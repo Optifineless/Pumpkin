@@ -35,6 +35,7 @@ pub mod generation_cache;
 pub mod loot;
 pub mod map;
 mod particle_senders;
+mod neighbor_updater;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -6081,49 +6082,7 @@ impl World {
         source_block: &Block,
         except: Option<BlockDirection>,
     ) {
-        for direction in BlockDirection::update_order() {
-            if except.is_some_and(|d| d == direction) {
-                continue;
-            }
-
-            let neighbor_pos = block_pos.offset(direction.to_offset());
-            let (neighbor_block, neighbor_fluid) = self.get_block_and_fluid(&neighbor_pos);
-
-            let mut event =
-                crate::plugin::api::events::block::block_physics::BlockPhysicsEvent::new(
-                    neighbor_pos,
-                    *block_pos,
-                );
-            if let Some(server) = self.server.upgrade() {
-                server.plugin_manager.fire_blocking(&server, &mut event);
-            }
-            if event.cancelled {
-                continue;
-            }
-
-            if let Some(neighbor_pumpkin_block) =
-                self.block_registry.get_pumpkin_block(neighbor_block.id)
-            {
-                neighbor_pumpkin_block.on_neighbor_update(OnNeighborUpdateArgs {
-                    world: self,
-                    block: neighbor_block,
-                    position: &neighbor_pos,
-                    source_block,
-                    notify: false,
-                });
-            }
-
-            if let Some(neighbor_pumpkin_fluid) =
-                self.block_registry.get_pumpkin_fluid(neighbor_fluid.id)
-            {
-                neighbor_pumpkin_fluid.on_neighbor_update(
-                    self,
-                    neighbor_fluid,
-                    &neighbor_pos,
-                    false,
-                );
-            }
-        }
+        neighbor_updater::update_neighbors_at(self, block_pos, source_block, except);
     }
 
     /// Updates neighboring blocks of a block
@@ -6137,30 +6096,7 @@ impl World {
     }
 
     pub fn update_neighbor(self: &Arc<Self>, neighbor_block_pos: &BlockPos, source_block: &Block) {
-        let neighbor_block = self.get_block(neighbor_block_pos);
-
-        let mut event = crate::plugin::api::events::block::block_physics::BlockPhysicsEvent::new(
-            *neighbor_block_pos,
-            *neighbor_block_pos,
-        );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-        if event.cancelled {
-            return;
-        }
-
-        if let Some(neighbor_pumpkin_block) =
-            self.block_registry.get_pumpkin_block(neighbor_block.id)
-        {
-            neighbor_pumpkin_block.on_neighbor_update(OnNeighborUpdateArgs {
-                world: self,
-                block: neighbor_block,
-                position: neighbor_block_pos,
-                source_block,
-                notify: false,
-            });
-        }
+        neighbor_updater::update_neighbor(self, neighbor_block_pos, source_block);
     }
 
     pub fn update_neighbour_for_output_signal(
@@ -6227,6 +6163,15 @@ impl World {
     }
 
     pub fn replace_with_state_for_neighbor_update(
+        self: &Arc<Self>,
+        block_pos: &BlockPos,
+        direction: BlockDirection,
+        flags: BlockFlags,
+    ) {
+        neighbor_updater::update_shape(self, block_pos, direction, flags);
+    }
+
+    fn execute_shape_update(
         self: &Arc<Self>,
         block_pos: &BlockPos,
         direction: BlockDirection,
