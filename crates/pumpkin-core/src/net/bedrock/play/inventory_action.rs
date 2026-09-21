@@ -455,6 +455,10 @@ impl BedrockClient {
                     return;
                 };
 
+                if player.is_spectator() {
+                    return;
+                }
+
                 let mut event = PlayerInteractEntityEvent::new(
                     player,
                     target.clone(),
