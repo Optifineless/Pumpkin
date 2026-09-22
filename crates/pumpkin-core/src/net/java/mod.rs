@@ -24,7 +24,7 @@ use pumpkin_protocol::java::server::play::{
     SPlayerRotation, SPlayerSession, SRecipeBookChangeSettings, SRecipeBookSeenRecipe, SRenameItem,
     SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCommandBlock, SSetCommandMinecart,
     SSetCreativeSlot, SSetGameRule, SSetHeldItem, SSetJigsawBlock, SSetPlayerGround,
-    SSetStructureBlock, SSetTestBlock, SSpectateEntity, SSwingArm, STeleportToEntity,
+    SSetStructureBlock, SSetTestBlock, SSpectatorAction, SSwingArm, STeleportToEntity,
     STestInstanceBlockAction, SUpdateSign, SUseItem, SUseItemOn,
 };
 use pumpkin_protocol::packet::MultiVersionJavaPacket;
@@ -1172,11 +1172,10 @@ impl JavaClient {
                     &SContainerSlotStateChanged::read_bounded(&mut payload, &version)?,
                 );
             }
-            id if id == SSpectateEntity::to_id(version) => {
+            id if id == SSpectatorAction::to_id(version) => {
                 self.handle_spectate_entity(
                     player,
-                    server,
-                    &SSpectateEntity::read_bounded(&mut payload, &version)?,
+                    &SSpectatorAction::read_bounded(&mut payload, &version)?,
                 );
             }
             id if id == SSetCommandMinecart::to_id(version) => {

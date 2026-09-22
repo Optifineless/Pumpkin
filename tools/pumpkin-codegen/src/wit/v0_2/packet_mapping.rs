@@ -578,7 +578,7 @@ fn process_packets(
             continue;
         }
         if path.extension().is_some_and(|ext| ext == "rs")
-            && path.file_name().is_some_and(|name| name != "mod.rs")
+            && path.file_name().is_some_and(|name| name != "mod.rs" && name != "spectator_action.rs")
         {
             parse_packet_file(
                 &path,
