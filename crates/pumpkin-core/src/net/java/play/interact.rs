@@ -114,13 +114,14 @@ impl JavaClient {
                             } else {
                                 event.target.interact(player, &mut stack)
                             };
+                            let stand_swap = interacted && event.target.cast_any().is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
                             if !interacted {
                                 server
                                     .item_registry
                                     .use_on_entity(&mut stack, player, event.target);
                             }
                             super::hand_use_result::write_back_used_item(player, hand, source_slot, &before, &stack);
-                            if !stack.are_equal(&before) {
+                            if !stand_swap && !stack.are_equal(&before) {
                                 player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
                             }
                         }
