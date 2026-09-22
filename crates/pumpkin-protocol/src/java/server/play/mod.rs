@@ -146,6 +146,8 @@ pub use set_game_rule::*;
 mod set_structure_block;
 pub use set_structure_block::*;
 
+mod spectator_action;
+pub use spectator_action::*;
 mod spectate_entity;
 pub use spectate_entity::*;
 
