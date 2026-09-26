@@ -270,6 +270,10 @@ impl ShulkerBulletEntity {
 }
 
 impl EntityBase for ShulkerBulletEntity {
+    fn can_hit(&self) -> bool {
+        !self.get_entity().is_removed()
+    }
+
     fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
         Some(&self.projectile)
     }

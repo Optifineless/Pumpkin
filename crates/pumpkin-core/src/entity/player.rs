@@ -6284,6 +6284,10 @@ impl EntityBase for Player {
         self.gamemode.load() == GameMode::Spectator
     }
 
+    fn can_hit(&self) -> bool {
+        !self.is_spectator() && !self.living_entity.entity.is_removed()
+    }
+
     fn set_on_fire_for_ticks(&self, ticks: u32) {
         super::ignite::ignite_for_ticks(self, ticks);
     }

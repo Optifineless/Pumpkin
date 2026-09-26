@@ -2,6 +2,7 @@
 use super::*;
 use pumpkin_protocol::java::server::play::SSpectatorAction;
 use pumpkin_util::GameMode;
+use pumpkin_data::attributes::Attributes;
 
 impl JavaClient {
     pub fn handle_spectate_entity(&self, player: &Arc<Player>, packet: &SSpectatorAction) {
@@ -20,7 +21,17 @@ impl JavaClient {
 
         let world = player.world();
         if let Some(target) = world.get_entity_or_part(target_id) {
-            let target_pos = target.get_entity().pos.load();
+            // ServerGamePacketListenerImpl.handleSpectatorAction checks border, range, then pickability.
+            let entity = target.get_entity();
+            let block_pos = entity.block_pos.load().0;
+            if !world.worldborder.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(f64::from(block_pos.x), f64::from(block_pos.z))
+            { return; }
+            let max_range = player.living_entity.get_attribute_value(&Attributes::ENTITY_INTERACTION_RANGE) + 3.0;
+            if entity.bounding_box.load().squared_magnitude(player.eye_position()) >= max_range * max_range
+                || entity.is_removed() || !target.can_hit()
+            { return; }
+            let target_pos = entity.pos.load();
             let target_yaw = target.get_entity().yaw.load();
             let target_pitch = target.get_entity().pitch.load();
             let target_id = target.get_entity().entity_id;
