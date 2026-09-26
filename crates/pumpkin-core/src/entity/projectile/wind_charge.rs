@@ -138,6 +138,10 @@ impl WindChargeEntity {
 }
 
 impl EntityBase for WindChargeEntity {
+    fn can_hit(&self) -> bool {
+        !self.get_entity().is_removed()
+    }
+
     fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
         Some(&self.thrown_item_entity.projectile)
     }
