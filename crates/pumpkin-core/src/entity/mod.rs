@@ -593,7 +593,9 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         let self_entity = self.get_entity();
         let other_entity = entity.get_entity();
 
-        if self_entity.no_physics.load(Ordering::Relaxed)
+        // Vanilla `LivingEntity.push`: a sleeper is never shoved out of its bed.
+        if self_entity.pose.load() == EntityPose::Sleeping
+            || self_entity.no_physics.load(Ordering::Relaxed)
             || other_entity.no_physics.load(Ordering::Relaxed)
         {
             return;
