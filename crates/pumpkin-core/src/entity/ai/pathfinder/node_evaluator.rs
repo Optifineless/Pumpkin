@@ -160,6 +160,15 @@ impl BaseNodeEvaluator {
         }
     }
 
+    /// Marks a node the search is done with. Vanilla nodes are shared, so `Node.closed` set by
+    /// the path finder is what `isNeighborValid` sees; here the cache has to be told.
+    pub fn close_node(&mut self, pos: Vector3<i32>) {
+        self.nodes
+            .entry(pos)
+            .or_insert_with(|| Node::new(BlockPos(pos)))
+            .closed = true;
+    }
+
     pub fn reset(&mut self) {
         self.nodes.clear();
         self.context = None;

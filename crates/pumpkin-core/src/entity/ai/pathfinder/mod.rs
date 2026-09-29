@@ -332,6 +332,15 @@ impl EvaluatorKind {
         }
     }
 
+    pub fn close_node(&mut self, pos: Vector3<i32>) {
+        match self {
+            Self::Walk(e) => e.base.close_node(pos),
+            Self::Fly(e) => e.walk.base.close_node(pos),
+            Self::Swim(e) => e.base.close_node(pos),
+            Self::Amphibious(e) => e.walk.base.close_node(pos),
+        }
+    }
+
     pub fn set_can_float(&mut self, can_float: bool) {
         match self {
             Self::Walk(e) => e.set_can_float(can_float),
@@ -654,6 +663,7 @@ impl PathNavigation {
             let Some(current) = self.open_set.pop() else {
                 break;
             };
+            self.evaluator.close_node(current.pos.0);
 
             if current.distance_manhattan(&target) <= reach_range as f32 {
                 target.reached = true;
