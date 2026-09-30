@@ -332,12 +332,22 @@ impl EvaluatorKind {
         }
     }
 
-    pub fn close_node(&mut self, pos: Vector3<i32>) {
+    pub fn close_node(&mut self, node: Node) {
         match self {
-            Self::Walk(e) => e.base.close_node(pos),
-            Self::Fly(e) => e.walk.base.close_node(pos),
-            Self::Swim(e) => e.base.close_node(pos),
-            Self::Amphibious(e) => e.walk.base.close_node(pos),
+            Self::Walk(e) => e.base.close_node(node),
+            Self::Fly(e) => e.walk.base.close_node(node),
+            Self::Swim(e) => e.base.close_node(node),
+            Self::Amphibious(e) => e.walk.base.close_node(node),
+        }
+    }
+
+    #[must_use]
+    pub fn closed_node(&self, pos: &Vector3<i32>) -> Option<Node> {
+        match self {
+            Self::Walk(e) => e.base.closed_node(pos),
+            Self::Fly(e) => e.walk.base.closed_node(pos),
+            Self::Swim(e) => e.base.closed_node(pos),
+            Self::Amphibious(e) => e.walk.base.closed_node(pos),
         }
     }
 
@@ -640,17 +650,15 @@ impl PathNavigation {
         start_node.came_from = None;
 
         let start_pos = start_node.pos.0;
-        let mut closed_set: FxHashMap<Vector3<i32>, Node> = FxHashMap::default();
-
         self.open_set.reserve_for_search();
         self.open_set.clear();
         self.open_set.insert(start_node);
 
         let mut iterations = 0usize;
         let mut reached = false;
-        let max_iters = ((self.mob_max_follow_range(entity)
-            * 16.0
-            * self.max_visited_nodes_multiplier) as usize)
+        // Read once: it's an attribute lookup, and the loop below runs up to 2048 times.
+        let follow_range = self.mob_max_follow_range(entity);
+        let max_iters = ((follow_range * 16.0 * self.max_visited_nodes_multiplier) as usize)
             .clamp(100, 2048)
             .max(MAX_ITERS);
 
@@ -663,13 +671,12 @@ impl PathNavigation {
             let Some(current) = self.open_set.pop() else {
                 break;
             };
-            self.evaluator.close_node(current.pos.0);
+            self.evaluator.close_node(current);
 
             if current.distance_manhattan(&target) <= reach_range as f32 {
                 target.reached = true;
                 reached = true;
                 target.update_best(0.0, &current);
-                closed_set.insert(current.pos.0, current);
                 break;
             }
 
@@ -677,9 +684,7 @@ impl PathNavigation {
             let dy = (current.pos.0.y - start_pos.y) as f32;
             let dz = (current.pos.0.z - start_pos.z) as f32;
             let euclidean = (dx * dx + dy * dy + dz * dz).sqrt();
-            let follow_range = self.mob_max_follow_range(entity);
             if euclidean >= follow_range {
-                closed_set.insert(current.pos.0, current);
                 continue;
             }
 
@@ -692,13 +697,10 @@ impl PathNavigation {
                 neighbor.walked_dist = current.walked_dist + step_cost;
                 let tentative_g = current.g + step_cost + neighbor.cost_malus;
 
-                let in_heap = self.open_set.contains(&neighbor);
+                let existing_g = self.open_set.get_node(&neighbor).map(|existing| existing.g);
+                let in_heap = existing_g.is_some();
                 if neighbor.walked_dist < follow_range
-                    && (!in_heap
-                        || self
-                            .open_set
-                            .get_node(&neighbor)
-                            .is_some_and(|existing| tentative_g < existing.g))
+                    && existing_g.is_none_or(|existing_g| tentative_g < existing_g)
                 {
                     neighbor.came_from = Some(current.pos.0);
                     neighbor.g = tentative_g;
@@ -714,47 +716,43 @@ impl PathNavigation {
                     }
                 }
             }
-
-            closed_set.insert(current.pos.0, current);
         }
 
         self.evaluator.done();
 
-        for node in self.open_set.drain() {
-            closed_set.entry(node.pos.0).or_insert(node);
-        }
-
-        if let Some(best_node) = target.best_node {
-            let mut path_nodes: Vec<Node> = Vec::new();
-            let mut current_pos = best_node.pos.0;
-            path_nodes.push(best_node);
+        let path = target.best_node.map(|best_node| {
+            // The latest copy of the best node: closed, or still open. Every node before it in the
+            // chain was expanded, so it is closed and cached.
+            let best_pos = best_node.pos.0;
+            let latest = self
+                .evaluator
+                .closed_node(&best_pos)
+                .or_else(|| self.open_set.get_node(&best_node).copied())
+                .unwrap_or(best_node);
+            let mut path_nodes = vec![best_node];
             let mut visited: FxHashSet<Vector3<i32>> = FxHashSet::default();
-            visited.insert(current_pos);
-            while let Some(node) = closed_set.get(&current_pos) {
-                if let Some(prev_pos) = node.came_from {
-                    if prev_pos == current_pos || !visited.insert(prev_pos) {
-                        break;
-                    }
-                    if let Some(&prev_node) = closed_set.get(&prev_pos) {
-                        path_nodes.push(prev_node);
-                        current_pos = prev_pos;
-                    } else {
-                        break;
-                    }
-                } else {
+            visited.insert(best_pos);
+            let mut came_from = latest.came_from;
+            while let Some(prev_pos) = came_from {
+                if !visited.insert(prev_pos) {
                     break;
                 }
+                let Some(prev_node) = self.evaluator.closed_node(&prev_pos) else {
+                    break;
+                };
+                path_nodes.push(prev_node);
+                came_from = prev_node.came_from;
             }
             path_nodes.reverse();
-
-            let path_target = target.node.pos;
+            Path::new(path_nodes, target.node.pos, reached)
+        });
+        self.open_set.clear();
+        if path.is_some() {
             self.target_pos = Some(BlockPos::floored_v(destination));
             self.reach_range = reach_range;
             self.reset_stuck_timeout();
-            return Some(Path::new(path_nodes, path_target, reached));
         }
-
-        None
+        path
     }
 
     pub fn find_surface_position(world: &World, mut pos: BlockPos) -> BlockPos {
