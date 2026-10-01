@@ -1312,7 +1312,10 @@ pub trait Mob: EntityBase + Send + Sync {
         }
     }
 
-    fn transform(&self, new_entity_id: i32, transform_reason: String) {
+    /// Fires [`EntityTransformEvent`]
+    ///
+    /// Returns `false` when a plugin cancels the transformation.
+    fn transform(&self, new_entity_id: i32, transform_reason: String) -> bool {
         let mob = self.get_mob_entity();
         let mut event =
             crate::plugin::api::events::entity::entity_transform::EntityTransformEvent::new(
@@ -1323,6 +1326,7 @@ pub trait Mob: EntityBase + Send + Sync {
         if let Some(server) = mob.living_entity.entity.world.load().server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
+        !event.cancelled
     }
 
     fn break_door(&self, block_pos: BlockPos) {
