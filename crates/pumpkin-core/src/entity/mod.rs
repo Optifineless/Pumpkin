@@ -103,6 +103,8 @@ mod player_teleport;
 pub mod projectile;
 pub mod projectile_deflection;
 pub(crate) mod spawn_mount;
+
+pub mod shearable;
 pub mod spawn_util;
 pub mod synched_entity_data;
 pub mod tnt;
