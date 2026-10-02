@@ -115,6 +115,7 @@ pub use lightning::LightningBoltEntity;
 
 pub(crate) mod combat;
 pub mod equipment_damage;
+mod detached_stack_damage;
 pub(crate) mod ignite;
 pub mod predicate;
 pub(crate) mod recipe_properties;
