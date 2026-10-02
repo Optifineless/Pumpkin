@@ -38,7 +38,7 @@ impl Explosion {
         if block == &Block::LEVER {
             lever::toggle_lever(world, pos);
         } else if block.has_tag(&tag::Block::MINECRAFT_BUTTONS) {
-            if buttons::click_button(world, pos) {
+            if buttons::click_button(None, world, pos) {
                 world.emit_game_event(GameEvent::BlockActivate.name(), pos.to_centered_f64());
             }
         } else if block == &Block::BELL {
