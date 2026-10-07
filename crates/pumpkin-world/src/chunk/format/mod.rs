@@ -182,7 +182,8 @@ where
     let x = nbt.get_int("x")?;
     let y = nbt.get_int("y")?;
     let z = nbt.get_int("z")?;
-    let delay = nbt.get_int("t")? as u8;
+    // Vanilla saves overdue ticks with a delay of 0 or less, and those run on the next tick.
+    let delay = nbt.get_int("t")?.clamp(0, i32::from(u8::MAX)) as u8;
     let priority = TickPriority::try_from(nbt.get_int("p")?).ok()?;
     let res_loc_str = nbt.get_string("i")?;
     let res_loc = ResourceLocation::from_str(res_loc_str).ok()?;
@@ -1006,6 +1007,23 @@ mod tests {
             NbtTag::List(sections.into_iter().map(NbtTag::Compound).collect()),
         );
         pumpkin_nbt::Nbt::new(String::new(), root)
+    }
+
+    #[test]
+    fn saved_tick_delay_is_clamped_instead_of_wrapping() {
+        let saved = |t: i32| {
+            let mut nbt = NbtCompound::new();
+            nbt.put_int("x", 0);
+            nbt.put_int("y", 0);
+            nbt.put_int("z", 0);
+            nbt.put_int("t", t);
+            nbt.put_int("p", 0);
+            nbt.put_string("i", "minecraft:stone".to_string());
+            parse_scheduled_tick::<&'static Block>(&nbt).map(|tick| tick.delay)
+        };
+        // Vanilla saves a tick that was already due with a delay of 0 or less.
+        assert_eq!(saved(-1), Some(0));
+        assert_eq!(saved(300), Some(u8::MAX));
     }
 
     #[test]

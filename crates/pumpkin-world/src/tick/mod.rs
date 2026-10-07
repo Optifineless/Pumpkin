@@ -132,7 +132,7 @@ where
         let x = nbt.get_int("x")?;
         let y = nbt.get_int("y")?;
         let z = nbt.get_int("z")?;
-        let delay = nbt.get_int("t")? as u8;
+        let delay = nbt.get_int("t")?.clamp(0, i32::from(u8::MAX)) as u8;
         let priority = TickPriority::try_from(nbt.get_int("p")?).ok()?;
         let res_loc_str = nbt.get_string("i")?;
         let res_loc = ResourceLocation::from_str(res_loc_str).ok()?;
