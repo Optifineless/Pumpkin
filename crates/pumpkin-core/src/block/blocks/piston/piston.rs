@@ -240,39 +240,41 @@ impl PistonBlock {
             source: true,
         }));
 
-        world.set_block_state(
-            &extended_pos,
-            Block::AIR.default_state.id,
-            BlockFlags::NOTIFY_ALL | BlockFlags::FORCE_STATE,
-        );
-
         world.update_neighbors(pos, None);
         if sticky {
             let pull_pos = pos.offset_dir(dir.to_offset(), 2);
             let (block, state) = world.get_block_and_state(&pull_pos);
-            if data == 2 {
-                world.set_block_state(
-                    &extended_pos,
-                    Block::AIR.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                );
+
+            // Vanilla finishes a block this piston is still pushing instead of pulling it back,
+            // which is how a short pulse drops the block.
+            let piston_piece = if block == &Block::MOVING_PISTON
+                && let Some(block_entity) = world.get_block_entity(&pull_pos)
+                && let Some(moving) = block_entity.as_any().downcast_ref::<PistonBlockEntity>()
+                && moving.facing == dir
+                && moving.extending
+            {
+                moving.finish(world);
+                true
             } else {
-                let is_air = state.is_air();
-                if !is_air
-                    && (Self::is_movable(block, state, dir, false, dir.opposite())
-                        || Self::is_movable(block, state, dir, false, dir))
-                    && (state.piston_behavior == PistonBehavior::Normal
-                        || block == &Block::PISTON
-                        || block == &Block::STICKY_PISTON)
+                false
+            };
+
+            if !piston_piece {
+                // Event 2 is a retraction that came too soon after extending, so nothing is pulled.
+                if r#type != 1
+                    || state.is_air()
+                    || !Self::is_movable(block, state, dir.opposite(), false, dir)
+                    || (state.piston_behavior != PistonBehavior::Normal
+                        && block != &Block::PISTON
+                        && block != &Block::STICKY_PISTON)
                 {
-                    move_piston(world, dir, pos, false, sticky);
-                } else {
-                    // remove
                     world.set_block_state(
                         &extended_pos,
                         Block::AIR.default_state.id,
                         BlockFlags::NOTIFY_ALL,
                     );
+                } else {
+                    move_piston(world, dir, pos, false, sticky);
                 }
             }
         } else {
@@ -348,8 +350,10 @@ pub fn try_move(world: &Arc<World>, _block: &Block, block_pos: &BlockPos) {
                 let Some(piston) = entity.as_any().downcast_ref::<PistonBlockEntity>() else {
                     return;
                 };
-                if piston.extending && piston.current_progress.load() < 0.5
-                // TODO: more stuff...
+                // TODO: vanilla also checks `getLastTicked() == getGameTime()`, which needs the
+                // block entity to remember the tick it last ran.
+                if piston.extending
+                    && (piston.current_progress.load() < 0.5 || world.is_handling_tick())
                 {
                     // Piston reduced too quickly, if its a stick piston no blocks will be dragged
                     r#type = 2;
