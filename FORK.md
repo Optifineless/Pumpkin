@@ -46,7 +46,7 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 
 | Report | Status |
 |:--|:--|
-| Chest and hopper contents vanished after `stop` and restart (2026-10-07, build with the first upstream harvest) | Investigating; suspect upstream PR #3859 |
+| Chest and hopper contents vanished after `stop` and restart (2026-10-07, first start after switching from the pre-harvest build) | Not reproduced in three headless investigations (same build, player-style unload, old-build world opened by new build); container NBT format verified unchanged across the harvest; the owner's later tests (hand-filled chest, autosave, restart with a build switch) kept their items. Kept open; report any recurrence with the build and steps. |
 
 ## Fork fixes checked in-game
 
