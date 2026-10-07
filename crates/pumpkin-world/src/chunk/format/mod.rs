@@ -241,7 +241,7 @@ impl ChunkData {
                     let block_light = section_compound
                         .get("BlockLight")
                         .and_then(|tag| tag.extract_byte_array())
-                        .map(|arr| {
+                        .map(|arr| -> Box<[u8]> {
                             // SAFETY: `arr` is an `i8` slice (`&[i8]`). `u8` and `i8` have identical memory layout, alignment (1 byte), and lifetime.
                             unsafe {
                                 Box::from(std::slice::from_raw_parts(
@@ -254,7 +254,7 @@ impl ChunkData {
                     let sky_light = section_compound
                         .get("SkyLight")
                         .and_then(|tag| tag.extract_byte_array())
-                        .map(|arr| {
+                        .map(|arr| -> Box<[u8]> {
                             // SAFETY: `arr` is an `i8` slice (`&[i8]`). `u8` and `i8` have identical memory layout, alignment (1 byte), and lifetime.
                             unsafe {
                                 Box::from(std::slice::from_raw_parts(
@@ -264,10 +264,15 @@ impl ChunkData {
                             }
                         });
 
-                    block_lights[index] =
-                        block_light.map_or(LightContainer::Empty(0), LightContainer::Full);
-                    sky_lights[index] =
-                        sky_light.map_or(LightContainer::Empty(0), LightContainer::Full);
+                    // `Full` skips the length check `LightContainer::new` makes,
+                    // and every reader indexes it up to `ARRAY_SIZE`, so a
+                    // short array from disk is dropped instead of stored.
+                    block_lights[index] = block_light
+                        .filter(|data| data.len() == LightContainer::ARRAY_SIZE)
+                        .map_or(LightContainer::Empty(0), LightContainer::Full);
+                    sky_lights[index] = sky_light
+                        .filter(|data| data.len() == LightContainer::ARRAY_SIZE)
+                        .map_or(LightContainer::Empty(0), LightContainer::Full);
 
                     if let Some(bs_compound) = section_compound.get_compound("block_states") {
                         let data = bs_compound
@@ -327,15 +332,20 @@ impl ChunkData {
                 motion_blocking: None,
                 motion_blocking_no_leaves: None,
             },
+            // A heightmap of the wrong length is dropped rather than stored:
+            // every reader indexes it by column and would run off the end.
             |h_compound| ChunkHeightmaps {
                 world_surface: h_compound
                     .get_long_array("WORLD_SURFACE")
+                    .filter(|a| a.len() == ChunkHeightmaps::LONGS)
                     .map(|a| a.to_vec().into_boxed_slice()),
                 motion_blocking: h_compound
                     .get_long_array("MOTION_BLOCKING")
+                    .filter(|a| a.len() == ChunkHeightmaps::LONGS)
                     .map(|a| a.to_vec().into_boxed_slice()),
                 motion_blocking_no_leaves: h_compound
                     .get_long_array("MOTION_BLOCKING_NO_LEAVES")
+                    .filter(|a| a.len() == ChunkHeightmaps::LONGS)
                     .map(|a| a.to_vec().into_boxed_slice()),
             },
         );

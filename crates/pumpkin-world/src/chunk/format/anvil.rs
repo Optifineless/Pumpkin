@@ -1128,6 +1128,18 @@ mod tests {
     }
 
     #[test]
+    fn a_chunk_declaring_one_byte_too_many_is_an_error_not_a_panic() {
+        // RegionFile.getChunkDataInputStream subtracts the consumed compression byte.
+        // The storage merge keeps this record error isolated from healthy chunks.
+        let file = AnvilChunkFile::<ChunkData>::read(region_with_first_location(
+            (2 << 8) | 1,
+            SECTOR_BYTES as u32 - 3,
+        ));
+
+        assert!(file.unwrap().read_errors.contains_key(&0));
+    }
+
+    #[test]
     fn custom_compression_returns_unknown_compression_error() {
         assert!(matches!(
             Compression::Custom.compress_data(b"chunk data", 6),
