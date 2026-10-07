@@ -15,7 +15,7 @@ use rayon::prelude::*;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, RwLock, Weak};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, VecDeque},
     sync::atomic::Ordering,
 };
 use tracing::{debug, error, info, trace, warn};
@@ -273,7 +273,10 @@ pub struct World {
     /// Block Behaviour
     pub block_registry: Arc<BlockRegistry>,
     pub server: Weak<Server>,
-    synced_block_event_queue: std::sync::Mutex<Vec<BlockEvent>>,
+    synced_block_event_queue: std::sync::Mutex<VecDeque<BlockEvent>>,
+    /// Vanilla's `ServerLevel.handlingTick`: set while scheduled ticks, chunk ticks and block
+    /// events run, but not while entities and block entities tick.
+    handling_tick: std::sync::atomic::AtomicBool,
     /// A map of unsent block changes, keyed by block position.
     unsent_block_changes: std::sync::Mutex<HashMap<BlockPos, BlockStateId>>,
     /// Persisted vanilla POI storage for portal and villager lookups.
@@ -415,7 +418,8 @@ impl World {
             block_registry,
             sea_level: generation_settings.sea_level,
             min_y: i32::from(generation_settings.shape.min_y),
-            synced_block_event_queue: std::sync::Mutex::new(Vec::new()),
+            synced_block_event_queue: std::sync::Mutex::new(VecDeque::new()),
+            handling_tick: std::sync::atomic::AtomicBool::new(false),
             unsent_block_changes: std::sync::Mutex::new(HashMap::new()),
             portal_poi: std::sync::Mutex::new(portal_poi),
             villager_poi: std::sync::Mutex::new(villager_poi::VillagerPoiStorage::default()),
@@ -919,34 +923,66 @@ impl World {
         }
     }
 
+    /// Vanilla's `ServerLevel.isHandlingTick`.
+    pub fn is_handling_tick(&self) -> bool {
+        self.handling_tick.load(Ordering::Relaxed)
+    }
+
+    /// Vanilla's `Level.blockEvent`. Like vanilla's linked set, an event already waiting in the
+    /// queue is not queued twice.
     pub fn add_synced_block_event(&self, pos: BlockPos, r#type: u8, data: u8) {
+        let event = BlockEvent {
+            pos,
+            block: self.get_block(&pos),
+            r#type,
+            data,
+        };
         let mut queue = self
             .synced_block_event_queue
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        queue.push(BlockEvent { pos, r#type, data });
+        if !queue.contains(&event) {
+            queue.push_back(event);
+        }
     }
 
+    /// Vanilla's `ServerLevel.runBlockEvents`: runs until the queue is empty, so events queued
+    /// by other events (piston chains) run in the same tick. Events in chunks that aren't
+    /// ticking wait for a later tick.
     pub fn flush_synced_block_events(self: &Arc<Self>) {
-        // THIS IS IMPORTANT
-        // it prevents deadlocks and also removes the need to wait for a lock when adding a new synced block
-        let events = {
-            let mut queue = self
+        let mut rescheduled = Vec::new();
+        loop {
+            // The lock is released before the event runs, because running it can queue more.
+            let Some(event) = self
                 .synced_block_event_queue
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::take(&mut *queue)
-        };
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .pop_front()
+            else {
+                break;
+            };
 
-        for event in events {
+            let is_ticking = self
+                .active_chunks
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(&event.pos.chunk_position());
+            if !is_ticking {
+                rescheduled.push(event);
+                continue;
+            }
+
+            // Vanilla's `doBlockEvent`: the event is dropped if its block was replaced.
             let block = self.get_block(&event.pos);
-            if !self.block_registry.on_synced_block_event(
-                block,
-                self,
-                &event.pos,
-                event.r#type,
-                event.data,
-            ) {
+            if block != event.block
+                || !self.block_registry.on_synced_block_event(
+                    block,
+                    self,
+                    &event.pos,
+                    event.r#type,
+                    event.data,
+                )
+            {
                 continue;
             }
             let chunk_pos = event.pos.chunk_position();
@@ -964,6 +1000,12 @@ impl World {
                     event_value: event.data.into(),
                 },
             );
+        }
+        if !rescheduled.is_empty() {
+            self.synced_block_event_queue
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend(rescheduled);
         }
     }
 
@@ -1534,8 +1576,8 @@ impl World {
 
         let start = std::time::Instant::now();
 
+        self.handling_tick.store(true, Ordering::Relaxed);
         self.flush_block_updates();
-        self.flush_synced_block_events();
         self.update_active_chunks();
         self.tick_environment();
         let mut raids = {
@@ -1561,6 +1603,11 @@ impl World {
         let t_chunks = std::time::Instant::now();
         self.tick_chunks(server);
         let chunk_elapsed = t_chunks.elapsed();
+
+        // Vanilla runs block events after scheduled and chunk ticks, then stops handling the tick
+        // before entities and block entities.
+        self.flush_synced_block_events();
+        self.handling_tick.store(false, Ordering::Relaxed);
 
         let handle = server.runtime.clone();
 
