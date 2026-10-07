@@ -77,6 +77,7 @@ pub mod breath;
 pub mod custom_sound;
 pub mod decoration;
 pub mod effect;
+mod equipment_damage;
 pub mod experience_orb;
 pub mod falling;
 pub mod hunger;

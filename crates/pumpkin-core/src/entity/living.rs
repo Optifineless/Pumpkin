@@ -1,3 +1,8 @@
+mod armor;
+mod equipment_modifiers;
+#[cfg(test)]
+mod test_support;
+
 use pumpkin_data::item::Item;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::potion::Effect;
@@ -5,7 +10,6 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_inventory::build_equipment_slots;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_protocol::bedrock::client::take_item_actor::CTakeItemActor;
 use pumpkin_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
 use pumpkin_protocol::codec::var_ulong::VarULong;
@@ -30,19 +34,17 @@ use crate::entity::ageable::AgeableMob;
 use crate::entity::attributes::AttributeInstance;
 use crate::entity::attributes::Modifier;
 use crate::entity::attributes::ModifierOperation;
-use crate::entity::combat::{CombatRules, CombatTracker, FallLocation, knockback_after_resistance};
+use crate::entity::combat::{CombatTracker, FallLocation, knockback_after_resistance};
 use crate::entity::mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
 use crate::server::Server;
 use crate::world::loot::LootContextParameters;
 use crossbeam::atomic::AtomicCell;
-use pumpkin_data::AttributeModifierSlot;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::data_component_impl::Operation;
 use pumpkin_data::data_component_impl::food::{ConsumableImpl, ConsumeEffect};
 use pumpkin_data::data_component_impl::{
-    AttributeModifiersImpl, BlocksAttacksImpl, DeathProtectionImpl, EnchantmentsImpl,
-    EquipmentSlot, EquippableImpl, FoodImpl,
+    BlocksAttacksImpl, DeathProtectionImpl, EquipmentSlot, FoodImpl,
 };
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityPose, EntityStatus, EntityType};
@@ -56,9 +58,7 @@ use pumpkin_inventory::entity_equipment::EntityEquipment;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{
-    CHurtAnimation, CSetPlayerInventory, CTakeItemEntity, CUpdateMobEffect,
-};
+use pumpkin_protocol::java::client::play::{CHurtAnimation, CTakeItemEntity, CUpdateMobEffect};
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
     java::client::play::{CSetEquipment, MetadataSerializer},
@@ -143,8 +143,6 @@ pub struct LivingEntity {
     /// Modifier ids applied from the current item in each equipment slot.
     /// Used to remove them on unequip without the previous stack.
     equipment_attribute_modifier_ids: std::sync::Mutex<FxHashMap<EquipmentSlot, Vec<(u8, String)>>>,
-    /// Modifier ids applied from the currently held weapon.
-    weapon_attribute_modifier_ids: std::sync::Mutex<Vec<(u8, String)>>,
 }
 
 #[derive(Clone)]
@@ -317,7 +315,6 @@ impl LivingEntity {
             water_movement_speed_multiplier,
             last_block_pos: AtomicCell::new(None),
             equipment_attribute_modifier_ids: std::sync::Mutex::new(FxHashMap::default()),
-            weapon_attribute_modifier_ids: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -424,9 +421,6 @@ impl LivingEntity {
 
         let mut sent_editioned = false;
         for (slot, stack) in equipment {
-            if *slot == EquipmentSlot::MAIN_HAND {
-                self.update_weapon_attributes(stack);
-            }
             if *slot == EquipmentSlot::MAIN_HAND || *slot == EquipmentSlot::OFF_HAND {
                 let window_id = if *slot == EquipmentSlot::OFF_HAND {
                     120
@@ -457,167 +451,6 @@ impl LivingEntity {
                 .world
                 .load()
                 .send_to_tracking_players(&self.entity, &je_packet);
-        }
-    }
-
-    /// Applies the held item's attack attribute modifiers to this entity's
-    /// attribute map and sends the changed attributes to clients. Without this
-    /// the client never sees the reduced attack speed and does not show the
-    /// crosshair attack indicator.
-    fn update_weapon_attributes(&self, stack: &ItemStack) {
-        let component = stack.get_data_component::<AttributeModifiersImpl>();
-
-        let mut changed: Vec<Attributes> = Vec::new();
-
-        // Remove only the modifiers the previously held stack applied; replacing
-        // the whole list would drop permanent modifiers from commands and effects.
-        let previous = std::mem::take(
-            &mut *self
-                .weapon_attribute_modifier_ids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        for (attribute_id, modifier_id) in previous {
-            if let Some(attribute) = attributes_by_id(attribute_id) {
-                self.update_attribute(attribute, |inst| inst.remove_modifier(&modifier_id));
-                push_unique_attribute(&mut changed, attribute);
-            }
-        }
-
-        let mut applied = Vec::new();
-        for modifier in component
-            .into_iter()
-            .flat_map(|c| c.attribute_modifiers.iter())
-        {
-            let attribute = modifier.r#type;
-            if attribute != &Attributes::ATTACK_SPEED && attribute != &Attributes::ATTACK_DAMAGE {
-                continue;
-            }
-            let operation = match modifier.operation {
-                Operation::AddValue => ModifierOperation::Add,
-                Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
-                Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
-            };
-            self.update_attribute(attribute, |inst| {
-                inst.add_or_replace_modifier(Modifier {
-                    id: modifier.id.to_string(),
-                    amount: modifier.amount,
-                    operation,
-                    permanent: false,
-                });
-            });
-            applied.push((attribute.id, modifier.id.to_string()));
-            push_unique_attribute(&mut changed, attribute);
-        }
-
-        *self
-            .weapon_attribute_modifier_ids
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = applied;
-
-        if !changed.is_empty() {
-            crate::entity::attributes::send_attribute_updates_for_living(self, changed);
-        }
-    }
-
-    /// Applies item `attribute_modifiers` for the given slots and notifies clients.
-    ///
-    /// The local HUD armor bar is driven by `minecraft:armor` / `minecraft:armor_toughness`
-    /// on `UPDATE_ATTRIBUTES`, not by `SET_EQUIPMENT`.
-    pub fn apply_and_send_equipment_attribute_modifiers(
-        &self,
-        equipment: &[(EquipmentSlot, ItemStack)],
-    ) {
-        let mut touched = Vec::new();
-        for (slot, stack) in equipment {
-            self.apply_equipment_slot_attribute_modifiers(slot, stack, &mut touched);
-        }
-        if !touched.is_empty() {
-            crate::entity::attributes::send_attribute_updates_for_living(self, touched);
-        }
-    }
-
-    /// Re-applies modifiers from every currently equipped stack without notifying clients.
-    pub fn apply_current_equipment_attribute_modifiers(&self) {
-        let equipment = self.snapshot_equipped_stacks();
-        let mut touched = Vec::new();
-        for (slot, stack) in &equipment {
-            self.apply_equipment_slot_attribute_modifiers(slot, stack, &mut touched);
-        }
-    }
-
-    /// Re-applies modifiers from every currently equipped stack and sends updates.
-    pub fn send_current_equipment_attribute_modifiers(&self) {
-        self.apply_and_send_equipment_attribute_modifiers(&self.snapshot_equipped_stacks());
-    }
-
-    fn snapshot_equipped_stacks(&self) -> Vec<(EquipmentSlot, ItemStack)> {
-        let guard = self
-            .entity_equipment
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard
-            .equipment
-            .iter()
-            .map(|(slot, stack)| (slot.clone(), stack.clone()))
-            .collect()
-    }
-
-    fn apply_equipment_slot_attribute_modifiers(
-        &self,
-        slot: &EquipmentSlot,
-        stack: &ItemStack,
-        touched: &mut Vec<Attributes>,
-    ) {
-        let previous = {
-            let mut map = self
-                .equipment_attribute_modifier_ids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            map.remove(slot).unwrap_or_default()
-        };
-        for (attr_id, modifier_id) in previous {
-            if let Some(attr) = attributes_by_id(attr_id) {
-                self.update_attribute(attr, |inst| inst.remove_modifier(&modifier_id));
-                push_unique_attribute(touched, attr);
-            }
-        }
-
-        if stack.is_empty() {
-            return;
-        }
-        let Some(modifiers) = stack.get_data_component::<AttributeModifiersImpl>() else {
-            return;
-        };
-
-        let mut applied = Vec::new();
-        for item_mod in modifiers.attribute_modifiers.iter() {
-            if !attribute_modifier_slot_matches(&item_mod.slot, slot) {
-                continue;
-            }
-            let operation = match item_mod.operation {
-                Operation::AddValue => ModifierOperation::Add,
-                Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
-                Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
-            };
-            self.update_attribute(item_mod.r#type, |inst| {
-                inst.add_or_replace_modifier(Modifier {
-                    id: item_mod.id.to_string(),
-                    amount: item_mod.amount,
-                    operation,
-                    permanent: false,
-                });
-            });
-            applied.push((item_mod.r#type.id, item_mod.id.to_string()));
-            push_unique_attribute(touched, item_mod.r#type);
-        }
-
-        if !applied.is_empty() {
-            let mut map = self
-                .equipment_attribute_modifier_ids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            map.insert(slot.clone(), applied);
         }
     }
 
@@ -2499,77 +2332,6 @@ impl LivingEntity {
         false
     }
 
-    #[allow(dead_code)]
-    fn damage_armor_items(&self, caller: &dyn EntityBase, damage_amount: f32) {
-        // Formula: armor loses floor(incoming_damage / 4) durability, minimum 1.
-        let armor_damage = (damage_amount / 4.0).floor().max(1.0) as i32;
-        let mut equipment_updates = Vec::new();
-
-        // TODO: Falling anvil/stalactite should only damage the helmet slot.
-        // TODO: Implement DAMAGE_RESISTANT component checks (e.g. netherite vs fire).
-
-        let armor_slots: Vec<(usize, ItemStack, EquipmentSlot)> = {
-            let equipment_lock = self
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            self.equipment_slots
-                .iter()
-                .filter(|(_, slot)| slot.is_armor_slot())
-                .filter_map(|(index, slot)| {
-                    equipment_lock
-                        .equipment
-                        .get(slot)
-                        .cloned()
-                        .map(|stack| (*index, stack, slot.clone()))
-                })
-                .collect()
-        };
-
-        for (slot_index, mut stack, slot) in armor_slots {
-            if stack.is_empty() {
-                continue;
-            }
-
-            let takes_damage = stack
-                .get_data_component::<EquippableImpl>()
-                .is_none_or(|equippable| equippable.damage_on_hurt);
-
-            if takes_damage {
-                let item_id = stack.item.id;
-                let slot_result = stack.damage_item(armor_damage);
-                if slot_result != pumpkin_data::item_stack::DamageResult::Untouched {
-                    if slot_result == pumpkin_data::item_stack::DamageResult::Broken {
-                        if let Some(player) = caller.get_player() {
-                            player.increment_stat(
-                                pumpkin_data::statistic::StatisticCategory::Broken,
-                                item_id as i32,
-                                1,
-                            );
-                        }
-                        let world = self.entity.world.load();
-                        world.send_entity_status(
-                            &self.entity,
-                            super::equipment_break_status(&slot),
-                            None,
-                        );
-                    }
-                    equipment_updates.push((slot.clone(), stack.clone()));
-                    if let Some(player) = caller.get_player() {
-                        player.enqueue_slot_set_packet(&CSetPlayerInventory::new(
-                            (slot_index as i32).into(),
-                            &ItemStackSerializer::from(stack),
-                        ));
-                    }
-                }
-            }
-        }
-
-        if !equipment_updates.is_empty() {
-            self.send_equipment_changes(&equipment_updates);
-        }
-    }
-
     pub fn held_item(&self, caller: &dyn EntityBase) -> ItemStack {
         if let Some(player) = caller.get_player() {
             return player.inventory.held_item();
@@ -2811,6 +2573,13 @@ impl LivingEntity {
             }
         }
 
+        // LivingEntity.readAdditionalSaveData restores equipment; collectEquipmentChanges
+        // reinstalls its transient modifiers, which are deliberately absent from attribute NBT.
+        // Player.read_custom_nbt rebuilds once its authoritative inventory has also loaded.
+        if self.entity.entity_type != &EntityType::PLAYER {
+            self.apply_current_equipment_attribute_modifiers();
+        }
+
         // Clamp any persisted absorption to the entity's configured max
         let raw_abs = nbt.get_float("AbsorptionAmount").unwrap_or(0.0);
         let max_abs = self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32;
@@ -2863,137 +2632,6 @@ impl LivingEntity {
             }
         }
         // todo more...
-    }
-
-    /// Calculates damage after armor reduction, mirroring vanilla `LivingEntity.getDamageAfterArmorAbsorb`.
-    pub fn get_damage_after_armor_absorb(
-        &self,
-        damage: f32,
-        damage_type: &DamageType,
-        attacker: Option<&dyn EntityBase>,
-    ) -> f32 {
-        if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_ARMOR) {
-            return damage;
-        }
-
-        let mut armor = 0.0f32;
-        let mut toughness = 0.0f32;
-        {
-            let equipment_lock = self
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for slot in [
-                EquipmentSlot::HEAD,
-                EquipmentSlot::CHEST,
-                EquipmentSlot::LEGS,
-                EquipmentSlot::FEET,
-            ] {
-                if let Some(stack) = equipment_lock.equipment.get(&slot)
-                    && !stack.is_empty()
-                    && let Some(modifiers) = stack.get_data_component::<AttributeModifiersImpl>()
-                {
-                    for modifier in modifiers.attribute_modifiers.iter() {
-                        if modifier.r#type == &Attributes::ARMOR {
-                            armor += modifier.amount as f32;
-                        } else if modifier.r#type == &Attributes::ARMOR_TOUGHNESS {
-                            toughness += modifier.amount as f32;
-                        }
-                    }
-                }
-            }
-        }
-
-        let breach_level = attacker
-            .and_then(|att| {
-                let player = att.get_player()?;
-                let hand_stack = player
-                    .inventory()
-                    .get_stack_in_hand(pumpkin_util::Hand::Right);
-                let level = hand_stack.get_enchantment_level(&Enchantment::BREACH);
-                (level > 0).then_some(level as u32)
-            })
-            .unwrap_or(0);
-
-        CombatRules::get_damage_after_absorb(damage, armor, toughness, breach_level)
-    }
-
-    /// Calculates damage after magic/resistance/enchantment reduction, mirroring vanilla `LivingEntity.getDamageAfterMagicAbsorb`.
-    pub fn get_damage_after_magic_absorb(
-        &self,
-        mut damage: f32,
-        damage_type: &DamageType,
-        caller: &dyn EntityBase,
-        cause: Option<&dyn EntityBase>,
-    ) -> f32 {
-        if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_EFFECTS) {
-            return damage;
-        }
-
-        // 1. Resistance Effect (evaluated before enchantments)
-        if !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_RESISTANCE)
-            && let Some(effect) = self.get_effect(&StatusEffect::RESISTANCE)
-        {
-            let absorb_value = (effect.amplifier + 1) * 5;
-            let absorb = 25 - absorb_value;
-            let v = damage * absorb as f32;
-            let old_damage = damage;
-            damage = (v / 25.0).max(0.0);
-            let damage_resisted = old_damage - damage;
-            if damage_resisted > 0.0 {
-                if let Some(victim_player) = caller.get_player() {
-                    victim_player.increment_stat(
-                        StatisticCategory::Custom,
-                        CustomStatistic::DamageResisted as i32,
-                        (damage_resisted * 10.0).round() as i32,
-                    );
-                } else if let Some(attacker_player) = cause.and_then(|c| c.get_player()) {
-                    attacker_player.increment_stat(
-                        StatisticCategory::Custom,
-                        CustomStatistic::DamageDealtResisted as i32,
-                        (damage_resisted * 10.0).round() as i32,
-                    );
-                }
-            }
-        }
-
-        if damage <= 0.0 {
-            return 0.0;
-        }
-
-        // 2. Enchantment Protection
-        if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_ENCHANTMENTS) {
-            return damage;
-        }
-
-        let mut epf = 0.0f32;
-        {
-            let equipment_lock = self
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for slot in [
-                EquipmentSlot::HEAD,
-                EquipmentSlot::CHEST,
-                EquipmentSlot::LEGS,
-                EquipmentSlot::FEET,
-            ] {
-                if let Some(stack) = equipment_lock.equipment.get(&slot)
-                    && !stack.is_empty()
-                    && let Some(enchantments) = stack.get_data_component::<EnchantmentsImpl>()
-                {
-                    for (enchantment, level) in enchantments.enchantment.iter() {
-                        enchantment.modify_damage_protection_against(*level, damage_type, &mut epf);
-                    }
-                }
-            }
-        }
-
-        if epf > 0.0 {
-            damage = CombatRules::get_damage_after_magic_absorb(damage, epf);
-        }
-
-        damage
     }
 
     #[allow(clippy::too_many_lines)]
@@ -3864,46 +3502,6 @@ fn random_teleport_coordinate(center: f64, diameter: f32, random: f64) -> f64 {
     center + (random - 0.5) * f64::from(diameter)
 }
 
-fn attributes_by_id(id: u8) -> Option<&'static Attributes> {
-    Attributes::ALL.iter().find(|attr| attr.id == id)
-}
-
-fn push_unique_attribute(touched: &mut Vec<Attributes>, attr: &Attributes) {
-    if !touched.iter().any(|existing| existing.id == attr.id) {
-        touched.push(attr.clone());
-    }
-}
-
-const fn attribute_modifier_slot_matches(
-    modifier_slot: &AttributeModifierSlot,
-    equipment_slot: &EquipmentSlot,
-) -> bool {
-    match modifier_slot {
-        AttributeModifierSlot::Any => true,
-        AttributeModifierSlot::MainHand => matches!(equipment_slot, EquipmentSlot::MainHand(_)),
-        AttributeModifierSlot::OffHand => matches!(equipment_slot, EquipmentSlot::OffHand(_)),
-        AttributeModifierSlot::Hand => {
-            matches!(
-                equipment_slot,
-                EquipmentSlot::MainHand(_) | EquipmentSlot::OffHand(_)
-            )
-        }
-        AttributeModifierSlot::Feet => matches!(equipment_slot, EquipmentSlot::Feet(_)),
-        AttributeModifierSlot::Legs => matches!(equipment_slot, EquipmentSlot::Legs(_)),
-        AttributeModifierSlot::Chest => matches!(equipment_slot, EquipmentSlot::Chest(_)),
-        AttributeModifierSlot::Head => matches!(equipment_slot, EquipmentSlot::Head(_)),
-        AttributeModifierSlot::Armor => matches!(
-            equipment_slot,
-            EquipmentSlot::Feet(_)
-                | EquipmentSlot::Legs(_)
-                | EquipmentSlot::Chest(_)
-                | EquipmentSlot::Head(_)
-        ),
-        AttributeModifierSlot::Body => matches!(equipment_slot, EquipmentSlot::Body(_)),
-        AttributeModifierSlot::Saddle => matches!(equipment_slot, EquipmentSlot::Saddle(_)),
-    }
-}
-
 /// Mirrors vanilla's strict `random < probability` consume-effect gate.
 const fn consume_effect_probability_applies(probability: f32, random: f32) -> bool {
     random < probability
@@ -3980,8 +3578,10 @@ pub(crate) const fn bypasses_armor_durability(damage_type: &DamageType) -> bool 
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    pub use super::test_support::armor_test_world;
 
     #[test]
     fn fluid_jump_probe_accounts_for_vertical_travel() {

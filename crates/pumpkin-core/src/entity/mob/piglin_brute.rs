@@ -167,6 +167,10 @@ impl PiglinBruteEntity {
             }
         }
 
+        // LivingEntity.collectEquipmentChanges installs the converted entity's equipment bonuses.
+        if let Some(living) = zombified.get_living_entity() {
+            living.apply_current_equipment_attribute_modifiers();
+        }
         world.spawn_entity(zombified);
         entity.remove();
     }
@@ -226,5 +230,55 @@ impl Mob for PiglinBruteEntity {
 
     fn get_base_experience_reward(&self) -> u32 {
         Self::XP_REWARD
+    }
+}
+
+#[cfg(test)]
+mod armor_conversion_tests {
+    use super::*;
+    use crate::entity::living::tests::armor_test_world;
+    use pumpkin_data::attributes::Attributes;
+    use pumpkin_data::data_component_impl::EquipmentSlot;
+    use pumpkin_data::item::Item;
+    use pumpkin_data::item_stack::ItemStack;
+    use pumpkin_util::math::vector3::Vector3;
+
+    #[tokio::test]
+    async fn zombification_preserves_equipment_armor_modifiers() {
+        let temp = tempfile::tempdir().unwrap();
+        let world = armor_test_world(temp.path());
+        let piglin = PiglinBruteEntity::new(Entity::new(
+            world.clone(),
+            Vector3::default(),
+            &EntityType::PIGLIN_BRUTE,
+        ));
+        piglin
+            .mob_entity
+            .living_entity
+            .entity_equipment
+            .lock()
+            .unwrap()
+            .put(
+                &EquipmentSlot::CHEST,
+                ItemStack::new(1, &Item::IRON_CHESTPLATE),
+            );
+        piglin.convert_to_zombified();
+        let entities = world.entities.load();
+        let converted = entities
+            .iter()
+            .find(|entity| entity.get_entity().entity_type == &EntityType::ZOMBIFIED_PIGLIN)
+            .unwrap();
+        let living = converted.get_living_entity().unwrap();
+        assert_eq!(
+            living
+                .entity_equipment
+                .lock()
+                .unwrap()
+                .get(&EquipmentSlot::CHEST)
+                .item
+                .id,
+            Item::IRON_CHESTPLATE.id
+        );
+        assert_eq!(living.get_attribute_value(&Attributes::ARMOR), 8.0);
     }
 }

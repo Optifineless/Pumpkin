@@ -76,6 +76,31 @@ impl AttributeInstance {
             return f64::from_bits(self.cached_value.load(Ordering::Relaxed));
         }
 
+        let mut value = self.calculate_value();
+
+        if value.is_nan() || value.is_infinite() {
+            value = self.base_value;
+        }
+
+        self.cached_value.store(value.to_bits(), Ordering::Relaxed);
+        self.dirty.store(false, Ordering::Relaxed);
+
+        value
+    }
+
+    /// Computes the effective value with vanilla ranged-attribute sanitizing.
+    /// NaN becomes the minimum; infinities clamp to the corresponding boundary.
+    pub fn value_in_range(&self, min: f64, max: f64) -> f64 {
+        // AttributeInstance.calculateValue ends with RangedAttribute.sanitizeValue.
+        let value = self.calculate_value();
+        if value.is_nan() {
+            min
+        } else {
+            value.clamp(min, max)
+        }
+    }
+
+    fn calculate_value(&self) -> f64 {
         let mut value = self.base_value;
 
         let mut add_sum = 0.0;
@@ -92,13 +117,6 @@ impl AttributeInstance {
         value += add_sum;
         value *= 1.0 + mul_base;
         value *= mul_total;
-
-        if value.is_nan() || value.is_infinite() {
-            value = self.base_value;
-        }
-
-        self.cached_value.store(value.to_bits(), Ordering::Relaxed);
-        self.dirty.store(false, Ordering::Relaxed);
 
         value
     }
@@ -425,6 +443,27 @@ mod tests {
     use super::*;
     use pumpkin_data::attributes::Attributes;
     use pumpkin_data::entity::EntityType;
+
+    #[test]
+    fn ranged_effective_values_sanitize_after_modifiers() {
+        let mut instance = AttributeInstance::new(101.0);
+        assert_eq!(instance.value_in_range(0.0, 30.0), 30.0);
+        instance.add_or_replace_modifier(Modifier {
+            id: "test:armor".to_string(),
+            amount: -76.0,
+            operation: ModifierOperation::Add,
+            permanent: true,
+        });
+        // AttributeInstance.calculateValue sanitizes the effective value, not the base first.
+        assert_eq!(instance.value_in_range(0.0, 30.0), 25.0);
+        instance.add_or_replace_modifier(Modifier {
+            id: "test:armor".to_string(),
+            amount: f64::NAN,
+            operation: ModifierOperation::MultiplyTotal,
+            permanent: true,
+        });
+        assert_eq!(instance.value_in_range(0.0, 30.0), 0.0);
+    }
 
     #[test]
     fn player_base_attributes() {

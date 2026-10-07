@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use crate::entity::EntityBase;
 use crate::entity::decoration::armor_stand::ArmorStandEntity;
 use crate::entity::living::LivingEntity;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{
@@ -246,23 +247,27 @@ impl CombatRules {
     pub const MIN_ARMOR_RATIO: f32 = 0.2;
 
     /// Calculates damage after armor reduction, mirroring vanilla `CombatRules.getDamageAfterAbsorb`.
+    /// `weapon` must come from the direct damage entity, including a projectile's stored weapon.
     #[must_use]
     pub fn get_damage_after_absorb(
         damage: f32,
         total_armor: f32,
         armor_toughness: f32,
-        breach_level: u32,
+        weapon: Option<&ItemStack>,
     ) -> f32 {
         let toughness = Self::BASE_ARMOR_TOUGHNESS + armor_toughness / 4.0;
         let real_armor = (total_armor - damage / toughness)
             .clamp(total_armor * Self::MIN_ARMOR_RATIO, Self::MAX_ARMOR);
         let mut armor_fraction = real_armor / Self::ARMOR_PROTECTION_DIVIDER;
 
-        if breach_level > 0 {
-            let mut effectiveness = 1.0f32;
-            pumpkin_data::Enchantment::BREACH
-                .modify_armor_effectiveness(breach_level as i32, &mut effectiveness);
-            armor_fraction = (armor_fraction * effectiveness.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+        if let Some(weapon) = weapon {
+            // EnchantmentHelper.modifyArmorEffectiveness receives the fraction itself.
+            // Vanilla 26.3's only armor-effectiveness effect, Breach, has no requirements.
+            armor_fraction = crate::enchantment::EnchantmentHelper::modify_armor_effectiveness(
+                weapon,
+                armor_fraction,
+            )
+            .clamp(0.0, 1.0);
         }
 
         let damage_multiplier = 1.0 - armor_fraction;
@@ -735,6 +740,39 @@ impl CombatTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn armor_absorption_clamps_to_the_lower_bound() {
+        // CombatRules.getDamageAfterAbsorb: large hits retain 20% of armor points.
+        assert!((CombatRules::get_damage_after_absorb(100.0, 20.0, 0.0, None) - 84.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn armor_absorption_clamps_to_the_upper_bound() {
+        // Effective armor may reach 30, but realArmor is capped at 20.
+        assert!((CombatRules::get_damage_after_absorb(2.0, 30.0, 20.0, None) - 0.4).abs() < 1e-5);
+    }
+
+    #[test]
+    fn breach_subtracts_from_the_armor_fraction_and_clamps() {
+        use pumpkin_data::data_component_impl::EnchantmentsImpl;
+        use pumpkin_data::{Enchantment, item::Item};
+        use std::borrow::Cow;
+
+        let mut weapon = ItemStack::new(1, &Item::MACE);
+        // CombatRules.getDamageAfterAbsorb: 20 damage, 20 armor, 8 toughness gives 0.6 armor fraction.
+        assert!((CombatRules::get_damage_after_absorb(20.0, 20.0, 8.0, None) - 8.0).abs() < 1.0e-5);
+        for (level, expected) in [(1, 11.0), (4, 20.0), (5, 20.0)] {
+            weapon.set_data_component(EnchantmentsImpl {
+                enchantment: Cow::Owned(vec![(&Enchantment::BREACH, level)]),
+            });
+            assert!(
+                (CombatRules::get_damage_after_absorb(20.0, 20.0, 8.0, Some(&weapon)) - expected)
+                    .abs()
+                    < 1.0e-5
+            );
+        }
+    }
 
     #[test]
     fn zero_resistance_keeps_full_strength() {

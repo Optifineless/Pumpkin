@@ -1752,6 +1752,15 @@ impl Player {
     /// Applies `amount` durability damage to the item in `slot`.
     /// Broadcasts an [`EntityStatus`] break event and syncs the slot if the item is destroyed.
     pub fn damage_item_in_slot(&self, slot: &EquipmentSlot, amount: i32) -> bool {
+        self.damage_item_in_slot_if(slot, |_| Some(amount))
+    }
+
+    /// Selects durability damage on the guarded slot and rechecks eligibility after plugins run.
+    pub(crate) fn damage_item_in_slot_if(
+        &self,
+        slot: &EquipmentSlot,
+        select_amount: impl Fn(&ItemStack) -> Option<i32>,
+    ) -> bool {
         if matches!(
             self.gamemode.load(),
             GameMode::Creative | GameMode::Spectator
@@ -1772,24 +1781,30 @@ impl Player {
             EquipmentSlot::Body(_) | EquipmentSlot::Saddle(_) => return false,
         };
 
-        let mut stack = self.inventory.get_slot(slot_index);
-        let original_item = stack.item;
-        let result = stack.damage_item(amount);
-        let updated = (result != pumpkin_data::item_stack::DamageResult::Untouched)
-            .then_some((result, stack.clone()));
+        let updated = super::equipment_damage::damage_inventory_slot(
+            &self.inventory,
+            slot_index,
+            select_amount,
+            |stack, amount| {
+                if let Some(server) = self.world().server.upgrade()
+                    && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
+                {
+                    let mut event = crate::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent::new(
+                        player_arc,
+                        stack.item.registry_key.to_string(),
+                        amount,
+                    );
+                    server.plugin_manager.fire_blocking(&server, &mut event);
+                    if event.cancelled {
+                        return None;
+                    }
+                    return Some(event.damage);
+                }
+                Some(amount)
+            },
+        );
 
-        if let Some((result, updated_stack)) = updated {
-            self.inventory.set_slot(slot_index, updated_stack.clone());
-            if let Some(server) = self.world().server.upgrade()
-                && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
-            {
-                let mut event = crate::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent::new(
-                    player_arc,
-                    original_item.registry_key.to_string(),
-                    amount,
-                );
-                server.plugin_manager.fire_blocking(&server, &mut event);
-            }
+        if let Some((result, updated_stack, original_item)) = updated {
             if result == pumpkin_data::item_stack::DamageResult::Broken {
                 if let Some(server) = self.world().server.upgrade()
                     && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
