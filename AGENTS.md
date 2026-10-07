@@ -13,6 +13,14 @@ This checkout is the Murgicraft fork of Pumpkin (see [FORK.md](FORK.md)), not up
 - Do the "Read your own diff before handover" checks below on every commit, not just before handover.
 - If you could not verify part of a change, say so plainly to the owner. Never claim a play test, review or capture that didn't happen.
 
+**Size and structure.** Upstream has files over 8,000 lines. Our own code must not make that worse, and nothing of ours should need a later split.
+
+- A new file stays under 1,000 lines; 1,500 is a hard limit. Split by vanilla class or by behaviour group before you reach it.
+- A file that is already over 3,000 lines on upstream `master` (for example `entity/player.rs`, `entity/living.rs`, `world/mod.rs`, `entity/mod.rs`) gets only small call sites. Put the new logic in a new sibling module, named after the vanilla class or method group it ports (Rust lets `impl` blocks live in separate files), and call it from the giant file.
+- Don't add `#[allow(clippy::too_many_lines)]`; the 100-line function limit stands for new code.
+- `python .fork/check-sizes.py` reports violations against `upstream/master`; it runs before anything lands on `murgicraft`.
+- Don't split or reformat upstream's existing big files. That refactor waits until the fork stops tracking upstream daily, because every split is a merge conflict until then.
+
 **Branches and upstream.**
 
 - `master` mirrors upstream `master` and never gets fork commits. `murgicraft` is upstream plus the fork's commits, and is what the server runs. Work on a topic branch from `murgicraft` and fast-forward it in once the checks pass.

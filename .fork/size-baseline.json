@@ -1,0 +1,11 @@
+{
+  "crates/pumpkin-core/src/entity/living.rs": 4154,
+  "crates/pumpkin-core/src/entity/mod.rs": 4327,
+  "crates/pumpkin-core/src/entity/player.rs": 8241,
+  "crates/pumpkin-core/src/world/mod.rs": 8016,
+  "crates/pumpkin-wasm-host-v0_1/src/generated_packets.rs": 3905,
+  "crates/pumpkin-wasm-host-v0_1/src/player.rs": 4231,
+  "crates/pumpkin-wasm-host-v0_2/src/generated_packets.rs": 3905,
+  "crates/pumpkin-wasm-host-v0_2/src/player.rs": 4231,
+  "tools/pumpkin-codegen/src/noise_router.rs": 3405
+}
