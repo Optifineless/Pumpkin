@@ -6,7 +6,7 @@ Usage:
   python .fork/check-sizes.py --write-baseline  record current sizes of files over the giant threshold
 
 Rules (see the fork section of AGENTS.md):
-- A .rs file that does not exist on the base ref must be <= 1500 lines (fail) and should be <= 1000 (warn).
+- A .rs file that does not exist on the base ref must be <= 1000 lines (fail) and should be <= 600 (warn).
 - A .rs file that is already > 3000 lines may grow by at most 150 lines (fail); any growth is listed.
   Growth is measured from .fork/size-baseline.json when the file is listed there (sizes recorded when the
   rule was adopted, so growth that predates the rule is not counted), otherwise from the base ref.
@@ -18,8 +18,8 @@ import os
 import subprocess
 import sys
 
-NEW_WARN = 1000
-NEW_FAIL = 1500
+NEW_WARN = 600
+NEW_FAIL = 1000
 GIANT = 3000
 GIANT_GROWTH = 150
 BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "size-baseline.json")

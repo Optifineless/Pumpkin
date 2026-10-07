@@ -15,7 +15,7 @@ This checkout is the Murgicraft fork of Pumpkin (see [FORK.md](FORK.md)), not up
 
 **Size and structure.** Upstream has files over 8,000 lines. Our own code must not make that worse, and nothing of ours should need a later split.
 
-- A new file stays under 1,000 lines; 1,500 is a hard limit. Split by vanilla class or by behaviour group before you reach it.
+- A new file aims for 600 lines or fewer; 1,000 is a hard limit. Split by vanilla class or by behaviour group before you reach it.
 - A file that is already over 3,000 lines on upstream `master` (for example `entity/player.rs`, `entity/living.rs`, `world/mod.rs`, `entity/mod.rs`) gets only small call sites. Put the new logic in a new sibling module, named after the vanilla class or method group it ports (Rust lets `impl` blocks live in separate files), and call it from the giant file.
 - Don't add `#[allow(clippy::too_many_lines)]`; the 100-line function limit stands for new code.
 - `python .fork/check-sizes.py` reports violations against `upstream/master`; it runs before anything lands on `murgicraft`.
