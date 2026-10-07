@@ -3064,10 +3064,9 @@ impl LivingEntity {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if let Some(hand) = *active_hand {
-                    let slot = if hand == Hand::Left {
-                        EquipmentSlot::MAIN_HAND
-                    } else {
-                        EquipmentSlot::OFF_HAND
+                    let slot = match hand {
+                        Hand::Right => EquipmentSlot::MAIN_HAND,
+                        Hand::Left => EquipmentSlot::OFF_HAND,
                     };
 
                     let durability_damage = (amount / 1.0).floor().max(1.0) as i32;
