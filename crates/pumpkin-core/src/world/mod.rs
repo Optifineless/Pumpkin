@@ -1989,6 +1989,10 @@ impl World {
                 for scheduled_tick in batch {
                     let pos = scheduled_tick.position;
                     let block = world.get_block(&pos);
+                    // Vanilla's `ServerLevel.tickBlock` skips the tick once the block was replaced.
+                    if block.id != scheduled_tick.value.id {
+                        continue;
+                    }
                     if let Some(pumpkin_block) = world.block_registry.get_pumpkin_block(block.id) {
                         pumpkin_block.on_scheduled_tick(OnScheduledTickArgs {
                             world: &world,
@@ -2011,6 +2015,11 @@ impl World {
                 for scheduled_tick in batch {
                     let pos = scheduled_tick.position;
                     let fluid = world.get_fluid(&pos);
+                    // Vanilla's `ServerLevel.tickFluid` check. `get_fluid` always returns the
+                    // flowing variant, so compare against the flowing variant of the scheduled fluid.
+                    if fluid.id != scheduled_tick.value.to_flowing().id {
+                        continue;
+                    }
                     if let Some(pumpkin_fluid) = world.block_registry.get_pumpkin_fluid(fluid.id) {
                         pumpkin_fluid.on_scheduled_tick(&world, fluid, &pos);
                     }
