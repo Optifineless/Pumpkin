@@ -5,6 +5,7 @@ use crossbeam::atomic::AtomicCell;
 use pumpkin_data::{Block, BlockDirection, BlockState};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
+use pumpkin_world::block::{block_state_from_codec_nbt, block_state_to_codec_nbt};
 
 use crate::world::{BlockFlags, World};
 
@@ -207,6 +208,7 @@ impl PistonBlockEntity {
     }
 }
 
+const BLOCK_STATE: &str = "blockState";
 const FACING: &str = "facing";
 const LAST_PROGRESS: &str = "progress";
 const EXTENDING: &str = "extending";
@@ -256,8 +258,12 @@ impl BlockEntity for PistonBlockEntity {
     where
         Self: Sized,
     {
-        // TODO
-        let pushed_block_state = Block::AIR.default_state;
+        // PistonMovingBlockEntity.loadAdditional defaults a missing or unknown blockState to air.
+        let pushed_block_state = nbt
+            .get(BLOCK_STATE)
+            .map_or(Block::AIR.default_state, |tag| {
+                BlockState::from_id(block_state_from_codec_nbt(tag))
+            });
         let facing = nbt.get_byte(FACING).unwrap_or(0);
         let last_progress = nbt.get_float(LAST_PROGRESS).unwrap_or(0.0);
         let extending = nbt.get_bool(EXTENDING).unwrap_or(false);
@@ -274,7 +280,11 @@ impl BlockEntity for PistonBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        // TODO: pushed_block_state
+        // PistonMovingBlockEntity.saveAdditional writes progressO, not the current progress.
+        nbt.put(
+            BLOCK_STATE,
+            block_state_to_codec_nbt(self.pushed_block_state.id),
+        );
         nbt.put_byte(FACING, self.facing.to_index() as i8);
         nbt.put_float(LAST_PROGRESS, self.last_progress.load());
         nbt.put_bool(EXTENDING, self.extending);
@@ -283,16 +293,161 @@ impl BlockEntity for PistonBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        // TODO: pushed_block_state
-        nbt.put_byte(FACING, self.facing.to_index() as i8);
-        nbt.put_float(LAST_PROGRESS, self.last_progress.load());
-        nbt.put_bool(EXTENDING, self.extending);
-        nbt.put_bool(SOURCE, self.source);
-        // TODO: duplicated code because of async :c
+        // PistonMovingBlockEntity.getUpdateTag sends the same custom tag as saveAdditional.
+        self.write_nbt(&mut nbt);
         Some(nbt)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_nbt::tag::NbtTag;
+
+    #[test]
+    fn moving_block_state_survives_nbt_round_trip() {
+        let state_id = Block::OAK_STAIRS
+            .from_properties(&[
+                ("facing", "west"),
+                ("half", "top"),
+                ("shape", "straight"),
+                ("waterlogged", "false"),
+            ])
+            .to_state_id(&Block::OAK_STAIRS);
+        let position = BlockPos::new(1, 64, 2);
+        let piston = PistonBlockEntity {
+            position,
+            pushed_block_state: BlockState::from_id(state_id),
+            facing: BlockDirection::East,
+            current_progress: 0.5.into(),
+            last_progress: 0.25.into(),
+            extending: true,
+            source: false,
+        };
+
+        let mut nbt = NbtCompound::new();
+        piston.write_nbt(&mut nbt);
+        let mut properties = NbtCompound::new();
+        properties.put_string("facing", "west".to_string());
+        properties.put_string("half", "top".to_string());
+        properties.put_string("shape", "straight".to_string());
+        properties.put_string("waterlogged", "false".to_string());
+        let mut block_state = NbtCompound::new();
+        block_state.put_string("id", "minecraft:oak_stairs".to_string());
+        block_state.put_compound("properties", properties);
+        let mut expected = NbtCompound::new();
+        expected.put_compound("blockState", block_state);
+        expected.put("facing", NbtTag::Byte(5));
+        expected.put("progress", NbtTag::Float(0.25));
+        expected.put("extending", NbtTag::Byte(1));
+        expected.put("source", NbtTag::Byte(0));
+        assert_eq!(nbt, expected);
+        assert_eq!(piston.chunk_data_nbt(), Some(expected));
+
+        let loaded = PistonBlockEntity::from_nbt(&nbt, position);
+        assert_eq!(loaded.pushed_block_state.id, state_id);
+        assert_eq!(loaded.facing, BlockDirection::East);
+        assert_eq!(loaded.current_progress.load(), 0.25);
+        assert_eq!(loaded.last_progress.load(), 0.25);
+        assert!(loaded.extending);
+        assert!(!loaded.source);
+    }
+
+    #[test]
+    fn default_moving_block_state_uses_string_tag() {
+        let position = BlockPos::new(1, 64, 2);
+        for (block, name) in [
+            (&Block::STONE, "minecraft:stone"),
+            (&Block::OAK_STAIRS, "minecraft:oak_stairs"),
+        ] {
+            let mut nbt = NbtCompound::new();
+            nbt.put_string("blockState", name.to_string());
+            let loaded = PistonBlockEntity::from_nbt(&nbt, position);
+            assert_eq!(loaded.pushed_block_state.id, block.default_state.id);
+
+            let mut saved = NbtCompound::new();
+            loaded.write_nbt(&mut saved);
+            assert_eq!(saved.get("blockState"), nbt.get("blockState"));
+            assert_eq!(loaded.chunk_data_nbt(), Some(saved));
+        }
+    }
+
+    #[test]
+    fn missing_or_unknown_moving_block_state_loads_as_air() {
+        let position = BlockPos::new(1, 64, 2);
+        let mut nbt = NbtCompound::new();
+        assert!(
+            PistonBlockEntity::from_nbt(&nbt, position)
+                .pushed_block_state
+                .is_air()
+        );
+
+        let mut block_state = NbtCompound::new();
+        block_state.put_string("id", "minecraft:unknown_block".to_string());
+        for tag in [
+            NbtTag::String("minecraft:unknown_block".into()),
+            NbtTag::Compound(block_state),
+            NbtTag::Compound(NbtCompound::new()),
+            NbtTag::Int(1),
+        ] {
+            nbt.put("blockState", tag);
+            let loaded = PistonBlockEntity::from_nbt(&nbt, position);
+            assert!(loaded.pushed_block_state.is_air());
+
+            let mut saved = NbtCompound::new();
+            loaded.write_nbt(&mut saved);
+            assert_eq!(saved.get_string("blockState"), Some("minecraft:air"));
+        }
+    }
+
+    #[test]
+    fn moving_block_properties_use_lenient_defaults() {
+        let position = BlockPos::new(1, 64, 2);
+        let mut invalid_properties = NbtCompound::new();
+        invalid_properties.put_string("facing", "sideways".to_string());
+        for properties in [
+            None,
+            Some(NbtTag::String("invalid".into())),
+            Some(NbtTag::Compound(NbtCompound::new())),
+            Some(NbtTag::Compound(invalid_properties)),
+        ] {
+            let mut block_state = NbtCompound::new();
+            block_state.put_string("id", "minecraft:oak_stairs".to_string());
+            if let Some(properties) = properties {
+                block_state.put("properties", properties);
+            }
+            let mut nbt = NbtCompound::new();
+            nbt.put_compound("blockState", block_state);
+            assert_eq!(
+                PistonBlockEntity::from_nbt(&nbt, position)
+                    .pushed_block_state
+                    .id,
+                Block::OAK_STAIRS.default_state.id
+            );
+        }
+
+        let mut properties = NbtCompound::new();
+        properties.put_string("facing", "sideways".to_string());
+        properties.put_string("half", "top".to_string());
+        properties.put_int("shape", 1);
+        properties.put_string("unknown", "ignored".to_string());
+        let mut block_state = NbtCompound::new();
+        block_state.put_string("id", "minecraft:oak_stairs".to_string());
+        block_state.put_compound("properties", properties);
+        let mut nbt = NbtCompound::new();
+        nbt.put_compound("blockState", block_state);
+        let expected = Block::OAK_STAIRS
+            .from_properties(&[("half", "top")])
+            .to_state_id(&Block::OAK_STAIRS);
+        assert_eq!(
+            PistonBlockEntity::from_nbt(&nbt, position)
+                .pushed_block_state
+                .id,
+            expected
+        );
     }
 }
