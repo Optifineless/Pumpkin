@@ -476,17 +476,21 @@ impl BedrockClient {
                         let mut stack = player.inventory().held_item();
                         let item_id = stack.item.id;
                         let before = stack.clone();
-                        if !event.target.interact(player, &mut stack) {
+                        let interacted = event.target.interact(player, &mut stack);
+                        let stand_swap = interacted && event.target.cast_any().is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
+                        if !interacted {
                             server
                                 .item_registry
                                 .use_on_entity(&mut stack, player, event.target);
                         }
                         if !stack.are_equal(&before) {
-                            player.increment_stat(
-                                pumpkin_data::statistic::StatisticCategory::Used,
-                                item_id as i32,
-                                1,
-                            );
+                            if !stand_swap {
+                                player.increment_stat(
+                                    pumpkin_data::statistic::StatisticCategory::Used,
+                                    item_id as i32,
+                                    1,
+                                );
+                            }
                             if before.is_damageable() && stack.is_empty() {
                                 player.increment_stat(
                                     pumpkin_data::statistic::StatisticCategory::Broken,
