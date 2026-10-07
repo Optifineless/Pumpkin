@@ -1301,7 +1301,12 @@ impl Entity {
     }
 
     pub fn get_eye_height(&self) -> f64 {
-        f64::from(Self::get_entity_dimensions(self.pose.load()).eye_height)
+        // Vanilla Entity.getEyeHeight uses the entity's dimensions, not player poses.
+        f64::from(if self.entity_type == &EntityType::PLAYER {
+            Self::get_entity_dimensions(self.pose.load()).eye_height
+        } else {
+            self.entity_type.eye_height
+        })
     }
 
     /// Updates the entity's position, block position, and chunk position.

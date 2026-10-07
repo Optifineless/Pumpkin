@@ -2,7 +2,9 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::math::wrap_degrees;
 
+use crate::entity::ai::control::move_control::MoveControl;
 use crate::entity::living::LivingEntity;
+use crate::entity::mob::MobEntity;
 use crate::world::World;
 
 use crate::entity::ai::pathfinder::amphibious_node_evaluator::AmphibiousNodeEvaluator;
@@ -384,7 +386,7 @@ pub trait PathNavigationTrait: Send + Sync {
         destination: Vector3<f64>,
         distance: f32,
     ) -> bool;
-    fn tick(&mut self, entity: &LivingEntity);
+    fn tick(&mut self, mob: &MobEntity);
     fn move_to_coords(&mut self, x: f64, y: f64, z: f64, speed: f64, entity: &LivingEntity)
     -> bool;
     fn move_to_pos(&mut self, pos: BlockPos, speed: f64, entity: &LivingEntity) -> bool;
@@ -529,7 +531,6 @@ impl PathNavigation {
     pub fn finish_navigation(&mut self, entity: &LivingEntity) {
         self.stop();
         entity.movement_input.store(Vector3::new(0.0, 0.0, 0.0));
-        entity.jumping.store(false, Ordering::Relaxed);
     }
 
     pub fn set_pathfinding_malus(&mut self, path_type: PathType, malus: f32) {
@@ -973,7 +974,8 @@ impl PathNavigation {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn tick_ground(&mut self, entity: &LivingEntity) {
+    pub fn tick_ground(&mut self, mob: &MobEntity) {
+        let entity = &mob.living_entity;
         self.tick_count += 1;
         let world_age = entity.entity.world.load().get_world_age() as u64;
 
@@ -1137,16 +1139,7 @@ impl PathNavigation {
                     .movement_input
                     .store(Vector3::new(0.0, 0.0, mob_speed));
 
-                let step_height = entity.get_attribute_value(&Attributes::STEP_HEIGHT);
-                let jump_distance = 1.0f64.max(f64::from(self.mob_width));
-
-                if (dy > step_height || f64::from(next_block.0.y) > current_pos.y)
-                    && horizontal_dist_sq < jump_distance * jump_distance
-                {
-                    entity.jumping.store(true, Ordering::SeqCst);
-                } else {
-                    entity.jumping.store(false, Ordering::SeqCst);
-                }
+                MoveControl::jump_if_needed(mob, target_pos);
             } else {
                 self.finish_navigation(entity);
                 return;
@@ -1234,8 +1227,8 @@ impl PathNavigationTrait for GroundPathNavigation {
         self.inner.can_reach_within(entity, destination, distance)
     }
 
-    fn tick(&mut self, entity: &LivingEntity) {
-        self.inner.tick_ground(entity);
+    fn tick(&mut self, mob: &MobEntity) {
+        self.inner.tick_ground(mob);
     }
 
     fn move_to_coords(
@@ -1471,7 +1464,8 @@ impl PathNavigationTrait for FlyingPathNavigation {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn tick(&mut self, entity: &LivingEntity) {
+    fn tick(&mut self, mob: &MobEntity) {
+        let entity = &mob.living_entity;
         self.inner.tick_count += 1;
         let world_age = entity.entity.world.load().get_world_age() as u64;
 
@@ -1772,7 +1766,8 @@ impl PathNavigationTrait for WaterBoundPathNavigation {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn tick(&mut self, entity: &LivingEntity) {
+    fn tick(&mut self, mob: &MobEntity) {
+        let entity = &mob.living_entity;
         self.inner.tick_count += 1;
         let world_age = entity.entity.world.load().get_world_age() as u64;
 
@@ -2073,9 +2068,10 @@ impl PathNavigationTrait for WallClimberNavigation {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn tick(&mut self, entity: &LivingEntity) {
+    fn tick(&mut self, mob: &MobEntity) {
+        let entity = &mob.living_entity;
         if !self.inner.is_done() {
-            self.inner.tick(entity);
+            self.inner.tick(mob);
         } else if let Some(target_pos) = self.path_to_position {
             let current_pos = entity.entity.pos.load();
             let bb = entity.entity.bounding_box.load();
@@ -2086,7 +2082,6 @@ impl PathNavigationTrait for WallClimberNavigation {
                 f64::from(target_pos.0.z) + 0.5,
             );
             let dx = target_center.x - current_pos.x;
-            let dy = target_center.y - current_pos.y;
             let dz = target_center.z - current_pos.z;
             let dist_sq = dx * dx + dz * dz;
 
@@ -2106,11 +2101,7 @@ impl PathNavigationTrait for WallClimberNavigation {
                 let speed = self.inner.inner.speed_modifier
                     * entity.get_attribute_value(&Attributes::MOVEMENT_SPEED);
                 entity.movement_input.store(Vector3::new(0.0, 0.0, speed));
-                if dy > 0.0 {
-                    entity.jumping.store(true, Ordering::SeqCst);
-                } else {
-                    entity.jumping.store(false, Ordering::SeqCst);
-                }
+                MoveControl::jump_if_needed(mob, target_center);
             }
         }
     }
@@ -2298,7 +2289,8 @@ impl PathNavigationTrait for AmphibiousPathNavigation {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn tick(&mut self, entity: &LivingEntity) {
+    fn tick(&mut self, mob: &MobEntity) {
+        let entity = &mob.living_entity;
         if entity.entity.touching_water.load(Ordering::Relaxed) {
             self.inner.tick_count += 1;
             let world_age = entity.entity.world.load().get_world_age() as u64;
@@ -2384,7 +2376,7 @@ impl PathNavigationTrait for AmphibiousPathNavigation {
                 }
             }
         } else {
-            self.inner.tick_ground(entity);
+            self.inner.tick_ground(mob);
         }
     }
 

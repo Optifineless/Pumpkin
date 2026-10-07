@@ -1392,13 +1392,7 @@ impl LivingEntity {
             let on_ground = self.entity.on_ground.load(SeqCst);
 
             if (in_water || in_lava) && (!on_ground || fluid_height > swim_height) {
-                // Swim upward
-
-                let mut velo = self.entity.velocity.load();
-
-                velo.y += 0.04;
-
-                self.entity.velocity.store(velo);
+                self.jump_in_liquid(caller);
             } else if (on_ground || in_water && fluid_height <= swim_height)
                 && self.jumping_cooldown.load(SeqCst) == 0
             {
@@ -1593,10 +1587,25 @@ impl LivingEntity {
         self.entity.velocity.store(velo);
     }
 
+    fn jump_in_liquid(&self, caller: &dyn EntityBase) {
+        // Vanilla Mob.jumpInLiquid overrides LivingEntity.jumpInLiquid when navigation cannot float.
+        let can_float = caller.get_mob().is_none_or(|mob| {
+            mob.get_mob_entity()
+                .navigator
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .can_float()
+        });
+        let mut velocity = self.entity.velocity.load();
+        velocity.y += if can_float { f64::from(0.04f32) } else { 0.3 };
+        self.entity.velocity.store(velocity);
+    }
+
     fn travel_in_fluid(&self, caller: &dyn EntityBase, water: bool) {
         let movement_input = self.movement_input.load();
 
         let falling = self.entity.velocity.load().y <= 0.0;
+        let old_y = self.entity.pos.load().y;
         let gravity = self.get_effective_gravity(caller);
         let effective_speed = self.get_attribute_value(&Attributes::MOVEMENT_SPEED);
 
@@ -1664,18 +1673,42 @@ impl LivingEntity {
             self.entity.velocity.store(velo);
         }
 
-        let mut velo = self.entity.velocity.load();
+        self.jump_out_of_fluid(caller, old_y);
+    }
 
-        if self.entity.horizontal_collision.load(SeqCst)
-            && !self
-                .entity
-                .world
-                .load()
-                .check_fluid_collision(self.entity.bounding_box.load().shift(velo))
+    // Vanilla LivingEntity.jumpOutOfFluid probes above the position before travel.
+    fn fluid_jump_probe(
+        bounding_box: BoundingBox,
+        velocity: Vector3<f64>,
+        current_y: f64,
+        old_y: f64,
+    ) -> BoundingBox {
+        bounding_box.shift(Vector3::new(
+            velocity.x,
+            velocity.y + f64::from(0.6f32) - current_y + old_y,
+            velocity.z,
+        ))
+    }
+
+    fn jump_out_of_fluid(&self, caller: &dyn EntityBase, old_y: f64) {
+        if !self.entity.horizontal_collision.load(SeqCst) {
+            return;
+        }
+
+        let mut velocity = self.entity.velocity.load();
+        let probe = Self::fluid_jump_probe(
+            self.entity.bounding_box.load(),
+            velocity,
+            self.entity.pos.load().y,
+            old_y,
+        );
+        let world = self.entity.world.load();
+        // Vanilla Entity.isFree requires solid clearance and no liquid in the probe.
+        if world.get_block_collisions(probe, caller).0.is_empty()
+            && !world.contains_any_liquid(probe)
         {
-            velo.y = 0.3;
-
-            self.entity.velocity.store(velo);
+            velocity.y = f64::from(0.3f32);
+            self.entity.velocity.store(velocity);
         }
     }
 
@@ -3962,6 +3995,35 @@ pub(crate) const fn bypasses_armor_durability(damage_type: &DamageType) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fluid_jump_probe_accounts_for_vertical_travel() {
+        // Fixed probes from LivingEntity.jumpOutOfFluid, including Java's widened 0.6F.
+        for (old_y, expected_min_y) in [
+            (64.0, 64.568_750_023_841_86),
+            (-32.0, -31.431_249_976_158_142),
+        ] {
+            for current_y in [old_y + 0.25, old_y - 0.25] {
+                let bounding_box = BoundingBox {
+                    min: Vector3::new(1.0, current_y, 2.0),
+                    max: Vector3::new(2.0, current_y + 2.0, 3.0),
+                };
+                let probe = LivingEntity::fluid_jump_probe(
+                    bounding_box,
+                    Vector3::new(0.125, -0.03125, -0.25),
+                    current_y,
+                    old_y,
+                );
+
+                assert_eq!(probe.min.x, 1.125);
+                assert_eq!(probe.min.z, 1.75);
+                assert!((probe.min.y - expected_min_y).abs() < 1.0e-12);
+                assert_eq!(probe.max.x, 2.125);
+                assert_eq!(probe.max.z, 2.75);
+                assert!((probe.max.y - (expected_min_y + 2.0)).abs() < 1.0e-12);
+            }
+        }
+    }
 
     // ── bypasses_armor_durability ─────────────────────────────────────
 

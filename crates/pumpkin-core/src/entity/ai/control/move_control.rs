@@ -1,6 +1,8 @@
 use crate::entity::ai::control::{Control, MoveControlTrait};
-use crate::entity::mob::Mob;
+use crate::entity::mob::{Mob, MobEntity};
+use pumpkin_data::Block;
 use pumpkin_data::attributes::Attributes;
+use pumpkin_data::tag::{self, Taggable};
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering;
 
@@ -79,12 +81,10 @@ impl MoveControlTrait for MoveControl {
                 .movement_input
                 .store(Vector3::new(0.0, 0.0, speed));
 
-            // TODO: Jump if needed (based on collision and height difference)
-            let step_height = living_entity.get_attribute_value(&Attributes::STEP_HEIGHT);
-            if yd > step_height
-                && xd * xd + zd * zd < 1.0f64.max(entity.entity_dimension.load().width as f64)
-            {
-                living_entity.jumping.store(true, Ordering::SeqCst);
+            if Self::jump_if_needed(
+                mob_entity,
+                Vector3::new(self.wanted_x, self.wanted_y, self.wanted_z),
+            ) {
                 self.operation = Operation::Jumping;
             }
         } else if self.operation == Operation::Jumping {
@@ -94,7 +94,10 @@ impl MoveControlTrait for MoveControl {
                 .movement_input
                 .store(Vector3::new(0.0, 0.0, speed));
 
-            if entity.on_ground.load(Ordering::Relaxed) {
+            if entity.on_ground.load(Ordering::Relaxed)
+                || entity.touching_water.load(Ordering::Relaxed)
+                || entity.touching_lava.load(Ordering::Relaxed)
+            {
                 self.operation = Operation::Wait;
             }
         }
@@ -125,6 +128,36 @@ impl MoveControlTrait for MoveControl {
 }
 
 impl MoveControl {
+    // Vanilla MoveControl.tick's MOVE_TO jump request. Ground navigation also
+    // steers directly in Pumpkin, so it must use the same jump conditions.
+    pub fn jump_if_needed(mob: &MobEntity, wanted: Vector3<f64>) -> bool {
+        let living = &mob.living_entity;
+        let entity = &living.entity;
+        let pos = entity.pos.load();
+        let delta = wanted - pos;
+        let block_pos = entity.block_pos.load();
+        let world = entity.world.load();
+        let state = world.get_block_state(&block_pos);
+        let block = Block::from_state_id(state.id);
+        let above_step = delta.y > living.get_attribute_value(&Attributes::STEP_HEIGHT)
+            && delta.x * delta.x + delta.z * delta.z < 1.0f64.max(f64::from(entity.width()));
+        let inside_shape = state
+            .get_block_collision_shapes_at(&block_pos)
+            .any(|shape| pos.y < shape.max.y + f64::from(block_pos.0.y))
+            && !block.has_tag(&tag::Block::MINECRAFT_DOORS)
+            && !block.has_tag(&tag::Block::MINECRAFT_FENCES);
+
+        if above_step || inside_shape {
+            mob.jump_control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .jump();
+            true
+        } else {
+            false
+        }
+    }
+
     #[must_use]
     pub fn has_wanted(&self) -> bool {
         self.operation == Operation::MoveTo
