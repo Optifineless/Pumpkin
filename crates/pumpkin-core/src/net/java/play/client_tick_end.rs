@@ -6,10 +6,7 @@ impl JavaClient {
         // If no movement packet arrived this tick the player is standing still —
         // zero out the known movement so consumers (e.g. riptide speed) see 0.
         // Matches vanilla ServerGamePacketListenerImpl#handleClientTickEnd.
-        if !self
-            .received_movement_this_tick
-            .swap(false, Ordering::Relaxed)
-        {
+        if !player.known_movement.finish_tick() {
             player
                 .get_entity()
                 .movement

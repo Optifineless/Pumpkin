@@ -10,13 +10,11 @@ use crate::{
 };
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::{EntityPose, EntityStatus};
-use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use pumpkin_util::math::vector3::Vector3;
 
 const GRAVITY: f64 = 0.03;
-const PARTICLE_COUNT: i32 = 32;
 const ENDERMITE_SPAWN_CHANCE: f32 = 0.05;
 
 pub struct EnderPearlEntity {
@@ -73,29 +71,6 @@ impl EntityBase for EnderPearlEntity {
             .thrown
             .owner_id
             .and_then(|id| world.get_entity_by_id(id));
-
-        // Spawn portal particles at hit position
-        let hit_pos = hit.hit_pos();
-        for _ in 0..PARTICLE_COUNT {
-            let offset = Vector3::new(
-                rand::random::<f32>() as f64 - 0.5,
-                rand::random::<f32>() as f64 * 2.0,
-                rand::random::<f32>() as f64 - 0.5,
-            );
-            let speed = Vector3::new(
-                rand::random::<f64>() - 0.5,
-                0.0,
-                rand::random::<f64>() - 0.5,
-            );
-
-            world.spawn_particle(
-                hit_pos.add(&offset),
-                Vector3::new(speed.x as f32, speed.y as f32, speed.z as f32),
-                1.0,
-                1,
-                Particle::Portal,
-            );
-        }
 
         let owner_id = self.thrown.owner_id;
         let teleport_pos = entity.last_pos.load();

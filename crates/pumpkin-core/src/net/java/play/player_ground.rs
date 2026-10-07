@@ -3,9 +3,19 @@ use super::*;
 
 impl JavaClient {
     pub fn handle_player_ground(&self, player: &Player, ground: &SSetPlayerGround) {
-        // A movement packet was received this tick — tracked for SClientTickEnd zeroing.
-        self.received_movement_this_tick
-            .store(true, Ordering::Relaxed);
+        if !player.has_client_loaded() {
+            return;
+        }
+        if !player.get_entity().has_vehicle()
+            && !player.is_movement_locked.load(Ordering::Relaxed)
+            && player
+                .awaiting_teleport
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_none()
+        {
+            player.known_movement.record(Vector3::new(0.0, 0.0, 0.0));
+        }
         player
             .living_entity
             .entity

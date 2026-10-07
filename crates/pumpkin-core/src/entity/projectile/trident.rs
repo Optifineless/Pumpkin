@@ -10,7 +10,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_protocol::IdOr;
-use pumpkin_protocol::java::client::play::{CEntityVelocity, CSoundEffect};
+use pumpkin_protocol::java::client::play::CSoundEffect;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -33,8 +33,8 @@ pub struct TridentEntity {
 
 impl TridentEntity {
     const BASE_DAMAGE: f64 = 8.0;
-    const AIR_INERTIA: f64 = 0.99;
-    const WATER_INERTIA: f64 = 0.9;
+    // ThrownTrident.getWaterInertia.
+    const WATER_INERTIA: f64 = 0.99f32 as f64;
     const GRAVITY: f64 = 0.05;
     const DESPAWN_TIME: u32 = 1200;
 
@@ -123,11 +123,101 @@ impl TridentEntity {
             .multiply(power, power, power);
 
         self.entity.velocity.store(velocity);
+        self.entity.velocity_dirty.store(true, Ordering::Relaxed);
         let len = velocity.horizontal_length();
         self.entity.set_rotation(
             velocity.x.atan2(velocity.z) as f32 * 57.295_776,
             velocity.y.atan2(len) as f32 * 57.295_776,
         );
+    }
+
+    fn step_move_and_hit(
+        &self,
+        caller: &dyn EntityBase,
+        start_pos: Vector3<f64>,
+        new_pos: Vector3<f64>,
+        movement: Vector3<f64>,
+    ) {
+        let entity = &self.entity;
+        let world = entity.world.load();
+        // Check for collisions using raycasting
+        let search_box = BoundingBox::new(
+            Vector3::new(
+                start_pos.x.min(new_pos.x),
+                start_pos.y.min(new_pos.y),
+                start_pos.z.min(new_pos.z),
+            ),
+            Vector3::new(
+                start_pos.x.max(new_pos.x),
+                start_pos.y.max(new_pos.y),
+                start_pos.z.max(new_pos.z),
+            ),
+        )
+        .expand(0.3, 0.3, 0.3);
+
+        let mut closest_t = 1.0f64;
+        let mut hit = None;
+
+        // Block collisions
+        let (block_cols, block_positions) =
+            world.get_block_collisions(search_box, self.get_entity());
+        for (idx, bb) in block_cols.iter().enumerate() {
+            if let Some(t) = calculate_ray_intersection(&start_pos, &movement, bb)
+                && t < closest_t
+            {
+                closest_t = t;
+
+                // Map back to block pos
+                let mut curr = 0;
+                for (len, pos) in &block_positions {
+                    curr += len;
+                    if idx < curr {
+                        let hit_pos = start_pos.add(&movement.multiply(t, t, t));
+                        hit = Some(ProjectileHit::Block {
+                            pos: *pos,
+                            face: get_hit_face(hit_pos, *pos),
+                            hit_pos,
+                            normal: movement.normalize().multiply(-1.0, -1.0, -1.0),
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Entity collisions
+        let candidates = world.get_all_at_box(&search_box);
+        for cand in candidates.into_iter().filter(super::can_hit_entity) {
+            if self.should_skip_collision(entity, &cand)
+                || !super::arrow::can_hit_player(entity, self.owner_id, &cand)
+            {
+                continue;
+            }
+
+            let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
+            if let Some(t) = calculate_ray_intersection(&start_pos, &movement, &ebb)
+                && t < closest_t
+            {
+                closest_t = t;
+                let hit_pos = start_pos.add(&movement.multiply(t, t, t));
+                hit = Some(ProjectileHit::Entity {
+                    entity: cand.clone(),
+                    hit_pos,
+                    normal: movement.normalize().multiply(-1.0, -1.0, -1.0),
+                });
+            }
+        }
+
+        // Handle hit
+        if let Some(h) = hit {
+            entity.set_pos(h.hit_pos());
+            if !self.has_hit.swap(true, Ordering::SeqCst) {
+                caller.on_hit(h);
+                entity.velocity_dirty.store(true, Ordering::Relaxed);
+            }
+        } else {
+            entity.set_pos(new_pos);
+        }
     }
 
     fn should_skip_collision(&self, self_ent: &Entity, other: &Arc<dyn EntityBase>) -> bool {
@@ -163,8 +253,6 @@ impl EntityBase for TridentEntity {
 
     fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
         let entity = self.get_entity();
-        let world = entity.world.load();
-
         // Handle shake time
         let shake = self.shake_time.load(Ordering::Relaxed);
         if shake > 0 {
@@ -182,113 +270,28 @@ impl EntityBase for TridentEntity {
             return;
         }
 
-        // Trident is flying
-        let start_pos = entity.pos.load();
-        let mut velocity = entity.velocity.load();
-
-        // Apply gravity
-        velocity.y -= Self::GRAVITY;
-
-        // Apply inertia (air resistance or water drag)
-        let inertia = if entity.touching_water.load(Ordering::Relaxed) {
-            Self::WATER_INERTIA
-        } else {
-            Self::AIR_INERTIA
-        };
-        velocity = velocity.multiply(inertia, inertia, inertia);
-
-        entity.velocity.store(velocity);
-
-        // Update rotation based on velocity
-        let len = velocity.horizontal_length();
-        entity.set_rotation(
-            velocity.x.atan2(velocity.z) as f32 * 57.295_776,
-            velocity.y.atan2(len) as f32 * 57.295_776,
+        // ThrownTrident.tick delegates its flight to AbstractArrow.tick.
+        let velocity = super::arrow::tick_flight(
+            entity.velocity.load(),
+            entity.touching_water.load(Ordering::Relaxed) || entity.is_in_water(),
+            Self::WATER_INERTIA,
+            if entity.has_no_gravity() {
+                0.0
+            } else {
+                Self::GRAVITY
+            },
+            |movement, velocity| {
+                entity.velocity.store(velocity);
+                super::arrow::update_flight_rotation(entity, movement, true);
+                let start_pos = entity.pos.load();
+                self.step_move_and_hit(caller, start_pos, start_pos.add(&movement), movement);
+                (
+                    entity.velocity.load(),
+                    self.in_ground.load(Ordering::Relaxed),
+                )
+            },
         );
-
-        // Move trident
-        let new_pos = start_pos.add(&velocity);
-        entity.set_pos(new_pos);
-
-        // Broadcast velocity update
-        let packet = CEntityVelocity::new(entity.entity_id.into(), velocity);
-        let chunk_pos = entity.chunk_pos.load();
-        world.broadcast_to_chunk(chunk_pos, &packet);
-
-        // Check for collisions using raycasting
-        let search_box = BoundingBox::new(
-            Vector3::new(
-                start_pos.x.min(new_pos.x),
-                start_pos.y.min(new_pos.y),
-                start_pos.z.min(new_pos.z),
-            ),
-            Vector3::new(
-                start_pos.x.max(new_pos.x),
-                start_pos.y.max(new_pos.y),
-                start_pos.z.max(new_pos.z),
-            ),
-        )
-        .expand(0.3, 0.3, 0.3);
-
-        let mut closest_t = 1.0f64;
-        let mut hit = None;
-
-        // Block collisions
-        let (block_cols, block_positions) =
-            world.get_block_collisions(search_box, self.get_entity());
-        for (idx, bb) in block_cols.iter().enumerate() {
-            if let Some(t) = calculate_ray_intersection(&start_pos, &velocity, bb)
-                && t < closest_t
-            {
-                closest_t = t;
-
-                // Map back to block pos
-                let mut curr = 0;
-                for (len, pos) in &block_positions {
-                    curr += len;
-                    if idx < curr {
-                        let hit_pos = start_pos.add(&velocity.multiply(t, t, t));
-                        hit = Some(ProjectileHit::Block {
-                            pos: *pos,
-                            face: get_hit_face(hit_pos, *pos),
-                            hit_pos,
-                            normal: velocity.normalize().multiply(-1.0, -1.0, -1.0),
-                        });
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Entity collisions
-        let candidates = world.get_all_at_box(&search_box);
-        for cand in candidates.into_iter().filter(super::can_hit_entity) {
-            if self.should_skip_collision(entity, &cand)
-                || !super::arrow::can_hit_player(entity, self.owner_id, &cand)
-            {
-                continue;
-            }
-
-            let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
-            if let Some(t) = calculate_ray_intersection(&start_pos, &velocity, &ebb)
-                && t < closest_t
-            {
-                closest_t = t;
-                let hit_pos = start_pos.add(&velocity.multiply(t, t, t));
-                hit = Some(ProjectileHit::Entity {
-                    entity: cand.clone(),
-                    hit_pos,
-                    normal: velocity.normalize().multiply(-1.0, -1.0, -1.0),
-                });
-            }
-        }
-
-        // Handle hit
-        if let Some(h) = hit
-            && !self.has_hit.swap(true, Ordering::SeqCst)
-        {
-            caller.on_hit(h);
-        }
+        entity.velocity.store(velocity);
     }
 
     fn get_entity(&self) -> &Entity {

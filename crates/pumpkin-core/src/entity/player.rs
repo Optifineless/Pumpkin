@@ -403,9 +403,33 @@ pub enum SpamType {
     Command,
 }
 
+#[derive(Default)]
+pub(crate) struct KnownMovement {
+    movement: AtomicCell<Vector3<f64>>,
+    received_this_tick: AtomicBool,
+}
+
+impl KnownMovement {
+    // ServerGamePacketListenerImpl.handlePlayerKnownMovement / handleClientTickEnd.
+    pub(crate) fn record(&self, movement: Vector3<f64>) {
+        self.movement.store(movement);
+        self.received_this_tick.store(true, Ordering::Relaxed);
+    }
+
+    /// Returns whether an accepted movement arrived during this client tick.
+    pub(crate) fn finish_tick(&self) -> bool {
+        let received = self.received_this_tick.swap(false, Ordering::Relaxed);
+        if !received {
+            self.movement.store(Vector3::new(0.0, 0.0, 0.0));
+        }
+        received
+    }
+}
+
 pub struct Player {
     /// The underlying living entity object that represents the player.
     pub living_entity: LivingEntity,
+    pub(crate) known_movement: KnownMovement,
     /// The player's game profile information, including their username and UUID.
     pub gameprofile: GameProfile,
     /// The client connection associated with the player.
@@ -576,6 +600,31 @@ struct SkinMetadata {
 }
 
 impl Player {
+    pub(crate) fn controls_vehicle(&self, vehicle: &dyn EntityBase) -> bool {
+        // AbstractBoat.getControllingPassenger; other implemented vehicles have no controller.
+        vehicle
+            .cast_any()
+            .is::<crate::entity::vehicle::boat::BoatEntity>()
+            && vehicle
+                .get_entity()
+                .passengers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .first()
+                .is_some_and(|passenger| passenger.get_entity().entity_id == self.entity_id())
+    }
+
+    /// Returns the accepted client movement used by Projectile.shootFromRotation.
+    pub fn get_known_movement(&self) -> Vector3<f64> {
+        // ServerPlayer.getKnownMovement uses the vehicle when this player is a passenger.
+        if let Some(vehicle) = self.get_entity().get_vehicle()
+            && !self.controls_vehicle(vehicle.as_ref())
+        {
+            return vehicle.get_entity().velocity.load();
+        }
+        self.known_movement.movement.load()
+    }
+
     #[must_use]
     pub fn fetch_skin(properties: &[Property]) -> Option<pumpkin_protocol::bedrock::client::Skin> {
         let textures_prop = properties.iter().find(|p| &*p.name == "textures")?;
@@ -727,6 +776,7 @@ impl Player {
 
         Self {
             living_entity,
+            known_movement: KnownMovement::default(),
             config: ArcSwap::new(Arc::new(config)),
             advancements: Arc::new(Mutex::new(
                 server
@@ -6455,20 +6505,12 @@ impl Player {
         use pumpkin_data::item::Item;
         let inventory = &self.inventory;
 
-        // Check offhand first
-        let stack = inventory.get_slot(PlayerInventory::OFF_HAND_SLOT);
-        if matches!(
-            stack.item.id,
-            id if id == Item::ARROW.id
-                || id == Item::TIPPED_ARROW.id
-                || id == Item::SPECTRAL_ARROW.id
-        ) && stack.item_count > 0
-        {
-            return Some(PlayerInventory::OFF_HAND_SLOT);
-        }
-
-        // Check hotbar and main inventory
-        for slot in 0..PlayerInventory::MAIN_SIZE {
+        // Player.getProjectile / ProjectileWeaponItem.getHeldProjectile prefer either hand.
+        let held_slots = [
+            PlayerInventory::OFF_HAND_SLOT,
+            inventory.get_selected_slot() as usize,
+        ];
+        for slot in held_slots.into_iter().chain(0..PlayerInventory::MAIN_SIZE) {
             let stack = inventory.get_slot(slot);
             if matches!(
                 stack.item.id,
@@ -8094,9 +8136,25 @@ impl InventoryPlayer for Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{bedrock_inventory_slot, read_root_vehicle, write_root_vehicle};
+    use super::{KnownMovement, bedrock_inventory_slot, read_root_vehicle, write_root_vehicle};
     use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+    use pumpkin_util::math::vector3::Vector3;
     use uuid::Uuid;
+
+    #[test]
+    fn known_movement_resets_only_after_a_client_tick_without_an_accepted_move() {
+        let known = KnownMovement::default();
+        known.record(Vector3::new(0.3, 0.4, -0.2));
+        known.record(Vector3::new(0.1, 0.2, -0.3));
+        assert!(known.finish_tick());
+        assert_eq!(known.movement.load(), Vector3::new(0.1, 0.2, -0.3));
+        assert!(!known.finish_tick());
+        assert_eq!(known.movement.load(), Vector3::new(0.0, 0.0, 0.0));
+        known.record(Vector3::new(0.5, 0.0, 0.0));
+        known.record(Vector3::new(0.0, 0.0, 0.0));
+        assert!(known.finish_tick());
+        assert_eq!(known.movement.load(), Vector3::new(0.0, 0.0, 0.0));
+    }
 
     #[test]
     fn player_screen_slots_map_to_bedrock_inventory() {

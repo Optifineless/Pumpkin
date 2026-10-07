@@ -115,6 +115,10 @@ impl ItemBehaviour for TridentItem {
             ArrowPickup::Allowed,
         );
         trident.set_velocity_from_rotation(pitch, yaw, 0.0, 2.5, 1.0);
+        super::projectile_weapon::ProjectileWeaponItem::add_shooter_movement(
+            &trident.entity,
+            player.get_entity(),
+        );
         trident.apply_on_projectile_spawned(&stack_guard);
         world.spawn_entity(Arc::new(trident));
 

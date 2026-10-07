@@ -37,7 +37,10 @@ impl JavaClient {
         }
 
         let (item_id, _item) = (item_in_hand.item.id, item_in_hand.item);
-        player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
+        // BowItem.releaseUsing awards ITEM_USED only after a successful release.
+        if item_id != Item::BOW.id {
+            player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
+        }
 
         let hit_result = player.world().raycast(
             player.eye_position(),

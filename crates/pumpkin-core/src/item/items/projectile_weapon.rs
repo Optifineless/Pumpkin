@@ -14,6 +14,24 @@ pub struct ProjectileWeaponItem;
 impl ProjectileWeaponItem {
     pub const ARROW_SPEED_MULTIPLIER: f32 = 3.0;
 
+    pub fn add_shooter_movement(projectile: &Entity, shooter: &Entity) {
+        // Projectile.shootFromRotation adds known movement after setting launch rotation.
+        let mut movement = shooter
+            .world
+            .load()
+            .get_player_by_id(shooter.entity_id)
+            .map_or_else(
+                || shooter.velocity.load(),
+                |player| player.get_known_movement(),
+            );
+        if shooter.on_ground.load(Ordering::Relaxed) {
+            movement.y = 0.0;
+        }
+        projectile
+            .velocity
+            .store(projectile.velocity.load().add(&movement));
+    }
+
     #[must_use]
     pub const fn is_arrow(item: &Item) -> bool {
         item.id == Item::ARROW.id
@@ -165,6 +183,11 @@ impl ProjectileWeaponItem {
                 is_creative,
             );
             arrow.set_velocity_from_rotation(pitch, yaw + angle, 0.0, power, uncertainty);
+            // BowItem.shoot uses shootFromRotation, which adds the shooter's movement;
+            // CrossbowItem.shootProjectile calls shoot directly and does not.
+            if weapon.item.id != Item::CROSSBOW.id {
+                Self::add_shooter_movement(&arrow.entity, shooter);
+            }
             let arrow_arc: Arc<dyn EntityBase> = Arc::new(arrow);
             world.spawn_entity(arrow_arc);
         }

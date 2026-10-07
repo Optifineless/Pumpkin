@@ -249,8 +249,17 @@ impl JavaClient {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .clone();
-                    if let Some(stack) = item_in_use {
-                        server.item_registry.on_stopped_using(&stack, player);
+                    let hand = *player
+                        .living_entity
+                        .active_hand
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if let (Some(stack), Some(hand)) = (item_in_use, hand) {
+                        // LivingEntity.releaseUsingItem re-reads the used hand before release.
+                        let current = player.inventory().get_stack_in_hand(hand);
+                        if !current.is_empty() && current.item.id == stack.item.id {
+                            server.item_registry.on_stopped_using(&current, player);
+                        }
                     }
 
                     player.living_entity.clear_active_hand();

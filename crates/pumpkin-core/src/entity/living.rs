@@ -656,6 +656,12 @@ impl LivingEntity {
 
     /// Sends the Hand animation to all others, used when Eating for example
     pub fn set_active_hand(&self, hand: Hand, stack: ItemStack, duration: i32) {
+        // LivingEntity.startUsingItem does not restart an active use.
+        if stack.is_empty()
+            || self.livings_flags.load(Ordering::Relaxed) & Self::USING_ITEM_FLAG != 0
+        {
+            return;
+        }
         self.item_use_time.store(duration, Ordering::Relaxed);
         *self
             .item_in_use
@@ -3508,6 +3514,28 @@ impl EntityBase for LivingEntity {
 
         self.tick_effects();
 
+        // LivingEntity.updatingUsingItem refreshes the stack, or stops after a hand swap.
+        let active_hand = *self
+            .active_hand
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let active_item = self
+            .item_in_use
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let (Some(hand), Some(item)) = (active_hand, active_item) {
+            let current = self.get_stack_in_hand(caller, hand);
+            if current.is_empty() || current.item.id != item.item.id {
+                self.clear_active_hand();
+            } else {
+                *self
+                    .item_in_use
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(current);
+            }
+        }
+
         if let Some(player) = caller.get_player() {
             let remaining_use_ticks = self.item_use_time.load(Ordering::Relaxed);
             if remaining_use_ticks > 0 {
@@ -3533,121 +3561,75 @@ impl EntityBase for LivingEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
-            if let Some(item) = item_in_use.as_ref() {
-                // Consume item
-                let mut is_potion = false;
-                if let Some(food) = item.get_data_component::<FoodImpl>()
-                    && let Some(player) = caller.get_player()
+            // CrossbowItem.useOnRelease keeps the item active until release.
+            if item_in_use
+                .as_ref()
+                .is_none_or(|item| item.item.id != Item::CROSSBOW.id)
+            {
+                if let Some(item) = item_in_use.as_ref()
+                    && item.get_data_component::<ConsumableImpl>().is_some()
                 {
-                    player
-                        .hunger_manager
-                        .eat(player, food.nutrition as u8, food.saturation);
-                    self.entity.world.load().play_bedrock_level_sound(
-                        "burp",
-                        &self.entity.pos.load(),
-                        -1,
-                    );
-                }
-
-                self.apply_consumable_effects(caller, item);
-
-                // Handle potion consumption
-                if item
-                    .get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>()
-                    .is_some()
-                {
-                    let effects = crate::item::potion::PotionContents::read_potion_effects(item);
-                    crate::item::potion::PotionContents::apply_effects_to(
-                        self,
-                        effects,
-                        1.0,
-                        crate::item::potion::PotionApplicationSource::Normal,
-                    );
-                    is_potion = true;
-                }
-
-                if let Some(player) = caller.get_player() {
-                    player.trigger_advancement(
-                        crate::entity::player::advancement::trigger::AdvancementTrigger::ConsumeItem {
-                            item_id: format!("minecraft:{}", item.item.registry_key),
-                        },
-                    );
-
-                    // Prefer modifying the exact stack that matches the consumed item:
-                    // 1) selected hotbar (held_item)
-                    // 2) off-hand
-                    // 3) fallback to active_hand if the above didn't match
-                    let mut handled = false;
-
-                    // Check main hand (hotbar selected)
-                    let mut held = player.inventory.held_item();
-                    if held.are_items_and_components_equal(item) {
-                        if is_potion {
-                            if player.gamemode.load() != GameMode::Creative {
-                                held.decrement(1);
-                                if held.is_empty() {
-                                    held = ItemStack::new(1, &Item::GLASS_BOTTLE);
-                                }
-                            }
-                        } else {
-                            held.decrement_unless_creative(player.gamemode.load(), 1);
-                        }
-                        player.inventory.set_held_item(held);
-                        handled = true;
-                    }
-
-                    if !handled {
-                        // Check off-hand
-                        let mut off_hand = player.inventory.off_hand_item();
-                        if off_hand.are_items_and_components_equal(item) {
-                            if is_potion {
-                                if player.gamemode.load() != GameMode::Creative {
-                                    off_hand.decrement(1);
-                                    if off_hand.is_empty() {
-                                        off_hand = ItemStack::new(1, &Item::GLASS_BOTTLE);
-                                    }
-                                }
-                            } else {
-                                off_hand.decrement_unless_creative(player.gamemode.load(), 1);
-                            }
-                            player.inventory.set_stack_in_hand(Hand::Left, off_hand);
-                            handled = true;
-                        }
-                    }
-
-                    if !handled {
-                        // Use stored active_hand (as a fallback)
-                        let active_hand = *self
-                            .active_hand
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        let hand_to_modify = active_hand.unwrap_or(Hand::Right);
-                        let mut item_stack = self.get_stack_in_hand(caller, hand_to_modify);
-
-                        if is_potion {
-                            if player.gamemode.load() != GameMode::Creative {
-                                item_stack.decrement(1);
-                                if item_stack.is_empty() {
-                                    item_stack = ItemStack::new(1, &Item::GLASS_BOTTLE);
-                                }
-                            }
-                        } else {
-                            item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                        }
+                    // Item.finishUsingItem consumes only stacks with a Consumable component.
+                    let mut is_potion = false;
+                    if let Some(food) = item.get_data_component::<FoodImpl>()
+                        && let Some(player) = caller.get_player()
+                    {
                         player
-                            .inventory
-                            .set_stack_in_hand(hand_to_modify, item_stack);
+                            .hunger_manager
+                            .eat(player, food.nutrition as u8, food.saturation);
+                        self.entity.world.load().play_bedrock_level_sound(
+                            "burp",
+                            &self.entity.pos.load(),
+                            -1,
+                        );
                     }
 
-                    if let Some(cooldown) = item.get_use_cooldown() {
-                        let group = cooldown
-                            .cooldown_group
-                            .clone()
-                            .unwrap_or_else(|| item.item.registry_key.to_string());
-                        player.start_cooldown(group, (cooldown.seconds * 20.0) as i32);
+                    self.apply_consumable_effects(caller, item);
+
+                    // Handle potion consumption
+                    if item
+                        .get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>()
+                        .is_some()
+                    {
+                        let effects = crate::item::potion::PotionContents::read_potion_effects(item);
+                        crate::item::potion::PotionContents::apply_effects_to(
+                            self,
+                            effects,
+                            1.0,
+                            crate::item::potion::PotionApplicationSource::Normal,
+                        );
+                        is_potion = true;
+                    }
+
+                    if let Some(player) = caller.get_player() {
+                        player.trigger_advancement(
+                            crate::entity::player::advancement::trigger::AdvancementTrigger::ConsumeItem {
+                                item_id: format!("minecraft:{}", item.item.registry_key),
+                            },
+                        );
+
+                        if let Some(hand) = active_hand {
+                            let mut stack = player.inventory.get_stack_in_hand(hand);
+                            if is_potion && player.gamemode.load() != GameMode::Creative {
+                                stack.decrement(1);
+                                if stack.is_empty() {
+                                    stack = ItemStack::new(1, &Item::GLASS_BOTTLE);
+                                }
+                            } else if !is_potion {
+                                stack.decrement_unless_creative(player.gamemode.load(), 1);
+                            }
+                            player.inventory.set_stack_in_hand(hand, stack);
+                        }
+
+                        if let Some(cooldown) = item.get_use_cooldown() {
+                            let group = cooldown
+                                .cooldown_group
+                                .clone()
+                                .unwrap_or_else(|| item.item.registry_key.to_string());
+                            player.start_cooldown(group, (cooldown.seconds * 20.0) as i32);
+                        }
                     }
                 }
-
                 self.clear_active_hand();
             }
         }

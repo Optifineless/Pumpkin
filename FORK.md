@@ -37,6 +37,7 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | Upstream issue | Fixed by | Checked in-game |
 |:--|:--|:--|
 | [#3468](https://github.com/Pumpkin-MC/Pumpkin/issues/3468) Aquatic mob AI (fish and squid movement only) | port of upstream PR #3718 | Not yet |
+| [#3388](https://github.com/Pumpkin-MC/Pumpkin/issues/3388) Arrows have glitchy particles | remove server-generated arrow trails | Not yet |
 | [#3520](https://github.com/Pumpkin-MC/Pumpkin/issues/3520) Shields cannot block player melee | `fix(combat): let shields block melee hits` | Yes, 2026-10-07 (blocked a zombie) |
 | [#3105](https://github.com/Pumpkin-MC/Pumpkin/issues/3105) Observers don't work | upstream PR #3863 | Not yet |
 | [#877](https://github.com/Pumpkin-MC/Pumpkin/issues/877) Naturally generated water sometimes doesn't flow | upstream PR #3863 | Not yet |
@@ -52,6 +53,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Sticky pistons pull back in every direction | Yes, 2026-10-07 |
 | Pistons tell the client which block is moving, so the animation shows it | Not yet |
 | Arrows, tridents, splash potions, evoker fangs and shulker bullets can hit players | Partly: skeleton arrows confirmed 2026-10-07 |
+| Arrows and tridents follow vanilla flight timing; bow trails, shooter movement and off-hand use are corrected | Not yet |
 | Land mobs bob at the surface instead of being pushed up out of the water | Not yet |
 | Zombies sink in water like vanilla instead of floating | Not yet |
 | Scheduled ticks run on time and survive a restart | Not yet |

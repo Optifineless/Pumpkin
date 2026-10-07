@@ -6,9 +6,6 @@ impl JavaClient {
         if !player.has_client_loaded() {
             return;
         }
-        // A movement packet was received this tick — tracked for SClientTickEnd zeroing.
-        self.received_movement_this_tick
-            .store(true, Ordering::Relaxed);
         if !rotation.yaw.is_finite() || !rotation.pitch.is_finite() {
             self.try_kick(&TextComponent::translate_cross(
                 translation::java::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT,
@@ -16,6 +13,16 @@ impl JavaClient {
                 [],
             ));
             return;
+        }
+        if !player.get_entity().has_vehicle()
+            && !player.is_movement_locked.load(Ordering::Relaxed)
+            && player
+                .awaiting_teleport
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_none()
+        {
+            player.known_movement.record(Vector3::new(0.0, 0.0, 0.0));
         }
         let entity = &player.get_entity();
         entity.on_ground.store(rotation.ground, Ordering::Relaxed);

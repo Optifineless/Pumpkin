@@ -13,16 +13,60 @@ use pumpkin_data::data_component_impl::PotionDurationScaleImpl;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_protocol::IdOr;
-use pumpkin_protocol::java::client::play::{CEntityVelocity, CSoundEffect, Metadata};
+use pumpkin_protocol::java::client::play::{CSoundEffect, Metadata};
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 const TEAM_OPTION_FRIENDLY_FIRE: i8 = 0x01;
+
+// AbstractArrow.tick: water drag precedes the hit, air drag and gravity follow it.
+pub(super) fn tick_flight(
+    movement: Vector3<f64>,
+    in_water: bool,
+    water_inertia: f64,
+    gravity: f64,
+    step_move_and_hit: impl FnOnce(Vector3<f64>, Vector3<f64>) -> (Vector3<f64>, bool),
+) -> Vector3<f64> {
+    let velocity = if in_water {
+        movement * water_inertia
+    } else {
+        movement
+    };
+    let (mut velocity, in_ground) = step_move_and_hit(movement, velocity);
+    if !in_water {
+        velocity = velocity * ArrowEntity::AIR_INERTIA;
+    }
+    if !in_ground {
+        velocity.y -= gravity;
+    }
+    velocity
+}
+
+pub(super) fn update_flight_rotation(
+    entity: &Entity,
+    movement: Vector3<f64>,
+    physics_enabled: bool,
+) {
+    // Projectile.lerpRotation interpolates from the equivalent angle nearest the target.
+    let lerp_rotation = |previous: f32, target: f32| {
+        let previous = target - pumpkin_util::math::wrap_degrees(target - previous);
+        previous + (target - previous) * 0.2
+    };
+    let yaw = if physics_enabled {
+        movement.x.atan2(movement.z)
+    } else {
+        (-movement.x).atan2(-movement.z)
+    };
+    let pitch = movement.y.atan2(movement.horizontal_length());
+    entity.set_rotation(
+        lerp_rotation(entity.yaw.load(), yaw.to_degrees() as f32),
+        lerp_rotation(entity.pitch.load(), pitch.to_degrees() as f32),
+    );
+}
 
 // Player.canHarmPlayer / Entity.doTeamsAllowDamage and ServerPlayer.canHarmPlayer.
 fn can_harm_player(
@@ -111,8 +155,8 @@ pub struct ArrowEntity {
 
 impl ArrowEntity {
     const ARROW_BASE_DAMAGE: f64 = 2.0;
-    const WATER_INERTIA: f64 = 0.6;
-    const AIR_INERTIA: f64 = 0.99;
+    const WATER_INERTIA: f64 = 0.6f32 as f64;
+    const AIR_INERTIA: f64 = 0.99f32 as f64;
     const GRAVITY: f64 = 0.05;
     const DESPAWN_TIME: u32 = 1200;
 
@@ -303,6 +347,113 @@ impl ArrowEntity {
         }
     }
 
+    fn step_move_and_hit(
+        &self,
+        caller: &dyn EntityBase,
+        start_pos: Vector3<f64>,
+        new_pos: Vector3<f64>,
+        movement: Vector3<f64>,
+    ) {
+        let entity = &self.entity;
+        let world = entity.world.load();
+        // Check for collisions using raycasting
+        let search_box = BoundingBox::new(
+            Vector3::new(
+                start_pos.x.min(new_pos.x),
+                start_pos.y.min(new_pos.y),
+                start_pos.z.min(new_pos.z),
+            ),
+            Vector3::new(
+                start_pos.x.max(new_pos.x),
+                start_pos.y.max(new_pos.y),
+                start_pos.z.max(new_pos.z),
+            ),
+        )
+        .expand(0.3, 0.3, 0.3);
+
+        let mut closest_t = 1.0f64;
+        let mut hit = None;
+
+        // Block collisions
+        let (block_cols, block_positions) =
+            world.get_block_collisions(search_box, self.get_entity());
+        for (idx, bb) in block_cols.iter().enumerate() {
+            if let Some(t) = calculate_ray_intersection(&start_pos, &movement, bb)
+                && t < closest_t
+            {
+                closest_t = t;
+
+                // Map back to block pos
+                let mut curr = 0;
+                for (len, pos) in &block_positions {
+                    curr += len;
+                    if idx < curr {
+                        let hit_pos = start_pos.add(&movement.multiply(t, t, t));
+                        hit = Some(ProjectileHit::Block {
+                            pos: *pos,
+                            face: get_hit_face(hit_pos, *pos),
+                            hit_pos,
+                            normal: movement.normalize().multiply(-1.0, -1.0, -1.0),
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Entity collisions
+        let candidates = world.get_all_at_box(&search_box);
+        for cand in candidates.into_iter().filter(super::can_hit_entity) {
+            if self.should_skip_collision(entity, &cand)
+                || !can_hit_player(entity, self.owner_id, &cand)
+            {
+                continue;
+            }
+
+            let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
+            if let Some(t) = calculate_ray_intersection(&start_pos, &movement, &ebb)
+                && t < closest_t
+            {
+                closest_t = t;
+                let hit_pos = start_pos.add(&movement.multiply(t, t, t));
+                hit = Some(ProjectileHit::Entity {
+                    entity: cand.clone(),
+                    hit_pos,
+                    normal: movement.normalize().multiply(-1.0, -1.0, -1.0),
+                });
+            }
+        }
+
+        // Handle hit
+        if let Some(h) = hit {
+            entity.set_pos(h.hit_pos());
+            match h {
+                ProjectileHit::Block { .. } => {
+                    if self.has_hit.swap(true, Ordering::SeqCst) {
+                        return;
+                    }
+                    caller.on_hit(h);
+                    entity.velocity_dirty.store(true, Ordering::Relaxed);
+                }
+                ProjectileHit::Entity { .. } => {
+                    let pierce = self.pierce_level.load(Ordering::Relaxed);
+                    let pierced_len = self
+                        .pierced_entities
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .len();
+                    if pierced_len >= pierce as usize && self.has_hit.swap(true, Ordering::SeqCst) {
+                        return;
+                    }
+                    caller.on_hit(h);
+                    entity.velocity_dirty.store(true, Ordering::Relaxed);
+                }
+            }
+        } else {
+            entity.set_pos(new_pos);
+        }
+    }
+
     pub fn set_velocity_from_rotation(
         &self,
         pitch: f32,
@@ -343,6 +494,8 @@ impl ArrowEntity {
             .multiply(power, power, power);
 
         self.entity.velocity.store(velocity);
+        // Projectile.shoot requests the first tracker motion update.
+        self.entity.velocity_dirty.store(true, Ordering::Relaxed);
         let len = velocity.horizontal_length();
         self.entity.set_rotation(
             velocity.x.atan2(velocity.z) as f32 * 57.295_776,
@@ -625,7 +778,7 @@ impl EntityBase for ArrowEntity {
             self.shake_time.store(shake - 1, Ordering::Relaxed);
         }
 
-        if self.in_ground.load(Ordering::Relaxed) {
+        if self.in_ground.load(Ordering::Relaxed) && !self.is_no_physics() {
             // Check if the block we are stuck into was broken / turned to air
             let last_pos = *self
                 .last_block_pos
@@ -658,180 +811,34 @@ impl EntityBase for ArrowEntity {
             return;
         }
 
-        // Arrow is flying
-        let start_pos = entity.pos.load();
-        let mut velocity = entity.velocity.load();
-
-        // Apply gravity
-        velocity.y -= Self::GRAVITY;
-
-        // Apply inertia (air resistance or water drag)
-        let inertia = if in_water {
-            Self::WATER_INERTIA
+        let physics_enabled = !self.is_no_physics();
+        let gravity = if physics_enabled && !entity.has_no_gravity() {
+            Self::GRAVITY
         } else {
-            Self::AIR_INERTIA
+            0.0
         };
-        velocity = velocity.multiply(inertia, inertia, inertia);
-
-        entity.velocity.store(velocity);
-
-        // Update rotation based on velocity
-        let len = velocity.horizontal_length();
-        entity.set_rotation(
-            velocity.x.atan2(velocity.z) as f32 * 57.295_776,
-            velocity.y.atan2(len) as f32 * 57.295_776,
+        let velocity = tick_flight(
+            entity.velocity.load(),
+            in_water,
+            Self::WATER_INERTIA,
+            gravity,
+            |movement, velocity| {
+                entity.velocity.store(velocity);
+                update_flight_rotation(entity, movement, physics_enabled);
+                let start_pos = entity.pos.load();
+                let new_pos = start_pos.add(&movement);
+                if physics_enabled {
+                    self.step_move_and_hit(caller, start_pos, new_pos, movement);
+                } else {
+                    entity.set_pos(new_pos);
+                }
+                (
+                    entity.velocity.load(),
+                    self.in_ground.load(Ordering::Relaxed),
+                )
+            },
         );
-
-        // Move arrow
-        let new_pos = start_pos.add(&velocity);
-        entity.set_pos(new_pos);
-
-        // Spawn particles while arrow is flying
-        if in_water {
-            for i in 0..4 {
-                let factor = 0.25 * f64::from(i);
-                world.spawn_particle(
-                    Vector3::new(
-                        new_pos.x - velocity.x * factor,
-                        new_pos.y - velocity.y * factor,
-                        new_pos.z - velocity.z * factor,
-                    ),
-                    Vector3::new(velocity.x as f32, velocity.y as f32, velocity.z as f32),
-                    0.0,
-                    1,
-                    Particle::Bubble,
-                );
-            }
-        }
-
-        if is_on_fire {
-            world.spawn_particle(
-                entity.pos.load(),
-                Vector3::new(0.0f32, 0.0f32, 0.0f32),
-                0.0,
-                1,
-                Particle::Flame,
-            );
-        }
-
-        if self.is_critical.load(Ordering::Relaxed) {
-            for i in 0..4 {
-                let factor = f64::from(i) / 4.0;
-                world.spawn_particle(
-                    Vector3::new(
-                        start_pos.x + velocity.x * factor,
-                        start_pos.y + velocity.y * factor,
-                        start_pos.z + velocity.z * factor,
-                    ),
-                    Vector3::new(
-                        -velocity.x as f32,
-                        (-velocity.y + 0.2) as f32,
-                        -velocity.z as f32,
-                    ),
-                    0.0,
-                    1,
-                    Particle::Crit,
-                );
-            }
-        }
-
-        // Broadcast velocity update
-        let packet = CEntityVelocity::new(entity.entity_id.into(), velocity);
-
-        let chunk_pos = entity.chunk_pos.load();
-        world.broadcast_to_chunk(chunk_pos, &packet);
-
-        // Check for collisions using raycasting
-        let search_box = BoundingBox::new(
-            Vector3::new(
-                start_pos.x.min(new_pos.x),
-                start_pos.y.min(new_pos.y),
-                start_pos.z.min(new_pos.z),
-            ),
-            Vector3::new(
-                start_pos.x.max(new_pos.x),
-                start_pos.y.max(new_pos.y),
-                start_pos.z.max(new_pos.z),
-            ),
-        )
-        .expand(0.3, 0.3, 0.3);
-
-        let mut closest_t = 1.0f64;
-        let mut hit = None;
-
-        // Block collisions
-        let (block_cols, block_positions) =
-            world.get_block_collisions(search_box, self.get_entity());
-        for (idx, bb) in block_cols.iter().enumerate() {
-            if let Some(t) = calculate_ray_intersection(&start_pos, &velocity, bb)
-                && t < closest_t
-            {
-                closest_t = t;
-
-                // Map back to block pos
-                let mut curr = 0;
-                for (len, pos) in &block_positions {
-                    curr += len;
-                    if idx < curr {
-                        let hit_pos = start_pos.add(&velocity.multiply(t, t, t));
-                        hit = Some(ProjectileHit::Block {
-                            pos: *pos,
-                            face: get_hit_face(hit_pos, *pos),
-                            hit_pos,
-                            normal: velocity.normalize().multiply(-1.0, -1.0, -1.0),
-                        });
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Entity collisions
-        let candidates = world.get_all_at_box(&search_box);
-        for cand in candidates.into_iter().filter(super::can_hit_entity) {
-            if self.should_skip_collision(entity, &cand)
-                || !can_hit_player(entity, self.owner_id, &cand)
-            {
-                continue;
-            }
-
-            let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
-            if let Some(t) = calculate_ray_intersection(&start_pos, &velocity, &ebb)
-                && t < closest_t
-            {
-                closest_t = t;
-                let hit_pos = start_pos.add(&velocity.multiply(t, t, t));
-                hit = Some(ProjectileHit::Entity {
-                    entity: cand.clone(),
-                    hit_pos,
-                    normal: velocity.normalize().multiply(-1.0, -1.0, -1.0),
-                });
-            }
-        }
-
-        // Handle hit
-        if let Some(h) = hit {
-            match h {
-                ProjectileHit::Block { .. } => {
-                    if self.has_hit.swap(true, Ordering::SeqCst) {
-                        return;
-                    }
-                    caller.on_hit(h);
-                }
-                ProjectileHit::Entity { .. } => {
-                    let pierce = self.pierce_level.load(Ordering::Relaxed);
-                    let pierced_len = self
-                        .pierced_entities
-                        .read()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .len();
-                    if pierced_len >= pierce as usize && self.has_hit.swap(true, Ordering::SeqCst) {
-                        return;
-                    }
-                    caller.on_hit(h);
-                }
-            }
-        }
+        entity.velocity.store(velocity);
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1153,7 +1160,7 @@ fn get_hit_face(hit_pos: Vector3<f64>, block_pos: BlockPos) -> pumpkin_data::Blo
 
 #[cfg(test)]
 mod tests {
-    use super::{ArrowEntity, TEAM_OPTION_FRIENDLY_FIRE, can_harm_player};
+    use super::{ArrowEntity, TEAM_OPTION_FRIENDLY_FIRE, can_harm_player, tick_flight};
     use crate::world::scoreboard::{CollisionRule, NameTagVisibility, Team};
     use pumpkin_data::data_component::DataComponent;
     use pumpkin_data::data_component_impl::{
@@ -1162,7 +1169,42 @@ mod tests {
     use pumpkin_data::entity::EntityType;
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
+    use pumpkin_util::math::vector3::Vector3;
     use pumpkin_util::text::{TextComponent, color::NamedColor};
+
+    #[test]
+    fn arrow_flight_moves_and_hits_before_air_drag_and_gravity() {
+        let mut position = Vector3::new(10.0, 20.0, 30.0);
+        let velocity = tick_flight(
+            Vector3::new(1.0, 2.0, 3.0),
+            false,
+            ArrowEntity::WATER_INERTIA,
+            ArrowEntity::GRAVITY,
+            |movement, hit_velocity| {
+                position = position.add(&movement);
+                assert_eq!(hit_velocity, Vector3::new(1.0, 2.0, 3.0));
+                (hit_velocity, false)
+            },
+        );
+        assert_eq!(position, Vector3::new(11.0, 22.0, 33.0));
+        assert!((velocity - Vector3::new(0.99, 1.93, 2.97)).length_squared() < 1.0e-12);
+    }
+
+    #[test]
+    fn arrow_water_drag_preserves_this_ticks_movement_and_ground_hit_stops_gravity() {
+        let velocity = tick_flight(
+            Vector3::new(1.0, 2.0, 3.0),
+            true,
+            ArrowEntity::WATER_INERTIA,
+            ArrowEntity::GRAVITY,
+            |movement, hit_velocity| {
+                assert_eq!(movement, Vector3::new(1.0, 2.0, 3.0));
+                assert!((hit_velocity - Vector3::new(0.6, 1.2, 1.8)).length_squared() < 1.0e-12);
+                (Vector3::new(0.0, 0.0, 0.0), true)
+            },
+        );
+        assert_eq!(velocity, Vector3::new(0.0, 0.0, 0.0));
+    }
 
     #[test]
     fn player_projectiles_obey_pvp_and_friendly_fire_independently_of_pushing() {
