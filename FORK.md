@@ -14,7 +14,18 @@ None of this is sent upstream as pull requests. Upstream maintainers are welcome
 
 Upstream is merged in regularly. When upstream fixes something this fork also fixed, the fork drops its own version and keeps upstream's.
 
+## Upstream pull requests included early
+
+These are open upstream PRs merged here before upstream merges them. Each is dropped from the fork once upstream merges its own version.
+
+| Upstream PR | What it fixes |
+|:--|:--|
+| [#3863](https://github.com/Pumpkin-MC/Pumpkin/pull/3863) | Scheduled ticks ran one tick late, ticks saved with a chunk never ran after loading, and observers misbehaved. |
+
 ## Upstream issues addressed here
 
-| Upstream issue | Commit | Checked in-game |
+| Upstream issue | Fixed by | Checked in-game |
 |:--|:--|:--|
+| [#3520](https://github.com/Pumpkin-MC/Pumpkin/issues/3520) Shields cannot block player melee | `fix(combat): let shields block melee hits` | Not yet |
+| [#3105](https://github.com/Pumpkin-MC/Pumpkin/issues/3105) Observers don't work | upstream PR #3863 | Not yet |
+| [#877](https://github.com/Pumpkin-MC/Pumpkin/issues/877) Naturally generated water sometimes doesn't flow | upstream PR #3863 | Not yet |
