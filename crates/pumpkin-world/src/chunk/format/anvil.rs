@@ -110,6 +110,7 @@ struct AnvilChunkMetadata {
 }
 
 pub struct AnvilChunkFile<S: SingleChunkDataSerializer> {
+    // Keep the region table out of the by-value loader's async stack frames.
     chunks_data: Box<[Option<AnvilChunkMetadata>]>,
     write_action: Mutex<WriteAction>,
     reservations: Mutex<region_write::RegionBitmap>,

@@ -596,3 +596,7 @@ mod pending;
 #[cfg(test)]
 #[path = "serialization_failure_tests.rs"]
 mod serialization_failure_tests;
+
+#[cfg(test)]
+#[path = "heap_stack_tests.rs"]
+mod heap_stack_tests;
