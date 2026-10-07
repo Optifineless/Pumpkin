@@ -26,6 +26,18 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 
 | Upstream issue | Fixed by | Checked in-game |
 |:--|:--|:--|
-| [#3520](https://github.com/Pumpkin-MC/Pumpkin/issues/3520) Shields cannot block player melee | `fix(combat): let shields block melee hits` | Not yet |
+| [#3520](https://github.com/Pumpkin-MC/Pumpkin/issues/3520) Shields cannot block player melee | `fix(combat): let shields block melee hits` | Yes, 2026-10-07 (blocked a zombie) |
 | [#3105](https://github.com/Pumpkin-MC/Pumpkin/issues/3105) Observers don't work | upstream PR #3863 | Not yet |
 | [#877](https://github.com/Pumpkin-MC/Pumpkin/issues/877) Naturally generated water sometimes doesn't flow | upstream PR #3863 | Not yet |
+
+## Fork fixes checked in-game
+
+Fixes with no upstream issue number, and what the owner saw when testing them.
+
+| Change | Checked in-game |
+|:--|:--|
+| Hoppers keep their facing after a restart | Yes, 2026-10-07 |
+| Redstone torches burn out when toggled too fast | Yes, 2026-10-07 |
+| Sticky pistons pull back in every direction | Works, but the moving block renders wrong (under investigation) |
+| Scheduled ticks run on time and survive a restart | Not yet |
+| Dust removed by water or explosions updates neighbours | Not yet |
