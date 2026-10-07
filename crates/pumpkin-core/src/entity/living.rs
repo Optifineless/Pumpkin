@@ -1421,6 +1421,11 @@ impl LivingEntity {
 
         if !effective_ai {
             // No travel.
+        } else if caller
+            .get_mob()
+            .is_some_and(|mob| mob.custom_travel(caller))
+        {
+            // The mob overrides vanilla LivingEntity.travel.
         } else if (touching_water || self.entity.touching_lava.load(SeqCst))
             && should_swim_in_fluids
             && self.entity.entity_type != &EntityType::STRIDER
@@ -3456,8 +3461,8 @@ impl EntityBase for LivingEntity {
             self.entity.tick_frozen(caller);
         }
 
-        // Coalesce velocity sends to once per tick.
-        if self.entity.velocity_dirty.swap(false, Ordering::SeqCst) {
+        // Non-player motion (including needsSync) belongs to ServerEntity.sendChanges.
+        if is_player && self.entity.velocity_dirty.swap(false, Ordering::SeqCst) {
             self.entity.send_velocity();
         }
 

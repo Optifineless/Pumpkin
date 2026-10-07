@@ -295,6 +295,12 @@ impl MobEntity {
         };
 
         navigator.tick(self);
+        if let Some((target, speed)) = navigator.next_move_target() {
+            self.move_control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .set_wanted_position(target.x, target.y, target.z, speed);
+        }
 
         {
             *self
@@ -1134,6 +1140,17 @@ pub trait Mob: EntityBase + Send + Sync {
     /// Runs after navigation and before the movement controls, where vanilla ticks a mob's brain.
     fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {}
 
+    /// Moves the mob for this tick in place of the usual walking and swimming
+    /// physics, returning whether it did; vanilla mobs that override `travel`.
+    fn custom_travel(&self, _caller: &dyn EntityBase) -> bool {
+        false
+    }
+
+    /// Whether currents push this mob along. Water animals hold their ground.
+    fn mob_is_pushed_by_fluids(&self) -> bool {
+        true
+    }
+
     /// Builds this mob's brain from its saved memories; goal mobs keep the brain-dead default.
     fn make_brain(&self, _packed: &PackedMemories) -> Brain {
         Brain::default()
@@ -1330,6 +1347,10 @@ pub trait Mob: EntityBase + Send + Sync {
 impl<T: Mob + Send + 'static> EntityBase for T {
     fn get_mob(&self) -> Option<&dyn Mob> {
         Some(self)
+    }
+
+    fn is_pushed_by_fluids(&self) -> bool {
+        self.mob_is_pushed_by_fluids()
     }
 
     fn is_pushable(&self) -> bool {

@@ -874,6 +874,7 @@ pub struct Entity {
     pub velocity: AtomicCell<Vector3<f64>>,
     /// Tracks a horizontal collision
     pub horizontal_collision: AtomicBool,
+    pub vertical_collision: AtomicBool,
     /// Indicates whether the entity is on the ground (may not always be accurate).
     pub on_ground: AtomicBool,
     /// Indicates whether the entity is touching water
@@ -1026,6 +1027,7 @@ impl Entity {
             touching_lava: AtomicBool::new(false),
             lava_height: AtomicCell::new(0.0),
             horizontal_collision: AtomicBool::new(false),
+            vertical_collision: AtomicBool::new(false),
             pos: AtomicCell::new(position),
             last_pos: AtomicCell::new(position),
             movement: AtomicCell::new(Vector3::default()),
@@ -1933,7 +1935,7 @@ impl Entity {
 
     // Entity.updateVelocity in yarn
 
-    fn update_velocity_from_input(&self, movement_input: Vector3<f64>, speed: f64) {
+    pub(crate) fn update_velocity_from_input(&self, movement_input: Vector3<f64>, speed: f64) {
         let final_input = self.movement_input_to_velocity(movement_input, speed);
 
         self.velocity.store(self.velocity.load() + final_input);
@@ -2027,6 +2029,7 @@ impl Entity {
         if self.no_physics.load(Ordering::Relaxed) {
             self.move_pos(motion);
             self.horizontal_collision.store(false, Ordering::Relaxed);
+            self.vertical_collision.store(false, Ordering::Relaxed);
             self.on_ground.store(false, Ordering::Relaxed);
 
             return;
@@ -2045,6 +2048,8 @@ impl Entity {
         }
 
         let final_move = self.adjust_movement_for_collisions(motion, caller);
+        self.vertical_collision
+            .store(motion.y != final_move.y, Ordering::Relaxed);
 
         self.move_pos(final_move);
 
@@ -2549,7 +2554,7 @@ impl Entity {
     #[must_use]
     pub fn is_submerged_in_water(&self) -> bool {
         let pos = self.pos.load();
-        let eye_y = pos.y + self.get_eye_height();
+        let eye_y = self.get_eye_y();
         let eye_pos = BlockPos::floored(pos.x, eye_y, pos.z);
         let world = self.world.load();
         let (fluid, state) = world.get_fluid_and_fluid_state(&eye_pos);

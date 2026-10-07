@@ -387,6 +387,11 @@ pub trait PathNavigationTrait: Send + Sync {
         distance: f32,
     ) -> bool;
     fn tick(&mut self, mob: &MobEntity);
+
+    /// Waypoint passed to `MoveControl`, as in vanilla `PathNavigation.tick`.
+    fn next_move_target(&self) -> Option<(Vector3<f64>, f64)> {
+        None
+    }
     fn move_to_coords(&mut self, x: f64, y: f64, z: f64, speed: f64, entity: &LivingEntity)
     -> bool;
     fn move_to_pos(&mut self, pos: BlockPos, speed: f64, entity: &LivingEntity) -> bool;
@@ -412,6 +417,12 @@ pub trait PathNavigationTrait: Send + Sync {
     fn get_target_pos(&self) -> Option<BlockPos>;
     fn can_path_to_targets_below_surface(&self) -> bool;
     fn set_can_path_to_targets_below_surface(&mut self, can_path: bool);
+
+    /// Whether the mob can settle at `pos`, which random targets are checked
+    /// against: vanilla's `PathNavigation.isStableDestination`.
+    fn is_stable_destination(&self, world: &World, pos: &BlockPos) -> bool {
+        world.get_block_state(&pos.down()).is_solid()
+    }
 }
 
 pub struct PathNavigation {
@@ -1765,7 +1776,6 @@ impl PathNavigationTrait for WaterBoundPathNavigation {
         self.inner.can_reach_within(entity, destination, distance)
     }
 
-    #[allow(clippy::too_many_lines)]
     fn tick(&mut self, mob: &MobEntity) {
         let entity = &mob.living_entity;
         self.inner.tick_count += 1;
@@ -1796,61 +1806,33 @@ impl PathNavigationTrait for WaterBoundPathNavigation {
 
         if self.is_done() {
             self.inner.finish_navigation(entity);
-        } else {
-            if let Some(path) = &mut self.inner.path
-                && let Some(pos) = path.get_next_node_pos()
-            {
-                let target_pos = Vector3::new(
-                    f64::from(pos.0.x) + 0.5,
-                    f64::from(pos.0.y) + 0.5,
-                    f64::from(pos.0.z) + 0.5,
-                );
-                let current_pos = entity.entity.pos.load();
-                let dx = target_pos.x - current_pos.x;
-                let dy = target_pos.y - current_pos.y;
-                let dz = target_pos.z - current_pos.z;
-                let dist_sq = dx * dx + dy * dy + dz * dz;
+        } else if let Some(path) = &mut self.inner.path
+            && let Some(pos) = path.get_next_node_pos()
+        {
+            let target_pos = Vector3::new(
+                f64::from(pos.0.x) + 0.5,
+                f64::from(pos.0.y),
+                f64::from(pos.0.z) + 0.5,
+            );
+            let current_pos = entity.entity.pos.load();
+            let dx = target_pos.x - current_pos.x;
+            let dy = target_pos.y - current_pos.y;
+            let dz = target_pos.z - current_pos.z;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if dist_sq < 0.5 * 0.5 {
-                    path.advance();
-                }
-            }
-
-            if !self.is_done()
-                && let Some(path) = &self.inner.path
-                && let Some(next_block) = path.get_next_node_pos()
-            {
-                let target_pos = Vector3::new(
-                    f64::from(next_block.0.x) + 0.5,
-                    f64::from(next_block.0.y) + 0.5,
-                    f64::from(next_block.0.z) + 0.5,
-                );
-                let current_pos = entity.entity.pos.load();
-                let dx = target_pos.x - current_pos.x;
-                let dy = target_pos.y - current_pos.y;
-                let dz = target_pos.z - current_pos.z;
-                let sd = dx.hypot(dz);
-
-                let desired_yaw = wrap_degrees((dz.atan2(dx) as f32).to_degrees() - 90.0);
-                let desired_pitch = wrap_degrees(-(dy.atan2(sd) as f32).to_degrees());
-
-                entity.entity.yaw.store(desired_yaw);
-                entity.entity.head_yaw.store(desired_yaw);
-                entity.entity.body_yaw.store(desired_yaw);
-                entity.entity.pitch.store(desired_pitch);
-
-                let speed = self.inner.speed_modifier
-                    * entity.get_attribute_value(&Attributes::MOVEMENT_SPEED);
-                let y_input = if dy.abs() > 0.1 {
-                    if dy > 0.0 { speed } else { -speed }
-                } else {
-                    0.0
-                };
-                entity
-                    .movement_input
-                    .store(Vector3::new(0.0, y_input, speed));
+            if dist_sq < 0.5 * 0.5 {
+                path.advance();
             }
         }
+    }
+
+    fn next_move_target(&self) -> Option<(Vector3<f64>, f64)> {
+        let target = self
+            .inner
+            .path
+            .as_ref()?
+            .get_next_entity_pos(self.inner.mob_width)?;
+        Some((target, self.inner.speed_modifier))
     }
 
     fn move_to_coords(
@@ -1870,7 +1852,7 @@ impl PathNavigationTrait for WaterBoundPathNavigation {
         let p = entity.entity.pos.load();
         let target = Vector3::new(
             f64::from(pos.0.x) + 0.5,
-            f64::from(pos.0.y) + 0.5,
+            f64::from(pos.0.y),
             f64::from(pos.0.z) + 0.5,
         );
         self.set_progress(NavigatorGoal::new(p, target, speed));
@@ -1983,6 +1965,11 @@ impl PathNavigationTrait for WaterBoundPathNavigation {
 
     fn set_can_path_to_targets_below_surface(&mut self, can_path: bool) {
         self.inner.can_path_to_targets_below_surface = can_path;
+    }
+
+    /// Vanilla WaterBoundPathNavigation.isStableDestination.
+    fn is_stable_destination(&self, world: &World, pos: &BlockPos) -> bool {
+        !world.get_block_state(pos).is_solid_render()
     }
 }
 
@@ -2568,5 +2555,38 @@ impl Deref for Navigator {
 impl DerefMut for Navigator {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn water_navigation_hands_the_next_waypoint_to_move_control() {
+        let mut navigation = WaterBoundPathNavigation::new(false);
+        navigation.set_mob_dimensions(0.5, 0.3);
+        navigation.set_speed(1.6);
+        navigation.inner.path = Some(Path::new(
+            vec![
+                Node::new(BlockPos::new(4, 60, -2)),
+                Node::new(BlockPos::new(4, 59, -2)),
+            ],
+            BlockPos::new(4, 59, -2),
+            true,
+        ));
+        assert_eq!(
+            navigation.next_move_target(),
+            Some((Vector3::new(4.5, 60.0, -1.5), 1.6))
+        );
+        if let Some(path) = navigation.get_path_mut() {
+            path.advance();
+        }
+        assert_eq!(
+            navigation.next_move_target(),
+            Some((Vector3::new(4.5, 59.0, -1.5), 1.6))
+        );
+        navigation.stop();
+        assert_eq!(navigation.next_move_target(), None);
     }
 }
