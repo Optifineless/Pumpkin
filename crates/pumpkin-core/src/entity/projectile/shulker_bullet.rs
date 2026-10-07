@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crossbeam::atomic::AtomicCell;
@@ -441,17 +440,8 @@ impl EntityBase for ShulkerBulletEntity {
 
         // Check for entity collisions
         let bullet_bb = entity.bounding_box.load().expand(0.1, 0.1, 0.1);
-        let nearby_entities = world.get_entities_at_box(&bullet_bb);
-        let nearby_players = world.get_players_at_box(&bullet_bb);
-        let nearby: Vec<Arc<dyn crate::entity::EntityBase>> = nearby_entities
-            .into_iter()
-            .chain(
-                nearby_players
-                    .into_iter()
-                    .map(|p| p as Arc<dyn crate::entity::EntityBase>),
-            )
-            .collect();
-        for hit_entity in nearby {
+        let nearby = world.get_all_at_box(&bullet_bb);
+        for hit_entity in nearby.into_iter().filter(super::can_hit_entity) {
             let he = hit_entity.get_entity();
             // Skip self
             if he.entity_id == entity.entity_id {
@@ -461,15 +451,8 @@ impl EntityBase for ShulkerBulletEntity {
             if he.entity_id == self.owner_id {
                 continue;
             }
-            // Must be alive
-            if !he.is_alive() {
-                continue;
-            }
-            // Must be a living entity
-            let Some(living) = hit_entity.get_living_entity() else {
-                continue;
-            };
-            if !living.entity.is_alive() {
+            // ShulkerBullet.canHitEntity excludes entities with noPhysics.
+            if he.no_physics.load(Ordering::Relaxed) {
                 continue;
             }
 

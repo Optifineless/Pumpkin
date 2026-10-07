@@ -22,6 +22,44 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::version::JavaMinecraftVersion;
 
+const TEAM_OPTION_FRIENDLY_FIRE: i8 = 0x01;
+
+// Player.canHarmPlayer / Entity.doTeamsAllowDamage and ServerPlayer.canHarmPlayer.
+fn can_harm_player(
+    pvp_enabled: bool,
+    own_team: Option<&crate::world::scoreboard::Team>,
+    their_team: Option<&crate::world::scoreboard::Team>,
+) -> bool {
+    pvp_enabled
+        && own_team.is_none_or(|team| {
+            their_team.is_none_or(|other| team.name != other.name)
+                || team.options & TEAM_OPTION_FRIENDLY_FIRE != 0
+        })
+}
+
+// AbstractArrow.canHitEntity also applies to ThrownTrident in vanilla.
+pub(super) fn can_hit_player(
+    projectile: &Entity,
+    owner_id: Option<i32>,
+    other: &Arc<dyn EntityBase>,
+) -> bool {
+    let Some(target) = other.get_player() else {
+        return true;
+    };
+    let world = projectile.world.load();
+    let Some(owner) = owner_id.and_then(|id| world.get_player_by_id(id)) else {
+        return true;
+    };
+    let Some(server) = world.server.upgrade() else {
+        return false;
+    };
+    can_harm_player(
+        server.advanced_config.pvp.enabled,
+        owner.get_team().as_ref(),
+        target.get_team().as_ref(),
+    )
+}
+
 /// Represents the pickup rules for arrows
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArrowPickup {
@@ -749,9 +787,11 @@ impl EntityBase for ArrowEntity {
         }
 
         // Entity collisions
-        let candidates = world.get_entities_at_box(&search_box);
-        for cand in candidates {
-            if self.should_skip_collision(entity, &cand) {
+        let candidates = world.get_all_at_box(&search_box);
+        for cand in candidates.into_iter().filter(super::can_hit_entity) {
+            if self.should_skip_collision(entity, &cand)
+                || !can_hit_player(entity, self.owner_id, &cand)
+            {
                 continue;
             }
 
@@ -1075,11 +1115,6 @@ impl ArrowEntity {
             return true;
         }
 
-        // Skip dead entities
-        if !other_ent.is_alive() {
-            return true;
-        }
-
         // Skip other arrows, item entities, falling block entities, and area effect clouds
         if (other_ent.entity_type == &pumpkin_data::entity::EntityType::ARROW
             || other_ent.entity_type == &pumpkin_data::entity::EntityType::SPECTRAL_ARROW)
@@ -1118,7 +1153,8 @@ fn get_hit_face(hit_pos: Vector3<f64>, block_pos: BlockPos) -> pumpkin_data::Blo
 
 #[cfg(test)]
 mod tests {
-    use super::ArrowEntity;
+    use super::{ArrowEntity, TEAM_OPTION_FRIENDLY_FIRE, can_harm_player};
+    use crate::world::scoreboard::{CollisionRule, NameTagVisibility, Team};
     use pumpkin_data::data_component::DataComponent;
     use pumpkin_data::data_component_impl::{
         DataComponentImpl, PotionContentsImpl, PotionDurationScaleImpl,
@@ -1126,6 +1162,34 @@ mod tests {
     use pumpkin_data::entity::EntityType;
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
+    use pumpkin_util::text::{TextComponent, color::NamedColor};
+
+    #[test]
+    fn player_projectiles_obey_pvp_and_friendly_fire_independently_of_pushing() {
+        let mut team = Team {
+            name: "archers".to_string(),
+            display_name: TextComponent::text("Archers"),
+            options: 0,
+            nametag_visibility: NameTagVisibility::Always,
+            collision_rule: CollisionRule::Never,
+            color: NamedColor::White,
+            player_prefix: TextComponent::empty(),
+            player_suffix: TextComponent::empty(),
+            players: Vec::new(),
+        };
+        let mut rival_team = team.clone();
+        rival_team.name = "rivals".to_string();
+
+        assert!(!can_harm_player(true, Some(&team), Some(&team)));
+        assert!(can_harm_player(true, Some(&team), Some(&rival_team)));
+        assert!(can_harm_player(true, Some(&team), None));
+        assert!(can_harm_player(true, None, Some(&team)));
+
+        team.options |= TEAM_OPTION_FRIENDLY_FIRE;
+        assert!(can_harm_player(true, Some(&team), Some(&team)));
+        assert!(!can_harm_player(false, Some(&team), Some(&team)));
+        assert!(!can_harm_player(false, None, None));
+    }
 
     fn tipped_payload(count: u8) -> ItemStack {
         let mut tipped = ItemStack::new(32, &Item::TIPPED_ARROW);

@@ -50,18 +50,28 @@ impl EntityBase for EvokerFangsEntity {
         if warmup < 0 {
             if warmup == -8 {
                 let bb = entity.bounding_box.load().expand(0.2, 0.0, 0.2);
-                let candidates = world.get_entities_at_box(&bb);
+                // EvokerFangs.tick searches living entities with NO_SPECTATORS.
+                let candidates = world.get_all_at_box(&bb);
 
                 let owner = self.owner_id.and_then(|id| world.get_entity_by_id(id));
 
                 for cand in candidates {
                     let cand_ent = cand.get_entity();
-                    if Some(cand_ent.entity_id) == self.owner_id {
+                    // EvokerFangs.dealDamageTo excludes its owner and allies.
+                    if Some(cand_ent.entity_id) == self.owner_id
+                        || cand.is_spectator()
+                        || !cand_ent.is_alive()
+                        || !cand
+                            .get_living_entity()
+                            .is_some_and(|living| living.health.load() > 0.0)
+                        || owner
+                            .as_deref()
+                            .is_some_and(|owner| owner.is_allied_to(cand.as_ref()))
+                    {
                         continue;
                     }
 
-                    if cand_ent.entity_id != entity.entity_id && cand.get_living_entity().is_some()
-                    {
+                    if cand_ent.entity_id != entity.entity_id {
                         let damage_type = if owner.is_some() {
                             DamageType::INDIRECT_MAGIC
                         } else {

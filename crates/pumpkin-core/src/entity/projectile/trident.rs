@@ -261,9 +261,11 @@ impl EntityBase for TridentEntity {
         }
 
         // Entity collisions
-        let candidates = world.get_entities_at_box(&search_box);
-        for cand in candidates {
-            if self.should_skip_collision(entity, &cand) {
+        let candidates = world.get_all_at_box(&search_box);
+        for cand in candidates.into_iter().filter(super::can_hit_entity) {
+            if self.should_skip_collision(entity, &cand)
+                || !super::arrow::can_hit_player(entity, self.owner_id, &cand)
+            {
                 continue;
             }
 

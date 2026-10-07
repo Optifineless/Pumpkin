@@ -222,15 +222,12 @@ impl EntityBase for SplashPotionEntity {
         let max = Vector3::new(hit_pos.x + radius, hit_pos.y + radius, hit_pos.z + radius);
         let aabb = BoundingBox::new(min, max);
 
-        // Gather entity and player candidates
-        let mut candidates = world.get_entities_at_box(&aabb);
-        let players = world.get_players_at_box(&aabb);
-        for p in players {
-            candidates.push(p.clone() as Arc<dyn EntityBase>);
-        }
+        // ThrownSplashPotion.onHitAsPotion uses living entities and NO_SPECTATORS.
+        // The splash can affect its thrower, independently of projectile owner grace.
+        let candidates = world.get_all_at_box(&aabb);
 
         let mut affected: Vec<(Arc<dyn EntityBase>, f32)> = Vec::new();
-        for cand in candidates {
+        for cand in candidates.into_iter().filter(|cand| !cand.is_spectator()) {
             if cand.get_living_entity().is_some() {
                 let pos = cand.get_entity().pos.load();
                 let dx = pos.x - hit_pos.x;

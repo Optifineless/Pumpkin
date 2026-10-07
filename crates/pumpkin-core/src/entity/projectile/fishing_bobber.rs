@@ -187,8 +187,13 @@ impl FishingBobberEntity {
 
         entity.set_pos(new_pos);
 
-        let candidates = world.get_entities_at_box(&search_box);
-        for cand in candidates {
+        let candidates = world.get_all_at_box(&search_box);
+        // FishingHook.canHitEntity also permits live item entities.
+        for cand in candidates.into_iter().filter(|other| {
+            super::can_hit_entity(other)
+                || (other.get_entity().entity_type == &pumpkin_data::entity::EntityType::ITEM
+                    && other.get_entity().is_alive())
+        }) {
             if cand.get_entity().entity_id == self.owner_id
                 || cand.get_entity().entity_id == entity.entity_id
             {
