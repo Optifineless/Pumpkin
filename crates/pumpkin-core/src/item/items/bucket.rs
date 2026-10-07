@@ -99,6 +99,37 @@ const fn get_empty_sound(item: &Item) -> Sound {
     }
 }
 
+pub(crate) fn play_empty_sound(world: &Arc<World>, item: &Item, pos: BlockPos) {
+    let category = if get_mob_for_bucket(item).is_some() {
+        SoundCategory::Neutral
+    } else {
+        SoundCategory::Blocks
+    };
+    world.play_sound(get_empty_sound(item), category, &pos.to_f64());
+}
+
+pub(crate) fn check_extra_content(world: &Arc<World>, item: &Item, pos: BlockPos) {
+    if let Some((entity_type, _)) = get_mob_for_bucket(item) {
+        let spawn_coord = Vector3::new(
+            f64::from(pos.0.x) + 0.5,
+            f64::from(pos.0.y),
+            f64::from(pos.0.z) + 0.5,
+        );
+        let mob = from_type(entity_type, spawn_coord, world, Uuid::new_v4());
+        // MobBucketItem.spawn finalizes before marking a mob as bucket-persistent.
+        crate::entity::mob::spawn::finalize_spawn_with_reason(
+            &mob,
+            world,
+            crate::entity::mob::spawn::SpawnReason::SpawnBucket,
+            None,
+        );
+        if let Some(mob) = mob.get_mob() {
+            mob.set_spawned_from_bucket(true);
+        }
+        world.spawn_entity(mob);
+    }
+}
+
 const fn get_fill_sound(item: &Item) -> Sound {
     if item.id == Item::LAVA_BUCKET.id {
         Sound::ItemBucketFillLava
@@ -429,25 +460,7 @@ impl ItemBehaviour for FilledBucketItem {
             &place_pos.to_f64(),
         );
 
-        if let Some((entity_type, _)) = get_mob_for_bucket(item) {
-            let spawn_coord = Vector3::new(
-                f64::from(place_pos.0.x) + 0.5,
-                f64::from(place_pos.0.y),
-                f64::from(place_pos.0.z) + 0.5,
-            );
-            let mob = from_type(entity_type, spawn_coord, &world, Uuid::new_v4());
-            // MobBucketItem.spawn uses EntityType.spawn, then setFromBucket(true).
-            crate::entity::mob::spawn::finalize_spawn_with_reason(
-                &mob,
-                &world,
-                crate::entity::mob::spawn::SpawnReason::SpawnBucket,
-                None,
-            );
-            if let Some(mob) = mob.get_mob() {
-                mob.set_spawned_from_bucket(true);
-            }
-            world.spawn_entity(mob);
-        }
+        check_extra_content(&world, item, place_pos);
 
         if player.gamemode.load() != GameMode::Creative {
             let item_stack = ItemStack::new(1, &Item::BUCKET);
