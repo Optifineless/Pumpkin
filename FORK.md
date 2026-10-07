@@ -49,6 +49,10 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 |:--|:--|
 | Hoppers keep their facing after a restart | Yes, 2026-10-07 |
 | Redstone torches burn out when toggled too fast | Yes, 2026-10-07 |
-| Sticky pistons pull back in every direction | Works, but the moving block renders wrong (under investigation) |
+| Sticky pistons pull back in every direction | Yes, 2026-10-07 |
+| Pistons tell the client which block is moving, so the animation shows it | Not yet |
+| Arrows, tridents, splash potions, evoker fangs and shulker bullets can hit players | Partly: skeleton arrows confirmed 2026-10-07 |
+| Land mobs bob at the surface instead of being pushed up out of the water | Not yet |
+| Zombies sink in water like vanilla instead of floating | Not yet |
 | Scheduled ticks run on time and survive a restart | Not yet |
 | Dust removed by water or explosions updates neighbours | Not yet |
