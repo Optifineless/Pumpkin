@@ -14,9 +14,8 @@ use pumpkin_world::world::{BlockAccessor, BlockFlags};
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{
-    BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetRedstonePowerArgs,
-    GetStateForNeighborUpdateArgs, NormalUseArgs, OnNeighborUpdateArgs, OnPlaceArgs, PlacedArgs,
-    PrepareArgs,
+    BlockBehaviour, CanPlaceAtArgs, GetRedstonePowerArgs, GetStateForNeighborUpdateArgs,
+    NormalUseArgs, OnNeighborUpdateArgs, OnPlaceArgs, OnStateReplacedArgs, PlacedArgs, PrepareArgs,
 };
 use crate::world::World;
 
@@ -39,7 +38,7 @@ impl BlockBehaviour for RedstoneWireBlock {
     }
 
     fn placed(&self, args: PlacedArgs<'_>) {
-        update_power_strength(args.world, args.position);
+        update_power_strength(args.world, args.position, args.state_id);
 
         for direction in [BlockDirection::Up, BlockDirection::Down] {
             let neighbor_pos = args.position.offset(direction.to_offset());
@@ -49,12 +48,18 @@ impl BlockBehaviour for RedstoneWireBlock {
         update_neighbors_of_neighboring_wires(args.world, args.position);
     }
 
-    fn broken(&self, args: BrokenArgs<'_>) {
+    /// Vanilla's `affectNeighborsAfterRemoval`. This runs however the wire is removed (water,
+    /// explosions, losing its support), not only when a player breaks it.
+    fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
+        if args.moved {
+            return;
+        }
         for direction in BlockDirection::all() {
             let neighbor_pos = args.position.offset(direction.to_offset());
             update_neighbors_at(args.world, &neighbor_pos, &Block::REDSTONE_WIRE);
         }
 
+        update_power_strength(args.world, args.position, args.old_state_id);
         update_neighbors_of_neighboring_wires(args.world, args.position);
     }
 
@@ -176,7 +181,8 @@ impl BlockBehaviour for RedstoneWireBlock {
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         if can_survive(args.world.as_ref(), args.position) {
-            update_power_strength(args.world, args.position);
+            let state_id = args.world.get_block_state_id(args.position);
+            update_power_strength(args.world, args.position, state_id);
         } else {
             args.world
                 .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
@@ -276,20 +282,18 @@ impl BlockBehaviour for RedstoneWireBlock {
 // Evaluator Logic (matching DefaultRedstoneWireEvaluator)
 // ---------------------------------------------------------------------------
 
-pub fn update_power_strength(world: &Arc<World>, pos: &BlockPos) {
-    let (block, state) = world.get_block_and_state(pos);
-    if block != &Block::REDSTONE_WIRE {
-        return;
-    }
-
-    let mut wire = RedstoneWireProperties::from_state_id(state.id);
+/// `state_id` is the wire the power is compared against. After the wire is removed it is the
+/// old wire, so the blocks it was powering still get updated when its power goes away.
+pub fn update_power_strength(world: &Arc<World>, pos: &BlockPos, state_id: BlockStateId) {
+    let mut wire = RedstoneWireProperties::from_state_id(state_id);
     let target_strength = calculate_target_strength(world, pos);
 
     if wire.power != target_strength {
-        wire.power = target_strength;
-        let new_state_id = wire.to_state_id(&Block::REDSTONE_WIRE);
-
-        world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_LISTENERS);
+        if world.get_block_state_id(pos) == state_id {
+            wire.power = target_strength;
+            let new_state_id = wire.to_state_id(&Block::REDSTONE_WIRE);
+            world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_LISTENERS);
+        }
 
         let mut to_update = Vec::with_capacity(7);
         to_update.push(*pos);
