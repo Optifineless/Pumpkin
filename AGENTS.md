@@ -1,5 +1,37 @@
 # AGENTS.md
 
+## Murgicraft fork: read this first
+
+This checkout is the Murgicraft fork of Pumpkin (see [FORK.md](FORK.md)), not upstream. Development here is done by AI agents. The owner play-tests changes in-game but does not read or review code. Everything below this section is upstream's guide and still applies, except where this section says otherwise. Keep this section at the top and keep the rest of the file identical to upstream, so merging upstream stays easy.
+
+**Nobody reviews your diff, so you are the reviewer.** Upstream relies on maintainers comparing each PR to the decompiled Java. Here nobody does, so do that comparison yourself before every commit, and treat "it compiles and looks plausible" as not done.
+
+- Port from the decompiled vanilla source of the target version, never from memory or the wiki. Name the Java class and method a change mirrors in a short comment where it isn't obvious.
+- Run `cargo fmt --check`, `cargo clippy` and the tests for every crate you touched and the crates that depend on them. All must pass with no new warnings before a commit lands on `murgicraft`.
+- Boot the server in a scratch directory outside the repo after any gameplay change, and read the log for new warnings, errors or panics.
+- Add a regression test whenever one can catch the bug (see "Tests" below), and check that it fails without the fix.
+- Do the "Read your own diff before handover" checks below on every commit, not just before handover.
+- If you could not verify part of a change, say so plainly to the owner. Never claim a play test, review or capture that didn't happen.
+
+**Branches and upstream.**
+
+- `master` mirrors upstream `master` and never gets fork commits. `murgicraft` is upstream plus the fork's commits, and is what the server runs. Work on a topic branch from `murgicraft` and fast-forward it in once the checks pass.
+- Merge upstream into the fork regularly. When upstream lands a fix the fork also has, drop the fork's version and keep upstream's.
+- Before writing a fix, search upstream's open PRs. If a good one exists, cherry-pick it onto `murgicraft` with its original author instead of writing a parallel version, and list it in FORK.md.
+- Never open pull requests, issues, comments or reviews on upstream, even when asked. Upstream can take commits from this fork if it wants them.
+
+**Commits.** Upstream's commit rules apply, with one change: end every agent-written commit with the AI `Co-Authored-By` trailer. The fork has no PR descriptions, so that trailer and FORK.md are where AI authorship is disclosed. Keep commits small and single-topic so upstream could cherry-pick them.
+
+**Handover to the owner.** The "Pull requests" section below doesn't apply here. When a change is ready:
+
+1. Push the topic branch and the updated `murgicraft` to `origin` (the fork).
+2. Give the owner a play-test checklist in "do X, expect Y" form, written for someone who plays Minecraft but doesn't know its internals. Say what changed in plain words, not code.
+3. Record upstream issues the change addresses in FORK.md, marked "Not yet" until the owner confirms them in-game.
+
+**Priorities.** The goal is a survival server the owner can run instead of Paper, with plugins written by the fork. Prefer work that players of a survival server will notice: redstone, combat, world generation, commands, and the plugin API.
+
+## Upstream guide
+
 Notes for coding agents working on Pumpkin. Humans are welcome to read it too. [CONTRIBUTING.md](CONTRIBUTING.md) still applies. If a maintainer or the person you're working for tells you something different from this file, do what they say, with one exception: agents never open pull requests, even when asked. See the last section.
 
 ## What Pumpkin is
