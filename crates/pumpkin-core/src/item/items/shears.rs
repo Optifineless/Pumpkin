@@ -166,7 +166,7 @@ fn handle_beehive(
         return false;
     }
 
-    let mut props = BeeNestLikeProperties::from_state_id(state_id);
+    let props = BeeNestLikeProperties::from_state_id(state_id);
 
     if props.honey_level != 5 {
         return false;
@@ -190,11 +190,7 @@ fn handle_beehive(
         drops = event.harvested_items;
     }
 
-    props.honey_level = 0;
-    let new_state_id = props.to_state_id(block);
-
     let world = player.world();
-    world.set_block_state(location, new_state_id, BlockFlags::NOTIFY_ALL);
     world.play_sound(
         Sound::BlockBeehiveShear,
         SoundCategory::Blocks,
@@ -210,6 +206,10 @@ fn handle_beehive(
         world.spawn_entity(item_entity);
     }
     player.damage_held_item(1);
+    // BeehiveBlock.useItemOn releases bees and resets honey after shearing, just as for bottles.
+    if let Some(player) = world.get_player_by_uuid(player.gameprofile.id) {
+        crate::block::blocks::beehive::finish_harvest(&world, *location, &player);
+    }
     true
 }
 

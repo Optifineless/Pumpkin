@@ -50,7 +50,20 @@ impl ItemBehaviour for FireworkRocketItem {
         BlockActionResult::Success
     }
 
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, item: &Item, player: &Player) {
+        let (yaw, pitch) = player.rotation();
+        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+    }
+
+    // FireworkRocketItem.use reads and consumes player.getItemInHand(hand).
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
         if player.get_entity().is_fall_flying() {
             let world = player.world();
             let entity = Entity::new(
@@ -58,30 +71,20 @@ impl ItemBehaviour for FireworkRocketItem {
                 player.get_entity().pos.load(),
                 &EntityType::FIREWORK_ROCKET,
             );
-            let mut held = player.inventory().held_item();
-            let mut is_main = true;
-            if held.is_empty() || held.item.id != Item::FIREWORK_ROCKET.id {
-                held = player.inventory().off_hand_item();
-                is_main = false;
-                if held.is_empty() || held.item.id != Item::FIREWORK_ROCKET.id {
-                    return;
-                }
+            let mut stack = player.inventory().get_stack_in_hand(hand);
+            if stack.is_empty() || stack.item.id != Item::FIREWORK_ROCKET.id {
+                return;
             }
+            // FireworkRocketItem.use builds the rocket from the hand's stack, attached to the player.
             let rocket = FireworkRocketEntity::with_item(
                 entity,
-                held.clone(),
+                stack.clone(),
                 Some(player.get_entity()),
                 true,
             );
             world.spawn_entity(Arc::new(rocket));
-            held.decrement_unless_creative(player.gamemode.load(), 1);
-            if is_main {
-                player.inventory().set_held_item(held);
-            } else {
-                player
-                    .inventory()
-                    .set_stack_in_hand(pumpkin_util::Hand::Left, held);
-            }
+            stack.decrement_unless_creative(player.gamemode.load(), 1);
+            player.inventory().set_stack_in_hand(hand, stack);
         }
     }
 

@@ -95,7 +95,12 @@ impl JavaClient {
                                     return;
                                 }
                             }
-                            let mut stack = player.inventory().held_item();
+                            let Ok(hand) = Hand::from_packet_id(interact.hand.map_or(0, |hand| hand.0)) else {
+                                self.try_kick(&TextComponent::text("InvalidHand"));
+                                return;
+                            };
+                            let source_slot = super::hand_use_result::hand_slot(player, hand);
+                            let mut stack = player.inventory().get_stack_in_hand(hand);
 
                             let item_id = stack.item.id;
                             let before = stack.clone();
@@ -105,22 +110,10 @@ impl JavaClient {
                                     .item_registry
                                     .use_on_entity(&mut stack, player, event.target);
                             }
+                            super::hand_use_result::write_back_used_item(player, hand, source_slot, &before, &stack);
                             if !stack.are_equal(&before) {
                                 player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-                                if before.is_damageable() && stack.is_empty() {
-                                    player.increment_stat(
-                                        StatisticCategory::Broken,
-                                        item_id as i32,
-                                        1,
-                                    );
-                                    player.world().send_entity_status(
-                                        player.get_entity(),
-                                        equipment_break_status(&EquipmentSlot::MAIN_HAND),
-                                        None,
-                                    );
-                                }
                             }
-                            player.inventory().set_held_item(stack);
                         }
                     }
                 }

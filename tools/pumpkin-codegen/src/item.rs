@@ -1142,6 +1142,7 @@ impl ToTokens for ItemComponents {
             tokens.extend(quote! {
                 (UseRemainder, &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed(#id)),
+                    template: None,
                 }),
             });
         }

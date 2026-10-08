@@ -15,7 +15,7 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
 };
 use pumpkin_util::{
-    GameMode,
+    GameMode, Hand,
     math::{position::BlockPos, vector3::Vector3},
 };
 use pumpkin_world::{tick::TickPriority, world::BlockFlags};
@@ -25,7 +25,6 @@ use crate::world::World;
 
 pub struct EmptyBucketItem;
 pub struct FilledBucketItem;
-pub struct MilkBucketItem;
 
 impl ItemMetadata for EmptyBucketItem {
     fn ids() -> Box<[u16]> {
@@ -47,12 +46,6 @@ impl ItemMetadata for FilledBucketItem {
             Item::TADPOLE_BUCKET.id,
         ]
         .into()
-    }
-}
-
-impl ItemMetadata for MilkBucketItem {
-    fn ids() -> Box<[u16]> {
-        [Item::MILK_BUCKET.id].into()
     }
 }
 
@@ -184,41 +177,6 @@ const fn get_fill_sound(item: &Item) -> Sound {
     }
 }
 
-fn give_player_bucket_item(player: &Player, item: &'static Item) {
-    if player.gamemode.load() == GameMode::Creative {
-        let has_item = {
-            let inv = player
-                .inventory
-                .main_inventory
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            inv.iter().any(|stack| stack.item.id == item.id)
-        };
-        if has_item {
-            return;
-        }
-        let mut item_stack = ItemStack::new(1, item);
-        player.inventory.insert_stack_anywhere(&mut item_stack);
-    } else {
-        let item_stack = ItemStack::new(1, item);
-        let mut held_stack = player.inventory.held_item();
-
-        if held_stack.item_count == 1 {
-            player.inventory.set_held_item(item_stack);
-        } else {
-            held_stack.decrement(1);
-            player.inventory.set_held_item(held_stack);
-            let mut stack_to_give = item_stack;
-            let was_added = player.inventory.insert_stack_anywhere(&mut stack_to_give);
-            if !was_added && !stack_to_give.is_empty() {
-                player
-                    .world()
-                    .drop_stack(&player.position().to_block_pos(), stack_to_give);
-            }
-        }
-    }
-}
-
 pub(crate) fn try_pickup_fluid_at(
     world: &Arc<World>,
     block_pos: BlockPos,
@@ -258,23 +216,27 @@ pub(crate) fn try_pickup_fluid_at(
     None
 }
 
-fn try_pickup_bucket_item(
-    world: &Arc<World>,
-    block_pos: BlockPos,
+fn bucket_pickup_target(
+    world: &World,
+    position: BlockPos,
     direction: BlockDirection,
-) -> Option<&'static Item> {
-    if let Some(item) = try_pickup_fluid_at(world, block_pos) {
-        return Some(item);
+) -> Option<(BlockPos, &'static Item)> {
+    for pos in [position, position.offset(direction.to_offset())] {
+        let (block, state) = world.get_block_and_state_id(&pos);
+        let output = if block == &Block::POWDER_SNOW {
+            Some(&Item::POWDER_SNOW_BUCKET)
+        } else if block.is_waterlogged(state) || state == Block::WATER.default_state.id {
+            Some(&Item::WATER_BUCKET)
+        } else if state == Block::LAVA.default_state.id {
+            Some(&Item::LAVA_BUCKET)
+        } else {
+            None
+        };
+        if let Some(output) = output {
+            return Some((pos, output));
+        }
     }
-
-    let target_pos = block_pos.offset(direction.to_offset());
-    let (block, state) = world.get_block_and_state_id(&target_pos);
-
-    let unwaterlogged = block.set_waterlogged(state, false)?;
-
-    world.set_block_state(&target_pos, unwaterlogged, BlockFlags::NOTIFY_ALL);
-    world.schedule_fluid_tick(&Fluid::WATER, target_pos, 5, TickPriority::Normal);
-    Some(&Item::WATER_BUCKET)
+    None
 }
 
 pub(crate) const fn should_evaporate_in_nether(item: &Item, world: &World) -> bool {
@@ -399,7 +361,19 @@ impl ItemBehaviour for EmptyBucketItem {
         self.normal_use_with_rotation(item, player, yaw, pitch);
     }
 
-    fn normal_use_with_rotation(&self, _block: &Item, player: &Player, yaw: f32, pitch: f32) {
+    fn normal_use_with_rotation(&self, item: &Item, player: &Player, yaw: f32, pitch: f32) {
+        self.normal_use_with_hand(item, player, yaw, pitch, Hand::Right);
+    }
+
+    // BucketItem.use reads and replaces the originating hand.
+    fn normal_use_with_hand(
+        &self,
+        _block: &Item,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) {
         let world = player.world();
         let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
 
@@ -421,7 +395,7 @@ impl ItemBehaviour for EmptyBucketItem {
             return;
         };
 
-        let Some(item) = try_pickup_bucket_item(&world, block_pos, direction) else {
+        let Some((pickup_pos, item)) = bucket_pickup_target(&world, block_pos, direction) else {
             return;
         };
 
@@ -440,21 +414,40 @@ impl ItemBehaviour for EmptyBucketItem {
             }
         }
 
+        let mut stack = player.inventory().get_stack_in_hand(hand);
+        if stack.is_empty()
+            || stack.item != &Item::BUCKET
+            || try_pickup_fluid_at(&world, pickup_pos).is_none()
+        {
+            return;
+        }
         world.play_sound(
             get_fill_sound(item),
             SoundCategory::Blocks,
             &block_pos.to_f64(),
         );
 
-        give_player_bucket_item(player, item);
+        crate::item::item_utils::create_filled_result(
+            &mut stack,
+            player,
+            ItemStack::new(1, item),
+            true,
+        );
+        player.inventory().set_stack_in_hand(hand, stack);
+        player.increment_stat(
+            pumpkin_data::statistic::StatisticCategory::Used,
+            i32::from(Item::BUCKET.id),
+            1,
+        );
     }
 
-    fn use_on_entity(&self, _item: &mut ItemStack, player: &Player, entity: Arc<dyn EntityBase>) {
+    fn use_on_entity(&self, item: &mut ItemStack, player: &Player, entity: Arc<dyn EntityBase>) {
         let ent = entity.get_entity();
         let entity_type = ent.entity_type;
-        if (entity_type == &EntityType::COW
-            || entity_type == &EntityType::MOOSHROOM
-            || entity_type == &EntityType::GOAT)
+        if !item.is_empty()
+            && (entity_type == &EntityType::COW
+                || entity_type == &EntityType::MOOSHROOM
+                || entity_type == &EntityType::GOAT)
             && ent.age.load(Ordering::Relaxed) >= 0
         {
             let world = ent.world.load();
@@ -472,13 +465,40 @@ impl ItemBehaviour for EmptyBucketItem {
                 Sound::EntityCowMilk
             };
             world.play_sound(sound, SoundCategory::Neutral, &ent.pos.load());
-            give_player_bucket_item(player, &Item::MILK_BUCKET);
+            crate::item::item_utils::create_filled_result(
+                item,
+                player,
+                ItemStack::new(1, &Item::MILK_BUCKET),
+                true,
+            );
         }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+}
+
+// BucketItem.getEmptySuccessItem leaves creative stacks intact and replaces the requested hand.
+fn finish_empty_bucket(player: &Player, hand: Hand, item: &Item) {
+    if player.gamemode.load() != GameMode::Creative {
+        let mut stack = player.inventory().get_stack_in_hand(hand);
+        if stack.item != item {
+            return;
+        }
+        crate::item::item_utils::create_filled_result(
+            &mut stack,
+            player,
+            ItemStack::new(1, &Item::BUCKET),
+            true,
+        );
+        player.inventory().set_stack_in_hand(hand, stack);
+    }
+    player.increment_stat(
+        pumpkin_data::statistic::StatisticCategory::Used,
+        i32::from(item.id),
+        1,
+    );
 }
 
 impl ItemBehaviour for FilledBucketItem {
@@ -488,6 +508,11 @@ impl ItemBehaviour for FilledBucketItem {
     }
 
     fn normal_use_with_rotation(&self, item: &Item, player: &Player, yaw: f32, pitch: f32) {
+        self.normal_use_with_hand(item, player, yaw, pitch, Hand::Right);
+    }
+
+    // BucketItem.use reads and replaces the originating hand.
+    fn normal_use_with_hand(&self, item: &Item, player: &Player, yaw: f32, pitch: f32, hand: Hand) {
         let world = player.world();
         let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
         let checker = |pos: &BlockPos, world_inner: &Arc<World>| {
@@ -502,7 +527,7 @@ impl ItemBehaviour for FilledBucketItem {
             return;
         };
 
-        // resolve eligibility, then cancellation, before any placement.
+        // BucketItem.use resolves eligibility, then plugin cancellation, before placement.
         let Some(destination) = bucket_destination(
             &world,
             item,
@@ -526,7 +551,11 @@ impl ItemBehaviour for FilledBucketItem {
                 return;
             }
         }
-        let stack = player.inventory.held_item();
+
+        let stack = player.inventory().get_stack_in_hand(hand);
+        if stack.is_empty() || stack.item != item {
+            return;
+        }
         let place_pos = if item == &Item::POWDER_SNOW_BUCKET {
             world.set_block_state(
                 &destination,
@@ -542,16 +571,14 @@ impl ItemBehaviour for FilledBucketItem {
         };
         check_extra_content(&world, &stack, place_pos);
 
-        if player.gamemode.load() != GameMode::Creative {
-            let item_stack = ItemStack::new(1, &Item::BUCKET);
-            player
-                .inventory
-                .set_slot(player.inventory.get_selected_slot() as usize, item_stack);
-        }
+        finish_empty_bucket(player, hand, item);
     }
 
     fn use_on_entity(&self, item: &mut ItemStack, player: &Player, entity: Arc<dyn EntityBase>) {
-        if item.item.id == Item::WATER_BUCKET.id {
+        if !item.is_empty()
+            && item.item.id == Item::WATER_BUCKET.id
+            && entity.get_entity().is_alive()
+        {
             let entity_type = entity.get_entity().entity_type;
             let result_item = if entity_type == &EntityType::AXOLOTL {
                 Some((&Item::AXOLOTL_BUCKET, Sound::ItemBucketFillAxolotl))
@@ -573,7 +600,13 @@ impl ItemBehaviour for FilledBucketItem {
                 let ent = entity.get_entity();
                 let world = ent.world.load();
                 world.play_sound(sound, SoundCategory::Neutral, &ent.pos.load());
-                give_player_bucket_item(player, mob_bucket);
+                // Bucketable.bucketMobPickup has one owner of the transformed hand stack.
+                crate::item::item_utils::create_filled_result(
+                    item,
+                    player,
+                    ItemStack::new(1, mob_bucket),
+                    false,
+                );
                 ent.remove();
             }
         }
@@ -584,24 +617,80 @@ impl ItemBehaviour for FilledBucketItem {
     }
 }
 
-impl ItemBehaviour for MilkBucketItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
-        let stack = player.inventory().held_item();
-        player
-            .living_entity
-            .set_active_hand(pumpkin_util::Hand::Right, stack, 32);
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        net::java::combat_test_support::TestPlayer, server::combat_test_support,
+        world::spawn_test_support,
+    };
+    use pumpkin_data::{
+        biome::Biome,
+        data_component_impl::{BucketEntityDataImpl, CustomNameImpl},
+    };
+    use pumpkin_inventory::Inventory;
+    use pumpkin_nbt::compound::NbtCompound;
+    use pumpkin_protocol::{codec::var_int::VarInt, java::server::play::SUseItem};
+    use pumpkin_util::text::TextComponent;
 
-    fn on_stopped_using(&self, _stack: &ItemStack, player: &Player) {
-        player.living_entity.reset_effects_and_attributes();
-        give_player_bucket_item(player, &Item::BUCKET);
-    }
-
-    fn get_use_duration(&self) -> i32 {
-        32
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[expect(
+        clippy::unwrap_used,
+        reason = "Regression fixture requires a released mob"
+    )]
+    async fn offhand_mob_bucket_use_restores_saved_data_and_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = combat_test_support::server(dir.path());
+        let world = combat_test_support::world(&server, dir.path());
+        let mut chunk = spawn_test_support::proto(&Biome::PLAINS, &Block::STONE);
+        chunk.set_block_state(8, 65, 11, Block::STONE.default_state);
+        spawn_test_support::publish(&world, chunk);
+        let fixture = TestPlayer::new(&world);
+        let player = &fixture.player;
+        player.get_entity().set_pos(Vector3::new(8.5, 64.0, 8.5));
+        let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+        player.inventory().set_stack(0, sword.clone());
+        let mut tag = NbtCompound::new();
+        tag.put_float("Health", 2.0);
+        tag.put_bool("Silent", true);
+        let mut bucket = ItemStack::new(1, &Item::COD_BUCKET);
+        bucket.set_data_component(BucketEntityDataImpl { nbt: Some(tag) });
+        bucket.set_data_component(CustomNameImpl {
+            name: TextComponent::text("London"),
+        });
+        player.inventory().set_stack(40, bucket);
+        fixture.client().handle_use_item(
+            player,
+            &SUseItem {
+                hand: VarInt(1),
+                sequence: VarInt(1),
+                yaw: 0.0,
+                pitch: 0.0,
+            },
+            &server,
+        );
+        assert_eq!(world.get_block(&BlockPos::new(8, 65, 10)), &Block::WATER);
+        assert!(player.inventory().held_item().are_equal(&sword));
+        assert_eq!(player.inventory().off_hand_item().item, &Item::BUCKET);
+        let fish = world
+            .entities
+            .load()
+            .iter()
+            .find(|entity| entity.get_entity().entity_type == &EntityType::COD)
+            .cloned()
+            .unwrap();
+        assert_eq!(fish.get_living_entity().unwrap().health.load(), 2.0);
+        assert!(fish.get_entity().is_silent());
+        assert_eq!(
+            fish.get_entity()
+                .custom_name
+                .load()
+                .as_ref()
+                .as_ref()
+                .map(|name| name.clone().get_text()),
+            Some("London".to_owned())
+        );
+        assert!(fish.get_mob().unwrap().spawned_from_bucket());
+        assert!(world.level.shutdown().await.is_ok());
     }
 }

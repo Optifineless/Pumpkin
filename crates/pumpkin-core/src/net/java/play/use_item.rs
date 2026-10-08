@@ -42,17 +42,6 @@ impl JavaClient {
             return;
         }
 
-        // BowItem.releaseUsing, FishingRodItem.use and BlocksAttacks.hurtBlockingItem
-        // award successful use.
-        if item_in_hand.item.id != Item::BOW.id
-            && item_in_hand.item.id != Item::FISHING_ROD.id
-            && item_in_hand
-                .get_data_component::<BlocksAttacksImpl>()
-                .is_none()
-        {
-            player.increment_stat(StatisticCategory::Used, i32::from(item_in_hand.item.id), 1);
-        }
-
         let hit_result = player.world().raycast(
             player.eye_position(),
             player.eye_position().add(
@@ -75,18 +64,24 @@ impl JavaClient {
         } else {
             PlayerInteractEvent::new(player, InteractAction::RightClickAir, &Block::AIR, None)
         };
-        let stack_for_use = item_in_hand.clone();
         let (use_yaw, use_pitch) = if self.version.load() >= JavaMinecraftVersion::V_1_21 {
             (use_item.yaw, use_item.pitch)
         } else {
             player.rotation()
         };
-        Self::prepare_hand_item_for_use(player, hand, &mut item_in_hand);
 
         send_cancellable_blocking! {{
             server;
             event;
             'after: {
+                item_in_hand = inventory.get_stack_in_hand(hand);
+                let stack_for_use = item_in_hand.clone();
+                if stack_for_use.is_empty() || !crate::entity::item_use::item_use_allowed(
+                    &stack_for_use, |group| player.is_on_cooldown(group),
+                ) {
+                    return;
+                }
+                Self::prepare_hand_item_for_use(player, hand, &mut item_in_hand);
                 server
                     .item_registry
                     .on_use_with_rotation(&stack_for_use, player, use_yaw, use_pitch, hand);
@@ -97,18 +92,16 @@ impl JavaClient {
     fn prepare_hand_item_for_use(player: &Arc<Player>, hand: Hand, held: &mut ItemStack) {
         let inventory = player.inventory();
 
-        if held.get_data_component::<ConsumableImpl>().is_some()
-            || held.get_data_component::<BlocksAttacksImpl>().is_some()
+        let consumable = held.get_data_component::<ConsumableImpl>().is_some();
+        if (consumable || held.get_data_component::<BlocksAttacksImpl>().is_some())
+            && held
+                .get_data_component::<FoodImpl>()
+                .is_none_or(|food| player.can_eat(food.can_always_eat))
         {
-            // If its food we want to make sure we can actually consume it
-            if let Some(food) = held.get_data_component::<FoodImpl>() {
-                if player.can_eat(food.can_always_eat) {
-                    player.living_entity.set_active_hand(
-                        hand,
-                        held.clone(),
-                        held.get_max_use_time(),
-                    );
-                }
+            if consumable && held.get_max_use_time() == 0 {
+                player
+                    .living_entity
+                    .consume_instantly(player.as_ref(), hand, held);
             } else {
                 player
                     .living_entity
@@ -132,6 +125,8 @@ impl JavaClient {
             }
 
             player.enqueue_equipment_change(&slot, held);
+            // Equippable.swapWithEquipmentSlot awards the original item's successful use.
+            player.increment_stat(StatisticCategory::Used, i32::from(held.item.id), 1);
 
             let equipped = if current_equipped.is_empty() {
                 let equipped = held.clone();
@@ -147,5 +142,43 @@ impl JavaClient {
                 .put(&slot, equipped);
             inventory.set_stack_in_hand(hand, held.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{net::java::combat_test_support::TestPlayer, server::combat_test_support};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn hand_use_instant_consumable_keeps_another_hands_use_active() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = combat_test_support::server(dir.path());
+        let world = combat_test_support::world(&server, dir.path());
+        let fixture = TestPlayer::new(&world);
+        let player = &fixture.player;
+        let bow = ItemStack::new(1, &Item::BOW);
+        player
+            .inventory()
+            .set_stack_in_hand(Hand::Right, bow.clone());
+        player.living_entity.set_active_hand(Hand::Right, bow, 10);
+        let mut milk = ItemStack::new(1, &Item::MILK_BUCKET);
+        milk.get_data_component_mut::<ConsumableImpl>()
+            .unwrap()
+            .consume_seconds = 0.0;
+        player
+            .inventory()
+            .set_stack_in_hand(Hand::Left, milk.clone());
+        JavaClient::prepare_hand_item_for_use(player, Hand::Left, &mut milk);
+        assert_eq!(player.inventory().off_hand_item().item, &Item::BUCKET);
+        assert_eq!(
+            *player.living_entity.active_hand.lock().unwrap(),
+            Some(Hand::Right)
+        );
+        assert_eq!(
+            player.living_entity.item_use_time.load(Ordering::Relaxed),
+            10
+        );
+        assert!(world.level.shutdown().await.is_ok());
     }
 }

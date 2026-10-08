@@ -69,7 +69,20 @@ impl ItemBehaviour for EnderEyeItem {
         BlockActionResult::Success
     }
 
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, item: &Item, player: &Player) {
+        let (yaw, pitch) = player.rotation();
+        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+    }
+
+    // EnderEyeItem.use reads and consumes player.getItemInHand(hand).
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
         let world = player.world();
 
         let (start_pos, end_pos) = self.get_start_and_end_pos(player);
@@ -120,9 +133,9 @@ impl ItemBehaviour for EnderEyeItem {
         player.trigger_advancement(
             crate::entity::player::advancement::trigger::AdvancementTrigger::LaunchedEyeOfEnder,
         );
-        let mut stack = player.inventory.held_item();
+        let mut stack = player.inventory.get_stack_in_hand(hand);
         stack.decrement_unless_creative(player.gamemode.load(), 1);
-        player.inventory.set_held_item(stack);
+        player.inventory.set_stack_in_hand(hand, stack);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

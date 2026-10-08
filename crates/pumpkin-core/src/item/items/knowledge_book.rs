@@ -15,27 +15,24 @@ impl ItemMetadata for KnowledgeBookItem {
 }
 
 impl ItemBehaviour for KnowledgeBookItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
-        let mut held = player.inventory().held_item();
-        let mut matched_main = true;
-        if held.is_empty() || held.item.id != Item::KNOWLEDGE_BOOK.id {
-            held = player.inventory().off_hand_item();
-            matched_main = false;
-            if held.is_empty() || held.item.id != Item::KNOWLEDGE_BOOK.id {
-                return;
-            }
-        }
+    fn normal_use(&self, item: &Item, player: &Player) {
+        let (yaw, pitch) = player.rotation();
+        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+    }
 
-        let _recipes = held.get_data_component::<RecipesImpl>();
-
-        held.decrement_unless_creative(player.gamemode.load(), 1);
-        if matched_main {
-            player.inventory().set_held_item(held);
-        } else {
-            player
-                .inventory()
-                .set_stack_in_hand(pumpkin_util::Hand::Left, held);
-        }
+    // KnowledgeBookItem.use reads and consumes player.getItemInHand(hand).
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
+        let mut stack = player.inventory().get_stack_in_hand(hand);
+        let _recipes = stack.get_data_component::<RecipesImpl>();
+        stack.decrement_unless_creative(player.gamemode.load(), 1);
+        player.inventory().set_stack_in_hand(hand, stack);
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -15,7 +15,20 @@ impl ItemMetadata for ExperienceBottleItem {
 }
 
 impl ItemBehaviour for ExperienceBottleItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, item: &Item, player: &Player) {
+        let (yaw, pitch) = player.rotation();
+        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+    }
+
+    // ExperienceBottleItem.use reads and consumes player.getItemInHand(hand).
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
         let world = player.world();
         let pos = player.eye_position();
         world.play_sound(
@@ -27,9 +40,9 @@ impl ItemBehaviour for ExperienceBottleItem {
         let amount = (rand::random::<u32>() % 9 + 3) as u32; // 3..=11 exp
         ExperienceOrbEntity::spawn(&world, pos, amount);
 
-        let mut held = player.inventory().held_item();
+        let mut held = player.inventory().get_stack_in_hand(hand);
         held.decrement_unless_creative(player.gamemode.load(), 1);
-        player.inventory().set_held_item(held);
+        player.inventory().set_stack_in_hand(hand, held);
     }
 
     fn as_any(&self) -> &dyn Any {

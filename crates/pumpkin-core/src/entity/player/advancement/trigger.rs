@@ -1,20 +1,42 @@
 use crate::entity::player::Player;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum AdvancementTrigger {
     InventoryChanged,
-    PlayerKilledEntity { entity_type_resource: String },
-    EnterBlock { block_id: String },
-    PlacedBlock { block_id: String },
-    ConsumeItem { item_id: String },
+    ItemUsedOnBlock {
+        position: pumpkin_util::math::position::BlockPos,
+        item: pumpkin_data::item_stack::ItemStack,
+        state: pumpkin_data::BlockStateId,
+    },
+    DefaultBlockUse {
+        position: pumpkin_util::math::position::BlockPos,
+    },
+    PlayerKilledEntity {
+        entity_type_resource: String,
+    },
+    EnterBlock {
+        block_id: String,
+    },
+    PlacedBlock {
+        block_id: String,
+    },
+    ConsumeItem {
+        item_id: String,
+    },
     SleptInBed,
-    FishedItem { item_id: String },
-    EnterDimension { dimension: String },
+    FishedItem {
+        item_id: String,
+    },
+    EnterDimension {
+        dimension: String,
+    },
     PlayerKilled,
     DeflectedDamage,
     LaunchedEyeOfEnder,
     GlowedSign,
-    BredAnimal { parent_type: String },
+    BredAnimal {
+        parent_type: String,
+    },
     DealtOverkillDamage,
     SniperDuel,
     TwoBirdsOneArrow,
@@ -31,6 +53,24 @@ impl Player {
         use pumpkin_data::item::Item;
 
         match trigger {
+            AdvancementTrigger::ItemUsedOnBlock {
+                position,
+                item,
+                state,
+            } => {
+                self.trigger_block_use(
+                    "minecraft:item_used_on_block",
+                    position,
+                    Some(&item),
+                    state,
+                );
+            }
+            AdvancementTrigger::DefaultBlockUse { position } => self.trigger_block_use(
+                "minecraft:default_block_use",
+                position,
+                None,
+                self.world().get_block_state_id(&position),
+            ),
             AdvancementTrigger::InventoryChanged => {
                 if !self.has_advancement(Advancement::STORY_ROOT) {
                     if self.has_item_in_inventory(&Item::CRAFTING_TABLE) {
@@ -461,26 +501,7 @@ impl Player {
                 }
             }
             AdvancementTrigger::PlacedBlock { block_id } => {
-                if !self.has_advancement(Advancement::HUSBANDRY_PLANT_SEED) {
-                    let seed_blocks = [
-                        ("minecraft:wheat", "wheat"),
-                        ("minecraft:pumpkin_stem", "pumpkin_stem"),
-                        ("minecraft:melon_stem", "melon_stem"),
-                        ("minecraft:beetroots", "beetroots"),
-                        ("minecraft:nether_wart", "nether_wart"),
-                        ("minecraft:torchflower", "torchflower"),
-                        ("minecraft:pitcher_pod", "pitcher_pod"),
-                    ];
-                    for (block, criterion) in seed_blocks {
-                        if block_id == block {
-                            self.trigger_advancement_criterion(
-                                Advancement::HUSBANDRY_PLANT_SEED,
-                                criterion,
-                            );
-                            break;
-                        }
-                    }
-                }
+                self.trigger_planting_criteria(&block_id);
             }
             AdvancementTrigger::EnterDimension { dimension } => {
                 if dimension == "the_nether" {

@@ -14,7 +14,6 @@ use crate::block::registry::BlockActionResult;
 use crate::block::{self};
 use crate::entity::Entity;
 use crate::entity::EntityBase;
-use crate::entity::equipment_break_status;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
 use crate::entity::player::{ChatMode, ChatSession, MINE_BLOCK_EXHAUSTION, Player};
 use crate::error::PumpkinError;
@@ -40,7 +39,7 @@ use crate::world::{BlockBreakingProgress, World, chunker};
 use pumpkin_data::block_properties::CommandBlockLikeProperties;
 use pumpkin_data::data_component::DataComponent;
 use pumpkin_data::data_component_impl::{
-    BlocksAttacksImpl, ConsumableImpl, DataComponentImpl, EquipmentSlot, EquippableImpl, FoodImpl,
+    BlocksAttacksImpl, ConsumableImpl, EquipmentSlot, EquippableImpl, FoodImpl,
     WritableBookContentImpl, WrittenBookContentImpl,
 };
 use pumpkin_data::item::Item;
@@ -258,6 +257,7 @@ pub mod cookie_response;
 pub mod debug_sample_subscription;
 pub mod debug_subscription_request;
 pub mod edit_book;
+mod hand_use_result;
 pub mod interact;
 pub mod jigsaw_generate;
 pub mod keep_alive;

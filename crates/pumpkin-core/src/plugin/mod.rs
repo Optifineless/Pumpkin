@@ -37,6 +37,7 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 // v7 adds harvest death hooks, bucket layouts and inventory predicates to the v6 storage API.
 // v8 adds the orb snapshot and replaces the player's locked XP pickup delay with an atomic.
 // v8 changes projectile EntityBase hooks and ExplodeArgs after the harvest API v7.
+// v8 also preserves full use-remainder templates and exposes generated block-use advancement criteria.
 pub const PLUGIN_API_VERSION: u32 = 8;
 
 const PLUGIN_DIR: &str = "./plugins";

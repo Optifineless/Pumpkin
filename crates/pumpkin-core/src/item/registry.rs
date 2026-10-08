@@ -4,6 +4,7 @@ use crate::entity::player::Player;
 use crate::server::Server;
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
+use pumpkin_data::data_component_impl::BlocksAttacksImpl;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_util::Hand;
@@ -37,6 +38,26 @@ impl ItemRegistry {
         self.on_use_with_rotation(stack, player, yaw, pitch, hand);
     }
 
+    /// Reports whether shared consumption or bucket/bottle hooks count successful use.
+    /// Dispatchers must skip their initial use statistic for these stacks.
+    #[must_use]
+    pub fn records_item_use_stat(&self, stack: &ItemStack) -> bool {
+        if stack
+            .get_data_component::<pumpkin_data::data_component_impl::ConsumableImpl>()
+            .is_some()
+        {
+            return true;
+        }
+        self.get_pumpkin_item(stack.item.id).is_some_and(|item| {
+            let behaviour = item.as_any();
+            behaviour.is::<super::items::bucket::EmptyBucketItem>()
+                || behaviour.is::<super::items::bucket::FilledBucketItem>()
+                || behaviour.is::<super::items::glass_bottle::GlassBottleItem>()
+                // FishingRodItem.use awards the cast itself (both hands).
+                || behaviour.is::<super::items::fishing_rod::FishingRodItem>()
+        })
+    }
+
     pub fn on_use_with_rotation(
         &self,
         stack: &ItemStack,
@@ -58,9 +79,28 @@ impl ItemRegistry {
         let pumpkin_item = self.get_pumpkin_item(item.id);
         if let Some(pumpkin_item) = pumpkin_item {
             pumpkin_item.normal_use_with_hand(item, player, yaw, pitch, hand);
+            // Legacy void hooks keep their use statistics after dispatch. Consumption,
+            // BowItem.releaseUsing and BucketItem.use award at their actual success points.
+            let behaviour = pumpkin_item.as_any();
+            if matches!(player.client.as_ref(), crate::net::ClientPlatform::Java(_))
+                // BlocksAttacks.hurtBlockingItem counts blocking, not raising the item.
+                && stack.get_data_component::<BlocksAttacksImpl>().is_none()
+                && !self.records_item_use_stat(stack)
+                && !behaviour.is::<super::items::bow::BowItem>()
+            {
+                player.increment_stat(
+                    pumpkin_data::statistic::StatisticCategory::Used,
+                    i32::from(item.id),
+                    1,
+                );
+            }
         }
 
-        if let Some(cooldown) = cooldown {
+        if stack
+            .get_data_component::<pumpkin_data::data_component_impl::ConsumableImpl>()
+            .is_none()
+            && let Some(cooldown) = cooldown
+        {
             player.start_cooldown(cooldown_group, (cooldown.seconds * 20.0) as i32);
         }
     }

@@ -763,3 +763,27 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
 
     dispatcher.register(builder);
 }
+
+#[cfg(test)]
+mod ext_review_tests {
+    use super::*;
+    use pumpkin_data::item::Item;
+    use pumpkin_inventory::SimpleInventory;
+
+    #[ignore = "external-review reproduction R15; passes once loot task lands"]
+    #[test]
+    fn ext_review_r15_loot_insert_preserves_distinct_components() {
+        // LootCommand.distributeToContainer -> canMergeItems requires same item AND components.
+        let inventory = SimpleInventory::new(2);
+        let plain = ItemStack::new(1, &Item::DIAMOND);
+        inventory.set_stack(0, plain.clone());
+        let mut named = ItemStack::new(1, &Item::DIAMOND);
+        named.set_custom_name("review".to_owned());
+        assert!(distribute_to_container(&inventory, named.clone()));
+        assert!(
+            inventory.get_stack(0).are_equal(&plain),
+            "named diamond was merged into a plain stack"
+        );
+        assert!(inventory.get_stack(1).are_equal(&named));
+    }
+}

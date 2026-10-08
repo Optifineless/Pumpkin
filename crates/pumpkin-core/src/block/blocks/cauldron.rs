@@ -49,23 +49,25 @@ fn fire_cauldron_change(
     !event.cancelled
 }
 
-fn give_item_or_drop(
-    player: &crate::entity::player::Player,
-    world: &std::sync::Arc<crate::world::World>,
-    item: &'static Item,
-) {
-    give_stack_or_drop(player, world, ItemStack::new(1, item));
+// CauldronInteractions.bootStrap accepts only PotionContents.is(WATER).
+fn is_water_potion(stack: &ItemStack) -> bool {
+    stack
+        .get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>()
+        .is_some_and(|contents| {
+            contents.potion_id == Some(i32::from(pumpkin_data::potion::Potion::WATER.id))
+                && contents.custom_effects.is_empty()
+        })
 }
 
-fn give_stack_or_drop(
-    player: &crate::entity::player::Player,
-    world: &std::sync::Arc<crate::world::World>,
-    mut stack: ItemStack,
-) {
-    let was_added = player.inventory.insert_stack_anywhere(&mut stack);
-    if !was_added && !stack.is_empty() {
-        world.drop_stack(&player.position().to_block_pos(), stack);
-    }
+// CauldronInteractions.fillBucket / emptyBucket / bootStrap award the original container item.
+fn exchange_item(input: &mut ItemStack, player: &crate::entity::player::Player, output: ItemStack) {
+    let item_id = input.item.id;
+    crate::item::item_utils::create_filled_result(input, player, output, true);
+    player.increment_stat(
+        pumpkin_data::statistic::StatisticCategory::Used,
+        i32::from(item_id),
+        1,
+    );
 }
 
 impl BlockBehaviour for CauldronBlock {
@@ -73,7 +75,6 @@ impl BlockBehaviour for CauldronBlock {
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
         let item_id = args.item_stack.item.id;
         let block_id = args.block.id;
-        let gamemode = args.player.gamemode.load();
 
         if block_id == BlockId::CAULDRON {
             if item_id == Item::WATER_BUCKET.id {
@@ -97,8 +98,11 @@ impl BlockBehaviour for CauldronBlock {
                     SoundCategory::Blocks,
                     &args.position.to_f64(),
                 );
-                args.item_stack.decrement_unless_creative(gamemode, 1);
-                give_item_or_drop(args.player, args.world, &Item::BUCKET);
+                exchange_item(
+                    args.item_stack,
+                    args.player,
+                    ItemStack::new(1, &Item::BUCKET),
+                );
                 args.player.increment_stat(
                     pumpkin_data::statistic::StatisticCategory::Custom,
                     pumpkin_data::statistic::CustomStatistic::FillCauldron as i32,
@@ -116,8 +120,11 @@ impl BlockBehaviour for CauldronBlock {
                     SoundCategory::Blocks,
                     &args.position.to_f64(),
                 );
-                args.item_stack.decrement_unless_creative(gamemode, 1);
-                give_item_or_drop(args.player, args.world, &Item::BUCKET);
+                exchange_item(
+                    args.item_stack,
+                    args.player,
+                    ItemStack::new(1, &Item::BUCKET),
+                );
                 args.player.increment_stat(
                     pumpkin_data::statistic::StatisticCategory::Custom,
                     pumpkin_data::statistic::CustomStatistic::FillCauldron as i32,
@@ -135,15 +142,18 @@ impl BlockBehaviour for CauldronBlock {
                     SoundCategory::Blocks,
                     &args.position.to_f64(),
                 );
-                args.item_stack.decrement_unless_creative(gamemode, 1);
-                give_item_or_drop(args.player, args.world, &Item::BUCKET);
+                exchange_item(
+                    args.item_stack,
+                    args.player,
+                    ItemStack::new(1, &Item::BUCKET),
+                );
                 args.player.increment_stat(
                     pumpkin_data::statistic::StatisticCategory::Custom,
                     pumpkin_data::statistic::CustomStatistic::FillCauldron as i32,
                     1,
                 );
                 return BlockActionResult::Success;
-            } else if item_id == Item::POTION.id {
+            } else if item_id == Item::POTION.id && is_water_potion(args.item_stack) {
                 let state_id = Block::WATER_CAULDRON
                     .from_properties(&[("level", "1")])
                     .to_state_id(&Block::WATER_CAULDRON);
@@ -154,8 +164,11 @@ impl BlockBehaviour for CauldronBlock {
                     SoundCategory::Blocks,
                     &args.position.to_f64(),
                 );
-                args.item_stack.decrement_unless_creative(gamemode, 1);
-                give_item_or_drop(args.player, args.world, &Item::GLASS_BOTTLE);
+                exchange_item(
+                    args.item_stack,
+                    args.player,
+                    ItemStack::new(1, &Item::GLASS_BOTTLE),
+                );
                 args.player.increment_stat(
                     pumpkin_data::statistic::StatisticCategory::Custom,
                     pumpkin_data::statistic::CustomStatistic::UseCauldron as i32,
@@ -198,8 +211,7 @@ impl BlockBehaviour for CauldronBlock {
                 );
                 args.world
                     .play_sound(sound, SoundCategory::Blocks, &args.position.to_f64());
-                args.item_stack.decrement_unless_creative(gamemode, 1);
-                give_item_or_drop(args.player, args.world, result_item);
+                exchange_item(args.item_stack, args.player, ItemStack::new(1, result_item));
                 args.player.increment_stat(
                     pumpkin_data::statistic::StatisticCategory::Custom,
                     pumpkin_data::statistic::CustomStatistic::UseCauldron as i32,
@@ -213,7 +225,8 @@ impl BlockBehaviour for CauldronBlock {
             let state_id = args.world.get_block_state_id(args.position);
             let props = WaterCauldronLikeProperties::from_state_id(state_id);
             if props.level > 0 {
-                if item_id == Item::POTION.id && props.level < 3 {
+                if item_id == Item::POTION.id && props.level < 3 && is_water_potion(args.item_stack)
+                {
                     let next_level_str = match props.level {
                         1 => "2",
                         _ => "3",
@@ -228,8 +241,11 @@ impl BlockBehaviour for CauldronBlock {
                         SoundCategory::Blocks,
                         &args.position.to_f64(),
                     );
-                    args.item_stack.decrement_unless_creative(gamemode, 1);
-                    give_item_or_drop(args.player, args.world, &Item::GLASS_BOTTLE);
+                    exchange_item(
+                        args.item_stack,
+                        args.player,
+                        ItemStack::new(1, &Item::GLASS_BOTTLE),
+                    );
                     args.player.increment_stat(
                         pumpkin_data::statistic::StatisticCategory::Custom,
                         pumpkin_data::statistic::CustomStatistic::UseCauldron as i32,
@@ -265,10 +281,9 @@ impl BlockBehaviour for CauldronBlock {
                         SoundCategory::Blocks,
                         &args.position.to_f64(),
                     );
-                    args.item_stack.decrement_unless_creative(gamemode, 1);
-                    give_stack_or_drop(
+                    exchange_item(
+                        args.item_stack,
                         args.player,
-                        args.world,
                         crate::item::items::glass_bottle::water_bottle(),
                     );
                     args.player.increment_stat(
@@ -318,7 +333,11 @@ impl BlockBehaviour for CauldronBlock {
                 if args
                     .item_stack
                     .get_data_component::<pumpkin_data::data_component_impl::BannerPatternsImpl>()
-                    .is_some()
+                    .is_some_and(|patterns| !patterns.layers.is_empty())
+                    && args
+                        .item_stack
+                        .item
+                        .has_tag(&pumpkin_data::tag::Item::MINECRAFT_BANNERS)
                 {
                     let next_level = props.level - 1;
                     if next_level > 0 {
@@ -341,8 +360,16 @@ impl BlockBehaviour for CauldronBlock {
                             BlockFlags::NOTIFY_ALL,
                         );
                     }
-                    args.item_stack.remove_data_component(
-                        pumpkin_data::data_component::DataComponent::BannerPatterns,
+                    // CauldronInteractions.bannerInteraction cleans one banner's last pattern.
+                    let mut cleaned = args.item_stack.copy_with_count(1);
+                    if let Some(patterns) = cleaned.get_data_component_mut::<pumpkin_data::data_component_impl::BannerPatternsImpl>() {
+                        patterns.layers.pop();
+                    }
+                    crate::item::item_utils::create_filled_result(
+                        args.item_stack,
+                        args.player,
+                        cleaned,
+                        false,
                     );
                     args.player.increment_stat(
                         pumpkin_data::statistic::StatisticCategory::Custom,

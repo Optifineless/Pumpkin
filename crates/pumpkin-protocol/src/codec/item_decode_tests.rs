@@ -8,8 +8,26 @@ use pumpkin_util::version::JavaMinecraftVersion;
 fn nested_template_uses_plain_component_patch() {
     // UseRemainder: item 1, count 1, add 1, remove 0, max_damage(id 2) = 7.
     let mut input: &[u8] = &[1, 1, 1, 0, 2, 7];
-    assert!(deserialize(DataComponent::UseRemainder, &mut input).is_ok());
+    let decoded = deserialize(DataComponent::UseRemainder, &mut input).unwrap();
     assert!(input.is_empty());
+    let remainder = pumpkin_data::data_component_impl::get::<
+        pumpkin_data::data_component_impl::UseRemainderImpl,
+    >(&*decoded)
+    .create()
+    .unwrap();
+    assert_eq!(remainder.item, &pumpkin_data::item::Item::STONE);
+    assert_eq!(remainder.item_count, 1);
+    assert_eq!(
+        remainder
+            .get_data_component::<pumpkin_data::data_component_impl::MaxDamageImpl>()
+            .unwrap()
+            .max_damage,
+        7
+    );
+    let mut encoded = Vec::new();
+    crate::codec::data_component::serialize(DataComponent::UseRemainder, &*decoded, &mut encoded)
+        .unwrap();
+    assert_eq!(encoded, [1, 1, 1, 0, 2, 7]);
 }
 
 #[test]

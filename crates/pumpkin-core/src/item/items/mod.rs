@@ -89,7 +89,7 @@ use crate::item::items::potions::{LingeringPotionItem, PotionItem, SplashPotionI
 use arrow::ArrowItem;
 use axe::AxeItem;
 use bow::BowItem;
-use bucket::{EmptyBucketItem, FilledBucketItem, MilkBucketItem};
+use bucket::{EmptyBucketItem, FilledBucketItem};
 use crossbow::CrossbowItem;
 use dye::DyeItem;
 use egg::EggItem;
@@ -139,7 +139,6 @@ pub fn default_registry() -> Arc<ItemRegistry> {
     manager.register(GoatHornItem);
     manager.register(EmptyBucketItem);
     manager.register(FilledBucketItem);
-    manager.register(MilkBucketItem);
     manager.register(ShovelItem);
     manager.register(SpawnEggItem);
     manager.register(AxeItem);
@@ -173,3 +172,6 @@ pub fn default_registry() -> Arc<ItemRegistry> {
 
     Arc::new(manager)
 }
+
+#[cfg(test)]
+mod hand_use_review_tests;

@@ -29,6 +29,7 @@ impl BlockBehaviour for ComposterBlock {
             let props = ComposterLikeProperties::from_state_id(state_id);
             if props.level == 8 {
                 self.clear_composter(args.world, args.position, state_id, args.block);
+                return BlockActionResult::Success;
             }
 
             BlockActionResult::Pass
@@ -43,8 +44,7 @@ impl BlockBehaviour for ComposterBlock {
 
             // Check if the composter is full
             if level == 8 {
-                self.clear_composter(args.world, args.position, state_id, args.block);
-                return BlockActionResult::Consume;
+                return BlockActionResult::PassToDefaultBlockAction;
             }
 
             let item_stack = &mut *args.item_stack;
@@ -52,7 +52,16 @@ impl BlockBehaviour for ComposterBlock {
                 return BlockActionResult::Pass;
             };
             let chance = compostable.chance;
+            // ComposterBlock.useItemOn consumes input only below the waiting level.
+            if level == 7 {
+                return BlockActionResult::Success;
+            }
 
+            args.player.increment_stat(
+                pumpkin_data::statistic::StatisticCategory::Used,
+                i32::from(item_stack.item.id),
+                1,
+            );
             // Consume one item from the stack (if in survival mode)
             if !args.player.has_infinite_materials() {
                 item_stack.decrement(1);

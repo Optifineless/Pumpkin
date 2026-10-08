@@ -21,7 +21,20 @@ impl ItemMetadata for EggItem {
 const POWER: f32 = 1.5;
 
 impl ItemBehaviour for EggItem {
-    fn normal_use(&self, _block: &Item, player: &Player) {
+    fn normal_use(&self, item: &Item, player: &Player) {
+        let (yaw, pitch) = player.rotation();
+        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+    }
+
+    // EggItem.use reads and consumes player.getItemInHand(hand).
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
         let position = player.position();
         let world = player.world();
         world.play_sound(
@@ -31,7 +44,7 @@ impl ItemBehaviour for EggItem {
         );
 
         // Capture the held item stack and pass it to the thrown egg entity
-        let item_stack: ItemStack = player.inventory.held_item();
+        let item_stack: ItemStack = player.inventory.get_stack_in_hand(hand);
 
         let entity = Entity::new(world.clone(), position, &EntityType::EGG);
         let egg = EggEntity::new_shot(entity, player.get_entity());
@@ -43,25 +56,9 @@ impl ItemBehaviour for EggItem {
         egg.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
         world.spawn_entity(Arc::new(egg));
 
-        // Consume item
-        let mut main_hand = player.inventory.held_item();
-        let consumed = if !main_hand.is_empty() && Self::ids().contains(&main_hand.item.id) {
-            main_hand.decrement_unless_creative(player.gamemode.load(), 1);
-            player.inventory.set_held_item(main_hand);
-            true
-        } else {
-            false
-        };
-
-        if !consumed {
-            let mut off_hand = player.inventory.off_hand_item();
-            if !off_hand.is_empty() && Self::ids().contains(&off_hand.item.id) {
-                off_hand.decrement_unless_creative(player.gamemode.load(), 1);
-                player
-                    .inventory
-                    .set_stack_in_hand(pumpkin_util::Hand::Left, off_hand);
-            }
-        }
+        let mut stack = player.inventory.get_stack_in_hand(hand);
+        stack.decrement_unless_creative(player.gamemode.load(), 1);
+        player.inventory.set_stack_in_hand(hand, stack);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

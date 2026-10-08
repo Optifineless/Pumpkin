@@ -4466,6 +4466,7 @@ impl Item {
                 UseRemainder,
                 &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed("minecraft:bowl")),
+                    template: None,
                 },
             ),
         ],
@@ -37520,6 +37521,7 @@ impl Item {
                 UseRemainder,
                 &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed("minecraft:glass_bottle")),
+                    template: None,
                 },
             ),
         ],
@@ -49224,6 +49226,7 @@ impl Item {
                 UseRemainder,
                 &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed("minecraft:bucket")),
+                    template: None,
                 },
             ),
         ],
@@ -50430,6 +50433,7 @@ impl Item {
                 UseRemainder,
                 &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed("minecraft:bowl")),
+                    template: None,
                 },
             ),
         ],
@@ -64574,6 +64578,7 @@ impl Item {
                 UseRemainder,
                 &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed("minecraft:glass_bottle")),
+                    template: None,
                 },
             ),
         ],
@@ -67397,6 +67402,7 @@ impl Item {
                 UseRemainder,
                 &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed("minecraft:bowl")),
+                    template: None,
                 },
             ),
         ],
@@ -79963,6 +79969,7 @@ impl Item {
                 UseRemainder,
                 &UseRemainderImpl {
                     remainder: Some(Cow::Borrowed("minecraft:bowl")),
+                    template: None,
                 },
             ),
         ],

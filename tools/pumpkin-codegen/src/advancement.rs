@@ -658,16 +658,7 @@ pub struct AdvancementStruct {
     #[serde(default, rename = "sends_telemetry_event")]
     pub sends_telemetry: bool,
     pub requirements: Vec<Vec<String>>,
-    #[serde(deserialize_with = "deserialize_first_key")]
-    pub criteria: Vec<String>,
-}
-
-fn deserialize_first_key<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let map = BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
-    Ok(map.into_keys().collect())
+    pub criteria: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Clone)]
@@ -895,7 +886,28 @@ pub(crate) fn build() -> TokenStream {
         let requirements = advancement.requirements.iter().map(|inner_req| {
             quote! { &[#(#inner_req),*]}
         });
-        let criteria = advancement.criteria;
+        let action_criteria: Vec<_> = advancement
+            .criteria
+            .iter()
+            .filter_map(|(name, criterion)| {
+                let trigger = criterion.get("trigger")?.as_str()?;
+                if !matches!(
+                    trigger,
+                    "minecraft:item_used_on_block"
+                        | "minecraft:default_block_use"
+                        | "minecraft:placed_block"
+                ) {
+                    return None;
+                }
+                let conditions = criterion
+                    .get("conditions")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}))
+                    .to_string();
+                Some(quote! { (#name, #trigger, #conditions) })
+            })
+            .collect();
+        let criteria: Vec<_> = advancement.criteria.into_keys().collect();
         variants.extend([quote! {
             pub const #format_name: &Self = &Self {
                 id: Identifier::vanilla_static(#raw_name),
@@ -905,6 +917,7 @@ pub(crate) fn build() -> TokenStream {
                 reward : &#reward,
                 requirements: &[#(#requirements),*],
                 criteria: &[#(#criteria),*],
+                action_criteria: &[#(#action_criteria),*],
             };
         }]);
         let minecraft_name = identifier.to_string();
@@ -938,6 +951,7 @@ pub(crate) fn build() -> TokenStream {
             pub reward : &'static AdvancementReward,
             pub requirements: &'static[&'static[&'static str]],
             pub criteria: &'static[&'static str],
+            pub action_criteria: &'static[(&'static str, &'static str, &'static str)],
         }
 
         impl Display for Advancement {

@@ -10,7 +10,7 @@ use pumpkin_data::{
 use pumpkin_util::{GameMode, Hand};
 
 /// BottleItem.use's dragon-breath branch, before the ordinary water raycast.
-pub fn try_bottle(player: &Player) -> bool {
+pub fn try_bottle(player: &Player, hand: Hand) -> bool {
     let world = player.world();
     let candidates = world.get_all_at_box(&player.get_entity().bounding_box.load().expand_all(2.0));
     let Some(cloud) = candidates
@@ -25,11 +25,7 @@ pub fn try_bottle(player: &Player) -> bool {
     else {
         return false;
     };
-    let (hand, mut held) = if player.inventory().held_item().item == &Item::GLASS_BOTTLE {
-        (Hand::Right, player.inventory().held_item())
-    } else {
-        (Hand::Left, player.inventory().off_hand_item())
-    };
+    let mut held = player.inventory().get_stack_in_hand(hand);
     if held.is_empty() || held.item != &Item::GLASS_BOTTLE {
         return false;
     }

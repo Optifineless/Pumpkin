@@ -74,16 +74,6 @@ impl JavaClient {
         let held_item_empty = held_item.is_empty();
         let off_hand_item_empty = off_hand_item.is_empty();
 
-        let mut item = inventory.get_stack_in_hand(hand);
-        let before = item.clone();
-        let slot_index = if matches!(hand, Hand::Right) {
-            inventory.get_selected_slot() as usize
-        } else {
-            PlayerInventory::OFF_HAND_SLOT
-        };
-        let item_id = item.item.id;
-        player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-
         let entity = &player.get_entity();
         let world = entity.world.load_full();
         let block = world.get_block(&position);
@@ -108,6 +98,14 @@ impl JavaClient {
             }
         }}
 
+        // Read after plugin callbacks, which may change the inventory themselves.
+        let source_slot = super::hand_use_result::hand_slot(player, hand);
+        let mut item = inventory.get_stack_in_hand(hand);
+        let before = item.clone();
+        // ItemStack.getItem hides the backing item of a depleted stack from block interactions.
+        if item.is_empty() {
+            item.clear();
+        }
         let equipment_slot = if matches!(hand, Hand::Right) {
             EquipmentSlot::MAIN_HAND
         } else {
@@ -129,15 +127,9 @@ impl JavaClient {
                 block,
                 server,
             );
-            if result.consumes_action() {
-                // TODO: Trigger ANY_BLOCK_USE Criteria
-                // ServerPlayerGameMode.useItemOn hands BlockBehaviour.useItemOn the live
-                // stack, so a block that split or exchanged it (jukebox, composter,
-                // cauldron) must reach the inventory before this returns.
-                if !item.are_equal(&before) {
-                    player.sync_hand_slot(slot_index, item.clone());
-                    inventory.set_stack_in_hand(hand, item);
-                }
+            // ServerPlayerGameMode.useItemOn supplies the live hand stack even on consuming returns.
+            super::hand_use_result::write_back_used_item(player, hand, source_slot, &before, &item);
+            if result.consumes_action() || matches!(result, BlockActionResult::Fail) {
                 if matches!(result, BlockActionResult::SuccessServer) {
                     player.swing_hand(hand, true);
                 }
@@ -145,12 +137,21 @@ impl JavaClient {
             }
         }
 
-        if item.is_empty() {
-            // TODO item cool down
-            // If the hand is empty we stop here
+        let source_slot = super::hand_use_result::hand_slot(player, hand);
+        item = inventory.get_stack_in_hand(hand);
+
+        // ServerPlayerGameMode.useItemOn checks cooldowns before item use or placement.
+        if item.is_empty()
+            || !crate::entity::item_use::item_use_allowed(&item, |group| {
+                player.is_on_cooldown(group)
+            })
+        {
             return Ok(());
         }
 
+        let before = item.clone();
+
+        let state_before = world.get_block_state_id(&position);
         let item_result = server
             .item_registry
             .use_on_block(&mut item, player, position, face, cursor_pos, block, server);
@@ -159,8 +160,19 @@ impl JavaClient {
             // Check if the item is a block, because not every item can be placed :D
             let item_id = item.item.id;
             if let Some(block) = Block::from_item_id(item_id) {
-                should_try_decrement =
-                    Self::run_is_block_place(player, block, server, use_item_on, position, face)?;
+                match Self::run_is_block_place(player, block, server, use_item_on, position, face) {
+                    Ok(placed) => should_try_decrement = placed,
+                    Err(error) => {
+                        super::hand_use_result::write_back_used_item(
+                            player,
+                            hand,
+                            source_slot,
+                            &before,
+                            &item,
+                        );
+                        return Err(error);
+                    }
+                }
             }
         }
 
@@ -172,33 +184,20 @@ impl JavaClient {
             }
         }
 
-        let after = item.clone();
-
-        if matches!(item_result, BlockActionResult::SuccessServer) {
-            player.swing_hand(hand, true);
-        }
-
-        // Broadcast the break entity status before the slot sync; the client
-        // needs the old item texture in the slot for break particles.
-        if !before.is_empty() && after.is_empty() {
-            let slot = if slot_index == player.inventory.get_selected_slot() as usize {
-                &EquipmentSlot::MAIN_HAND
-            } else {
-                &EquipmentSlot::OFF_HAND
-            };
-            if before.is_damageable() {
-                player.increment_stat(StatisticCategory::Broken, before.item.id as i32, 1);
+        super::hand_use_result::write_back_used_item(player, hand, source_slot, &before, &item);
+        if item_result.consumes_action() || should_try_decrement {
+            if !before.is_empty() {
+                player.increment_stat(StatisticCategory::Used, i32::from(before.item.id), 1);
             }
-            player.world().send_entity_status(
-                player.get_entity(),
-                equipment_break_status(slot),
-                None,
+            super::hand_use_result::trigger_item_used_on_block(
+                player,
+                position,
+                &before,
+                state_before,
             );
         }
-
-        if !after.are_equal(&before) {
-            player.sync_hand_slot(slot_index, after.clone());
-            inventory.set_stack_in_hand(hand, after);
+        if matches!(item_result, BlockActionResult::SuccessServer) {
+            player.swing_hand(hand, true);
         }
 
         Ok(())
@@ -216,6 +215,8 @@ impl JavaClient {
         block: &Block,
         server: &Arc<Server>,
     ) -> BlockActionResult {
+        let before = held_item.clone();
+        let state_before = world.get_block_state_id(position);
         let result = server.block_registry.use_with_item(
             block,
             player,
@@ -230,12 +231,22 @@ impl JavaClient {
             world,
         );
 
+        if matches!(result, BlockActionResult::Fail) {
+            return result;
+        }
         if result.consumes_action() {
-            // TODO: Trigger ITEM_USED_ON_BLOCK Criteria
+            super::hand_use_result::trigger_item_used_on_block(
+                player,
+                *position,
+                &before,
+                state_before,
+            );
             return result;
         }
 
-        if matches!(result, BlockActionResult::PassToDefaultBlockAction) {
+        if matches!(result, BlockActionResult::PassToDefaultBlockAction)
+            && equipment_slot == &EquipmentSlot::MAIN_HAND
+        {
             let result = server.block_registry.on_use(
                 block,
                 player,
@@ -249,7 +260,7 @@ impl JavaClient {
             );
 
             if result.consumes_action() {
-                // TODO: Trigger DEFAULT_BLOCK_USE Criteria
+                player.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::DefaultBlockUse { position: *position });
                 return result;
             }
         }

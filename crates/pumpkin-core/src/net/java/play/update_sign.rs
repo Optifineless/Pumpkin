@@ -20,9 +20,8 @@ impl JavaClient {
             .currently_editing_player()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(editor_id) = currently_editing
-            && editor_id != player.gameprofile.id
-        {
+        // SignBlockEntity.updateSignText requires an active session for exactly this player.
+        if currently_editing != Some(player.gameprofile.id) {
             return;
         }
 

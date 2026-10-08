@@ -319,7 +319,8 @@ impl BedrockClient {
                         held = client_stack;
                         player.inventory().set_stack_in_hand(hand, held.clone());
                     }
-                    if !held.is_empty() {
+                    // Consumable.onConsume and BucketItem/BottleItem.use count on success.
+                    if !held.is_empty() && !server.item_registry.records_item_use_stat(&held) {
                         player.increment_stat(
                             pumpkin_data::statistic::StatisticCategory::Used,
                             held.item.id as i32,

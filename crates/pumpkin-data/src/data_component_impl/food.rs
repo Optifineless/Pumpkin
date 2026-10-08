@@ -433,16 +433,77 @@ impl DataComponentImpl for UseEffectsImpl {
     default_impl!(UseEffects);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct UseRemainderImpl {
     pub remainder: Option<Cow<'static, str>>,
+    pub template: Option<Box<crate::item_stack::ItemStack>>,
 }
-impl UseRemainderImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self { remainder: None })
+
+impl PartialEq for UseRemainderImpl {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.create(), other.create()) {
+            (Some(left), Some(right)) => left.are_equal(&right),
+            (None, None) => true,
+            _ => false,
+        }
     }
 }
+
+impl UseRemainderImpl {
+    // UseRemainder.CODEC stores the full ItemStackTemplate, including count and components.
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        // ItemStackTemplate.CODEC also accepts a bare item identifier.
+        if let Some(id) = data.extract_string() {
+            let stack =
+                crate::item_stack::ItemStack::new(1, crate::item::Item::from_registry_key(id)?);
+            return (!stack.is_empty()).then_some(Self {
+                remainder: None,
+                template: Some(Box::new(stack)),
+            });
+        }
+        // ItemStackTemplate.MAP_CODEC bounds NBT template counts to 1..=99.
+        const MAX_TEMPLATE_COUNT: u8 = 99;
+        let mut compound = data.extract_compound()?.clone();
+        if compound.get("count").is_none() {
+            compound.put_int("count", 1);
+        }
+        let count = u8::try_from(compound.get_int("count")?).ok()?;
+        if count == 0 || count > MAX_TEMPLATE_COUNT {
+            return None;
+        }
+        let stack = crate::item_stack::ItemStack::read_item_stack(&compound)?;
+        if stack.is_empty() {
+            return None;
+        }
+        Some(Self {
+            remainder: None,
+            template: Some(Box::new(stack)),
+        })
+    }
+
+    #[must_use]
+    pub fn create(&self) -> Option<crate::item_stack::ItemStack> {
+        // ItemStackTemplate.create produces a fresh stack instance for every use.
+        self.template
+            .as_deref()
+            .map(|stack| stack.copy_with_count(stack.item_count))
+            .or_else(|| {
+                Some(crate::item_stack::ItemStack::new(
+                    1,
+                    crate::item::Item::from_registry_key(self.remainder.as_deref()?)?,
+                ))
+            })
+    }
+}
+
 impl DataComponentImpl for UseRemainderImpl {
+    fn write_data(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        if let Some(stack) = self.create() {
+            stack.write_item_stack(&mut compound);
+        }
+        NbtTag::Compound(compound)
+    }
     default_impl!(UseRemainder);
 }
 
@@ -738,4 +799,57 @@ impl DataComponentImpl for SuspiciousStewEffectsImpl {
         digest.finalize() as i32
     }
     default_impl!(SuspiciousStewEffects);
+}
+
+#[cfg(test)]
+mod use_remainder_tests {
+    use super::*;
+    use crate::{item::Item, item_stack::ItemStack};
+
+    #[test]
+    fn remainder_template_preserves_count_and_components_through_nbt() {
+        let mut output = ItemStack::new(2, &Item::BOWL);
+        output.set_custom_name("Container".to_owned());
+        let component = UseRemainderImpl {
+            remainder: None,
+            template: Some(Box::new(output.clone())),
+        };
+        let decoded = UseRemainderImpl::read_data(&component.write_data()).unwrap();
+        assert!(decoded.create().unwrap().are_equal(&output));
+        let mut default = NbtCompound::new();
+        default.put_string("id", "minecraft:bucket".into());
+        let decoded = UseRemainderImpl::read_data(&NbtTag::Compound(default)).unwrap();
+        assert!(
+            decoded
+                .create()
+                .unwrap()
+                .are_equal(&ItemStack::new(1, &Item::BUCKET))
+        );
+    }
+
+    #[test]
+    fn remainder_rejects_invalid_counts() {
+        for count in [-1, 0, 100, 256] {
+            let mut nbt = NbtCompound::new();
+            nbt.put_string("id", "minecraft:bowl".into());
+            nbt.put_int("count", count);
+            assert!(UseRemainderImpl::read_data(&NbtTag::Compound(nbt)).is_none());
+        }
+    }
+
+    #[test]
+    fn remainder_accepts_item_ids_and_rejects_empty_templates() {
+        let decoded =
+            UseRemainderImpl::read_data(&NbtTag::String("minecraft:bowl".into())).unwrap();
+        assert!(
+            decoded
+                .create()
+                .unwrap()
+                .are_equal(&ItemStack::new(1, &Item::BOWL))
+        );
+        assert!(UseRemainderImpl::read_data(&NbtTag::String("minecraft:air".into())).is_none());
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", "minecraft:air".into());
+        assert!(UseRemainderImpl::read_data(&NbtTag::Compound(nbt)).is_none());
+    }
 }

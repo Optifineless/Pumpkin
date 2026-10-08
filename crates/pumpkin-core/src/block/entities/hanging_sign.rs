@@ -18,6 +18,10 @@ pub struct HangingSignBlockEntity {
 }
 
 impl BlockEntity for HangingSignBlockEntity {
+    fn tick(&self, world: &Arc<crate::world::World>) {
+        super::sign::expire_edit_session(world, self.position, &self.currently_editing_player);
+    }
+
     fn resource_location(&self) -> &'static str {
         Self::ID
     }

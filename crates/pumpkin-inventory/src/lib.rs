@@ -62,6 +62,9 @@ pub mod sync_handler;
 pub mod viewer;
 pub mod window_property;
 
+#[cfg(test)]
+mod ext_review_tests;
+
 use rustc_hash::FxHashMap;
 
 pub use error::InventoryError;

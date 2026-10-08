@@ -1709,15 +1709,17 @@ impl DataComponentCodec<Self> for FoodImpl {
 
 impl DataComponentCodec<Self> for UseRemainderImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt(0))?;
-        seq.write_var_int(&VarInt(0))?;
-        seq.write_var_int(&VarInt(0))?;
-        seq.write_var_int(&VarInt(0))
+        let stack = self
+            .create()
+            .ok_or_else(|| WritingError::Message("Invalid use remainder".to_owned()))?;
+        serialize_item_stack_template(&stack, seq)
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _ = deserialize_item_stack_template(seq)?;
-        Ok(Self { remainder: None })
+        Ok(Self {
+            remainder: None,
+            template: Some(Box::new(deserialize_item_stack_template(seq)?)),
+        })
     }
 }
 

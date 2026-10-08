@@ -1,3 +1,4 @@
+mod block_use;
 pub mod trigger;
 mod visibility_evaluator;
 

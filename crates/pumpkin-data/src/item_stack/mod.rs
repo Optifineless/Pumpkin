@@ -50,6 +50,18 @@ pub struct ItemStack {
     pub uid: NonZero<i32>,
 }
 
+impl std::fmt::Debug for ItemStack {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut data = NbtCompound::new();
+        self.write_item_stack(&mut data);
+        formatter
+            .debug_struct("ItemStack")
+            .field("data", &data)
+            .field("uid", &self.uid)
+            .finish()
+    }
+}
+
 // impl Hash for ItemStack {
 //     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 //         self.item_count.hash(state);

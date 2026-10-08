@@ -254,6 +254,10 @@ impl SignText {
 }
 
 impl BlockEntity for SignBlockEntity {
+    fn tick(&self, world: &Arc<crate::world::World>) {
+        super::sign::expire_edit_session(world, self.position, &self.currently_editing_player);
+    }
+
     fn resource_location(&self) -> &'static str {
         Self::ID
     }
@@ -404,5 +408,60 @@ impl<'a> SignEntityRef<'a> {
             Self::Sign(s) => &s.currently_editing_player,
             Self::Hanging(s) => &s.currently_editing_player,
         }
+    }
+}
+
+// SignBlockEntity.tick / playerIsTooFarAwayToEdit use the block interaction range plus four.
+pub(super) fn expire_edit_session(
+    world: &Arc<crate::world::World>,
+    position: BlockPos,
+    editor: &Mutex<Option<uuid::Uuid>>,
+) {
+    clear_invalid_player_who_may_edit(editor, |id| {
+        world
+            .get_player_by_uuid(id)
+            .is_none_or(|player| !player.can_interact_with_block_at(&position, 4.0))
+    });
+}
+
+// SignBlockEntity.clearInvalidPlayerWhoMayEdit checks the player without holding the editor lock.
+fn clear_invalid_player_who_may_edit(
+    editor: &Mutex<Option<uuid::Uuid>>,
+    too_far: impl FnOnce(uuid::Uuid) -> bool,
+) {
+    let id = *editor
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(id) = id
+        && too_far(id)
+    {
+        let mut editor = editor
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if *editor == Some(id) {
+            *editor = None;
+        }
+    }
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+
+    #[test]
+    fn review_sign_distance_check_releases_lock_and_preserves_new_editor() {
+        let first = uuid::Uuid::new_v4();
+        let second = uuid::Uuid::new_v4();
+        let editor = Mutex::new(Some(first));
+        clear_invalid_player_who_may_edit(&editor, |id| {
+            assert_eq!(id, first);
+            *editor
+                .try_lock()
+                .expect("distance check held the editor lock") = Some(second);
+            true
+        });
+        assert_eq!(*editor.lock().unwrap(), Some(second));
+        clear_invalid_player_who_may_edit(&editor, |_| true);
+        assert_eq!(*editor.lock().unwrap(), None);
     }
 }

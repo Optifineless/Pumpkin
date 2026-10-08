@@ -1,3 +1,4 @@
+pub mod item_utils;
 pub mod items;
 pub mod potion;
 pub mod registry;
