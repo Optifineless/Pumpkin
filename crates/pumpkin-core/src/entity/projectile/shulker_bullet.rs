@@ -462,13 +462,14 @@ impl EntityBase for ShulkerBulletEntity {
 
             // Deal 4 (MOB_PROJECTILE) damage
             let owner_arc = world.get_entity_by_id(self.owner_id);
-            let damaged = hit_entity.damage_with_context(
+            let damaged = super::damage::hurt_entity(
                 hit_entity.as_ref(),
                 4.0,
                 DamageType::MOB_PROJECTILE,
-                None,
-                owner_arc.as_deref(),
-                None,
+                self,
+                owner_arc
+                    .as_deref()
+                    .filter(|owner| owner.get_living_entity().is_some()),
             );
 
             if damaged && let Some(living) = hit_entity.get_living_entity() {

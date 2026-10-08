@@ -64,3 +64,10 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Zombies sink in water like vanilla instead of floating | Yes, 2026-10-07 |
 | Scheduled ticks run on time and survive a restart | Not yet |
 | Dust removed by water or explosions updates neighbours | Not yet |
+| Shields respect piercing shots, cooldowns and hand changes; death protectors use their configured effects (combat task 2 review follow-up, related to #3520) | Not yet |
+
+## Native plugin API 4
+
+Shield and totem integration changes native trait/component layouts and bumps `PLUGIN_API_VERSION` from 3 to 4. Rebuild native plugins. `EntityDamageByEntityEvent.damager_id` now identifies the direct projectile for projectile hits; it previously identified the shooter. Resolve the projectile's owner for player attribution. Mob damage hooks carry separate direct and causing entities. The Wasm WIT is unchanged.
+
+The second shield/totem review adds authoritative item transactions, effect lifecycle corrections, projectile owner handling and teleport destination checks. Play testing remains **Not yet**. Hurt-cooldown admission, full-block damage history and specialized `blockUsingItem`/`blockedByItem` orchestration still require the separate damage-pipeline integration; this branch preserves that boundary.

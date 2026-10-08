@@ -1,3 +1,4 @@
+mod absorption;
 pub mod hunger;
 pub mod infested;
 pub mod oozing;
@@ -25,7 +26,9 @@ pub trait MobEffect: Send + Sync {
     }
 
     /// Applies periodic/tick-based effect logic on a living entity.
-    fn apply_effect_tick(&self, _living: &LivingEntity, _amplifier: u8) {}
+    fn apply_effect_tick(&self, _living: &LivingEntity, _amplifier: u8) -> bool {
+        true
+    }
 
     /// Called when an entity carrying this effect is hurt.
     fn on_mob_hurt(
@@ -54,7 +57,9 @@ pub static WIND_CHARGED: wind_charged::WindChargedMobEffect = wind_charged::Wind
 
 #[must_use]
 pub fn get_mob_effect(effect: &'static StatusEffect) -> Option<&'static dyn MobEffect> {
-    if effect == &StatusEffect::REGENERATION {
+    if effect == &StatusEffect::ABSORPTION {
+        Some(&absorption::AbsorptionMobEffect)
+    } else if effect == &StatusEffect::REGENERATION {
         Some(&REGENERATION)
     } else if effect == &StatusEffect::POISON {
         Some(&POISON)
@@ -83,7 +88,8 @@ impl NBTStorage for pumpkin_data::potion::Effect {
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put("id", self.effect_type.minecraft_name);
         if self.amplifier > 0 {
-            nbt.put("amplifier", NbtTag::Int(i32::from(self.amplifier)));
+            // MobEffectInstance.Details.MAP_CODEC / ExtraCodecs.UNSIGNED_BYTE.
+            nbt.put_byte("amplifier", self.amplifier as i8);
         }
         nbt.put("duration", NbtTag::Int(self.duration));
         if self.ambient {
@@ -107,22 +113,18 @@ impl NBTStorageInit for pumpkin_data::potion::Effect {
             warn!("Unable to read effect. Unknown effect type: {effect_id}");
             return None;
         };
-        let Some(show_icon) = nbt.get_byte("show_icon") else {
-            warn!("Unable to read effect. Show icon is not present");
-            return None;
-        };
-        let amplifier = nbt.get_int("amplifier").unwrap_or(0) as u8;
-        let duration = nbt.get_int("duration").unwrap_or(0);
-        let ambient = nbt.get_byte("ambient").unwrap_or(0) == 1;
-        let show_particles = nbt.get_byte("show_particles").unwrap_or(1) == 1;
-        let show_icon = show_icon == 1;
+        // Reuse MobEffectInstance.Details decoding for saved and consumed effects.
+        let details = pumpkin_data::data_component_impl::DeathStatusEffect::from_nbt(
+            &NbtTag::Compound(nbt.clone()),
+        )?
+        .effect;
         Some(Self {
             effect_type,
-            duration,
-            amplifier,
-            ambient,
-            show_particles,
-            show_icon,
+            duration: details.duration,
+            amplifier: details.amplifier as u8,
+            ambient: details.ambient,
+            show_particles: details.show_particles,
+            show_icon: details.show_icon,
             blend: false,
         })
     }

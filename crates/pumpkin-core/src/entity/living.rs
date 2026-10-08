@@ -1,9 +1,21 @@
 mod armor;
+#[path = "blocking.rs"]
+pub(super) mod blocking;
+#[cfg(test)]
+#[path = "combat_lifecycle_tests.rs"]
+mod combat_lifecycle_tests;
+mod damage;
+#[path = "death_protection.rs"]
+mod death_protection;
+#[path = "effects.rs"]
+mod effects;
 mod equipment_modifiers;
 mod hurt_server;
 mod impulse;
+#[path = "random_teleport.rs"]
+mod random_teleport;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 use super::kill_credit::HurtByMemory;
 pub(super) use equipment_modifiers::attribute_modifier_slot_matches;
@@ -15,7 +27,6 @@ use pumpkin_data::tracked_data;
 use pumpkin_inventory::build_equipment_slots;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_protocol::bedrock::client::take_item_actor::CTakeItemActor;
-use pumpkin_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
 use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_util::Difficulty;
 use pumpkin_util::GameMode;
@@ -37,30 +48,27 @@ use crate::entity::ageable::AgeableMob;
 use crate::entity::attributes::AttributeInstance;
 use crate::entity::attributes::Modifier;
 use crate::entity::attributes::ModifierOperation;
-use crate::entity::combat::{CombatTracker, knockback_after_resistance};
+use crate::entity::combat::CombatTracker;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
 use crate::server::Server;
 use crate::world::loot::LootContextParameters;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::Block;
 use pumpkin_data::attributes::Attributes;
-use pumpkin_data::data_component_impl::Operation;
 use pumpkin_data::data_component_impl::food::{ConsumableImpl, ConsumeEffect};
-use pumpkin_data::data_component_impl::{
-    BlocksAttacksImpl, DeathProtectionImpl, EquipmentSlot, FoodImpl,
-};
+use pumpkin_data::data_component_impl::{EquipmentSlot, FoodImpl};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::game_rules::{GameRule, GameRuleValue};
-use pumpkin_data::item_stack::{DamageResult, ItemStack};
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::{damage::DamageType, sound::Sound};
 use pumpkin_inventory::entity_equipment::EntityEquipment;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{CHurtAnimation, CTakeItemEntity, CUpdateMobEffect};
+use pumpkin_protocol::java::client::play::{CTakeItemEntity, CUpdateMobEffect};
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
     java::client::play::{CSetEquipment, MetadataSerializer},
@@ -95,6 +103,9 @@ pub struct LivingEntity {
     pub dead: AtomicBool,
     /// The distance the entity has been falling.
     pub fall_distance: AtomicCell<f32>,
+    hidden_effects:
+        std::sync::Mutex<FxHashMap<&'static StatusEffect, Option<Box<effects::HiddenEffect>>>>,
+    effect_versions: std::sync::Mutex<FxHashMap<&'static StatusEffect, u64>>,
     pub active_effects: std::sync::Mutex<FxHashMap<&'static StatusEffect, Effect>>,
     pub entity_equipment: Arc<std::sync::Mutex<EntityEquipment>>,
     pub equipment_drop_chances: Arc<std::sync::Mutex<FxHashMap<EquipmentSlot, f32>>>,
@@ -291,6 +302,8 @@ impl LivingEntity {
             active_hand: std::sync::Mutex::new(None),
             recent_kinetic_enemies: std::sync::Mutex::new(FxHashMap::default()),
             livings_flags: AtomicU8::new(0),
+            hidden_effects: std::sync::Mutex::new(FxHashMap::default()),
+            effect_versions: std::sync::Mutex::default(),
             active_effects: std::sync::Mutex::new(FxHashMap::default()),
             entity_equipment: Arc::new(std::sync::Mutex::new(EntityEquipment::new())),
             equipment_drop_chances: Arc::new(std::sync::Mutex::new(FxHashMap::default())),
@@ -511,11 +524,13 @@ impl LivingEntity {
         }
     }
 
+    // LivingEntity.stopUsingItem: release every use-state guard before metadata callbacks.
     pub fn clear_active_hand(&self) {
-        *self
+        let used_item = self
             .item_in_use
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         *self
             .active_hand
             .lock()
@@ -526,7 +541,19 @@ impl LivingEntity {
             .clear();
         self.item_use_time.store(0, Ordering::Relaxed);
 
+        let was_using = self.livings_flags.load(Relaxed) & Self::USING_ITEM_FLAG != 0;
         self.set_living_flag(Self::USING_ITEM_FLAG, false);
+        if was_using
+            && used_item.is_some_and(|item| {
+                item.get_data_component::<pumpkin_data::data_component_impl::UseEffectsImpl>()
+                    .is_some_and(|effects| effects.interact_vibrations)
+            })
+        {
+            self.entity
+                .world
+                .load()
+                .game_event_item_interact_finish(&self.entity);
+        }
     }
 
     pub fn was_recently_stabbed(&self, target_id: i32, now: i32, allowed_ticks: i32) -> bool {
@@ -545,33 +572,7 @@ impl LivingEntity {
     }
 
     pub fn is_blocking(&self) -> bool {
-        let item_in_use = self
-            .item_in_use
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(item) = item_in_use.as_ref()
-            && item.get_data_component::<BlocksAttacksImpl>().is_some()
-        {
-            let use_time = self.item_use_time.load(Ordering::Relaxed);
-            let required_time = if let Some(dyn_self) = self
-                .entity
-                .world
-                .load()
-                .get_entity_by_id(self.entity.entity_id)
-                && let Some(player) = dyn_self
-                    .cast_any()
-                    .downcast_ref::<crate::entity::player::Player>()
-                && matches!(
-                    player.client.as_ref(),
-                    crate::net::ClientPlatform::Bedrock(_)
-                ) {
-                0
-            } else {
-                5
-            };
-            return item.get_max_use_time() - use_time >= required_time;
-        }
-        false
+        self.get_item_blocking_with().is_some()
     }
 
     pub fn heal(&self, additional_health: f32) {
@@ -756,110 +757,7 @@ impl LivingEntity {
     }
 
     pub fn add_effect(&self, effect: Effect) {
-        let mut effect_event =
-            crate::plugin::api::events::entity::entity_potion_effect::EntityPotionEffectEvent::new(
-                self.entity.entity_id,
-                effect.effect_type.translation_key.to_string(),
-                effect.duration,
-                effect.amplifier,
-            );
-        if let Some(server) = self.entity.world.load().server.upgrade() {
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut effect_event);
-        }
-        if effect_event.cancelled {
-            return;
-        }
-
-        // Apply instant effects immediately before storing
-        if effect.effect_type == &StatusEffect::INSTANT_HEALTH {
-            let heal_amount = 4.0 * (1 << effect.amplifier) as f32;
-            self.heal(heal_amount);
-            // Like vanilla, instant effects are never sent or stored as active effects.
-            return;
-        } else if effect.effect_type == &StatusEffect::INSTANT_DAMAGE {
-            let damage_amount = 6.0 * (1 << effect.amplifier) as f32;
-            let dyn_self = self
-                .entity
-                .world
-                .load()
-                .get_entity_by_id(self.entity.entity_id);
-            if let Some(dyn_self) = dyn_self {
-                let _ = dyn_self.damage(&*dyn_self, damage_amount, DamageType::MAGIC);
-            }
-            return;
-        }
-
-        // Apply non-instant effects
-
-        // Effects that modify attributes (ex. speed) should also update the
-        // entity's attribute instances (server-side) and then notify clients.
-        if !effect.effect_type.attribute_modifiers.is_empty() {
-            // Apply each attribute modifier into the local AttributeInstance
-            for m in effect.effect_type.attribute_modifiers {
-                let id = m.id.to_string();
-                let op = match m.operation {
-                    Operation::AddValue => ModifierOperation::Add,
-                    Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
-                    Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
-                };
-                let scaled_amount = m.base_value * (f64::from(effect.amplifier) + 1.);
-                let mod_inst = Modifier {
-                    id,
-                    amount: scaled_amount,
-                    operation: op,
-                    // Vanilla `MobEffect.addAttributeModifiers` adds these as permanent.
-                    permanent: true,
-                };
-
-                self.update_attribute(m.attribute, |inst| {
-                    inst.add_or_replace_modifier(mod_inst.clone());
-                });
-            }
-
-            // Recompute packet modifiers from active effects for each affected attribute
-            let mut touched_attrs: Vec<pumpkin_data::attributes::Attributes> = Vec::new();
-            for m in effect.effect_type.attribute_modifiers {
-                if !touched_attrs.iter().any(|a| a.id == m.attribute.id) {
-                    touched_attrs.push(m.attribute.clone());
-                }
-            }
-
-            if !touched_attrs.is_empty() {
-                crate::entity::attributes::send_attribute_updates_for_living(self, touched_attrs);
-            }
-        }
-
-        // Apply absorption effect (+4 absorption per level)
-        if effect.effect_type == &StatusEffect::ABSORPTION {
-            let added = 4.0 * (effect.amplifier as f32 + 1.0);
-            let max_abs = self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32;
-            let new_abs = (self.absorption.load() + added).min(max_abs);
-            self.set_absorption(new_abs);
-        }
-
-        // Apply invisible effect
-        if effect.effect_type == &StatusEffect::INVISIBILITY {
-            self.entity.set_invisible(true);
-        }
-
-        // Apply glowing effect
-        if effect.effect_type == &StatusEffect::GLOWING {
-            self.entity.set_glowing(true);
-        }
-
-        // Broadcast effect to nearby players
-        self.broadcast_effect(&effect);
-        if effect.effect_type != &StatusEffect::INSTANT_HEALTH
-            && effect.effect_type != &StatusEffect::INSTANT_DAMAGE
-        {
-            self.active_effects
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(effect.effect_type, effect);
-        }
-        self.sync_effect_particles();
+        self.add_effect_impl(effect);
     }
 
     /// Sends an effect packet to every player tracking this entity, mirroring
@@ -933,13 +831,22 @@ impl LivingEntity {
     }
 
     pub fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
-        // Remove the effect
-        let succeeded = self
-            .active_effects
+        // LivingEntity.removeEffect only invokes removal hooks when an effect existed.
+        {
+            let mut active = self
+                .active_effects
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if active.remove(&effect_type).is_none() {
+                return false;
+            }
+            self.bump_effect_version(effect_type);
+        };
+
+        self.hidden_effects
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&effect_type)
-            .is_some();
+            .remove(&effect_type);
 
         // Broadcast effect removal
         self.entity
@@ -974,9 +881,13 @@ impl LivingEntity {
             }
         }
 
-        // If absorption effect removed, clear current absorption amount and notify clients
+        // LivingEntity.onAttributeUpdated preserves absorption from independent modifiers.
         if effect_type == &StatusEffect::ABSORPTION {
-            self.set_absorption(0.0);
+            self.set_absorption(
+                self.absorption
+                    .load()
+                    .min(self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32),
+            );
         }
 
         // If health boost effect removed, clamp current health to new max and notify clients
@@ -998,11 +909,8 @@ impl LivingEntity {
             self.entity.set_glowing(false);
         }
 
-        if succeeded {
-            self.sync_effect_particles();
-        }
-
-        succeeded
+        self.sync_effect_particles();
+        true
     }
 
     pub fn has_effect(&self, effect: &'static StatusEffect) -> bool {
@@ -1937,142 +1845,7 @@ impl LivingEntity {
     }
 
     fn tick_effects(&self) {
-        let mut effects_to_remove = Vec::new();
-        let mut effects_to_apply = Vec::new();
-        let mut effects_to_refresh = Vec::new();
-
-        {
-            let Ok(mut effects) = self.active_effects.try_lock() else {
-                return;
-            };
-            let entity_age = self.entity.age.load(Relaxed);
-            for effect in effects.values_mut() {
-                if effect.duration == 0 {
-                    effects_to_remove.push(effect.effect_type);
-                    continue;
-                }
-
-                let tick_duration = if effect.duration == -1 {
-                    entity_age
-                } else {
-                    effect.duration
-                };
-
-                if let Some(mob_effect) = crate::entity::effect::get_mob_effect(effect.effect_type)
-                    && mob_effect.should_apply_effect_tick(tick_duration, effect.amplifier)
-                {
-                    effects_to_apply.push((mob_effect, effect.amplifier));
-                }
-
-                if effect.duration != -1 {
-                    effect.duration -= 1;
-                    // Vanilla `LivingEntity.tickEffects` re-sends the effect every 600
-                    // ticks via `onEffectUpdated(effect, false, null)`; the `false`
-                    // means the attribute modifiers are not reapplied.
-                    if effect.duration > 0 && effect.duration % 600 == 0 {
-                        effects_to_refresh.push(effect.clone());
-                    }
-                }
-            }
-        }
-
-        // Call the central removal function for each expired effect
-        for effect_type in effects_to_remove {
-            self.remove_effect(effect_type);
-        }
-
-        for (mob_effect, amplifier) in effects_to_apply {
-            mob_effect.apply_effect_tick(self, amplifier);
-        }
-
-        for effect in effects_to_refresh {
-            self.broadcast_effect(&effect);
-        }
-    }
-
-    /// Tries to use a totem of undying from the entity's hands. If successful, applies the totem effects and returns true.
-    #[allow(dead_code)]
-    async fn try_use_death_protector(&self, caller: &dyn EntityBase) -> bool {
-        for hand in Hand::all() {
-            let mut stack = self.get_stack_in_hand(caller, hand);
-
-            // Clear the stack and use the totem of undying
-            if stack.get_data_component::<DeathProtectionImpl>().is_some() {
-                let mut resurrect_event =
-                    crate::plugin::api::events::entity::entity_resurrect::EntityResurrectEvent::new(
-                        self.entity.entity_id,
-                    );
-                if let Some(server) = self.entity.world.load().server.upgrade() {
-                    server
-                        .plugin_manager
-                        .fire(&server, &mut resurrect_event)
-                        .await;
-                }
-                if resurrect_event.cancelled {
-                    return false;
-                }
-
-                stack.clear();
-                let slot = match hand {
-                    Hand::Right => EquipmentSlot::MAIN_HAND,
-                    Hand::Left => EquipmentSlot::OFF_HAND,
-                };
-                if let Some(player) = caller.get_player() {
-                    player
-                        .inventory()
-                        .entity_equipment
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .equipment
-                        .insert(slot, stack);
-                } else {
-                    self.entity_equipment
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .equipment
-                        .insert(slot, stack);
-                }
-                self.set_health(1.0);
-                self.entity.world.load().send_entity_status(
-                    &self.entity,
-                    EntityStatus::ProtectedFromDeath,
-                    Some(ActorEventID::InstantDeath),
-                );
-
-                // Set Absorption, Regeneration, and Fire Resistance effects
-                self.add_effect(Effect {
-                    effect_type: &StatusEffect::ABSORPTION,
-                    duration: 100,
-                    amplifier: 1,
-                    ambient: false,
-                    show_particles: true,
-                    show_icon: true,
-                    blend: false,
-                });
-                self.add_effect(Effect {
-                    effect_type: &StatusEffect::REGENERATION,
-                    duration: 900,
-                    amplifier: 1,
-                    ambient: false,
-                    show_particles: true,
-                    show_icon: true,
-                    blend: false,
-                });
-                self.add_effect(Effect {
-                    effect_type: &StatusEffect::FIRE_RESISTANCE,
-                    duration: 800,
-                    amplifier: 0,
-                    ambient: false,
-                    show_particles: true,
-                    show_icon: true,
-                    blend: false,
-                });
-
-                return true;
-            }
-        }
-
-        false
+        self.tick_effects_impl();
     }
 
     pub fn held_item(&self, caller: &dyn EntityBase) -> ItemStack {
@@ -2261,6 +2034,7 @@ impl LivingEntity {
                 for effect in effects_vec {
                     let mut effect_nbt = pumpkin_nbt::compound::NbtCompound::new();
                     effect.write_nbt(&mut effect_nbt);
+                    self.write_hidden_effect(&effect, &mut effect_nbt);
                     effects_list.push(NbtTag::Compound(effect_nbt));
                 }
                 nbt.put("active_effects", NbtTag::List(effects_list));
@@ -2362,6 +2136,7 @@ impl LivingEntity {
                 for effect in nbt_effects {
                     if let NbtTag::Compound(effect_nbt) = effect {
                         if let Some(mut effect) = Effect::create_from_nbt(&mut effect_nbt.clone()) {
+                            self.read_hidden_effect(&effect, effect_nbt);
                             effect.blend = true; // TODO: change, is taken from effect give command
                             read_effects.push(effect);
                         } else {
@@ -2383,7 +2158,6 @@ impl LivingEntity {
         // todo more...
     }
 
-    #[allow(clippy::too_many_lines)]
     pub fn damage_with_context(
         &self,
         caller: &dyn EntityBase,
@@ -2393,288 +2167,7 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        let mut amount = amount;
-
-        // Check invulnerability before applying damage
-        if self.entity.is_invulnerable_to(&damage_type, cause) {
-            return false;
-        }
-
-        if self.health.load() <= 0.0 || self.dead.load(Relaxed) {
-            return false; // Dying or dead
-        }
-
-        if amount < 0.0 {
-            return false;
-        }
-
-        let mut damage_event =
-            crate::plugin::api::events::entity::entity_damage::EntityDamageEvent::new(
-                self.entity.entity_id,
-                damage_type,
-                amount,
-            );
-        if let Some(server) = self.entity.world.load().server.upgrade() {
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut damage_event);
-        }
-        if damage_event.cancelled {
-            return false;
-        }
-        amount = damage_event.damage;
-
-        if let Some(damager) = source.or(cause) {
-            let mut by_entity_event =
-                crate::plugin::api::events::entity::entity_damage_by_entity::EntityDamageByEntityEvent {
-                    entity_id: self.entity.entity_id,
-                    damager_id: damager.get_entity().entity_id,
-                    damage: amount,
-                    cause: format!("{damage_type:?}"),
-                    cancelled: false,
-                };
-            if let Some(server) = self.entity.world.load().server.upgrade() {
-                server
-                    .plugin_manager
-                    .fire_blocking(&server, &mut by_entity_event);
-            }
-            if by_entity_event.cancelled {
-                return false;
-            }
-            amount = by_entity_event.damage;
-        } else if position.is_some()
-            || matches!(
-                damage_type,
-                DamageType::CACTUS
-                    | DamageType::SWEET_BERRY_BUSH
-                    | DamageType::CAMPFIRE
-                    | DamageType::HOT_FLOOR
-                    | DamageType::STALAGMITE
-            )
-        {
-            let damager_pos = position.map(|p| {
-                BlockPos(Vector3::new(
-                    p.x.floor() as i32,
-                    p.y.floor() as i32,
-                    p.z.floor() as i32,
-                ))
-            });
-            let mut by_block_event =
-                crate::plugin::api::events::entity::entity_damage_by_block::EntityDamageByBlockEvent {
-                    entity_id: self.entity.entity_id,
-                    damager_pos,
-                    damage: amount,
-                    cause: format!("{damage_type:?}"),
-                    cancelled: false,
-                };
-            if let Some(server) = self.entity.world.load().server.upgrade() {
-                server
-                    .plugin_manager
-                    .fire_blocking(&server, &mut by_block_event);
-            }
-            if by_block_event.cancelled {
-                return false;
-            }
-            amount = by_block_event.damage;
-        }
-
-        let world = self.entity.world.load();
-        let is_fire_damage = damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FIRE);
-
-        // Fire damage can be prevented by either game rules or fire resistance
-        if is_fire_damage {
-            // Check game rule for fire damage (only for players)
-            if self.entity.entity_type == &EntityType::PLAYER
-                && !world.level_info.load().game_rules.fire_damage
-            {
-                return false;
-            }
-
-            // Check for fire resistance effect
-            if self.has_effect(&StatusEffect::FIRE_RESISTANCE)
-                && !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_EFFECTS)
-            {
-                return false;
-            }
-        }
-
-        if let Some(player) = caller.get_player()
-            && player.sleeping_since.load().is_some()
-        {
-            player.wake_up();
-        }
-
-        // Check for shield blocking before armor/magic/cooldown. Like vanilla's
-        // `DamageSource.getSourcePosition`, melee hits come from the direct attacker's position.
-        if self.is_blocking()
-            && !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_SHIELD)
-            && let Some(pos) = position.or_else(|| source.map(|s| s.get_entity().pos.load()))
-        {
-            let player_pos = self.entity.pos.load();
-            let look_vec = Vector3::rotation_vector(0.0, self.entity.yaw.load() as f64);
-            let mut source_to_player = (player_pos - pos).normalize();
-            source_to_player.y = 0.0;
-
-            if source_to_player.dot(&look_vec) < 0.0 {
-                world.play_sound(Sound::ItemShieldBlock, SoundCategory::Players, &player_pos);
-
-                if let Some(player) = caller.get_player() {
-                    player.increment_stat(
-                        StatisticCategory::Custom,
-                        CustomStatistic::DamageBlockedByShield as i32,
-                        (amount * 10.0).round() as i32,
-                    );
-                }
-
-                let active_hand = *self
-                    .active_hand
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(hand) = active_hand {
-                    let slot = match hand {
-                        Hand::Right => EquipmentSlot::MAIN_HAND,
-                        Hand::Left => EquipmentSlot::OFF_HAND,
-                    };
-
-                    let durability_damage = (amount / 1.0).floor().max(1.0) as i32;
-                    if let Some(player) = caller.get_player() {
-                        let broke = player.damage_item_in_slot(&slot, durability_damage);
-                        let empty = player
-                            .inventory
-                            .get_stack_in_hand(match &slot {
-                                EquipmentSlot::OffHand(_) => Hand::Left,
-                                _ => Hand::Right,
-                            })
-                            .is_empty();
-                        if broke && empty {
-                            self.clear_active_hand();
-                        }
-                    } else {
-                        let mut equipment_guard = self
-                            .entity_equipment
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        if let Some(stack) = equipment_guard.equipment.get_mut(&slot)
-                            && stack.damage_item(durability_damage) == DamageResult::Broken
-                        {
-                            world.send_entity_status(
-                                &self.entity,
-                                crate::entity::equipment_break_status(&slot),
-                                None,
-                            );
-                            *stack = ItemStack::EMPTY.clone();
-                            let broken_stack = stack.clone();
-                            drop(equipment_guard);
-
-                            self.send_equipment_changes(&[(slot, broken_stack)]);
-                            self.clear_active_hand();
-                        }
-                    }
-                }
-
-                // LivingEntity.hurtServer still resolves credit for an admitted fully blocked hit.
-                if self.damage_after_cooldown(0.0, &damage_type).is_some() {
-                    self.record_hurt_by(damage_type, source, cause);
-                }
-                return false;
-            }
-        }
-
-        // Vanilla parity: entities in FREEZE_HURTS_EXTRA_TYPES take 5x freezing damage.
-        if damage_type == DamageType::FREEZE
-            && self
-                .entity
-                .entity_type
-                .has_tag(&tag::EntityType::MINECRAFT_FREEZE_HURTS_EXTRA_TYPES)
-        {
-            amount *= 5.0;
-        }
-
-        // LivingEntity.hurtServer admits the raw excess before actuallyHurt applies armor.
-        let Some((damage_amount, took_full_damage)) =
-            self.damage_after_cooldown(amount, &damage_type)
-        else {
-            return false;
-        };
-
-        // Record the source once the hit is confirmed.
-        *self
-            .last_damage_type
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(damage_type);
-        self.last_damage_stamp.store(world.get_world_age(), Relaxed);
-
-        let Some(server) = world.server.upgrade() else {
-            return false;
-        };
-        let config = &server.advanced_config.pvp;
-        self.actually_hurt(caller, damage_amount, damage_type, source, cause);
-        self.record_hurt_by(damage_type, source, cause);
-
-        if config.hurt_animation {
-            let entity_id = self.entity.entity_id;
-            let hurt_yaw = source.map_or(0.0, |source| {
-                let src = source.get_entity().pos.load();
-                let tgt = self.entity.pos.load();
-                (src.z - tgt.z).atan2(src.x - tgt.x).to_degrees() as f32 - self.entity.yaw.load()
-            });
-            let hurt_event = SActorEvent {
-                target_runtime_id: VarULong(entity_id as u64),
-                event_id: ActorEventID::Hurt,
-                data: VarInt(0),
-                fire_at_position: None,
-            };
-            let hurt_animation = CHurtAnimation::new(entity_id.into(), hurt_yaw);
-            world.send_to_tracking_players_and_self_editioned(
-                &self.entity,
-                &hurt_animation,
-                &hurt_event,
-            );
-        }
-
-        world.broadcast_damage_event(
-            &self.entity,
-            i32::from(damage_type.id),
-            source.map(|e| e.get_entity().entity_id),
-            cause.map(|e| e.get_entity().entity_id),
-            position,
-        );
-
-        if took_full_damage && self.health.load() > 0.0 {
-            world.play_sound_fine(
-                self.hurt_sound(caller),
-                SoundCategory::Players,
-                &self.entity.pos.load(),
-                1.0,
-                self.get_pitch(),
-            );
-
-            if let Some(source) = source {
-                let source_pos = source.get_entity().pos.load();
-                let target_pos = self.entity.pos.load();
-                let dx = source_pos.x - target_pos.x;
-                let dz = source_pos.z - target_pos.z;
-                let resistance = self.get_attribute_value(&Attributes::KNOCKBACK_RESISTANCE);
-                self.entity
-                    .apply_knockback(knockback_after_resistance(0.4, resistance), dx, dz);
-            }
-        }
-
-        if self.health.load() <= 0.0 {
-            let mut death_event =
-                crate::plugin::api::events::entity::entity_death::EntityDeathEvent::new(
-                    self.entity.entity_id,
-                    0,
-                );
-            if let Some(server) = world.server.upgrade() {
-                server
-                    .plugin_manager
-                    .fire_blocking(&server, &mut death_event);
-            }
-            self.on_death(damage_type, source, cause);
-        }
-
-        true
+        self.hurt_server(caller, amount, damage_type, position, source, cause)
     }
 
     pub fn damage(&self, caller: &dyn EntityBase, amount: f32, damage_type: DamageType) -> bool {

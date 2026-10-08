@@ -1,3 +1,4 @@
+mod consume_effect_tags;
 pub mod context_provider_loader;
 pub mod damage_type_loader;
 pub mod dynamic_registry_loader;
@@ -77,6 +78,7 @@ pub struct DatapackManager {
     loaded_packs: RwLock<Vec<LoadedDatapack>>,
     functions: RwLock<HashMap<String, Arc<[String]>>>,
     function_tags: RwLock<HashMap<String, Vec<String>>>,
+    consume_effect_tags: RwLock<consume_effect_tags::ConsumeEffectTags>,
     test_instances: RwLock<TestInstanceRegistry>,
     context_int_providers: RwLock<ContextProviderRegistry>,
     context_float_providers: RwLock<ContextProviderRegistry>,
@@ -189,6 +191,7 @@ impl DatapackManager {
             loaded_packs: RwLock::new(Vec::new()),
             functions: RwLock::new(HashMap::new()),
             function_tags: RwLock::new(HashMap::new()),
+            consume_effect_tags: RwLock::new(consume_effect_tags::ConsumeEffectTags::default()),
             test_instances: RwLock::new(HashMap::new()),
             context_int_providers: RwLock::new(HashMap::new()),
             context_float_providers: RwLock::new(HashMap::new()),
@@ -257,6 +260,7 @@ impl DatapackManager {
             &mut loaded_packs_vec,
         );
 
+        self.load_consume_effect_tags(&loaded_packs_vec, enabled_packs);
         let damage_type_registry = build_damage_type_registry(all_damage_type_defs);
 
         recipe_manager.set_recipes(all_recipes);

@@ -331,9 +331,14 @@ impl Mob for ArmadilloEntity {
         }
     }
 
-    fn on_damage(&self, _damage_type: DamageType, source: Option<&dyn EntityBase>) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+    ) {
         if self.get_entity().is_alive()
-            && let Some(src) = source
+            && let Some(src) = cause
             && src.get_entity().entity_type != &EntityType::ITEM
         {
             self.danger_detected_recently_ticks

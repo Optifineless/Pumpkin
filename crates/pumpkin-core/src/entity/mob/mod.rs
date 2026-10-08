@@ -795,6 +795,11 @@ impl MobEntity {
 }
 
 pub trait Mob: EntityBase + Send + Sync {
+    /// Overrides `LivingEntity.getSecondsToDisableBlocking` for mobs with a fixed duration.
+    fn blocking_disable_seconds_override(&self) -> Option<f32> {
+        None
+    }
+
     fn get_random(&self) -> rand::rngs::ThreadRng {
         rand::rng()
     }
@@ -950,11 +955,23 @@ pub trait Mob: EntityBase + Send + Sync {
 
     /// Called before damage is applied. Return `false` to cancel the damage entirely.
     /// Used by endermen to dodge projectiles via teleportation.
-    fn pre_damage(&self, _damage_type: DamageType, _source: Option<&dyn EntityBase>) -> bool {
+    /// `source` and `cause` preserve DamageSource.getDirectEntity and getEntity respectively.
+    fn pre_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) -> bool {
         true
     }
 
-    fn on_damage(&self, _damage_type: DamageType, _source: Option<&dyn EntityBase>) {}
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) {
+    }
 
     fn on_attack(&self, _target: &dyn EntityBase) {}
 
@@ -1477,7 +1494,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         cause: Option<&dyn EntityBase>,
     ) -> bool {
         // pre_damage hook: allows mobs to dodge/cancel damage (e.g. enderman projectile dodge)
-        if !self.pre_damage(damage_type, source) {
+        if !self.pre_damage(damage_type, source, cause) {
             return false;
         }
         // Mob-specific damage modifier (e.g. shulker armor when closed).
@@ -1491,7 +1508,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
             cause,
         );
         if damaged {
-            self.on_damage(damage_type, source);
+            self.on_damage(damage_type, source, cause);
         }
         damaged
     }

@@ -568,7 +568,7 @@ impl DataComponentImpl for BreakSoundImpl {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SoundEvent {
-    pub sound_name: String,
+    pub sound_name: Cow<'static, str>,
     pub range: Option<f32>,
 }
 impl std::hash::Hash for SoundEvent {
@@ -583,7 +583,7 @@ impl std::hash::Hash for SoundEvent {
     }
 }
 impl SoundEvent {
-    pub const fn new(sound_name: String, range: Option<f32>) -> Self {
+    pub const fn new(sound_name: Cow<'static, str>, range: Option<f32>) -> Self {
         Self { sound_name, range }
     }
 }

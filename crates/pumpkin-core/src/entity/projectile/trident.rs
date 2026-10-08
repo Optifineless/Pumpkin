@@ -368,7 +368,15 @@ impl EntityBase for TridentEntity {
                 }
 
                 let damage_val = damage as f32;
-                target.damage(&*target, damage_val, DamageType::TRIDENT);
+                // ThrownTrident.onHitEntity keeps the projectile and its owner separate.
+                let owner = self.owner_id.and_then(|id| world.get_entity_by_id(id));
+                super::damage::hurt_entity(
+                    &*target,
+                    damage_val,
+                    DamageType::TRIDENT,
+                    self,
+                    owner.as_deref().or(Some(self)),
+                );
 
                 // Play hit sound
                 let sound_packet = CSoundEffect::new(

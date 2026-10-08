@@ -81,24 +81,25 @@ impl EntityBase for LlamaSpitEntity {
     }
 
     fn on_hit(&self, hit: ProjectileHit) {
-        if let ProjectileHit::Entity {
-            ref entity,
-            hit_pos,
-            ..
-        } = hit
-        {
+        if let ProjectileHit::Entity { ref entity, .. } = hit {
             let world = self.get_entity().world.load();
             let owner_id = self.thrown.owner_id;
             let owner = owner_id.and_then(|id| world.get_entity_by_id(id));
 
-            let _ = entity.damage_with_context(
-                entity.as_ref(),
-                1.0,
-                DamageType::SPIT,
-                Some(hit_pos),
-                Some(self.get_entity()),
-                owner.as_deref(),
-            );
+            // LlamaSpit.onHitEntity only hurts with a living owner.
+            if let Some(owner) = owner
+                .as_deref()
+                .filter(|owner| owner.get_living_entity().is_some())
+                && super::damage::hurt_entity(
+                    entity.as_ref(),
+                    1.0,
+                    DamageType::SPIT,
+                    self,
+                    Some(owner),
+                )
+            {
+                super::damage::post_attack(entity.as_ref(), DamageType::SPIT, self, Some(owner));
+            }
         }
     }
 }

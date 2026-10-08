@@ -507,12 +507,45 @@ impl ToTokens for ItemComponents {
             }), });
         }
 
-        if self.blocks_attacks.is_some() {
-            tokens.extend(quote! { (BlocksAttacks, &BlocksAttacksImpl), });
+        if let Some(blocking) = &self.blocks_attacks {
+            let block_delay_seconds = float_literal(blocking.block_delay_seconds);
+            let disable_cooldown_scale = float_literal(blocking.disable_cooldown_scale);
+            let reductions = blocking.damage_reductions.iter().map(|reduction| {
+                let angle = float_literal(reduction.horizontal_blocking_angle);
+                let damage_type = optional_damage_types_tokens(reduction.damage_type.as_ref());
+                let base = float_literal(reduction.base);
+                let factor = float_literal(reduction.factor);
+                quote! { BlockingDamageReduction { horizontal_blocking_angle: #angle, damage_type: #damage_type, base: #base, factor: #factor } }
+            });
+            let threshold = float_literal(blocking.item_damage.threshold);
+            let base = float_literal(blocking.item_damage.base);
+            let factor = float_literal(blocking.item_damage.factor);
+            let bypassed_by = optional_damage_types_tokens(blocking.bypassed_by.as_ref());
+            let block_sound = blocking.block_sound.as_ref().map_or_else(
+                || quote! { None },
+                |sound| {
+                    let sound = sound_holder_tokens(sound);
+                    quote! { Some(#sound) }
+                },
+            );
+            let disable_sound = blocking.disabled_sound.as_ref().map_or_else(
+                || quote! { None },
+                |sound| {
+                    let sound = sound_holder_tokens(sound);
+                    quote! { Some(#sound) }
+                },
+            );
+            tokens.extend(quote! { (BlocksAttacks, &BlocksAttacksImpl {
+                block_delay_seconds: #block_delay_seconds, disable_cooldown_scale: #disable_cooldown_scale,
+                damage_reductions: Cow::Borrowed(&[#(#reductions),*]),
+                item_damage: BlockingItemDamage { threshold: #threshold, base: #base, factor: #factor },
+                bypassed_by: #bypassed_by, block_sound: #block_sound, disable_sound: #disable_sound,
+            }), });
         }
 
-        if self.death_protection.is_some() {
-            tokens.extend(quote! { (DeathProtection, &DeathProtectionImpl), });
+        if let Some(protection) = &self.death_protection {
+            let effects = death_effect_tokens(&protection.death_effects);
+            tokens.extend(quote! { (DeathProtection, &DeathProtectionImpl { death_effects: Cow::Borrowed(&[#effects]) }), });
         }
 
         if let Some(weapon) = &self.weapon {
@@ -520,7 +553,8 @@ impl ToTokens for ItemComponents {
                 &weapon.item_damage_per_attack.to_string(),
                 Span::call_site(),
             );
-            tokens.extend(quote! { (Weapon, &WeaponImpl { item_damage_per_attack: #damage }), });
+            let disable_seconds = float_literal(weapon.disable_blocking_for_seconds);
+            tokens.extend(quote! { (Weapon, &WeaponImpl { item_damage_per_attack: #damage, disable_blocking_for_seconds: #disable_seconds }), });
         }
 
         if let Some(damage_resistant) = &self.damage_resistant {
@@ -1079,8 +1113,24 @@ impl ToTokens for ItemComponents {
         if self.tooltip_display.is_some() {
             tokens.extend(quote! { (TooltipDisplay, &TooltipDisplayImpl), });
         }
-        if self.use_effects.is_some() {
-            tokens.extend(quote! { (UseEffects, &UseEffectsImpl), });
+        if let Some(effects) = &self.use_effects {
+            let can_sprint = effects
+                .get("can_sprint")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            let interact_vibrations = effects
+                .get("interact_vibrations")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(true);
+            let speed_multiplier = effects
+                .get("speed_multiplier")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.2) as f32;
+            if !can_sprint && interact_vibrations && speed_multiplier == 0.2 {
+                tokens.extend(quote! { (UseEffects, &UseEffectsImpl::DEFAULT), });
+            } else {
+                tokens.extend(quote! { (UseEffects, &UseEffectsImpl { can_sprint: #can_sprint, interact_vibrations: #interact_vibrations, speed_multiplier: #speed_multiplier }), });
+            }
         }
         if self.use_remainder.is_some() {
             let remainder = self.use_remainder.as_ref().unwrap();
@@ -1218,19 +1268,20 @@ pub enum StringOrStatusEffects {
     Effects(Vec<StatusEffectInstance>),
 }
 
-/// Deserialized death-protection component (e.g., totem of undying); fields are unimplemented.
+/// Mirrors DeathProtection.CODEC.
 #[derive(Deserialize, Clone)]
 pub struct DeathProtection {
-    // TODO
+    #[serde(default)]
+    pub death_effects: Vec<DeathEffectComponent>,
 }
 
-/// Deserialized attack-blocking component (e.g., shield); fields are unimplemented.
+/// Mirrors Weapon.CODEC.
 #[derive(Deserialize, Clone)]
 pub struct WeaponComponent {
     #[serde(default = "default_item_damage")]
     pub item_damage_per_attack: u32,
-    // TODO: Add disable_blocking_for_seconds parsing when shield-disable mechanic is implemented.
-    // This preserves round-trip fidelity for vanilla items and datapacks.
+    #[serde(default)]
+    pub disable_blocking_for_seconds: f32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1340,9 +1391,239 @@ fn kinetic_condition_tokens(condition: Option<&KineticConditionComponent>) -> To
     )
 }
 
+/// Mirrors BlocksAttacks.CODEC, including its default frontal reduction.
 #[derive(Deserialize, Clone)]
 pub struct BlocksAttacks {
-    // TODO
+    #[serde(default)]
+    pub block_delay_seconds: f32,
+    #[serde(default = "return_1f32")]
+    pub disable_cooldown_scale: f32,
+    #[serde(default = "default_blocking_reductions")]
+    pub damage_reductions: Vec<BlockingDamageReduction>,
+    #[serde(default)]
+    pub item_damage: BlockingItemDamage,
+    pub bypassed_by: Option<StringOrList>,
+    pub block_sound: Option<SoundComponent>,
+    pub disabled_sound: Option<SoundComponent>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct BlockingDamageReduction {
+    #[serde(default = "default_blocking_angle")]
+    pub horizontal_blocking_angle: f32,
+    #[serde(rename = "type")]
+    pub damage_type: Option<StringOrList>,
+    pub base: f32,
+    pub factor: f32,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct BlockingItemDamage {
+    pub threshold: f32,
+    pub base: f32,
+    pub factor: f32,
+}
+impl Default for BlockingItemDamage {
+    fn default() -> Self {
+        Self {
+            threshold: 1.0,
+            base: 0.0,
+            factor: 1.0,
+        }
+    }
+}
+const fn default_blocking_angle() -> f32 {
+    90.0
+}
+fn default_blocking_reductions() -> Vec<BlockingDamageReduction> {
+    vec![BlockingDamageReduction {
+        horizontal_blocking_angle: 90.0,
+        damage_type: None,
+        base: 0.0,
+        factor: 1.0,
+    }]
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(untagged)]
+pub enum SoundComponent {
+    Registered(String),
+    Inline {
+        sound_id: String,
+        range: Option<f32>,
+    },
+}
+
+fn sound_holder_tokens(sound: &SoundComponent) -> TokenStream {
+    match sound {
+        SoundComponent::Registered(sound) => {
+            let sound = format_ident!(
+                "{}",
+                sound
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(sound)
+                    .to_pascal_case()
+            );
+            quote! { IdOr::Id(Sound::#sound) }
+        }
+        SoundComponent::Inline { sound_id, range } => {
+            let range = range.map_or_else(
+                || quote! { None },
+                |range| {
+                    let range = float_literal(range);
+                    quote! { Some(#range) }
+                },
+            );
+            quote! { IdOr::Value(SoundEvent { sound_name: Cow::Borrowed(#sound_id), range: #range }) }
+        }
+    }
+}
+
+fn optional_damage_types_tokens(types: Option<&StringOrList>) -> TokenStream {
+    types.map_or_else(
+        || quote! { None },
+        |types| {
+            let types = registry_set_tokens(types, |name| {
+                let name = format_ident!(
+                    "{}",
+                    name.strip_prefix("minecraft:")
+                        .unwrap_or(name)
+                        .to_shouty_snake_case()
+                );
+                quote! { &DamageTypeImpl { damage_type: crate::damage::DamageType::#name } }
+            });
+            quote! { Some(#types) }
+        },
+    )
+}
+
+fn registry_set_tokens(types: &StringOrList, entry: impl Fn(&str) -> TokenStream) -> TokenStream {
+    match types {
+        StringOrList::String(tag) if tag.starts_with('#') => {
+            let tag = tag.trim_start_matches('#');
+            quote! { IDSet::Tag(Cow::Borrowed(#tag)) }
+        }
+        StringOrList::String(name) => {
+            let entry = entry(name);
+            quote! { IDSet::IDs(Cow::Borrowed(&[#entry])) }
+        }
+        StringOrList::List(names) => {
+            let entries = names.iter().map(|name| entry(name));
+            quote! { IDSet::IDs(Cow::Borrowed(&[#(#entries),*])) }
+        }
+    }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct DeathEffectComponent {
+    r#type: String,
+    probability: Option<f32>,
+    diameter: Option<f32>,
+    directional_particles: Option<bool>,
+    sound: Option<SoundComponent>,
+    effects: Option<DeathEffectTargets>,
+}
+#[derive(Deserialize, Clone)]
+#[serde(untagged)]
+pub enum DeathEffectTargets {
+    String(String),
+    Effects(Vec<DeathStatusEffectComponent>),
+    Names(Vec<String>),
+}
+#[derive(Deserialize, Clone)]
+pub struct DeathStatusEffectComponent {
+    #[serde(default)]
+    id: String,
+    amplifier: Option<i32>,
+    duration: Option<i32>,
+    ambient: Option<bool>,
+    show_particles: Option<bool>,
+    show_icon: Option<bool>,
+    hidden_effect: Option<Box<DeathStatusEffectComponent>>,
+}
+
+fn death_effect_tokens(effects: &[DeathEffectComponent]) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    for effect in effects {
+        match effect
+            .r#type
+            .strip_prefix("minecraft:")
+            .unwrap_or(&effect.r#type)
+        {
+            "clear_all_effects" => tokens.extend(quote! { DeathEffect::ClearAllEffects, }),
+            "teleport_randomly" => {
+                let diameter = float_literal(effect.diameter.unwrap_or(16.0));
+                let particles = effect.directional_particles.unwrap_or(true);
+                tokens.extend(quote! { DeathEffect::TeleportRandomly { diameter: #diameter, directional_particles: #particles }, });
+            }
+            "apply_effects" => {
+                let Some(DeathEffectTargets::Effects(effects)) = &effect.effects else {
+                    panic!("Missing death status effects")
+                };
+                let effects = effects
+                    .iter()
+                    .map(|effect| death_status_effect_tokens(effect, None));
+                let probability = float_literal(effect.probability.unwrap_or(1.0));
+                tokens.extend(quote! { DeathEffect::ApplyEffects(Cow::Borrowed(&[#(#effects),*]), #probability), });
+            }
+            "play_sound" => {
+                let sound =
+                    sound_holder_tokens(effect.sound.as_ref().expect("Missing death effect sound"));
+                tokens.extend(quote! { DeathEffect::PlaySound(#sound), });
+            }
+            "remove_effects" => {
+                let types = removed_effects_tokens(effect);
+                tokens.extend(quote! { DeathEffect::RemoveEffects(#types), });
+            }
+            _ => panic!("Unknown death effect type: {}", effect.r#type),
+        }
+    }
+    tokens
+}
+
+fn death_status_effect_tokens(
+    effect: &DeathStatusEffectComponent,
+    inherited_id: Option<&str>,
+) -> TokenStream {
+    let id = inherited_id.unwrap_or(&effect.id);
+    let id = if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    };
+    let amplifier = effect.amplifier.unwrap_or(0);
+    let duration = effect.duration.unwrap_or(0);
+    let ambient = effect.ambient.unwrap_or(false);
+    let particles = effect.show_particles.unwrap_or(true);
+    let icon = effect.show_icon.unwrap_or(particles);
+    let hidden = effect.hidden_effect.as_ref().map_or_else(
+        || quote! { None },
+        |hidden| {
+            let hidden = death_status_effect_tokens(hidden, Some(&id));
+            quote! { Some(HiddenDeathEffect::Static(&#hidden)) }
+        },
+    );
+    quote! { DeathStatusEffect { effect: StatusEffectInstance { effect_id: Cow::Borrowed(#id), amplifier: #amplifier, duration: #duration, ambient: #ambient, show_particles: #particles, show_icon: #icon }, hidden_effect: #hidden } }
+}
+
+fn removed_effects_tokens(effect: &DeathEffectComponent) -> TokenStream {
+    let types = match effect.effects.as_ref().expect("Missing removed effects") {
+        DeathEffectTargets::String(name) => StringOrList::String(name.clone()),
+        DeathEffectTargets::Names(names) => StringOrList::List(names.clone()),
+        DeathEffectTargets::Effects(effects) if effects.is_empty() => {
+            StringOrList::List(Vec::new())
+        }
+        _ => panic!("Invalid removed effect holder set"),
+    };
+    registry_set_tokens(&types, |name| {
+        let name = format_ident!(
+            "{}",
+            name.strip_prefix("minecraft:")
+                .unwrap_or(name)
+                .to_shouty_snake_case()
+        );
+        quote! { &StatusEffect::#name }
+    })
 }
 
 /// Deserialized damage-resistance component indicating which damage types the item resists.
@@ -2056,3 +2337,61 @@ pub fn build() -> TokenStream {
         }
     }
 }
+
+#[cfg(test)]
+mod combat_component_tests {
+    use super::*;
+
+    #[test]
+    fn extracted_combat_components_keep_custom_values_in_generated_items() {
+        let components: ItemComponents = serde_json::from_value(serde_json::json!({
+            "minecraft:item_name": {"translate": "item.example.test"},
+            "minecraft:max_stack_size": 1,
+            "minecraft:weapon": {"item_damage_per_attack": 2, "disable_blocking_for_seconds": 3.25},
+            "minecraft:blocks_attacks": {
+                "block_delay_seconds": 0.125,
+                "disable_cooldown_scale": 0.5,
+                "damage_reductions": [{"type": "#minecraft:is_projectile", "horizontal_blocking_angle": 45, "base": 1, "factor": 0.25}],
+                "item_damage": {"threshold": 2, "base": 0.5, "factor": 0.25},
+                "bypassed_by": ["minecraft:fall"],
+                "block_sound": "minecraft:item.shield.block",
+                "disabled_sound": "minecraft:item.shield.break"
+            },
+            "minecraft:death_protection": {"death_effects": [
+                {"type": "minecraft:clear_all_effects"},
+                {"type": "minecraft:apply_effects", "probability": 0.75, "effects": [{"id": "minecraft:regeneration", "amplifier": 2, "duration": 123}]},
+                {"type": "minecraft:teleport_randomly", "diameter": 8, "directional_particles": false}
+            ]}
+        })).unwrap();
+        let generated = components.to_token_stream().to_string();
+        for expected in [
+            "disable_blocking_for_seconds : 3.25f32",
+            "block_delay_seconds : 0.125f32",
+            "disable_cooldown_scale : 0.5f32",
+            "horizontal_blocking_angle : 45.0f32",
+            "threshold : 2.0f32",
+            "ItemShieldBlock",
+            "ItemShieldBreak",
+            "minecraft:is_projectile",
+            "DamageType :: FALL",
+            "0.75f32",
+            "amplifier : 2",
+            "duration : 123",
+            "diameter : 8.0f32",
+            "directional_particles : false",
+        ] {
+            assert!(
+                generated.contains(expected),
+                "Missing {expected} in {generated}"
+            );
+        }
+        assert!(
+            generated.find("DeathEffect :: ClearAllEffects").unwrap()
+                < generated.find("DeathEffect :: ApplyEffects").unwrap()
+        );
+    }
+}
+
+#[cfg(test)]
+#[path = "item_const_tests.rs"]
+mod const_tests;

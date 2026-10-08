@@ -23,6 +23,12 @@ impl JavaClient {
         self.update_sequence(use_item.sequence.0);
 
         let mut item_in_hand = inventory.get_stack_in_hand(hand);
+        // ServerPlayerGameMode.useItem rejects cooldowns before starting any item use.
+        if !crate::entity::item_use::item_use_allowed(&item_in_hand, |group| {
+            player.is_on_cooldown(group)
+        }) {
+            return;
+        }
 
         let mut consume_event =
             crate::plugin::api::events::player::player_item_consume::PlayerItemConsumeEvent::new(
@@ -36,10 +42,13 @@ impl JavaClient {
             return;
         }
 
-        let (item_id, _item) = (item_in_hand.item.id, item_in_hand.item);
-        // BowItem.releaseUsing awards ITEM_USED only after a successful release.
-        if item_id != Item::BOW.id {
-            player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
+        // BowItem.releaseUsing and BlocksAttacks.hurtBlockingItem award successful use.
+        if item_in_hand.item.id != Item::BOW.id
+            && item_in_hand
+                .get_data_component::<BlocksAttacksImpl>()
+                .is_none()
+        {
+            player.increment_stat(StatisticCategory::Used, i32::from(item_in_hand.item.id), 1);
         }
 
         let hit_result = player.world().raycast(
@@ -89,16 +98,6 @@ impl JavaClient {
 
     fn prepare_hand_item_for_use(player: &Arc<Player>, hand: Hand, held: &mut ItemStack) {
         let inventory = player.inventory();
-
-        if let Some(cooldown) = held.get_use_cooldown() {
-            let group = cooldown
-                .cooldown_group
-                .clone()
-                .unwrap_or_else(|| held.item.registry_key.to_string());
-            if player.is_on_cooldown(&group) {
-                return;
-            }
-        }
 
         if held.get_data_component::<ConsumableImpl>().is_some()
             || held.get_data_component::<BlocksAttacksImpl>().is_some()

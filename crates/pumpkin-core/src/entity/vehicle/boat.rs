@@ -89,9 +89,9 @@ impl EntityBase for BoatEntity {
         _damage_type: DamageType,
         _position: Option<Vector3<f64>>,
         source: Option<&dyn EntityBase>,
-        _cause: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
     ) -> bool {
-        self.vehicle.damage_with_context(amount, source)
+        self.vehicle.damage_with_context(amount, source, cause)
     }
 
     fn interact(&self, player: &Arc<Player>, _item_stack: &mut ItemStack) -> bool {

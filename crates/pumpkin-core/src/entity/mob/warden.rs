@@ -160,6 +160,11 @@ impl WardenEntity {
 }
 
 impl Mob for WardenEntity {
+    fn blocking_disable_seconds_override(&self) -> Option<f32> {
+        // Warden.getSecondsToDisableBlocking, independent of held equipment.
+        Some(5.0)
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }

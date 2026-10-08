@@ -7,18 +7,12 @@ pub struct PoisonMobEffect;
 
 impl MobEffect for PoisonMobEffect {
     fn should_apply_effect_tick(&self, duration: i32, amplifier: u8) -> bool {
-        if duration <= 0 {
-            return false;
-        }
-        let tick_rate = 25 >> amplifier.min(4);
-        if tick_rate > 0 {
-            (duration as u32).is_multiple_of(tick_rate as u32)
-        } else {
-            true
-        }
+        // PoisonMobEffect.shouldApplyEffectTickThisTick uses Java's masked shift.
+        let interval = 25i32.wrapping_shr(u32::from(amplifier));
+        interval <= 0 || duration % interval == 0
     }
 
-    fn apply_effect_tick(&self, living: &LivingEntity, _amplifier: u8) {
+    fn apply_effect_tick(&self, living: &LivingEntity, _amplifier: u8) -> bool {
         let current_health = living.health.load();
         if current_health > 1.0
             && let Some(dyn_self) = living
@@ -32,5 +26,6 @@ impl MobEffect for PoisonMobEffect {
                 dyn_self.damage(&*dyn_self, damage_amount, DamageType::MAGIC);
             }
         }
+        true
     }
 }

@@ -164,14 +164,15 @@ impl PlayerInventory {
         let Some(slot) = self.equipment_slots.get(&Self::OFF_HAND_SLOT) else {
             return (ItemStack::EMPTY.clone(), ItemStack::EMPTY.clone());
         };
-        let mut equipment = self
-            .entity_equipment
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Match inventory lookups' main-inventory -> equipment lock order.
         let selected = self.get_selected_slot() as usize;
         let mut main_inv = self
             .main_inventory
             .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut equipment = self
+            .entity_equipment
+            .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let main_hand_item = main_inv[selected].clone();
         let new_main = equipment.put(slot, main_hand_item.clone());

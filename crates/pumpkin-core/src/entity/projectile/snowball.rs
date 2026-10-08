@@ -75,7 +75,18 @@ impl EntityBase for SnowballEntity {
             let is_blaze = entity.get_entity().entity_type.id == EntityType::BLAZE.id;
             let damage = if is_blaze { 3.0 } else { 0.0 }; // Only damage blazes
 
-            entity.damage(entity.as_ref(), damage, DamageType::THROWN);
+            let owner = self
+                .thrown
+                .owner_id
+                .and_then(|id| world.get_entity_by_id(id));
+            // Snowball.onHitEntity: direct projectile and causing owner.
+            super::damage::hurt_entity(
+                entity.as_ref(),
+                damage,
+                DamageType::THROWN,
+                self,
+                owner.as_deref(),
+            );
         }
     }
 }

@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod damage_tests;
 use super::{Entity, EntityBase, living::LivingEntity};
 use pumpkin_data::BlockDirection;
 use pumpkin_data::entity::EntityType;
@@ -10,6 +12,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 pub mod arrow;
+mod damage;
 pub mod egg;
 pub mod ender_pearl;
 pub mod evoker_fangs;

@@ -854,7 +854,12 @@ impl Mob for EnderDragonEntity {
         self.ai_step();
     }
 
-    fn on_damage(&self, _damage_type: DamageType, _source: Option<&dyn EntityBase>) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) {
         let living = &self.mob_entity.living_entity;
         if living.health.load() <= 0.0 {
             self.set_phase(EnderDragonPhase::Dying);

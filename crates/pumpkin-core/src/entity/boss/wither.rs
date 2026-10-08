@@ -602,27 +602,35 @@ impl Mob for WitherEntity {
         self.tick_wither();
     }
 
-    fn pre_damage(&self, damage_type: DamageType, source: Option<&dyn EntityBase>) -> bool {
+    fn pre_damage(
+        &self,
+        damage_type: DamageType,
+        source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+    ) -> bool {
         if damage_type.has_tag(&tag::DamageType::MINECRAFT_WITHER_IMMUNE_TO) {
             return false;
         }
 
-        if let Some(src) = source {
-            let src_type = src.get_entity().entity_type;
-            if src_type == &EntityType::WITHER {
-                return false;
-            }
-            if src_type.has_tag(&tag::EntityType::MINECRAFT_WITHER_FRIENDS) {
-                return false;
-            }
-            if self.is_powered()
-                && (src_type == &EntityType::ARROW
-                    || src_type == &EntityType::SPECTRAL_ARROW
-                    || src_type == &EntityType::WIND_CHARGE
-                    || src_type == &EntityType::BREEZE_WIND_CHARGE)
+        // WitherBoss.hurtServer distinguishes immunity to the cause from direct projectiles.
+        if let Some(cause) = cause {
+            let kind = cause.get_entity().entity_type;
+            if kind == &EntityType::WITHER
+                || kind.has_tag(&tag::EntityType::MINECRAFT_WITHER_FRIENDS)
             {
                 return false;
             }
+        }
+        if self.is_powered()
+            && source.is_some_and(|direct| {
+                let kind = direct.get_entity().entity_type;
+                kind == &EntityType::ARROW
+                    || kind == &EntityType::SPECTRAL_ARROW
+                    || kind == &EntityType::TRIDENT
+                    || kind == &EntityType::WIND_CHARGE
+            })
+        {
+            return false;
         }
 
         if self.get_invulnerable_ticks() > 0
@@ -634,7 +642,12 @@ impl Mob for WitherEntity {
         true
     }
 
-    fn on_damage(&self, _damage_type: DamageType, _source: Option<&dyn EntityBase>) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) {
         if self.destroy_blocks_tick.load(Ordering::Relaxed) <= 0 {
             self.destroy_blocks_tick.store(20, Ordering::Relaxed);
         }

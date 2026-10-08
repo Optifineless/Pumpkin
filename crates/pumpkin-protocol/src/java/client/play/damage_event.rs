@@ -23,7 +23,7 @@ pub struct CDamageEvent {
     /// Set to 0 if there is no specific entity cause.
     pub source_cause_id: VarInt,
     /// The Entity ID of the direct damager (e.g., the arrow entity itself).
-    /// Set to 0 if this is the same as the cause or if not applicable.
+    /// Set to 0 only when the direct entity is absent.
     pub source_direct_id: VarInt,
     /// The coordinates of the damage source. Used by the client to calculate
     /// the direction of the "damage tilt" camera effect.
@@ -68,5 +68,27 @@ impl ClientPacket for CDamageEvent {
             write.write_bool(false)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entity_damage_packet_keeps_distinct_victim_owner_and_projectile_ids() {
+        // ClientboundDamageEventPacket.write: victim, type, cause+1, direct+1, absent raw position.
+        let packet = CDamageEvent::new(
+            VarInt(300),
+            VarInt(7),
+            Some(VarInt(128)),
+            Some(VarInt(42)),
+            None,
+        );
+        let mut bytes = Vec::new();
+        packet
+            .write_packet_data(&mut bytes, &JavaMinecraftVersion::V_26_3)
+            .unwrap();
+        assert_eq!(bytes, [0xac, 0x02, 7, 0x81, 0x01, 43, 0]);
     }
 }

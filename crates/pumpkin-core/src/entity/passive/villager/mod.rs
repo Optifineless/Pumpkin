@@ -2283,15 +2283,17 @@ impl Mob for VillagerEntity {
     fn on_damage(
         &self,
         _damage_type: pumpkin_data::damage::DamageType,
-        source: Option<&dyn EntityBase>,
+        _source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
     ) {
-        let Some(source) = source.filter(|source| {
-            source.get_entity().entity_type == &pumpkin_data::entity::EntityType::PLAYER
+        // Villager reputation attributes projectile hits to DamageSource.getEntity.
+        let Some(cause) = cause.filter(|cause| {
+            cause.get_entity().entity_type == &pumpkin_data::entity::EntityType::PLAYER
         }) else {
             return;
         };
 
-        let Some(player) = source.cast_any().downcast_ref::<Player>() else {
+        let Some(player) = cause.cast_any().downcast_ref::<Player>() else {
             return;
         };
 

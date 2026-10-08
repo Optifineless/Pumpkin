@@ -27,6 +27,8 @@ pub fn build() -> TokenStream {
     let mut category_from_name_arms = Vec::new();
     let mut custom_stat_variants = Vec::new();
     let mut custom_stat_from_id_arms = Vec::new();
+    let mut custom_stat_names = Vec::new();
+    let mut category_names = Vec::new();
 
     for (category_name, data) in &stats_data {
         let category_ident = format_ident!(
@@ -34,6 +36,7 @@ pub fn build() -> TokenStream {
             category_name.replace("minecraft:", "").to_pascal_case()
         );
         let category_id = data.id;
+        category_names.push(quote! { Self::#category_ident => #category_name });
         category_variants.push(quote! { #category_ident = #category_id });
         category_from_id_arms.push(quote! { #category_id => Some(Self::#category_ident) });
         let category_name_stripped = category_name.replace("minecraft:", "");
@@ -45,6 +48,7 @@ pub fn build() -> TokenStream {
                 let stat_ident =
                     format_ident!("{}", stat_name.replace("minecraft:", "").to_pascal_case());
                 let stat_id = entry.id;
+                custom_stat_names.push(quote! { Self::#stat_ident => #stat_name });
                 custom_stat_variants.push(quote! { #stat_ident = #stat_id });
                 custom_stat_from_id_arms.push(quote! { #stat_id => Some(Self::#stat_ident) });
             }
@@ -61,6 +65,11 @@ pub fn build() -> TokenStream {
         }
 
         impl StatisticCategory {
+            #[must_use]
+            pub const fn registry_key(self) -> &'static str {
+                match self { #(#category_names,)* }
+            }
+
             #[must_use]
             pub const fn from_i32(id: i32) -> Option<Self> {
                 match id {
@@ -94,6 +103,11 @@ pub fn build() -> TokenStream {
         }
 
         impl CustomStatistic {
+            #[must_use]
+            pub const fn registry_key(self) -> &'static str {
+                match self { #(#custom_stat_names,)* }
+            }
+
             #[must_use]
             pub const fn from_i32(id: i32) -> Option<Self> {
                 match id {

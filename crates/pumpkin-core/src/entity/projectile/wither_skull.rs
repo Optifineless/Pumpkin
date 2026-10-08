@@ -119,9 +119,45 @@ impl EntityBase for WitherSkullEntity {
         if let ProjectileHit::Entity { ref entity, .. } = hit {
             let difficulty = world.level_info.load().difficulty;
 
-            let _ = entity.damage(entity.as_ref(), 8.0, DamageType::WITHER_SKULL);
+            let owner = self
+                .thrown
+                .owner_id
+                .and_then(|id| world.get_entity_by_id(id));
+            // WitherSkull.onHitEntity: living owners deal 8; all others deal 5 contextless magic.
+            let damaged = owner
+                .as_deref()
+                .filter(|owner| owner.get_living_entity().is_some())
+                .map_or_else(
+                    || entity.damage(entity.as_ref(), 5.0, DamageType::MAGIC),
+                    |owner| {
+                        let damaged = super::damage::hurt_entity(
+                            entity.as_ref(),
+                            8.0,
+                            DamageType::WITHER_SKULL,
+                            self,
+                            Some(owner),
+                        );
+                        if damaged {
+                            if entity.get_entity().is_alive()
+                                && entity
+                                    .get_living_entity()
+                                    .is_none_or(|living| living.health.load() > 0.0)
+                            {
+                                super::damage::post_attack(
+                                    entity.as_ref(),
+                                    DamageType::WITHER_SKULL,
+                                    self,
+                                    Some(owner),
+                                );
+                            } else if let Some(living) = owner.get_living_entity() {
+                                living.heal(5.0);
+                            }
+                        }
+                        damaged
+                    },
+                );
 
-            if let Some(living) = entity.get_living_entity() {
+            if damaged && let Some(living) = entity.get_living_entity() {
                 let duration = match difficulty {
                     Difficulty::Hard => 800,   // 40 seconds
                     Difficulty::Normal => 200, // 10 seconds

@@ -1,3 +1,5 @@
+#[path = "block_tag_graph.rs"]
+mod block_tag_graph;
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     fs,
@@ -510,8 +512,13 @@ pub(crate) fn build() -> TokenStream {
     }
     .to_token_stream();
 
+    // TagLoader must see the original graph before applying datapack overrides.
+    let block_tag_definitions = block_tag_graph::definitions();
     quote! {
         use pumpkin_util::version::JavaMinecraftVersion;
+
+        /// Original block-tag JSON, before nested tags are expanded.
+        pub const BLOCK_TAG_DEFINITIONS: &[(&str, &str)] = &[#(#block_tag_definitions),*];
 
         pub type Tag = (&'static [&'static str], &'static [u16]);
 

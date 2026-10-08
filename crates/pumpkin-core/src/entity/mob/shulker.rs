@@ -353,11 +353,21 @@ impl Mob for ShulkerEntity {
         }
     }
 
-    fn on_damage(&self, _damage_type: DamageType, _source: Option<&dyn EntityBase>) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) {
         self.on_shulker_damage();
     }
 
-    fn pre_damage(&self, damage_type: DamageType, _source: Option<&dyn EntityBase>) -> bool {
+    fn pre_damage(
+        &self,
+        damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) -> bool {
         if self.is_closed() && damage_type == DamageType::ARROW {
             return false;
         }

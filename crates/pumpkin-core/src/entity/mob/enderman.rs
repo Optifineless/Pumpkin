@@ -435,7 +435,12 @@ impl Mob for EndermanEntity {
         }
     }
 
-    fn pre_damage(&self, damage_type: DamageType, _source: Option<&dyn EntityBase>) -> bool {
+    fn pre_damage(
+        &self,
+        damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) -> bool {
         let is_projectile = is_projectile_damage(damage_type);
         if is_projectile {
             for _ in 0..64 {
@@ -447,8 +452,14 @@ impl Mob for EndermanEntity {
         true
     }
 
-    fn on_damage(&self, _damage_type: DamageType, source: Option<&dyn EntityBase>) {
-        if source.is_some_and(|s| s.get_living_entity().is_some()) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+    ) {
+        // EnderMan.hurtServer distinguishes living causes from environmental damage.
+        if cause.is_some_and(|s| s.get_living_entity().is_some()) {
             return;
         }
         let should_teleport = self.get_random().random_range(0..10) != 0;

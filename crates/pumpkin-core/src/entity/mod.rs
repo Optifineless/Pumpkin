@@ -87,6 +87,7 @@ pub mod hunger;
 pub mod interaction;
 pub mod item;
 pub mod item_steerable;
+pub mod item_use;
 pub mod lightning;
 pub mod living;
 pub mod marker;
@@ -170,6 +171,11 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         } else {
             self.get_entity().tick(caller, server);
         }
+    }
+
+    /// Returns the attacker's blocking-disable duration, including mob overrides.
+    fn get_seconds_to_disable_blocking(&self) -> f32 {
+        crate::entity::living::blocking::seconds_to_disable_blocking(self)
     }
 
     fn get_job_site_pos(&self) -> Option<pumpkin_util::math::position::BlockPos> {

@@ -162,13 +162,14 @@ impl EntityBase for WindChargeEntity {
             let owner_id = self.thrown_item_entity.owner_id;
             let owner = owner_id.and_then(|id| world.get_entity_by_id(id));
 
-            let _ = entity.damage_with_context(
+            let _ = super::damage::hurt_entity(
                 entity.as_ref(),
                 1.0,
                 DamageType::WIND_CHARGE,
-                Some(hit_pos),
-                Some(self.get_entity()),
-                owner.as_deref(),
+                self,
+                owner
+                    .as_deref()
+                    .filter(|owner| owner.get_living_entity().is_some()),
             );
         }
         let explosion_pos = if let ProjectileHit::Block { face, .. } = hit {

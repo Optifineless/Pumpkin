@@ -1211,12 +1211,14 @@ impl Mob for PiglinEntity {
     fn on_damage(
         &self,
         _damage_type: pumpkin_data::damage::DamageType,
-        source: Option<&dyn EntityBase>,
+        _source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
     ) {
         self.reset_ambient_sound_time();
         if self.mob_entity.living_entity.dead.load(Ordering::Relaxed) {
             self.drop_inventory();
-        } else if let Some(attacker) = source {
+        } else if let Some(attacker) = cause {
+            // Piglin.hurtServer credits DamageSource.getEntity, including projectile owners.
             self.was_hurt_by(attacker);
         }
     }

@@ -403,11 +403,11 @@ impl EntityBase for ItemFrameEntity {
         _amount: f32,
         damage_type: DamageType,
         _position: Option<Vector3<f64>>,
-        source: Option<&dyn EntityBase>,
-        _cause: Option<&dyn EntityBase>,
+        _source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
     ) -> bool {
         let fixed = self.is_fixed();
-        let is_creative_player = source.is_some_and(|s| {
+        let is_creative_player = cause.is_some_and(|s| {
             s.cast_any()
                 .downcast_ref::<Player>()
                 .is_some_and(Player::is_creative)
@@ -419,7 +419,7 @@ impl EntityBase for ItemFrameEntity {
             if !bypasses_invuln && !is_creative_player {
                 return false;
             }
-            self.drop_item(source, true);
+            self.drop_item(cause, true);
             self.entity.remove();
             return true;
         }
@@ -429,10 +429,10 @@ impl EntityBase for ItemFrameEntity {
             damage_type == DamageType::EXPLOSION || damage_type == DamageType::PLAYER_EXPLOSION;
 
         if !is_explosion && has_item {
-            self.drop_item(source, false);
+            self.drop_item(cause, false);
             self.entity.play_sound(self.get_remove_item_sound());
         } else {
-            self.drop_item(source, true);
+            self.drop_item(cause, true);
             self.entity.play_sound(self.get_break_sound());
             self.entity.remove();
         }

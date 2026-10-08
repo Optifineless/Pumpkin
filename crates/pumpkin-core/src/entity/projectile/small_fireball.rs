@@ -65,12 +65,41 @@ impl EntityBase for SmallFireballEntity {
     fn on_hit(&self, hit: ProjectileHit) {
         match hit {
             ProjectileHit::Entity { ref entity, .. } => {
+                let old_fire = entity
+                    .get_entity()
+                    .fire_ticks
+                    .load(std::sync::atomic::Ordering::Relaxed);
                 entity.get_entity().set_on_fire_for(5.0);
-                let _ = entity.damage(
+                let owner = self
+                    .thrown
+                    .owner_id
+                    .and_then(|id| self.get_entity().world.load().get_entity_by_id(id));
+                // SmallFireball.onHitEntity / DamageSources.fireball.
+                let damage_type = if owner.is_some() {
+                    pumpkin_data::damage::DamageType::FIREBALL
+                } else {
+                    pumpkin_data::damage::DamageType::UNATTRIBUTED_FIREBALL
+                };
+                let damaged = super::damage::hurt_entity(
                     entity.as_ref(),
                     5.0,
-                    pumpkin_data::damage::DamageType::FIREBALL,
+                    damage_type,
+                    self,
+                    owner.as_deref().or(Some(self)),
                 );
+                if damaged {
+                    super::damage::post_attack(
+                        entity.as_ref(),
+                        damage_type,
+                        self,
+                        owner.as_deref().or(Some(self)),
+                    );
+                } else {
+                    entity
+                        .get_entity()
+                        .fire_ticks
+                        .store(old_fire, std::sync::atomic::Ordering::Relaxed);
+                }
             }
             ProjectileHit::Block { pos, face, .. } => {
                 // Try to place fire

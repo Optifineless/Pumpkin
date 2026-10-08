@@ -7,18 +7,12 @@ pub struct WitherMobEffect;
 
 impl MobEffect for WitherMobEffect {
     fn should_apply_effect_tick(&self, duration: i32, amplifier: u8) -> bool {
-        if duration <= 0 {
-            return false;
-        }
-        let tick_rate = 40 >> amplifier.min(4);
-        if tick_rate > 0 {
-            (duration as u32).is_multiple_of(tick_rate as u32)
-        } else {
-            true
-        }
+        // WitherMobEffect.shouldApplyEffectTickThisTick uses Java's masked shift.
+        let interval = 40i32.wrapping_shr(u32::from(amplifier));
+        interval <= 0 || duration % interval == 0
     }
 
-    fn apply_effect_tick(&self, living: &LivingEntity, _amplifier: u8) {
+    fn apply_effect_tick(&self, living: &LivingEntity, _amplifier: u8) -> bool {
         let dyn_self = living
             .entity
             .world
@@ -27,5 +21,6 @@ impl MobEffect for WitherMobEffect {
         if let Some(dyn_self) = dyn_self {
             dyn_self.damage(&*dyn_self, 1.0, DamageType::WITHER);
         }
+        true
     }
 }

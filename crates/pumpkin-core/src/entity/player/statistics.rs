@@ -50,3 +50,142 @@ impl Statistics {
         }
     }
 }
+
+impl super::Player {
+    /// Awards the plugin-approved count to the statistics map and vanilla statistic objectives.
+    pub fn award_stat(&self, category: StatisticCategory, stat: i32, amount: i32) {
+        let final_amount = if let Some(player_arc) =
+            self.world().get_player_by_uuid(self.gameprofile.id)
+            && let Some(server) = self.world().server.upgrade()
+        {
+            let mut event = crate::plugin::api::events::player::player_statistic_increment::PlayerStatisticIncrementEvent {
+                player: player_arc,
+                statistic_id: format!("{category:?}:{stat}"),
+                amount,
+                cancelled: false,
+            };
+            server.plugin_manager.fire_blocking(&server, &mut event);
+            if event.cancelled {
+                return;
+            }
+            event.amount
+        } else {
+            amount
+        };
+        self.stats
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .increment(category, stat, final_amount);
+        // ServerPlayer.awardStat updates statistic-backed objectives by the accepted count.
+        if let Some(criterion) = statistic_criterion(category, stat) {
+            let world = self.world();
+            let mut scoreboard = world
+                .scoreboard
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            award_stat_objectives(
+                &mut scoreboard,
+                &world,
+                &self.gameprofile.name,
+                &criterion,
+                final_amount,
+            );
+        }
+    }
+}
+
+fn statistic_criterion(category: StatisticCategory, id: i32) -> Option<String> {
+    use pumpkin_data::{Block, data_component_impl::IDSetContent, entity::EntityType, item::Item};
+    let name = match category {
+        StatisticCategory::Custom => CustomStatistic::from_i32(id)?.registry_key(),
+        StatisticCategory::Mined => {
+            let block = pumpkin_data::BlockId::new(u16::try_from(id).ok()?)?;
+            Block::from_id(block).name
+        }
+        StatisticCategory::Killed | StatisticCategory::KilledBy => {
+            EntityType::from_id(u16::try_from(id).ok()?)?.resource_name
+        }
+        _ => Item::from_id(u16::try_from(id).ok()?)?.registry_key,
+    };
+    let name = if name.contains(':') {
+        name.to_owned()
+    } else {
+        format!("minecraft:{name}")
+    };
+    Some(format!(
+        "{}:{}",
+        category.registry_key().replace(':', "."),
+        name.replace(':', ".")
+    ))
+}
+
+fn award_stat_objectives(
+    scoreboard: &mut crate::world::scoreboard::Scoreboard,
+    target: &impl crate::world::scoreboard::ScoreboardTarget,
+    player: &str,
+    criterion: &str,
+    amount: i32,
+) {
+    let objectives: Vec<_> = scoreboard
+        .get_objectives()
+        .values()
+        .filter(|objective| objective.criterion == criterion)
+        .map(|objective| objective.name.clone())
+        .collect();
+    for objective in objectives {
+        scoreboard.add_score(target, player, objective, amount);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::scoreboard::{NoTarget, Scoreboard, ScoreboardObjective};
+    use pumpkin_protocol::java::client::play::RenderType;
+    use pumpkin_util::text::TextComponent;
+
+    #[test]
+    fn accepted_statistics_increment_every_matching_objective() {
+        let mut scoreboard = Scoreboard::default();
+        for (name, criterion) in [
+            (
+                "blocks",
+                "minecraft.custom:minecraft.damage_blocked_by_shield",
+            ),
+            (
+                "also",
+                "minecraft.custom:minecraft.damage_blocked_by_shield",
+            ),
+            ("other", "dummy"),
+        ] {
+            scoreboard.add_objective(
+                &NoTarget,
+                ScoreboardObjective::new(
+                    name,
+                    TextComponent::text(name),
+                    RenderType::Integer,
+                    None,
+                    criterion,
+                ),
+            );
+            scoreboard.set_score_value(&NoTarget, "Alex", name, 5);
+        }
+        let criterion = statistic_criterion(
+            StatisticCategory::Custom,
+            CustomStatistic::DamageBlockedByShield as i32,
+        )
+        .unwrap();
+        award_stat_objectives(&mut scoreboard, &NoTarget, "Alex", &criterion, 3);
+        assert_eq!(scoreboard.get_score_value("Alex", "blocks"), Some(8));
+        assert_eq!(scoreboard.get_score_value("Alex", "also"), Some(8));
+        assert_eq!(scoreboard.get_score_value("Alex", "other"), Some(5));
+        assert_eq!(
+            statistic_criterion(
+                StatisticCategory::Used,
+                i32::from(pumpkin_data::item::Item::SHIELD.id)
+            )
+            .unwrap(),
+            "minecraft.used:minecraft.shield"
+        );
+    }
+}

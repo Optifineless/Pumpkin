@@ -186,7 +186,12 @@ impl VehicleEntity {
         self.entity.remove();
     }
 
-    pub fn damage_with_context(&self, amount: f32, source: Option<&dyn EntityBase>) -> bool {
+    pub fn damage_with_context(
+        &self,
+        amount: f32,
+        source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+    ) -> bool {
         if !self.entity.is_alive() {
             return true;
         }
@@ -209,7 +214,8 @@ impl VehicleEntity {
 
         let new_strength = self.apply_damage_wobble(amount);
 
-        let is_creative = source
+        // VehicleEntity.hurtServer tests the causing player.
+        let is_creative = cause
             .and_then(|s| s.get_player())
             .is_some_and(|p| p.gamemode.load() == GameMode::Creative);
 

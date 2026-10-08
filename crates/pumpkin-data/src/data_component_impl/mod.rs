@@ -151,7 +151,7 @@ pub fn get_idor_hash(val: &IdOr<basic::SoundEvent>) -> u32 {
         }
         IdOr::Value(sound) => {
             digest.update(&[2u8]);
-            digest.update(&get_str_hash(sound.sound_name.as_str()).to_le_bytes());
+            digest.update(&get_str_hash(sound.sound_name.as_ref()).to_le_bytes());
             if let Some(range) = sound.range {
                 digest.update(&[1u8]);
                 digest.update(&get_f32_hash(range).to_le_bytes());
@@ -169,7 +169,7 @@ pub fn put_idor(nbt: &mut NbtCompound, key: &str, val: &IdOr<basic::SoundEvent>)
         IdOr::Value(sound) => {
             let mut sound_compound = NbtCompound::new();
 
-            sound_compound.put_string("sound_id", sound.sound_name.clone());
+            sound_compound.put_string("sound_id", sound.sound_name.to_string());
             if let Some(range) = sound.range {
                 sound_compound.put_float("range", range);
             }
@@ -188,7 +188,7 @@ pub fn get_idor(nbt: &NbtCompound, key: &str, default: Sound) -> IdOr<basic::Sou
         };
         let range = sound_compound.get_float("range");
         IdOr::Value(basic::SoundEvent {
-            sound_name: sound_name.to_string(),
+            sound_name: Cow::Owned(sound_name.to_string()),
             range,
         })
     } else {

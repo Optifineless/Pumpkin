@@ -8,7 +8,8 @@ use pumpkin_data::item_stack::{DamageResult, ItemStack};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_util::GameMode;
 
-fn with_slot<T>(
+/// Mutates one inventory slot under its guard; the action must not call plugins or synchronize.
+pub(super) fn with_slot<T>(
     inventory: &PlayerInventory,
     index: usize,
     action: impl FnOnce(&mut ItemStack) -> T,

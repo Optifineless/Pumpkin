@@ -1,3 +1,5 @@
+#[cfg(test)]
+pub(crate) mod combat_test_support;
 use crate::block::registry::BlockRegistry;
 use crate::command::commands::default_dispatcher;
 use crate::command::commands::defaultgamemode::DefaultGamemode;

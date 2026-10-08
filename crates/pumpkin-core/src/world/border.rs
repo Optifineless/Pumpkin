@@ -149,6 +149,25 @@ impl Worldborder {
     }
 
     #[must_use]
+    /// Clamps a random-teleport destination to the vanilla border bounds.
+    pub fn clamp_teleport_position(
+        &self,
+        mut position: pumpkin_util::math::vector3::Vector3<f64>,
+    ) -> pumpkin_util::math::vector3::Vector3<f64> {
+        // WorldBorder.clampVec3ToBound uses the float constant 1.0E-5F at the upper edges.
+        let half = self.new_diameter / 2.0;
+        let limit = f64::from(self.portal_teleport_boundary);
+        let clamp = |value: f64, center: f64| {
+            let min = (center - half).max(-limit);
+            let max = (center + half).min(limit) - f64::from(1.0e-5f32);
+            if value < min { min } else { value.min(max) }
+        };
+        position.x = clamp(position.x, self.center_x);
+        position.z = clamp(position.z, self.center_z);
+        position
+    }
+
+    #[must_use]
     pub fn clamp_block(&self, x: i32, z: i32) -> (i32, i32) {
         let half = self.new_diameter / 2.0;
         // A border narrower than one block spans no block boundary, leaving `max`
@@ -210,5 +229,14 @@ mod tests {
         assert_eq!(border.clamp_block(100, 100), (4, 4));
         assert_eq!(border.clamp_block(-100, -100), (-5, -5));
         assert_eq!(border.clamp_block(2, -3), (2, -3));
+    }
+    #[test]
+    fn random_teleport_clamps_both_axes_and_preserves_height() {
+        use pumpkin_util::math::vector3::Vector3;
+        let border = Worldborder::new(10.0, -20.0, 8.0, 0, 5, 15);
+        let clamped = border.clamp_teleport_position(Vector3::new(-100.0, 73.25, 100.0));
+        assert_eq!(clamped.x, 6.0);
+        assert_eq!(clamped.y, 73.25);
+        assert!(clamped.z < -16.0 && clamped.z > -16.00002);
     }
 }

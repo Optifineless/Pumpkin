@@ -97,7 +97,13 @@ impl Mob for GuardianEntity {
         &self.mob_entity
     }
 
-    fn on_damage(&self, _damage_type: DamageType, source: Option<&dyn EntityBase>) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) {
+        // Guardian.hurtServer checks the direct entity for thorns, never the shooter.
         if let Some(src) = source
             && let Some(living) = src.get_living_entity()
         {

@@ -1,5 +1,8 @@
 #![allow(clippy::wildcard_imports)]
 
+#[path = "combat_component.rs"]
+mod combat_component;
+
 use std::borrow::Cow;
 
 use crate::codec::var_int::VarInt;
@@ -15,13 +18,14 @@ use pumpkin_nbt::{serializer::NbtWriteHelperJava, tag::NbtTag};
 use pumpkin_util::version::JavaMinecraftVersion;
 
 const MAX_STATUS_EFFECTS: usize = 128;
+const MAX_REGISTRY_HOLDERS: i32 = 4096;
 
 #[must_use]
 pub fn data_to_proto_sound(id_or: &IdOr<SoundEvent>) -> crate::IdOr<crate::SoundEvent> {
     match id_or {
         IdOr::Id(id) => crate::IdOr::Id(*id as u16),
         IdOr::Value(sound) => crate::IdOr::Value(crate::SoundEvent {
-            sound_name: sound.sound_name.clone(),
+            sound_name: sound.sound_name.to_string(),
             range: sound.range,
         }),
     }
@@ -35,7 +39,7 @@ pub fn proto_to_data_sound(id_or: &crate::IdOr<crate::SoundEvent>) -> Option<IdO
             Some(IdOr::Id(Sound::from_name(name)?))
         }
         crate::IdOr::Value(sound) => Some(IdOr::Value(SoundEvent {
-            sound_name: sound.sound_name.clone(),
+            sound_name: Cow::Owned(sound.sound_name.clone()),
             range: sound.range,
         })),
     }
@@ -53,12 +57,19 @@ fn deserialize_idset<T: IDSetContent>(
         }
         std::cmp::Ordering::Greater => {
             let len = id_type - 1;
+            if len > MAX_REGISTRY_HOLDERS {
+                return Err(ReadingError::Message(
+                    "Too many registry holders in IDSet".into(),
+                ));
+            }
             let mut content_vec = Vec::with_capacity(len as usize);
 
             for _ in 0..len {
                 let varint_id = seq.get_var_int()?.0;
 
-                let elmt = T::from_id(varint_id as u16).ok_or(ReadingError::Message(
+                let id = u16::try_from(varint_id)
+                    .map_err(|_| ReadingError::Message("Invalid registry id in IDSet".into()))?;
+                let elmt = T::from_id(id).ok_or(ReadingError::Message(
                     "Invalid registry id VarInt in IDSet".into(),
                 ))?;
                 content_vec.push(elmt);
@@ -1437,16 +1448,18 @@ impl DataComponentCodec<Self> for MaxDamageImpl {
 
 impl DataComponentCodec<Self> for UseEffectsImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_bool(false)?;
-        seq.write_bool(true)?;
-        seq.write_f32(0.2)
+        // UseEffects.STREAM_CODEC preserves the interaction vibration flag.
+        seq.write_bool(self.can_sprint)?;
+        seq.write_bool(self.interact_vibrations)?;
+        seq.write_f32(self.speed_multiplier)
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _can_sprint = seq.get_bool()?;
-        let _interact_vibrations = seq.get_bool()?;
-        let _speed_multiplier = seq.get_f32()?;
-        Ok(Self)
+        Ok(Self {
+            can_sprint: seq.get_bool()?,
+            interact_vibrations: seq.get_bool()?,
+            speed_multiplier: seq.get_f32()?,
+        })
     }
 }
 
@@ -1834,21 +1847,6 @@ impl DataComponentCodec<Self> for ToolImpl {
     }
 }
 
-impl DataComponentCodec<Self> for WeaponImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt::from(self.item_damage_per_attack as i32))?;
-        seq.write_f32(0.0)
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let item_damage_per_attack = seq.get_var_int()?.0 as u32;
-        let _disable_blocking_for_seconds = seq.get_f32()?;
-        Ok(Self {
-            item_damage_per_attack,
-        })
-    }
-}
-
 impl DataComponentCodec<Self> for AttackRangeImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
         seq.write_f32(self.min_reach)?;
@@ -1906,75 +1904,6 @@ impl DataComponentCodec<Self> for TooltipStyleImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let id = seq.get_str()?.to_string();
         Ok(Self { id })
-    }
-}
-
-impl DataComponentCodec<Self> for DeathProtectionImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt(0))
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let len = seq.get_var_int()?.0 as usize;
-        for _ in 0..len {
-            let _ = deserialize_consume_effect(seq)?;
-        }
-        Ok(Self)
-    }
-}
-
-impl DataComponentCodec<Self> for BlocksAttacksImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_f32(0.0)?;
-        seq.write_f32(1.0)?;
-        seq.write_var_int(&VarInt(0))?;
-        seq.write_var_int(&VarInt(0))?;
-        seq.write_bool(false)?;
-        seq.write_bool(false)?;
-        seq.write_bool(false)
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _block_delay = seq.get_f32()?;
-        let _disable_scale = seq.get_f32()?;
-        let red_len = seq.get_var_int()?.0 as usize;
-        for _ in 0..red_len {
-            let _ = seq.get_f32()?;
-            if seq.get_bool()? {
-                let id_type = seq.get_var_int()?.0;
-                if id_type == 0 {
-                    let _ = seq.get_str()?;
-                } else if id_type > 0 {
-                    for _ in 0..(id_type - 1) {
-                        let _ = seq.get_var_int()?;
-                    }
-                }
-            }
-            let _ = seq.get_f32()?;
-            let _ = seq.get_f32()?;
-        }
-        let item_damage_type = seq.get_var_int()?.0;
-        if item_damage_type == 1 {
-            let _ = seq.get_f32()?;
-            let _ = seq.get_f32()?;
-        }
-        if seq.get_bool()? {
-            let id_type = seq.get_var_int()?.0;
-            if id_type == 0 {
-                let _ = seq.get_str()?;
-            } else if id_type > 0 {
-                for _ in 0..(id_type - 1) {
-                    let _ = seq.get_var_int()?;
-                }
-            }
-        }
-        if seq.get_bool()? {
-            let _ = seq.get_var_int()?;
-        }
-        if seq.get_bool()? {
-            let _ = seq.get_var_int()?;
-        }
-        Ok(Self)
     }
 }
 

@@ -262,7 +262,12 @@ impl Mob for BatEntity {
         Some(0.6)
     }
 
-    fn on_damage(&self, _damage_type: DamageType, _source: Option<&dyn EntityBase>) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) {
         if self.is_roosting() {
             self.set_roosting(false);
             let entity = &self.mob_entity.living_entity.entity;

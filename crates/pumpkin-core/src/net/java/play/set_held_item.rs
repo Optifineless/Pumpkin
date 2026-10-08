@@ -21,6 +21,15 @@ impl JavaClient {
             return;
         }
 
+        // ServerGamePacketListenerImpl.handleSetCarriedItem stops main-hand use.
+        let using_hand = *player
+            .living_entity
+            .active_hand
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot != previous_slot && using_hand == Some(Hand::Right) {
+            player.living_entity.clear_active_hand();
+        }
         let inv = player.inventory();
         inv.set_selected_slot(slot);
         let stack = inv.held_item();

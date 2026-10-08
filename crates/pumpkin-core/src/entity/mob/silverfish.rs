@@ -86,7 +86,12 @@ impl Mob for SilverfishEntity {
         }
     }
 
-    fn on_damage(&self, _damage_type: DamageType, _source: Option<&dyn EntityBase>) {
+    fn on_damage(
+        &self,
+        _damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) {
         if self.wake_up_friends_ticks.load(Ordering::Relaxed) == 0 {
             self.wake_up_friends_ticks.store(20, Ordering::Relaxed);
         }

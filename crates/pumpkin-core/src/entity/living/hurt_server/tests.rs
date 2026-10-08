@@ -39,6 +39,12 @@ async fn death_integration_shield_credit_obeys_cooldown_acceptance() {
             Some(source),
         )
     };
+    let blocked_stat = || {
+        victim.stats.lock().unwrap().get(
+            StatisticCategory::Custom,
+            CustomStatistic::DamageBlockedByShield as i32,
+        )
+    };
     let initial_health = living.health.load();
     assert!(!hit(&*attacker));
     assert_eq!(living.health.load(), initial_health);
@@ -48,9 +54,12 @@ async fn death_integration_shield_credit_obeys_cooldown_acceptance() {
         living.get_kill_credit().unwrap().get_entity().entity_uuid,
         attacker.gameprofile.id
     );
+    assert_eq!(blocked_stat(), 40);
+    assert!(living.last_damage_type.lock().unwrap().is_none());
     living.hurt_by.lock().unwrap().player_memory_time = 70;
     assert!(!hit(&*rejected_attacker));
     assert_eq!(living.hurt_by.lock().unwrap().player_memory_time, 70);
+    assert_eq!(blocked_stat(), 40);
     assert_eq!(
         living.get_kill_credit().unwrap().get_entity().entity_uuid,
         attacker.gameprofile.id
@@ -58,6 +67,7 @@ async fn death_integration_shield_credit_obeys_cooldown_acceptance() {
     living.hurt_cooldown.store(10, Relaxed);
     assert!(!hit(&*rejected_attacker));
     assert_eq!(living.hurt_by.lock().unwrap().player_memory_time, 100);
+    assert_eq!(blocked_stat(), 80);
     assert_eq!(
         living.get_kill_credit().unwrap().get_entity().entity_uuid,
         rejected_attacker.gameprofile.id
@@ -136,4 +146,30 @@ async fn death_integration_armored_excess_wears_once_and_drops_the_worn_stack() 
         .collect();
     assert_eq!(dropped_armor.len(), 1);
     assert_eq!(dropped_armor[0].get_damage(), 19);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn damage_pipeline_wears_the_actual_victims_armor_without_a_world_lookup() {
+    let fixture = DeathTestWorld::new().await;
+    let victim = fixture.player("Armored");
+    let living = &victim.living_entity;
+    living.entity_equipment.lock().unwrap().put(
+        &EquipmentSlot::CHEST,
+        ItemStack::new(1, &Item::IRON_CHESTPLATE),
+    );
+    // A supplied Player remains the armor victim even before world registration.
+    fixture
+        .world()
+        .players
+        .store(std::sync::Arc::new(Vec::new()));
+    assert!(victim.damage(&*victim, 4.0, DamageType::MOB_ATTACK));
+    assert_eq!(
+        living
+            .entity_equipment
+            .lock()
+            .unwrap()
+            .get(&EquipmentSlot::CHEST)
+            .get_damage(),
+        1
+    );
 }

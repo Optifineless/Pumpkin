@@ -176,6 +176,7 @@ pub mod dragon_fight;
 pub mod end_podium;
 pub mod entity_tracker;
 pub mod environment;
+mod game_events;
 pub mod natural_spawner;
 pub mod scoreboard;
 pub mod weather;
@@ -853,15 +854,15 @@ impl World {
         &self,
         entity: &Entity,
         damage_type_id: i32,
-        source_entity_id: Option<i32>,
         cause_entity_id: Option<i32>,
+        direct_entity_id: Option<i32>,
         position: Option<Vector3<f64>>,
     ) {
         let je_packet = CDamageEvent::new(
             entity.entity_id.into(),
             damage_type_id.into(),
-            source_entity_id.map(Into::into),
             cause_entity_id.map(Into::into),
+            direct_entity_id.map(Into::into),
             position,
         );
         self.send_to_tracking_players_and_self(entity, &je_packet);

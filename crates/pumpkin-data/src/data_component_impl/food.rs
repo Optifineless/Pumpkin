@@ -381,14 +381,55 @@ impl Hash for ConsumableImpl {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct UseEffectsImpl;
+#[derive(Clone, Debug, PartialEq)]
+pub struct UseEffectsImpl {
+    pub can_sprint: bool,
+    pub interact_vibrations: bool,
+    pub speed_multiplier: f32,
+}
 impl UseEffectsImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
+    // UseEffects.DEFAULT.
+    pub const DEFAULT: Self = Self {
+        can_sprint: false,
+        interact_vibrations: true,
+        speed_multiplier: 0.2,
+    };
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        // UseEffects.CODEC defaults and range.
+        let data = data.extract_compound()?;
+        let speed_multiplier = match data.get("speed_multiplier") {
+            Some(_) => data.get_numeric_float("speed_multiplier")?,
+            None => 0.2,
+        };
+        if !(0.0..=1.0).contains(&speed_multiplier) {
+            return None;
+        }
+        Some(Self {
+            can_sprint: super::combat::read_combat_bool(data, "can_sprint", false)?,
+            interact_vibrations: super::combat::read_combat_bool(
+                data,
+                "interact_vibrations",
+                true,
+            )?,
+            speed_multiplier,
+        })
+    }
+}
+impl Hash for UseEffectsImpl {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.can_sprint.hash(state);
+        self.interact_vibrations.hash(state);
+        self.speed_multiplier.to_bits().hash(state);
     }
 }
 impl DataComponentImpl for UseEffectsImpl {
+    fn write_data(&self) -> NbtTag {
+        let mut data = NbtCompound::new();
+        data.put_bool("can_sprint", self.can_sprint);
+        data.put_bool("interact_vibrations", self.interact_vibrations);
+        data.put_float("speed_multiplier", self.speed_multiplier);
+        NbtTag::Compound(data)
+    }
     default_impl!(UseEffects);
 }
 
@@ -592,8 +633,30 @@ impl Hash for PotionDurationScaleImpl {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataComponentImpl, PotionDurationScaleImpl};
+    use super::{DataComponentImpl, NbtCompound, NbtTag, PotionDurationScaleImpl, UseEffectsImpl};
     use crate::item::Item;
+
+    #[test]
+    fn use_effects_nbt_preserves_flags_and_rejects_invalid_speed() {
+        let mut nbt = NbtCompound::new();
+        nbt.put_bool("can_sprint", true);
+        nbt.put_bool("interact_vibrations", false);
+        nbt.put_float("speed_multiplier", 0.75);
+        let data = NbtTag::Compound(nbt.clone());
+        let effect = UseEffectsImpl::read_data(&data).unwrap();
+        assert!(effect.can_sprint);
+        assert!(!effect.interact_vibrations);
+        assert_eq!(effect.speed_multiplier, 0.75);
+        assert_eq!(effect.write_data(), data);
+        nbt.put_byte("can_sprint", 2);
+        assert!(
+            UseEffectsImpl::read_data(&NbtTag::Compound(nbt.clone()))
+                .unwrap()
+                .can_sprint
+        );
+        nbt.put_float("speed_multiplier", 1.5);
+        assert!(UseEffectsImpl::read_data(&NbtTag::Compound(nbt)).is_none());
+    }
 
     #[test]
     fn potion_duration_scale_round_trips_as_a_float() {

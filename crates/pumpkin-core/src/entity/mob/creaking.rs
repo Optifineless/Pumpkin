@@ -481,7 +481,12 @@ impl Mob for CreakingEntity {
         }
     }
 
-    fn pre_damage(&self, damage_type: DamageType, _source: Option<&dyn EntityBase>) -> bool {
+    fn pre_damage(
+        &self,
+        damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
+    ) -> bool {
         let entity = &self.mob_entity.living_entity.entity;
 
         if self.is_heart_bound() && damage_type != DamageType::OUT_OF_WORLD {

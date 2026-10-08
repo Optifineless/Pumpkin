@@ -955,6 +955,7 @@ impl EntityBase for ArrowEntity {
                 let is_enderman =
                     target.get_entity().entity_type == &pumpkin_data::entity::EntityType::ENDERMAN;
                 let is_on_fire = entity.is_on_fire() || self.is_flame.load(Ordering::Relaxed);
+                let old_fire = target.get_entity().fire_ticks.load(Ordering::Relaxed);
                 if is_on_fire && !is_enderman {
                     target.get_entity().set_on_fire_for(5.0);
                 }
@@ -966,17 +967,23 @@ impl EntityBase for ArrowEntity {
 
                 let owner_entity = owner_id.and_then(|id| world.get_entity_by_id(id));
 
-                let damage_succeeded = target.damage_with_context(
+                let damage_succeeded = super::damage::hurt_entity(
                     target.as_ref(),
                     damage as f32,
                     DamageType::ARROW,
-                    Some(hit_pos),
-                    owner_entity.as_deref(),
-                    None,
+                    self,
+                    owner_entity.as_deref().or(Some(self)),
                 );
 
+                // AbstractArrow.onHitEntity restores fire on rejected hits and only knocks back successful hits.
+                if !damage_succeeded {
+                    target
+                        .get_entity()
+                        .fire_ticks
+                        .store(old_fire, Ordering::Relaxed);
+                }
                 if let Some(living) = target.get_living_entity() {
-                    if punch > 0 {
+                    if damage_succeeded && punch > 0 {
                         let norm = Vector3::new(velocity.x, 0.0, velocity.z).normalize();
                         let push_scale = f64::from(punch) * 0.6;
                         target.get_entity().velocity.store(

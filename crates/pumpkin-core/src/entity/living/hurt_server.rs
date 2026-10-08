@@ -44,7 +44,14 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) {
-        let damage_after_armor = self.get_damage_after_armor_absorb(damage, &damage_type, source);
+        // DamageSource.getWeaponItem uses the direct projectile's stored weapon.
+        let weapon = Self::damage_source_weapon(source);
+        let damage_after_armor = self.get_damage_after_armor_absorb_with_weapon(
+            caller,
+            damage,
+            &damage_type,
+            weapon.as_ref(),
+        );
         let damage_amount = self.get_damage_after_magic_absorb(
             damage_after_armor,
             &damage_type,

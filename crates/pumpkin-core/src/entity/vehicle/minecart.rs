@@ -683,17 +683,23 @@ impl EntityBase for MinecartEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        let creative = source
+        // VehicleEntity.hurtServer uses the causing player.
+        let creative = cause
             .and_then(EntityBase::get_player)
             .is_some_and(|player| player.gamemode.load() == GameMode::Creative);
 
         if let MinecartKind::Tnt(minecart) = &self.kind
-            && damage_type == DamageType::ARROW
-            && self.vehicle.entity.fire_ticks.load(Ordering::Relaxed) > 0
+            && let Some(projectile) = source
+            && [
+                &EntityType::ARROW,
+                &EntityType::SPECTRAL_ARROW,
+                &EntityType::TRIDENT,
+            ]
+            .contains(&projectile.get_entity().entity_type)
+            && projectile.get_entity().is_on_fire()
         {
-            let projectile_speed_squared = cause
-                .map(|entity| entity.get_entity().velocity.load().length_squared())
-                .unwrap_or_default();
+            // MinecartTNT.hurtServer uses the burning direct AbstractArrow's velocity.
+            let projectile_speed_squared = projectile.get_entity().velocity.load().length_squared();
             minecart.explode(&self.vehicle.entity, projectile_speed_squared);
             if self.vehicle.entity.is_removed() {
                 return true;
@@ -733,7 +739,7 @@ impl EntityBase for MinecartEntity {
             }
         }
 
-        let damaged = self.vehicle.damage_with_context(amount, source);
+        let damaged = self.vehicle.damage_with_context(amount, source, cause);
 
         if will_break && !creative && self.vehicle.entity.is_removed() {
             let world = self.vehicle.entity.world.load();

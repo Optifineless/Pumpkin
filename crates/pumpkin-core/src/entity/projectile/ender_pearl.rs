@@ -75,23 +75,17 @@ impl EntityBase for EnderPearlEntity {
         let owner_id = self.thrown.owner_id;
         let teleport_pos = entity.last_pos.load();
 
-        if let (
-            ProjectileHit::Entity {
-                entity: hit_entity,
-                hit_pos,
-                ..
-            },
-            Some(owner),
-        ) = (&hit, attacker)
+        // ThrownEnderpearl.onHitEntity also delivers ownerless zero-damage hits.
+        if let ProjectileHit::Entity {
+            entity: hit_entity, ..
+        } = &hit
         {
-            let victim_ref = &**hit_entity;
-            hit_entity.damage_with_context(
-                victim_ref,
+            super::damage::hurt_entity(
+                hit_entity.as_ref(),
                 0.0,
                 DamageType::THROWN,
-                Some(*hit_pos),
-                Some(owner.get_entity()),
-                Some(victim_ref),
+                self,
+                attacker.as_deref(),
             );
         }
 

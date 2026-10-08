@@ -15,6 +15,20 @@ pub enum StatisticCategory {
 }
 impl StatisticCategory {
     #[must_use]
+    pub const fn registry_key(self) -> &'static str {
+        match self {
+            Self::Mined => "minecraft:mined",
+            Self::Crafted => "minecraft:crafted",
+            Self::Used => "minecraft:used",
+            Self::Broken => "minecraft:broken",
+            Self::PickedUp => "minecraft:picked_up",
+            Self::Dropped => "minecraft:dropped",
+            Self::Killed => "minecraft:killed",
+            Self::KilledBy => "minecraft:killed_by",
+            Self::Custom => "minecraft:custom",
+        }
+    }
+    #[must_use]
     pub const fn from_i32(id: i32) -> Option<Self> {
         match id {
             0i32 => Some(Self::Mined),
@@ -135,6 +149,89 @@ pub enum CustomStatistic {
     HorseOneCm = 18i32,
 }
 impl CustomStatistic {
+    #[must_use]
+    pub const fn registry_key(self) -> &'static str {
+        match self {
+            Self::MinecartOneCm => "minecraft:minecart_one_cm",
+            Self::Deaths => "minecraft:deaths",
+            Self::InteractWithStonecutter => "minecraft:interact_with_stonecutter",
+            Self::RaidWin => "minecraft:raid_win",
+            Self::DamageBlockedByShield => "minecraft:damage_blocked_by_shield",
+            Self::SleepInStrawBed => "minecraft:sleep_in_straw_bed",
+            Self::FlyOneCm => "minecraft:fly_one_cm",
+            Self::InteractWithGrindstone => "minecraft:interact_with_grindstone",
+            Self::TargetHit => "minecraft:target_hit",
+            Self::BoatOneCm => "minecraft:boat_one_cm",
+            Self::TimeSinceDeath => "minecraft:time_since_death",
+            Self::FillCauldron => "minecraft:fill_cauldron",
+            Self::InteractWithSmoker => "minecraft:interact_with_smoker",
+            Self::LeaveGame => "minecraft:leave_game",
+            Self::ClimbOneCm => "minecraft:climb_one_cm",
+            Self::InteractWithBeacon => "minecraft:interact_with_beacon",
+            Self::TuneNoteblock => "minecraft:tune_noteblock",
+            Self::EnchantItem => "minecraft:enchant_item",
+            Self::PigOneCm => "minecraft:pig_one_cm",
+            Self::PlayRecord => "minecraft:play_record",
+            Self::TradedWithVillager => "minecraft:traded_with_villager",
+            Self::CleanArmor => "minecraft:clean_armor",
+            Self::PotFlower => "minecraft:pot_flower",
+            Self::TotalWorldTime => "minecraft:total_world_time",
+            Self::BellRing => "minecraft:bell_ring",
+            Self::NautilusOneCm => "minecraft:nautilus_one_cm",
+            Self::SwimOneCm => "minecraft:swim_one_cm",
+            Self::PlayerKills => "minecraft:player_kills",
+            Self::PlayTime => "minecraft:play_time",
+            Self::EatCakeSlice => "minecraft:eat_cake_slice",
+            Self::PlayNoteblock => "minecraft:play_noteblock",
+            Self::InspectHopper => "minecraft:inspect_hopper",
+            Self::OpenChest => "minecraft:open_chest",
+            Self::OpenEnderchest => "minecraft:open_enderchest",
+            Self::InteractWithCampfire => "minecraft:interact_with_campfire",
+            Self::InspectDropper => "minecraft:inspect_dropper",
+            Self::TimeSinceRest => "minecraft:time_since_rest",
+            Self::RaidTrigger => "minecraft:raid_trigger",
+            Self::UseCauldron => "minecraft:use_cauldron",
+            Self::InspectDispenser => "minecraft:inspect_dispenser",
+            Self::InteractWithCraftingTable => "minecraft:interact_with_crafting_table",
+            Self::FishCaught => "minecraft:fish_caught",
+            Self::InteractWithSmithingTable => "minecraft:interact_with_smithing_table",
+            Self::DamageDealtResisted => "minecraft:damage_dealt_resisted",
+            Self::WalkUnderWaterOneCm => "minecraft:walk_under_water_one_cm",
+            Self::AviateOneCm => "minecraft:aviate_one_cm",
+            Self::DamageResisted => "minecraft:damage_resisted",
+            Self::SneakTime => "minecraft:sneak_time",
+            Self::MobKills => "minecraft:mob_kills",
+            Self::TalkedToVillager => "minecraft:talked_to_villager",
+            Self::InteractWithBrewingstand => "minecraft:interact_with_brewingstand",
+            Self::CrouchOneCm => "minecraft:crouch_one_cm",
+            Self::OpenBarrel => "minecraft:open_barrel",
+            Self::InteractWithLectern => "minecraft:interact_with_lectern",
+            Self::InteractWithAnvil => "minecraft:interact_with_anvil",
+            Self::OpenShulkerBox => "minecraft:open_shulker_box",
+            Self::DamageDealt => "minecraft:damage_dealt",
+            Self::InteractWithCartographyTable => "minecraft:interact_with_cartography_table",
+            Self::SleepInBed => "minecraft:sleep_in_bed",
+            Self::SprintOneCm => "minecraft:sprint_one_cm",
+            Self::AnimalsBred => "minecraft:animals_bred",
+            Self::FallOneCm => "minecraft:fall_one_cm",
+            Self::DamageTaken => "minecraft:damage_taken",
+            Self::CleanShulkerBox => "minecraft:clean_shulker_box",
+            Self::CleanBanner => "minecraft:clean_banner",
+            Self::HappyGhastOneCm => "minecraft:happy_ghast_one_cm",
+            Self::DamageDealtAbsorbed => "minecraft:damage_dealt_absorbed",
+            Self::InteractWithFurnace => "minecraft:interact_with_furnace",
+            Self::InteractWithLoom => "minecraft:interact_with_loom",
+            Self::Drop => "minecraft:drop",
+            Self::TriggerTrappedChest => "minecraft:trigger_trapped_chest",
+            Self::StriderOneCm => "minecraft:strider_one_cm",
+            Self::InteractWithBlastFurnace => "minecraft:interact_with_blast_furnace",
+            Self::WalkOneCm => "minecraft:walk_one_cm",
+            Self::DamageAbsorbed => "minecraft:damage_absorbed",
+            Self::WalkOnWaterOneCm => "minecraft:walk_on_water_one_cm",
+            Self::Jump => "minecraft:jump",
+            Self::HorseOneCm => "minecraft:horse_one_cm",
+        }
+    }
     #[must_use]
     pub const fn from_i32(id: i32) -> Option<Self> {
         match id {

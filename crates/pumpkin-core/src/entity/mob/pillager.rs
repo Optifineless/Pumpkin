@@ -210,6 +210,7 @@ impl Mob for PillagerEntity {
         &self,
         _damage_type: pumpkin_data::damage::DamageType,
         _source: Option<&dyn EntityBase>,
+        _cause: Option<&dyn EntityBase>,
     ) {
         if self.mob_entity.living_entity.dead.load(Ordering::Relaxed) {
             self.drop_inventory();

@@ -4,10 +4,12 @@ use crate::Enchantment;
 use crate::attributes::Attributes;
 use crate::damage::DamageType;
 use crate::data_component_impl::basic::SoundEvent;
+use crate::data_component_impl::food::StatusEffectInstance;
 use crate::data_component_impl::{
-    DataComponentImpl, EquipmentSlot, IDSet, IdOr, get_f32_hash, get_i32_hash, get_idor,
-    get_idor_hash, get_idset_hash, get_str_hash, put_idor,
+    DataComponentImpl, EquipmentSlot, IDSet, IDSetContent, IdOr, get_f32_hash, get_i32_hash,
+    get_idor, get_idor_hash, get_idset_hash, get_str_hash, put_idor,
 };
+use crate::effect::StatusEffect;
 use crate::entity_type::EntityType;
 use crate::item::Item;
 use crate::item_stack::ItemStack;
@@ -17,6 +19,9 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use std::borrow::Cow;
 use std::hash::Hash;
+
+/// Maximum accepted nesting of hidden death-protection status effects on disk and the wire.
+pub const MAX_DEATH_STATUS_EFFECT_DEPTH: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Operation {
@@ -477,19 +482,24 @@ impl Hash for ToolImpl {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WeaponImpl {
     pub item_damage_per_attack: u32,
+    pub disable_blocking_for_seconds: f32,
 }
 impl WeaponImpl {
     pub fn read_data(data: &NbtTag) -> Option<Self> {
         let compound = data.extract_compound()?;
-        let item_damage_per_attack = compound
-            .get_int("item_damage_per_attack")
-            .unwrap_or(1)
-            .max(0) as u32;
+        // Weapon.CODEC rejects negative durability and disable durations.
+        let item_damage_per_attack =
+            u32::try_from(read_combat_int(compound, "item_damage_per_attack", 1)?).ok()?;
         Some(Self {
             item_damage_per_attack,
+            disable_blocking_for_seconds: read_nonnegative_combat_float(
+                compound,
+                "disable_blocking_for_seconds",
+                Some(0.0),
+            )?,
         })
     }
 }
@@ -497,12 +507,25 @@ impl DataComponentImpl for WeaponImpl {
     fn write_data(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.put_int("item_damage_per_attack", self.item_damage_per_attack as i32);
+        compound.put_float(
+            "disable_blocking_for_seconds",
+            self.disable_blocking_for_seconds,
+        );
         NbtTag::Compound(compound)
     }
     fn get_hash(&self) -> i32 {
-        self.item_damage_per_attack as i32
+        let mut digest = Digest::new();
+        digest.update(&get_i32_hash(self.item_damage_per_attack as i32).to_le_bytes());
+        digest.update(&get_f32_hash(self.disable_blocking_for_seconds).to_le_bytes());
+        digest.finalize() as i32
     }
     default_impl!(Weapon);
+}
+impl Hash for WeaponImpl {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.item_damage_per_attack.hash(state);
+        self.disable_blocking_for_seconds.to_bits().hash(state);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -746,26 +769,586 @@ impl DataComponentImpl for GliderImpl {
     default_impl!(Glider);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct DeathProtectionImpl;
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct DeathProtectionImpl {
+    pub death_effects: Cow<'static, [DeathEffect]>,
+}
 impl DeathProtectionImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        let compound = data.extract_compound()?;
+        let death_effects = match compound.get("death_effects") {
+            Some(effects) => effects
+                .extract_list()?
+                .iter()
+                .map(DeathEffect::read_data)
+                .collect::<Option<Vec<_>>>()?,
+            None => Vec::new(),
+        };
+        Some(Self {
+            death_effects: Cow::Owned(death_effects),
+        })
     }
 }
 impl DataComponentImpl for DeathProtectionImpl {
+    fn write_data(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        compound.put_list(
+            "death_effects",
+            self.death_effects.iter().map(DeathEffect::as_nbt).collect(),
+        );
+        NbtTag::Compound(compound)
+    }
     default_impl!(DeathProtection);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BlocksAttacksImpl;
+/// Consume effects retained by DeathProtection, including teleport and hidden-effect parameters.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeathEffect {
+    ApplyEffects(Cow<'static, [DeathStatusEffect]>, f32),
+    RemoveEffects(IDSet<StatusEffect>),
+    ClearAllEffects,
+    TeleportRandomly {
+        diameter: f32,
+        directional_particles: bool,
+    },
+    PlaySound(IdOr<SoundEvent>),
+}
+
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct DeathStatusEffect {
+    pub effect: StatusEffectInstance,
+    pub hidden_effect: Option<HiddenDeathEffect>,
+}
+/// Hidden details can borrow generated constants or own runtime component data.
+#[derive(Clone, Debug)]
+pub enum HiddenDeathEffect {
+    Static(&'static DeathStatusEffect),
+    Owned(Box<DeathStatusEffect>),
+}
+impl std::ops::Deref for HiddenDeathEffect {
+    type Target = DeathStatusEffect;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Static(effect) => effect,
+            Self::Owned(effect) => effect,
+        }
+    }
+}
+impl PartialEq for HiddenDeathEffect {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+impl Hash for HiddenDeathEffect {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (**self).hash(state);
+    }
+}
+
+impl DeathStatusEffect {
+    /// Decodes vanilla effect details and their bounded hidden chain from NBT.
+    #[must_use]
+    pub fn from_nbt(data: &NbtTag) -> Option<Self> {
+        Self::read_data(data, None, 0)
+    }
+
+    // MobEffectInstance.CODEC and Details.MAP_CODEC, bounded against hostile NBT nesting.
+    fn read_data(data: &NbtTag, inherited_id: Option<&str>, depth: usize) -> Option<Self> {
+        if depth > MAX_DEATH_STATUS_EFFECT_DEPTH {
+            return None;
+        }
+        let data = data.extract_compound()?;
+        let id = inherited_id.or_else(|| data.get_string("id"))?;
+        let name = if id.contains(':') {
+            id.to_string()
+        } else {
+            format!("minecraft:{id}")
+        };
+        let effect_type = StatusEffect::from_minecraft_name(&name)?;
+        let id = effect_type.minecraft_name;
+        let particles = read_combat_bool(data, "show_particles", true)?;
+        let hidden_effect = match data.get("hidden_effect") {
+            Some(hidden) => Some(HiddenDeathEffect::Owned(Box::new(Self::read_data(
+                hidden,
+                Some(id),
+                depth + 1,
+            )?))),
+            None => None,
+        };
+        // MobEffectInstance.Details / ExtraCodecs.UNSIGNED_BYTE wraps Codec.BYTE.
+        let amplifier = i32::from(read_combat_int(data, "amplifier", 0)? as u8);
+        Some(Self {
+            effect: StatusEffectInstance {
+                effect_id: Cow::Borrowed(id),
+                amplifier,
+                duration: read_combat_int(data, "duration", 0)?,
+                ambient: read_combat_bool(data, "ambient", false)?,
+                show_particles: particles,
+                show_icon: read_combat_bool(data, "show_icon", particles)?,
+            },
+            hidden_effect,
+        })
+    }
+
+    pub fn as_nbt(&self) -> NbtTag {
+        let NbtTag::Compound(mut data) = self.effect.as_nbt() else {
+            return NbtTag::End;
+        };
+        data.put_byte(
+            "amplifier",
+            self.effect.amplifier.clamp(0, i32::from(u8::MAX)) as i8,
+        );
+        if let Some(hidden) = &self.hidden_effect {
+            if let NbtTag::Compound(mut details) = hidden.as_nbt() {
+                // Details.MAP_CODEC inherits the enclosing effect id.
+                details.child_tags.remove("id");
+                data.put_compound("hidden_effect", details);
+            }
+        }
+        NbtTag::Compound(data)
+    }
+}
+impl DeathEffect {
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        let data = data.extract_compound()?;
+        let kind = data.get_string("type")?;
+        match kind.strip_prefix("minecraft:").unwrap_or(kind) {
+            "clear_all_effects" => Some(Self::ClearAllEffects),
+            "apply_effects" => {
+                let effects = data
+                    .get_list("effects")?
+                    .iter()
+                    .map(|effect| DeathStatusEffect::read_data(effect, None, 0))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(Self::ApplyEffects(Cow::Owned(effects), {
+                    let probability = read_combat_float(data, "probability", Some(1.0))?;
+                    (0.0..=1.0).contains(&probability).then_some(probability)?
+                }))
+            }
+            "remove_effects" => Some(Self::RemoveEffects(read_combat_holder_set(
+                data.get("effects")?,
+            )?)),
+            "teleport_randomly" => Some(Self::TeleportRandomly {
+                diameter: {
+                    // TeleportRandomlyConsumeEffect.CODEC uses POSITIVE_FLOAT.
+                    let diameter = read_combat_float(data, "diameter", Some(16.0))?;
+                    (diameter > 0.0).then_some(diameter)?
+                },
+                directional_particles: read_combat_bool(data, "directional_particles", true)?,
+            }),
+            "play_sound" => Some(Self::PlaySound(read_optional_combat_sound(data, "sound")??)),
+            _ => None,
+        }
+    }
+
+    pub fn as_nbt(&self) -> NbtTag {
+        let mut data = NbtCompound::new();
+        let kind = match self {
+            Self::ClearAllEffects => "clear_all_effects",
+            Self::ApplyEffects(effects, probability) => {
+                data.put_list(
+                    "effects",
+                    effects.iter().map(DeathStatusEffect::as_nbt).collect(),
+                );
+                data.put_float("probability", *probability);
+                "apply_effects"
+            }
+            Self::RemoveEffects(types) => {
+                types.write(&mut data, "effects");
+                "remove_effects"
+            }
+            Self::TeleportRandomly {
+                diameter,
+                directional_particles,
+            } => {
+                data.put_float("diameter", *diameter);
+                data.put_bool("directional_particles", *directional_particles);
+                "teleport_randomly"
+            }
+            Self::PlaySound(sound) => {
+                put_idor(&mut data, "sound", sound);
+                "play_sound"
+            }
+        };
+        data.put_string("type", format!("minecraft:{kind}"));
+        NbtTag::Compound(data)
+    }
+}
+impl Hash for DeathEffect {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::ClearAllEffects => 2.hash(state),
+            Self::ApplyEffects(effects, probability) => {
+                0.hash(state);
+                effects.hash(state);
+                probability.to_bits().hash(state);
+            }
+            Self::RemoveEffects(types) => {
+                1.hash(state);
+                types.hash(state);
+            }
+            Self::TeleportRandomly {
+                diameter,
+                directional_particles,
+            } => {
+                3.hash(state);
+                diameter.to_bits().hash(state);
+                directional_particles.hash(state);
+            }
+            Self::PlaySound(sound) => {
+                4.hash(state);
+                sound.hash(state);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlockingDamageReduction {
+    pub horizontal_blocking_angle: f32,
+    pub damage_type: Option<IDSet<DamageTypeImpl>>,
+    pub base: f32,
+    pub factor: f32,
+}
+impl BlockingDamageReduction {
+    // BlocksAttacks.DamageReduction.resolve: the limit includes its boundary.
+    pub fn resolve(&self, damage_type: &DamageType, damage: f32, angle: f64) -> f32 {
+        if angle > f64::from((std::f64::consts::PI / 180.0) as f32 * self.horizontal_blocking_angle)
+            || self
+                .damage_type
+                .as_ref()
+                .is_some_and(|types| !damage_type_set_contains(types, damage_type))
+        {
+            return 0.0;
+        }
+        clamp_blocked_damage(self.base + self.factor * damage, damage)
+    }
+}
+
+impl Hash for BlockingDamageReduction {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.horizontal_blocking_angle.to_bits().hash(state);
+        self.damage_type.hash(state);
+        self.base.to_bits().hash(state);
+        self.factor.to_bits().hash(state);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockingItemDamage {
+    pub threshold: f32,
+    pub base: f32,
+    pub factor: f32,
+}
+impl BlockingItemDamage {
+    pub const DEFAULT: Self = Self {
+        threshold: 1.0,
+        base: 0.0,
+        factor: 1.0,
+    };
+
+    // BlocksAttacks.ItemDamageFunction.apply.
+    pub fn apply(&self, blocked_damage: f32) -> i32 {
+        if blocked_damage < self.threshold {
+            0
+        } else {
+            (self.base + self.factor * blocked_damage).floor() as i32
+        }
+    }
+}
+
+impl Hash for BlockingItemDamage {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.threshold.to_bits().hash(state);
+        self.base.to_bits().hash(state);
+        self.factor.to_bits().hash(state);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlocksAttacksImpl {
+    pub block_delay_seconds: f32,
+    pub disable_cooldown_scale: f32,
+    pub damage_reductions: Cow<'static, [BlockingDamageReduction]>,
+    pub item_damage: BlockingItemDamage,
+    pub bypassed_by: Option<IDSet<DamageTypeImpl>>,
+    pub block_sound: Option<IdOr<SoundEvent>>,
+    pub disable_sound: Option<IdOr<SoundEvent>>,
+}
 impl BlocksAttacksImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
+    // BlocksAttacks.CODEC supplies these defaults even for an empty component.
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        let compound = data.extract_compound()?;
+        let damage_reductions = if let Some(list) = compound.get("damage_reductions") {
+            list.extract_list()?
+                .iter()
+                .map(|data| {
+                    let data = data.extract_compound()?;
+                    Some(BlockingDamageReduction {
+                        horizontal_blocking_angle: {
+                            let angle =
+                                read_combat_float(data, "horizontal_blocking_angle", Some(90.0))?;
+                            (angle > 0.0).then_some(angle)?
+                        },
+                        damage_type: read_optional_damage_types(data, "type")?,
+                        base: read_combat_float(data, "base", None)?,
+                        factor: read_combat_float(data, "factor", None)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?
+        } else {
+            vec![BlockingDamageReduction {
+                horizontal_blocking_angle: 90.0,
+                damage_type: None,
+                base: 0.0,
+                factor: 1.0,
+            }]
+        };
+        let item_damage = if let Some(data) = compound.get("item_damage") {
+            let data = data.extract_compound()?;
+            BlockingItemDamage {
+                threshold: read_nonnegative_combat_float(data, "threshold", None)?,
+                base: read_combat_float(data, "base", None)?,
+                factor: read_combat_float(data, "factor", None)?,
+            }
+        } else {
+            BlockingItemDamage::DEFAULT
+        };
+        Some(Self {
+            block_delay_seconds: read_nonnegative_combat_float(
+                compound,
+                "block_delay_seconds",
+                Some(0.0),
+            )?,
+            disable_cooldown_scale: read_nonnegative_combat_float(
+                compound,
+                "disable_cooldown_scale",
+                Some(1.0),
+            )?,
+            damage_reductions: Cow::Owned(damage_reductions),
+            item_damage,
+            bypassed_by: read_optional_damage_types(compound, "bypassed_by")?,
+            block_sound: read_optional_combat_sound(compound, "block_sound")?,
+            disable_sound: read_optional_combat_sound(compound, "disabled_sound")?,
+        })
+    }
+
+    pub fn block_delay_ticks(&self) -> i32 {
+        (self.block_delay_seconds * 20.0).round() as i32
+    }
+
+    // BlocksAttacks.disableBlockingForTicks.
+    pub fn disable_blocking_for_ticks(&self, base_seconds: f32) -> i32 {
+        let seconds = base_seconds * self.disable_cooldown_scale;
+        if seconds > 0.0 {
+            (seconds * 20.0).round() as i32
+        } else {
+            0
+        }
+    }
+
+    pub fn resolve_blocked_damage(&self, damage_type: &DamageType, damage: f32, angle: f64) -> f32 {
+        let blocked = self
+            .damage_reductions
+            .iter()
+            .map(|reduction| reduction.resolve(damage_type, damage, angle))
+            .sum::<f32>();
+        clamp_blocked_damage(blocked, damage)
     }
 }
 impl DataComponentImpl for BlocksAttacksImpl {
+    fn write_data(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        compound.put_float("block_delay_seconds", self.block_delay_seconds);
+        compound.put_float("disable_cooldown_scale", self.disable_cooldown_scale);
+        compound.put_list(
+            "damage_reductions",
+            self.damage_reductions
+                .iter()
+                .map(|reduction| {
+                    let mut data = NbtCompound::new();
+                    data.put_float(
+                        "horizontal_blocking_angle",
+                        reduction.horizontal_blocking_angle,
+                    );
+                    if let Some(types) = &reduction.damage_type {
+                        types.write(&mut data, "type");
+                    }
+                    data.put_float("base", reduction.base);
+                    data.put_float("factor", reduction.factor);
+                    NbtTag::Compound(data)
+                })
+                .collect(),
+        );
+        let mut item_damage = NbtCompound::new();
+        item_damage.put_float("threshold", self.item_damage.threshold);
+        item_damage.put_float("base", self.item_damage.base);
+        item_damage.put_float("factor", self.item_damage.factor);
+        compound.put_compound("item_damage", item_damage);
+        if let Some(types) = &self.bypassed_by {
+            types.write(&mut compound, "bypassed_by");
+        }
+        if let Some(sound) = &self.block_sound {
+            put_idor(&mut compound, "block_sound", sound);
+        }
+        if let Some(sound) = &self.disable_sound {
+            put_idor(&mut compound, "disabled_sound", sound);
+        }
+        NbtTag::Compound(compound)
+    }
     default_impl!(BlocksAttacks);
+}
+
+// Mth.clamp propagates NaN instead of panicking on a NaN upper bound.
+fn clamp_blocked_damage(value: f32, incoming: f32) -> f32 {
+    if value < 0.0 {
+        0.0
+    } else if value.is_nan() || incoming.is_nan() {
+        f32::NAN
+    } else {
+        value.min(incoming)
+    }
+}
+
+impl Hash for BlocksAttacksImpl {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.block_delay_seconds.to_bits().hash(state);
+        self.disable_cooldown_scale.to_bits().hash(state);
+        self.damage_reductions.hash(state);
+        self.item_damage.hash(state);
+        self.bypassed_by.hash(state);
+        self.block_sound.hash(state);
+        self.disable_sound.hash(state);
+    }
+}
+
+// NbtOps.getNumberValue / Codec.INT use NumericTag.intValue for every numeric tag.
+fn read_combat_int(compound: &NbtCompound, key: &str, default: i32) -> Option<i32> {
+    Some(match compound.get(key) {
+        None => default,
+        Some(NbtTag::Byte(value)) => i32::from(*value),
+        Some(NbtTag::Short(value)) => i32::from(*value),
+        Some(NbtTag::Int(value)) => *value,
+        Some(NbtTag::Long(value)) => *value as i32,
+        Some(NbtTag::Float(value)) => *value as i32,
+        Some(NbtTag::Double(value)) => *value as i32,
+        _ => return None,
+    })
+}
+
+// NbtOps.getBooleanValue accepts numeric tags, including SNBT true/false bytes.
+pub(super) fn read_combat_bool(compound: &NbtCompound, key: &str, default: bool) -> Option<bool> {
+    match compound.get(key) {
+        Some(value) => value.as_numeric_double().map(|value| value != 0.0),
+        None => Some(default),
+    }
+}
+
+// Vanilla Codec.FLOAT accepts every NBT numeric type, including integers in SNBT commands.
+fn read_combat_float(compound: &NbtCompound, key: &str, default: Option<f32>) -> Option<f32> {
+    match compound.get(key) {
+        Some(value) => value.as_numeric_float(),
+        None => default,
+    }
+}
+
+fn read_nonnegative_combat_float(
+    compound: &NbtCompound,
+    key: &str,
+    default: Option<f32>,
+) -> Option<f32> {
+    let value = read_combat_float(compound, key, default)?;
+    (value >= 0.0).then_some(value)
+}
+
+fn read_optional_combat_sound(
+    compound: &NbtCompound,
+    key: &str,
+) -> Option<Option<IdOr<SoundEvent>>> {
+    let Some(data) = compound.get(key) else {
+        return Some(None);
+    };
+    if let Some(name) = data.extract_string() {
+        return Some(Some(IdOr::Id(Sound::from_name(
+            name.strip_prefix("minecraft:").unwrap_or(name),
+        )?)));
+    }
+    let data = data.extract_compound()?;
+    Some(Some(IdOr::Value(SoundEvent {
+        sound_name: Cow::Owned(data.get_string("sound_id")?.to_string()),
+        range: data.get_numeric_float("range"),
+    })))
+}
+
+fn read_optional_damage_types(
+    compound: &NbtCompound,
+    key: &str,
+) -> Option<Option<IDSet<DamageTypeImpl>>> {
+    match compound.get(key) {
+        Some(data) => Some(Some(read_combat_holder_set(data)?)),
+        None => Some(None),
+    }
+}
+
+// RegistryCodecs.holderSet rejects the whole list if any holder is invalid.
+fn read_combat_holder_set<T: IDSetContent>(data: &NbtTag) -> Option<IDSet<T>> {
+    if let NbtTag::List(entries) = data {
+        let entries = entries
+            .iter()
+            .map(|entry| T::from_str(entry.extract_string()?))
+            .collect::<Option<Vec<_>>>()?;
+        Some(IDSet::IDs(Cow::Owned(entries)))
+    } else {
+        IDSet::read(data)
+    }
+}
+
+/// Tests a blocking component's holder set against the generated damage registry and tags.
+pub fn damage_type_set_contains(types: &IDSet<DamageTypeImpl>, damage_type: &DamageType) -> bool {
+    match types {
+        IDSet::Tag(tag) => damage_type.is_tagged_with(tag).unwrap_or(false),
+        IDSet::IDs(ids) => ids
+            .iter()
+            .any(|entry| entry.damage_type.id == damage_type.id),
+    }
+}
+
+impl IDSetContent for DamageTypeImpl {
+    fn registry_id(&self) -> u16 {
+        u16::from(self.damage_type.id)
+    }
+
+    fn from_id(id: u16) -> Option<&'static Self> {
+        static TYPES: std::sync::LazyLock<Vec<DamageTypeImpl>> = std::sync::LazyLock::new(|| {
+            (0..=u8::MAX)
+                .filter_map(DamageType::from_id)
+                .map(|damage_type| DamageTypeImpl { damage_type })
+                .collect()
+        });
+        TYPES
+            .iter()
+            .find(|entry| u16::from(entry.damage_type.id) == id)
+    }
+
+    fn from_str(name: &str) -> Option<&'static Self> {
+        let damage_type = DamageType::from_name(name.strip_prefix("minecraft:").unwrap_or(name))?;
+        <Self as IDSetContent>::from_id(u16::from(damage_type.id))
+    }
+
+    #[expect(
+        clippy::expect_used,
+        reason = "DamageType and the registry are generated from the same vanilla datapack"
+    )]
+    fn to_string(&self) -> String {
+        // DamageType.message_id is a translation key, not the registry name.
+        let name = crate::registry::REGISTRY_V_26_3
+            .iter()
+            .find(|registry| registry.registry_id == "damage_type")
+            .and_then(|registry| registry.entries.get(usize::from(self.damage_type.id)))
+            .expect("Generated damage registry contains every DamageType id")
+            .name;
+        format!("minecraft:{name}")
+    }
 }
 
 fn get_optional_idor(compound: &NbtCompound, key: &str) -> Option<IdOr<SoundEvent>> {
@@ -1224,5 +1807,198 @@ impl DataComponentImpl for DamageTypeImpl {
 impl Hash for DamageTypeImpl {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.damage_type.id.hash(state);
+    }
+}
+
+#[cfg(test)]
+mod blocking_component_tests {
+    use super::*;
+
+    fn blocking_fixture() -> NbtTag {
+        let mut component = NbtCompound::new();
+        component.put_float("block_delay_seconds", 0.175);
+        component.put_float("disable_cooldown_scale", 0.375);
+        let mut projectile = NbtCompound::new();
+        projectile.put_string("type", "#minecraft:is_projectile".to_string());
+        projectile.put_float("horizontal_blocking_angle", 60.0);
+        projectile.put_float("base", 1.0);
+        projectile.put_float("factor", 0.25);
+        let mut general = NbtCompound::new();
+        general.put_float("horizontal_blocking_angle", 45.0);
+        general.put_float("base", 0.5);
+        general.put_float("factor", 0.5);
+        component.put_list(
+            "damage_reductions",
+            vec![NbtTag::Compound(projectile), NbtTag::Compound(general)],
+        );
+        let mut wear = NbtCompound::new();
+        wear.put_float("threshold", 3.0);
+        wear.put_float("base", 1.0);
+        wear.put_float("factor", 1.0);
+        component.put_compound("item_damage", wear);
+        component.put_list(
+            "bypassed_by",
+            vec![NbtTag::String("minecraft:mob_attack".into())],
+        );
+        component.put_string("block_sound", "minecraft:item.shield.block".to_string());
+        let mut sound = NbtCompound::new();
+        sound.put_string("sound_id", "example:disable".to_string());
+        sound.put_float("range", 12.5);
+        component.put_compound("disabled_sound", sound);
+        NbtTag::Compound(component)
+    }
+
+    #[test]
+    fn blocking_nbt_preserves_custom_fields_and_registry_names() {
+        let input = blocking_fixture();
+        let component = BlocksAttacksImpl::read_data(&input).unwrap();
+        assert_eq!(component.write_data(), input);
+        assert_eq!(component.block_delay_ticks(), 4);
+        assert_eq!(component.disable_blocking_for_ticks(5.0), 38);
+        assert_eq!(component.disable_blocking_for_ticks(0.0), 0);
+    }
+
+    #[test]
+    fn reductions_resolve_partial_damage_by_type_and_horizontal_angle() {
+        let component = BlocksAttacksImpl::read_data(&blocking_fixture()).unwrap();
+        assert_eq!(
+            component.resolve_blocked_damage(&DamageType::ARROW, 8.0, 0.0),
+            7.5
+        );
+        assert_eq!(
+            component.resolve_blocked_damage(&DamageType::PLAYER_ATTACK, 8.0, 0.0),
+            4.5
+        );
+        assert_eq!(
+            component.resolve_blocked_damage(&DamageType::ARROW, 8.0, 50.0f64.to_radians()),
+            3.0
+        );
+        assert_eq!(
+            component.resolve_blocked_damage(&DamageType::ARROW, 8.0, std::f64::consts::PI),
+            0.0
+        );
+        // Independent sixty-degree probe, inside vanilla's float-rounded boundary.
+        let boundary = std::f64::consts::FRAC_PI_3;
+        assert_eq!(
+            component.resolve_blocked_damage(&DamageType::ARROW, 8.0, boundary),
+            3.0
+        );
+        assert_eq!(
+            component.resolve_blocked_damage(&DamageType::ARROW, 8.0, boundary + 0.001),
+            0.0
+        );
+        assert_eq!(
+            component.resolve_blocked_damage(&DamageType::ARROW, 1.0, 0.0),
+            1.0
+        );
+    }
+
+    #[test]
+    fn blocking_item_wear_uses_threshold_base_and_factor() {
+        let component = BlocksAttacksImpl::read_data(&blocking_fixture()).unwrap();
+        assert_eq!(component.item_damage.apply(2.99), 0);
+        assert_eq!(component.item_damage.apply(3.0), 4);
+        assert_eq!(component.item_damage.apply(6.75), 7);
+    }
+
+    #[test]
+    fn death_protection_nbt_preserves_order_and_effect_defaults() {
+        let mut clear = NbtCompound::new();
+        clear.put_string("type", "minecraft:clear_all_effects".to_string());
+        let mut regeneration = NbtCompound::new();
+        regeneration.put_string("id", "minecraft:regeneration".to_string());
+        regeneration.put_short("duration", 900);
+        let mut apply = NbtCompound::new();
+        apply.put_string("type", "minecraft:apply_effects".to_string());
+        apply.put_list("effects", vec![NbtTag::Compound(regeneration)]);
+        let mut protection = NbtCompound::new();
+        protection.put_list(
+            "death_effects",
+            vec![NbtTag::Compound(clear), NbtTag::Compound(apply)],
+        );
+        let parsed = DeathProtectionImpl::read_data(&NbtTag::Compound(protection)).unwrap();
+        assert!(matches!(
+            parsed.death_effects[0],
+            DeathEffect::ClearAllEffects
+        ));
+        let DeathEffect::ApplyEffects(effects, probability) = &parsed.death_effects[1] else {
+            panic!("Missing apply_effects")
+        };
+        assert_eq!(*probability, 1.0);
+        assert_eq!(effects[0].effect.amplifier, 0);
+        assert_eq!(effects[0].effect.duration, 900);
+        assert!(effects[0].effect.show_icon);
+        assert_eq!(
+            DeathProtectionImpl::read_data(&parsed.write_data()).unwrap(),
+            parsed
+        );
+    }
+
+    #[test]
+    fn weapon_nbt_preserves_disable_duration() {
+        let mut input = NbtCompound::new();
+        input.put_int("item_damage_per_attack", 2);
+        input.put_float("disable_blocking_for_seconds", 3.25);
+        let input = NbtTag::Compound(input);
+        assert_eq!(WeaponImpl::read_data(&input).unwrap().write_data(), input);
+        let mut numeric = NbtCompound::new();
+        numeric.put_byte("item_damage_per_attack", 2);
+        numeric.put_double("disable_blocking_for_seconds", 3.25);
+        let parsed = WeaponImpl::read_data(&NbtTag::Compound(numeric)).unwrap();
+        assert_eq!(parsed.item_damage_per_attack, 2);
+        assert_eq!(parsed.disable_blocking_for_seconds, 3.25);
+    }
+
+    #[test]
+    fn blocking_nbt_accepts_numeric_snbt_and_rejects_invalid_fields() {
+        let mut wear = NbtCompound::new();
+        wear.put_int("threshold", 3);
+        wear.put_int("base", 1);
+        wear.put_int("factor", 1);
+        let mut input = NbtCompound::new();
+        input.put_compound("item_damage", wear);
+        input.put_double("block_delay_seconds", 0.25);
+        let parsed = BlocksAttacksImpl::read_data(&NbtTag::Compound(input.clone())).unwrap();
+        assert_eq!(parsed.item_damage.apply(3.0), 4);
+        assert_eq!(parsed.block_delay_ticks(), 5);
+        input.put_float("block_delay_seconds", -1.0);
+        assert!(BlocksAttacksImpl::read_data(&NbtTag::Compound(input.clone())).is_none());
+        input.put_string("block_delay_seconds", "0.25".to_owned());
+        assert!(BlocksAttacksImpl::read_data(&NbtTag::Compound(input.clone())).is_none());
+        input.child_tags.remove("block_delay_seconds");
+        input.put_string("damage_reductions", "bad".to_owned());
+        assert!(BlocksAttacksImpl::read_data(&NbtTag::Compound(input)).is_none());
+    }
+    #[test]
+    fn death_effect_amplifiers_use_unsigned_nbt_bytes_in_hidden_details() {
+        let mut details = NbtCompound::new();
+        details.put_byte("amplifier", -128);
+        let mut visible = NbtCompound::new();
+        visible.put_string("id", "minecraft:regeneration".into());
+        visible.put_byte("amplifier", -1);
+        visible.put_compound("hidden_effect", details);
+        let effect = DeathStatusEffect::read_data(&NbtTag::Compound(visible), None, 0).unwrap();
+        assert_eq!(effect.effect.amplifier, 255);
+        assert_eq!(effect.hidden_effect.as_ref().unwrap().effect.amplifier, 128);
+        let nbt = effect.as_nbt();
+        let nbt = nbt.extract_compound().unwrap();
+        assert_eq!(nbt.get("amplifier"), Some(&NbtTag::Byte(-1)));
+        assert_eq!(
+            nbt.get_compound("hidden_effect").unwrap().get("amplifier"),
+            Some(&NbtTag::Byte(-128))
+        );
+    }
+
+    #[test]
+    fn combat_holder_sets_reject_any_invalid_list_entry() {
+        for invalid in [NbtTag::Int(1), NbtTag::String("minecraft:missing".into())] {
+            let list = NbtTag::List(vec![NbtTag::String("minecraft:fall".into()), invalid]);
+            assert!(read_combat_holder_set::<DamageTypeImpl>(&list).is_none());
+        }
+        let effects = NbtTag::List(vec![
+            NbtTag::String("minecraft:regeneration".into()),
+            NbtTag::Byte(0),
+        ]);
+        assert!(read_combat_holder_set::<StatusEffect>(&effects).is_none());
     }
 }

@@ -2582,7 +2582,7 @@ impl Player {
                         }
                         let item_id = p.inventory().held_item().item.id;
                         p.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-                        p.increment_stat(StatisticCategory::Mined, state.id.as_u16() as i32, 1);
+                        p.increment_stat(StatisticCategory::Mined, block.id.as_u16() as i32, 1);
                     }
                 }
             }
@@ -3011,27 +3011,7 @@ impl Player {
     }
 
     pub fn increment_stat(&self, category: statistics::StatisticCategory, stat: i32, amount: i32) {
-        let final_amount = if let Some(player_arc) =
-            self.world().get_player_by_uuid(self.gameprofile.id)
-            && let Some(server) = self.world().server.upgrade()
-        {
-            let mut event = crate::plugin::api::events::player::player_statistic_increment::PlayerStatisticIncrementEvent {
-                player: player_arc,
-                statistic_id: format!("{category:?}:{stat}"),
-                amount,
-                cancelled: false,
-            };
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
-            event.amount
-        } else {
-            amount
-        };
-        if let Ok(mut stats) = self.stats.try_lock() {
-            stats.increment(category, stat, final_amount);
-        }
+        self.award_stat(category, stat, amount);
     }
 
     pub fn set_stat(&self, category: statistics::StatisticCategory, stat: i32, value: i32) {
@@ -4746,7 +4726,8 @@ impl Player {
             (EquipmentSlot::OFF_HAND, off_hand_item),
         ];
         self.living_entity.send_equipment_changes(equipment);
-        // todo this.player.stopUsingItem();
+        // ServerGamePacketListenerImpl.handlePlayerAction, SWAP_ITEM_WITH_OFFHAND.
+        self.living_entity.clear_active_hand();
     }
 
     #[must_use]
