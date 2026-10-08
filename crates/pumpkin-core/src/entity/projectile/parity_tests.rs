@@ -5,6 +5,42 @@ use crate::entity::{
 use pumpkin_nbt::compound::NbtCompound;
 
 #[tokio::test]
+async fn owner_grace_includes_zero_health_unremoved_living_passengers() {
+    // Projectile.isOutsideOwnerCollisionRange -> LivingEntity.isPickable ignores health.
+    let dir = tempfile::tempdir().unwrap();
+    let world = armor_test_world(dir.path());
+    let owner = Arc::new(LivingEntity::new(Entity::new(
+        world.clone(),
+        Vector3::new(10.0, 0.0, 0.0),
+        &EntityType::COW,
+    )));
+    let passenger = Arc::new(LivingEntity::new(Entity::new(
+        world.clone(),
+        Vector3::default(),
+        &EntityType::COW,
+    )));
+    passenger.health.store(0.0);
+    owner.entity.add_passenger(owner.clone(), passenger.clone());
+    world
+        .entities
+        .store(Arc::new(vec![owner.clone(), passenger.clone()]));
+    let arrow = arrow::ArrowEntity::new(
+        Entity::new(world, Vector3::default(), &EntityType::ARROW),
+        Some(owner.entity.entity_id),
+    );
+    assert!(owner.health.load() > 0.0);
+    assert!(!passenger.entity.is_removed());
+    assert!(passenger.is_pickable());
+    assert!(!passenger.can_be_hit_by_projectile());
+    arrow.projectile.tick(&arrow.entity);
+    assert!(!arrow.projectile.left_owner.load(Ordering::Relaxed));
+    passenger.entity.remove();
+    arrow.projectile.tick(&arrow.entity);
+    assert!(arrow.projectile.left_owner.load(Ordering::Relaxed));
+    owner.entity.remove_passenger(passenger.entity.entity_id);
+}
+
+#[tokio::test]
 async fn owner_uuid_survives_reload_and_owner_grace_depends_on_collision_not_age() {
     let dir = tempfile::tempdir().unwrap();
     let world = armor_test_world(dir.path());

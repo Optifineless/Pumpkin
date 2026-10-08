@@ -96,6 +96,7 @@ pub mod living;
 pub mod marker;
 pub mod mob;
 pub mod passive;
+mod pickability;
 pub mod player;
 pub(crate) mod player_skin;
 mod player_teleport;
@@ -405,6 +406,16 @@ pub trait EntityBase: Send + Sync + std::any::Any {
 
     fn can_hit(&self) -> bool {
         false
+    }
+
+    /// Returns vanilla pickability, which can include dying, unremoved living entities.
+    fn is_pickable(&self) -> bool {
+        pickability::is_pickable(self)
+    }
+
+    /// Returns Entity.canBeHitByProjectile's alive and pickable target check.
+    fn can_be_hit_by_projectile(&self) -> bool {
+        pickability::can_be_hit_by_projectile(self)
     }
 
     fn is_flutterer(&self) -> bool {

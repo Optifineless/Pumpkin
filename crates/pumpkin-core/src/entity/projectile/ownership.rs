@@ -178,9 +178,8 @@ impl ProjectileState {
             .expand_all(1.0);
         let mut pending = vec![root_vehicle(owner)];
         while let Some(other) = pending.pop() {
-            if super::can_hit_entity(&other)
-                && sweep.intersects(&other.get_entity().bounding_box.load())
-            {
+            // Projectile.isOutsideOwnerCollisionRange uses EntitySelector.CAN_BE_PICKED.
+            if other.is_pickable() && sweep.intersects(&other.get_entity().bounding_box.load()) {
                 return;
             }
             pending.extend(

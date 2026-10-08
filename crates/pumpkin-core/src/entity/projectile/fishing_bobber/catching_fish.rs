@@ -39,13 +39,20 @@ impl FishingBobberEntity {
         );
         let nibble = self.bite_countdown.load(Relaxed);
         if nibble > 0 {
+            // Gate vanilla FishingHook.catchingFish's expiry before any state changes.
+            if nibble == 1
+                && self
+                    .fire_fish_event(PlayerFishState::FailedAttempt, None, self.hand, 0)
+                    .is_none()
+            {
+                return;
+            }
             self.bite_countdown.store(nibble - 1, Relaxed);
             if nibble == 1 {
                 self.wait_countdown.store(0, Relaxed);
                 self.hook_countdown.store(0, Relaxed);
                 self.entity
                     .set_synced_data(tracked_data::fishing_bobber::DATA_BITING, false);
-                self.fire_fish_event(PlayerFishState::FailedAttempt, None, self.hand, 0);
             }
         } else if self.hook_countdown.load(Relaxed) > 0 {
             let hooked = self.hook_countdown.load(Relaxed) - speed;
@@ -96,7 +103,10 @@ impl FishingBobberEntity {
         self.entity
             .set_synced_data(tracked_data::fishing_bobber::DATA_BITING, true);
         // FishingHook.onSyncedDataUpdated uses the UUID/game-time seeded random for the dip.
-        velocity.y = f64::from(-0.4f32 * (self.synced_random(world).next_f32() * 0.4 + 0.6));
+        // Mth.nextFloat subtracts the f32 endpoints before multiplying the draw.
+        velocity.y = f64::from(
+            -0.4f32 * (self.synced_random(world).next_f32() * (1.0f32 - 0.6f32) + 0.6f32),
+        );
     }
 
     fn approach_particles(&self, world: &World, hooked: i32) {

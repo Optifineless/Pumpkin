@@ -13,7 +13,6 @@ mod verification_tests;
 use super::{Entity, EntityBase, living::LivingEntity};
 use pumpkin_data::BlockDirection;
 use pumpkin_data::entity::EntityType;
-use pumpkin_data::tag::{self, Taggable};
 use pumpkin_protocol::java::client::play::CEntityVelocity;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
@@ -77,39 +76,7 @@ pub fn is_projectile(entity_type: &EntityType) -> bool {
 // Projectile.canHitEntity's target check: Entity.canBeHitByProjectile and isPickable.
 // ProjectileState applies the owner/root-vehicle exclusion separately.
 fn can_hit_entity(other: &Arc<dyn EntityBase>) -> bool {
-    let entity = other.get_entity();
-    if !entity.is_alive()
-        || other.is_spectator()
-        || entity.entity_type == &EntityType::INTERACTION
-        || entity.entity_type == &EntityType::ENDER_DRAGON
-    {
-        return false;
-    }
-    if let Some(stand) = other
-        .cast_any()
-        .downcast_ref::<super::decoration::armor_stand::ArmorStandEntity>()
-        && stand.is_marker()
-    {
-        return false;
-    }
-    if let Some(living) = other.get_living_entity() {
-        return living.health.load() > 0.0;
-    }
-
-    // Nonliving isPickable overrides, including Projectile's redirectable tag.
-    other.can_hit()
-        || [
-            &EntityType::END_CRYSTAL,
-            &EntityType::ITEM_FRAME,
-            &EntityType::GLOW_ITEM_FRAME,
-            &EntityType::FALLING_BLOCK,
-            &EntityType::TNT,
-            &EntityType::SHULKER_BULLET,
-        ]
-        .contains(&entity.entity_type)
-        || entity
-            .entity_type
-            .has_tag(&tag::EntityType::MINECRAFT_REDIRECTABLE_PROJECTILE)
+    other.can_be_hit_by_projectile()
 }
 
 /// Helper to apply projectile spawned enchantment effects matching vanilla `Projectile::applyOnProjectileSpawned`.

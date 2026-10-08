@@ -17,10 +17,14 @@ use std::sync::{
 
 mod catching_fish;
 mod collision;
+#[cfg(test)]
+mod event_tests;
 mod open_water;
 #[cfg(test)]
 mod regression_tests;
 mod retrieve;
+#[cfg(test)]
+mod review_tests;
 #[cfg(test)]
 mod tests;
 

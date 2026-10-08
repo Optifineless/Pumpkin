@@ -8,10 +8,11 @@ use crate::{
     item::{ItemBehaviour, ItemMetadata},
 };
 use pumpkin_data::{
-    data_component_impl::EquipmentSlot,
+    data_component_impl::{EquipmentSlot, UseEffectsImpl},
     entity::EntityType,
     game_event::GameEvent,
     item::Item,
+    item_stack::ItemStack,
     sound::{Sound, SoundCategory},
     statistic::StatisticCategory,
 };
@@ -25,6 +26,9 @@ pub struct FishingRodItem;
 #[cfg(test)]
 #[path = "fishing_rod_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "fishing_rod_vibration_tests.rs"]
+mod vibration_tests;
 
 impl ItemMetadata for FishingRodItem {
     fn ids() -> Box<[u16]> {
@@ -85,7 +89,8 @@ impl ItemBehaviour for FishingRodItem {
                 1.0,
                 bobber_sound_pitch(),
             );
-            world.emit_game_event(GameEvent::ItemInteractFinish.name(), player.position());
+            // FishingRodItem.use calls ItemStack.causeUseVibration after durability damage.
+            cause_use_vibration(&rod, player, GameEvent::ItemInteractFinish);
             return;
         }
         player.fishing_bobber.store(-1, Relaxed);
@@ -122,11 +127,23 @@ impl ItemBehaviour for FishingRodItem {
             hook.clear_owner();
         }
         player.increment_stat(StatisticCategory::Used, i32::from(Item::FISHING_ROD.id), 1);
-        world.emit_game_event(GameEvent::ItemInteractStart.name(), player.position());
+        cause_use_vibration(&rod, player, GameEvent::ItemInteractStart);
     }
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+// ItemStack.causeUseVibration requires the use_effects component.
+fn cause_use_vibration(rod: &ItemStack, player: &Player, event: GameEvent) {
+    if rod
+        .get_data_component::<UseEffectsImpl>()
+        .is_some_and(|effects| effects.interact_vibrations)
+    {
+        player
+            .world()
+            .emit_game_event(event.name(), player.position());
     }
 }
 

@@ -184,6 +184,7 @@ pub mod end_podium;
 pub mod entity_tracker;
 pub mod environment;
 mod experience_orbs;
+mod fishing_hook;
 mod game_events;
 pub(crate) mod generation_spawning;
 pub mod natural_spawner;
@@ -5039,6 +5040,7 @@ impl World {
         {
             return;
         }
+        self.clear_fishing_hook_owner(base_entity);
         base_entity.removed.store(true, Ordering::Release);
 
         self.spawn_state.load().remove_entity(self, entity);

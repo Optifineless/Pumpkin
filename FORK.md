@@ -20,7 +20,7 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 
 | Upstream PR | What it fixes |
 |:--|:--|
-| [#3821](https://github.com/Pumpkin-MC/Pumpkin/pull/3821) by towner-10 | Casting showed no bobber because its spawn packet lacked the caster id. Hook and rod behaviour adapted from this PR to vanilla 26.3; the fishing loot context, open-water treasure predicate and XP rewards are fork work. In-game verification: Not yet. |
+| [#3821](https://github.com/Pumpkin-MC/Pumpkin/pull/3821) by towner-10 | Casting showed no bobber because its spawn packet lacked the caster id. Hook and rod behaviour adapted from this PR to vanilla 26.3; the fishing loot context, open-water treasure predicate and XP rewards are fork work. Follow-up matches the bite kick rounding, honours failed-attempt cancellation and rod vibration settings, keeps owner grace around dying passengers, and clears the caster immediately when a hook is removed externally. In-game verification: Not yet. |
 | [#3718](https://github.com/Pumpkin-MC/Pumpkin/pull/3718) by KBDL | Fish swim underwater and flop on land; squid and glow squid move with their tentacle strokes. Ported to pumpkin-core and checked against vanilla 26.3. |
 | [#3863](https://github.com/Pumpkin-MC/Pumpkin/pull/3863) | Scheduled ticks ran one tick late, ticks saved with a chunk never ran after loading, and observers misbehaved. |
 | [#3853](https://github.com/Pumpkin-MC/Pumpkin/pull/3853) | Falling out of the world killed instantly instead of in steps, because void damage skipped the hurt cooldown. |
