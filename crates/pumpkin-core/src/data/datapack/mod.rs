@@ -10,9 +10,7 @@ pub mod structure_loader;
 pub mod test_loader;
 pub mod trade_loader;
 
-use std::cell::Cell;
 use std::collections::HashMap;
-use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -25,7 +23,6 @@ use pumpkin_nbt::{NbtCompound, nbt_compress::read_gzip_compound_tag};
 use pumpkin_protocol::codec::recipe::DynamicRecipe;
 use pumpkin_util::loot_table::DynamicLootTable;
 
-use crate::command::context::command_source::CommandSource;
 use crate::server::Server;
 use crate::server::recipe::RecipeManager;
 use crate::world::loot::LootTableHandle;
@@ -76,6 +73,7 @@ pub enum DatapackEnablePosition {
 }
 
 pub struct DatapackManager {
+    load_pending: std::sync::atomic::AtomicBool,
     loaded_packs: RwLock<Vec<LoadedDatapack>>,
     functions: RwLock<HashMap<String, Arc<[String]>>>,
     function_tags: RwLock<HashMap<String, Vec<String>>>,
@@ -98,86 +96,12 @@ fn share_function_bodies(
         .collect()
 }
 
-/// Maximum nested functions per command chain. Far below vanilla's `maxCommandChainLength`
-/// (65536): each level costs stack frames and a Rust stack overflow aborts the process.
-pub const MAX_FUNCTION_CHAIN_DEPTH: usize = 256;
-
-/// Maximum dispatched commands per chain (vanilla `maxCommandChainLength` default).
-/// Depth alone cannot bound a fanning chain, which grows exponentially without nesting deep.
-pub const MAX_FUNCTION_CHAIN_COMMANDS: usize = 65536;
-
-thread_local! {
-    /// How many functions the current thread is currently executing, nested.
-    static FUNCTION_CHAIN_DEPTH: Cell<usize> = const { Cell::new(0) };
-    /// How many command lines the current chain has dispatched so far.
-    static FUNCTION_CHAIN_COMMANDS: Cell<usize> = const { Cell::new(0) };
-}
-
-/// Why a function could not be executed.
-#[derive(Debug, PartialEq, Eq)]
-pub enum FunctionRunError {
-    /// The function or function tag does not exist, or could not be read.
-    Unknown(String),
-    /// The command chain already nested [`MAX_FUNCTION_CHAIN_DEPTH`] functions.
-    ChainLimitExceeded,
-}
-
-impl fmt::Display for FunctionRunError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown(reason) => f.write_str(reason),
-            Self::ChainLimitExceeded => write!(
-                f,
-                "Maximum number of nested function calls reached ({MAX_FUNCTION_CHAIN_DEPTH})"
-            ),
-        }
-    }
-}
-
-/// Counts nested function entries on this thread; the guard releases its level on drop.
-struct FunctionChainGuard;
-
-impl FunctionChainGuard {
-    fn enter() -> Result<Self, FunctionRunError> {
-        FUNCTION_CHAIN_DEPTH.with(|depth| {
-            if depth.get() >= MAX_FUNCTION_CHAIN_DEPTH {
-                return Err(FunctionRunError::ChainLimitExceeded);
-            }
-            depth.set(depth.get() + 1);
-            Ok(Self)
-        })
-    }
-
-    /// Records one dispatched line against the chain budget; false means stop the chain.
-    fn count_command() -> bool {
-        FUNCTION_CHAIN_COMMANDS.with(|commands| {
-            let count = commands.get() + 1;
-            commands.set(count);
-            count <= MAX_FUNCTION_CHAIN_COMMANDS
-        })
-    }
-}
-
-impl Drop for FunctionChainGuard {
-    fn drop(&mut self) {
-        // Only ever dropped after a successful `enter`, so the depth cannot underflow.
-        let outermost = FUNCTION_CHAIN_DEPTH.with(|depth| {
-            let outer = depth.get() - 1;
-            depth.set(outer);
-            outer
-        });
-        if outermost == 0 {
-            // Outermost chain ended; reset the budget for the next chain.
-            FUNCTION_CHAIN_COMMANDS.with(|commands| commands.set(0));
-        }
-    }
-}
-
-/// True while inside a nested function call; nested calls must not report their own result.
-#[must_use]
-pub fn is_nested_function_call() -> bool {
-    FUNCTION_CHAIN_DEPTH.with(Cell::get) > 0
-}
+mod function_frame;
+mod function_runner;
+pub use function_runner::{
+    FunctionRunError, consume_command_cost, current_function_frame, discard_function_tail,
+    execute_command_in_context, is_nested_function_call, max_command_forks, return_from_function,
+};
 
 impl Default for DatapackManager {
     fn default() -> Self {
@@ -189,6 +113,7 @@ impl DatapackManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            load_pending: std::sync::atomic::AtomicBool::new(true),
             loaded_packs: RwLock::new(Vec::new()),
             functions: RwLock::new(HashMap::new()),
             function_tags: RwLock::new(HashMap::new()),
@@ -861,76 +786,6 @@ impl DatapackManager {
             names.push(format!("#{tag}"));
         }
         names
-    }
-
-    /// Runs every line of a function or function tag; also the single place chains are bounded.
-    pub fn execute_function(
-        &self,
-        server: &Arc<Server>,
-        source: &CommandSource,
-        name: &str,
-    ) -> Result<usize, FunctionRunError> {
-        let Ok(_guard) = FunctionChainGuard::enter() else {
-            return Err(FunctionRunError::ChainLimitExceeded);
-        };
-
-        self.visit_function_lines(name, |line| {
-            server
-                .command_dispatcher
-                .load()
-                .handle_command(source, line);
-        })
-        .map_err(FunctionRunError::Unknown)
-    }
-
-    fn visit_function_lines(
-        &self,
-        name: &str,
-        mut visit: impl FnMut(&str),
-    ) -> Result<usize, String> {
-        let (functions_to_run, is_tag) = if let Some(tag_name) = name.strip_prefix('#') {
-            let tags = self
-                .function_tags
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let Some(fns) = tags.get(tag_name) else {
-                return Err(format!("Unknown function tag: #{tag_name}"));
-            };
-            (fns.clone(), true)
-        } else {
-            (vec![name.to_string()], false)
-        };
-
-        let functions = {
-            let all_fns = self
-                .functions
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut functions = Vec::with_capacity(functions_to_run.len());
-            for fn_id in functions_to_run {
-                let Some(lines) = all_fns.get(&fn_id) else {
-                    if !is_tag {
-                        return Err(format!("Unknown function: {fn_id}"));
-                    }
-                    continue;
-                };
-                functions.push(Arc::clone(lines));
-            }
-            functions
-        };
-
-        let mut total_executed = 0;
-        'functions: for lines in functions {
-            for line in lines.iter() {
-                if !FunctionChainGuard::count_command() {
-                    break 'functions;
-                }
-                visit(line);
-                total_executed += 1;
-            }
-        }
-
-        Ok(total_executed)
     }
 
     #[must_use]
@@ -1829,143 +1684,7 @@ fn load_recipes_from_dir(
 }
 #[cfg(test)]
 mod tests {
-    use super::{
-        DatapackManager, FunctionChainGuard, FunctionRunError, MAX_FUNCTION_CHAIN_COMMANDS,
-        MAX_FUNCTION_CHAIN_DEPTH,
-    };
-
-    #[test]
-    fn function_chain_depth_is_bounded_instead_of_recursing_forever() {
-        // Unbounded entry is refused instead of overflowing the stack.
-        let mut guards = Vec::new();
-        let error = loop {
-            match FunctionChainGuard::enter() {
-                Ok(guard) => guards.push(guard),
-                Err(error) => break error,
-            }
-        };
-
-        assert_eq!(error, FunctionRunError::ChainLimitExceeded);
-        assert_eq!(guards.len(), MAX_FUNCTION_CHAIN_DEPTH);
-    }
-
-    #[test]
-    fn function_chain_depth_is_released_after_a_bounded_chain() {
-        // Bounded recursion still completes and releases the depth.
-        fn recurse(remaining: usize) -> Result<(), FunctionRunError> {
-            if remaining == 0 {
-                return Ok(());
-            }
-            let _guard = FunctionChainGuard::enter()?;
-            recurse(remaining - 1)
-        }
-
-        recurse(100).expect("bounded recursion must succeed");
-        // The depth has to be released again, or later chains would inherit it.
-        assert!(FunctionChainGuard::enter().is_ok());
-    }
-
-    #[test]
-    fn function_chain_commands_are_budgeted_per_chain() {
-        // An exhausted budget stops the chain; the next chain starts fresh.
-        let manager = DatapackManager::new();
-        manager
-            .functions
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(
-                "test:wide".to_string(),
-                vec!["say hi".to_string(); MAX_FUNCTION_CHAIN_COMMANDS + 10].into(),
-            );
-
-        {
-            let _guard = FunctionChainGuard::enter().expect("chain must start");
-            let mut visited = 0;
-            let executed = manager
-                .visit_function_lines("test:wide", |_| visited += 1)
-                .expect("wide function must resolve");
-            assert_eq!(visited, MAX_FUNCTION_CHAIN_COMMANDS);
-            assert_eq!(executed, MAX_FUNCTION_CHAIN_COMMANDS);
-        };
-        // Guard dropped above, so the budget was reset.
-        {
-            let _guard = FunctionChainGuard::enter().expect("next chain must start");
-            let mut visited = 0;
-            manager
-                .visit_function_lines("test:wide", |_| visited += 1)
-                .expect("wide function must resolve");
-            assert_eq!(visited, MAX_FUNCTION_CHAIN_COMMANDS);
-        };
-    }
-
-    #[test]
-    fn function_dispatch_releases_the_functions_lock() {
-        let manager = DatapackManager::new();
-        manager
-            .functions
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(
-                "test:reentrant".to_string(),
-                vec!["first command".to_string(), "second command".to_string()].into(),
-            );
-
-        let mut visited = Vec::new();
-        let executed = manager
-            .visit_function_lines("test:reentrant", |line| {
-                let functions = manager
-                    .functions
-                    .try_write()
-                    .expect("function dispatch must not hold the functions read lock");
-                drop(functions);
-                visited.push(line.to_string());
-            })
-            .expect("execute function lines");
-
-        assert_eq!(executed, 2);
-        assert_eq!(visited, ["first command", "second command"]);
-    }
-
-    #[test]
-    fn function_resolution_preserves_unknown_errors_and_skips_missing_tag_entries() {
-        let manager = DatapackManager::new();
-        manager
-            .functions
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(
-                "test:known".to_string(),
-                vec!["known command".to_string()].into(),
-            );
-        manager
-            .function_tags
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(
-                "test:mixed".to_string(),
-                vec!["test:missing".to_string(), "test:known".to_string()],
-            );
-
-        let mut visited = Vec::new();
-        let executed = manager
-            .visit_function_lines("#test:mixed", |line| visited.push(line.to_string()))
-            .expect("execute function tag");
-        assert_eq!(executed, 1);
-        assert_eq!(visited, ["known command"]);
-
-        assert_eq!(
-            manager
-                .visit_function_lines("test:missing", |_| {})
-                .expect_err("unknown function must fail"),
-            "Unknown function: test:missing"
-        );
-        assert_eq!(
-            manager
-                .visit_function_lines("#test:missing", |_| {})
-                .expect_err("unknown function tag must fail"),
-            "Unknown function tag: #test:missing"
-        );
-    }
+    use super::DatapackManager;
 
     #[test]
     fn read_pack_mcmeta_parses_known_packs() {

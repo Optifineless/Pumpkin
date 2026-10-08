@@ -24,7 +24,7 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | [#3863](https://github.com/Pumpkin-MC/Pumpkin/pull/3863) | Scheduled ticks ran one tick late, ticks saved with a chunk never ran after loading, and observers misbehaved. |
 | [#3853](https://github.com/Pumpkin-MC/Pumpkin/pull/3853) | Falling out of the world killed instantly instead of in steps, because void damage skipped the hurt cooldown. |
 | [#3904](https://github.com/Pumpkin-MC/Pumpkin/pull/3904) | Sleeping players were not woken when hurt. |
-| [#3813](https://github.com/Pumpkin-MC/Pumpkin/pull/3813) | A datapack function that called itself crashed the server with a stack overflow. |
+| [#3813](https://github.com/Pumpkin-MC/Pumpkin/pull/3813) | Harvested recursion guards, now replaced by vanilla's iterative execution queue and generated command quota. |
 | [#3876](https://github.com/Pumpkin-MC/Pumpkin/pull/3876) | Mace smash damage, knockback and sounds did not follow vanilla. |
 | [#3859](https://github.com/Pumpkin-MC/Pumpkin/pull/3859) | Block entity data lingered after its block was removed, so a later block of the same kind could inherit old contents. |
 | [#3905](https://github.com/Pumpkin-MC/Pumpkin/pull/3905) | Wind charges could not be thrown at blocks, launched players ever higher, and had no burst effects. |
@@ -34,6 +34,12 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | [#3804](https://github.com/Pumpkin-MC/Pumpkin/pull/3804) | Hoppers took dropped stacks one item at a time and never picked items out of their own bowl. |
 | [#3348](https://github.com/Pumpkin-MC/Pumpkin/pull/3348) by JulesB40 | Goat horn instrument holders preserve their references and inline definitions. Adapted to the generated instrument registry and vanilla 26.3's durability damage field. |
 | [#3897](https://github.com/Pumpkin-MC/Pumpkin/pull/3897) by ToffyMTA | Charged crossbows preserve projectile items and intangible-projectile NBT. Adapted to vanilla 26.3's item templates and 1,024-projectile bound. |
+| [#3827](https://github.com/Pumpkin-MC/Pumpkin/pull/3827) by luisakrivonogih | Block-state argument parsing, extended with block entity SNBT and vanilla placement callbacks. |
+| [#3763](https://github.com/Pumpkin-MC/Pumpkin/pull/3763) by AdmerPRO | `/tick sprint` announces its start without printing an incomplete completion report. |
+| [#3642](https://github.com/Pumpkin-MC/Pumpkin/pull/3642) by CocofireHD | Edition-specific `/gamemode` feedback argument order. |
+| [#3638](https://github.com/Pumpkin-MC/Pumpkin/pull/3638) by CocofireHD | Hardcore difficulty override, including startup before worlds are initialized. |
+| [#3394](https://github.com/Pumpkin-MC/Pumpkin/pull/3394) by JulesB40 | Defer datapack load functions until ticking resumes; keep the pending flag with the function library. |
+| [#3807](https://github.com/Pumpkin-MC/Pumpkin/pull/3807) by 4d1cksupmya55-source | Apply command NBT to live block entities, close stale inventory screens and notify comparators. |
 
 ## Upstream issues addressed here
 
@@ -54,6 +60,15 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | [#3272](https://github.com/Pumpkin-MC/Pumpkin/issues/3272) Duplicate entity UUIDs | existing spawn reservation reused by loads and commands; each rejection logs once and retains the original | Not yet |
 | [#3777](https://github.com/Pumpkin-MC/Pumpkin/issues/3777), [#3319](https://github.com/Pumpkin-MC/Pumpkin/issues/3319), [#3065](https://github.com/Pumpkin-MC/Pumpkin/issues/3065) Malformed particle payloads disconnect clients | malformed 26.3 payloads rejected; eyeblossom, creaking, mooshroom and command senders supply typed options, adapting upstream #3079/#3509 | Not yet |
 | [#3382](https://github.com/Pumpkin-MC/Pumpkin/issues/3382), [#3561](https://github.com/Pumpkin-MC/Pumpkin/issues/3561), [#1800](https://github.com/Pumpkin-MC/Pumpkin/issues/1800) Attacking dragons or vanished entities disconnects players | dragon parts resolve while tracked; atomically reserved IDs and silent missing-target returns adapt upstream #3407/#3661/#3583 | Not yet |
+| [#3759](https://github.com/Pumpkin-MC/Pumpkin/issues/3759) Recursive functions overflow the native stack | iterative vanilla function queue with shared command and fork limits | Not yet |
+| [#1985](https://github.com/Pumpkin-MC/Pumpkin/issues/1985) Effect commands crash | existing effect lifecycle fixes plus vanilla command arguments and instant durations | Not yet |
+| [#3758](https://github.com/Pumpkin-MC/Pumpkin/issues/3758) Execute store rejects valid commands | score, bossbar, block, entity and storage result callbacks | Not yet |
+| [#3779](https://github.com/Pumpkin-MC/Pumpkin/issues/3779) Setblock rejects block-state data | upstream PR #3827 approach with SNBT support | Not yet |
+| [#3502](https://github.com/Pumpkin-MC/Pumpkin/issues/3502) Hardcore does not force Hard | startup difficulty override | Not yet |
+| [#3538](https://github.com/Pumpkin-MC/Pumpkin/issues/3538) Gamemode feedback uses wrong variables | upstream PR #3642 | Not yet |
+| [#3760](https://github.com/Pumpkin-MC/Pumpkin/issues/3760) Tick sprint prints wrong start message | upstream PR #3763 | Not yet |
+| [#3874](https://github.com/Pumpkin-MC/Pumpkin/issues/3874) Fill cannot create snow golems | synchronous BlockInput placement through existing block callbacks | Not yet |
+| [#3276](https://github.com/Pumpkin-MC/Pumpkin/issues/3276) Reload runs load functions while frozen | upstream PR #3394 approach | Not yet |
 
 ## Known regressions under investigation
 
@@ -105,6 +120,8 @@ to Bedrock accounts on a public server until that exchange is implemented.
 | Report | Status |
 |:--|:--|
 | Chest and hopper contents vanished after `stop` and restart (2026-10-07, first start after switching from the pre-harvest build) | Not reproduced in three headless investigations (same build, player-style unload, old-build world opened by new build); container NBT format verified unchanged across the harvest; the owner's later tests (hand-filled chest, autosave, restart with a build switch) kept their items. Kept open; report any recurrence with the build and steps. |
+| [#2016](https://github.com/Pumpkin-MC/Pumpkin/issues/2016) Sapling fills crash | Oversized fills are rejected using the generated block limit and overflow-safe volume. Allowed-size fills still need the world neighbour queue from upstream PR #3924, outside the command lane's ownership. |
+| Effect command success counts for instant effects | The entity API returns no admission result, so the command cannot observe an instant effect rejected by a plugin or boss immunity. Duration and argument fixes do not resolve that entity API limitation. |
 
 ## Fork fixes checked in-game
 
@@ -146,6 +163,9 @@ The native plugin API has moved three times in this fork; rebuild native plugins
 - API 4: shield and totem integration changed native trait/component layouts. `EntityDamageByEntityEvent.damager_id` now identifies the direct projectile for projectile hits; it previously identified the shooter. Resolve the projectile's owner for player attribution. Mob damage hooks carry separate direct and causing entities.
 - API 5: the crash-codec audit changes `InstrumentImpl` from a unit component to registered or inline instrument data.
 - API 6: durable storage. `ChunkData.dirty` and `ChunkEntityData.dirty` are `DirtyFlag` instead of `AtomicBool` (carried by the chunk load, save and send events); `ChunkSections.randomly_ticking_mask` is `RandomTickMembership`; `Server` gains `tick_gate` and a session lock and `Player` gains `storage_session` (layout changes); `Server::add_player` is async; `Level::shutdown`, `get_entity_chunk`, `get_or_fetch_chunk` and `get_or_fetch_entity_chunk` return `Result`. Mob movement (same version) changes `MobEntity.look_control` to `Box<dyn LookControlTrait>`, adds public movement fields, and changes `PathNavigationTrait::tick` to take the owning mob and its collision context.
+- API 6 (same version): command robustness adds methods to `CommandSource`, `ReturnValueCallable` and both `CommandExecutor` traits, the public `RedirectModifier::CustomUncharged` variant (update exhaustive matches), a `FunctionRunError::EmptyTag` variant and a new `DatapackManager` field, removes `MAX_FUNCTION_CHAIN_DEPTH`/`MAX_FUNCTION_CHAIN_COMMANDS`, and `reload_datapacks` no longer runs `#minecraft:load` synchronously. `CommandDispatcher::execute` installs a command quota context; a plugin's reentrant `handle_command` joins the caller's quota. `/function` and nested `execute_function` calls return 0 when scheduled; `/function` sends "Running function..." feedback before execution and reports an explicit function return later, including its result callbacks.
+
+Command execution contexts are thread-local, as in vanilla `Commands.executeCommandInContext`. Work handed to another Rayon worker starts a separate context, while unrelated work invoked on the same worker during dispatch can join the active context. Reentrant command dispatch currently runs inline with the shared quota; vanilla queues it at the front for execution after the current command. Plugins must account for that ordering difference.
 
 The second shield/totem review adds authoritative item transactions, effect lifecycle corrections, projectile owner handling and teleport destination checks. Play testing remains **Not yet**. Hurt-cooldown admission, full-block damage history and specialized `blockUsingItem`/`blockedByItem` orchestration still require the separate damage-pipeline integration; this branch preserves that boundary.
 

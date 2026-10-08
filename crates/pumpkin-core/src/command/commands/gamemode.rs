@@ -43,6 +43,12 @@ impl CommandExecutor for GamemodeExecutor {
 
         let mut succeeded: i32 = 0;
         let server = context.source.server();
+        let source_is_bedrock = context.source.output.as_player().is_some_and(|player| {
+            matches!(
+                player.client.as_ref(),
+                crate::net::ClientPlatform::Bedrock(_)
+            )
+        });
 
         for target in &targets {
             if target.gamemode.load() != gamemode {
@@ -75,7 +81,11 @@ impl CommandExecutor for GamemodeExecutor {
                         TextComponent::translate_cross(
                             translation::java::COMMANDS_GAMEMODE_SUCCESS_OTHER,
                             translation::bedrock::COMMANDS_GAMEMODE_SUCCESS_OTHER,
-                            [target.as_ref().get_display_name(), gamemode_comp],
+                            gamemode_success_other_args(
+                                target.as_ref().get_display_name(),
+                                gamemode_comp,
+                                source_is_bedrock,
+                            ),
                         ),
                         true,
                     );
@@ -104,4 +114,36 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
                 ),
         ),
     );
+}
+
+// GameModeCommand.logGamemodeChange uses target then mode; Bedrock's placeholders use mode then target.
+const fn gamemode_success_other_args(
+    target: TextComponent,
+    gamemode: TextComponent,
+    bedrock: bool,
+) -> [TextComponent; 2] {
+    if bedrock {
+        [gamemode, target]
+    } else {
+        [target, gamemode]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn other_feedback_args_follow_each_edition() {
+        let target = TextComponent::text("Alex");
+        let mode = TextComponent::text("Creative Mode");
+        assert_eq!(
+            gamemode_success_other_args(target.clone(), mode.clone(), false),
+            [target.clone(), mode.clone()]
+        );
+        assert_eq!(
+            gamemode_success_other_args(target.clone(), mode.clone(), true),
+            [mode, target]
+        );
+    }
 }

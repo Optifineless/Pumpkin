@@ -68,7 +68,7 @@ impl CommandExecutor for SpawnpointExecutor {
             target.set_respawn_point(dimension.clone(), pos, yaw, pitch, true);
         }
 
-        if targets.len() == 1 {
+        if let [first_targets] = targets.as_slice() {
             context.source.send_feedback(
                 TextComponent::translate_cross(
                     translation::java::COMMANDS_SPAWNPOINT_SUCCESS_SINGLE,
@@ -80,7 +80,7 @@ impl CommandExecutor for SpawnpointExecutor {
                         TextComponent::text(yaw.to_string()),
                         TextComponent::text(pitch.to_string()),
                         TextComponent::text(dimension_name),
-                        TextComponent::text(targets[0].gameprofile.name.clone()),
+                        TextComponent::text(first_targets.gameprofile.name.clone()),
                     ],
                 ),
                 true,

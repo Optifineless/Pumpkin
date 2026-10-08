@@ -477,6 +477,33 @@ impl CommandSource {
 }
 
 impl pumpkin_command::source::CommandSource for CommandSource {
+    fn execute_command_in_context<T>(&self, dispatch: impl FnOnce() -> T) -> T {
+        crate::data::datapack::execute_command_in_context(self, dispatch)
+    }
+
+    fn consume_command_cost(&self) -> bool {
+        crate::data::datapack::consume_command_cost()
+    }
+
+    fn return_fallthrough(&self) {
+        for callback in &self.command_result_taker.0 {
+            if callback.returned_function_frame().is_some() {
+                callback.call(ReturnValue::Failure);
+            }
+        }
+    }
+
+    fn is_returning(&self) -> bool {
+        self.command_result_taker
+            .0
+            .iter()
+            .any(|callback| callback.returned_function_frame().is_some())
+    }
+
+    fn max_command_forks(&self) -> usize {
+        crate::data::datapack::max_command_forks(self)
+    }
+
     fn send_message(&self, message: TextComponent) {
         self.send_message(message);
     }

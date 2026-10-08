@@ -36,13 +36,17 @@ impl SuggestionsBuilder {
     /// Gets the remaining substring of the underlying input string.
     #[must_use]
     pub fn remaining(&self) -> &str {
-        &self.input[self.start.min(self.input.len())..]
+        &self.input[self
+            .input
+            .floor_char_boundary(self.start.min(self.input.len()))..]
     }
 
     /// Gets the remaining substring of the underlying lowercased input string.
     #[must_use]
     pub fn remaining_lowercase(&self) -> &str {
-        &self.input_lowercase[self.start.min(self.input_lowercase.len())..]
+        &self.input_lowercase[self
+            .input_lowercase
+            .floor_char_boundary(self.start.min(self.input_lowercase.len()))..]
     }
 
     /// Builds the [`Suggestions`] object, consuming itself in the process.
@@ -299,8 +303,8 @@ impl Suggestions {
 
         if input.is_empty() {
             return Self::empty();
-        } else if input.len() == 1 {
-            return input[0].borrow().clone();
+        } else if let [first] = input.as_slice() {
+            return first.borrow().clone();
         }
 
         let mut texts = Vec::new();
@@ -331,11 +335,13 @@ impl Suggestions {
         }
 
         // First, we figure out the range encompassing all suggestions provided.
-        let range = suggestions
+        let Some(range) = suggestions
             .iter()
             .map(|s| s.borrow().range)
             .reduce(StringRange::encompass)
-            .expect("Suggestions list is not empty, so range should exist");
+        else {
+            return Self::empty();
+        };
 
         let mut texts = Vec::new();
         for suggestion in &suggestions {

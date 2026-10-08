@@ -27,13 +27,13 @@ impl CommandExecutor for ClearOrResetExecutor {
             target.try_send_client_packet(&CClearTitle::new(reset));
         }
 
-        let msg = if targets.len() == 1 {
+        let msg = if let [first_targets] = targets.as_slice() {
             let text = if reset {
                 "commands.title.reset.single"
             } else {
                 "commands.title.cleared.single"
             };
-            TextComponent::translate_cross(text, text, [targets[0].as_ref().get_display_name()])
+            TextComponent::translate_cross(text, text, [first_targets.as_ref().get_display_name()])
         } else {
             let text = if reset {
                 "commands.title.reset.multiple"
@@ -65,11 +65,11 @@ impl CommandExecutor for TitleExecutor {
         }
 
         let mode_name = format!("{mode:?}").to_lowercase();
-        let msg = if targets.len() == 1 {
+        let msg = if let [first_targets] = targets.as_slice() {
             TextComponent::translate_cross(
                 format!("commands.title.show.{mode_name}.single"),
                 format!("commands.title.show.{mode_name}.single"),
-                [targets[0].as_ref().get_display_name()],
+                [first_targets.as_ref().get_display_name()],
             )
         } else {
             TextComponent::translate_cross(
@@ -97,11 +97,11 @@ impl CommandExecutor for TimesTitleExecutor {
             target.send_title_animation(fade_in, stay, fade_out);
         }
 
-        let msg = if targets.len() == 1 {
+        let msg = if let [first_targets] = targets.as_slice() {
             TextComponent::translate_cross(
                 "commands.title.times.single",
                 "commands.title.times.single",
-                [targets[0].as_ref().get_display_name()],
+                [first_targets.as_ref().get_display_name()],
             )
         } else {
             TextComponent::translate_cross(

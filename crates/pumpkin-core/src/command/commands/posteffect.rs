@@ -59,7 +59,7 @@ impl CommandExecutor for AddExecutor {
         }
 
         let msg = if added_count == 1 {
-            let player = first_player.unwrap_or_else(|| players[0].clone());
+            let player = first_player.ok_or_else(|| ERROR_ADD_FAILED.create_without_context())?;
             TextComponent::translate_cross(
                 translation::java::COMMANDS_POSTEFFECT_ADD_SUCCESS_SINGLE,
                 translation::java::COMMANDS_POSTEFFECT_ADD_SUCCESS_SINGLE,
@@ -104,7 +104,7 @@ impl CommandExecutor for ClearExecutor {
         }
 
         let msg = if cleared_players == 1 {
-            let player = first_player.unwrap_or_else(|| players[0].clone());
+            let player = first_player.ok_or_else(|| ERROR_CLEAR_FAILED.create_without_context())?;
             TextComponent::translate_cross(
                 translation::java::COMMANDS_POSTEFFECT_CLEAR_SUCCESS_SINGLE,
                 translation::java::COMMANDS_POSTEFFECT_CLEAR_SUCCESS_SINGLE,
@@ -182,7 +182,8 @@ impl CommandExecutor for RemoveExecutor {
         }
 
         let msg = if removed_count == 1 {
-            let player = first_player.unwrap_or_else(|| players[0].clone());
+            let player =
+                first_player.ok_or_else(|| ERROR_REMOVE_FAILED.create_without_context())?;
             TextComponent::translate_cross(
                 translation::java::COMMANDS_POSTEFFECT_REMOVE_SUCCESS_SINGLE,
                 translation::java::COMMANDS_POSTEFFECT_REMOVE_SUCCESS_SINGLE,

@@ -163,7 +163,9 @@ impl EntitySelector {
         let mut list = self.find_players(source)?;
         match list.len() {
             0 => Err(entity::NO_PLAYERS_ERROR_TYPE.create_without_context()),
-            1 => Ok(list.pop().unwrap()),
+            1 => list
+                .pop()
+                .ok_or_else(|| entity::NO_PLAYERS_ERROR_TYPE.create_without_context()),
             _ => Err(entity::NOT_SINGLE_PLAYER_ERROR_TYPE.create_without_context()),
         }
     }

@@ -9,6 +9,11 @@ use crate::errors::command_syntax_error::CommandSyntaxError;
 
 pub trait ReturnValueCallable: Send + Sync {
     fn call(&self, value: ReturnValue);
+
+    /// Identifies the current execution context's frame targeted by `/return run`.
+    fn returned_function_frame(&self) -> Option<usize> {
+        None
+    }
 }
 
 pub type ReturnValueCallback = Arc<dyn ReturnValueCallable>;
@@ -67,6 +72,20 @@ impl ReturnValue {
 
 /// Abstract command source trait for command dispatch and execution.
 pub trait CommandSource: Clone + Send + Sync + 'static {
+    /// Installs one execution context for a top-level dispatch; nested dispatch joins it.
+    fn execute_command_in_context<T>(&self, dispatch: impl FnOnce() -> T) -> T {
+        dispatch()
+    }
+
+    /// Charges one unit to an active execution context, returning false when exhausted.
+    fn consume_command_cost(&self) -> bool {
+        true
+    }
+
+    /// Maximum sources allowed at a redirect stage (vanilla `MAX_COMMAND_FORKS`).
+    fn max_command_forks(&self) -> usize {
+        pumpkin_data::game_rules::GameRuleRegistry::default().max_command_forks as usize
+    }
     /// Sends a feedback message to the command sender.
     fn send_message(&self, message: TextComponent);
 
@@ -77,6 +96,14 @@ pub trait CommandSource: Clone + Send + Sync + 'static {
 
     /// Invokes callbacks for the command's return value.
     fn call_result(&self, _result: ReturnValue) {}
+
+    /// Returns failure to the function frame when a returned chain has no sources.
+    fn return_fallthrough(&self) {}
+
+    /// Whether this source executes a returned command chain.
+    fn is_returning(&self) -> bool {
+        false
+    }
 
     /// Checks if this command source has the specified permission.
     fn has_permission(&self, _permission: &str) -> bool {
@@ -151,6 +178,17 @@ impl CommandSource for () {
 }
 
 impl<S: CommandSource> CommandSource for Arc<S> {
+    fn execute_command_in_context<T>(&self, dispatch: impl FnOnce() -> T) -> T {
+        (**self).execute_command_in_context(dispatch)
+    }
+
+    fn consume_command_cost(&self) -> bool {
+        (**self).consume_command_cost()
+    }
+
+    fn max_command_forks(&self) -> usize {
+        (**self).max_command_forks()
+    }
     fn send_message(&self, message: TextComponent) {
         (**self).send_message(message);
     }
@@ -181,6 +219,14 @@ impl<S: CommandSource> CommandSource for Arc<S> {
 
     fn call_result(&self, result: ReturnValue) {
         (**self).call_result(result);
+    }
+
+    fn return_fallthrough(&self) {
+        (**self).return_fallthrough();
+    }
+
+    fn is_returning(&self) -> bool {
+        (**self).is_returning()
     }
 
     fn check_block_loaded(&self, pos: &BlockPos) -> Result<(), CommandSyntaxError> {

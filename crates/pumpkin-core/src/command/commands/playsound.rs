@@ -122,8 +122,8 @@ fn play_sound(
     }
 
     let sound_str = sound.to_string();
-    if count == 1 {
-        let player_name = played_for[0].gameprofile.name.clone();
+    if let [player] = played_for.as_slice() {
+        let player_name = player.gameprofile.name.clone();
         source.send_feedback(
             TextComponent::translate_cross(
                 translation::java::COMMANDS_PLAYSOUND_SUCCESS_SINGLE,

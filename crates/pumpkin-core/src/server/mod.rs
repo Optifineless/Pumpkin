@@ -199,7 +199,7 @@ impl Server {
 
         let block_registry = super::block::registry::default_registry();
 
-        let level_info = match AnvilLevelInfo.read_world_info(&world_path) {
+        let mut level_info = match AnvilLevelInfo.read_world_info(&world_path) {
             Ok(level_info) => {
                 let dat_path = world_path.join(LEVEL_DAT_FILE_NAME);
                 if dat_path.exists() {
@@ -245,6 +245,13 @@ impl Server {
             }
         };
 
+        crate::command::commands::enforce_hardcore_difficulty(
+            basic_config.hardcore,
+            &mut level_info,
+        );
+        if basic_config.hardcore {
+            AnvilLevelInfo.write_world_info(&level_info, &world_path)?;
+        }
         let seed = level_info.world_gen_settings.seed;
         let level_info = Arc::new(ArcSwap::new(Arc::new(level_info)));
 
@@ -453,11 +460,6 @@ impl Server {
             .datapack_manager
             .load_all(&world_path, &enabled_packs, &server.recipe_manager);
 
-        let source = crate::command::CommandSender::Console.into_source(&server);
-        let _ = server
-            .datapack_manager
-            .execute_function(&server, &source, "#minecraft:load");
-
         Ok(server)
     }
 
@@ -559,16 +561,13 @@ impl Server {
             .write_world_info(&level_data, &self.basic_config.get_world_path())
     }
 
-    pub fn reload_datapacks(&self, server: &Arc<Self>) {
+    pub fn reload_datapacks(&self, _server: &Arc<Self>) {
         let enabled_packs = self.level_info.load().data_packs.enabled.clone();
         let world_path = self.basic_config.get_world_path();
         self.datapack_manager
             .load_all(&world_path, &enabled_packs, &self.recipe_manager);
 
-        let source = crate::command::CommandSender::Console.into_source(server);
-        let _ = self
-            .datapack_manager
-            .execute_function(server, &source, "#minecraft:load");
+        self.datapack_manager.mark_load_pending();
 
         let dynamic_recipes = self.recipe_manager.get_dynamic_recipes_internal();
         for player in self.get_all_players() {
@@ -1253,9 +1252,7 @@ impl Server {
         let source = crate::command::CommandSender::Console
             .into_source(self)
             .with_silent();
-        let _ = self
-            .datapack_manager
-            .execute_function(self, &source, "#minecraft:tick");
+        self.datapack_manager.tick_functions(self, &source);
 
         self.plugin_manager.tick_loaders(self);
         self.scheduled_functions.tick(

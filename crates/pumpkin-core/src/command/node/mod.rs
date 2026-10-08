@@ -49,6 +49,20 @@ pub type RedirectModifierExecutor = pumpkin_command::node::RedirectModifierExecu
 
 /// A struct implementing this trait is able to run with a given context.
 pub trait CommandExecutor: Sync + Send {
+    /// Custom execution schedules its own work and delivers its own result callbacks.
+    fn is_custom(&self) -> bool {
+        false
+    }
+
+    /// Queues all sources of a custom command in one continuation, when supported.
+    fn execute_batch(
+        &self,
+        _context: &CommandContext,
+        _sources: &[std::sync::Arc<CommandSource>],
+    ) -> Option<pumpkin_command::node::CommandExecutorResult> {
+        None
+    }
+
     /// Executes this executor for a command.
     fn execute(&self, context: &CommandContext) -> pumpkin_command::node::CommandExecutorResult;
 }
@@ -58,6 +72,18 @@ pub struct CommandExecutorAdapter<T>(pub T);
 impl<T: CommandExecutor> pumpkin_command::node::CommandExecutor<CommandSource>
     for CommandExecutorAdapter<T>
 {
+    fn execute_batch(
+        &self,
+        context: &CommandContext,
+        sources: &[std::sync::Arc<CommandSource>],
+    ) -> Option<pumpkin_command::node::CommandExecutorResult> {
+        self.0.execute_batch(context, sources)
+    }
+
+    fn is_custom(&self) -> bool {
+        self.0.is_custom()
+    }
+
     fn execute(
         &self,
         context: &pumpkin_command::context::command_context::CommandContext<'_, CommandSource>,
@@ -69,6 +95,18 @@ impl<T: CommandExecutor> pumpkin_command::node::CommandExecutor<CommandSource>
 pub struct ArcCommandExecutorAdapter(pub std::sync::Arc<dyn CommandExecutor>);
 
 impl pumpkin_command::node::CommandExecutor<CommandSource> for ArcCommandExecutorAdapter {
+    fn execute_batch(
+        &self,
+        context: &CommandContext,
+        sources: &[std::sync::Arc<CommandSource>],
+    ) -> Option<pumpkin_command::node::CommandExecutorResult> {
+        self.0.execute_batch(context, sources)
+    }
+
+    fn is_custom(&self) -> bool {
+        self.0.is_custom()
+    }
+
     fn execute(
         &self,
         context: &pumpkin_command::context::command_context::CommandContext<'_, CommandSource>,

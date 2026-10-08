@@ -149,8 +149,11 @@ impl CommandExecutor for ExperienceExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let targets = EntityArgumentType::get_players(context, "target")?;
 
+        let first_target = targets.first().ok_or_else(|| {
+            crate::command::argument_types::entity::NO_PLAYERS_ERROR_TYPE.create_without_context()
+        })?;
         if self.mode == Mode::Query {
-            let target = targets[0].clone();
+            let target = first_target.clone();
             return Ok(self.handle_query(context, &target));
         }
 
@@ -167,7 +170,7 @@ impl CommandExecutor for ExperienceExecutor {
             return Err(ERROR_SET_POINTS_INVALID.create_without_context());
         }
 
-        let first_name = targets[0].as_ref().get_display_name();
+        let first_name = first_target.as_ref().get_display_name();
         let msg = self.get_success_message(amount, &targets, first_name);
         context.source.send_feedback(msg, true);
 

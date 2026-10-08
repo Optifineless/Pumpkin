@@ -114,13 +114,13 @@ impl CommandExecutor for RecipeGiveExecutor {
         }
 
         let recipe_count_str = recipe_count.to_string();
-        if targets.len() == 1 {
+        if let [first_targets] = targets.as_slice() {
             let msg = TextComponent::translate_cross(
                 translation::java::COMMANDS_RECIPE_GIVE_SUCCESS_SINGLE,
                 translation::java::COMMANDS_RECIPE_GIVE_SUCCESS_SINGLE,
                 [
                     TextComponent::text(recipe_count_str),
-                    targets[0].get_display_name(),
+                    first_targets.get_display_name(),
                 ],
             );
             context.source.send_feedback(msg, true);
@@ -205,13 +205,13 @@ impl CommandExecutor for RecipeTakeExecutor {
         }
 
         let taken_count_str = taken_count.to_string();
-        if targets.len() == 1 {
+        if let [first_targets] = targets.as_slice() {
             let msg = TextComponent::translate_cross(
                 translation::java::COMMANDS_RECIPE_TAKE_SUCCESS_SINGLE,
                 translation::java::COMMANDS_RECIPE_TAKE_SUCCESS_SINGLE,
                 [
                     TextComponent::text(taken_count_str),
-                    targets[0].get_display_name(),
+                    first_targets.get_display_name(),
                 ],
             );
             context.source.send_feedback(msg, true);

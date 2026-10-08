@@ -115,8 +115,8 @@ fn clear_inventory(
     }
 
     if total_count == 0 {
-        if players.len() == 1 {
-            let player_name = players[0].gameprofile.name.clone();
+        if let [first_players] = players {
+            let player_name = first_players.gameprofile.name.clone();
             Err(ERROR_SINGLE.create_without_context(TextComponent::text(player_name)))
         } else {
             Err(ERROR_MULTIPLE
@@ -124,8 +124,8 @@ fn clear_inventory(
         }
     } else {
         if max_count == 0 {
-            if players.len() == 1 {
-                let player_name = players[0].gameprofile.name.clone();
+            if let [first_players] = players {
+                let player_name = first_players.gameprofile.name.clone();
                 source.send_feedback(
                     TextComponent::translate_cross(
                         translation::java::COMMANDS_CLEAR_TEST_SINGLE,
@@ -150,8 +150,8 @@ fn clear_inventory(
                     true,
                 );
             }
-        } else if players.len() == 1 {
-            let player_name = players[0].gameprofile.name.clone();
+        } else if let [first_players] = players {
+            let player_name = first_players.gameprofile.name.clone();
             source.send_feedback(
                 TextComponent::translate_cross(
                     translation::java::COMMANDS_CLEAR_SUCCESS_SINGLE,

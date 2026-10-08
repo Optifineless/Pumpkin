@@ -222,7 +222,9 @@ impl CommandExecutor for LocateStructureExecutor {
 
         let mut found: Option<(BlockPos, StructureKeys)> = None;
         for (set_index, keys) in scans {
-            let set = &StructureSet::ALL[set_index];
+            let Some(set) = StructureSet::ALL.get(set_index) else {
+                continue;
+            };
             let nearest = match &set.placement.placement_type {
                 // Strongholds come out of the pre-computed ring cache, which
                 // already holds positions they really occupy. A concentric-ring
@@ -238,7 +240,7 @@ impl CommandExecutor for LocateStructureExecutor {
                             global_cache,
                         )
                     })
-                    .map(|pos| (pos, keys[0])),
+                    .and_then(|pos| keys.first().map(|key| (pos, *key))),
                 // Everything else is spread over a grid whose candidate chunks
                 // are only *possible* sites: the biome at a candidate can still
                 // reject every structure in the set. Resolving the start makes

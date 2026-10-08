@@ -147,7 +147,12 @@ async fn fetch_profile_by_name_helper(server: &Server, name: &str) -> Option<Gam
         return Some(player.gameprofile.clone());
     }
 
-    let cached_entry = server.data.user_cache.write().unwrap().get_by_name(name);
+    let cached_entry = server
+        .data
+        .user_cache
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_by_name(name);
 
     let auth_config = server
         .advanced_config
@@ -165,7 +170,7 @@ async fn fetch_profile_by_name_helper(server: &Server, name: &str) -> Option<Gam
             .data
             .user_cache
             .write()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .upsert(uuid, resolved_name.clone());
         let auth_config_clone = server
             .advanced_config
@@ -208,7 +213,7 @@ async fn fetch_profile_by_name_helper(server: &Server, name: &str) -> Option<Gam
             .data
             .user_cache
             .write()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .upsert(uuid, name.to_string());
         return Some(profile);
     }
@@ -234,12 +239,17 @@ async fn fetch_profile_by_id_helper(server: &Server, id: Uuid) -> Option<GamePro
             .data
             .user_cache
             .write()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .upsert(profile.id, profile.name.clone());
         return Some(profile);
     }
 
-    let cached_entry = server.data.user_cache.write().unwrap().get_by_uuid(id);
+    let cached_entry = server
+        .data
+        .user_cache
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_by_uuid(id);
     if let Some(entry) = cached_entry {
         return Some(GameProfile {
             id: entry.uuid,

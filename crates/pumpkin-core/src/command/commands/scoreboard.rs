@@ -232,8 +232,8 @@ impl CommandExecutor for ObjectivesRemoveExecutor {
 
 /// Vanilla prints the holder name for a single target and a count otherwise.
 fn holder_component(holders: &[ResolvedScoreHolder]) -> (TextComponent, bool) {
-    if holders.len() == 1 {
-        (holders[0].display_name.clone(), true)
+    if let [first_holders] = holders {
+        (first_holders.display_name.clone(), true)
     } else {
         (TextComponent::text(holders.len().to_string()), false)
     }

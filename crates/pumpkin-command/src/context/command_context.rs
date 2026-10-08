@@ -11,6 +11,9 @@ use rustc_hash::FxHashMap;
 use std::any::Any;
 use std::sync::Arc;
 
+const ERROR_FORK_LIMIT: crate::errors::error_types::CommandErrorType<1> =
+    crate::errors::error_types::CommandErrorType::new("command.forkLimit", "command.forkLimit");
+
 /// Represents the current stage of the chain.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Stage {
@@ -253,10 +256,6 @@ impl<'a, S: CommandSource> ContextChain<'a, S> {
     }
 
     /// Runs the given executable, returning an [`i32`] on success.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `executable` provided cannot be executed.
     pub fn run_executable(
         executable: &CommandContext<'a, S>,
         source: &Arc<S>,
@@ -265,10 +264,17 @@ impl<'a, S: CommandSource> ContextChain<'a, S> {
     ) -> Result<i32, CommandSyntaxError> {
         let context_to_use = executable.with_source(source.clone());
 
-        let mut result = executable.command.as_ref().map_or_else(
-            || panic!("Expected `executable` to be executable"),
-            |command| command.execute(&context_to_use),
-        );
+        let command = executable.command.as_ref().ok_or_else(|| {
+            crate::errors::error_types::DISPATCHER_UNKNOWN_ARGUMENT.create_without_context()
+        })?;
+        // ExecuteCommand charges each executor; CustomCommandExecutor schedules its own cost.
+        if !command.is_custom() && !source.consume_command_cost() {
+            return Ok(0);
+        }
+        let mut result = command.execute(&context_to_use);
+        if command.is_custom() && result.is_ok() {
+            return result;
+        }
 
         if let Ok(result) = result {
             result_consumer.on_command_completion(&context_to_use, ReturnValue::Success(result));
@@ -280,6 +286,34 @@ impl<'a, S: CommandSource> ContextChain<'a, S> {
             }
             result
         }
+    }
+
+    fn run_batch(
+        &self,
+        sources: &[Arc<S>],
+        result_consumer: &dyn ResultConsumer<S>,
+        forked_mode: bool,
+    ) -> Option<Result<i32, CommandSyntaxError>> {
+        // BuildContexts hands a custom executor the fan-out before expanding CallFunction frames.
+        let result = self
+            .execute
+            .command
+            .as_ref()?
+            .execute_batch(&self.execute, sources)?;
+        if result.is_err() {
+            let count = if forked_mode { sources.len() } else { 1 };
+            for source in sources.iter().take(count) {
+                result_consumer.on_command_completion(
+                    &self.execute.with_source(source.clone()),
+                    ReturnValue::Failure,
+                );
+            }
+        }
+        Some(if forked_mode && result.is_err() {
+            Ok(0)
+        } else {
+            result
+        })
     }
 
     /// Executes all contexts in the chain, returning the ultimate result.
@@ -298,26 +332,67 @@ impl<'a, S: CommandSource> ContextChain<'a, S> {
         for modifier in &self.modifiers {
             forked_mode |= modifier.forks;
 
+            // BuildContexts.execute charges a redirect once, rather than once per source.
+            if matches!(modifier.modifier, RedirectModifier::Custom(_))
+                && !source.consume_command_cost()
+            {
+                return Ok(0);
+            }
+
             let mut next_sources = Vec::new();
+            let fallthrough_source = current_sources.first().cloned();
             for source in current_sources {
                 let mut to_add =
                     Self::run_modifier(modifier, &source, result_consumer, forked_mode)?;
+                // BuildContexts.execute: bound source fanout before expanding the next stage.
+                if matches!(modifier.modifier, RedirectModifier::Custom(_))
+                    && next_sources.len().saturating_add(to_add.len()) >= source.max_command_forks()
+                {
+                    // CommandSourceStack.handleError suppresses errors after a fork.
+                    if forked_mode {
+                        return Ok(0);
+                    }
+                    return Err(ERROR_FORK_LIMIT.create_without_context(
+                        pumpkin_util::text::TextComponent::text(
+                            source.max_command_forks().to_string(),
+                        ),
+                    ));
+                }
                 next_sources.append(&mut to_add);
             }
             if next_sources.is_empty() {
+                // BuildContexts schedules FallthroughTask for an empty returned command chain.
+                if let Some(source) = fallthrough_source {
+                    source.return_fallthrough();
+                }
                 return Ok(0);
             }
             current_sources = next_sources;
         }
 
-        let mut result = 0;
+        let mut result: i32 = 0;
+        if let Some(result) = self.run_batch(&current_sources, result_consumer, forked_mode) {
+            return result;
+        }
+        // BuildContexts executes only the first source for a returned ordinary command.
+        if self
+            .execute
+            .command
+            .as_ref()
+            .is_some_and(|command| !command.is_custom())
+            && current_sources
+                .first()
+                .is_some_and(CommandSource::is_returning)
+        {
+            current_sources.truncate(1);
+        }
         for execution_source in current_sources {
-            result += Self::run_executable(
+            result = result.wrapping_add(Self::run_executable(
                 &self.execute,
                 &execution_source,
                 result_consumer,
                 forked_mode,
-            )?;
+            )?);
         }
 
         Ok(result)
@@ -553,6 +628,81 @@ mod test {
         fn execute(&self, _context: &CommandContext) -> CommandExecutorResult {
             Ok(10)
         }
+    }
+
+    #[test]
+    fn redirect_fanout_obeys_the_source_fork_limit() -> Result<(), CommandSyntaxError> {
+        #[derive(Clone)]
+        struct LimitedSource;
+        impl crate::source::CommandSource for LimitedSource {
+            fn max_command_forks(&self) -> usize {
+                2
+            }
+            fn send_message(&self, _: pumpkin_util::text::TextComponent) {}
+        }
+        let mut dispatcher = CommandDispatcher::<LimitedSource>::new();
+        let probe: fn(&CommandContext<LimitedSource>) -> crate::node::CommandExecutorResult =
+            |_| Ok(1);
+        dispatcher.register(CommandArgumentBuilder::new("probe", "probe").executes(probe));
+        let modifier =
+            RedirectModifier::Custom(Arc::new(|context: &CommandContext<LimitedSource>| {
+                Ok(vec![context.source.clone(), context.source.clone()])
+            }));
+        dispatcher.register(
+            CommandArgumentBuilder::new("fanout", "fanout")
+                .redirect_with_modifier(Redirection::Root, modifier.clone()),
+        );
+        dispatcher.register(
+            CommandArgumentBuilder::new("fork", "fork").fork(Redirection::Root, modifier),
+        );
+        assert_eq!(
+            dispatcher.execute_input("fork probe", &LimitedSource),
+            Ok(0)
+        );
+        let error = dispatcher
+            .execute_input("fanout probe", &LimitedSource)
+            .err()
+            .ok_or_else(|| {
+                super::ERROR_FORK_LIMIT.create_without_context(
+                    pumpkin_util::text::TextComponent::text("missing limit"),
+                )
+            })?;
+        let message = serde_json::to_value(error.message).map_err(|_| {
+            super::ERROR_FORK_LIMIT
+                .create_without_context(pumpkin_util::text::TextComponent::text("invalid message"))
+        })?;
+        assert_eq!(message["translate"], "command.forkLimit");
+        Ok(())
+    }
+
+    #[test]
+    fn returned_redirect_executes_only_the_first_source() -> Result<(), CommandSyntaxError> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        #[derive(Clone)]
+        struct ReturningSource(Arc<AtomicUsize>);
+        impl crate::source::CommandSource for ReturningSource {
+            fn is_returning(&self) -> bool {
+                true
+            }
+            fn send_message(&self, _: pumpkin_util::text::TextComponent) {}
+        }
+        let mut dispatcher = CommandDispatcher::<ReturningSource>::new();
+        let probe: fn(&CommandContext<ReturningSource>) -> crate::node::CommandExecutorResult =
+            |context| {
+                context.source.0.fetch_add(1, Ordering::Relaxed);
+                Ok(1)
+            };
+        dispatcher.register(CommandArgumentBuilder::new("probe", "probe").executes(probe));
+        dispatcher.register(CommandArgumentBuilder::new("fanout", "fanout").fork(
+            Redirection::Root,
+            RedirectModifier::Custom(Arc::new(|context: &CommandContext<ReturningSource>| {
+                Ok(vec![context.source.clone(), context.source.clone()])
+            })),
+        ));
+        let source = ReturningSource(Arc::new(AtomicUsize::new(0)));
+        assert_eq!(dispatcher.execute_input("fanout probe", &source)?, 1);
+        assert_eq!(source.0.load(Ordering::Relaxed), 1);
+        Ok(())
     }
 
     // For testing purposes

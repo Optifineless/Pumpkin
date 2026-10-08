@@ -387,7 +387,7 @@ impl<S: CommandSource> AttachedNode<S> {
         let len = literal.len();
         if reader.can_read_bytes(len) {
             let end = start + len;
-            if &reader.string()[start..end] == literal {
+            if reader.string().get(start..end) == Some(literal) {
                 reader.set_cursor(end);
                 if matches!(reader.peek(), Some(' ') | None) {
                     return Ok(end);

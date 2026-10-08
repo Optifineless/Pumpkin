@@ -155,19 +155,23 @@ impl TickExecutor {
         );
     }
 
-    fn send_sprint_report(source: &CommandSource, ticks: i32) {
+    // TickCommand.sprint starts with status; the rate manager reports completion.
+    fn send_sprint_started(source: &CommandSource) {
         source.send_feedback(
             TextComponent::translate_cross(
-                translation::java::COMMANDS_TICK_SPRINT_REPORT,
-                translation::java::COMMANDS_TICK_SPRINT_REPORT,
-                [TextComponent::text(ticks.to_string())],
+                translation::java::COMMANDS_TICK_STATUS_SPRINTING,
+                translation::java::COMMANDS_TICK_STATUS_SPRINTING,
+                [],
             ),
             true,
         );
+    }
+
+    fn send_sprint_stopped(source: &CommandSource) {
         source.send_feedback(
             TextComponent::translate_cross(
-                translation::java::COMMANDS_TICK_STATUS_SPRINTING,
-                translation::java::COMMANDS_TICK_STATUS_SPRINTING,
+                translation::java::COMMANDS_TICK_SPRINT_STOP_SUCCESS,
+                translation::java::COMMANDS_TICK_SPRINT_STOP_SUCCESS,
                 [],
             ),
             true,
@@ -286,20 +290,15 @@ impl CommandExecutor for TickExecutor {
             }
             SubCommand::SprintTimed => {
                 let ticks = TimeArgumentType::get(context, "time")?;
-                manager.request_game_to_sprint(server, ticks as i64);
-                Self::send_sprint_report(source, ticks);
+                if manager.request_game_to_sprint(server, i64::from(ticks)) {
+                    Self::send_sprint_stopped(source);
+                }
+                Self::send_sprint_started(source);
                 Ok(1)
             }
             SubCommand::SprintStop => {
                 if manager.stop_sprinting(server) {
-                    source.send_feedback(
-                        TextComponent::translate_cross(
-                            translation::java::COMMANDS_TICK_SPRINT_STOP_SUCCESS,
-                            translation::java::COMMANDS_TICK_SPRINT_STOP_SUCCESS,
-                            [],
-                        ),
-                        true,
-                    );
+                    Self::send_sprint_stopped(source);
                     Ok(1)
                 } else {
                     source.send_error(

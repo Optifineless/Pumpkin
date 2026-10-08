@@ -267,12 +267,12 @@ impl CommandExecutor for TeamJoinExecutor {
             scoreboard.add_player_to_team(&world, &team_name_owned, name.clone());
         }
 
-        let msg = if count == 1 {
+        let msg = if let [first_entity_names] = entity_names.as_slice() {
             TextComponent::translate_cross(
                 translation::java::COMMANDS_TEAM_JOIN_SUCCESS_SINGLE,
                 translation::java::COMMANDS_TEAM_JOIN_SUCCESS_SINGLE,
                 [
-                    TextComponent::text(entity_names[0].clone()),
+                    TextComponent::text(first_entity_names.clone()),
                     team_display_name,
                 ],
             )
@@ -336,11 +336,11 @@ impl CommandExecutor for TeamLeaveExecutor {
             }
         }
 
-        let msg = if entity_names.len() == 1 {
+        let msg = if let [first_entity_names] = entity_names.as_slice() {
             TextComponent::translate_cross(
                 translation::java::COMMANDS_TEAM_LEAVE_SUCCESS_SINGLE,
                 translation::java::COMMANDS_TEAM_LEAVE_SUCCESS_SINGLE,
-                [TextComponent::text(entity_names[0].clone())],
+                [TextComponent::text(first_entity_names.clone())],
             )
         } else {
             TextComponent::translate_cross(

@@ -681,7 +681,9 @@ impl<S: crate::source::CommandSource> ArgumentType<S> for NbtPathArgumentType {
             node_to_original_position.push(reader.cursor() - start);
             first_node = false;
             if reader.can_read_char() {
-                let next = reader.peek().unwrap();
+                let next = reader
+                    .peek()
+                    .ok_or_else(|| ERROR_INVALID_NODE.create(reader))?;
                 if next != ' ' && next != '[' && next != '{' {
                     reader.expect('.')?;
                 }

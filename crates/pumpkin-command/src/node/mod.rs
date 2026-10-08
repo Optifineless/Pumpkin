@@ -31,6 +31,20 @@ pub type CommandExecutorResult = Result<i32, CommandSyntaxError>;
 
 /// A struct implementing this trait is able to run with a given context.
 pub trait CommandExecutor<S: CommandSource = DummySource>: Sync + Send {
+    /// Custom execution schedules its own work and delivers its own result callbacks.
+    fn is_custom(&self) -> bool {
+        false
+    }
+
+    /// Queues a custom command's source fan-out as one continuation, when supported.
+    fn execute_batch(
+        &self,
+        _context: &CommandContext<S>,
+        _sources: &[Arc<S>],
+    ) -> Option<CommandExecutorResult> {
+        None
+    }
+
     /// Executes this executor for a command.
     fn execute(&self, context: &CommandContext<S>) -> CommandExecutorResult;
 }
@@ -63,6 +77,9 @@ pub enum RedirectModifier<S: CommandSource = DummySource> {
     /// Returns multiple [`CommandSource`]s from one context via
     /// custom behavior.
     Custom(Arc<RedirectModifierExecutor<S>>),
+
+    /// A control-flow modifier such as vanilla `ReturnFromCommandCustomModifier` costs no quota.
+    CustomUncharged(Arc<RedirectModifierExecutor<S>>),
 }
 
 impl<S: CommandSource> RedirectModifier<S> {
@@ -71,7 +88,7 @@ impl<S: CommandSource> RedirectModifier<S> {
     pub fn sources(&self, command_context: &CommandContext<S>) -> RedirectModifierResult<S> {
         match self {
             Self::KeepSource => Ok(vec![command_context.source.clone()]),
-            Self::Custom(function) => function(command_context),
+            Self::Custom(function) | Self::CustomUncharged(function) => function(command_context),
         }
     }
 }

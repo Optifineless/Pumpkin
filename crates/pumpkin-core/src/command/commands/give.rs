@@ -48,7 +48,7 @@ impl CommandExecutor for GiveExecutor {
         }
 
         let item_name = item.registry_key;
-        let msg = if targets.len() == 1 {
+        let msg = if let [first_targets] = targets.as_slice() {
             TextComponent::translate_cross(
                 pumpkin_data::translation::java::COMMANDS_GIVE_SUCCESS_SINGLE,
                 pumpkin_data::translation::bedrock::COMMANDS_GIVE_SUCCESS,
@@ -61,7 +61,7 @@ impl CommandExecutor for GiveExecutor {
                             id: item_name.to_string().into(),
                             count: Some(item_count.min(99)),
                         }),
-                    targets[0].as_ref().get_display_name(),
+                    first_targets.as_ref().get_display_name(),
                 ],
             )
         } else {

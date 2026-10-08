@@ -40,7 +40,9 @@ impl<S: crate::source::CommandSource> ArgumentType<S> for SwizzleArgumentType {
         let mut count = 0;
 
         while reader.can_read_char() && reader.peek() != Some(' ') {
-            let c = reader.read().unwrap();
+            let c = reader
+                .read()
+                .ok_or_else(|| ERROR_INVALID_SWIZZLE.create(reader))?;
             match c {
                 'x' => {
                     if swizzle.x {

@@ -39,7 +39,11 @@ impl SnbtOperations {
     /// Acts like an identity operation for booleans,
     /// and returns `true` for non-zero numbers.
     fn bool(parser: &mut SnbtParser, args: &[NbtTag]) -> Option<NbtTag> {
-        NbtOps.get_bool(&args[0]).into_result().map_or_else(
+        let Some(arg) = args.first() else {
+            parser.store_simple_error(&EXPECTED_NUMBER_OR_BOOLEAN);
+            return None;
+        };
+        NbtOps.get_bool(arg).into_result().map_or_else(
             || {
                 parser.store_simple_error(&EXPECTED_NUMBER_OR_BOOLEAN);
                 None
@@ -52,7 +56,7 @@ impl SnbtOperations {
     ///
     /// Parses a UUID in a string to an array of 4 integers.
     fn uuid(parser: &mut SnbtParser, args: &[NbtTag]) -> Option<NbtTag> {
-        if let NbtTag::String(string) = &args[0]
+        if let Some(NbtTag::String(string)) = args.first()
             && let Some(ints) = parse_uuid_vec(string)
         {
             Some(NbtTag::IntArray(ints))

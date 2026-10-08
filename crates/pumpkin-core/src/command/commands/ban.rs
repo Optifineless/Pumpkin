@@ -24,7 +24,11 @@ const ERROR_BAN_FAILED: CommandErrorType<0> = CommandErrorType::new(
 
 fn ban_profile(context: &CommandContext, profile: &GameProfile, reason: Option<String>) -> bool {
     let server = context.source.server();
-    let mut banned_players = server.data.banned_player_list.write().unwrap();
+    let mut banned_players = server
+        .data
+        .banned_player_list
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     let reason = reason.unwrap_or_else(|| "Banned by an operator.".to_string());
 

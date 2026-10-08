@@ -50,13 +50,13 @@ fn transfer_players(
         );
     }
 
-    if players.len() == 1 {
+    if let [first_players] = players {
         source.send_feedback(
             TextComponent::translate_cross(
                 "commands.transfer.success.single",
                 "commands.transfer.success.single",
                 [
-                    players[0].as_ref().get_display_name(),
+                    first_players.as_ref().get_display_name(),
                     TextComponent::text(hostname.to_string()),
                     TextComponent::text(port.to_string()),
                 ],

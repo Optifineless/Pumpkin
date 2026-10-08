@@ -56,7 +56,7 @@ fn perform_swing(
     }
 
     let msg = if living_count == 1 {
-        let target = first_living.unwrap_or(&targets[0]);
+        let target = first_living.ok_or_else(|| ERROR_NO_LIVING_ENTITY.create_without_context())?;
         TextComponent::translate_cross(
             translation::java::COMMANDS_SWING_SUCCESS_SINGLE,
             translation::java::COMMANDS_SWING_SUCCESS_SINGLE,

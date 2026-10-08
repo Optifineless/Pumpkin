@@ -96,14 +96,14 @@ impl CommandExecutor for EnchantExecutor {
 
         let mut successful_targets = 0;
 
-        if targets.len() == 1 {
-            enchant_target(&targets[0], enchantment, level)?;
+        if let [first_targets] = targets.as_slice() {
+            enchant_target(first_targets, enchantment, level)?;
             let msg = TextComponent::translate_cross(
                 translation::java::COMMANDS_ENCHANT_SUCCESS_SINGLE,
                 translation::bedrock::COMMANDS_ENCHANT_SUCCESS,
                 [
                     enchantment.get_fullname(level),
-                    targets[0].as_ref().get_display_name(),
+                    first_targets.as_ref().get_display_name(),
                 ],
             );
             context.source.send_feedback(msg, true);

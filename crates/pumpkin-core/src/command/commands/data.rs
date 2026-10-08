@@ -288,12 +288,23 @@ impl BlockDataAccessor {
 
 impl DataAccessor for BlockDataAccessor {
     fn set_data(&self, tag: &NbtCompound) -> Result<(), CommandSyntaxError> {
-        if self.world.get_block_entity(&self.pos).is_some() {
-            self.world.add_block_entity_nbt(self.pos, tag);
-            Ok(())
-        } else {
-            Err(ERROR_BLOCK_INVALID.create_without_context())
-        }
+        let existing = self
+            .world
+            .get_block_entity(&self.pos)
+            .ok_or_else(|| ERROR_BLOCK_INVALID.create_without_context())?;
+        // BlockDataAccessor.setData / BlockEntity.setChanged, using upstream PR #3807's live replacement.
+        let mut tag = tag.clone();
+        tag.put_string("id", existing.resource_location().to_string());
+        tag.put_int("x", self.pos.0.x);
+        tag.put_int("y", self.pos.0.y);
+        tag.put_int("z", self.pos.0.z);
+        let entity = crate::block::entities::block_entity_from_nbt(&tag)
+            .ok_or_else(|| ERROR_BLOCK_INVALID.create_without_context())?;
+        self.world.close_container_screens_at(&self.pos);
+        self.world.add_block_entity(entity);
+        self.world
+            .update_neighbour_for_output_signal(&self.pos, self.world.get_block(&self.pos));
+        Ok(())
     }
 
     fn get_data(&self) -> Result<NbtCompound, CommandSyntaxError> {
@@ -422,7 +433,10 @@ pub fn get_single_tag(
     match tags.len() {
         0 => Err(ERROR_GET_NON_EXISTENT
             .create_without_context(TextComponent::text(path.as_str().to_string()))),
-        1 => Ok(tags.into_iter().next().unwrap()),
+        1 => tags.into_iter().next().ok_or_else(|| {
+            ERROR_GET_NON_EXISTENT
+                .create_without_context(TextComponent::text(path.as_str().to_string()))
+        }),
         _ => Err(ERROR_MULTIPLE_TAGS.create_without_context()),
     }
 }
@@ -458,9 +472,15 @@ fn substring(input: &str, start: i32, end: Option<i32>) -> Result<String, Comman
     };
     if abs_start >= 0 && abs_end <= len && abs_start <= abs_end {
         let chars: Vec<char> = input.chars().collect();
-        Ok(chars[(abs_start as usize)..(abs_end as usize)]
-            .iter()
-            .collect())
+        chars
+            .get((abs_start as usize)..(abs_end as usize))
+            .map(|slice| slice.iter().collect())
+            .ok_or_else(|| {
+                ERROR_INVALID_SUBSTRING.create_without_context(
+                    TextComponent::text(start.to_string()),
+                    TextComponent::text(end.unwrap_or(len).to_string()),
+                )
+            })
     } else {
         Err(ERROR_INVALID_SUBSTRING.create_without_context(
             TextComponent::text(start.to_string()),
@@ -645,7 +665,12 @@ fn resolve_source_tags(
             Ok(vec![val])
         }
         SourceMode::From { has_path } => {
-            let source_accessor = source_kind.unwrap().access(context, "source")?;
+            let source_accessor = source_kind
+                .ok_or_else(|| {
+                    crate::command::errors::error_types::DISPATCHER_UNKNOWN_ARGUMENT
+                        .create_without_context()
+                })?
+                .access(context, "source")?;
             let data = source_accessor.get_data()?;
             if has_path {
                 let source_path = context.get_argument::<NbtPath>("sourcePath")?;
@@ -659,7 +684,12 @@ fn resolve_source_tags(
             has_start,
             has_end,
         } => {
-            let source_accessor = source_kind.unwrap().access(context, "source")?;
+            let source_accessor = source_kind
+                .ok_or_else(|| {
+                    crate::command::errors::error_types::DISPATCHER_UNKNOWN_ARGUMENT
+                        .create_without_context()
+                })?
+                .access(context, "source")?;
             let data = source_accessor.get_data()?;
             let tags = if has_path {
                 let source_path = context.get_argument::<NbtPath>("sourcePath")?;

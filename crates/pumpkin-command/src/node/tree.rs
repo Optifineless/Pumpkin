@@ -408,7 +408,7 @@ impl<S: CommandSource> Tree<S> {
         match redirect {
             Redirection::Root => Some(ROOT_NODE_ID),
             Redirection::Global(id) => self.ids_map.get(&id).copied(),
-            Redirection::Local(id) => (id.0 < self.size_nonzero()).then_some(id),
+            Redirection::Local(id) => (id.0 <= self.size_nonzero()).then_some(id),
         }
     }
 

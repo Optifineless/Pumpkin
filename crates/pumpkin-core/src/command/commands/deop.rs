@@ -26,7 +26,11 @@ impl CommandExecutor for DeopExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let targets = GameProfileArgumentType::get(context, "targets")?;
         let server = context.source.server();
-        let mut config = server.data.operator_config.write().unwrap();
+        let mut config = server
+            .data
+            .operator_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let mut succeeded_deops: i32 = 0;
         for profile in &targets {
@@ -75,7 +79,12 @@ impl SuggestionProvider for DeopSuggestionProvider {
         context: &CommandContext,
         mut builder: SuggestionsBuilder,
     ) -> SuggestionProviderResult {
-        let ops = context.server().data.operator_config.read().unwrap();
+        let ops = context
+            .server()
+            .data
+            .operator_config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for op in &ops.ops {
             builder = builder.suggest(op.name.clone());
         }

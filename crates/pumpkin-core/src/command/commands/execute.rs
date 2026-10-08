@@ -1556,7 +1556,7 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
                 ),
         );
 
-    let execute_node_id = dispatcher.register(builder);
+    let execute_node_id = dispatcher.register(super::execute_store::add_store(builder));
 
     set_redirects_to_execute(
         &mut dispatcher.tree,
@@ -1565,7 +1565,7 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
     );
 }
 
-fn set_redirects_to_execute(tree: &mut Tree, parent: NodeId, execute_id: CommandNodeId) {
+pub(super) fn set_redirects_to_execute(tree: &mut Tree, parent: NodeId, execute_id: CommandNodeId) {
     for child_id in tree.get_children(parent) {
         if let Some(redirect) = tree[child_id].redirect()
             && matches!(redirect, Redirection::Root)

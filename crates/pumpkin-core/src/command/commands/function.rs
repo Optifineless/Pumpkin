@@ -3,15 +3,17 @@ use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
 
+use crate::command::CommandSource;
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};
 use crate::command::argument_types::function::FunctionArgumentType;
 use crate::command::context::command_context::CommandContext;
-use crate::command::errors::error_types::{CommandErrorType, LiteralCommandErrorType};
+use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::command::suggestion::provider::{SuggestionProvider, SuggestionProviderResult};
 use crate::command::suggestion::suggestions::SuggestionsBuilder;
-use crate::data::datapack::{FunctionRunError, is_nested_function_call};
+use crate::data::datapack::FunctionRunError;
+use std::sync::Arc;
 
 const DESCRIPTION: &str = "Runs commands found in the corresponding function files.";
 const PERMISSION: &str = "minecraft:command.function";
@@ -21,8 +23,10 @@ static ERROR_UNKNOWN_FUNCTION: CommandErrorType<1> = CommandErrorType::new(
     translation::java::ARGUMENTS_FUNCTION_UNKNOWN,
 );
 
-static ERROR_CHAIN_LIMIT_EXCEEDED: LiteralCommandErrorType =
-    LiteralCommandErrorType::new("Maximum number of nested function calls reached");
+static ERROR_NO_FUNCTIONS: CommandErrorType<1> = CommandErrorType::new(
+    translation::java::COMMANDS_FUNCTION_SCHEDULED_NO_FUNCTIONS,
+    translation::java::COMMANDS_FUNCTION_SCHEDULED_NO_FUNCTIONS,
+);
 
 struct FunctionSuggestionProvider;
 
@@ -44,44 +48,49 @@ impl SuggestionProvider for FunctionSuggestionProvider {
 struct FunctionExecutor;
 
 impl CommandExecutor for FunctionExecutor {
+    fn execute_batch(
+        &self,
+        context: &CommandContext,
+        sources: &[Arc<CommandSource>],
+    ) -> Option<CommandExecutorResult> {
+        Some(Self::queue_sources(context, sources))
+    }
+
+    fn is_custom(&self) -> bool {
+        true
+    }
+
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        Self::queue_sources(context, std::slice::from_ref(&context.source))
+    }
+}
+
+impl FunctionExecutor {
+    fn queue_sources(
+        context: &CommandContext,
+        sources: &[Arc<CommandSource>],
+    ) -> CommandExecutorResult {
         let name_str = FunctionArgumentType::get(context, "name")?;
         let server = context.server();
 
-        let executed_count =
-            match server
-                .datapack_manager
-                .execute_function(server, &context.source, name_str)
-            {
-                Ok(executed_count) => executed_count,
-                Err(FunctionRunError::ChainLimitExceeded) => {
-                    return Err(ERROR_CHAIN_LIMIT_EXCEEDED.create_without_context());
-                }
-                Err(FunctionRunError::Unknown(_)) => {
-                    return Err(ERROR_UNKNOWN_FUNCTION
-                        .create_without_context(TextComponent::text(name_str.to_string())));
-                }
-            };
-
-        // Only the outermost call reports a result, or unwinding prints one line per level.
-        if !is_nested_function_call() {
-            let success = if name_str.starts_with('#') {
-                translation::java::COMMANDS_FUNCTION_SUCCESS_MULTIPLE
-            } else {
-                translation::java::COMMANDS_FUNCTION_SUCCESS_SINGLE
-            };
-            context.source.send_feedback(
-                TextComponent::translate_cross(
-                    success,
-                    success,
-                    [
-                        TextComponent::text(executed_count.to_string()),
-                        TextComponent::text(name_str.to_string()),
-                    ],
-                ),
-                true,
-            );
-        }
+        let executed_count = match server
+            .datapack_manager
+            .execute_function_sources(server, sources, name_str)
+        {
+            Ok(executed_count) => executed_count,
+            Err(FunctionRunError::ChainLimitExceeded) => {
+                // ExecutionContext.runCommandQueue only logs queue overflow.
+                return Ok(0);
+            }
+            Err(FunctionRunError::Unknown(_)) => {
+                return Err(ERROR_UNKNOWN_FUNCTION
+                    .create_without_context(TextComponent::text(name_str.to_string())));
+            }
+            Err(FunctionRunError::EmptyTag(_)) => {
+                return Err(ERROR_NO_FUNCTIONS
+                    .create_without_context(TextComponent::text(name_str.to_string())));
+            }
+        };
 
         Ok(executed_count as i32)
     }

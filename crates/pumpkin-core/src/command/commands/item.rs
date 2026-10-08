@@ -228,12 +228,12 @@ impl CommandExecutor for EntityReplaceExecutor {
         }
 
         let item_name = item.registry_key;
-        let msg = if targets.len() == 1 {
+        let msg = if let [first_targets] = targets.as_slice() {
             TextComponent::translate_cross(
                 translation::java::COMMANDS_ITEM_ENTITY_SET_SUCCESS_SINGLE,
                 translation::java::COMMANDS_ITEM_ENTITY_SET_SUCCESS_SINGLE,
                 [
-                    targets[0].as_ref().get_display_name(),
+                    first_targets.as_ref().get_display_name(),
                     TextComponent::text("[")
                         .add_child(item.translated_name())
                         .add_child(TextComponent::text("]"))

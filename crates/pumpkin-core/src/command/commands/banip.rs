@@ -46,7 +46,11 @@ fn ban_ip(context: &CommandContext, target: &str, reason: Option<String>) -> Com
     let target_ip =
         parse_ip(target, server).ok_or_else(|| ERROR_BANIP_INVALID.create_without_context())?;
 
-    let mut banned_ips = server.data.banned_ip_list.write().unwrap();
+    let mut banned_ips = server
+        .data
+        .banned_ip_list
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     if banned_ips.get_entry(&target_ip).is_some() {
         return Err(ERROR_BANIP_FAILED.create_without_context());

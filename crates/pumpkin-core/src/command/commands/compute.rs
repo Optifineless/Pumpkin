@@ -202,7 +202,10 @@ fn evaluate_score_provider_int(
         .and_then(|t| resolve_target_name(t, ctx));
 
     if let (Some(target), Some(world)) = (target_name, ctx.source.world.as_ref()) {
-        let scoreboard = world.scoreboard.lock().unwrap();
+        let scoreboard = world
+            .scoreboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(score) = scoreboard.get_score(&target, score_name) {
             return Ok(i64::from(score.value.0));
         }
@@ -225,7 +228,10 @@ fn evaluate_score_provider_float(
         .and_then(|t| resolve_target_name(t, ctx));
 
     if let (Some(target), Some(world)) = (target_name, ctx.source.world.as_ref()) {
-        let scoreboard = world.scoreboard.lock().unwrap();
+        let scoreboard = world
+            .scoreboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(score) = scoreboard.get_score(&target, score_name) {
             return Ok(f64::from(score.value.0));
         }

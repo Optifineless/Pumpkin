@@ -127,7 +127,7 @@ fn extract_next_url(header: &str) -> Option<String> {
         .and_then(|part| {
             let start = part.find('<')? + 1;
             let end = part.find('>')?;
-            Some(part[start..end].to_string())
+            part.get(start..end).map(str::to_string)
         })
 }
 

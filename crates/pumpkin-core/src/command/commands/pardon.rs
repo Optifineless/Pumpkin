@@ -25,7 +25,11 @@ impl CommandExecutor for PardonExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let targets = GameProfileArgumentType::get(context, "targets")?;
         let server = context.source.server();
-        let mut lock = server.data.banned_player_list.write().unwrap();
+        let mut lock = server
+            .data
+            .banned_player_list
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut successes = 0;
 
         for target in &targets {

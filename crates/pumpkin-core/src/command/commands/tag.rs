@@ -85,11 +85,11 @@ impl CommandExecutor for ChangeExecutor {
             ),
         };
 
-        let msg = if targets.len() == 1 {
+        let msg = if let [first_targets] = targets.as_slice() {
             TextComponent::translate_cross(
                 single_key.0,
                 single_key.1,
-                [TextComponent::text(tag), targets[0].get_display_name()],
+                [TextComponent::text(tag), first_targets.get_display_name()],
             )
         } else {
             TextComponent::translate_cross(
@@ -128,8 +128,8 @@ impl CommandExecutor for ListExecutor {
         let tag_list =
             TextComponent::text(all_tags.iter().cloned().collect::<Vec<String>>().join(", "));
 
-        let msg = if targets.len() == 1 {
-            let name = targets[0].get_display_name();
+        let msg = if let [first_targets] = targets.as_slice() {
+            let name = first_targets.get_display_name();
             if all_tags.is_empty() {
                 TextComponent::translate_cross(
                     translation::java::COMMANDS_TAG_LIST_SINGLE_EMPTY,

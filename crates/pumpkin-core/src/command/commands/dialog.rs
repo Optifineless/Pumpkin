@@ -30,11 +30,8 @@ impl CommandExecutor for DialogClearExecutor {
             player.try_send_client_packet(&packet);
         }
 
-        let msg = if count == 1 {
-            TextComponent::text(format!(
-                "Cleared dialog for {}",
-                targets[0].gameprofile.name
-            ))
+        let msg = if let [target] = targets.as_slice() {
+            TextComponent::text(format!("Cleared dialog for {}", target.gameprofile.name))
         } else {
             TextComponent::text(format!("Cleared dialogs for {count} players"))
         };
@@ -65,8 +62,8 @@ impl CommandExecutor for DialogShowExecutor {
                     player.try_send_client_packet(&packet);
                 }
 
-                let msg = if count == 1 {
-                    TextComponent::text(format!("Showed dialog to {}", targets[0].gameprofile.name))
+                let msg = if let [target] = targets.as_slice() {
+                    TextComponent::text(format!("Showed dialog to {}", target.gameprofile.name))
                 } else {
                     TextComponent::text(format!("Showed dialog to {count} players"))
                 };

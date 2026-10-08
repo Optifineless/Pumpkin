@@ -347,6 +347,15 @@ impl<S: CommandSource> CommandDispatcher<S> {
     /// # Note
     /// This does not cache parsed input.
     pub fn execute_input(&self, input: &str, source: &S) -> Result<i32, CommandSyntaxError> {
+        self.execute_input_with_source(input, Arc::new(source.clone()))
+    }
+
+    /// Executes input while retaining the shared source of a queued command.
+    pub fn execute_input_with_source(
+        &self,
+        input: &str,
+        source: Arc<S>,
+    ) -> Result<i32, CommandSyntaxError> {
         let mut reader = StringReader::new(input);
 
         // A disabled command must behave as if it does not exist from every
@@ -357,7 +366,8 @@ impl<S: CommandSource> CommandDispatcher<S> {
             return Err(Self::unknown_command_error(&reader));
         }
 
-        self.execute_reader(&mut reader, source)
+        let parsed = self.parse_with_source(&mut reader, source);
+        self.execute(parsed)
     }
 
     /// Executes the given command in a [`StringReader`] with the provided source, returning a result of execution.
@@ -375,6 +385,11 @@ impl<S: CommandSource> CommandDispatcher<S> {
 
     /// Executes a given result that has already been parsed from an input.
     pub fn execute(&self, parsed: ParsingResult<'_, S>) -> Result<i32, CommandSyntaxError> {
+        let source = parsed.context.source.clone();
+        source.execute_command_in_context(|| self.execute_in_context(parsed))
+    }
+
+    fn execute_in_context(&self, parsed: ParsingResult<'_, S>) -> Result<i32, CommandSyntaxError> {
         if parsed.reader.peek().is_some() {
             return if let Some(err) = parsed.errors.values().next() {
                 Err(err.clone())
@@ -409,12 +424,16 @@ impl<S: CommandSource> CommandDispatcher<S> {
 
     /// Parses a command owned by a [`StringReader`] with the provided source.
     pub fn parse(&self, reader: &mut StringReader<'_>, source: &S) -> ParsingResult<'_, S> {
-        let context = CommandContextBuilder::new(
-            self,
-            Arc::new(source.clone()),
-            ROOT_NODE_ID,
-            reader.cursor(),
-        );
+        self.parse_with_source(reader, Arc::new(source.clone()))
+    }
+
+    /// Parses input without copying the shared command source.
+    pub fn parse_with_source(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: Arc<S>,
+    ) -> ParsingResult<'_, S> {
+        let context = CommandContextBuilder::new(self, source, ROOT_NODE_ID, reader.cursor());
         self.parse_nodes(ROOT_NODE_ID, reader, &context)
     }
 
@@ -503,7 +522,11 @@ impl<S: CommandSource> CommandDispatcher<S> {
 
                     (a_reader_remaining, a_has_errors).cmp(&(b_reader_remaining, b_has_errors))
                 })
-                .expect("Potentials list is not empty")
+                .unwrap_or_else(|| ParsingResult {
+                    context: context_so_far.clone(),
+                    errors,
+                    reader: original_reader.clone_into_owned(),
+                })
         }
     }
 
@@ -512,7 +535,12 @@ impl<S: CommandSource> CommandDispatcher<S> {
     ///
     /// If the input starts with one slash (`/`), it is removed
     /// inside the call itself.
-    pub fn handle_command<'a>(&'a self, source: &S, mut input: &'a str) {
+    pub fn handle_command<'a>(&'a self, source: &S, input: &'a str) {
+        self.handle_command_with_source(&Arc::new(source.clone()), input);
+    }
+
+    /// Handles a queued command while sharing its source with the parsed context.
+    pub fn handle_command_with_source<'a>(&'a self, source: &Arc<S>, mut input: &'a str) {
         // If input starts with '/', but the command with that leading slash is NOT
         // registered, while the stripped command IS registered (or if it's an unknown command
         // starting with a single slash, e.g. from console input), strip one leading slash.
@@ -533,14 +561,18 @@ impl<S: CommandSource> CommandDispatcher<S> {
         // before either dispatcher gets a chance to run it.
         if self.is_disabled(Self::command_name(input)) {
             let reader = StringReader::new(input);
-            Self::send_error_to_source(source, Self::unknown_command_error(&reader), input);
+            Self::send_error_to_source(
+                source.as_ref(),
+                Self::unknown_command_error(&reader),
+                input,
+            );
             return;
         }
 
-        let output = self.execute_input(input, source);
+        let output = self.execute_input_with_source(input, source.clone());
 
         if let Err(error) = output {
-            Self::send_error_to_source(source, error, input);
+            Self::send_error_to_source(source.as_ref(), error, input);
         }
     }
 
@@ -568,7 +600,7 @@ impl<S: CommandSource> CommandDispatcher<S> {
                 error_text = error_text.add_text("...");
             }
 
-            let start = i.saturating_sub(10);
+            let start = context.input.floor_char_boundary(i.saturating_sub(10));
 
             let command_snippet = &context.input[start..i];
             error_text = error_text.add_text(command_snippet.to_owned());
@@ -627,7 +659,8 @@ impl<S: CommandSource> CommandDispatcher<S> {
 
         let full_input = parsing_result.reader.string();
 
-        let truncated_input = &full_input[0..cursor.min(full_input.len())];
+        let truncated_input =
+            &full_input[..full_input.floor_char_boundary(cursor.min(full_input.len()))];
 
         let children = self.tree.get_children(parent);
         let context = context.build(truncated_input);
@@ -900,10 +933,9 @@ impl<S: CommandSource> CommandDispatcher<S> {
                     }
                 }
 
-                if children.len() == 1 {
-                    let child = children[0];
+                if let [child] = children.as_slice() {
                     if let Some(child_usage_text) =
-                        self.get_usage_recursive(child, source, child_optional, true, None)
+                        self.get_usage_recursive(*child, source, child_optional, true, None)
                     {
                         return Some(format!("{usage_text}{ARG_SEPARATOR}{child_usage_text}"));
                     }
@@ -967,6 +999,51 @@ mod test {
     use crate::node::dispatcher::CommandDispatcher;
     use crate::node::{CommandExecutor, CommandExecutorResult};
     use crate::source::{CommandSource, DummySource};
+
+    #[test]
+    fn queued_command_lines_reuse_the_source_without_deep_clones()
+    -> Result<(), crate::errors::command_syntax_error::CommandSyntaxError> {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        struct SharedSource(Arc<AtomicUsize>);
+        impl Clone for SharedSource {
+            fn clone(&self) -> Self {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                Self(self.0.clone())
+            }
+        }
+        impl CommandSource for SharedSource {
+            fn send_message(&self, _: TextComponent) {}
+        }
+        let mut dispatcher = CommandDispatcher::<SharedSource>::new();
+        let probe: fn(&CommandContext<SharedSource>) -> CommandExecutorResult = |_| Ok(1);
+        dispatcher.register(CommandArgumentBuilder::new("probe", "probe").executes(probe));
+        let clones = Arc::new(AtomicUsize::new(0));
+        let source = Arc::new(SharedSource(clones.clone()));
+        for _ in 0..16 {
+            assert_eq!(
+                dispatcher.execute_input_with_source("probe", source.clone())?,
+                1
+            );
+        }
+        assert_eq!(clones.load(Ordering::Relaxed), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn unicode_literal_mismatch_and_suggestion_cursor_do_not_split_utf8() {
+        let mut reader = crate::string_reader::StringReader::new("\u{00e9}");
+        assert!(
+            crate::node::attached::AttachedNode::<DummySource>::parse_literal(&mut reader, "x")
+                .is_err()
+        );
+        let mut dispatcher = CommandDispatcher::new();
+        dispatcher.register(crate::argument_builder::command("say", "say"));
+        let parsed = dispatcher.parse_input("\u{00e9}", &DummySource::dummy());
+        let _ = dispatcher.get_completion_suggestions(parsed, 1);
+    }
 
     #[test]
     fn unknown_command() {

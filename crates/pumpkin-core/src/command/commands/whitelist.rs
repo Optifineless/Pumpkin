@@ -42,8 +42,16 @@ const ERROR_REMOVE_FAILED: CommandErrorType<0> = CommandErrorType::new(
 );
 
 pub fn kick_non_whitelisted_players(server: &Server) {
-    let whitelist = server.data.whitelist_config.read().unwrap();
-    let ops = server.data.operator_config.read().unwrap();
+    let whitelist = server
+        .data
+        .whitelist_config
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let ops = server
+        .data
+        .operator_config
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if server.basic_config.enforce_whitelist && server.white_list.load(Ordering::Relaxed) {
         for player in server.get_all_players() {
             if ops.get_entry(&player.gameprofile.id).is_some()
@@ -110,7 +118,11 @@ struct ListExecutor;
 impl CommandExecutor for ListExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let server = context.source.server();
-        let whitelist_guard = server.data.whitelist_config.read().unwrap();
+        let whitelist_guard = server
+            .data
+            .whitelist_config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let whitelist = &whitelist_guard.whitelist;
         if whitelist.is_empty() {
             context.source.send_feedback(
@@ -153,7 +165,11 @@ struct ReloadExecutor;
 impl CommandExecutor for ReloadExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let server = context.source.server();
-        *server.data.whitelist_config.write().unwrap() = WhitelistConfig::load();
+        *server
+            .data
+            .whitelist_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = WhitelistConfig::load();
         context.source.send_feedback(
             pumpkin_macros::translate_cross!(
                 translation::java::COMMANDS_WHITELIST_RELOADED,
@@ -174,7 +190,12 @@ impl SuggestionProvider for AddSuggestionProvider {
         context: &CommandContext,
         mut builder: SuggestionsBuilder,
     ) -> SuggestionProviderResult {
-        let whitelist = context.server().data.whitelist_config.read().unwrap();
+        let whitelist = context
+            .server()
+            .data
+            .whitelist_config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for player in context.server().get_all_players() {
             if !whitelist.is_whitelisted(&player.gameprofile) {
                 builder = builder.suggest(player.gameprofile.name.clone());
@@ -190,7 +211,11 @@ impl CommandExecutor for AddExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let targets = GameProfileArgumentType::get(context, "targets")?;
         let server = context.source.server();
-        let mut whitelist = server.data.whitelist_config.write().unwrap();
+        let mut whitelist = server
+            .data
+            .whitelist_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut successes: i32 = 0;
         let mut modified = false;
 
@@ -241,7 +266,12 @@ impl SuggestionProvider for RemoveSuggestionProvider {
         context: &CommandContext,
         mut builder: SuggestionsBuilder,
     ) -> SuggestionProviderResult {
-        let whitelist = context.server().data.whitelist_config.read().unwrap();
+        let whitelist = context
+            .server()
+            .data
+            .whitelist_config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for entry in &whitelist.whitelist {
             builder = builder.suggest(entry.name.clone());
         }
@@ -255,7 +285,11 @@ impl CommandExecutor for RemoveExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let targets = GameProfileArgumentType::get(context, "targets")?;
         let server = context.source.server();
-        let mut whitelist = server.data.whitelist_config.write().unwrap();
+        let mut whitelist = server
+            .data
+            .whitelist_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut successes: i32 = 0;
         for player in &targets {
             let i = whitelist

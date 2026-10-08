@@ -45,7 +45,11 @@ impl SuggestionProvider for RandomSequenceSuggestionProvider {
         context: &CommandContext,
         mut builder: SuggestionsBuilder,
     ) -> SuggestionProviderResult {
-        let sequences = context.server().random_sequences.lock().unwrap();
+        let sequences = context
+            .server()
+            .random_sequences
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in sequences.get_sequence_keys() {
             builder = builder.suggest(key);
         }
@@ -75,7 +79,11 @@ impl CommandExecutor for RandomExecutor {
         let value = if self.has_sequence {
             let sequence = IdentifierArgumentType::get(context, ARG_SEQUENCE)?;
             let world_seed = context.server().level_info.load().world_gen_settings.seed;
-            let mut sequences = context.server().random_sequences.lock().unwrap();
+            let mut sequences = context
+                .server()
+                .random_sequences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             sequences
                 .get_or_create(&sequence, world_seed)
                 .random_between_inclusive(min, max)
@@ -125,7 +133,11 @@ impl CommandExecutor for ResetSequenceExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let sequence = IdentifierArgumentType::get(context, ARG_SEQUENCE)?;
         let world_seed = context.server().level_info.load().world_gen_settings.seed;
-        let mut sequences = context.server().random_sequences.lock().unwrap();
+        let mut sequences = context
+            .server()
+            .random_sequences
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if self.has_seed {
             let seed = IntegerArgumentType::get(context, ARG_SEED)?;
@@ -171,7 +183,11 @@ struct ResetAllSequencesExecutor {
 
 impl CommandExecutor for ResetAllSequencesExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let mut sequences = context.server().random_sequences.lock().unwrap();
+        let mut sequences = context
+            .server()
+            .random_sequences
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if self.has_seed {
             let seed = IntegerArgumentType::get(context, ARG_SEED)?;

@@ -29,7 +29,11 @@ impl CommandExecutor for OpCommandExecutor {
         let server = context.server();
         let profiles = GameProfileArgumentType::get(context, ARG_TARGETS)?;
 
-        let mut config = server.data.operator_config.write().unwrap();
+        let mut config = server
+            .data
+            .operator_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut successes: i32 = 0;
         let new_level = server.basic_config.op_permission_level;
 
@@ -86,7 +90,12 @@ impl SuggestionProvider for OpSuggestionProvider {
         mut builder: SuggestionsBuilder,
     ) -> SuggestionProviderResult {
         // Suggest every non-opped player.
-        let ops = context.server().data.operator_config.read().unwrap();
+        let ops = context
+            .server()
+            .data
+            .operator_config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for player in context.source.server().get_all_players() {
             if ops.ops.iter().all(|op| op.uuid != player.gameprofile.id) {
                 builder = builder.suggest(player.gameprofile.name.clone());

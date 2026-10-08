@@ -14,6 +14,16 @@ const PERMISSION: &str = "minecraft:command.difficulty";
 const FAILURE_ERROR_TYPE: CommandErrorType<1> =
     CommandErrorType::new("commands.difficulty.failure", "commands.difficulty.failure");
 
+/// Applies MinecraftServer.setDifficulty's hardcore override before worlds are initialized.
+pub const fn enforce_hardcore_difficulty(
+    hardcore: bool,
+    level_info: &mut pumpkin_world::world_info::LevelData,
+) {
+    if hardcore {
+        level_info.difficulty = Difficulty::Hard;
+    }
+}
+
 struct DifficultyQueryExecutor;
 
 impl CommandExecutor for DifficultyQueryExecutor {
@@ -90,4 +100,21 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
             .then(literal("hard").executes(DifficultySetExecutor(Difficulty::Hard)))
             .executes(DifficultyQueryExecutor),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hardcore_startup_overrides_the_saved_difficulty() {
+        let mut level =
+            pumpkin_world::world_info::LevelData::default(pumpkin_util::world_seed::Seed(0));
+        level.difficulty = Difficulty::Easy;
+        enforce_hardcore_difficulty(true, &mut level);
+        assert_eq!(level.difficulty, Difficulty::Hard);
+        level.difficulty = Difficulty::Easy;
+        enforce_hardcore_difficulty(false, &mut level);
+        assert_eq!(level.difficulty, Difficulty::Easy);
+    }
 }

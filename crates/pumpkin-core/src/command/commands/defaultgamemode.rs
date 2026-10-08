@@ -48,7 +48,11 @@ impl CommandExecutor for DefaultGamemodeExecutor {
             true,
         );
 
-        server.defaultgamemode.lock().unwrap().gamemode = gamemode;
+        server
+            .defaultgamemode
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .gamemode = gamemode;
 
         Ok(successful_changes)
     }

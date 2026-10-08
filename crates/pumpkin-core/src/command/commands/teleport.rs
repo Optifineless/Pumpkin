@@ -49,8 +49,8 @@ fn success_key_and_arg(
     single_key: &'static str,
     multiple_key: &'static str,
 ) -> (&'static str, TextComponent) {
-    if targets.len() == 1 {
-        (single_key, targets[0].get_display_name())
+    if let [first_targets] = targets {
+        (single_key, first_targets.get_display_name())
     } else {
         (multiple_key, TextComponent::text(targets.len().to_string()))
     }

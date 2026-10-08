@@ -25,11 +25,11 @@ impl CommandExecutor for TargetsExecutor {
             target.kill(target.as_ref());
         }
 
-        let msg = if target_count == 1 {
+        let msg = if let [target] = targets.as_slice() {
             TextComponent::translate_cross(
                 translation::java::COMMANDS_KILL_SUCCESS_SINGLE,
                 translation::bedrock::COMMANDS_KILL_SUCCESSFUL,
-                [targets[0].get_display_name()],
+                [target.get_display_name()],
             )
         } else {
             TextComponent::translate_cross(

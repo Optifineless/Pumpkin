@@ -173,11 +173,10 @@ fn replace_entity_slots(
         if let Some(player_arc) = player.world().get_player_by_uuid(player.gameprofile.id) {
             for i in 0..count {
                 let mojang_slot = start_slot + i;
-                let item_stack = if i < drops.len() {
-                    drops[i].clone()
-                } else {
-                    ItemStack::EMPTY.clone()
-                };
+                let item_stack = drops
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| ItemStack::EMPTY.clone());
                 if (200..=226).contains(&mojang_slot) {
                     let ender_slot = mojang_slot - 200;
                     if ender_slot < player.ender_chest_inventory.size() {
@@ -243,11 +242,10 @@ fn replace_entity_slots(
     } else if let Some(living) = entity.get_living_entity() {
         for i in 0..count {
             let mojang_slot = start_slot + i;
-            let item_stack = if i < drops.len() {
-                drops[i].clone()
-            } else {
-                ItemStack::EMPTY.clone()
-            };
+            let item_stack = drops
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| ItemStack::EMPTY.clone());
             let mapped_eq = if mojang_slot == 98 {
                 Some(EquipmentSlot::MAIN_HAND)
             } else if mojang_slot == 99 {
@@ -282,9 +280,8 @@ fn replace_entity_slots(
 }
 
 fn send_callback(context: &CommandContext, drops: &[ItemStack], table_id: Option<&str>) {
-    let msg = match (drops.len(), table_id) {
-        (1, Some(table)) => {
-            let drop = &drops[0];
+    let msg = match (drops, table_id) {
+        ([drop], Some(table)) => {
             let item = drop.item;
             let item_name = item.registry_key;
             let display_comp = TextComponent::text("[")
@@ -304,8 +301,7 @@ fn send_callback(context: &CommandContext, drops: &[ItemStack], table_id: Option
                 ],
             )
         }
-        (1, None) => {
-            let drop = &drops[0];
+        ([drop], None) => {
             let item = drop.item;
             let item_name = item.registry_key;
             let display_comp = TextComponent::text("[")
@@ -328,14 +324,14 @@ fn send_callback(context: &CommandContext, drops: &[ItemStack], table_id: Option
             translation::java::COMMANDS_DROP_SUCCESS_MULTIPLE_WITH_TABLE,
             translation::bedrock::COMMANDS_LOOT_SUCCESS,
             [
-                TextComponent::text(count.to_string()),
+                TextComponent::text(count.len().to_string()),
                 TextComponent::text(table.to_string()),
             ],
         ),
         (count, None) => TextComponent::translate_cross(
             translation::java::COMMANDS_DROP_SUCCESS_MULTIPLE,
             translation::bedrock::COMMANDS_LOOT_SUCCESS,
-            [TextComponent::text(count.to_string())],
+            [TextComponent::text(count.len().to_string())],
         ),
     };
     context.source.send_feedback(msg, true);
@@ -588,11 +584,10 @@ impl CommandExecutor for LootExecutor {
                 for i in 0..count {
                     let s = slot + i;
                     if s < inventory.size() {
-                        let to_add = if i < drops.len() {
-                            drops[i].clone()
-                        } else {
-                            ItemStack::EMPTY.clone()
-                        };
+                        let to_add = drops
+                            .get(i)
+                            .cloned()
+                            .unwrap_or_else(|| ItemStack::EMPTY.clone());
                         inventory.set_stack(s, to_add.clone());
                         used_items.push(to_add);
                     }
