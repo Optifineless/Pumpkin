@@ -97,6 +97,14 @@ impl BlockBehaviour for FurnaceBlock {
         args: GetScreenHandlerFactoryArgs<'_>,
     ) -> Option<Box<dyn ScreenHandlerFactory>> {
         let block_entity = args.world.get_block_entity(args.position)?;
+        if !crate::block::entities::container_lock::can_open(
+            &*block_entity,
+            args.player,
+            args.world,
+            "container.furnace",
+        ) {
+            return None;
+        }
         let inventory = block_entity.clone().get_inventory()?;
         let property_delegate = block_entity.clone().to_property_delegate()?;
         let experience_container = block_entity.to_experience_container()?;

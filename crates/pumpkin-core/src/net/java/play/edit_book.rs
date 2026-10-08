@@ -58,6 +58,9 @@ impl JavaClient {
                 title,
                 author: player.gameprofile.name.clone(),
                 pages: pages.into_iter().map(TextComponent::text).collect(),
+                // ServerGamePacketListenerImpl.signBook writes generation 0 and a resolved book.
+                generation: 0,
+                resolved: true,
             };
             written_book.set_data_component(content);
             player.inventory().set_stack(slot as usize, written_book);

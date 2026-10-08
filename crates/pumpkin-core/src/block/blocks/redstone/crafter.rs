@@ -14,9 +14,7 @@ use crate::entity::Entity;
 use crate::entity::item::ItemEntity;
 use crate::world::World;
 use pumpkin_data::block_properties::{CrafterLikeProperties, HorizontalFacing, Orientation};
-use pumpkin_data::data_component_impl::UseRemainderImpl;
 use pumpkin_data::entity::EntityType;
-use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::translation;
 use pumpkin_data::world::WorldEvent;
@@ -117,13 +115,7 @@ impl CrafterBlock {
 
         let recipe = match_crafting_recipe(crafter, None);
         if let Some(recipe_result) = recipe
-            && let Some(item) = Item::from_registry_key(
-                recipe_result
-                    .item_id
-                    .strip_prefix("minecraft:")
-                    .unwrap_or(&recipe_result.item_id),
-            )
-            && recipe_result.count > 0
+            && !recipe_result.stack.is_empty()
         {
             let state = world.get_block_state(pos);
             let mut props = CrafterLikeProperties::from_state_id(state.id);
@@ -132,7 +124,7 @@ impl CrafterBlock {
             props.crafting = true;
             world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
 
-            let mut result_stack = ItemStack::new(recipe_result.count, item);
+            let mut result_stack = recipe_result.stack;
             if let Some(server) = world.server.upgrade() {
                 let mut event =
                     crate::plugin::api::events::block::crafter_craft::CrafterCraftEvent::new(
@@ -148,16 +140,9 @@ impl CrafterBlock {
             }
             Self::dispense_item(world, pos, crafter, &mut result_stack, props.orientation);
 
-            for i in 0..CrafterBlockEntity::INVENTORY_SIZE {
-                let stack = crafter.get_stack(i);
-                if !stack.is_empty()
-                    && let Some(remainder) = stack.get_data_component::<UseRemainderImpl>()
-                    && let Some(remainder_item) = remainder
-                        .remainder
-                        .as_deref()
-                        .and_then(Item::from_registry_key)
-                {
-                    let mut remainder_stack = ItemStack::new(1, remainder_item);
+            // CrafterBlock.dispenseFrom uses the matched recipe's remaining items.
+            for mut remainder_stack in recipe_result.remaining_items {
+                if !remainder_stack.is_empty() {
                     Self::dispense_item(
                         world,
                         pos,
@@ -360,3 +345,7 @@ impl BlockBehaviour for CrafterBlock {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "crafter_remainder_tests.rs"]
+mod remainder_tests;

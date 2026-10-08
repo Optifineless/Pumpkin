@@ -8,7 +8,6 @@ use pumpkin_data::data_component_impl::{
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::text::TextComponent;
 use pumpkin_util::version::JavaMinecraftVersion;
 use std::borrow::Cow;
 use std::io::Cursor;
@@ -215,8 +214,9 @@ fn decode_custom_name(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl
     let tag = cursor
         .get_nbt_with_version(&JavaMinecraftVersion::V_26_3)?
         .ok_or_else(|| ReadingError::Message("Missing CustomName NBT".into()))?;
-    let name = TextComponent::from_nbt(&tag);
-    Ok(CustomNameImpl { name }.to_dyn())
+    CustomNameImpl::read_data(&tag)
+        .map(DataComponentImpl::to_dyn)
+        .ok_or_else(|| ReadingError::Message("Invalid CustomName NBT".into()))
 }
 
 fn decode_item_name(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl>, ReadingError> {

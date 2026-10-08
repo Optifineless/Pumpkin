@@ -16,7 +16,7 @@ pub mod lighting;
 pub mod poi;
 pub mod session_lock;
 mod storage;
-pub use storage::{recover_temporaries, safe_replace_file, temporary_path};
+pub use storage::{recover_temporaries, replace, safe_replace_file, sync_parent, temporary_path};
 pub mod test_instance;
 pub mod tick;
 pub mod world;

@@ -21,6 +21,7 @@ use crate::{
 
 pub struct FurnaceBlockEntity {
     pub position: BlockPos,
+    pub lock: super::container_lock::ContainerLock,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
 
@@ -44,6 +45,7 @@ impl FurnaceBlockEntity {
     pub fn new(position: BlockPos) -> Self {
         Self {
             position,
+            lock: super::container_lock::ContainerLock::default(),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),

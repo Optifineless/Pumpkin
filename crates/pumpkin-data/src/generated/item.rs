@@ -4061,7 +4061,7 @@ impl Item {
                     attribute_modifiers: Cow::Borrowed(&[]),
                 },
             ),
-            (Bees, &BeesImpl),
+            (Bees, &BeesImpl::EMPTY),
             (
                 BlockState,
                 &BlockStateImpl {
@@ -4237,7 +4237,7 @@ impl Item {
                     attribute_modifiers: Cow::Borrowed(&[]),
                 },
             ),
-            (Bees, &BeesImpl),
+            (Bees, &BeesImpl::EMPTY),
             (
                 BlockState,
                 &BlockStateImpl {
@@ -5770,7 +5770,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -6204,7 +6210,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Black,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -7310,7 +7321,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -7744,7 +7761,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Blue,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -9736,7 +9758,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -10170,7 +10198,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Brown,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -11162,7 +11195,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -21457,7 +21496,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -21891,7 +21936,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Cyan,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -34667,7 +34717,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -35101,7 +35157,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Gray,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -35752,7 +35813,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -36186,7 +36253,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Green,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -42848,7 +42920,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -43282,7 +43360,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::LightBlue,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -43933,7 +44016,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -44367,7 +44456,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::LightGray,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -45266,7 +45360,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -45700,7 +45800,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Lime,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -46661,7 +46766,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -47095,7 +47206,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Magenta,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -55723,7 +55839,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -56157,7 +56279,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Orange,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -59838,7 +59965,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -60272,7 +60405,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Pink,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -65670,7 +65808,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -66104,7 +66248,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Purple,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -68026,7 +68175,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -68460,7 +68615,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Red,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -88027,7 +88187,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -88461,7 +88627,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::White,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -90595,7 +90766,13 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BundleContents, &BundleContentsImpl { items: Vec::new() }),
+            (
+                BundleContents,
+                &BundleContentsImpl {
+                    items: Vec::new(),
+                    selected_item: -1,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
@@ -91029,7 +91206,12 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (Dye, &DyeImpl),
+            (
+                Dye,
+                &DyeImpl {
+                    color: crate::dye_color::DyeColor::Yellow,
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {

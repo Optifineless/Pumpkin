@@ -2,7 +2,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::packet::clientbound::play::RECIPE_BOOK_ADD;
 use pumpkin_data::recipes::{
-    CookingRecipeType, CraftingRecipeTypes, RECIPES_COOKING, RECIPES_CRAFTING, RecipeCategoryTypes,
+    CookingRecipeType, CraftingRecipeTypes, RECIPES_COOKING, RecipeCategoryTypes,
     RecipeIngredientTypes, RecipeResultStruct,
 };
 use pumpkin_macros::java_packet;
@@ -13,6 +13,9 @@ use std::{collections::HashMap, io::Write};
 use crate::codec::item_stack_seralizer::ItemStackSerializer;
 use crate::{ClientPacket, VarInt, WritingError, ser::NetworkWriteExt};
 
+#[path = "recipe_book_transmute.rs"]
+mod transmute;
+
 // Recipe Display type IDs
 const RECIPE_DISPLAY_SHAPELESS: i32 = 0;
 const RECIPE_DISPLAY_SHAPED: i32 = 1;
@@ -22,7 +25,7 @@ const RECIPE_DISPLAY_FURNACE: i32 = 2;
 const SLOT_DISPLAY_EMPTY: u32 = 0;
 const SLOT_DISPLAY_ANY_FUEL: u32 = 1;
 const SLOT_DISPLAY_ITEM: u32 = 4;
-const SLOT_DISPLAY_ITEM_STACK: u32 = 5;
+pub(super) const SLOT_DISPLAY_ITEM_STACK: u32 = 5;
 const SLOT_DISPLAY_COMPOSITE: u32 = 10;
 
 const ENTRY_FLAG_NOTIFICATION: u8 = 0x01;
@@ -104,7 +107,10 @@ fn write_any_fuel_slot_display(
     Ok(())
 }
 
-fn resolve_item_tag(tag: &str, version: JavaMinecraftVersion) -> Option<Vec<&'static Item>> {
+pub(super) fn resolve_item_tag(
+    tag: &str,
+    version: JavaMinecraftVersion,
+) -> Option<Vec<&'static Item>> {
     let tag = tag.strip_prefix('#').unwrap_or(tag);
     let full_tag = if tag.contains(':') {
         Cow::Borrowed(tag)
@@ -191,7 +197,7 @@ fn write_ingredient_slot_display(
 /// Vanilla wire format for `ByteBufCodecs.holderSet(Registries.ITEM)`:
 ///   VarInt(0)     -> named tag reference (followed by `ResourceLocation`)
 ///   VarInt(n + 1) -> direct list of n item IDs
-fn write_ingredient_holderset(
+pub(super) fn write_ingredient_holderset(
     write: &mut impl Write,
     ingredient: &RecipeIngredientTypes,
     version: JavaMinecraftVersion,
@@ -409,31 +415,15 @@ fn write_entry(
                 };
                 write.write_u8(flags)?;
             }
-            CraftingRecipeTypes::CraftingTransmute {
-                category,
-                input,
-                material,
-                result,
-                ..
-            } => {
-                // Transmute shown as shapeless with 2 ingredients
-                write.write_var_int(&VarInt(display_id))?;
-                write.write_var_int(&VarInt(RECIPE_DISPLAY_SHAPELESS))?;
-                // 2 ingredients
-                write.write_var_int(&VarInt(2))?;
-                write_ingredient_slot_display(write, input, version)?;
-                write_ingredient_slot_display(write, material, version)?;
-                write_result_slot_display(write, result, version)?;
-                write_item_slot_display(write, crafting_table, version)?;
-                write_optional_var_int(write, group_id)?;
-                write.write_var_int(&VarInt(crafting_category(category)))?;
-                // craftingRequirements: input + material
-                write_crafting_requirements(write, &[input, material], version)?;
-                write.write_u8(flags)?;
-            }
             // Skip special/decorated_pot recipes as they have no useful display
             CraftingRecipeTypes::CraftingDecoratedPot { .. }
-            | CraftingRecipeTypes::CraftingSpecial => {
+            | CraftingRecipeTypes::CraftingTransmute { .. }
+            | CraftingRecipeTypes::CraftingSpecial
+            | CraftingRecipeTypes::FireworkRocket { .. }
+            | CraftingRecipeTypes::BookCloning { .. }
+            | CraftingRecipeTypes::BannerDuplicate { .. }
+            | CraftingRecipeTypes::Dye { .. }
+            | CraftingRecipeTypes::RepairItem => {
                 return Ok(false);
             }
         }
@@ -498,16 +488,7 @@ impl ClientPacket for CRecipeBookAdd<'_> {
             .ok_or_else(|| WritingError::Message("campfire item must exist".into()))?;
 
         // First pass - count and skip CraftingSpecial and CraftingDecoratedPot entries.
-        let crafting_count: usize = RECIPES_CRAFTING
-            .iter()
-            .filter(|r| {
-                !matches!(
-                    r,
-                    CraftingRecipeTypes::CraftingSpecial
-                        | CraftingRecipeTypes::CraftingDecoratedPot { .. }
-                )
-            })
-            .count();
+        let crafting_count = pumpkin_data::crafting_displays().count();
         let dynamic_count = self.dynamic_recipes.len();
         let total = crafting_count + RECIPES_COOKING.len() + dynamic_count;
 
@@ -520,7 +501,7 @@ impl ClientPacket for CRecipeBookAdd<'_> {
         let highlight = !self.replace;
 
         // Write crafting recipes
-        for recipe in RECIPES_CRAFTING {
+        for (recipe, material_count) in pumpkin_data::crafting_displays() {
             let (group, notification) = match recipe {
                 CraftingRecipeTypes::CraftingShaped {
                     group,
@@ -528,14 +509,31 @@ impl ClientPacket for CRecipeBookAdd<'_> {
                     ..
                 } => (group.map(Cow::Borrowed), *show_notification),
                 CraftingRecipeTypes::CraftingShapeless { group, .. }
-                | CraftingRecipeTypes::CraftingTransmute { group, .. } => {
-                    (group.map(Cow::Borrowed), true)
-                }
+                | CraftingRecipeTypes::CraftingTransmute { group, .. }
+                | CraftingRecipeTypes::Dye { group, .. } => (group.map(Cow::Borrowed), true),
                 CraftingRecipeTypes::CraftingDecoratedPot { .. }
-                | CraftingRecipeTypes::CraftingSpecial => (None, true),
+                | CraftingRecipeTypes::CraftingSpecial
+                | CraftingRecipeTypes::FireworkRocket { .. }
+                | CraftingRecipeTypes::BookCloning { .. }
+                | CraftingRecipeTypes::BannerDuplicate { .. }
+                | CraftingRecipeTypes::RepairItem => (None, true),
             };
             let group_id = resolve_group_id_owned(&mut group_ids, &mut next_group_id, group);
             let flags = entry_flags(self.replace, notification, highlight);
+            if matches!(
+                recipe,
+                CraftingRecipeTypes::CraftingTransmute { .. } | CraftingRecipeTypes::Dye { .. }
+            ) {
+                transmute::write_entry(
+                    &mut write,
+                    (display_id, *version, group_id, flags),
+                    recipe,
+                    material_count,
+                    crafting_table,
+                )?;
+                display_id += 1;
+                continue;
+            }
             let written = write_entry(
                 &mut write,
                 display_id,
@@ -955,6 +953,7 @@ mod tests {
         let result = RecipeResultStruct {
             id: "minecraft:air",
             count: 1,
+            components: None,
         };
         for version in [JavaMinecraftVersion::V_1_21_2, JavaMinecraftVersion::V_26_3] {
             let mut bytes = Vec::new();

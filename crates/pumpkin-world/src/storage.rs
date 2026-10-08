@@ -16,7 +16,6 @@ pub fn temporary_path(path: &Path) -> PathBuf {
 #[cfg_attr(
     not(unix),
     expect(
-        clippy::unnecessary_wraps,
         clippy::missing_const_for_fn,
         reason = "the Unix build does real I/O here; keep one signature for both platforms"
     )
@@ -173,11 +172,13 @@ impl Drop for TemporaryFile {
 }
 
 #[cfg(not(windows))]
+/// Publishes a prepared file, replacing an existing destination.
 pub fn replace(from: &Path, to: &Path) -> io::Result<()> {
     fs::rename(from, to)
 }
 
 #[cfg(windows)]
+/// Publishes a prepared file with Windows write-through replacement.
 pub fn replace(from: &Path, to: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "kernel32")]

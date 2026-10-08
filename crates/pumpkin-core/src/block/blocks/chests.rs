@@ -183,6 +183,30 @@ fn get_chest_screen_handler_factory(
         ChestType::Right => Some(chest_props.facing.rotate_counter_clockwise()),
     };
 
+    if let Some(entity) = &first_chest
+        && !crate::block::entities::container_lock::can_open(
+            &**entity,
+            args.player,
+            args.world,
+            "container.chest",
+        )
+    {
+        return None;
+    }
+    if let Some(direction) = connected_towards
+        && let Some(entity) = args
+            .world
+            .get_block_entity(&args.position.offset(direction.to_offset()))
+        && !crate::block::entities::container_lock::can_open(
+            &*entity,
+            args.player,
+            args.world,
+            "container.chest",
+        )
+    {
+        return None;
+    }
+
     let unpack = |entity: &Arc<dyn BlockEntity>| {
         if let Some((loot_key, seed)) = entity.take_loot_table()
             && let Some(table) = args.world.get_loot_table(&loot_key)

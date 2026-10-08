@@ -792,7 +792,7 @@ impl ToTokens for ItemComponents {
             tokens.extend(quote! { (BannerPatterns, &BannerPatternsImpl::EMPTY), });
         }
         if self.bees.is_some() {
-            tokens.extend(quote! { (Bees, &BeesImpl), });
+            tokens.extend(quote! { (Bees, &BeesImpl::EMPTY), });
         }
         if let Some(block_state) = &self.block_state {
             let mut entries = TokenStream::new();
@@ -822,7 +822,7 @@ impl ToTokens for ItemComponents {
             tokens.extend(quote! { (BucketEntityData, &BucketEntityDataImpl { nbt: None }), });
         }
         if self.bundle_contents.is_some() {
-            tokens.extend(quote! { (BundleContents, &BundleContentsImpl { items: Vec::new() }), });
+            tokens.extend(quote! { (BundleContents, &BundleContentsImpl { items: Vec::new(), selected_item: -1 }), });
         }
         if self.charged_projectiles.is_some() {
             tokens.extend(quote! { (ChargedProjectiles, &ChargedProjectilesImpl { projectiles: Vec::new() }), });
@@ -855,8 +855,10 @@ impl ToTokens for ItemComponents {
         if self.debug_stick_state.is_some() {
             tokens.extend(quote! { (DebugStickState, &DebugStickStateImpl), });
         }
-        if self.dye.is_some() {
-            tokens.extend(quote! { (Dye, &DyeImpl), });
+        if let Some(dye) = &self.dye {
+            let color = format_ident!("{}", dye.as_str().unwrap().to_pascal_case());
+            tokens
+                .extend(quote! { (Dye, &DyeImpl { color: crate::dye_color::DyeColor::#color }), });
         }
         if self.brewing_fuel.is_some() {
             tokens.extend(quote! { (BrewingFuel, &BrewingFuelImpl), });
@@ -2050,6 +2052,10 @@ pub fn build() -> TokenStream {
         .map(|item| (item.registry_key.clone(), item.id))
         .collect();
 
+    let existing_item_source =
+        fs::read_to_string(std::path::Path::new(crate::OUT_DIR).join("item.rs"))
+            .unwrap_or_default();
+    let existing_definitions = crate::item_nbt::existing_definitions(&existing_item_source);
     for item in bedrock_item_definitions {
         let const_ident = format_ident!(
             "{}",
@@ -2072,8 +2078,11 @@ pub fn build() -> TokenStream {
         );
         let component_based = item.component_based;
 
-        let components_bytes_lit =
-            LitByteStr::new(&item.components.write_bedrock(), Span::call_site());
+        let bytes = crate::item_nbt::definition_bytes(
+            existing_definitions.get(&registry_key).map(Vec::as_slice),
+            item.components,
+        );
+        let components_bytes_lit = LitByteStr::new(&bytes, Span::call_site());
 
         bedrock_constants.extend(quote! {
             pub const #const_ident: Self = Self {

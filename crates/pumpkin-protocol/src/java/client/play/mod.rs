@@ -300,6 +300,7 @@ pub use move_vehicle::*;
 mod recipe_book_remove;
 pub use recipe_book_remove::*;
 
+mod recipe_properties;
 mod update_recipes;
 pub use update_recipes::*;
 

@@ -70,8 +70,11 @@ pub struct ContainerImpl {
     pub items: Vec<(u8, crate::item_stack::ItemStack)>,
 }
 impl PartialEq for ContainerImpl {
-    fn eq(&self, _other: &Self) -> bool {
-        false
+    fn eq(&self, other: &Self) -> bool {
+        self.items.len() == other.items.len()
+            && self.items.iter().zip(&other.items).all(|((i, a), (j, b))| {
+                i == j && a.item_count == b.item_count && a.are_items_and_components_equal(b)
+            })
     }
 }
 impl Eq for ContainerImpl {}
@@ -175,16 +178,7 @@ impl DataComponentImpl for BlockStateImpl {
     default_impl!(BlockState);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BeesImpl;
-impl BeesImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
-    }
-}
-impl DataComponentImpl for BeesImpl {
-    default_impl!(Bees);
-}
+pub use super::bees::{BeeOccupant, BeesImpl};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ContainerLootImpl {

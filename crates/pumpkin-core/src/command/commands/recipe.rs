@@ -8,7 +8,7 @@ use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::command::suggestion::provider::{SuggestionProvider, SuggestionProviderResult};
 use crate::command::suggestion::suggestions::SuggestionsBuilder;
 use crate::entity::EntityBase;
-use pumpkin_data::recipes::{CraftingRecipeTypes, RECIPES_COOKING, RECIPES_CRAFTING};
+use pumpkin_data::recipes::RECIPES_COOKING;
 use pumpkin_data::translation;
 use pumpkin_protocol::codec::recipe::DynamicRecipe;
 use pumpkin_protocol::codec::var_int::VarInt;
@@ -159,16 +159,7 @@ impl CommandExecutor for RecipeTakeExecutor {
 
         let all_recipes = server.recipe_manager.get_dynamic_recipes_internal();
 
-        let crafting_display_count = RECIPES_CRAFTING
-            .iter()
-            .filter(|r| {
-                !matches!(
-                    r,
-                    CraftingRecipeTypes::CraftingSpecial
-                        | CraftingRecipeTypes::CraftingDecoratedPot { .. }
-                )
-            })
-            .count();
+        let crafting_display_count = pumpkin_data::crafting_displays().count();
 
         let dynamic_recipe_offset = crafting_display_count + RECIPES_COOKING.len();
 

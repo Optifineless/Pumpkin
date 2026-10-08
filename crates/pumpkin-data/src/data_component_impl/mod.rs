@@ -538,11 +538,15 @@ pub enum IdOr<T> {
 }
 
 pub mod basic;
+mod bees;
 pub mod block_entity;
 pub mod book;
 pub mod combat;
+#[cfg(test)]
+mod custom_name_tests;
 pub mod entity_variant;
 pub mod instrument;
+mod text_component_codec;
 pub use instrument::InstrumentImpl;
 pub mod food;
 pub mod utility;
@@ -975,3 +979,6 @@ mod tests {
         assert_round_trip(SwingAnimationImpl::DEFAULT, SwingAnimationImpl::read_data);
     }
 }
+
+mod bundle_contents;
+pub use bundle_contents::BundleContentsImpl;

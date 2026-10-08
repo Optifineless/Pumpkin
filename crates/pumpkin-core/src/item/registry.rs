@@ -38,7 +38,7 @@ impl ItemRegistry {
         self.on_use_with_rotation(stack, player, yaw, pitch, hand);
     }
 
-    /// Reports whether shared consumption or bucket/bottle hooks count successful use.
+    /// Reports whether consumption or item hooks count successful use.
     /// Dispatchers must skip their initial use statistic for these stacks.
     #[must_use]
     pub fn records_item_use_stat(&self, stack: &ItemStack) -> bool {
@@ -55,6 +55,8 @@ impl ItemRegistry {
                 || behaviour.is::<super::items::glass_bottle::GlassBottleItem>()
                 // FishingRodItem.use awards the cast itself (both hands).
                 || behaviour.is::<super::items::fishing_rod::FishingRodItem>()
+                // BundleItem.dropContent counts successful drops, not starting use.
+                || behaviour.is::<super::items::bundle::BundleItem>()
         })
     }
 

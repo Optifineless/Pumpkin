@@ -12,6 +12,9 @@ mod book_components;
 #[cfg(test)]
 #[path = "component_crash_tests.rs"]
 mod component_crash_tests;
+#[cfg(test)]
+#[path = "custom_name_wire_tests.rs"]
+mod custom_name_wire_tests;
 
 use std::borrow::Cow;
 
@@ -342,7 +345,7 @@ impl DataComponentCodec<Self> for ItemModelImpl {
 impl DataComponentCodec<Self> for CustomNameImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
         let mut bytes = Vec::new();
-        NbtTag::String(self.name.clone().get_text().into_boxed_str())
+        self.write_data()
             .serialize(&mut NbtWriteHelperJava::new(&mut bytes))
             .map_err(|e| WritingError::Message(e.to_string()))?;
         seq.write_slice(&bytes)?;
@@ -351,11 +354,9 @@ impl DataComponentCodec<Self> for CustomNameImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let tag = seq.get_nbt_with_version(&pumpkin_util::version::JavaMinecraftVersion::V_26_2)?;
-        let name = tag.as_ref().map_or_else(
-            pumpkin_util::text::TextComponent::empty,
-            pumpkin_util::text::TextComponent::from_nbt,
-        );
-        Ok(Self { name })
+        tag.as_ref()
+            .and_then(Self::read_data)
+            .ok_or_else(|| ReadingError::Message("Invalid custom name component".into()))
     }
 }
 
@@ -1323,7 +1324,10 @@ impl DataComponentCodec<Self> for BundleContentsImpl {
         for _ in 0..len {
             items.push(deserialize_item_stack_template(seq)?);
         }
-        Ok(Self { items })
+        Ok(Self {
+            items,
+            selected_item: -1,
+        })
     }
 }
 
@@ -2047,12 +2051,16 @@ impl DataComponentCodec<Self> for AdditionalTradeCostImpl {
 
 impl DataComponentCodec<Self> for DyeImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt(0))
+        seq.write_var_int(&VarInt(i32::from(self.color.id())))
     }
-
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _ = seq.get_var_int()?;
-        Ok(Self)
+        // DyeColor.STREAM_CODEC uses its numeric id.
+        let id = seq.get_var_int()?.0;
+        let color = u8::try_from(id)
+            .ok()
+            .and_then(pumpkin_data::dye_color::DyeColor::by_id)
+            .unwrap_or(pumpkin_data::dye_color::DyeColor::White);
+        Ok(Self { color })
     }
 }
 
@@ -2539,19 +2547,33 @@ impl DataComponentCodec<Self> for BlockStateImpl {
 
 impl DataComponentCodec<Self> for BeesImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt(0))
+        // Bees.STREAM_CODEC -> BeehiveBlockEntity.Occupant.STREAM_CODEC.
+        seq.write_var_int(&VarInt(self.bees.len() as i32))?;
+        for bee in &self.bees {
+            EntityDataImpl {
+                nbt: Some(bee.entity_data.clone()),
+            }
+            .serialize(seq)?;
+            seq.write_var_int(&VarInt(bee.ticks_in_hive))?;
+            seq.write_var_int(&VarInt(bee.min_ticks_in_hive))?;
+        }
+        Ok(())
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let len = seq.get_var_int()?.0 as usize;
-        let _ = crate::ser::collection_capacity(len)?;
+        let mut bees = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for _ in 0..len {
-            let _entity_type = seq.get_var_int()?;
-            let _nbt = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_2)?;
-            let _ticks = seq.get_var_int()?;
-            let _min_ticks = seq.get_var_int()?;
+            let entity_data = EntityDataImpl::deserialize(seq)?
+                .nbt
+                .ok_or_else(|| ReadingError::Message("Missing bee entity data".into()))?;
+            bees.push(BeeOccupant {
+                entity_data,
+                ticks_in_hive: seq.get_var_int()?.0,
+                min_ticks_in_hive: seq.get_var_int()?.0,
+            });
         }
-        Ok(Self)
+        Ok(Self { bees })
     }
 }
 

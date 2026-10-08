@@ -79,6 +79,14 @@ impl BlockBehaviour for BarrelBlock {
         args: GetScreenHandlerFactoryArgs<'_>,
     ) -> Option<Box<dyn ScreenHandlerFactory>> {
         let block_entity = args.world.get_block_entity(args.position)?;
+        if !crate::block::entities::container_lock::can_open(
+            &*block_entity,
+            args.player,
+            args.world,
+            "container.barrel",
+        ) {
+            return None;
+        }
         let inventory = block_entity.get_inventory()?;
         Some(Box::new(BarrelScreenFactory(inventory)))
     }

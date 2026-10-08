@@ -87,6 +87,8 @@ pub struct WrittenBookContentImpl {
     pub title: String,
     pub author: String,
     pub pages: Vec<TextComponent>,
+    pub generation: i32,
+    pub resolved: bool,
 }
 impl WrittenBookContentImpl {
     pub fn read_data(tag: &NbtTag) -> Option<Self> {
@@ -128,10 +130,20 @@ impl WrittenBookContentImpl {
                 }
             }
         }
+        // WrittenBookContent.CODEC bounds generation by MAX_GENERATION (3).
+        let generation = tag.extract_compound()?.get_int("generation").unwrap_or(0);
+        if !(0..=3).contains(&generation) {
+            return None;
+        }
         Some(Self {
             title,
             author,
             pages,
+            generation,
+            resolved: tag
+                .extract_compound()?
+                .get_bool("resolved")
+                .unwrap_or(false),
         })
     }
 }
@@ -140,6 +152,8 @@ impl DataComponentImpl for WrittenBookContentImpl {
         let mut compound = NbtCompound::new();
         compound.put("title", text_tag(&self.title));
         compound.put_string("author", self.author.clone());
+        compound.put_int("generation", self.generation);
+        compound.put_bool("resolved", self.resolved);
         let pages_tags: Vec<NbtTag> = self.pages.iter().map(text_component_tag).collect();
         compound.put("pages", NbtTag::List(pages_tags));
         NbtTag::Compound(compound)
@@ -272,6 +286,8 @@ mod tests {
         let content = WrittenBookContentImpl {
             title: "Title".to_string(),
             author: "Author".to_string(),
+            generation: 1,
+            resolved: true,
             pages: vec![TextComponent::text("one"), TextComponent::text("two")],
         };
         let tag = content.write_data();

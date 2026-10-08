@@ -15,6 +15,7 @@ use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
 
 pub struct ShulkerBoxBlockEntity {
     pub position: BlockPos,
+    pub lock: super::container_lock::ContainerLock,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
@@ -24,6 +25,9 @@ pub struct ShulkerBoxBlockEntity {
 }
 
 impl BlockEntity for ShulkerBoxBlockEntity {
+    fn container_lock(&self) -> Option<pumpkin_data::data_component_impl::LockImpl> {
+        self.lock.get()
+    }
     fn resource_location(&self) -> &'static str {
         Self::ID
     }
@@ -38,6 +42,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     {
         let mut shulker_box = Self {
             position,
+            lock: super::container_lock::ContainerLock::from_nbt(nbt),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -56,6 +61,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.lock.write_nbt(nbt);
         self.write_inventory_nbt(nbt, true);
     }
 
@@ -73,6 +79,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     }
 
     fn collect_item_components(&self, stack: &mut ItemStack) {
+        self.lock.collect(stack);
         let items = self
             .items
             .read()
@@ -90,6 +97,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     }
 
     fn apply_item_components(&self, stack: &ItemStack) {
+        self.lock.apply(stack);
         let Some(container) = stack.get_data_component::<ContainerImpl>() else {
             return;
         };
@@ -166,6 +174,7 @@ impl ShulkerBoxBlockEntity {
     pub fn new(position: BlockPos) -> Self {
         Self {
             position,
+            lock: super::container_lock::ContainerLock::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),

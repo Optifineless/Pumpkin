@@ -14,9 +14,31 @@ impl JavaClient {
             return;
         }
 
-        debug!(
-            "Bundle item selected: Slot ID {}, Selected Item Index {}",
-            packet.slot_id.0, selected_item_index
-        );
+        // AbstractContainerMenu.setSelectedBundleItemIndex -> BundleItem.toggleSelectedItem.
+        let menu = player
+            .current_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let menu = menu
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Ok(index) = usize::try_from(packet.slot_id.0)
+            && let Some(slot) = menu.get_behaviour().slots.get(index)
+        {
+            let mut stack = slot.get_stack();
+            if let Some(contents) = stack
+                .get_data_component_mut::<pumpkin_data::data_component_impl::BundleContentsImpl>()
+            {
+                contents.selected_item = if contents.selected_item != selected_item_index
+                    && usize::try_from(selected_item_index).is_ok_and(|i| i < contents.items.len())
+                {
+                    selected_item_index
+                } else {
+                    -1
+                };
+                slot.set_stack(stack);
+            }
+        }
     }
 }

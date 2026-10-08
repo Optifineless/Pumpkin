@@ -18,9 +18,14 @@ use style::Style;
 
 pub mod click;
 pub mod color;
+pub mod component_codec;
 pub mod hover;
 pub mod legacy;
 pub mod style;
+mod translatable;
+
+#[cfg(test)]
+mod component_codec_tests;
 
 /// Represents a Minecraft chat component.
 ///
@@ -112,6 +117,9 @@ impl TextComponentBase {
     ) -> pumpkin_nbt::NbtCompound {
         let mut compound = pumpkin_nbt::NbtCompound::new();
         match &*self.content {
+            TextContent::Opaque { component } | TextContent::Translatable { component } => {
+                compound = component.0.clone();
+            }
             TextContent::Text { text } => {
                 compound.put_string("text", text.to_string());
             }
@@ -398,11 +406,15 @@ impl TextComponentBase {
         }
 
         if !self.extra.is_empty() {
-            let list = self
-                .extra
-                .iter()
-                .map(|e| e.to_nbt_tag_for_version(version))
-                .collect();
+            let mut list = if matches!(
+                &*self.content,
+                TextContent::Opaque { .. } | TextContent::Translatable { .. }
+            ) {
+                compound.get_list("extra").unwrap_or_default().to_vec()
+            } else {
+                Vec::new()
+            };
+            list.extend(self.extra.iter().map(|e| e.to_nbt_tag_for_version(version)));
             compound.put_list("extra", list);
         }
 
@@ -443,6 +455,11 @@ impl TextComponentBase {
         let mut map = serde_json::Map::new();
 
         match &*self.content {
+            TextContent::Opaque { component } | TextContent::Translatable { component } => {
+                if let serde_json::Value::Object(value) = nbt_compound_to_json(&component.0) {
+                    map = value;
+                }
+            }
             TextContent::Text { text } => {
                 map.insert(
                     "text".to_string(),
@@ -880,11 +897,22 @@ impl TextComponentBase {
         }
 
         if !self.extra.is_empty() {
-            let list: Vec<serde_json::Value> = self
-                .extra
-                .iter()
-                .map(|e| e.to_json_value_for_version(version))
-                .collect();
+            let mut list = if matches!(
+                &*self.content,
+                TextContent::Opaque { .. } | TextContent::Translatable { .. }
+            ) {
+                map.get("extra")
+                    .and_then(serde_json::Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            list.extend(
+                self.extra
+                    .iter()
+                    .map(|e| e.to_json_value_for_version(version)),
+            );
             map.insert("extra".to_string(), serde_json::Value::Array(list));
         }
 
@@ -904,6 +932,21 @@ fn nbt_compound_to_json(compound: &pumpkin_nbt::NbtCompound) -> serde_json::Valu
         map.insert(k.to_string(), nbt_tag_to_json(v));
     }
     serde_json::Value::Object(map)
+}
+
+fn opaque_text(component: &pumpkin_nbt::NbtCompound) -> String {
+    let mut text = component
+        .get_string("text")
+        .or_else(|| component.get_string("fallback"))
+        .or_else(|| component.get_string("translate"))
+        .unwrap_or_default()
+        .to_owned();
+    if let Some(children) = component.get_list("extra") {
+        for child in children {
+            text.push_str(&TextComponent::from_nbt(child).get_text());
+        }
+    }
+    text
 }
 
 fn nbt_tag_to_json(tag: &pumpkin_nbt::tag::NbtTag) -> serde_json::Value {
@@ -984,6 +1027,10 @@ impl TextComponentBase {
         }
 
         let mut text = match *self.content {
+            TextContent::Translatable { component } => {
+                translatable::get_text(&component.0, Locale::EnUs)
+            }
+            TextContent::Opaque { component } => opaque_text(&component.0),
             TextContent::Text { text } => text.into_owned(),
             TextContent::Translate {
                 translate, with, ..
@@ -1036,6 +1083,10 @@ impl TextComponentBase {
         let mut text = String::new();
 
         match &*self.content {
+            TextContent::Translatable { component } => {
+                text.push_str(&translatable::get_text(&component.0, Locale::EnUs));
+            }
+            TextContent::Opaque { component } => text.push_str(&opaque_text(&component.0)),
             TextContent::Text { text: t } => text.push_str(t),
             TextContent::Translate {
                 translate,
@@ -1101,6 +1152,10 @@ impl TextComponentBase {
 
         // 2. Resolve Content
         match &*self.content {
+            TextContent::Translatable { component } => {
+                text.push_str(&translatable::get_text(&component.0, locale));
+            }
+            TextContent::Opaque { component } => text.push_str(&opaque_text(&component.0)),
             TextContent::Text { text: t } => text.push_str(t),
             TextContent::Translate {
                 translate,
@@ -1143,6 +1198,8 @@ impl TextComponentBase {
     #[must_use]
     pub fn get_text(self, locale: Locale) -> String {
         let mut text = match *self.content {
+            TextContent::Translatable { component } => translatable::get_text(&component.0, locale),
+            TextContent::Opaque { component } => opaque_text(&component.0),
             TextContent::Text { text } => text.into_owned(),
             TextContent::Translate {
                 translate,
@@ -1322,7 +1379,7 @@ impl TextComponent {
     /// Parses a text component from its NBT representation
     #[must_use]
     pub fn from_nbt(tag: &pumpkin_nbt::tag::NbtTag) -> Self {
-        serde_json::from_value(nbt_tag_to_json(tag)).unwrap_or_else(|_| Self::empty())
+        component_codec::read_component(tag).unwrap_or_else(Self::empty)
     }
 
     /// Creates a new text component with plain text content.
@@ -2011,6 +2068,12 @@ impl std::hash::Hash for ProfileNbt {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum TextContent {
+    /// `ComponentSerialization` contents preserved for client-side interpretation.
+    #[serde(skip)]
+    Opaque { component: ProfileNbt },
+    /// `TranslatableContents` retaining fallback, boxed NBT arguments and unmodeled styles.
+    #[serde(skip)]
+    Translatable { component: ProfileNbt },
     /// Raw, untranslated text.
     Text { text: Cow<'static, str> },
     /// Text that should be translated on the client.

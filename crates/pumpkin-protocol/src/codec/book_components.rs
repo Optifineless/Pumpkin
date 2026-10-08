@@ -64,7 +64,7 @@ impl DataComponentCodec<Self> for WrittenBookContentImpl {
         write_utf8_string(seq, &self.title, TITLE_MAX_LENGTH)?;
         seq.write_bool(false)?;
         write_utf8_string(seq, &self.author, MAX_STRING_LENGTH)?;
-        seq.write_var_int(&VarInt(0))?;
+        seq.write_var_int(&VarInt(self.generation))?;
         let count = i32::try_from(self.pages.len())
             .map_err(|_| WritingError::Message("Too many written book pages".into()))?;
         seq.write_var_int(&VarInt(count))?;
@@ -72,7 +72,7 @@ impl DataComponentCodec<Self> for WrittenBookContentImpl {
             seq.write_slice(&page.encode_for_version(&JavaMinecraftVersion::V_26_3))?;
             seq.write_bool(false)?;
         }
-        seq.write_bool(true)
+        seq.write_bool(self.resolved)
     }
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let title = seq.get_str_bounded(TITLE_MAX_LENGTH)?.to_string();
@@ -102,11 +102,13 @@ impl DataComponentCodec<Self> for WrittenBookContentImpl {
             }
             pages.push(TextComponent::from_nbt(&tag));
         }
-        let _resolved = seq.get_bool()?;
+        let resolved = seq.get_bool()?;
         Ok(Self {
             title,
             author,
             pages,
+            generation,
+            resolved,
         })
     }
 }

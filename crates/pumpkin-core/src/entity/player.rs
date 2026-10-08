@@ -26,7 +26,6 @@ use crossbeam::channel::Receiver;
 use crossbeam::queue::SegQueue;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_inventory::Inventory;
-use pumpkin_inventory::merchant::merchant_screen_handler::MerchantScreenHandler;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
 use pumpkin_protocol::RawPacket;
 use pumpkin_protocol::bedrock::client::play_status::CPlayStatus;
@@ -2301,16 +2300,14 @@ impl Player {
             drop(current_screen_handler_guard);
             let is_invalid = current_screen_handler
                 .try_lock()
-                .is_ok_and(|screen_handler| {
-                    screen_handler.as_any().is::<MerchantScreenHandler>()
-                        && !screen_handler.can_use(self)
-                });
+                .is_ok_and(|screen_handler| !screen_handler.can_use(self));
 
             if is_invalid {
                 if let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id) {
                     p.close_handled_screen();
                 }
             } else if let Ok(mut screen_handler) = current_screen_handler.try_lock() {
+                screen_handler.tick(self);
                 screen_handler.send_content_updates();
             }
         }
@@ -4747,17 +4744,12 @@ impl Player {
                             direction: icon_direction,
                             display_name: None,
                         }];
-                        icons.extend(map_data.decorations.iter().map(|decoration| {
-                            MapIcon {
-                                icon_type: VarInt(decoration.icon_type),
-                                x: decoration.x,
-                                z: decoration.z,
-                                direction: decoration.direction,
-                                display_name: decoration
-                                    .display_name
-                                    .as_ref()
-                                    .map(|name| TextComponent::text(name.clone())),
-                            }
+                        icons.extend(map_data.decorations.iter().map(|decoration| MapIcon {
+                            icon_type: VarInt(decoration.icon_type),
+                            x: decoration.x,
+                            z: decoration.z,
+                            direction: decoration.direction,
+                            display_name: decoration.display_name.clone(),
                         }));
 
                         let data = map_data.dirty.then(|| MapPatch {
@@ -5377,10 +5369,8 @@ impl Player {
         }
 
         if !can_use {
-            warn!(
-                "Player {} interacted with invalid menu {:?}",
-                self.gameprofile.name, window_type
-            );
+            // ServerPlayer.doTick / ServerGamePacketListenerImpl.handleContainerClick.
+            self.close_handled_screen();
             return;
         }
 
@@ -7024,6 +7014,19 @@ impl MessageCache {
 }
 
 impl InventoryPlayer for Player {
+    fn play_bundle_sound(&self, sound: Sound) {
+        crate::item::items::bundle::play_bundle_sound(self, sound);
+    }
+    fn sync_recipe_properties(&self) {
+        crate::entity::recipe_properties::sync(self);
+    }
+    fn map_crafting_state(&self, stack: &ItemStack) -> Option<(i8, bool)> {
+        crate::item::items::map_crafting::saved_state(self, stack)
+    }
+    fn process_crafted_map(&self, stack: &mut ItemStack) {
+        crate::item::items::map_crafting::on_crafted_post_process(self, stack);
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

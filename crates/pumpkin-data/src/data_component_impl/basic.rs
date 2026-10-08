@@ -103,20 +103,32 @@ impl DataComponentImpl for UnbreakableImpl {
     default_impl!(Unbreakable);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct CustomNameImpl {
     pub name: TextComponent,
 }
+impl PartialEq for CustomNameImpl {
+    fn eq(&self, other: &Self) -> bool {
+        // DataComponentExactPredicate.test uses Component.equals, including contents and style.
+        super::text_component_codec::canonical_component(&self.write_data())
+            == super::text_component_codec::canonical_component(&other.write_data())
+    }
+}
+impl Eq for CustomNameImpl {}
+impl std::hash::Hash for CustomNameImpl {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        super::text_component_codec::canonical_component(&self.write_data()).hash(state);
+    }
+}
 impl CustomNameImpl {
     pub fn read_data(data: &NbtTag) -> Option<Self> {
-        data.extract_string().map(|name| Self {
-            name: TextComponent::text(name.to_string()),
-        })
+        super::text_component_codec::read_component(data).map(|name| Self { name })
     }
 }
 impl DataComponentImpl for CustomNameImpl {
     fn write_data(&self) -> NbtTag {
-        NbtTag::String(self.name.clone().get_text().into())
+        // DataComponents.CUSTOM_NAME uses ComponentSerialization.CODEC, without translation.
+        super::text_component_codec::write_component(&self.name)
     }
     fn get_hash(&self) -> i32 {
         get_str_hash(self.name.clone().get_text().as_str()) as i32

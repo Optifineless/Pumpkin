@@ -197,6 +197,8 @@ pub fn component_copy_supported(name: &str) -> bool {
             | "map_post_processing"
             | "block_entity_data"
             | "bundle_contents"
+            // CopyComponentsFunction.run copies BeehiveBlockEntity's typed occupants unchanged.
+            | "bees"
             | "container"
             | "block_state"
             | "profile"

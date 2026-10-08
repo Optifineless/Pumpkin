@@ -20,6 +20,12 @@ mod context_tests;
 mod functions;
 mod number_provider;
 mod predicates;
+
+/// Uses the existing item predicate engine for a container key, rejecting unsupported predicates.
+pub(crate) fn matches_container_lock(predicate: &serde_json::Value, stack: &ItemStack) -> bool {
+    // LockCode uses the same ItemPredicate as loot conditions.
+    predicates::item_predicate(predicate, stack).unwrap_or(false)
+}
 #[cfg(test)]
 mod production_tests;
 #[cfg(test)]

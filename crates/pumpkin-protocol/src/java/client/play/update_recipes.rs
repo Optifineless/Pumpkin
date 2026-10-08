@@ -12,6 +12,12 @@ pub struct CUpdateRecipes<'a> {
 }
 
 impl<'a> CUpdateRecipes<'a> {
+    /// Encodes the 26.3 recipe property sets and stonecutter choices in menu order.
+    /// The version must be `V_26_3`, matching the property and display schema.
+    pub fn vanilla_inventory_data(version: JavaMinecraftVersion) -> Result<Vec<u8>, WritingError> {
+        super::recipe_properties::encode(version)
+    }
+
     #[must_use]
     pub const fn new(raw_data: &'a [u8]) -> Self {
         Self { raw_data }
