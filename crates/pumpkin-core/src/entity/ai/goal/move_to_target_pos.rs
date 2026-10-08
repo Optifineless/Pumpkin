@@ -77,18 +77,17 @@ impl<M: MoveToTargetPos> MoveToTargetPosGoal<M> {
                         {
                             let world = mob.get_entity().world.load_full();
 
-                            let can_target =
-                                self.move_to_target_pos
-                                    .get()
-                                    .is_some_and(|move_to_target_pos| {
-                                        move_to_target_pos.is_target_pos(world, block_pos_mut)
-                                    });
-
-                            if mob
+                            // MoveToBlockGoal.findNearestBlock checks home before the stateful validator.
+                            let can_target = mob
                                 .get_mob_entity()
                                 .is_in_position_target_range_pos(&block_pos_mut)
-                                && can_target
-                            {
+                                && self.move_to_target_pos.get().is_some_and(
+                                    |move_to_target_pos| {
+                                        move_to_target_pos.is_target_pos(world, block_pos_mut)
+                                    },
+                                );
+
+                            if can_target {
                                 self.target_pos = block_pos_mut;
                                 return true;
                             }

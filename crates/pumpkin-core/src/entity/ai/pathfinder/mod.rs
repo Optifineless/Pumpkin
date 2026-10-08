@@ -931,9 +931,9 @@ impl PathNavigationTrait for GroundPathNavigation {
         pos: &BlockPos,
         _entity: &dyn EntityBase,
     ) -> bool {
-        // StriderPathNavigation.isStableDestination.
+        // PathNavigation.isStableDestination, with StriderPathNavigation's lava exception.
         self.inner.stands_on_lava && world.get_block(pos) == &pumpkin_data::Block::LAVA
-            || world.get_block_state(&pos.down()).is_solid()
+            || world.get_block_state(&pos.down()).is_solid_render()
     }
 
     fn path_type_at(&mut self, entity: &LivingEntity, pos: BlockPos) -> PathType {

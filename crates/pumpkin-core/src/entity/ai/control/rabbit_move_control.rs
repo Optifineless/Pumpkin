@@ -16,9 +16,12 @@ pub struct RabbitMoveControl {
 impl RabbitMoveControl {
     #[must_use]
     pub fn new(rabbit: Weak<RabbitEntity>) -> Self {
+        let mut inner = MoveControl::default();
+        // Rabbit's constructor calls setSpeedModifier(0), publishing an initial MOVE_TO.
+        inner.set_wanted_position(0.0, 0.0, 0.0, 0.0);
         Self {
             rabbit,
-            inner: MoveControl::default(),
+            inner,
             next_jump_speed: 0.0,
         }
     }

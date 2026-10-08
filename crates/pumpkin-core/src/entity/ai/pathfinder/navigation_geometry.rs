@@ -137,6 +137,41 @@ impl PathNavigation {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn rabbit_review_glass_destination_and_strider_lava() {
+        use crate::entity::{
+            Entity,
+            ai::pathfinder::{GroundPathNavigation, PathNavigationTrait},
+        };
+        use pumpkin_data::{Block, entity::EntityType};
+        use pumpkin_util::math::vector2::Vector2;
+        use pumpkin_world::chunk::ChunkData;
+
+        let directory = tempfile::tempdir().unwrap();
+        let world = crate::entity::living::test_support::armor_test_world(directory.path());
+        let chunk = ChunkData::empty_sync(0, 0);
+        let candidate = BlockPos::new(4, 64, 4);
+        chunk.set_block_absolute_y(4, 63, 4, Block::GLASS.default_state.id);
+        world
+            .level
+            .loaded_chunks
+            .insert(Vector2::new(0, 0), chunk.clone());
+        let entity = Entity::new(
+            world.clone(),
+            candidate.to_centered_f64(),
+            &EntityType::RABBIT,
+        );
+        let mut navigation = GroundPathNavigation::new();
+        assert!(!navigation.is_stable_destination(&world, &candidate, &entity));
+        chunk.set_block_absolute_y(4, 63, 4, Block::STONE.default_state.id);
+        assert!(navigation.is_stable_destination(&world, &candidate, &entity));
+        chunk.set_block_absolute_y(4, 63, 4, Block::AIR.default_state.id);
+        chunk.set_block_absolute_y(4, 64, 4, Block::LAVA.default_state.id);
+        assert!(!navigation.is_stable_destination(&world, &candidate, &entity));
+        navigation.inner.stands_on_lava = true;
+        assert!(navigation.is_stable_destination(&world, &candidate, &entity));
+    }
+
     #[test]
     fn navigation_collision_ray_leaves_faces_and_misses_endpoint_contact() {
         let shape = BoundingBox::full_block();

@@ -642,6 +642,10 @@ impl MobEntity {
 
         if damaged {
             self.living_entity.set_last_hurt_mob(target);
+            // Mob.doHurtTarget plays the species attack sound only after successful damage.
+            if let Some(mob) = caller.get_mob() {
+                mob.play_attack_sound();
+            }
         }
     }
 
@@ -723,6 +727,9 @@ impl MobEntity {
 }
 
 pub trait Mob: EntityBase + Send + Sync {
+    /// Plays the species sound after a successful hit, as in Mob.playAttackSound.
+    fn play_attack_sound(&self) {}
+
     /// Runs mob-specific loot after Mob.dropCustomDeathLoot's equipment drops.
     fn drop_custom_death_loot(&self) {}
 

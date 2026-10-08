@@ -24,6 +24,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering::Relaxed},
 };
 
+// CarrotBlock inherits CropBlock.MAX_AGE in vanilla 26.3.
+const MAX_CARROT_AGE: u8 = 7;
+
 pub struct RabbitPanicGoal {
     inner: Box<EscapeDangerGoal>,
 }
@@ -132,14 +135,9 @@ impl Goal for RabbitAvoidEntityGoal {
             return false;
         }
         if self.monsters {
-            let entity = mob.get_entity();
-            let target =
-                entity
-                    .world
-                    .load()
-                    .get_nearest_entity(entity.pos.load(), 4.0, None, |candidate| {
-                        is_monster(candidate.get_entity().entity_type)
-                    });
+            let target = AvoidEntityGoal::find_threat(mob, 4.0, |candidate| {
+                is_monster(candidate.get_entity().entity_type)
+            });
             self.inner = target.map(|target| {
                 AvoidEntityGoal::new(
                     target.get_entity().entity_type,
@@ -250,7 +248,8 @@ impl MoveToTargetPos for RaidGardenGoal {
             return false;
         }
         let (block, state) = world.get_block_and_state_id(&pos.up());
-        let valid = block == &Block::CARROTS && WheatLikeProperties::from_state_id(state).age == 7;
+        let valid = block == &Block::CARROTS
+            && WheatLikeProperties::from_state_id(state).age == MAX_CARROT_AGE;
         if valid {
             self.can_raid.store(true, Relaxed);
         }
@@ -321,7 +320,16 @@ impl Goal for RaidGardenGoal {
                 properties.age -= 1;
                 properties.to_state_id(block)
             };
-            let mut event = crate::plugin::api::events::entity::entity_change_block::EntityChangeBlockEvent::new(mob.get_entity().entity_id, crops, if age == 0 { "minecraft:air".into() } else { format!("minecraft:carrots[age={}]", age - 1) });
+            let new_state = if age == 0 {
+                "minecraft:air".into()
+            } else {
+                format!("minecraft:carrots[age={}]", age - 1)
+            };
+            let mut event = crate::plugin::api::events::entity::entity_change_block::EntityChangeBlockEvent::new(
+                mob.get_entity().entity_id,
+                crops,
+                new_state,
+            );
             if let Some(server) = world.server.upgrade() {
                 server.plugin_manager.fire_blocking(&server, &mut event);
             }
@@ -335,8 +343,8 @@ impl Goal for RaidGardenGoal {
                         i32::from(state.as_u16()),
                     );
                 }
+                rabbit.more_carrot_ticks.store(MORE_CARROTS_DELAY, Relaxed);
             }
-            rabbit.more_carrot_ticks.store(MORE_CARROTS_DELAY, Relaxed);
         }
         self.can_raid.store(false, Relaxed);
         self.inner.cooldown = 10;
@@ -346,5 +354,115 @@ impl Goal for RaidGardenGoal {
     }
     fn controls(&self) -> Controls {
         self.inner.controls()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        entity::Entity,
+        plugin::{
+            BoxFuture, EventHandler, EventPriority,
+            api::events::entity::entity_change_block::EntityChangeBlockEvent,
+        },
+        server::{Server, combat_test_support},
+    };
+    use pumpkin_data::entity::EntityType;
+    use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
+    use pumpkin_world::chunk::ChunkData;
+
+    struct CropHandler(AtomicBool);
+
+    #[tokio::test]
+    async fn rabbit_review_home_before_crop_validation() {
+        let directory = tempfile::tempdir().unwrap();
+        let world = crate::entity::living::test_support::armor_test_world(directory.path());
+        let chunk = ChunkData::empty_sync(0, 0);
+        let excluded = BlockPos::new(4, 63, 4);
+        let eligible = BlockPos::new(5, 63, 4);
+        for soil in [excluded, eligible] {
+            chunk.set_block_absolute_y(
+                soil.0.x as usize,
+                63,
+                soil.0.z as usize,
+                Block::FARMLAND.default_state.id,
+            );
+            chunk.set_block_absolute_y(
+                soil.0.x as usize,
+                64,
+                soil.0.z as usize,
+                WheatLikeProperties { age: 7 }.to_state_id(&Block::CARROTS),
+            );
+        }
+        world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
+        let rabbit = RabbitEntity::new(Entity::new(
+            world,
+            Vector3::new(4.5, 64.0, 4.5),
+            &EntityType::RABBIT,
+        ));
+        rabbit
+            .mob_entity
+            .position_target
+            .store(BlockPos::new(6, 63, 4));
+        rabbit.mob_entity.position_target_range.store(2, Relaxed);
+        assert!(!rabbit.mob_entity.is_in_position_target_range_pos(&excluded));
+        let mut goal = RaidGardenGoal::new();
+        assert!(goal.can_start(rabbit.as_ref()));
+        assert_eq!(goal.inner.target_pos, eligible);
+    }
+
+    impl EventHandler<EntityChangeBlockEvent> for CropHandler {
+        fn handle_blocking<'a>(
+            &'a self,
+            _: &'a Arc<Server>,
+            event: &'a mut EntityChangeBlockEvent,
+        ) -> BoxFuture<'a, ()> {
+            assert_eq!(event.new_block, "minecraft:carrots[age=6]");
+            event.cancelled = self.0.load(Relaxed);
+            Box::pin(async {})
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancelled_carrot_raid_preserves_crop_and_appetite() -> Result<(), std::io::Error> {
+        let directory = tempfile::tempdir()?;
+        let server = combat_test_support::server(directory.path());
+        let world = combat_test_support::world(&server, directory.path());
+        let chunk = ChunkData::empty_sync(0, 0);
+        let soil = BlockPos::new(4, 63, 4);
+        let mature = WheatLikeProperties { age: 7 }.to_state_id(&Block::CARROTS);
+        chunk.set_block_absolute_y(4, 63, 4, Block::FARMLAND.default_state.id);
+        chunk.set_block_absolute_y(4, 64, 4, mature);
+        world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
+        let rabbit = RabbitEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(4.5, 64.0, 4.5),
+            &EntityType::RABBIT,
+        ));
+        let handler = Arc::new(CropHandler(AtomicBool::new(true)));
+        server.plugin_manager.register::<EntityChangeBlockEvent, _>(
+            handler.clone(),
+            EventPriority::Normal,
+            true,
+        );
+        let mut goal = RaidGardenGoal::new();
+        goal.inner.target_pos = soil;
+        goal.wants_to_raid.store(true, Relaxed);
+        assert!(goal.is_target_pos(world.clone(), soil));
+        goal.tick(rabbit.as_ref());
+        assert_eq!(world.get_block_state_id(&soil.up()), mature);
+        assert_eq!(rabbit.more_carrot_ticks.load(Relaxed), 0);
+
+        handler.0.store(false, Relaxed);
+        assert!(goal.is_target_pos(world.clone(), soil));
+        goal.tick(rabbit.as_ref());
+        assert_eq!(
+            WheatLikeProperties::from_state_id(world.get_block_state_id(&soil.up())).age,
+            6
+        );
+        assert_eq!(rabbit.more_carrot_ticks.load(Relaxed), 40);
+        assert!(!goal.is_target_pos(world, soil));
+        Ok(())
     }
 }

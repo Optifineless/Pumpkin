@@ -2,16 +2,17 @@ use super::rabbit_goals::{
     RabbitAvoidEntityGoal, RabbitPanicGoal, RabbitPowderSnowGoal, RaidGardenGoal,
 };
 use super::rabbit_movement::RabbitJumpState;
+use super::rabbit_stroll::RabbitStrollGoal;
 use crate::entity::ai::control::rabbit_move_control::RabbitMoveControl;
 use std::sync::{
-    Arc, Weak,
+    Arc, LazyLock, Weak,
     atomic::{AtomicI32, Ordering},
 };
 
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::sound::Sound;
+use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
@@ -23,8 +24,9 @@ use crate::entity::{
     ai::goal::{
         active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal, breed::BreedGoal,
         look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal, swim::SwimGoal,
-        tempt::TemptGoal, wander_around::WanderAroundGoal,
+        tempt::TemptGoal,
     },
+    attributes::{Modifier, ModifierOperation},
     mob::{Mob, MobEntity},
     passive::animal::Animal,
     player::Player,
@@ -38,7 +40,19 @@ pub(super) const FLEE_SPEED_MOD: f64 = 2.2;
 pub(super) const ATTACK_SPEED_MOD: f64 = 1.4;
 pub(super) const MORE_CARROTS_DELAY: i32 = 40;
 
-const TEMPT_ITEMS: &[&Item] = &[&Item::CARROT, &Item::GOLDEN_CARROT, &Item::DANDELION];
+// Rabbit.registerGoals uses ItemTags.RABBIT_FOOD for temptation as well as breeding.
+static TEMPT_ITEMS: LazyLock<Vec<&'static Item>> = LazyLock::new(|| {
+    tag::Item::MINECRAFT_RABBIT_FOOD
+        .0
+        .iter()
+        .filter_map(|name| Item::from_registry_key(name))
+        .collect()
+});
+
+// Rabbit.setVariant's named constants and transient attribute modifier.
+const EVIL_ATTACK_POWER_INCREMENT: f64 = 5.0;
+const EVIL_ARMOR_VALUE: f64 = 8.0;
+const EVIL_ATTACK_POWER_MODIFIER: &str = "minecraft:evil";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(i32)]
@@ -131,7 +145,7 @@ impl RabbitEntity {
             goal_selector.add_goal(2, BreedGoal::new(BREED_SPEED_MOD));
             goal_selector.add_goal(
                 3,
-                Box::new(TemptGoal::new(FOLLOW_SPEED_MOD, TEMPT_ITEMS, false)),
+                Box::new(TemptGoal::new(FOLLOW_SPEED_MOD, &TEMPT_ITEMS, false)),
             );
             goal_selector.add_goal(
                 4,
@@ -153,7 +167,7 @@ impl RabbitEntity {
             );
             goal_selector.add_goal(4, Box::new(RabbitAvoidEntityGoal::monsters()));
             goal_selector.add_goal(5, RaidGardenGoal::new());
-            goal_selector.add_goal(6, Box::new(WanderAroundGoal::new(STROLL_SPEED_MOD)));
+            goal_selector.add_goal(6, Box::new(RabbitStrollGoal::default()));
             goal_selector.add_goal(
                 11,
                 LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 10.0),
@@ -177,6 +191,27 @@ impl RabbitEntity {
         );
 
         if variant == RabbitVariant::Evil {
+            self.mob_entity.living_entity.set_attribute_base(
+                &pumpkin_data::attributes::Attributes::ARMOR,
+                EVIL_ARMOR_VALUE,
+            );
+            self.mob_entity.living_entity.update_attribute(
+                &pumpkin_data::attributes::Attributes::ATTACK_DAMAGE,
+                |attribute| {
+                    attribute.add_or_replace_modifier(Modifier {
+                        id: EVIL_ATTACK_POWER_MODIFIER.into(),
+                        amount: EVIL_ATTACK_POWER_INCREMENT,
+                        operation: ModifierOperation::Add,
+                        permanent: false,
+                    });
+                },
+            );
+            if entity.custom_name.load().is_none() {
+                entity.set_custom_name(pumpkin_util::text::TextComponent::translate(
+                    "entity.minecraft.killer_bunny",
+                    &[],
+                ));
+            }
             let mut goal_selector = self
                 .mob_entity
                 .goals_selector
@@ -201,6 +236,11 @@ impl RabbitEntity {
                 2,
                 ActiveTargetGoal::with_default(&self.mob_entity, &EntityType::WOLF, true),
             );
+        } else {
+            self.mob_entity.living_entity.update_attribute(
+                &pumpkin_data::attributes::Attributes::ATTACK_DAMAGE,
+                |attribute| attribute.remove_modifier(EVIL_ATTACK_POWER_MODIFIER),
+            );
         }
     }
 }
@@ -214,11 +254,25 @@ impl AgeableMob for RabbitEntity {
 impl Animal for RabbitEntity {
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         item_stack.item.has_tag(&tag::Item::MINECRAFT_RABBIT_FOOD)
-            || TEMPT_ITEMS.iter().any(|i| i.id == item_stack.item.id)
     }
 }
 
 impl Mob for RabbitEntity {
+    fn play_attack_sound(&self) {
+        // Rabbit.playAttackSound and getSoundSource.
+        let entity = self.get_entity();
+        if self.get_variant() == RabbitVariant::Evil && !entity.is_silent() {
+            let pitch = (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.0;
+            entity.world.load().play_sound_fine(
+                Sound::EntityRabbitAttack,
+                SoundCategory::Hostile,
+                &entity.pos.load(),
+                1.0,
+                pitch,
+            );
+        }
+    }
+
     fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
         self.tick_hopping();
     }
@@ -293,5 +347,34 @@ impl Mob for RabbitEntity {
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
         self.animal_interact(player, item_stack, Sound::EntityRabbitAmbient)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::living::test_support::armor_test_world;
+    use pumpkin_data::attributes::Attributes;
+    use pumpkin_util::math::vector3::Vector3;
+
+    #[tokio::test]
+    async fn killer_bunny_attributes_follow_variant_changes() -> Result<(), std::io::Error> {
+        let directory = tempfile::tempdir()?;
+        let rabbit = RabbitEntity::new(Entity::new(
+            armor_test_world(directory.path()),
+            Vector3::new(8.0, 64.0, 8.0),
+            &EntityType::RABBIT,
+        ));
+        let living = &rabbit.mob_entity.living_entity;
+        rabbit.set_variant(RabbitVariant::Evil);
+        assert_eq!(living.get_attribute_value(&Attributes::ATTACK_DAMAGE), 8.0);
+        assert_eq!(living.get_attribute_value(&Attributes::ARMOR), 8.0);
+        rabbit.set_variant(RabbitVariant::Evil);
+        assert_eq!(living.get_attribute_value(&Attributes::ATTACK_DAMAGE), 8.0);
+        rabbit.set_variant(RabbitVariant::Brown);
+        assert_eq!(living.get_attribute_value(&Attributes::ATTACK_DAMAGE), 3.0);
+        // Rabbit.setVariant removes the evil damage modifier but leaves the armor base.
+        assert_eq!(living.get_attribute_value(&Attributes::ARMOR), 8.0);
+        Ok(())
     }
 }

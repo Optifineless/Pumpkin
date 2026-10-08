@@ -55,6 +55,10 @@ pub mod zombie_nautilus;
 mod rabbit_movement;
 
 mod rabbit_goals;
+mod rabbit_stroll;
+
+#[cfg(test)]
+mod rabbit_review_tests;
 
 mod dolphin_movement;
 

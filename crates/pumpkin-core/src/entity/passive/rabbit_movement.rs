@@ -82,14 +82,13 @@ impl RabbitEntity {
         let entity = self.get_entity();
         let on_ground = entity.on_ground.load(Relaxed);
         if on_ground {
-            let (wanted, speed, has_wanted) = {
+            let speed = {
                 let control = self
                     .mob_entity
                     .move_control
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner);
-                let (wanted, speed) = control.wanted_position();
-                (wanted, speed, control.has_wanted())
+                control.wanted_position().1
             };
             if !state.was_on_ground.load(Relaxed) {
                 self.mob_entity.living_entity.jumping.store(false, Relaxed);
@@ -116,14 +115,25 @@ impl RabbitEntity {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .has_request();
+            // Rabbit.customServerAiStep rereads the controller after the evil-target update.
+            let (wanted, has_wanted) = {
+                let control = self
+                    .mob_entity
+                    .move_control
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                (control.wanted_position().0, control.has_wanted())
+            };
             if !requested && has_wanted && state.delay.load(Relaxed) == 0 {
                 let next = self
                     .mob_entity
                     .navigator
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .next_move_target()
-                    .map_or(wanted, |(position, _)| position);
+                    .get_path()
+                    .filter(|path| !path.is_done())
+                    .and_then(|path| path.get_next_entity_pos(entity.width()))
+                    .unwrap_or(wanted);
                 self.face_point(next);
                 self.start_jumping();
             } else if requested && !state.can_jump.load(Relaxed) {
@@ -148,13 +158,16 @@ impl RabbitEntity {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .wanted_position();
+        // Rabbit.getJumpPower reads the node height, before navigation adjusts for slabs.
         let path_above = self
             .mob_entity
             .navigator
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .next_move_target()
-            .is_some_and(|(next, _)| next.y > entity.pos.load().y + 0.5);
+            .get_path()
+            .filter(|path| !path.is_done())
+            .and_then(|path| path.get_next_entity_pos(entity.width()))
+            .is_some_and(|next| next.y > entity.pos.load().y + 0.5);
         let higher = path_above
             || entity.horizontal_collision.load(Relaxed)
             || self.mob_entity.living_entity.jumping.load(Relaxed)
