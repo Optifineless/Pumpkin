@@ -480,6 +480,7 @@ impl Clearable for PlayerInventory {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         inv.fill_with(|| ItemStack::EMPTY.clone());
+        drop(inv);
         self.entity_equipment
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

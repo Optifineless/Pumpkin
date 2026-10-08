@@ -294,6 +294,11 @@ impl Mob for SlimeEntity {
         );
     }
 
+    fn get_base_experience_reward(&self) -> u32 {
+        // Slime / MagmaCube.setSize set xpReward to the actual size.
+        super::equipped_mob_experience(&self.get_mob_entity().living_entity, self.get_size() as u32)
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.entity
     }

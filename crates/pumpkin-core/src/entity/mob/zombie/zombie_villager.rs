@@ -261,6 +261,10 @@ impl Mob for ZombieVillagerEntity {
         &self.mob_entity.mob_entity
     }
 
+    fn get_base_experience_reward(&self) -> u32 {
+        Mob::get_base_experience_reward(&*self.mob_entity)
+    }
+
     fn spawn_as_baby(&self) -> bool {
         self.mob_entity.spawn_as_baby()
     }

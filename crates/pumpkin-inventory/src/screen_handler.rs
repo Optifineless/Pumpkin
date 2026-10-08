@@ -141,6 +141,11 @@ pub trait InventoryPlayer: Send + Sync {
         false
     }
 
+    /// Returns whether menu removal must drop temporary items rather than return them to inventory.
+    fn is_removed(&self) -> bool {
+        false
+    }
+
     /// Gets the player's experience level.
     fn experience_level(&self) -> i32;
 
@@ -230,8 +235,12 @@ pub trait InventoryPlayer: Send + Sync {
 /// Tries to insert the stack into the player's inventory first,
 /// and drops it in the world if there's no room.
 pub fn offer_or_drop_stack(player: &dyn InventoryPlayer, stack: ItemStack) {
-    // TODO: Super weird disconnect logic in vanilla, investigate this later
-    player.get_inventory().offer_or_drop_stack(stack, player);
+    // AbstractContainerMenu.dropOrPlaceInInventory drops items when the player was removed.
+    if player.is_removed() {
+        player.drop_item(stack, false);
+    } else {
+        player.get_inventory().offer_or_drop_stack(stack, player);
+    }
 }
 
 /// The main trait for container screen handlers.

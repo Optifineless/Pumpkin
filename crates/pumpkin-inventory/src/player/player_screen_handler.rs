@@ -132,8 +132,9 @@ impl ScreenHandler for PlayerScreenHandler {
 
     fn on_closed(&mut self, player: &dyn InventoryPlayer) {
         self.default_on_closed(player);
-        //TODO: this.craftingResultInventory.clear();
         self.drop_inventory(player, self.crafting_inventory.clone());
+        // InventoryMenu.removed / CraftingMenu.removed: recompute the cached result after clearing inputs.
+        self.get_behaviour().slots[0].set_stack(ItemStack::EMPTY.clone());
     }
 
     /// Performs quick move (shift-click) for the given slot.

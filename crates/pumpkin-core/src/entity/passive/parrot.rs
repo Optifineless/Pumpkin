@@ -88,6 +88,11 @@ impl ParrotEntity {
 }
 
 impl Mob for ParrotEntity {
+    fn get_base_experience_reward(&self) -> u32 {
+        // Animal.getBaseExperienceReward, inherited through ShoulderRidingEntity.
+        rand::random_range(1..=3)
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }

@@ -477,7 +477,6 @@ impl CombatTracker {
     pub fn record_damage(
         &mut self,
         current_tick: i64,
-        is_alive: bool,
         fall_distance: f32,
         fall_location: FallLocation,
         damage_type: pumpkin_data::damage::DamageType,
@@ -485,7 +484,8 @@ impl CombatTracker {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) {
-        self.recheck_status(current_tick, is_alive);
+        // CombatTracker.recordDamage is called by actuallyHurt before health is reduced.
+        self.recheck_status(current_tick, true);
 
         let attacker = cause.or(source);
         let attacker_id = attacker.map(|e| e.get_entity().entity_id);
@@ -544,7 +544,7 @@ impl CombatTracker {
         self.last_damage_time = current_tick;
         self.taking_damage = true;
 
-        if !self.in_combat && is_alive && attacker_is_living {
+        if !self.in_combat && attacker_is_living {
             self.in_combat = true;
             self.combat_start_time = current_tick;
             self.combat_end_time = self.combat_start_time;
@@ -665,7 +665,7 @@ impl CombatTracker {
                 )
             }
             pumpkin_data::damage::DeathMessageType::Default => {
-                self.get_default_death_message(victim_name, killing_blow, kill_credit_name)
+                Self::get_default_death_message(victim_name, killing_blow, kill_credit_name)
             }
         }
     }
@@ -791,7 +791,6 @@ impl CombatTracker {
     }
 
     fn get_default_death_message(
-        &self,
         victim_name: pumpkin_util::text::TextComponent,
         killing_blow: &CombatEntry,
         kill_credit_name: Option<pumpkin_util::text::TextComponent>,
@@ -813,10 +812,7 @@ impl CombatTracker {
                     [victim_name, attacker_name.clone()],
                 )
             }
-        } else if let Some(killer_name) = kill_credit_name.or_else(|| {
-            self.get_killer_entry()
-                .and_then(|k| k.attacker_name.clone())
-        }) {
+        } else if let Some(killer_name) = kill_credit_name {
             pumpkin_util::text::TextComponent::translate_cross(
                 format!("death.attack.{msg_id}.player"),
                 format!("death.attack.{msg_id}.player"),

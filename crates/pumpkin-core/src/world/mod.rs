@@ -89,9 +89,9 @@ use pumpkin_data::{
     tag::Taggable,
     translation,
 };
+use pumpkin_inventory::Inventory;
 use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
-use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
 use pumpkin_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
@@ -4090,7 +4090,7 @@ impl World {
         );
 
         // Copy spawn info from default world level_info to avoid holding lock across await
-        let (spawn_x, spawn_y, spawn_z, spawn_yaw, spawn_pitch, keep_inventory) = {
+        let (spawn_x, spawn_y, spawn_z, spawn_yaw, spawn_pitch) = {
             let info = default_world.level_info.load();
             (
                 info.spawn_x,
@@ -4098,7 +4098,6 @@ impl World {
                 info.spawn_z,
                 info.spawn_yaw,
                 info.spawn_pitch,
-                info.game_rules.keep_inventory,
             )
         };
 
@@ -4169,6 +4168,9 @@ impl World {
             s.plugin_manager.fire(s, &mut spawn_loc_event).await;
         }
         let position = spawn_loc_event.spawn_pos;
+
+        // PlayerList.respawn removes the old player's menus before transferring worlds.
+        player.remove_respawn_menus(alive);
 
         // Candidate destination world for a cross-dimension respawn.
         let candidate_world = if respawn_dimension == self.dimension {
@@ -4323,16 +4325,12 @@ impl World {
             )
             .await;
 
+        player.restore_inventory_after_respawn(alive);
         player.living_entity.reset_state();
 
         player.send_permission_lvl_update();
 
         player.hunger_manager.restart();
-
-        if !keep_inventory {
-            player.set_experience(0, 0.0, 0);
-            player.inventory.clear();
-        }
 
         // Set entity position BEFORE loading chunks, so chunks load at the right location
         // This mirrors the initial spawn flow where update_position is called before teleport

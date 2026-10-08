@@ -174,6 +174,19 @@ impl Mob for HoglinEntity {
         &self.mob_entity
     }
 
+    fn get_base_experience_reward(&self) -> u32 {
+        // Hoglin.ageBoundaryReached / getBaseExperienceReward hardcode baby XP as 3.
+        if self.is_baby.load(Ordering::Relaxed) {
+            3
+        } else {
+            self.mob_entity
+                .living_entity
+                .entity
+                .entity_type
+                .experience_reward
+        }
+    }
+
     fn spawn_as_baby(&self) -> bool {
         self.is_baby.store(true, Ordering::Relaxed);
         self.mob_entity.set_baby_by_age();

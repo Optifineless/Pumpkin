@@ -1,4 +1,5 @@
 pub mod advancement;
+mod death;
 mod known_movement;
 mod mace;
 mod melee;
@@ -4432,49 +4433,6 @@ impl Player {
         );
     }
 
-    pub fn handle_killed(&self, death_msg: &TextComponent) {
-        self.trigger_advancement(
-            crate::entity::player::advancement::trigger::AdvancementTrigger::PlayerKilled,
-        );
-        crate::entity::mob::neutral::tell_neutral_mobs_player_died(self, &self.world());
-        let block_pos = self.position().to_block_pos();
-
-        let keep_inventory = { self.world().level_info.load().game_rules.keep_inventory };
-
-        if !keep_inventory {
-            let mut main_inv = self
-                .inventory()
-                .main_inventory
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for item in main_inv.iter_mut() {
-                if !item.is_empty() {
-                    let stack = std::mem::replace(item, ItemStack::EMPTY.clone());
-                    self.increment_stat(
-                        statistics::StatisticCategory::Dropped,
-                        stack.item.id as i32,
-                        stack.item_count as i32,
-                    );
-                    self.increment_custom_stat(
-                        statistics::CustomStatistic::Drop,
-                        stack.item_count as i32,
-                    );
-                    self.world().drop_stack(&block_pos, stack);
-                }
-            }
-        }
-
-        // Reset air supply & drowning ticks on death
-        self.breath_manager.reset(self);
-
-        if matches!(self.client.as_ref(), ClientPlatform::Java(_)) {
-            self.set_client_loaded(false);
-        }
-        self.send_combat_death(death_msg);
-        self.send_health();
-        self.send_bedrock_respawn_state(RespawnState::SearchingForSpawn);
-    }
-
     pub fn set_gamemode(self: &Arc<Self>, gamemode: GameMode) -> bool {
         // We could send the same gamemode without any problems. But why waste bandwidth?
         // assert_ne!(
@@ -6858,10 +6816,8 @@ impl EntityBase for Player {
             .read_nbt(nbt);
     }
 
-    fn get_experience_reward(&self, _killer: Option<&dyn EntityBase>) -> u32 {
-        // vanilla: min(level * 7, 100)
-        let level = self.experience_level.load(Ordering::Relaxed);
-        (level * 7).min(100) as u32
+    fn get_experience_reward(&self, killer: Option<&dyn EntityBase>) -> u32 {
+        self.death_experience_reward(killer)
     }
 
     fn tick_in_void(&self, dyn_self: &dyn EntityBase) {
@@ -7269,7 +7225,12 @@ impl InventoryPlayer for Player {
     }
 
     fn drop_item(&self, item: ItemStack, _retain_ownership: bool) {
-        self.drop_item(item);
+        if self.get_entity().is_removed() {
+            self.world()
+                .drop_stack(&self.position().to_block_pos(), item);
+        } else {
+            self.drop_item(item);
+        }
     }
 
     fn has_infinite_materials(&self) -> bool {
@@ -7299,6 +7260,13 @@ impl InventoryPlayer for Player {
 
     fn set_enchantment_seed(&self, seed: i32) {
         self.enchantment_seed.store(seed, Ordering::Relaxed);
+    }
+
+    fn is_removed(&self) -> bool {
+        self.get_entity()
+            .removal_reason
+            .load()
+            .is_some_and(|reason| reason != super::RemovalReason::ChangedDimension)
     }
 
     fn get_inventory(&self) -> Arc<PlayerInventory> {

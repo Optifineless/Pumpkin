@@ -59,6 +59,8 @@ pub mod pending;
 pub mod play;
 pub mod recipe_helper;
 pub mod status;
+#[cfg(test)]
+mod test_client;
 
 pub use chunk_data::{CChunkData, ChunkLightExt};
 use outgoing::{DISCONNECT_FLUSH_TIMEOUT, OutgoingPacket, run_outgoing_packet_writer};

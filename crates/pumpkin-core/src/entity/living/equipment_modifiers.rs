@@ -196,7 +196,8 @@ fn push_unique_attribute(touched: &mut Vec<Attributes>, attr: &Attributes) {
     }
 }
 
-const fn attribute_modifier_slot_matches(
+/// Matches vanilla EquipmentSlotGroup.test for attributes and active death-loot enchantments.
+pub const fn attribute_modifier_slot_matches(
     modifier_slot: &AttributeModifierSlot,
     equipment_slot: &EquipmentSlot,
 ) -> bool {

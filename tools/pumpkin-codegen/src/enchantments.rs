@@ -819,7 +819,40 @@ fn parse_conditional_value_effects(val: Option<&serde_json::Value>) -> TokenStre
     quote! { &[#(#effects),*] }
 }
 
-fn parse_targeted_conditional_value_effects(val: Option<&serde_json::Value>) -> TokenStream {
+// Preserve the entity-type predicate used by vanilla's equipment-drop effects.
+fn parse_equipment_drop_requirement(value: Option<&serde_json::Value>) -> TokenStream {
+    let Some(value) = value else {
+        return quote! { None };
+    };
+    assert_eq!(
+        value.get("type").and_then(|v| v.as_str()),
+        Some("minecraft:entity_properties")
+    );
+    let target = match value.get("entity").and_then(|v| v.as_str()) {
+        Some("attacker") => quote! { EnchantmentTarget::Attacker },
+        Some("damaging_entity") => quote! { EnchantmentTarget::DamagingEntity },
+        Some("this") => quote! { EnchantmentTarget::Victim },
+        _ => panic!("Unsupported equipment-drop predicate entity"),
+    };
+    let predicate = value
+        .get("predicate")
+        .and_then(|v| v.as_object())
+        .expect("Equipment-drop predicate must be an object");
+    assert_eq!(predicate.len(), 1, "Unsupported equipment-drop predicate");
+    let name = predicate
+        .get("minecraft:entity_type")
+        .and_then(|v| v.as_str())
+        .expect("Equipment-drop predicate must specify an entity type");
+    let ident = format_ident!(
+        "{}",
+        name.strip_prefix("minecraft:")
+            .unwrap_or(name)
+            .to_shouty_snake_case()
+    );
+    quote! { Some((#target, &crate::entity::EntityType::#ident)) }
+}
+
+fn parse_equipment_drop_effects(val: Option<&serde_json::Value>) -> TokenStream {
     let effects: Vec<TokenStream> = val
         .and_then(|v| v.as_array())
         .map(|arr| {
@@ -843,11 +876,14 @@ fn parse_targeted_conditional_value_effects(val: Option<&serde_json::Value>) -> 
                         Some("victim") => quote! { Some(EnchantmentTarget::Victim) },
                         _ => quote! { None },
                     };
+                    let required_entity_type =
+                        parse_equipment_drop_requirement(item.get("requirements"));
                     quote! {
-                        TargetedConditionalEffect {
+                        EquipmentDropEffect {
                             enchanted: #enchanted,
                             affected: #affected,
                             effect: #eff_tokens,
+                            required_entity_type: #required_entity_type,
                         }
                     }
                 })
@@ -1094,7 +1130,7 @@ pub fn build() -> TokenStream {
         let hit_block = parse_conditional_entity_effects(effects_map.get("minecraft:hit_block"));
         let item_damage = parse_conditional_value_effects(effects_map.get("minecraft:item_damage"));
         let equipment_drops =
-            parse_targeted_conditional_value_effects(effects_map.get("minecraft:equipment_drops"));
+            parse_equipment_drop_effects(effects_map.get("minecraft:equipment_drops"));
         let fishing_time_reduction =
             parse_conditional_value_effects(effects_map.get("minecraft:fishing_time_reduction"));
         let fishing_luck_bonus =
@@ -1311,6 +1347,14 @@ pub fn build() -> TokenStream {
             pub enchanted: Option<EnchantmentTarget>,
             pub affected: Option<EnchantmentTarget>,
             pub effect: T,
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct EquipmentDropEffect {
+            pub enchanted: Option<EnchantmentTarget>,
+            pub affected: Option<EnchantmentTarget>,
+            pub effect: EnchantmentValueEffect,
+            pub required_entity_type: Option<(EnchantmentTarget, &'static crate::entity::EntityType)>,
         }
 
         #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1590,7 +1634,7 @@ pub fn build() -> TokenStream {
             pub damage_protection: &'static [ConditionalEffect<EnchantmentValueEffect>],
             pub hit_block: &'static [ConditionalEffect<EnchantmentEntityEffect>],
             pub item_damage: &'static [ConditionalEffect<EnchantmentValueEffect>],
-            pub equipment_drops: &'static [TargetedConditionalEffect<EnchantmentValueEffect>],
+            pub equipment_drops: &'static [EquipmentDropEffect],
             pub fishing_time_reduction: &'static [ConditionalEffect<EnchantmentValueEffect>],
             pub fishing_luck_bonus: &'static [ConditionalEffect<EnchantmentValueEffect>],
             pub block_experience: &'static [ConditionalEffect<EnchantmentValueEffect>],

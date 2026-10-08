@@ -161,7 +161,8 @@ impl Mob for GhastEntity {
     }
 
     fn get_base_experience_reward(&self) -> u32 {
-        Self::XP_REWARD
+        // Mob.getBaseExperienceReward includes equipped items for this subtype.
+        super::equipped_mob_experience(&self.get_mob_entity().living_entity, Self::XP_REWARD)
     }
 }
 

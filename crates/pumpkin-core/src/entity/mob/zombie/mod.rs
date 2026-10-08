@@ -157,6 +157,20 @@ impl Mob for ZombieEntityBase {
         &self.mob_entity
     }
 
+    fn get_base_experience_reward(&self) -> u32 {
+        // Zombie.getBaseExperienceReward multiplies the base before Mob adds equipment XP.
+        let base = self
+            .mob_entity
+            .living_entity
+            .entity
+            .entity_type
+            .experience_reward;
+        super::equipped_mob_experience(
+            &self.mob_entity.living_entity,
+            zombie_experience_base(base, self.is_baby()),
+        )
+    }
+
     fn spawn_as_baby(&self) -> bool {
         self.set_baby(true);
         true
@@ -239,5 +253,23 @@ impl Mob for ZombieEntityBase {
         if let Some(can_break_doors) = nbt.get_bool("CanBreakDoors") {
             self.set_can_break_doors(can_break_doors, self);
         }
+    }
+}
+
+pub(super) fn zombie_experience_base(base: u32, baby: bool) -> u32 {
+    // Zombie.getBaseExperienceReward hardcodes the baby multiplier as 2.5.
+    if baby {
+        (f64::from(base) * 2.5) as u32
+    } else {
+        base
+    }
+}
+
+#[cfg(test)]
+mod death_experience_tests {
+    #[test]
+    fn baby_zombie_experience_truncates_before_equipment_bonus() {
+        assert_eq!(super::zombie_experience_base(5, true), 12);
+        assert_eq!(super::zombie_experience_base(5, false), 5);
     }
 }

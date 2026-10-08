@@ -114,6 +114,17 @@ impl Mob for ZombifiedPiglinEntity {
         &self.mob_entity
     }
 
+    fn get_base_experience_reward(&self) -> u32 {
+        // ZombifiedPiglin inherits Zombie.getBaseExperienceReward.
+        let living = &self.mob_entity.living_entity;
+        let base = living.entity.entity_type.experience_reward;
+        let base = super::zombie::zombie_experience_base(
+            base,
+            living.entity.age.load(Ordering::Relaxed) < 0,
+        );
+        super::equipped_mob_experience(living, base)
+    }
+
     fn spawn_as_baby(&self) -> bool {
         self.mob_entity.set_baby_by_age();
         true

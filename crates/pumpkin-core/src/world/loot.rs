@@ -14,6 +14,9 @@ pub struct LootContextParameters {
     pub explosion_radius: Option<f32>,
     pub block_state: Option<&'static BlockState>,
     pub killed_by_player: Option<bool>,
+    pub last_damage_player: Option<std::sync::Arc<crate::entity::player::Player>>,
+    /// Death loot uses the responsible entity's active Looting enchantment, independently of TOOL.
+    pub looting_level: Option<i32>,
     pub luck: f32,
     pub this_entity: Option<&'static EntityType>,
     pub killer_entity: Option<&'static EntityType>,
@@ -27,6 +30,29 @@ pub struct LootContextParameters {
     /// Whether the killed entity was on fire at death time.
     /// Computed from `Entity.fire_ticks > 0`.
     pub is_on_fire: Option<bool>,
+}
+
+impl LootContextParameters {
+    fn bonus_enchantment_level(&self) -> i32 {
+        self.looting_level.unwrap_or_else(|| {
+            self.tool.as_ref().map_or(0, |tool| {
+                let fortune = pumpkin_data::Enchantment::from_name("fortune")
+                    .map_or(0, |e| tool.get_enchantment_level(e));
+                let looting = pumpkin_data::Enchantment::from_name("looting")
+                    .map_or(0, |e| tool.get_enchantment_level(e));
+                fortune.max(looting)
+            })
+        })
+    }
+
+    fn was_killed_by_player(&self) -> bool {
+        // LootItemKilledByPlayerCondition.test checks LAST_DAMAGE_PLAYER in a death context.
+        if self.looting_level.is_some() {
+            self.last_damage_player.is_some()
+        } else {
+            self.killed_by_player.unwrap_or(false)
+        }
+    }
 }
 
 fn check_dynamic_condition(
@@ -44,7 +70,7 @@ fn check_dynamic_condition(
         DynamicLootCondition::Shears => has_shears,
         DynamicLootCondition::SilkTouchOrShears => has_silk_touch || has_shears,
         DynamicLootCondition::NoSilkTouchOrShears => !has_silk_touch && !has_shears,
-        DynamicLootCondition::KilledByPlayer => params.killed_by_player.unwrap_or(false),
+        DynamicLootCondition::KilledByPlayer => params.was_killed_by_player(),
         DynamicLootCondition::SurvivesExplosion => params
             .explosion_radius
             .is_none_or(|radius| rng.next_f32() <= 1.0 / radius),
@@ -112,7 +138,7 @@ fn check_condition(
         LootCondition::Shears => has_shears,
         LootCondition::SilkTouchOrShears => has_silk_touch || has_shears,
         LootCondition::NoSilkTouchOrShears => !has_silk_touch && !has_shears,
-        LootCondition::KilledByPlayer => params.killed_by_player.unwrap_or(false),
+        LootCondition::KilledByPlayer => params.was_killed_by_player(),
         LootCondition::SurvivesExplosion => params
             .explosion_radius
             .is_none_or(|radius| rng.next_f32() <= 1.0 / radius),
@@ -207,13 +233,7 @@ pub fn generate_loot_with_context(
         name == "shears"
     });
 
-    let fortune_level = params.tool.as_ref().map_or(0, |tool| {
-        let fortune = pumpkin_data::Enchantment::from_name("fortune")
-            .map_or(0, |e| tool.get_enchantment_level(e));
-        let looting = pumpkin_data::Enchantment::from_name("looting")
-            .map_or(0, |e| tool.get_enchantment_level(e));
-        fortune.max(looting)
-    });
+    let fortune_level = params.bonus_enchantment_level();
 
     for pool in table.pools {
         if !check_condition(
@@ -331,13 +351,7 @@ pub fn generate_dynamic_loot_with_context(
         name == "shears"
     });
 
-    let fortune_level = params.tool.as_ref().map_or(0, |tool| {
-        let fortune = pumpkin_data::Enchantment::from_name("fortune")
-            .map_or(0, |e| tool.get_enchantment_level(e));
-        let looting = pumpkin_data::Enchantment::from_name("looting")
-            .map_or(0, |e| tool.get_enchantment_level(e));
-        fortune.max(looting)
-    });
+    let fortune_level = params.bonus_enchantment_level();
 
     for pool in &table.pools {
         if !check_dynamic_condition(
@@ -594,5 +608,50 @@ fn shuffle_and_split_items(
     for i in (1..n).rev() {
         let j = rng.next_bounded_i32((i + 1) as i32) as usize;
         result.swap(i, j);
+    }
+}
+
+#[cfg(test)]
+mod death_loot_tests {
+    use super::*;
+
+    #[test]
+    fn death_loot_uses_attacker_looting_independently_of_tool_fortune() {
+        use pumpkin_data::{Enchantment, item::Item};
+        // Isolate the count modifier from unrelated entity predicates in the vanilla table.
+        static TABLE: LootTable = LootTable {
+            pools: &[LootPool {
+                entries: &[LootEntry {
+                    item: "minecraft:rotten_flesh",
+                    weight: 1,
+                    min_count: 1,
+                    max_count: 1,
+                    condition: LootCondition::None,
+                    bonus_formula: Some(LootBonusFormula::UniformBonusCount(1)),
+                }],
+                min_rolls: 1,
+                max_rolls: 1,
+                empty_weight: 0,
+                condition: LootCondition::None,
+            }],
+        };
+        let mut tool = ItemStack::new(1, &Item::DIAMOND_PICKAXE);
+        tool.add_enchantment(&Enchantment::FORTUNE, 3);
+        let mut params = LootContextParameters {
+            tool: Some(tool),
+            looting_level: Some(0),
+            ..Default::default()
+        };
+        for seed in 0..32 {
+            assert_eq!(
+                generate_loot_with_context(&TABLE, seed, &params)[0].item_count,
+                1
+            );
+        }
+        params.tool = None;
+        params.looting_level = Some(3);
+        assert!(
+            (0..32).any(|seed| generate_loot_with_context(&TABLE, seed, &params)[0].item_count > 1)
+        );
     }
 }

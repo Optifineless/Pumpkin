@@ -61,6 +61,14 @@ impl CustomSound for MagmaCubeEntity {
 }
 
 impl Mob for MagmaCubeEntity {
+    fn get_base_experience_reward(&self) -> u32 {
+        // Slime / MagmaCube.setSize set xpReward to the actual size.
+        super::equipped_mob_experience(
+            &self.get_mob_entity().living_entity,
+            self.slime.get_size() as u32,
+        )
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         self.slime.get_mob_entity()
     }

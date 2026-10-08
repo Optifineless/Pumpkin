@@ -209,8 +209,8 @@ impl SquidFleeGoal {
         }
         let attacker_id = living.last_attacker_id.load(Ordering::Relaxed);
         // LivingEntity.baseTick forgets a dead attacker or a hit older than 100 ticks.
-        let since_hit =
-            entity.age.load(Ordering::Relaxed) - living.last_attacked_time.load(Ordering::Relaxed);
+        let since_hit = living.combat_tick_count()
+            - i64::from(living.last_attacked_time.load(Ordering::Relaxed));
         if attacker_id == 0 || since_hit > 100 {
             return None;
         }
@@ -277,4 +277,35 @@ impl Goal for SquidFleeGoal {
 
 fn random_tentacle_speed(rng: &mut impl RngExt) -> f32 {
     1.0 / (rng.random::<f32>() + 1.0) * 0.2
+}
+
+#[cfg(test)]
+mod death_memory_tests {
+    use super::*;
+    use pumpkin_data::{damage::DamageType, entity::EntityType};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[expect(clippy::unwrap_used, reason = "Test fixture contains a living squid")]
+    async fn death_squid_fleeing_uses_the_incoming_entity_tick_clock() {
+        let fixture = crate::entity::death_test_world::DeathTestWorld::new().await;
+        let attacker = fixture.player("Attacker");
+        let squid = fixture.mob(&EntityType::SQUID);
+        let living = squid.get_living_entity().unwrap();
+        living.tick(&*squid, &fixture.server);
+        squid.get_entity().age.store(500, Ordering::Relaxed);
+        attacker.get_entity().set_pos(squid.get_entity().pos.load());
+        assert!(squid.damage_with_context(
+            &*squid,
+            1.0,
+            DamageType::PLAYER_ATTACK,
+            None,
+            Some(&*attacker),
+            Some(&*attacker)
+        ));
+        squid
+            .get_entity()
+            .touching_water
+            .store(true, Ordering::Relaxed);
+        assert!(SquidFleeGoal::attacker(living).is_some());
+    }
 }

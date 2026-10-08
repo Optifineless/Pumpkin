@@ -219,14 +219,7 @@ impl SpearItem {
             return false;
         }
 
-        player
-            .living_entity
-            .last_attacking_id
-            .store(target_entity.entity_id, Ordering::Relaxed);
-        player.living_entity.last_attack_time.store(
-            player.get_entity().age.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
+        player.living_entity.set_last_hurt_mob(&**target);
         if was_hurt {
             Self::apply_post_damage_effects(stack, target_entity);
         }
@@ -686,4 +679,46 @@ fn clip_point(
         return true;
     }
     false
+}
+
+#[cfg(test)]
+mod death_memory_tests {
+    use super::*;
+    use crate::entity::death_test_world::DeathTestWorld;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn death_outgoing_spear_attack_memory_uses_living_ticks() {
+        let fixture = DeathTestWorld::new().await;
+        let player = fixture.player("Spearman");
+        player.living_entity.tick(&*player, &fixture.server);
+        let target = fixture.mob(&EntityType::COW);
+        let stack = ItemStack::new(1, &Item::IRON_SPEAR);
+        assert!(SpearItem::stab_attack(
+            &player,
+            &fixture.server,
+            Hand::Right,
+            &stack,
+            &target,
+            1.0,
+            StabEffects {
+                damage: true,
+                knockback: false,
+                dismount: false
+            }
+        ));
+        assert_eq!(
+            player
+                .living_entity
+                .last_attack_time
+                .load(Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            player
+                .living_entity
+                .last_attacking_id
+                .load(Ordering::Relaxed),
+            target.get_entity().entity_id
+        );
+    }
 }

@@ -47,6 +47,10 @@ impl Mob for DrownedEntity {
         &self.entity.mob_entity
     }
 
+    fn get_base_experience_reward(&self) -> u32 {
+        self.entity.get_base_experience_reward()
+    }
+
     fn spawn_as_baby(&self) -> bool {
         self.entity.spawn_as_baby()
     }

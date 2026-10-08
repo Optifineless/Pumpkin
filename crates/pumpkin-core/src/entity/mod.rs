@@ -1,3 +1,7 @@
+pub mod death_loot;
+#[cfg(test)]
+pub(crate) mod death_test_world;
+pub mod kill_credit;
 use crate::{
     entity::item::ItemEntity,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},

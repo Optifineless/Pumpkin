@@ -108,14 +108,7 @@ impl Player {
             enchanted_damage > attribute_damage && charge > 0.0,
         );
 
-        self.living_entity.last_attacking_id.store(
-            victim_entity.entity_id,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        self.living_entity.last_attack_time.store(
-            attacker_entity.age.load(Ordering::Relaxed),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        self.living_entity.set_last_hurt_mob(victim.as_ref());
 
         self.item_attack_interaction(victim.as_ref(), &attacking_item, damage_type, is_mace_smash);
 

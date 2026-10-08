@@ -1,3 +1,4 @@
+pub(crate) mod death_loot;
 use super::{Entity, EntityBase, ai::pathfinder::Navigator, living::LivingEntity};
 use crate::entity::ai::brain::Brain;
 use crate::entity::ai::brain::memory::PackedMemories;
@@ -13,6 +14,7 @@ use crate::server::Server;
 use crate::world::World;
 use crate::world::brightness::DAYLIGHT_BRIGHTNESS;
 use crossbeam::atomic::AtomicCell;
+pub(crate) use death_loot::equipped_mob_experience;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::EquipmentSlot;
@@ -664,12 +666,7 @@ impl MobEntity {
         );
 
         if damaged {
-            self.living_entity
-                .last_attacking_id
-                .store(target.get_entity().entity_id, Relaxed);
-            self.living_entity
-                .last_attack_time
-                .store(self.living_entity.entity.age.load(Relaxed), Relaxed);
+            self.living_entity.set_last_hurt_mob(target);
         }
     }
 
@@ -1319,8 +1316,16 @@ pub trait Mob: EntityBase + Send + Sync {
             .is_some_and(crate::entity::passive::tamable::TamableAnimal::is_tame)
     }
 
+    fn should_drop_loot(&self) -> bool {
+        death_loot::should_drop_loot(self)
+    }
+
+    fn should_drop_experience(&self) -> bool {
+        death_loot::should_drop_experience(self)
+    }
+
     fn get_base_experience_reward(&self) -> u32 {
-        self.get_entity().entity_type.experience_reward
+        death_loot::get_base_experience_reward(self)
     }
 
     fn mob_init_data_tracker(&self) {
@@ -1592,17 +1597,9 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         self.get_mob_y_velocity_drag()
     }
 
-    fn get_experience_reward(&self, _killer: Option<&dyn EntityBase>) -> u32 {
-        if self
-            .get_entity()
-            .age
-            .load(std::sync::atomic::Ordering::Relaxed)
-            < 0
-        {
-            return 0;
-        }
-        // TODO: apply enchantment processing like in vanilla
-        Mob::get_base_experience_reward(self)
+    fn get_experience_reward(&self, killer: Option<&dyn EntityBase>) -> u32 {
+        // LivingEntity.getExperienceReward; baby eligibility belongs to dropExperience.
+        LivingEntity::process_mob_experience(killer, Mob::get_base_experience_reward(self))
     }
 
     fn get_base_experience_reward(&self) -> u32 {

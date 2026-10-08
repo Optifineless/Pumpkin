@@ -78,6 +78,13 @@ pub struct TargetedConditionalEffect<T> {
     pub affected: Option<EnchantmentTarget>,
     pub effect: T,
 }
+#[derive(Clone, Debug)]
+pub struct EquipmentDropEffect {
+    pub enchanted: Option<EnchantmentTarget>,
+    pub affected: Option<EnchantmentTarget>,
+    pub effect: EnchantmentValueEffect,
+    pub required_entity_type: Option<(EnchantmentTarget, &'static crate::entity::EntityType)>,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConditionalEffect<T> {
     pub effect: T,
@@ -335,7 +342,7 @@ pub struct EnchantmentEffects {
     pub damage_protection: &'static [ConditionalEffect<EnchantmentValueEffect>],
     pub hit_block: &'static [ConditionalEffect<EnchantmentEntityEffect>],
     pub item_damage: &'static [ConditionalEffect<EnchantmentValueEffect>],
-    pub equipment_drops: &'static [TargetedConditionalEffect<EnchantmentValueEffect>],
+    pub equipment_drops: &'static [EquipmentDropEffect],
     pub fishing_time_reduction: &'static [ConditionalEffect<EnchantmentValueEffect>],
     pub fishing_luck_bonus: &'static [ConditionalEffect<EnchantmentValueEffect>],
     pub block_experience: &'static [ConditionalEffect<EnchantmentValueEffect>],
@@ -1482,13 +1489,17 @@ impl Enchantment {
             damage_protection: &[],
             hit_block: &[],
             item_damage: &[],
-            equipment_drops: &[TargetedConditionalEffect {
+            equipment_drops: &[EquipmentDropEffect {
                 enchanted: Some(EnchantmentTarget::Attacker),
                 affected: None,
                 effect: EnchantmentValueEffect::Add(LevelBasedValue::Linear {
                     base: 0.01f32,
                     per_level_above_first: 0.01f32,
                 }),
+                required_entity_type: Some((
+                    EnchantmentTarget::Attacker,
+                    &crate::entity::EntityType::PLAYER,
+                )),
             }],
             fishing_time_reduction: &[],
             fishing_luck_bonus: &[],
