@@ -77,7 +77,6 @@ pub mod breath;
 pub mod custom_sound;
 pub mod decoration;
 pub mod effect;
-mod equipment_damage;
 pub mod experience_orb;
 pub mod falling;
 pub mod hunger;
@@ -101,6 +100,8 @@ pub mod vehicle;
 pub use lightning::LightningBoltEntity;
 
 pub(crate) mod combat;
+pub mod equipment_damage;
+pub(crate) mod ignite;
 pub mod predicate;
 
 /// The maximum number of scoreboard tags an entity can carry, matching Vanilla.
@@ -494,21 +495,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     }
 
     fn set_on_fire_for_ticks(&self, ticks: u32) {
-        let entity = self.get_entity();
-        let mut event = crate::plugin::api::events::entity::entity_combust::EntityCombustEvent::new(
-            entity.entity_id,
-            ticks as f32 / 20.0,
-        );
-        if let Some(server) = entity.world.load().server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
-        }
-        if entity.fire_ticks.load(Ordering::Relaxed) < ticks as i32 {
-            entity.fire_ticks.store(ticks as i32, Ordering::Relaxed);
-        }
-        // TODO: defrost
+        ignite::ignite_for_ticks(self, ticks);
     }
 
     /// Called when a player collides with an entity

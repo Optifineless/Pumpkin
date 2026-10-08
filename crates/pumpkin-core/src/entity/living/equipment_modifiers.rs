@@ -1,4 +1,5 @@
 use super::LivingEntity;
+use crate::enchantment::EnchantmentHelper;
 use crate::entity::attributes::{AttributeInstance, Modifier, ModifierOperation};
 use pumpkin_data::AttributeModifierSlot;
 use pumpkin_data::attributes::Attributes;
@@ -68,6 +69,16 @@ impl LivingEntity {
         &self,
         equipment: &[(EquipmentSlot, ItemStack)],
     ) -> Vec<Attributes> {
+        let world = self.entity.world.load();
+        let batches: Vec<_> = equipment
+            .iter()
+            .map(|(slot, stack)| {
+                (
+                    slot,
+                    equipment_slot_attribute_modifiers(&world, stack, slot),
+                )
+            })
+            .collect();
         // LivingEntity.collectEquipmentChanges removes all old modifiers before adding new ones.
         // Otherwise a hand swap can remove the modifier just installed in the other hand.
         let mut ids = self
@@ -91,10 +102,10 @@ impl LivingEntity {
                 }
             }
         }
-        for (slot, stack) in equipment {
+        for (slot, modifiers) in batches {
             self.apply_equipment_slot_attribute_modifiers(
                 slot,
-                stack,
+                modifiers,
                 &mut attributes,
                 &mut ids,
                 &mut touched,
@@ -106,57 +117,73 @@ impl LivingEntity {
     fn apply_equipment_slot_attribute_modifiers(
         &self,
         slot: &EquipmentSlot,
-        stack: &ItemStack,
+        modifiers: Vec<(&'static Attributes, Modifier)>,
         attributes: &mut FxHashMap<u8, AttributeInstance>,
         ids: &mut FxHashMap<EquipmentSlot, Vec<(u8, String)>>,
         touched: &mut Vec<Attributes>,
     ) {
-        if stack.is_empty()
-            || (stack.is_damageable()
-                && !stack.is_unbreakable()
-                && stack.get_data_component::<DamageImpl>().is_some()
-                && stack.get_damage() >= stack.get_max_damage().unwrap_or(0))
-        {
-            return;
-        }
-        let Some(modifiers) = stack.get_data_component::<AttributeModifiersImpl>() else {
-            return;
-        };
-
         let mut applied = Vec::new();
-        for item_mod in modifiers.attribute_modifiers.iter() {
-            if !attribute_modifier_slot_matches(&item_mod.slot, slot) {
-                continue;
-            }
-            let operation = match item_mod.operation {
-                Operation::AddValue => ModifierOperation::Add,
-                Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
-                Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
-            };
-            let instance = attributes.entry(item_mod.r#type.id).or_insert_with(|| {
+        for (attribute, modifier) in modifiers {
+            let instance = attributes.entry(attribute.id).or_insert_with(|| {
                 let base = self
                     .entity
                     .entity_type
                     .attributes
                     .iter()
-                    .find(|(attribute, _)| attribute.id == item_mod.r#type.id)
-                    .map_or(item_mod.r#type.default_value, |(_, base)| *base);
+                    .find(|(candidate, _)| candidate.id == attribute.id)
+                    .map_or(attribute.default_value, |(_, base)| *base);
                 AttributeInstance::new(base)
             });
-            instance.add_or_replace_modifier(Modifier {
-                id: item_mod.id.to_string(),
-                amount: item_mod.amount,
-                operation,
-                permanent: false,
-            });
-            applied.push((item_mod.r#type.id, item_mod.id.to_string()));
-            push_unique_attribute(touched, item_mod.r#type);
+            applied.push((attribute.id, modifier.id.clone()));
+            instance.add_or_replace_modifier(modifier);
+            push_unique_attribute(touched, attribute);
         }
 
         if !applied.is_empty() {
             ids.insert(slot.clone(), applied);
         }
     }
+}
+
+// ItemStack.forEachModifier applies ItemAttributeModifiers.forEach, then enchantment modifiers.
+fn equipment_slot_attribute_modifiers(
+    world: &crate::world::World,
+    stack: &ItemStack,
+    slot: &EquipmentSlot,
+) -> Vec<(&'static Attributes, Modifier)> {
+    if stack.is_empty()
+        || (stack.is_damageable()
+            && !stack.is_unbreakable()
+            && stack.get_data_component::<DamageImpl>().is_some()
+            && stack.get_damage() >= stack.get_max_damage().unwrap_or(0))
+    {
+        return Vec::new();
+    }
+    let mut modifiers: Vec<_> = stack
+        .get_data_component::<AttributeModifiersImpl>()
+        .into_iter()
+        .flat_map(|component| component.attribute_modifiers.iter())
+        .filter(|modifier| attribute_modifier_slot_matches(&modifier.slot, slot))
+        .map(|modifier| {
+            (
+                modifier.r#type,
+                Modifier {
+                    id: modifier.id.to_string(),
+                    amount: modifier.amount,
+                    operation: match modifier.operation {
+                        Operation::AddValue => ModifierOperation::Add,
+                        Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
+                        Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
+                    },
+                    permanent: false,
+                },
+            )
+        })
+        .collect();
+    modifiers.extend(EnchantmentHelper::equipment_attribute_modifiers(
+        world, stack, slot,
+    ));
+    modifiers
 }
 
 fn attributes_by_id(id: u8) -> Option<&'static Attributes> {
@@ -385,5 +412,116 @@ mod tests {
         armor.set_damage(armor.get_max_damage().unwrap());
         living.apply_and_send_equipment_attribute_modifiers(&[(EquipmentSlot::BODY, armor)]);
         assert_eq!(living.get_attribute_value(&Attributes::ARMOR), 12.0);
+    }
+    #[tokio::test]
+    async fn melee_equipment_installs_replaces_restores_and_removes_sweeping_edge() {
+        use crate::entity::player::Player;
+        use pumpkin_data::{Enchantment, data_component_impl::EnchantmentsImpl};
+        use std::borrow::Cow;
+        let temp = tempfile::tempdir().unwrap();
+        let world = armor_test_world(temp.path());
+        let living = LivingEntity::new(Entity::new(
+            world.clone(),
+            Vector3::default(),
+            &EntityType::ZOMBIE,
+        ));
+        let mut sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+        sword.set_data_component(EnchantmentsImpl {
+            enchantment: Cow::Owned(vec![(&Enchantment::SWEEPING_EDGE, 3)]),
+        });
+        living
+            .entity_equipment
+            .lock()
+            .unwrap()
+            .put(&EquipmentSlot::MAIN_HAND, sword.clone());
+        living.send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, sword.clone())]);
+        assert_eq!(
+            living.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.75
+        );
+        assert_eq!(living.get_attribute_value(&Attributes::ATTACK_DAMAGE), 9.0);
+        assert_eq!(
+            Player::sweep_damage(
+                &EntityType::ZOMBIE,
+                &sword,
+                7.0,
+                living.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO) as f32,
+                1.0
+            ),
+            6.25
+        );
+
+        let mut saved = NbtCompound::new();
+        living.write_living_nbt(&mut saved);
+        let loaded = LivingEntity::new(Entity::new(world, Vector3::default(), &EntityType::ZOMBIE));
+        loaded.read_living_nbt_non_mut(&saved);
+        assert_eq!(
+            loaded.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.75
+        );
+        loaded.apply_current_equipment_attribute_modifiers();
+        assert_eq!(
+            loaded.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.75
+        );
+
+        sword.set_data_component(EnchantmentsImpl {
+            enchantment: Cow::Owned(vec![(&Enchantment::SWEEPING_EDGE, 1)]),
+        });
+        let touched = loaded
+            .apply_equipment_attribute_modifiers(&[(EquipmentSlot::MAIN_HAND, sword.clone())]);
+        assert!(touched.contains(&Attributes::SWEEPING_DAMAGE_RATIO));
+        assert_eq!(
+            loaded.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.5
+        );
+        sword.set_damage(sword.get_max_damage().unwrap());
+        loaded.send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, sword)]);
+        assert_eq!(
+            loaded.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.0
+        );
+        assert_eq!(loaded.get_attribute_value(&Attributes::ATTACK_DAMAGE), 3.0);
+        let sword = living
+            .entity_equipment
+            .lock()
+            .unwrap()
+            .get(&EquipmentSlot::MAIN_HAND);
+        living.send_equipment_changes(&[
+            (EquipmentSlot::OFF_HAND, sword),
+            (EquipmentSlot::MAIN_HAND, ItemStack::EMPTY.clone()),
+        ]);
+        assert_eq!(
+            living.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.0
+        );
+    }
+
+    #[tokio::test]
+    async fn melee_enchantment_only_equipment_does_not_require_attribute_component() {
+        use pumpkin_data::{Enchantment, data_component_impl::EnchantmentsImpl};
+        use std::borrow::Cow;
+        let temp = tempfile::tempdir().unwrap();
+        let living = LivingEntity::new(Entity::new(
+            armor_test_world(temp.path()),
+            Vector3::default(),
+            &EntityType::ZOMBIE,
+        ));
+        let mut sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+        sword
+            .remove_data_component(pumpkin_data::data_component::DataComponent::AttributeModifiers);
+        sword.set_data_component(EnchantmentsImpl {
+            enchantment: Cow::Owned(vec![(&Enchantment::SWEEPING_EDGE, 1)]),
+        });
+        living.send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, sword)]);
+        assert_eq!(
+            living.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.5
+        );
+        living.send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, ItemStack::EMPTY.clone())]);
+        assert_eq!(
+            living.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
+            0.0
+        );
     }
 }

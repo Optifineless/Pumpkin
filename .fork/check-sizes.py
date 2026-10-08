@@ -48,7 +48,7 @@ def line_count(path):
 
 def tracked_sources():
     return [
-        f for f in git("ls-files", "*.rs").split("\n")
+        f for f in git("ls-files", "--cached", "--others", "--exclude-standard", "*.rs").split("\n")
         if f and "/generated/" not in f and not f.startswith("tests/")
     ]
 
@@ -68,6 +68,8 @@ def write_baseline(files):
 def main():
     positional = [a for a in sys.argv[1:] if not a.startswith("--")]
     base = positional[0] if positional else "upstream/master"
+    if not git("rev-parse", "--verify", base).strip():
+        base = "master"
     files = tracked_sources()
     if "--write-baseline" in sys.argv:
         write_baseline(files)

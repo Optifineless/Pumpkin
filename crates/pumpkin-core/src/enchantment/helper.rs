@@ -2,7 +2,7 @@ use crate::enchantment::effects::EnchantmentEntityEffectExt;
 use crate::entity::Entity;
 use crate::entity::projectile::arrow::ArrowEntity;
 use pumpkin_data::data_component_impl::EnchantmentsImpl;
-use pumpkin_data::enchantment::{Enchantment, EnchantmentEntityEffect, EnchantmentTarget};
+use pumpkin_data::enchantment::{Enchantment, EnchantmentEntityEffect};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 
@@ -43,24 +43,6 @@ impl EnchantmentHelper {
                 {
                     arrow.set_flame(true);
                 }
-            }
-        });
-    }
-
-    /// Applies post-attack enchantment effects (e.g. Fire Aspect ignites victim).
-    pub fn on_post_attack(attacker: &Entity, victim: &Entity, weapon: &ItemStack) {
-        Self::run_iteration_on_item(weapon, |enchantment, level| {
-            for targeted_effect in enchantment.effects.post_attack {
-                let target = match targeted_effect.affected {
-                    Some(EnchantmentTarget::Attacker | EnchantmentTarget::DamagingEntity) => {
-                        attacker
-                    }
-                    Some(EnchantmentTarget::Victim) | None => victim,
-                };
-                let world = target.world.load_full();
-                targeted_effect
-                    .effect
-                    .apply(&world, level, None, Some(target), target.pos.load());
             }
         });
     }

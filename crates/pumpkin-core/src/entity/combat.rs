@@ -4,6 +4,9 @@ use std::sync::atomic::Ordering;
 use crate::entity::EntityBase;
 use crate::entity::decoration::armor_stand::ArmorStandEntity;
 use crate::entity::living::LivingEntity;
+use pumpkin_data::Block;
+use pumpkin_data::block_properties::{LadderLikeProperties, OakTrapdoorLikeProperties};
+use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
@@ -31,13 +34,17 @@ pub enum AttackType {
 }
 
 impl AttackType {
-    pub fn new(player: &Player, attack_cooldown_progress: f32) -> Self {
+    pub fn new(
+        player: &Player,
+        target: &dyn EntityBase,
+        held_item: &pumpkin_data::item_stack::ItemStack,
+        attack_cooldown_progress: f32,
+    ) -> Self {
         let entity = &player.get_entity();
 
         let sprinting = entity.is_sprinting();
         let on_ground = entity.on_ground.load(Ordering::Relaxed);
         let fall_distance = player.living_entity.fall_distance.load();
-        let held_item = player.inventory().held_item();
 
         let sword = held_item.is_sword();
         let is_bedrock = matches!(player.client.as_ref(), ClientPlatform::Bedrock(_));
@@ -47,16 +54,104 @@ impl AttackType {
             return Self::Knockback;
         }
 
-        if is_strong && !on_ground && fall_distance > 0.0 {
+        // Vanilla Player.canCriticalAttack; Player.isMobilityRestricted is Blindness.
+        let critical = CriticalAttackConditions {
+            strong: is_strong,
+            on_ground,
+            fall_distance,
+            climbing: is_strong && !on_ground && fall_distance > 0.0 && on_climbable(player),
+            in_water: entity.is_in_water(),
+            blinded: player.living_entity.has_effect(&StatusEffect::BLINDNESS),
+            passenger: player.is_passenger(),
+            sprinting,
+            living_target: target.get_living_entity().is_some(),
+        }
+        .can_critical_attack();
+        if critical {
             return Self::Critical;
         }
 
-        if sword && is_strong && !is_bedrock {
+        // Vanilla Player.isSweepAttack uses the last known client movement.
+        let movement = player.get_known_movement();
+        let horizontal_speed_squared = movement.x * movement.x + movement.z * movement.z;
+        let speed = player
+            .living_entity
+            .get_attribute_value(&Attributes::MOVEMENT_SPEED) as f32;
+        if !is_bedrock
+            && is_sweep_attack(is_strong, on_ground, sword, horizontal_speed_squared, speed)
+        {
             return Self::Sweeping;
         }
 
         if is_strong { Self::Strong } else { Self::Weak }
     }
+}
+
+#[derive(Clone, Copy)]
+struct CriticalAttackConditions {
+    strong: bool,
+    on_ground: bool,
+    fall_distance: f32,
+    climbing: bool,
+    in_water: bool,
+    blinded: bool,
+    passenger: bool,
+    sprinting: bool,
+    living_target: bool,
+}
+
+impl CriticalAttackConditions {
+    fn can_critical_attack(&self) -> bool {
+        self.strong
+            && self.fall_distance > 0.0
+            && !self.on_ground
+            && !self.climbing
+            && !self.in_water
+            && !self.blinded
+            && !self.passenger
+            && !self.sprinting
+            && self.living_target
+    }
+}
+
+// Called after critical and sprint attacks have been excluded, as in Player.isSweepAttack.
+pub fn is_sweep_attack(
+    strong: bool,
+    on_ground: bool,
+    sword: bool,
+    movement_squared: f64,
+    speed: f32,
+) -> bool {
+    strong && on_ground && sword && movement_squared < (f64::from(speed) * 2.5).powi(2)
+}
+
+// LivingEntity.onClimbable, including trapdoors above ladders. Pumpkin's climbing
+// tick currently clears the cached flag, so checking it alone would allow ladder crits.
+fn on_climbable(player: &Player) -> bool {
+    if player.is_spectator() {
+        return false;
+    }
+    let entity = player.get_entity();
+    let world = player.world();
+    let pos = entity.block_pos.load();
+    let (block, state) = world.get_block_and_state(&pos);
+    if entity.is_fall_flying()
+        && block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_CAN_GLIDE_THROUGH)
+    {
+        return false;
+    }
+    if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_CLIMBABLE) {
+        return true;
+    }
+    if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_TRAPDOORS) {
+        let trapdoor = OakTrapdoorLikeProperties::from_state_id(state.id);
+        if trapdoor.open {
+            let (below, below_state) = world.get_block_and_state(&pos.down());
+            return below.id == Block::LADDER.id
+                && LadderLikeProperties::from_state_id(below_state.id).facing == trapdoor.facing;
+        }
+    }
+    false
 }
 
 /// Checks smash eligibility, rejecting stale fall distance after a ground-only packet.
@@ -771,6 +866,62 @@ mod tests {
                     .abs()
                     < 1.0e-5
             );
+        }
+    }
+
+    #[test]
+    fn melee_crit_rejects_every_vanilla_exclusion() {
+        let eligible = CriticalAttackConditions {
+            strong: true,
+            on_ground: false,
+            fall_distance: 1.0,
+            climbing: false,
+            in_water: false,
+            blinded: false,
+            passenger: false,
+            sprinting: false,
+            living_target: true,
+        };
+        assert!(eligible.can_critical_attack());
+        for excluded in [
+            CriticalAttackConditions {
+                strong: false,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                on_ground: true,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                fall_distance: 0.0,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                climbing: true,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                in_water: true,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                blinded: true,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                passenger: true,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                sprinting: true,
+                ..eligible
+            },
+            CriticalAttackConditions {
+                living_target: false,
+                ..eligible
+            },
+        ] {
+            assert!(!excluded.can_critical_attack());
         }
     }
 

@@ -135,38 +135,17 @@ impl LivingEntity {
         slots: &[EquipmentSlot],
     ) {
         // LivingEntity.doHurtEquipment delegates to ItemStack.hurtAndBreak for eligible slots.
-        let mut equipment_updates = Vec::new();
+        use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item_if};
+        let owner: &dyn EntityBase = if let Some(player) = caller.get_player() {
+            player
+        } else {
+            self
+        };
         for slot in slots {
-            if let Some(player) = caller.get_player() {
-                player.damage_item_in_slot_if(slot, |stack| {
-                    equipment_damage_amount(stack, damage_type, damage)
-                });
-            } else {
-                let mut equipment = self
-                    .entity_equipment
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let Some(stack) = equipment.equipment.get_mut(slot) else {
-                    continue;
-                };
-                let Some(amount) = equipment_damage_amount(stack, damage_type, damage) else {
-                    continue;
-                };
-                let result = stack.damage_item(amount);
-                if result != DamageResult::Untouched {
-                    equipment_updates.push((slot.clone(), stack.clone()));
-                }
-                drop(equipment);
-                if result == DamageResult::Broken {
-                    self.entity.world.load().send_entity_status(
-                        &self.entity,
-                        crate::entity::equipment_break_status(slot),
-                        None,
-                    );
-                }
-            }
+            damage_equipped_item_if(owner, &EquippedItem::capture(owner, slot), |stack| {
+                equipment_damage_amount(stack, damage_type, damage)
+            });
         }
-        self.send_equipment_changes(&equipment_updates);
     }
 
     /// Calculates armor absorption for existing callers using their attacker context.

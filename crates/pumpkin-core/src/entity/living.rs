@@ -1,5 +1,6 @@
 mod armor;
 mod equipment_modifiers;
+mod impulse;
 #[cfg(test)]
 mod test_support;
 
@@ -143,6 +144,7 @@ pub struct LivingEntity {
     /// Modifier ids applied from the current item in each equipment slot.
     /// Used to remove them on unequip without the previous stack.
     equipment_attribute_modifier_ids: std::sync::Mutex<FxHashMap<EquipmentSlot, Vec<(u8, String)>>>,
+    impulse: impulse::ImpulseContext,
 }
 
 #[derive(Clone)]
@@ -315,6 +317,7 @@ impl LivingEntity {
             water_movement_speed_multiplier,
             last_block_pos: AtomicCell::new(None),
             equipment_attribute_modifier_ids: std::sync::Mutex::new(FxHashMap::default()),
+            impulse: impulse::ImpulseContext::default(),
         }
     }
 
@@ -1730,6 +1733,9 @@ impl LivingEntity {
     ) {
         if ground {
             let fall_distance = self.fall_distance.swap(0.0);
+            if let Some(player) = caller.get_player() {
+                player.check_mace_landing_particles(fall_distance);
+            }
             if fall_distance > 0.0 {
                 self.on_changed_block(caller, self.entity.block_pos.load());
             }
@@ -1807,11 +1813,15 @@ impl LivingEntity {
             );
         }
 
+        let fall_distance = self
+            .impulse
+            .effective_fall_distance(fall_distance, self.entity.pos.load().y);
         let safe_fall_distance = self.get_attribute_value(&Attributes::SAFE_FALL_DISTANCE) as f32;
         let unsafe_fall_distance = fall_distance + 1.0E-6 - safe_fall_distance;
 
         let damage = (unsafe_fall_distance * damage_per_distance).floor();
         if damage > 0.0 {
+            self.impulse.reset();
             let check_damage = self.damage(caller, damage, DamageType::FALL); // Fall
             if check_damage {
                 self.entity
@@ -2404,6 +2414,7 @@ impl LivingEntity {
     }
 
     pub fn reset_state(&self) {
+        self.impulse.reset();
         self.entity.reset_state();
 
         // Restore to maximum health for this entity type
@@ -2481,6 +2492,7 @@ impl LivingEntity {
 
 impl LivingEntity {
     pub fn write_living_nbt(&self, nbt: &mut NbtCompound) {
+        self.impulse.write_nbt(nbt);
         nbt.put("Health", NbtTag::Float(self.health.load()));
         // Avoid persisting a lethal fall distance when the entity is dead to prevent death loops
         let fall_distance = if self.dead.load(Relaxed) {
@@ -2540,6 +2552,7 @@ impl LivingEntity {
     }
 
     pub fn read_living_nbt_non_mut(&self, nbt: &NbtCompound) {
+        self.impulse.read_nbt(nbt);
         // Restore saved attributes (base values and permanent modifiers) first so
         // the health default and absorption clamp below use the saved values,
         // mirroring vanilla `LivingEntity.readAdditionalSaveData`.
@@ -3077,6 +3090,7 @@ impl EntityBase for LivingEntity {
     /// death-animation completion.
     #[allow(clippy::too_many_lines)]
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.impulse.tick();
         self.entity.tick(caller, server);
 
         // Only tick movement if the entity is alive. This prevents a dead "corpse"

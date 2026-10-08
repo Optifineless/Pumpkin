@@ -1,8 +1,9 @@
+mod enchantment;
+
 use std::sync::Arc;
 
 use pumpkin_data::{
     Block, BlockState, BlockStateId,
-    damage::DamageType,
     entity::EntityType,
     fluid::Fluid,
     particle::Particle,
@@ -193,6 +194,7 @@ pub struct Explosion {
     block_interaction: BlockInteraction,
     damage_calculator: Option<Arc<dyn ExplosionDamageCalculator>>,
     preserve_rails: bool,
+    enchantment_settings: Option<enchantment::EnchantmentSettings>,
     pub(super) small_particle: Particle,
     pub(super) large_particle: Particle,
     pub(super) sound: Sound,
@@ -212,6 +214,7 @@ impl Explosion {
             block_interaction,
             damage_calculator: None,
             preserve_rails: false,
+            enchantment_settings: None,
             small_particle: Particle::Explosion,
             large_particle: Particle::ExplosionEmitter,
             sound: Sound::EntityGenericExplode,
@@ -440,7 +443,7 @@ impl Explosion {
             if should_damage {
                 let damage =
                     calc.get_entity_damage_amount(self, entity_base.as_ref(), exposure as f32);
-                entity.damage(entity_base.as_ref(), damage, DamageType::EXPLOSION);
+                self.hurt_from_explosion(entity_base.as_ref(), damage);
             }
 
             // Calculate and apply knockback
@@ -585,8 +588,10 @@ impl Explosion {
     }
 
     pub fn explode(&self, world: &Arc<World>) -> ExplosionResult {
+        let fire_positions = self.enchantment_fire_positions(world);
         let player_knockback = self.damage_entities(world);
         let block_count = self.interact_with_blocks(world);
+        self.create_enchantment_fire(world, &fire_positions);
         ExplosionResult {
             block_count,
             player_knockback,

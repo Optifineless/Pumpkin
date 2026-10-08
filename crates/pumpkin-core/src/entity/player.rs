@@ -1,4 +1,8 @@
 pub mod advancement;
+mod known_movement;
+mod mace;
+mod melee;
+use known_movement::KnownMovement;
 pub mod statistics;
 
 use core::f32;
@@ -236,8 +240,7 @@ impl BedrockPlayer<'_> {
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::damage::DamageType;
-use pumpkin_data::data_component_impl::{AttributeModifiersImpl, EnchantmentsImpl, Operation};
-use pumpkin_data::data_component_impl::{EquipmentSlot, EquippableImpl, ToolImpl, WeaponImpl};
+use pumpkin_data::data_component_impl::{EquipmentSlot, EquippableImpl, ToolImpl};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityPose, EntityStatus, EntityType};
 use pumpkin_data::item_stack::ItemStack;
@@ -312,10 +315,6 @@ use crate::world::{BlockBreakingProgress, World};
 use bytes::Bytes;
 
 use super::breath::BreathManager;
-use super::combat::{
-    self, AttackType, can_smash_attack, mace_smash_damage_bonus, mace_smash_knockback,
-    player_attack_sound,
-};
 use super::hunger::HungerManager;
 use super::item::ItemEntity;
 use super::living::LivingEntity;
@@ -401,29 +400,6 @@ pub enum PlayerWeather {
 pub enum SpamType {
     Chat,
     Command,
-}
-
-#[derive(Default)]
-pub(crate) struct KnownMovement {
-    movement: AtomicCell<Vector3<f64>>,
-    received_this_tick: AtomicBool,
-}
-
-impl KnownMovement {
-    // ServerGamePacketListenerImpl.handlePlayerKnownMovement / handleClientTickEnd.
-    pub(crate) fn record(&self, movement: Vector3<f64>) {
-        self.movement.store(movement);
-        self.received_this_tick.store(true, Ordering::Relaxed);
-    }
-
-    /// Returns whether an accepted movement arrived during this client tick.
-    pub(crate) fn finish_tick(&self) -> bool {
-        let received = self.received_this_tick.swap(false, Ordering::Relaxed);
-        if !received {
-            self.movement.store(Vector3::new(0.0, 0.0, 0.0));
-        }
-        received
-    }
 }
 
 pub struct Player {
@@ -600,31 +576,6 @@ struct SkinMetadata {
 }
 
 impl Player {
-    pub(crate) fn controls_vehicle(&self, vehicle: &dyn EntityBase) -> bool {
-        // AbstractBoat.getControllingPassenger; other implemented vehicles have no controller.
-        vehicle
-            .cast_any()
-            .is::<crate::entity::vehicle::boat::BoatEntity>()
-            && vehicle
-                .get_entity()
-                .passengers
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .first()
-                .is_some_and(|passenger| passenger.get_entity().entity_id == self.entity_id())
-    }
-
-    /// Returns the accepted client movement used by Projectile.shootFromRotation.
-    pub fn get_known_movement(&self) -> Vector3<f64> {
-        // ServerPlayer.getKnownMovement uses the vehicle when this player is a passenger.
-        if let Some(vehicle) = self.get_entity().get_vehicle()
-            && !self.controls_vehicle(vehicle.as_ref())
-        {
-            return vehicle.get_entity().velocity.load();
-        }
-        self.known_movement.movement.load()
-    }
-
     #[must_use]
     pub fn fetch_skin(properties: &[Property]) -> Option<pumpkin_protocol::bedrock::client::Skin> {
         let textures_prop = properties.iter().find(|p| &*p.name == "textures")?;
@@ -1367,312 +1318,6 @@ impl Player {
         }
     }
 
-    #[expect(clippy::too_many_lines)]
-    pub fn attack(&self, victim: &Arc<dyn EntityBase>) {
-        let world = self.world();
-        let Some(server) = world.server.upgrade() else {
-            return;
-        };
-        let victim_entity = victim.get_entity();
-        let attacker_entity = &self.living_entity.entity;
-        let config = &server.advanced_config.pvp;
-
-        let inventory = self.inventory();
-        let item_stack = inventory.held_item();
-        if !item_stack.is_empty() {
-            self.increment_stat(
-                statistics::StatisticCategory::Used,
-                item_stack.item.id as i32,
-                1,
-            );
-        }
-
-        let base_damage = self
-            .living_entity
-            .get_attribute_value(&Attributes::ATTACK_DAMAGE);
-        let base_attack_speed = 4.0;
-
-        let mut damage_multiplier = 1.0;
-        let mut add_speed = 0.0;
-        let mut extra_ench_damage = 0.0;
-        let mut enchantment_knockback = 0.0f64;
-
-        {
-            let stack = &item_stack;
-            if stack.is_empty() {
-                // Vanilla fist: base_attack_speed = -2.4
-                add_speed = -2.4;
-            } else if let Some(modifiers) = stack.get_data_component::<AttributeModifiersImpl>() {
-                // Only attack speed is read from the item here.
-                // Attack damage is already  part of `base_damage` via the held item's live
-                // ATTACK_DAMAGE modifier, re-adding it here would double it.
-                for item_mod in modifiers.attribute_modifiers.iter() {
-                    if item_mod.operation == Operation::AddValue
-                        && item_mod.id == "minecraft:base_attack_speed"
-                    {
-                        add_speed = item_mod.amount;
-                    }
-                }
-            }
-            if let Some(enchantments) = stack.get_data_component::<EnchantmentsImpl>() {
-                for (enchantment, level) in enchantments.enchantment.iter() {
-                    enchantment.modify_damage_against(
-                        *level,
-                        &mut extra_ench_damage,
-                        Some(victim_entity.entity_type),
-                    );
-                    let mut kb = 0.0f32;
-                    enchantment.modify_knockback(*level, &mut kb);
-                    enchantment_knockback += f64::from(kb);
-                }
-            }
-        }
-
-        let attack_speed = base_attack_speed + add_speed;
-
-        let is_bedrock = matches!(self.client.as_ref(), ClientPlatform::Bedrock(_));
-        let attack_cooldown_progress = if is_bedrock {
-            1.0
-        } else {
-            self.get_attack_cooldown_progress(f64::from(server.basic_config.tps), 0.5, attack_speed)
-        };
-        self.last_attacked_ticks.store(0, Ordering::Relaxed);
-
-        // Only reduce attack damage if in cooldown
-        // TODO: Enchantments are reduced in the same way, just without the square.
-        if attack_cooldown_progress < 1.0 {
-            damage_multiplier = attack_cooldown_progress.powi(2).mul_add(0.8, 0.2);
-        }
-
-        // Modify the added damage based on the multiplier.
-        let mut damage = base_damage * damage_multiplier;
-        damage += extra_ench_damage * attack_cooldown_progress;
-        // Strength and Weakness are modifiers on ATTACK_DAMAGE, so
-        // `base_damage` already carries them, like vanilla `Player.attack`.
-        damage = damage.max(0.0);
-
-        let pos = victim_entity.pos.load();
-        let attack_type = AttackType::new(self, attack_cooldown_progress as f32);
-
-        let is_mace_smash = item_stack.item.id == pumpkin_data::item::Item::MACE.id
-            && can_smash_attack(&self.living_entity);
-        // Vanilla adds the weapon's damage bonus before the critical hit multiplier.
-        if is_mace_smash {
-            let fall_distance = f64::from(self.living_entity.fall_distance.load());
-            let mut smash_bonus_per_block = 0.0f64;
-            if let Some(enchantments) = item_stack.get_data_component::<EnchantmentsImpl>() {
-                for (enchantment, level) in enchantments.enchantment.iter() {
-                    enchantment.modify_fall_based_damage(*level, &mut smash_bonus_per_block);
-                }
-            }
-            damage += smash_bonus_per_block
-                .mul_add(fall_distance, mace_smash_damage_bonus(fall_distance));
-        }
-
-        if matches!(attack_type, AttackType::Critical) {
-            damage *= 1.5;
-        }
-
-        if !victim.damage_with_context(
-            victim.as_ref(),
-            damage as f32,
-            if is_mace_smash {
-                DamageType::MACE_SMASH
-            } else {
-                DamageType::PLAYER_ATTACK
-            },
-            None,
-            Some(self),
-            Some(self),
-        ) {
-            world.play_sound(
-                Sound::EntityPlayerAttackNodamage,
-                SoundCategory::Players,
-                &self.living_entity.entity.pos.load(),
-            );
-            return;
-        }
-
-        if is_mace_smash && damage >= 100.0 {
-            self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::DealtOverkillDamage);
-        }
-
-        if let Some(enchantments) = item_stack.get_data_component::<EnchantmentsImpl>() {
-            for (enchantment, level) in enchantments.enchantment.iter() {
-                for post_effect in enchantment.get_post_attack_effects() {
-                    if post_effect.affected
-                        == Some(pumpkin_data::enchantment::EnchantmentTarget::Victim)
-                        && let pumpkin_data::enchantment::EnchantmentEntityEffect::Ignite {
-                            duration,
-                        } = &post_effect.effect
-                    {
-                        let duration_seconds = duration.calculate(*level);
-                        victim_entity.set_on_fire_for_ticks((duration_seconds * 20.0) as u32);
-                    }
-                }
-            }
-        }
-
-        if is_mace_smash && victim.get_living_entity().is_some() {
-            let attacker = &self.living_entity.entity;
-            let velocity = attacker.velocity.load();
-            self.set_velocity(Vector3::new(velocity.x, f64::from(0.01f32), velocity.z));
-
-            let fall_distance = self.living_entity.fall_distance.load();
-            let sound = if !victim_entity.on_ground.load(Ordering::Relaxed) {
-                Sound::ItemMaceSmashAir
-            } else if fall_distance > 5.0 {
-                Sound::ItemMaceSmashGroundHeavy
-            } else {
-                Sound::ItemMaceSmashGround
-            };
-            world.play_sound(sound, SoundCategory::Players, &attacker.pos.load());
-            mace_smash_knockback(&world, self, victim.as_ref());
-
-            self.living_entity.fall_distance.store(0.0);
-            if let Some(enchantments) = item_stack.get_data_component::<EnchantmentsImpl>() {
-                for (enchantment, level) in enchantments.enchantment.iter() {
-                    if **enchantment == Enchantment::WIND_BURST {
-                        let boost_y = 0.5 + 0.25 * (*level as f64);
-                        let vel = self.living_entity.entity.velocity.load();
-                        self.living_entity
-                            .entity
-                            .velocity
-                            .store(Vector3::new(vel.x, boost_y, vel.z));
-                    }
-                }
-            }
-        }
-
-        player_attack_sound(&pos, &world, attack_type);
-
-        if matches!(attack_type, AttackType::Critical) {
-            let je_packet =
-                CEntityAnimation::new(victim_entity.entity_id.into(), Animation::CriticalEffect);
-            let be_packet = pumpkin_protocol::bedrock::server::animate::SAnimate {
-                action: pumpkin_protocol::bedrock::server::animate::AnimateAction::CriticalHit,
-                target_actor_runtime_id: VarULong(victim_entity.entity_id as u64),
-                data: 0.0,
-                swing_source: None,
-            };
-            world.broadcast_editioned(&je_packet, &be_packet);
-        }
-
-        self.living_entity.last_attacking_id.store(
-            victim_entity.entity_id,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        self.living_entity.last_attack_time.store(
-            self.living_entity
-                .entity
-                .age
-                .load(std::sync::atomic::Ordering::Relaxed),
-            std::sync::atomic::Ordering::Relaxed,
-        );
-
-        if victim.get_living_entity().is_some() {
-            // Vanilla `LivingEntity.getKnockback` starts from the ATTACK_KNOCKBACK
-            // attribute and applies the weapon's enchantments, then halves:
-            // `(attribute + enchantment) / 2`. A sprint attack adds 0.5.
-            // `handle_knockback` halves its `strength`, so these are twice the
-            // vanilla amount.
-            let mut knockback_strength = self
-                .living_entity
-                .get_attribute_value(&Attributes::ATTACK_KNOCKBACK)
-                + enchantment_knockback;
-            match attack_type {
-                AttackType::Knockback => knockback_strength += 1.0,
-                AttackType::Sweeping => {
-                    combat::spawn_sweep_particle(attacker_entity, &world, &pos);
-
-                    let mut sweep_damage = 1.0;
-                    if let Some(enchantments) = item_stack.get_data_component::<EnchantmentsImpl>()
-                    {
-                        for (enchantment, level) in enchantments.enchantment.iter() {
-                            if **enchantment == Enchantment::SWEEPING_EDGE {
-                                sweep_damage +=
-                                    damage as f32 * (*level as f32 / (*level as f32 + 1.0));
-                            }
-                        }
-                    }
-
-                    let search_box = BoundingBox::new(
-                        Vector3::new(pos.x - 1.0, pos.y - 0.5, pos.z - 1.0),
-                        Vector3::new(pos.x + 1.0, pos.y + 0.5, pos.z + 1.0),
-                    );
-                    let yaw = f64::from(attacker_entity.yaw.load().to_radians());
-                    let knockback_x = yaw.sin();
-                    let knockback_z = -yaw.cos();
-                    let victims = world.get_all_at_box(&search_box);
-                    for other_victim in victims {
-                        if other_victim.get_entity().entity_id != victim_entity.entity_id
-                            && other_victim.get_entity().entity_id != attacker_entity.entity_id
-                        {
-                            let hurt = other_victim.damage_with_context(
-                                other_victim.as_ref(),
-                                sweep_damage,
-                                DamageType::PLAYER_ATTACK,
-                                None,
-                                Some(self),
-                                Some(self),
-                            );
-                            // Vanilla `Player.doSweepAttack` knocks every hurt victim
-                            // back by 0.4 along the attacker's facing.
-                            if hurt && let Some(living) = other_victim.get_living_entity() {
-                                let resistance =
-                                    living.get_attribute_value(&Attributes::KNOCKBACK_RESISTANCE);
-                                other_victim.get_entity().apply_knockback(
-                                    combat::knockback_after_resistance(0.4, resistance),
-                                    knockback_x,
-                                    knockback_z,
-                                );
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-            // Vanilla only pushes the victim when the extra knockback is non-zero;
-            // `Entity::knockback` halves the current velocity, so calling it with 0.0
-            // would still slow the victim down.
-            if config.knockback && knockback_strength > 0.0 {
-                combat::handle_knockback(attacker_entity, victim.as_ref(), knockback_strength);
-                // Vanilla `Player.causeExtraKnockback` ends the sprint.
-                self.living_entity.set_sprinting(false);
-            }
-        }
-
-        // NOTE: TOCTOU race condition in single-player context.
-        // The weapon cost is computed (cost = 1 or 2) with item_stack locked, then damage_held_item
-        // re-acquires the lock. In async multi-task scenarios, another task could theoretically
-        // swap the held item between these operations, causing the cost to apply to the wrong item.
-        // Mitigation options (in priority order):
-        // 1. Create damage_held_item_with_lock(&self, item_stack: MutexGuard, amount) variant
-        //    to hold the lock across both computation and application.
-        // 2. Refactor compute cost as a closure: damage_held_item(self, |stack| -> i32 { ... })
-        // 3. In practice, single-player scenarios are safe (this is not multiplayer). Document
-        //    as a known limitation if refactoring is deemed too invasive.
-        self.damage_held_item(Self::combat_weapon_durability_cost(&item_stack));
-
-        // Vanilla `Player#attack` ends the successful-hit branch with
-        // `causeFoodExhaustion(0.1F)`. Only landed hits exhaust; the miss/no-damage
-        // case returned early above.
-        self.add_exhaustion(0.1);
-
-        if config.swing {}
-    }
-
-    /// Returns the durability cost for using the held item as a weapon in combat.
-    /// Derived from the `Weapon` data component: items without it (e.g. shears, tools
-    /// not designed for combat) take no durability damage on attack.
-    /// Items with the component use its `item_damage_per_attack` value (default 1;
-    /// axes, pickaxes, shovels, and hoes carry a value of 2).
-    fn combat_weapon_durability_cost(stack: &ItemStack) -> i32 {
-        stack
-            .get_data_component::<WeaponImpl>()
-            .map_or(0, |w| w.item_damage_per_attack as i32)
-    }
-
     /// Pushes current inventory contents to the client via `CONTAINER_SET_SLOT`.
     ///
     /// `minecraft:set_player_inventory` is missing on 1.21.0/1.21.1 and is not
@@ -1747,99 +1392,6 @@ impl Player {
             self.living_entity
                 .send_equipment_changes(&[(EquipmentSlot::OFF_HAND, stack)]);
         }
-    }
-
-    /// Applies `amount` durability damage to the item in `slot`.
-    /// Broadcasts an [`EntityStatus`] break event and syncs the slot if the item is destroyed.
-    pub fn damage_item_in_slot(&self, slot: &EquipmentSlot, amount: i32) -> bool {
-        self.damage_item_in_slot_if(slot, |_| Some(amount))
-    }
-
-    /// Selects durability damage on the guarded slot and rechecks eligibility after plugins run.
-    pub(crate) fn damage_item_in_slot_if(
-        &self,
-        slot: &EquipmentSlot,
-        select_amount: impl Fn(&ItemStack) -> Option<i32>,
-    ) -> bool {
-        if matches!(
-            self.gamemode.load(),
-            GameMode::Creative | GameMode::Spectator
-        ) {
-            return false;
-        }
-
-        // Direct PlayerInventory slot indices (matches build_equipment_slots).
-        let slot_index: usize = match slot {
-            EquipmentSlot::MainHand(_) => self.inventory.get_selected_slot() as usize,
-            EquipmentSlot::OffHand(_) => PlayerInventory::OFF_HAND_SLOT, // 40
-            EquipmentSlot::Feet(_) => 36,
-            EquipmentSlot::Legs(_) => 37,
-            EquipmentSlot::Chest(_) => 38,
-            EquipmentSlot::Head(_) => 39,
-            // Players do not have Body or Saddle equipment slots;
-            // these are only used by non-player entities (e.g. horses).
-            EquipmentSlot::Body(_) | EquipmentSlot::Saddle(_) => return false,
-        };
-
-        let updated = super::equipment_damage::damage_inventory_slot(
-            &self.inventory,
-            slot_index,
-            select_amount,
-            |stack, amount| {
-                if let Some(server) = self.world().server.upgrade()
-                    && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
-                {
-                    let mut event = crate::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent::new(
-                        player_arc,
-                        stack.item.registry_key.to_string(),
-                        amount,
-                    );
-                    server.plugin_manager.fire_blocking(&server, &mut event);
-                    if event.cancelled {
-                        return None;
-                    }
-                    return Some(event.damage);
-                }
-                Some(amount)
-            },
-        );
-
-        if let Some((result, updated_stack, original_item)) = updated {
-            if result == pumpkin_data::item_stack::DamageResult::Broken {
-                if let Some(server) = self.world().server.upgrade()
-                    && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
-                {
-                    let mut event = crate::plugin::api::events::player::player_item_break::PlayerItemBreakEvent::new(
-                        player_arc,
-                        original_item.registry_key.to_string(),
-                    );
-                    server.plugin_manager.fire_blocking(&server, &mut event);
-                }
-                self.increment_stat(
-                    statistics::StatisticCategory::Broken,
-                    original_item.id as i32,
-                    1,
-                );
-                self.world().send_entity_status(
-                    &self.living_entity.entity,
-                    super::equipment_break_status(slot),
-                    None,
-                );
-            }
-
-            self.try_send_slot_set_packet(&CSetPlayerInventory::new(
-                (slot_index as i32).into(),
-                &ItemStackSerializer::from(updated_stack.clone()),
-            ));
-            self.sync_inventory_to_client();
-
-            self.living_entity
-                .send_equipment_changes(&[(slot.clone(), updated_stack)]);
-
-            return true;
-        }
-
-        false
     }
 
     /// Checks and triggers location-based enchantments (e.g. Frost Walker) on the player's equipped armor.
@@ -3222,14 +2774,6 @@ impl Player {
             self.client_loaded_timeout.store(60, Ordering::Relaxed);
         }
         self.client_loaded.store(loaded, Ordering::Relaxed);
-    }
-
-    pub fn get_attack_cooldown_progress(&self, tps: f64, base_time: f64, attack_speed: f64) -> f64 {
-        let x = f64::from(self.last_attacked_ticks.load(Ordering::Acquire)) + base_time;
-
-        let progress_per_tick = tps / attack_speed;
-        let progress = x / progress_per_tick;
-        progress.clamp(0.0, 1.0)
     }
 
     pub async fn fire_packet_sent<P: Send + Sync + std::any::Any>(
@@ -6990,15 +6534,7 @@ impl EntityBase for Player {
     }
 
     fn set_on_fire_for_ticks(&self, ticks: u32) {
-        let entity = self.get_entity();
-        let ticks = if entity.invulnerable.load(Ordering::Relaxed) {
-            1
-        } else {
-            ticks
-        };
-        if entity.fire_ticks.load(Ordering::Relaxed) < ticks as i32 {
-            entity.fire_ticks.store(ticks as i32, Ordering::Relaxed);
-        }
+        super::ignite::ignite_for_ticks(self, ticks);
     }
 
     fn is_pushable(&self) -> bool {
@@ -7152,8 +6688,7 @@ impl EntityBase for Player {
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
         self.inventory.read_nbt_non_mut(nbt);
         self.ender_chest_inventory.read_nbt_non_mut(nbt);
-        self.living_entity
-            .apply_current_equipment_attribute_modifiers();
+        self.restore_melee_equipment_attributes();
 
         let xp_p = nbt.get_float("XpP").unwrap_or(0.0);
         let xp_level = nbt.get_int("XpLevel");
@@ -8151,25 +7686,9 @@ impl InventoryPlayer for Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{KnownMovement, bedrock_inventory_slot, read_root_vehicle, write_root_vehicle};
+    use super::{bedrock_inventory_slot, read_root_vehicle, write_root_vehicle};
     use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-    use pumpkin_util::math::vector3::Vector3;
     use uuid::Uuid;
-
-    #[test]
-    fn known_movement_resets_only_after_a_client_tick_without_an_accepted_move() {
-        let known = KnownMovement::default();
-        known.record(Vector3::new(0.3, 0.4, -0.2));
-        known.record(Vector3::new(0.1, 0.2, -0.3));
-        assert!(known.finish_tick());
-        assert_eq!(known.movement.load(), Vector3::new(0.1, 0.2, -0.3));
-        assert!(!known.finish_tick());
-        assert_eq!(known.movement.load(), Vector3::new(0.0, 0.0, 0.0));
-        known.record(Vector3::new(0.5, 0.0, 0.0));
-        known.record(Vector3::new(0.0, 0.0, 0.0));
-        assert!(known.finish_tick());
-        assert_eq!(known.movement.load(), Vector3::new(0.0, 0.0, 0.0));
-    }
 
     #[test]
     fn player_screen_slots_map_to_bedrock_inventory() {

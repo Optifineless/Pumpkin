@@ -23,8 +23,11 @@ impl Ignite {
     /// Applies the ignite effect to an entity for the given enchantment level.
     pub fn apply_to_entity(&self, level: i32, entity: &Entity) {
         let seconds = self.duration.calculate(level);
-        entity.set_on_fire_for(seconds);
-        entity.set_on_fire(true);
+        if let Some(target) = entity.world.load().get_entity_by_id(entity.entity_id) {
+            ignite_target(target.as_ref(), seconds);
+        } else {
+            ignite_target(entity, seconds);
+        }
     }
 }
 
@@ -41,4 +44,11 @@ impl EnchantmentEntityEffectExt for Ignite {
             self.apply_to_entity(enchantment_level, entity);
         }
     }
+}
+
+// Ignite.apply dispatches through LivingEntity.igniteForTicks for living targets.
+pub(crate) fn ignite_target(target: &dyn EntityBase, seconds: f32) {
+    target.set_on_fire_for(seconds);
+    let entity = target.get_entity();
+    entity.set_on_fire(entity.fire_ticks.load(std::sync::atomic::Ordering::Relaxed) > 0);
 }
