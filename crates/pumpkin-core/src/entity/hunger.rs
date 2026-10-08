@@ -127,7 +127,9 @@ impl HungerManager {
     /// Add hunger manually
     pub fn add_hunger(&self, hunger: u8) {
         let current = self.level.load();
-        self.level.store((current + hunger).min(MAX_FOOD));
+        // FoodData.add clamps the integer sum before storing the bounded food level.
+        self.level
+            .store(current.saturating_add(hunger).min(MAX_FOOD));
     }
 
     /// Add saturation manually
@@ -182,3 +184,18 @@ impl NBTStorage for HungerManager {
 }
 
 impl NBTStorageInit for HungerManager {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saturation_food_additions_clamp_without_u8_overflow() {
+        let hunger = HungerManager::default();
+        for (initial, added, expected) in [(20, 236, 20), (0, 255, 20), (5, 2, 7), (19, 2, 20)] {
+            hunger.set_level(initial);
+            hunger.add_hunger(added);
+            assert_eq!(hunger.level.load(), expected);
+        }
+    }
+}
