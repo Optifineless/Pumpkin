@@ -484,6 +484,13 @@ impl Goal for EvokerSummonSpellGoal {
                 );
 
                 let vex = from_type(&EntityType::VEX, spawn_pos, &world, Uuid::new_v4());
+                // EvokerSummonSpellGoal.performSpellCasting finalizes the summoned vex.
+                crate::entity::mob::spawn::finalize_spawn_with_reason(
+                    &vex,
+                    &world,
+                    crate::entity::mob::spawn::SpawnReason::MobSummoned,
+                    None,
+                );
                 world.spawn_entity(vex);
             }
         }

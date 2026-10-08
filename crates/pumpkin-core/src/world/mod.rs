@@ -25,6 +25,7 @@ use tracing::{debug, error, info, trace, warn};
 mod active_chunks;
 pub mod brightness;
 pub mod chunker;
+mod entity_persistence;
 pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
@@ -32,6 +33,7 @@ pub mod map;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
+mod spawn_insertion;
 pub mod stopwatches;
 pub mod time;
 pub mod villager_poi;
@@ -45,7 +47,7 @@ use crate::{
         {OnNeighborUpdateArgs, OnScheduledTickArgs},
     },
     command::client_suggestions,
-    entity::{Entity, EntityBase, RemovalReason, player::Player, r#type::from_type},
+    entity::{Entity, EntityBase, RemovalReason, player::Player},
     error::PumpkinError,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
     plugin::{
@@ -177,8 +179,16 @@ pub mod end_podium;
 pub mod entity_tracker;
 pub mod environment;
 mod game_events;
+pub(crate) mod generation_spawning;
 pub mod natural_spawner;
 pub mod scoreboard;
+#[cfg(test)]
+mod spawn_plugin_tests;
+#[cfg(test)]
+pub(crate) mod spawn_test_support;
+#[cfg(test)]
+mod spawn_tests;
+pub mod spawn_view;
 pub mod weather;
 
 pub use environment::EnvironmentAttributes;
@@ -309,6 +319,7 @@ pub struct World {
     /// A map of active entities within the world, keyed by their unique UUID.
     /// This does not include players.
     pub entities: ArcSwap<Vec<Arc<dyn EntityBase>>>,
+    spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
     /// The world's scoreboard, used for tracking scores, objectives, and display information.
     pub scoreboard: std::sync::Mutex<Scoreboard>,
     /// The world's worldborder, defining the playable area and controlling its expansion or contraction.
@@ -457,6 +468,7 @@ impl World {
             level_info,
             players: ArcSwap::new(Arc::new(Vec::new())),
             entities: ArcSwap::new(Arc::new(Vec::new())),
+            spawn_uuids: std::sync::Mutex::default(),
             scoreboard: std::sync::Mutex::new(Scoreboard::default()),
             worldborder: std::sync::Mutex::new(Worldborder::new(
                 0.0,
@@ -493,7 +505,7 @@ impl World {
         }
     }
 
-    pub fn update_active_chunks(&self) {
+    pub fn update_active_chunks(self: &Arc<Self>) {
         let sim_dist = self.server.upgrade().map_or(10, |s| {
             s.advanced_config.networking.java.simulation_distance.get()
         }) as i32;
@@ -549,19 +561,12 @@ impl World {
                 self.migrate_pending_block_entities(pos);
             }
         }
+        let mut published_chunks = Vec::new();
         for change in self.level.loaded_chunk_changes() {
             match change {
                 pumpkin_world::level::LoadedChunkChange::Loaded(pos) => {
-                    // Ticks saved with the chunk only run once the chunk is registered here.
-                    if self
-                        .level
-                        .read_chunk_sync(&pos, |chunk| {
-                            chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks()
-                        })
-                        .unwrap_or(false)
-                    {
-                        self.level.chunks_with_scheduled_ticks.insert(pos);
-                    }
+                    published_chunks.push(pos);
+                    self.register_loaded_chunk_ticks(pos);
                     if active_chunks.contains(&pos)
                         && self.level.is_chunk_loaded(&pos)
                         && tracker.loaded_active_chunks.insert(pos)
@@ -585,9 +590,17 @@ impl World {
                 self.migrate_pending_block_entities(pos);
             }
         }
-        let spawnable_chunks = tracker.loaded_active_chunks.len() as i32;
+        let spawnable_chunks = ActiveChunkTracker::spawning_chunk_count(
+            players
+                .iter()
+                .filter(|player| !player.is_spectator())
+                .map(|player| player.get_entity().chunk_pos.load()),
+        );
         drop(active_chunks);
         drop(tracker);
+        for pos in published_chunks {
+            self.publish_generated_entities(pos);
+        }
 
         self.spawn_state.store(Arc::new(SpawnState::new(
             spawnable_chunks,
@@ -759,11 +772,11 @@ impl World {
         let mut groups: FxHashMap<Vector2<i32>, Vec<NbtCompound>> = FxHashMap::default();
         for entity in entities {
             let base_entity = entity.get_entity();
-            if base_entity.is_removed() {
+            // Entity.save saves passengers only inside their root's record.
+            if base_entity.is_removed() || base_entity.get_vehicle().is_some() {
                 continue;
             }
-            let mut nbt = NbtCompound::new();
-            entity.write_nbt(&mut nbt);
+            let nbt = entity_persistence::save_riding_tree(entity);
             groups
                 .entry(base_entity.chunk_pos.load())
                 .or_default()
@@ -2157,7 +2170,8 @@ impl World {
         let active_chunks = self
             .active_chunks
             .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let tick_data = self.level.get_tick_data(&active_chunks, random_tick_speed);
         let handle = server.runtime.clone();
 
@@ -2262,7 +2276,7 @@ impl World {
                 lock.difficulty == Difficulty::Peaceful,
             )
         };
-        let spawn_passives = self.get_time_of_day() % 400 == 0;
+        let spawn_passives = self.get_world_age() % 400 == 0;
         let spawn_enemies = !peaceful && spawn_monsters && spawn_mobs;
         let spawn_passives = spawn_passives && spawn_mobs;
 
@@ -2273,10 +2287,10 @@ impl World {
             spawn_passives,
         ));
 
-        // 5. Parallel Chunk Spawners via Rayon
+        // 5. Sequential mob spawning, as in ServerChunkCache.tickChunks
         if !spawn_list.is_empty() {
             let mut spawning_chunks = Vec::new();
-            for pos in active_chunks.iter() {
+            for pos in &active_chunks {
                 if let Some(chunk) = self.level.read_chunk_sync(pos, std::clone::Clone::clone) {
                     spawning_chunks.push((*pos, chunk));
                 }
@@ -2284,17 +2298,12 @@ impl World {
 
             spawning_chunks.shuffle(&mut rng());
 
-            let world = self.clone();
-            let spawn_handle = handle;
-            spawning_chunks.par_chunks(8).for_each(|batch| {
-                let _guard = spawn_handle.enter();
-                let world = world.clone();
-                let s_list = spawn_list.clone();
-                let s_state = spawn_state.clone();
-                for (pos, chunk) in batch {
-                    world.tick_spawning_chunk(*pos, chunk, &s_list, &s_state);
-                }
-            });
+            // ServerChunkCache.tickChunks serializes admission, insertion and afterSpawn.
+            // Releasing the parent active-chunk read above also permits workers' own reads.
+            let _guard = handle.enter();
+            for (pos, chunk) in spawning_chunks {
+                self.tick_spawning_chunk(pos, &chunk, &spawn_list, &spawn_state);
+            }
         }
 
         // Batch these cheap lookups and atomic increments to avoid waking Rayon
@@ -2652,7 +2661,7 @@ impl World {
             return;
         }
         // TODO this.level.canSpawnEntitiesInChunk(chunkPos)
-        let entities = spawn_for_chunk(
+        spawn_for_chunk(
             self,
             chunk_pos,
             chunk,
@@ -2660,9 +2669,6 @@ impl World {
             spawn_list,
             is_thundering,
         );
-        for entity in entities {
-            self.spawn_entity_non_save(entity);
-        }
     }
 
     pub fn get_world_age(&self) -> i64 {
@@ -4514,32 +4520,7 @@ impl World {
         );
         chunk.live.store(true, Relaxed);
         for entity_nbt in &entity_nbts {
-            let Some(id) = entity_nbt.get_string("id") else {
-                debug!("Entity has no ID");
-                continue;
-            };
-            let Some(entity_type) =
-                EntityType::from_name(id.strip_prefix("minecraft:").unwrap_or(id))
-            else {
-                warn!("Entity has no valid Entity Type {id}");
-                continue;
-            };
-
-            // Keep the persisted UUID so the entity keeps its identity
-            // across reloads (matching vanilla); only fall back to a
-            // fresh one if it is missing/corrupt.
-            let uuid = entity_nbt.get_uuid("UUID").unwrap_or_else(Uuid::new_v4);
-            // Pos is zero since it will be read from nbt.
-            let entity = from_type(entity_type, Vector3::new(0.0, 0.0, 0.0), self, uuid);
-            entity.read_nbt_non_mut(entity_nbt);
-            entity.init_data_tracker();
-
-            // UUID-dedupes if another watcher already loaded this entity.
-            // Tracker owns pairing (spawn packets + vehicle restore).
-            self.add_entity_silent(entity.clone());
-            if let Some(player) = player {
-                player.try_restore_vehicle(&entity);
-            }
+            self.restore_entity_tree(entity_nbt, player);
         }
     }
 
@@ -5033,111 +5014,6 @@ impl World {
         removed_player
     }
 
-    #[expect(clippy::needless_pass_by_value)]
-    pub fn spawn_entity_non_save(&self, entity: Arc<dyn EntityBase>) {
-        let _base_entity = entity.get_entity();
-        self.entity_tracker.add_entity(&entity, self);
-        self.spawn_state.load().add_entity(self, entity.as_ref());
-
-        self.entities.rcu(|current_entities| {
-            let mut new_entities = (**current_entities).clone();
-            new_entities.push(entity.clone());
-            new_entities
-        });
-        self.add_pending_riders(&entity);
-    }
-
-    /// Adds the riders a mob queued while being finalized (vanilla `addFreshEntityWithPassengers`).
-    fn add_pending_riders(&self, vehicle: &Arc<dyn EntityBase>) {
-        let Some(mob) = vehicle.get_mob() else {
-            return;
-        };
-        for rider in mob.get_mob_entity().take_pending_riders() {
-            rider.init_data_tracker();
-            self.add_entity_silent(rider.clone());
-            vehicle.get_entity().add_passenger(vehicle.clone(), rider);
-        }
-    }
-
-    /// Returns `false` when a plugin cancels the [`EntitySpawnEvent`].
-    ///
-    /// [`EntitySpawnEvent`]: crate::plugin::api::events::entity::entity_spawn::EntitySpawnEvent
-    pub fn spawn_entity(self: &Arc<Self>, entity: Arc<dyn EntityBase>) -> bool {
-        let mut event = crate::plugin::api::events::entity::entity_spawn::EntitySpawnEvent::new(
-            entity.get_entity().entity_id,
-            entity.get_entity().entity_type.id.to_string(),
-            entity.get_entity().pos.load(),
-            self.clone(),
-        );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-        if event.cancelled {
-            return false;
-        }
-
-        entity.init_data_tracker();
-        self.add_entity_silent(entity);
-        true
-    }
-
-    /// Fires [`CreatureSpawnEvent`], then spawns the entity; `false` if either event is cancelled.
-    ///
-    /// [`CreatureSpawnEvent`]: crate::plugin::api::events::entity::creature_spawn::CreatureSpawnEvent
-    pub fn spawn_creature(
-        self: &Arc<Self>,
-        entity: Arc<dyn EntityBase>,
-        reason: crate::plugin::api::events::entity::creature_spawn::CreatureSpawnReason,
-        player: Option<Arc<Player>>,
-    ) -> bool {
-        let base = entity.get_entity();
-        let mut event = crate::plugin::api::events::entity::creature_spawn::CreatureSpawnEvent::new(
-            base.entity_id,
-            base.entity_type.resource_name.to_string(),
-            base.pos.load(),
-            self.clone(),
-            reason,
-            player,
-        );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-        if event.cancelled {
-            return false;
-        }
-        self.spawn_entity(entity)
-    }
-
-    #[expect(clippy::needless_pass_by_value)]
-    pub fn add_entity_silent(&self, entity: Arc<dyn EntityBase>) {
-        let base_entity = entity.get_entity();
-
-        // Guard against duplicate entities with the same UUID.
-        // This can happen when chunk entity data is loaded while the entity
-        // already exists in the world (e.g. another player is still tracking it).
-        let already_exists = self
-            .entities
-            .load()
-            .iter()
-            .any(|e| e.get_entity().entity_uuid == base_entity.entity_uuid);
-        if already_exists {
-            return;
-        }
-
-        // The entity stays live-only: it is written to its chunk's saved data on
-        // unload (see `save_entities_by_chunk`), never at spawn, so it can't be both live and
-        // serialized at once (which would double it on the next reload).
-        self.spawn_state.load().add_entity(self, entity.as_ref());
-        self.entity_tracker.add_entity(&entity, self);
-
-        self.entities.rcu(|current_entities| {
-            let mut new_entities = (**current_entities).clone();
-            new_entities.push(entity.clone());
-            new_entities
-        });
-        self.add_pending_riders(&entity);
-    }
-
     pub fn remove_entity(&self, entity: &dyn EntityBase) {
         let base_entity = entity.get_entity();
         if base_entity
@@ -5172,8 +5048,7 @@ impl World {
             entities_to_remove.clear();
             let mut new_entities = (**current_entities).clone();
             new_entities.retain(|entity| {
-                let base_entity = entity.get_entity();
-                let pos = base_entity.chunk_pos.load();
+                let pos = entity_persistence::root_chunk(entity);
                 if chunks_set.contains(&pos) {
                     entities_to_remove.push(entity.clone());
                     false
@@ -5187,11 +5062,13 @@ impl World {
         self.save_entities_by_chunk(&entities_to_remove, chunks_set.iter().copied())
             .await;
 
-        for entity in entities_to_remove {
+        for entity in &entities_to_remove {
             self.entity_tracker.remove_entity(entity.as_ref(), self);
             self.spawn_state.load().remove_entity(self, entity.as_ref());
         }
 
+        // Serialized trees own the unload result; release the old strong riding links.
+        entity_persistence::detach_unloaded_trees(&entities_to_remove);
         for chunk_pos in &chunks_set {
             self.save_block_entities(*chunk_pos);
             self.block_entities.remove(chunk_pos);
@@ -7567,27 +7444,12 @@ impl WorldPortalExt for WorldPortal {
         natural_spawner::spawn_mobs_for_chunk_generation(&self.0, cache, biome, chunk_x, chunk_z);
     }
 
-    fn spawn_structure_entities(&self, entities: Vec<NbtCompound>) {
-        for nbt in entities {
-            let Some(id) = nbt.get_string("id") else {
-                continue;
-            };
-            let Some(entity_type) =
-                EntityType::from_name(id.strip_prefix("minecraft:").unwrap_or(id))
-            else {
-                warn!("Unknown structure entity type: {id}");
-                continue;
-            };
-            let entity = from_type(
-                entity_type,
-                Vector3::new(0.0, 0.0, 0.0),
-                &self.0,
-                Uuid::new_v4(),
-            );
-            entity.get_entity().read_nbt_non_mut(&nbt);
-            entity.read_nbt_non_mut(&nbt);
-            self.0.spawn_entity(entity);
-        }
+    fn spawn_structure_entities(
+        &self,
+        cache: &mut dyn GenerationCache,
+        entities: Vec<NbtCompound>,
+    ) {
+        self.0.retain_structure_entities(cache, entities);
     }
 }
 

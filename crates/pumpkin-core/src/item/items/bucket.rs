@@ -436,6 +436,16 @@ impl ItemBehaviour for FilledBucketItem {
                 f64::from(place_pos.0.z) + 0.5,
             );
             let mob = from_type(entity_type, spawn_coord, &world, Uuid::new_v4());
+            // MobBucketItem.spawn uses EntityType.spawn, then setFromBucket(true).
+            crate::entity::mob::spawn::finalize_spawn_with_reason(
+                &mob,
+                &world,
+                crate::entity::mob::spawn::SpawnReason::SpawnBucket,
+                None,
+            );
+            if let Some(mob) = mob.get_mob() {
+                mob.set_spawned_from_bucket(true);
+            }
             world.spawn_entity(mob);
         }
 

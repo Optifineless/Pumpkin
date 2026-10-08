@@ -39,9 +39,8 @@ pub struct CowEntity {
 
 impl CowEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
-        let world = entity.world.load();
-        let biome = world.get_biome(&entity.block_pos.load());
-        let variant = CowVariant::select_for_biome(biome.registry_id);
+        // Cow constructor: environmental variants are selected by finalizeSpawn.
+        let variant = CowVariant::default();
         let mob_entity = MobEntity::new(entity);
         let cow = Self {
             mob_entity,

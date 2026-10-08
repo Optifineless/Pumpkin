@@ -1856,7 +1856,15 @@ impl VillagerEntity {
                             let golem = crate::entity::passive::iron_golem::IronGolemEntity::new(
                                 golem_entity,
                             );
-                            world.spawn_entity_non_save(golem as Arc<dyn EntityBase>);
+                            let golem = golem as Arc<dyn EntityBase>;
+                            // Villager.spawnGolemIfNeeded uses SpawnUtil with MOB_SUMMONED.
+                            crate::entity::mob::spawn::finalize_spawn_with_reason(
+                                &golem,
+                                &world,
+                                crate::entity::mob::spawn::SpawnReason::MobSummoned,
+                                None,
+                            );
+                            world.spawn_entity_non_save(golem);
                             world.send_entity_status(
                                 self.get_entity(),
                                 pumpkin_data::entity::EntityStatus::VillagerHappy,

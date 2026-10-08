@@ -86,6 +86,7 @@ mod sdk;
 mod sound;
 mod sound_category;
 mod spawn_egg;
+mod spawn_variant;
 mod statistic;
 mod structure_metadata;
 mod structure_template;
@@ -207,6 +208,7 @@ pub fn main() {
         (trial_spawner::build, "trial_spawner.rs"),
         (banner_pattern::build, "banner_pattern.rs"),
         (cat_variant::build, "cat_variant.rs"),
+        (spawn_variant::build, "spawn_variant.rs"),
         (chat_type::build, "chat_type.rs"),
         (decorated_pot_pattern::build, "decorated_pot_pattern.rs"),
         (frog_variant::build, "frog_variant.rs"),

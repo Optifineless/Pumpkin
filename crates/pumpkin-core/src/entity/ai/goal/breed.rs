@@ -101,6 +101,7 @@ impl BreedGoal {
 
         let parent_pos = entity.pos.load();
         let baby = from_type(entity.entity_type, parent_pos, &world, Uuid::new_v4());
+        crate::entity::mob::spawn::inherit_breeding_variant(mob, mate, baby.as_ref());
         baby.get_entity().set_age(-24000);
         let world_full = entity.world.load_full();
         world_full.spawn_entity(baby);
@@ -185,5 +186,45 @@ impl Goal for BreedGoal {
 
     fn controls(&self) -> Controls {
         Controls::MOVE | Controls::LOOK
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::spawn_test_support::Fixture;
+    use pumpkin_data::entity::EntityType;
+    use pumpkin_nbt::compound::NbtCompound;
+    use pumpkin_util::math::vector3::Vector3;
+
+    #[tokio::test]
+    async fn breeding_keeps_parent_variants_after_constructor_defers_selection() {
+        let fixture = Fixture::new();
+        for ty in [&EntityType::COW, &EntityType::PIG, &EntityType::CHICKEN] {
+            let parent = from_type(
+                ty,
+                Vector3::new(8.5, 64.0, 8.5),
+                &fixture.world,
+                Uuid::new_v4(),
+            );
+            let partner = from_type(
+                ty,
+                Vector3::new(8.5, 64.0, 8.5),
+                &fixture.world,
+                Uuid::new_v4(),
+            );
+            parent.set_variant_name("minecraft:warm");
+            partner.set_variant_name("minecraft:warm");
+            BreedGoal::breed(parent.get_mob().unwrap(), partner.as_ref());
+            let entities = fixture.world.entities.load();
+            let baby = entities
+                .iter()
+                .find(|entity| entity.get_entity().entity_type == ty)
+                .unwrap();
+            let mut saved = NbtCompound::new();
+            baby.write_nbt(&mut saved);
+            assert_eq!(saved.get_string("variant"), Some("minecraft:warm"));
+        }
+        fixture.finish().await;
     }
 }

@@ -56,6 +56,13 @@ impl SummonEntityEffect {
             bolt.set_cause(Some(player.clone()));
         }
 
+        // SummonEntityEffect.apply uses EntityType.spawn, which finalizes mobs.
+        crate::entity::mob::spawn::finalize_spawn_with_reason(
+            &spawned,
+            world,
+            crate::entity::mob::spawn::SpawnReason::Triggered,
+            None,
+        );
         world.spawn_entity(spawned.clone());
         Some(spawned)
     }

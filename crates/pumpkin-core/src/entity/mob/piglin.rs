@@ -999,6 +999,33 @@ impl PiglinEntity {
 }
 
 impl Mob for PiglinEntity {
+    fn finalize_spawn_with_context(
+        &self,
+        entity: &Arc<dyn crate::entity::EntityBase>,
+        _view: &crate::world::spawn_view::SpawnView<'_>,
+        difficulty: &RegionalDifficulty,
+        reason: super::spawn::SpawnReason,
+        group_data: Option<super::spawn::SpawnGroupData>,
+    ) -> Option<super::spawn::SpawnGroupData> {
+        let world = &entity.get_entity().world.load_full();
+        // Piglin.finalizeSpawn: structures keep configured age/weapons, babies receive no gear.
+        if reason != super::spawn::SpawnReason::Structure && rand::random::<f32>() < 0.2 {
+            self.set_baby(true);
+        }
+        if reason != super::spawn::SpawnReason::Structure && !self.is_baby() {
+            super::equipment::equip_piglin_on_spawn(self, world, difficulty, true);
+        }
+        self.hunt_cooldown_timer.store(
+            rand::random_range(PiglinAi::MIN_TIME_BETWEEN_HUNTS..=PiglinAi::MAX_TIME_BETWEEN_HUNTS),
+            Ordering::Relaxed,
+        );
+        if !self.is_baby() {
+            super::equipment::equip_piglin_on_spawn(self, world, difficulty, false);
+        }
+        self.populate_default_equipment_enchantments(difficulty);
+        self.mob_entity.finalize_spawn_base();
+        group_data
+    }
     fn spawn_as_baby(&self) -> bool {
         self.set_baby(true);
         true
@@ -1268,6 +1295,14 @@ impl CrossbowAttackMob for PiglinEntity {
 
     fn is_charging_crossbow(&self) -> bool {
         self.is_charging_crossbow()
+    }
+
+    fn on_crossbow_attack_performed(&self) {
+        // Piglin.onCrossbowAttackPerformed
+        self.mob_entity
+            .living_entity
+            .no_action_time
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

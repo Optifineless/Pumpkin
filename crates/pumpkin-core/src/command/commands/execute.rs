@@ -919,6 +919,13 @@ fn execute_summon_modifier(
         context.source.world(),
         Uuid::new_v4(),
     );
+    // ExecuteCommand.spawnEntityAndRedirect calls SummonCommand.createEntity with initialization.
+    crate::entity::mob::spawn::finalize_spawn_with_reason(
+        &entity,
+        context.source.world(),
+        crate::entity::mob::spawn::SpawnReason::Command,
+        None,
+    );
     context.source.world().spawn_entity(entity.clone());
     let mut source = context.source.as_ref().clone();
     source.entity = Some(entity);

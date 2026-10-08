@@ -14,7 +14,6 @@ use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
-use crate::entity::mob::spawn::finalize_spawn;
 use crate::entity::r#type::from_type;
 use crate::world::World;
 
@@ -87,7 +86,12 @@ impl CommandExecutor for SummonExecutor {
         let name = entity.get_display_name();
         // Vanilla only finalizes the spawn when no NBT argument was given.
         if !self.has_nbt {
-            finalize_spawn(&entity, world, None);
+            crate::entity::mob::spawn::finalize_spawn_with_reason(
+                &entity,
+                world,
+                crate::entity::mob::spawn::SpawnReason::Command,
+                None,
+            );
         }
         world.spawn_entity(entity);
 

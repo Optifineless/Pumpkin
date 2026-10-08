@@ -30,6 +30,7 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | [#3905](https://github.com/Pumpkin-MC/Pumpkin/pull/3905) | Wind charges could not be thrown at blocks, launched players ever higher, and had no burst effects. |
 | [#3845](https://github.com/Pumpkin-MC/Pumpkin/pull/3845) | Entities loaded from disk were frozen, `/forceload` did not keep chunks loaded, attribute changes were lost on reload, and melee knockback ignored the knockback attribute. |
 | [#3861](https://github.com/Pumpkin-MC/Pumpkin/pull/3861) | Mobs spawned with equal odds instead of vanilla weights, so rare mobs were as common as zombies. |
+| [#3891](https://github.com/Pumpkin-MC/Pumpkin/pull/3891) by Rennex07 | Spawn-potential distances use floating-point arithmetic before subtraction and squaring, avoiding overflow far from the origin. |
 | [#3804](https://github.com/Pumpkin-MC/Pumpkin/pull/3804) | Hoppers took dropped stacks one item at a time and never picked items out of their own bowl. |
 
 ## Upstream issues addressed here
@@ -62,6 +63,20 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Arrows and tridents follow vanilla flight timing; bow trails, shooter movement and off-hand use are corrected | Not yet |
 | Land mobs bob at the surface instead of being pushed up out of the water | Yes, 2026-10-07 |
 | Zombies sink in water like vanilla instead of floating | Yes, 2026-10-07 |
+| Surface monsters use nighttime sky darkening; livestock and leashed or riding mobs keep vanilla distance persistence | Not yet |
+| Distant idle mobs can despawn randomly again, with vanilla light additions and damage or crossbow resets | Not yet |
+| Mob equipment is finalized before spawning and restored without re-rolling on reload | Not yet |
+| Villagers, golems, farm animals and bucket-released aquatic mobs keep their species' distance persistence | Not yet |
+| Generated creatures read the generation chunk and enter the world when their chunk is published | Not yet |
+| Parched skeletons receive bows; skeleton weapons choose bow or melee attacks with vanilla intervals | Not yet |
+| Spawners preserve configured entities and weighted potentials, and enforce their nearby-mob limit on each attempt | Not yet |
+| Generation spawning uses region light at night and selects variants before saving new mobs; farm-animal babies inherit a parent's variant | Not yet |
+| Slimes and magma cubes finalize size with local difficulty and load size before health | Not yet |
+| Trial spawners enforce custom light limits and keep configured equipment drop chances | Not yet |
+| Chicken jockey flags survive reload and suppress eggs; drowned can spawn on zombie nautiluses | Not yet |
+| Generated structure starts and references supply runtime mob spawn overrides | Not yet |
+| Natural jockey mounts are admitted together; ordinary unload and restart keep riders and equipment | Not yet |
+| Structure births keep cancellable plugin events; trial-spawner callbacks can read NBT without freezing the tick | Not yet |
 | Scheduled ticks run on time and survive a restart | Not yet |
 | Dust removed by water or explosions updates neighbours | Not yet |
 | Shields respect piercing shots, cooldowns and hand changes; death protectors use their configured effects (combat task 2 review follow-up, related to #3520) | Not yet |

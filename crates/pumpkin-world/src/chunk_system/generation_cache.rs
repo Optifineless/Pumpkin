@@ -177,6 +177,31 @@ impl BlockAccessor for Cache {
 }
 
 impl GenerationCache for Cache {
+    fn get_brightness(&self, pos: &Vector3<i32>, sky: bool) -> u8 {
+        let dx = (pos.x >> 4) - self.x;
+        let dz = (pos.z >> 4) - self.z;
+        if dx < 0 || dz < 0 || dx >= self.size || dz >= self.size {
+            return 0;
+        }
+        match &self.chunks[(dx * self.size + dz) as usize] {
+            Chunk::Proto(chunk) => crate::generation::spawn_entities::light_at(
+                &chunk.light,
+                chunk.bottom_y() as i32,
+                pos,
+                sky,
+            ),
+            Chunk::Level(chunk) => crate::generation::spawn_entities::light_at(
+                &chunk
+                    .light_engine
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                chunk.section.min_y,
+                pos,
+                sky,
+            ),
+        }
+    }
+
     fn get_chunk_mut(&mut self, chunk_x: i32, chunk_z: i32) -> Option<&mut ProtoChunk> {
         let dx = chunk_x - self.x;
         let dz = chunk_z - self.z;
@@ -713,6 +738,50 @@ mod tests {
     use super::{Chunk, SurfaceBiomeNeighborhood};
     use crate::chunk::ChunkData;
     use pumpkin_data::biome::Biome;
+    use pumpkin_util::world_seed::Seed;
+
+    #[test]
+    fn review_spawn_light_reads_unpublished_proto_chunks_and_level_neighbours() {
+        use super::Cache;
+        use crate::generation::{
+            generator::{WorldGenerator, flat::FlatGenerator},
+            proto_chunk::{GenerationCache, ProtoChunk},
+        };
+        use pumpkin_data::dimension::Dimension;
+        use pumpkin_util::math::vector3::Vector3;
+        let generator = WorldGenerator::Flat(Box::new(FlatGenerator::new(
+            Seed(0),
+            Dimension::OVERWORLD,
+            Vec::new(),
+            "minecraft:plains".to_owned(),
+        )));
+        let mut proto = ProtoChunk::new(12, -4, &generator);
+        proto.light.sky_light[0].set(3, 0, 2, 15);
+        proto.light.block_light[0].set(3, 0, 2, 7);
+        let pos = Vector3::new(12 * 16 + 3, Dimension::OVERWORLD.min_y, -4 * 16 + 2);
+        let mut cache = Cache::new(12, -4, 1);
+        cache.chunks.push(Chunk::Proto(Box::new(proto)));
+        assert_eq!(cache.get_brightness(&pos, true), 15);
+        assert_eq!(cache.get_brightness(&pos, false), 7);
+        let chunk = ChunkData::empty_sync(12, -4);
+        {
+            let mut light = chunk
+                .light_engine
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *light = crate::chunk::ChunkLight {
+                sky_light: vec![crate::chunk::format::LightContainer::new_empty(0)]
+                    .into_boxed_slice(),
+                block_light: vec![crate::chunk::format::LightContainer::new_empty(0)]
+                    .into_boxed_slice(),
+            };
+            light.sky_light[0].set(3, 0, 2, 2);
+            light.block_light[0].set(3, 0, 2, 11);
+        };
+        cache.chunks[0] = Chunk::Level(chunk);
+        assert_eq!(cache.get_brightness(&pos, true), 2);
+        assert_eq!(cache.get_brightness(&pos, false), 11);
+    }
 
     #[test]
     fn surface_biome_snapshot_copies_level_chunk_palettes() {

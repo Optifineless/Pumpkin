@@ -116,6 +116,13 @@ impl BlockBehaviour for NetherPortalBlock {
             mob.get_entity()
                 .portal_cooldown
                 .store(300, Ordering::Relaxed);
+            // NetherPortalBlock.randomTick uses EntityType.spawn with DIMENSION_TRAVEL.
+            crate::entity::mob::spawn::finalize_spawn_with_reason(
+                &mob,
+                args.world,
+                crate::entity::mob::spawn::SpawnReason::DimensionTravel,
+                None,
+            );
             args.world.spawn_entity_non_save(mob);
         }
     }

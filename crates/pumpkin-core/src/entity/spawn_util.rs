@@ -41,6 +41,7 @@ fn is_face_full_up(state: &BlockState) -> bool {
 #[expect(clippy::too_many_arguments)]
 pub fn try_spawn_mob<T: Mob + 'static>(
     entity_type: &'static EntityType,
+    spawn_reason: crate::entity::mob::spawn::SpawnReason,
     create: fn(Entity) -> Arc<T>,
     world: &Arc<World>,
     start: &BlockPos,
@@ -97,10 +98,15 @@ pub fn try_spawn_mob<T: Mob + 'static>(
             position,
             entity_type,
         ));
-        if !mob.check_spawn_obstruction(world) {
+        let entity = mob.clone() as Arc<dyn EntityBase>;
+        // SpawnUtil.trySpawnMob uses EntityType.create, which finalizes before instance checks.
+        crate::entity::mob::spawn::finalize_spawn_with_reason(&entity, world, spawn_reason, None);
+        if !mob.check_spawn_rules(world, spawn_reason) || !mob.check_spawn_obstruction(world) {
             continue;
         }
-        world.spawn_entity(mob.clone() as Arc<dyn EntityBase>);
+        if !world.spawn_entity(entity) {
+            continue;
+        }
         return Some(mob);
     }
 

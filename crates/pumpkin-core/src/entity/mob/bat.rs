@@ -9,7 +9,6 @@ use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_world::chunk::ChunkHeightmapType;
 use rand::RngExt;
 
 use crate::entity::mob::{Mob, MobEntity};
@@ -41,9 +40,12 @@ impl BatEntity {
     }
 
     #[must_use]
-    pub fn check_bat_spawn_rules(world: &World, pos: &BlockPos) -> bool {
-        if pos.0.y >= world.get_heightmap_height(ChunkHeightmapType::WorldSurface, pos.0.x, pos.0.z)
-        {
+    pub fn check_bat_spawn_rules(
+        world: &crate::world::spawn_view::SpawnView<'_>,
+        pos: &BlockPos,
+    ) -> bool {
+        // Bat.checkBatSpawnRules keeps the LevelAccessor's height, light and block view.
+        if pos.0.y >= world.get_world_surface_height(pos.0.x, pos.0.z) {
             return false;
         }
         if rand::random_bool(0.5) {

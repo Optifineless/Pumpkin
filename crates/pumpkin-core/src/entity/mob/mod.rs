@@ -15,6 +15,7 @@ use crate::world::World;
 use crate::world::brightness::DAYLIGHT_BRIGHTNESS;
 use crossbeam::atomic::AtomicCell;
 pub(crate) use death_loot::equipped_mob_experience;
+use pumpkin_data::BlockDirection;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::EquipmentSlot;
@@ -23,14 +24,11 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
-use pumpkin_data::{Block, BlockDirection};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::Difficulty;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
-use pumpkin_util::random::{RandomGenerator, get_seed};
 use pumpkin_util::version::JavaMinecraftVersion;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
@@ -44,11 +42,14 @@ pub mod cave_spider;
 pub mod creaking;
 pub mod creeper;
 pub mod crossbow_attack_mob;
+pub(crate) mod cube_spawn;
+pub mod despawn;
 pub mod elder_guardian;
 pub mod enderman;
 pub mod endermite;
 pub mod equipment;
 pub mod evoker;
+mod finalize;
 pub mod ghast;
 pub mod giant;
 pub mod guardian;
@@ -69,10 +70,12 @@ pub mod silverfish;
 pub mod skeleton;
 pub mod slime;
 pub mod spawn;
+mod spawn_variants;
 pub mod spider;
 pub mod sun_burn;
 pub mod vex;
 pub mod vindicator;
+pub(crate) mod walk_target;
 pub mod warden;
 pub mod warden_spawn_tracker;
 pub mod witch;
@@ -97,7 +100,12 @@ pub struct MobEntity {
     pub breeding_cooldown: AtomicI32,
     pub breeder: AtomicCell<Option<Uuid>>,
     pub persistence_required: AtomicBool,
+    spawned_from_bucket: AtomicBool,
+    pub ticks_lived: AtomicI32,
+    pub(crate) weapon_goal_dirty: AtomicBool,
     pending_riders: std::sync::Mutex<Vec<Arc<dyn EntityBase>>>,
+    pub(crate) pending_spawn_mount: std::sync::Mutex<Option<Arc<dyn EntityBase>>>,
+    pub(crate) pending_existing_mount: std::sync::Mutex<Option<Arc<dyn EntityBase>>>,
     mob_flags: AtomicU8,
 }
 impl MobEntity {
@@ -185,7 +193,12 @@ impl MobEntity {
             breeding_cooldown: AtomicI32::new(0),
             breeder: AtomicCell::new(None),
             persistence_required: AtomicBool::new(false),
+            spawned_from_bucket: AtomicBool::new(false),
+            ticks_lived: AtomicI32::new(0),
+            weapon_goal_dirty: AtomicBool::new(true),
             pending_riders: std::sync::Mutex::new(Vec::new()),
+            pending_spawn_mount: std::sync::Mutex::new(None),
+            pending_existing_mount: std::sync::Mutex::new(None),
             mob_flags: AtomicU8::new(0),
         }
     }
@@ -242,6 +255,7 @@ impl MobEntity {
 
     /// Vanilla `Mob.serverAiStep`: sensing, goals, navigation and controls.
     pub fn server_ai_step(&self, mob: &dyn Mob, caller: &dyn EntityBase) {
+        self.living_entity.no_action_time.fetch_add(1, Relaxed);
         let age = self.living_entity.entity.age.load(Relaxed);
         let entity_id = self.living_entity.entity.entity_id;
 
@@ -411,21 +425,12 @@ impl MobEntity {
     }
 
     fn read_drop_chances(&self, nbt: &NbtCompound) {
-        let Some(compound) = nbt.get_compound("drop_chances") else {
-            return;
-        };
         let mut chances = self
             .living_entity
             .equipment_drop_chances
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (name, tag) in &compound.child_tags {
-            if let Some(slot) = EquipmentSlot::get_from_name(name)
-                && let Some(chance) = tag.extract_float()
-            {
-                chances.insert(slot.clone(), chance);
-            }
-        }
+        equipment::read_equipment_drop_chances(nbt, &mut chances);
     }
 
     pub fn tick_brain(&self, mob: &dyn Mob) {
@@ -465,16 +470,13 @@ impl MobEntity {
         self.read_drop_chances(nbt);
         // Vanilla getBooleanOr: `/data remove ... NoAI` turns the AI back on.
         self.set_no_ai(nbt.get_bool("NoAI").unwrap_or(false));
-        if let Some(left_handed) = nbt.get_bool("LeftHanded") {
-            self.set_left_handed(left_handed);
-        }
-        if let Some(can_pick_up_loot) = nbt.get_bool("CanPickUpLoot") {
-            self.set_can_pick_up_loot(can_pick_up_loot);
-        }
-        if let Some(persistence_required) = nbt.get_bool("PersistenceRequired") {
-            self.persistence_required
-                .store(persistence_required, Relaxed);
-        }
+        // Mob.readAdditionalSaveData restores defaults as well as true values.
+        self.set_left_handed(nbt.get_bool("LeftHanded").unwrap_or(false));
+        self.set_can_pick_up_loot(nbt.get_bool("CanPickUpLoot").unwrap_or(false));
+        self.persistence_required.store(
+            nbt.get_bool("PersistenceRequired").unwrap_or(false),
+            Relaxed,
+        );
     }
 
     pub fn add_goal<G: crate::entity::ai::goal::Goal + 'static>(&self, priority: u8, goal: G) {
@@ -559,28 +561,7 @@ impl MobEntity {
     }
 
     pub fn is_dark_enough_to_spawn(world: &World, pos: &BlockPos, is_thundering: bool) -> bool {
-        let sky_light = world.get_sky_light_level(pos);
-        if sky_light > rand::random_range(0..32) {
-            return false;
-        }
-
-        let dimension = &world.dimension;
-        let block_light_limit = dimension.monster_spawn_block_light_limit;
-
-        let block_light = world.get_block_light_level(pos).unwrap_or(0);
-        if block_light_limit < 15 && block_light > block_light_limit {
-            return false;
-        }
-
-        let current_brightness = if is_thundering {
-            (sky_light - 10).max(block_light)
-        } else {
-            sky_light.max(block_light)
-        };
-
-        // TODO
-        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(get_seed()));
-        current_brightness <= dimension.monster_spawn_light_level.get(&mut random) as u8
+        crate::world::spawn_view::SpawnView::live(world).is_dark_enough_to_spawn(pos, is_thundering)
     }
 
     pub fn check_mob_spawn_rules(world: &World, pos: &BlockPos) -> bool {
@@ -618,33 +599,20 @@ impl MobEntity {
     }
 
     pub fn check_animal_spawn_rules(world: &World, pos: &BlockPos) -> bool {
-        let below = pos.down();
-        world
-            .get_block(&below)
-            .has_tag(&tag::Block::MINECRAFT_ANIMALS_SPAWNABLE_ON)
-            && Self::is_bright_enough_to_spawn(world, pos)
+        crate::world::spawn_view::SpawnView::live(world).check_animal_spawn_rules(pos)
     }
 
     pub fn is_bright_enough_to_spawn(world: &World, pos: &BlockPos) -> bool {
-        world.get_max_local_raw_brightness(pos) > 8
+        crate::world::spawn_view::SpawnView::live(world).is_bright_enough_to_spawn(pos)
     }
 
     pub fn check_surface_water_animal_spawn_rules(world: &World, pos: &BlockPos) -> bool {
-        let sea_level = world.sea_level;
-        let min_spawn_level = sea_level - 13;
-        pos.0.y >= min_spawn_level
-            && pos.0.y <= sea_level
-            && world
-                .get_fluid(&pos.down())
-                .has_tag(&tag::Fluid::MINECRAFT_WATER)
-            && (world.get_block(&pos.up()) == &Block::WATER
-                || world
-                    .get_fluid(&pos.up())
-                    .has_tag(&tag::Fluid::MINECRAFT_WATER))
+        crate::world::spawn_view::SpawnView::live(world).check_surface_water_animal_spawn_rules(pos)
     }
 
     pub fn check_surface_ageable_water_creature_spawn_rules(world: &World, pos: &BlockPos) -> bool {
-        Self::check_surface_water_animal_spawn_rules(world, pos)
+        crate::world::spawn_view::SpawnView::live(world)
+            .check_surface_ageable_water_creature_spawn_rules(pos)
     }
 
     pub fn try_attack(&self, caller: &dyn EntityBase, target: &dyn EntityBase) {
@@ -745,59 +713,17 @@ impl MobEntity {
 
         false
     }
-
-    pub fn check_despawn(&self, mob: &dyn Mob) {
-        let entity = &self.living_entity.entity;
-
-        if self.persistence_required.load(Relaxed) {
-            return;
-        }
-
-        if (**entity.custom_name.load()).is_some() {
-            return;
-        }
-
-        let world = entity.world.load();
-        let pos = entity.pos.load();
-        let players = world.players.load();
-
-        let nearest_dist_sq = players
-            .iter()
-            .filter(|p| p.gamemode.load() != pumpkin_util::GameMode::Spectator)
-            .map(|p| {
-                let pp = p.get_entity().pos.load();
-                let dx = pp.x - pos.x;
-                let dy = pp.y - pos.y;
-                let dz = pp.z - pos.z;
-                dx * dx + dy * dy + dz * dz
-            })
-            .fold(f64::MAX, f64::min);
-
-        // Mobs like a converting zombie villager refuse to despawn (`removeWhenFarAway`).
-        if !mob.remove_when_far_away(nearest_dist_sq) {
-            return;
-        }
-
-        if nearest_dist_sq == f64::MAX {
-            mob.get_entity().remove();
-            return;
-        }
-
-        if nearest_dist_sq > 128.0 * 128.0 {
-            mob.get_entity().remove();
-            return;
-        }
-
-        if nearest_dist_sq > 32.0 * 32.0 && rand::random::<i32>().wrapping_abs() % 800 == 0 {
-            mob.get_entity().remove();
-        }
-    }
 }
 
 pub trait Mob: EntityBase + Send + Sync {
     /// Overrides `LivingEntity.getSecondsToDisableBlocking` for mobs with a fixed duration.
     fn blocking_disable_seconds_override(&self) -> Option<f32> {
         None
+    }
+
+    /// Instance-level spawn rule, after static placement rules (Mob/PathfinderMob.checkSpawnRules).
+    fn check_spawn_rules(&self, world: &Arc<World>, _reason: spawn::SpawnReason) -> bool {
+        walk_target::check(self, &crate::world::spawn_view::SpawnView::live(world))
     }
 
     fn get_random(&self) -> rand::rngs::ThreadRng {
@@ -836,7 +762,7 @@ pub trait Mob: EntityBase + Send + Sync {
     }
 
     fn requires_custom_persistence(&self) -> bool {
-        false
+        despawn::requires_custom_persistence(self)
     }
 
     /// Whether daylight burns this mob. Default: entity tag `burn_in_daylight`.
@@ -851,8 +777,18 @@ pub trait Mob: EntityBase + Send + Sync {
         EquipmentSlot::HEAD
     }
 
-    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
-        true
+    fn remove_when_far_away(&self, distance_sq: f64) -> bool {
+        despawn::remove_when_far_away(self, distance_sq)
+    }
+
+    fn spawned_from_bucket(&self) -> bool {
+        self.get_mob_entity().spawned_from_bucket.load(Relaxed)
+    }
+
+    fn set_spawned_from_bucket(&self, value: bool) {
+        self.get_mob_entity()
+            .spawned_from_bucket
+            .store(value, Relaxed);
     }
 
     fn get_max_look_yaw_change(&self) -> f32 {
@@ -923,10 +859,9 @@ pub trait Mob: EntityBase + Send + Sync {
 
     fn set_saddled(&self, _saddled: bool) {}
 
+    /// Checks liquid and entity obstruction in addition to the placement's block collision test.
     fn check_spawn_obstruction(&self, world: &World) -> bool {
-        let bounding_box = self.get_entity().bounding_box.load();
-        !world.contains_any_liquid(bounding_box)
-            && world.get_entities_at_box(&bounding_box).is_empty()
+        spawn::check_spawn_obstruction(self, world)
     }
 
     /// Per-mob tick hook called each tick before AI runs. Override for mob-specific logic.
@@ -1013,10 +948,16 @@ pub trait Mob: EntityBase + Send + Sync {
         None
     }
 
+    /// Marks a chicken mounted by a spawn finalizer; Chicken owners also persist this and suppress eggs.
+    fn set_chicken_jockey(&self, _jockey: bool) {}
+
     /// How much this mob likes standing on `pos`, used to rank stroll candidates.
     fn get_walk_target_value(&self, pos: &BlockPos) -> f32 {
-        self.as_animal()
-            .map_or(0.0, |animal| animal.animal_walk_target_value(pos))
+        walk_target::value(
+            self,
+            pos,
+            &crate::world::spawn_view::SpawnView::live(&self.get_entity().world.load()),
+        )
     }
 
     fn as_tamable(&self) -> Option<&dyn crate::entity::passive::tamable::TamableAnimal> {
@@ -1045,15 +986,28 @@ pub trait Mob: EntityBase + Send + Sync {
     }
 
     /// Vanilla `Mob.finalizeSpawn`, run before the mob enters the world on spawns that
-    /// vanilla finalizes. Overrides call `finalize_spawn_base` first. Riders queued with
+    /// vanilla finalizes. Overrides preserve their vanilla superclass order. Riders queued with
     /// `add_pending_rider` are added by the world together with the mob.
     fn finalize_spawn(
         &self,
-        _world: &Arc<World>,
+        world: &Arc<World>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
         group_data: Option<spawn::SpawnGroupData>,
     ) -> Option<spawn::SpawnGroupData> {
-        self.get_mob_entity().finalize_spawn_base();
-        group_data
+        finalize::finalize_spawn(self, world, view, group_data)
+    }
+
+    /// Reason-aware finalization hook for subtype owners; called once before insertion, never on load.
+    fn finalize_spawn_with_context(
+        &self,
+        entity: &Arc<dyn EntityBase>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        _difficulty: &equipment::RegionalDifficulty,
+        _reason: spawn::SpawnReason,
+        group_data: Option<spawn::SpawnGroupData>,
+    ) -> Option<spawn::SpawnGroupData> {
+        let world = &entity.get_entity().world.load_full();
+        self.finalize_spawn(world, view, group_data)
     }
 
     fn populate_default_equipment_slots(
@@ -1171,6 +1125,9 @@ pub trait Mob: EntityBase + Send + Sync {
     }
 
     fn mob_write_nbt(&self, _nbt: &mut NbtCompound) {}
+
+    /// Species state that vanilla loads before `LivingEntity` attributes and health (cube size).
+    fn mob_pre_load_nbt(&self, _nbt: &NbtCompound) {}
 
     fn mob_read_nbt(&self, _nbt: &NbtCompound) {}
 
@@ -1393,21 +1350,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
 
     fn init_data_tracker(&self) {
         self.mob_init_data_tracker();
-        let world = self.get_mob_entity().living_entity.entity.world.load();
-        crate::entity::mob::equipment::equip_mob_on_spawn(self as &dyn EntityBase, &world);
-
-        let entity_name = self.get_entity().entity_type.resource_name;
-        if let Some(def) = crate::entity::mob::equipment::EQUIPMENT_REGISTRY.get(entity_name)
-            && def.can_pick_up_loot
-        {
-            let difficulty = crate::entity::mob::equipment::RegionalDifficulty::at(
-                &world,
-                self.get_entity().pos.load(),
-            );
-            let pickup_chance = 0.55 * difficulty.special_multiplier;
-            self.get_mob_entity()
-                .set_can_pick_up_loot(rand::random::<f32>() < pickup_chance);
-        }
+        skeleton::weapon_goal::reassess_weapon_goal(self);
     }
 
     fn set_variant_name(&self, name: &str) {
@@ -1444,12 +1387,17 @@ impl<T: Mob + Send + 'static> EntityBase for T {
             }
         }
 
-        mob_entity.check_despawn(self);
+        mob_entity.check_despawn_with_no_action_time(
+            self,
+            Some(&mob_entity.living_entity.no_action_time),
+        );
 
         if let Some(neutral) = self.as_neutral() {
             neutral.update_persistent_anger();
         }
 
+        skeleton::weapon_goal::reassess_if_dirty(self);
+        despawn::update_no_action_time(self);
         self.mob_tick(caller);
 
         // Vanilla Mob.isEffectiveAi: NoAI skips the whole serverAiStep.
@@ -1578,6 +1526,9 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         if let Some(neutral) = self.as_neutral() {
             neutral.write_anger_nbt(nbt);
         }
+        if despawn::is_bucket_mob(self.get_entity().entity_type) {
+            nbt.put_bool("FromBucket", self.spawned_from_bucket());
+        }
         self.mob_write_nbt(nbt);
     }
 
@@ -1603,7 +1554,11 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         if let Some(neutral) = self.as_neutral() {
             neutral.read_anger_nbt(nbt);
         }
+        if despawn::is_bucket_mob(self.get_entity().entity_type) {
+            self.set_spawned_from_bucket(nbt.get_bool("FromBucket").unwrap_or(false));
+        }
         self.mob_read_nbt(nbt);
+        skeleton::weapon_goal::reassess_weapon_goal(self);
     }
 
     fn get_gravity(&self) -> f64 {

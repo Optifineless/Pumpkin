@@ -290,6 +290,14 @@ impl TamableAnimal for CatEntity {
 }
 
 impl Mob for CatEntity {
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        // Cat.removeWhenFarAway.
+        crate::entity::mob::despawn::aged_wild_mob_can_despawn(
+            self.is_tame(),
+            self.get_mob_entity().ticks_lived.load(Ordering::Relaxed),
+        )
+    }
+
     fn as_custom_sound(&self) -> Option<&dyn CustomSound> {
         Some(self)
     }

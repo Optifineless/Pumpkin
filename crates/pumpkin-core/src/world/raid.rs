@@ -338,6 +338,13 @@ impl Raid {
                 );
                 let entity_base = from_type(raider_type.entity_type(), spawn_pos, world, uuid);
 
+                // Raid.joinRaid finalizes newly created raiders before their raid equipment buffs.
+                crate::entity::mob::spawn::finalize_spawn_with_reason(
+                    &entity_base,
+                    world,
+                    crate::entity::mob::spawn::SpawnReason::Event,
+                    None,
+                );
                 if let Some(mob) = entity_base.get_mob()
                     && let Some(raider) = mob.as_raider()
                 {
@@ -376,6 +383,12 @@ impl Raid {
                     if let Some(riding_type) = riding_type {
                         let rider_uuid = Uuid::new_v4();
                         let rider_base = from_type(riding_type, spawn_pos, world, rider_uuid);
+                        crate::entity::mob::spawn::finalize_spawn_with_reason(
+                            &rider_base,
+                            world,
+                            crate::entity::mob::spawn::SpawnReason::Event,
+                            None,
+                        );
                         if let Some(mob) = rider_base.get_mob()
                             && let Some(raider) = mob.as_raider()
                         {

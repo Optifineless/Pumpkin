@@ -26,6 +26,18 @@ impl ZombieEntity {
 }
 
 impl Mob for ZombieEntity {
+    fn finalize_spawn_with_context(
+        &self,
+        entity: &Arc<dyn crate::entity::EntityBase>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        difficulty: &crate::entity::mob::equipment::RegionalDifficulty,
+        reason: crate::entity::mob::spawn::SpawnReason,
+        group_data: Option<crate::entity::mob::spawn::SpawnGroupData>,
+    ) -> Option<crate::entity::mob::spawn::SpawnGroupData> {
+        self.entity
+            .finalize_zombie_spawn(self, entity, view, difficulty, reason, group_data)
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.entity.mob_entity
     }

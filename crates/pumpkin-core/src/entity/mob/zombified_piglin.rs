@@ -1,3 +1,4 @@
+mod spawn;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -32,6 +33,8 @@ pub struct ZombifiedPiglinEntity {
     ticks_until_next_alert: AtomicI32,
     /// Detects the target transition that restarts the alert interval.
     had_target: AtomicBool,
+    is_baby: AtomicBool,
+    can_break_doors: AtomicBool,
 }
 
 impl ZombifiedPiglinEntity {
@@ -44,6 +47,8 @@ impl ZombifiedPiglinEntity {
             neutral_data: NeutralData::default(),
             ticks_until_next_alert: AtomicI32::new(0),
             had_target: AtomicBool::new(false),
+            is_baby: AtomicBool::new(false),
+            can_break_doors: AtomicBool::new(false),
         };
         let mob_arc = Arc::new(piglin);
         let mob_weak: Weak<dyn Mob> = {
@@ -110,6 +115,39 @@ impl ZombifiedPiglinEntity {
 crate::impl_neutral_mob!(ZombifiedPiglinEntity, neutral_data);
 
 impl Mob for ZombifiedPiglinEntity {
+    fn finalize_spawn_with_context(
+        &self,
+        entity: &Arc<dyn EntityBase>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        difficulty: &RegionalDifficulty,
+        reason: super::spawn::SpawnReason,
+        group: Option<super::spawn::SpawnGroupData>,
+    ) -> Option<super::spawn::SpawnGroupData> {
+        Some(super::zombie::finalize::finalize_spawn(
+            self,
+            entity,
+            view,
+            difficulty,
+            reason,
+            group,
+            |enabled| self.set_spawn_doors(enabled),
+        ))
+    }
+    fn mob_read_nbt(&self, nbt: &pumpkin_nbt::compound::NbtCompound) {
+        self.set_spawn_baby(nbt.get_bool("IsBaby").unwrap_or(false));
+        self.set_spawn_doors(nbt.get_bool("CanBreakDoors").unwrap_or(false));
+    }
+    fn mob_write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
+        nbt.put_bool("IsBaby", self.is_baby.load(Ordering::Relaxed));
+        nbt.put_bool(
+            "CanBreakDoors",
+            self.can_break_doors.load(Ordering::Relaxed),
+        );
+    }
+    fn mob_init_data_tracker(&self) {
+        self.set_spawn_baby(self.is_baby.load(Ordering::Relaxed));
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }
@@ -126,7 +164,7 @@ impl Mob for ZombifiedPiglinEntity {
     }
 
     fn spawn_as_baby(&self) -> bool {
-        self.mob_entity.set_baby_by_age();
+        self.set_spawn_baby(true);
         true
     }
 

@@ -247,6 +247,13 @@ impl ZombieVillagerEntity {
             blend: false,
         });
 
+        // ZombieVillager.finishConversion finalizes the restored villager with CONVERSION.
+        crate::entity::mob::spawn::finalize_spawn_with_reason(
+            &(villager.clone() as Arc<dyn EntityBase>),
+            &world,
+            crate::entity::mob::spawn::SpawnReason::Conversion,
+            None,
+        );
         world.spawn_entity(villager);
         entity.remove();
 
@@ -257,6 +264,18 @@ impl ZombieVillagerEntity {
 }
 
 impl Mob for ZombieVillagerEntity {
+    fn finalize_spawn_with_context(
+        &self,
+        entity: &Arc<dyn crate::entity::EntityBase>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        difficulty: &crate::entity::mob::equipment::RegionalDifficulty,
+        reason: crate::entity::mob::spawn::SpawnReason,
+        group_data: Option<crate::entity::mob::spawn::SpawnGroupData>,
+    ) -> Option<crate::entity::mob::spawn::SpawnGroupData> {
+        self.mob_entity
+            .finalize_zombie_spawn(self, entity, view, difficulty, reason, group_data)
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity.mob_entity
     }

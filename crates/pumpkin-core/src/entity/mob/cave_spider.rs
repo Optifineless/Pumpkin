@@ -73,10 +73,12 @@ impl CaveSpiderEntity {
 impl Mob for CaveSpiderEntity {
     fn finalize_spawn(
         &self,
-        world: &Arc<crate::world::World>,
+        _world: &Arc<crate::world::World>,
+        _view: &crate::world::spawn_view::SpawnView<'_>,
         group_data: Option<super::spawn::SpawnGroupData>,
     ) -> Option<super::spawn::SpawnGroupData> {
-        super::spider::finalize_spider_spawn(&self.mob_entity, world, group_data)
+        // CaveSpider.finalizeSpawn deliberately skips Spider.finalizeSpawn and Mob.finalizeSpawn.
+        group_data
     }
 
     fn get_mob_entity(&self) -> &MobEntity {

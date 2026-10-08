@@ -48,9 +48,8 @@ pub struct PigEntity {
 
 impl PigEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
-        let world = entity.world.load();
-        let biome = world.get_biome(&entity.block_pos.load());
-        let variant = PigVariant::select_for_biome(biome.registry_id);
+        // Pig constructor: environmental variants are selected by finalizeSpawn.
+        let variant = PigVariant::default();
         let mob_entity = MobEntity::new(entity);
         let pig = Self {
             mob_entity,

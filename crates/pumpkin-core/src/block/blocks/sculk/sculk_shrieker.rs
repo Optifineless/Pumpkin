@@ -144,6 +144,7 @@ impl SculkShriekerBlock {
         }
         let Some(warden) = try_spawn_mob(
             &EntityType::WARDEN,
+            crate::entity::mob::spawn::SpawnReason::Triggered,
             WardenEntity::new,
             world,
             pos,

@@ -170,3 +170,65 @@ impl Default for GoalSelector {
         }
     }
 }
+
+#[cfg(test)]
+mod spawn_tests {
+    use super::*;
+    use crate::{
+        entity::{
+            ai::goal::{bow_attack::BowAttackGoal, melee_attack::MeleeAttackGoal},
+            r#type::from_type,
+        },
+        world::spawn_test_support::Fixture,
+    };
+    use pumpkin_data::{
+        data_component_impl::EquipmentSlot, entity::EntityType, item::Item, item_stack::ItemStack,
+    };
+    use pumpkin_util::math::vector3::Vector3;
+
+    #[tokio::test]
+    async fn equipment_changes_replace_installed_weapon_goals() {
+        let fixture = Fixture::new();
+        for ty in [
+            &EntityType::SKELETON,
+            &EntityType::PARCHED,
+            &EntityType::BOGGED,
+        ] {
+            let entity = from_type(
+                ty,
+                Vector3::new(8.0, 64.0, 8.0),
+                &fixture.world,
+                uuid::Uuid::new_v4(),
+            );
+            assert!(fixture.world.spawn_entity(entity.clone()));
+            let mob = entity.get_mob().unwrap().get_mob_entity();
+            for (main, off, bow) in [
+                (&Item::BOW, &Item::AIR, true),
+                (&Item::STONE_SWORD, &Item::AIR, false),
+                (&Item::STONE_SWORD, &Item::BOW, true),
+                (&Item::BOW, &Item::BOW, true),
+            ] {
+                mob.set_item_slot(&EquipmentSlot::MAIN_HAND, ItemStack::new(1, main));
+                mob.set_item_slot(&EquipmentSlot::OFF_HAND, ItemStack::new(1, off));
+                let goals = mob.goals_selector.lock().unwrap();
+                assert_eq!(
+                    goals
+                        .goals
+                        .iter()
+                        .filter(|g| g.type_id == TypeId::of::<BowAttackGoal>())
+                        .count(),
+                    usize::from(bow)
+                );
+                assert_eq!(
+                    goals
+                        .goals
+                        .iter()
+                        .filter(|g| g.type_id == TypeId::of::<MeleeAttackGoal>())
+                        .count(),
+                    usize::from(!bow)
+                );
+            }
+        }
+        fixture.finish().await;
+    }
+}

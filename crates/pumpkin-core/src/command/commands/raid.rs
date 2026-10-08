@@ -226,6 +226,13 @@ impl CommandExecutor for SpawnLeaderExecutor {
         let raider_uuid = Uuid::new_v4();
         let raider_entity = from_type(&EntityType::PILLAGER, pos, &world, raider_uuid);
 
+        // RaidCommand.spawnCaptain initializes its new pillager before the captain banner.
+        crate::entity::mob::spawn::finalize_spawn_with_reason(
+            &raider_entity,
+            &world,
+            crate::entity::mob::spawn::SpawnReason::Command,
+            None,
+        );
         if let Some(mob) = raider_entity.get_mob()
             && let Some(raider) = mob.as_raider()
         {

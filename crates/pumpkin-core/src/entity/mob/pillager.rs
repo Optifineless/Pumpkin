@@ -242,4 +242,12 @@ impl CrossbowAttackMob for PillagerEntity {
     fn is_charging_crossbow(&self) -> bool {
         self.is_charging_crossbow()
     }
+
+    fn on_crossbow_attack_performed(&self) {
+        // Pillager.onCrossbowAttackPerformed
+        self.mob_entity
+            .living_entity
+            .no_action_time
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
 }

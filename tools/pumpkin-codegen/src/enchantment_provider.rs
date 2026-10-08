@@ -534,8 +534,9 @@ fn extract_enchantments(val: Option<&serde_json::Value>, tags_dir: &Path) -> Vec
         _ => {}
     }
 
-    result.sort();
-    result.dedup();
+    // TagLoader uses an insertion-ordered set; weighted selection consumes that order.
+    let mut seen = HashSet::new();
+    result.retain(|enchantment| seen.insert(enchantment.clone()));
     result
 }
 

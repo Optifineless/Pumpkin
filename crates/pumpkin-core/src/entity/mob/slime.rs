@@ -86,24 +86,21 @@ impl SlimeEntity {
             );
         };
 
-        mob_arc.randomize_size();
+        // AbstractCubeMob.defineSynchedData defaults to size one; finalizeSpawn rolls size.
+        mob_arc.get_entity().data.store(1, Ordering::Relaxed);
 
         mob_arc
-    }
-
-    pub fn randomize_size(&self) {
-        let mut size_scale = rand::random_range(0..3);
-        if size_scale < 2 && rand::random_range(0.0..1.0) < 0.5 {
-            size_scale += 1;
-        }
-        let size = 1 << size_scale;
-        self.set_size(size, true);
     }
 
     pub fn set_size(&self, size: i32, update_health: bool) {
         let actual_size = size.clamp(1, 127);
         let entity = &self.entity.living_entity.entity;
         entity.data.store(actual_size, Ordering::Relaxed);
+        // AbstractCubeMob.setSize also publishes the size used by the client renderer.
+        entity.set_synced_data(
+            pumpkin_data::tracked_data::abstract_cube_mob::ID_SIZE,
+            pumpkin_protocol::codec::var_int::VarInt(actual_size),
+        );
 
         // Update attributes
         {
@@ -277,6 +274,34 @@ impl CustomSound for SlimeEntity {
 }
 
 impl Mob for SlimeEntity {
+    fn mob_pre_load_nbt(&self, nbt: &NbtCompound) {
+        self.set_size(super::cube_spawn::read_size(nbt), false);
+    }
+
+    fn finalize_spawn_with_context(
+        &self,
+        _entity: &Arc<dyn EntityBase>,
+        _view: &crate::world::spawn_view::SpawnView<'_>,
+        difficulty: &super::equipment::RegionalDifficulty,
+        _reason: super::spawn::SpawnReason,
+        group: Option<super::spawn::SpawnGroupData>,
+    ) -> Option<super::spawn::SpawnGroupData> {
+        let mut random = pumpkin_util::random::RandomGenerator::Xoroshiro(
+            pumpkin_util::random::xoroshiro128::Xoroshiro::from_seed(
+                pumpkin_util::random::get_seed(),
+            ),
+        );
+        Some(super::cube_spawn::finalize_spawn(
+            self,
+            difficulty,
+            group,
+            &mut random,
+            |size, health| {
+                self.set_size(size, health);
+            },
+        ))
+    }
+
     fn as_custom_sound(&self) -> Option<&dyn crate::entity::custom_sound::CustomSound> {
         Some(self)
     }
@@ -287,7 +312,6 @@ impl Mob for SlimeEntity {
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
-        self.set_size(nbt.get_int("Size").unwrap_or(0) + 1, false);
         self.was_on_ground.store(
             nbt.get_bool("wasOnGround").unwrap_or(false),
             Ordering::Relaxed,

@@ -88,6 +88,8 @@ pub struct LivingEntity {
     pub entity: Entity,
     /// Tracks the remaining time until the entity can regenerate health.
     pub hurt_cooldown: AtomicI32,
+    /// LivingEntity.noActionTime, incremented by Mob.serverAiStep and never saved.
+    pub no_action_time: AtomicI32,
     /// Stores the amount of damage the entity last received.
     pub last_damage_taken: AtomicCell<f32>,
     /// The current health level of the entity.
@@ -292,6 +294,7 @@ impl LivingEntity {
             health: AtomicCell::new(max_health), // Initial health value from attributes
             entity,
             hurt_cooldown: AtomicI32::new(0),
+            no_action_time: AtomicI32::new(0),
             last_damage_taken: AtomicCell::new(0.0),
             absorption: AtomicCell::new(0.0),
             fall_distance: AtomicCell::new(0.0),
@@ -359,6 +362,7 @@ impl LivingEntity {
     }
 
     pub fn send_equipment_changes(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
+        crate::entity::mob::skeleton::weapon_goal::equipment_changed(self);
         if equipment.is_empty() {
             return;
         }

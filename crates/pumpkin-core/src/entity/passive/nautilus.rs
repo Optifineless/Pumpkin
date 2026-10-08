@@ -204,6 +204,11 @@ impl CustomSound for NautilusEntity {
 }
 
 impl Mob for NautilusEntity {
+    fn requires_custom_persistence(&self) -> bool {
+        // AbstractNautilus.requiresCustomPersistence.
+        self.get_entity().has_vehicle() || self.get_entity().is_leashed() || self.is_tame()
+    }
+
     fn as_custom_sound(&self) -> Option<&dyn crate::entity::custom_sound::CustomSound> {
         Some(self)
     }

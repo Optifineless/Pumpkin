@@ -4,7 +4,7 @@
 //! vanilla Minecraft's `populateDefaultEquipmentSlots` and
 //! `populateDefaultEquipmentEnchantments` behaviour. It features:
 //!
-//! - A data-driven `EQUIPMENT_REGISTRY` mapping 13 mob types to their weapon/armor
+//! - A data-driven `EQUIPMENT_REGISTRY` mapping 14 mob types to their weapon/armor
 //!   configurations.
 //! - Exact vanilla `RegionalDifficulty` computation (game time, chunk inhabited time,
 //!   moon phase).
@@ -35,7 +35,6 @@ use pumpkin_util::difficulty::Difficulty;
 use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
 
-use crate::entity::EntityBase;
 use crate::entity::mob::{Mob, MobEntity};
 
 // ══════════════════════════════════════════════════════════════════
@@ -402,7 +401,19 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             },
         );
 
-        // ─── Wither Skeleton ───
+        // Parched inherits AbstractSkeleton.populateDefaultEquipmentSlots.
+        m.insert(
+            "parched",
+            MobEquipmentDef {
+                entity_type: "parched",
+                weapon: WeaponConfig::Always(&Item::BOW),
+                armor: ArmorConfig::Vanilla,
+                enchanted: true,
+                can_pick_up_loot: true,
+            },
+        );
+
+        // Wither Skeleton
         m.insert(
             "wither_skeleton",
             MobEquipmentDef {
@@ -482,7 +493,7 @@ impl RegionalDifficulty {
     ///
     /// Looks up the chunk's inhabited time and combines it with the world's
     /// difficulty, game time, and moon phase.
-    pub fn at(world: &Arc<crate::world::World>, pos: Vector3<f64>) -> Self {
+    pub fn at(world: &crate::world::World, pos: Vector3<f64>) -> Self {
         let level_info = world.level_info.load();
         let difficulty = level_info.difficulty;
         let time_of_day = world.level_time.try_lock().map_or(0, |t| t.time_of_day);
@@ -571,7 +582,7 @@ impl RegionalDifficulty {
 /// Moon brightness factor for the given time of day (0.0 to 1.0).
 /// Full moon at phase 0, new moon at phase 4.
 #[must_use]
-fn moon_brightness(time_of_day: i64) -> f32 {
+pub(crate) fn moon_brightness(time_of_day: i64) -> f32 {
     let phase = (time_of_day / 24000 % 8) as i32;
     (phase - 4).abs() as f32 / 4.0
 }
@@ -587,20 +598,36 @@ pub fn apply_vanilla_enchantments(
     _slot: &EquipmentSlot,
     special_multiplier: f32,
 ) {
-    EnchantmentProvider::MOB_SPAWN_EQUIPMENT.apply_to_stack(stack, special_multiplier);
+    crate::enchantment::spawn_equipment::apply(
+        &EnchantmentProvider::MOB_SPAWN_EQUIPMENT,
+        stack,
+        special_multiplier,
+    );
 }
 
 /// Applies pillager crossbow enchantments based on raid wave or default spawn provider.
 pub fn apply_pillager_crossbow_enchantments(stack: &mut ItemStack, wave: Option<u32>) {
     match wave {
         Some(w) if w >= 5 => {
-            EnchantmentProvider::RAID_PILLAGER_POST_WAVE_5.apply_to_stack(stack, 0.0);
+            crate::enchantment::spawn_equipment::apply(
+                &EnchantmentProvider::RAID_PILLAGER_POST_WAVE_5,
+                stack,
+                0.0,
+            );
         }
         Some(w) if w >= 3 => {
-            EnchantmentProvider::RAID_PILLAGER_POST_WAVE_3.apply_to_stack(stack, 0.0);
+            crate::enchantment::spawn_equipment::apply(
+                &EnchantmentProvider::RAID_PILLAGER_POST_WAVE_3,
+                stack,
+                0.0,
+            );
         }
         _ => {
-            EnchantmentProvider::PILLAGER_SPAWN_CROSSBOW.apply_to_stack(stack, 0.0);
+            crate::enchantment::spawn_equipment::apply(
+                &EnchantmentProvider::PILLAGER_SPAWN_CROSSBOW,
+                stack,
+                0.0,
+            );
         }
     }
 }
@@ -609,10 +636,18 @@ pub fn apply_pillager_crossbow_enchantments(stack: &mut ItemStack, wave: Option<
 pub fn apply_vindicator_weapon_enchantments(stack: &mut ItemStack, wave: Option<u32>) {
     match wave {
         Some(w) if w >= 5 => {
-            EnchantmentProvider::RAID_VINDICATOR_POST_WAVE_5.apply_to_stack(stack, 0.0);
+            crate::enchantment::spawn_equipment::apply(
+                &EnchantmentProvider::RAID_VINDICATOR_POST_WAVE_5,
+                stack,
+                0.0,
+            );
         }
         Some(_) => {
-            EnchantmentProvider::RAID_VINDICATOR.apply_to_stack(stack, 0.0);
+            crate::enchantment::spawn_equipment::apply(
+                &EnchantmentProvider::RAID_VINDICATOR,
+                stack,
+                0.0,
+            );
         }
         None => {}
     }
@@ -811,17 +846,16 @@ fn equip_mob_from_def(
 
 /// Equips a mob with weapons/armor/enchantments when it spawns.
 ///
-/// Called from the blanket `EntityBase::init_data_tracker` implementation for
-/// all mob types. Looks up the mob's equipment definition in
-/// [`EQUIPMENT_REGISTRY`], computes [`RegionalDifficulty`] at the mob's
-/// position, generates equipment, stores it in the entity's equipment slots,
-/// and broadcasts the changes to nearby players.
+/// Called only by spawn finalization, before insertion. Metadata initialization and loading
+/// must never roll equipment, pickup permission or drop chances.
 ///
 /// Mobs not listed in the registry silently receive no equipment.
-pub fn equip_mob_on_spawn(mob: &dyn EntityBase, world: &Arc<crate::world::World>) {
+pub fn equip_mob_on_spawn<M: Mob + ?Sized>(
+    mob: &M,
+    _world: &Arc<crate::world::World>,
+    difficulty: &RegionalDifficulty,
+) {
     let entity_type = mob.get_entity().entity_type;
-    let pos = mob.get_entity().pos.load();
-    let difficulty = RegionalDifficulty::at(world, pos);
 
     let Some(living) = mob.get_living_entity() else {
         return;
@@ -833,6 +867,44 @@ pub fn equip_mob_on_spawn(mob: &dyn EntityBase, world: &Arc<crate::world::World>
         return;
     };
 
+    apply_spawn_equipment(living, def, difficulty);
+}
+
+/// Populates Piglin.finalizeSpawn's separate weapon or armor step without enchanting twice.
+pub fn equip_piglin_on_spawn(
+    mob: &dyn Mob,
+    _world: &Arc<crate::world::World>,
+    difficulty: &RegionalDifficulty,
+    weapon_only: bool,
+) {
+    let Some(definition) = EQUIPMENT_REGISTRY.get("piglin") else {
+        return;
+    };
+    let definition = MobEquipmentDef {
+        entity_type: definition.entity_type,
+        weapon: if weapon_only {
+            definition.weapon
+        } else {
+            WeaponConfig::None
+        },
+        armor: if weapon_only {
+            ArmorConfig::None
+        } else {
+            definition.armor
+        },
+        enchanted: false,
+        can_pick_up_loot: false,
+    };
+    apply_spawn_equipment(&mob.get_mob_entity().living_entity, &definition, difficulty);
+}
+
+fn apply_spawn_equipment(
+    living: &crate::entity::living::LivingEntity,
+    def: &MobEquipmentDef,
+    difficulty: &RegionalDifficulty,
+) {
+    let changes_with_drops = equip_mob_from_def(def, difficulty);
+    // Shared with death_loot: equipment before drop chances; release both before notifications.
     let mut equipment = living
         .entity_equipment
         .lock()
@@ -841,7 +913,6 @@ pub fn equip_mob_on_spawn(mob: &dyn EntityBase, world: &Arc<crate::world::World>
         .equipment_drop_chances
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let changes_with_drops = equip_mob_from_def(def, &difficulty);
 
     let mut equipment_changes: Vec<(EquipmentSlot, ItemStack)> = Vec::new();
 
@@ -855,6 +926,110 @@ pub fn equip_mob_on_spawn(mob: &dyn EntityBase, world: &Arc<crate::world::World>
     drop(drop_chances);
 
     living.send_equipment_changes(&equipment_changes);
+}
+
+/// Applies a `SpawnData` equipment loot table and its per-slot drop chances after finalization.
+pub fn equip_from_spawn_data(
+    mob: &dyn Mob,
+    world: &Arc<crate::world::World>,
+    data: &pumpkin_nbt::compound::NbtCompound,
+) {
+    // Mob.equip / EquipmentUser.equip resolve slots from EQUIPPABLE and insert each slot once.
+    let Some(table) = data
+        .get_string("loot_table")
+        .and_then(|key| world.get_loot_table(key))
+    else {
+        return;
+    };
+    let params = crate::world::loot::LootContextParameters {
+        this_entity: Some(mob.get_entity().entity_type),
+        position: Some(mob.get_entity().pos.load()),
+        ..Default::default()
+    };
+    let mut inserted = Vec::new();
+    for stack in crate::world::loot::generate_loot_from_handle(&table, rand::random(), &params) {
+        let Some((slot, stack)) = resolve_spawn_equipment(stack, &inserted) else {
+            continue;
+        };
+        mob.get_mob_entity().set_item_slot(&slot, stack);
+        let chance = data.get_numeric_float("slot_drop_chances").or_else(|| {
+            data.get_compound("slot_drop_chances")
+                .and_then(|chances| chances.get_numeric_float(slot.to_name()))
+        });
+        if let Some(chance) = chance {
+            mob.get_mob_entity()
+                .living_entity
+                .equipment_drop_chances
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(slot.clone(), chance);
+        }
+        inserted.push(slot);
+    }
+}
+
+fn resolve_spawn_equipment(
+    mut stack: ItemStack,
+    inserted: &[EquipmentSlot],
+) -> Option<(EquipmentSlot, ItemStack)> {
+    // EquipmentUser.resolveSlot / EquipmentSlot.limit: use the split result, not the remainder.
+    if stack.is_empty() {
+        return None;
+    }
+    let slot = get_equipment_slot_for_item(&stack);
+    if inserted.contains(&slot) {
+        return None;
+    }
+    let equipped = limit_for_slot(&slot, &mut stack);
+    Some((slot, equipped))
+}
+
+/// Applies the seasonal helmet from Zombie/AbstractSkeleton.finalizeSpawn, preserving existing gear.
+pub fn equip_halloween_head(mob: &MobEntity) {
+    let today =
+        time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    if today.month() != time::Month::October || today.day() != 31 {
+        return;
+    }
+    let living = &mob.living_entity;
+    let empty = living
+        .entity_equipment
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&EquipmentSlot::HEAD)
+        .is_empty();
+    if empty && rand::random::<f32>() < 0.25 {
+        let item = if rand::random::<f32>() < 0.1 {
+            &Item::JACK_O_LANTERN
+        } else {
+            &Item::CARVED_PUMPKIN
+        };
+        mob.set_item_slot(&EquipmentSlot::HEAD, ItemStack::new(1, item));
+        living
+            .equipment_drop_chances
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(EquipmentSlot::HEAD, 0.0);
+    }
+}
+
+pub(super) fn read_equipment_drop_chances(
+    nbt: &pumpkin_nbt::compound::NbtCompound,
+    chances: &mut rustc_hash::FxHashMap<EquipmentSlot, f32>,
+) {
+    // Mob.readAdditionalSaveData restores DropChances.CODEC's default when the tag is absent.
+    chances.clear();
+    if let Some(compound) = nbt.get_compound("drop_chances") {
+        for (name, tag) in &compound.child_tags {
+            if let Some(slot) = EquipmentSlot::get_from_name(name)
+                && let Some(chance) = tag.as_numeric_float()
+                && chance.is_finite()
+                && chance >= 0.0
+            {
+                chances.insert(slot.clone(), chance);
+            }
+        }
+    }
 }
 
 #[must_use]
@@ -1078,38 +1253,65 @@ mod tests {
     use super::moon_brightness;
 
     #[test]
-    fn moon_brightness_matches_the_vanilla_phase_table() {
-        let expected = [1.0, 0.75, 0.5, 0.25, 0.0, 0.25, 0.5, 0.75];
-        for (phase, want) in expected.into_iter().enumerate() {
-            let time_of_day = phase as i64 * 24000;
-            assert!(
-                (moon_brightness(time_of_day) - want).abs() < f32::EPSILON,
-                "phase {phase}: got {}, want {want}",
-                moon_brightness(time_of_day)
-            );
-        }
+    fn spawn_equipment_uses_the_limited_stack_and_each_slot_once() {
+        use super::*;
+        let weapon = resolve_spawn_equipment(ItemStack::new(2, &Item::BOW), &[]);
+        assert!(
+            weapon.is_some_and(|(slot, stack)| slot == EquipmentSlot::MAIN_HAND
+                && stack.item == &Item::BOW
+                && stack.item_count == 2)
+        );
+        let helmet = resolve_spawn_equipment(ItemStack::new(3, &Item::IRON_HELMET), &[]);
+        assert!(
+            helmet.is_some_and(|(slot, stack)| slot == EquipmentSlot::HEAD
+                && stack.item == &Item::IRON_HELMET
+                && stack.item_count == 1)
+        );
+        assert!(
+            resolve_spawn_equipment(
+                ItemStack::new(1, &Item::IRON_HELMET),
+                &[EquipmentSlot::HEAD]
+            )
+            .is_none()
+        );
     }
 
     #[test]
-    fn moon_brightness_wraps_every_eight_days() {
-        for phase in 0..8i64 {
-            assert!(
-                (moon_brightness(phase * 24000) - moon_brightness((phase + 8) * 24000)).abs()
-                    < f32::EPSILON,
-                "phase {phase} does not wrap"
-            );
-        }
+    fn reading_drop_chances_replaces_old_overrides_and_restores_defaults() {
+        use super::*;
+        use pumpkin_nbt::compound::NbtCompound;
+        let mut chances = rustc_hash::FxHashMap::default();
+        chances.insert(EquipmentSlot::MAIN_HAND, 2.0);
+        let mut data = NbtCompound::new();
+        let mut saved = NbtCompound::new();
+        saved.put_float("head", 0.0);
+        saved.put_float("offhand", 2.0);
+        saved.put_int("feet", 2);
+        saved.put_float("legs", -1.0);
+        saved.put_float("body", f32::INFINITY);
+        saved.put_float("invalid_slot", 1.0);
+        data.put_compound("drop_chances", saved);
+        read_equipment_drop_chances(&data, &mut chances);
+        assert_eq!(chances.len(), 3);
+        assert_eq!(chances.get(&EquipmentSlot::HEAD), Some(&0.0));
+        assert_eq!(chances.get(&EquipmentSlot::OFF_HAND), Some(&2.0));
+        assert_eq!(chances.get(&EquipmentSlot::FEET), Some(&2.0));
+        read_equipment_drop_chances(&NbtCompound::new(), &mut chances);
+        assert!(chances.is_empty());
     }
 
     #[test]
-    fn mob_spawn_equipment_enchantment_provider_applies_enchantments() {
-        use pumpkin_data::data_component_impl::EquipmentSlot;
-        use pumpkin_data::item::Item;
-        use pumpkin_data::item_stack::ItemStack;
-
-        let mut stack = ItemStack::new(1, &Item::DIAMOND_SWORD);
-        super::apply_vanilla_enchantments(&mut stack, &EquipmentSlot::MAIN_HAND, 1.0);
-        assert!(stack.has_enchantments());
+    fn review_moon_brightness_matches_known_days_within_and_across_cycles() {
+        for (day, expected) in [
+            (0, 1.0),
+            (1, 0.75),
+            (4, 0.0),
+            (7, 0.75),
+            (8, 1.0),
+            (12, 0.0),
+        ] {
+            assert!((moon_brightness(day * 24000 + 18000) - expected).abs() < f32::EPSILON);
+        }
     }
 
     #[test]

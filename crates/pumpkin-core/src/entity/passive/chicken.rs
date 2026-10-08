@@ -1,6 +1,6 @@
 use std::sync::{
     Arc, Weak,
-    atomic::{AtomicI32, AtomicU8, Ordering, Ordering::Relaxed},
+    atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering, Ordering::Relaxed},
 };
 
 use pumpkin_data::chicken_sound_variant::ChickenSoundVariant;
@@ -43,14 +43,14 @@ pub struct ChickenEntity {
     pub variant: AtomicU8,
     pub sound_variant: AtomicU8,
     egg_lay_time: AtomicI32,
+    chicken_jockey: AtomicBool,
     pub ageable_data: crate::entity::ageable::AgeableData,
 }
 
 impl ChickenEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
-        let world = entity.world.load();
-        let biome = world.get_biome(&entity.block_pos.load());
-        let variant = ChickenVariant::select_for_biome(biome.registry_id);
+        // Chicken constructor: environmental variants are selected by finalizeSpawn.
+        let variant = ChickenVariant::default();
         let mob_entity = MobEntity::new(entity);
         let egg_lay_time = rand::rng().random_range(6000..12000);
         let chicken = Self {
@@ -58,6 +58,7 @@ impl ChickenEntity {
             variant: AtomicU8::new(variant.id()),
             sound_variant: AtomicU8::new(ChickenSoundVariant::Classic as u8),
             egg_lay_time: AtomicI32::new(egg_lay_time),
+            chicken_jockey: AtomicBool::new(false),
             ageable_data: crate::entity::ageable::AgeableData::default(),
         };
         let mob_arc = Arc::new(chicken);
@@ -144,6 +145,21 @@ impl Animal for ChickenEntity {
 }
 
 impl Mob for ChickenEntity {
+    // Chicken.setChickenJockey/removeWhenFarAway: the flag survives dismount and reload.
+    fn set_chicken_jockey(&self, jockey: bool) {
+        self.chicken_jockey.store(jockey, Relaxed);
+    }
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        self.chicken_jockey.load(Relaxed)
+    }
+    fn get_base_experience_reward(&self) -> u32 {
+        if self.chicken_jockey.load(Relaxed) {
+            10
+        } else {
+            crate::entity::mob::death_loot::get_base_experience_reward(self)
+        }
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }
@@ -157,6 +173,7 @@ impl Mob for ChickenEntity {
     }
 
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        nbt.put_bool("IsChickenJockey", self.chicken_jockey.load(Relaxed));
         nbt.put_int("EggLayTime", self.egg_lay_time.load(Ordering::Relaxed));
         let variant =
             ChickenVariant::from_id(self.variant.load(Ordering::Relaxed)).unwrap_or_default();
@@ -171,6 +188,8 @@ impl Mob for ChickenEntity {
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
+        self.chicken_jockey
+            .store(nbt.get_bool("IsChickenJockey").unwrap_or(false), Relaxed);
         self.egg_lay_time
             .store(nbt.get_int("EggLayTime").unwrap_or(6000), Ordering::Relaxed);
         if let Some(variant_str) = nbt.get_string("variant")
@@ -230,7 +249,11 @@ impl Mob for ChickenEntity {
         if (!on_ground) && current_velocity.y < 0.0 {
             entity.set_velocity(current_velocity.multiply(1.0, 0.6, 1.0));
         }
-        if self.egg_lay_time.fetch_sub(1, Ordering::Relaxed) <= 1 {
+        // Chicken.aiStep does not advance the egg clock for babies or jockeys.
+        if !self.is_baby()
+            && !self.chicken_jockey.load(Relaxed)
+            && self.egg_lay_time.fetch_sub(1, Ordering::Relaxed) <= 1
+        {
             let next_time = rand::rng().random_range(6000..12000);
             let world = entity.world.load_full();
             let pos = entity.block_pos.load();

@@ -122,6 +122,14 @@ impl Animal for OcelotEntity {
 }
 
 impl Mob for OcelotEntity {
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        // Ocelot.removeWhenFarAway.
+        crate::entity::mob::despawn::aged_wild_mob_can_despawn(
+            self.is_trusting(),
+            self.get_mob_entity().ticks_lived.load(Ordering::Relaxed),
+        )
+    }
+
     fn as_animal(&self) -> Option<&dyn Animal> {
         Some(self)
     }

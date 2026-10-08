@@ -53,19 +53,25 @@ impl BowAttackGoal {
         }
     }
 
-    fn main_hand_item(mob: &dyn Mob) -> ItemStack {
-        mob.get_mob_entity()
+    fn bow_and_hand(mob: &dyn Mob) -> (ItemStack, Hand) {
+        let equipment = mob
+            .get_mob_entity()
             .living_entity
             .entity_equipment
-            .try_lock()
-            .map_or_else(
-                |_| ItemStack::EMPTY.clone(),
-                |eq| eq.get(&EquipmentSlot::MAIN_HAND),
-            )
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let hand =
+            crate::entity::mob::skeleton::weapon_goal::bow_hand(&equipment).unwrap_or(Hand::Right);
+        let slot = if matches!(hand, Hand::Right) {
+            EquipmentSlot::MAIN_HAND
+        } else {
+            EquipmentSlot::OFF_HAND
+        };
+        (equipment.get(&slot), hand)
     }
 
     fn is_holding_bow(mob: &dyn Mob) -> bool {
-        Self::main_hand_item(mob).item.id == Item::BOW.id
+        Self::bow_and_hand(mob).0.item == &Item::BOW
     }
 
     fn stop_drawing(&mut self, mob: &dyn Mob) {
@@ -84,7 +90,7 @@ impl BowAttackGoal {
 
         let arrow_entity = Entity::new(world.clone(), entity.pos.load(), &EntityType::ARROW);
         let projectile = ItemStack::new(1, &Item::ARROW);
-        let bow_item = Self::main_hand_item(mob);
+        let bow_item = Self::bow_and_hand(mob).0;
         let arrow = ArrowEntity::new_shot_with_weapon(
             arrow_entity,
             entity,
@@ -258,10 +264,10 @@ impl Goal for BowAttackGoal {
         } else {
             self.attack_time -= 1;
             if self.attack_time <= 0 && self.see_time >= -60 {
-                let stack = Self::main_hand_item(mob);
+                let (stack, hand) = Self::bow_and_hand(mob);
                 mob.get_mob_entity()
                     .living_entity
-                    .set_active_hand(Hand::Right, stack, i32::MAX);
+                    .set_active_hand(hand, stack, i32::MAX);
                 self.drawing = true;
                 self.draw_ticks = 0;
             }

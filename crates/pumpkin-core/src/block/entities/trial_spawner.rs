@@ -2,7 +2,6 @@ use rustc_hash::FxHashSet;
 use std::sync::{Arc, Mutex};
 
 use pumpkin_data::block_properties::{TrialSpawnerLikeProperties, TrialSpawnerState};
-use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
@@ -20,6 +19,8 @@ use rand::RngExt;
 use uuid::Uuid;
 
 use super::BlockEntity;
+#[path = "trial_spawner_tick.rs"]
+mod ticking;
 use crate::entity::EntityBase;
 use crate::world::World;
 
@@ -100,7 +101,7 @@ impl PlayerDetector {
 }
 
 /// Spawn data configuration for an entity to spawn.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SpawnData {
     pub entity_type: Option<&'static EntityType>,
     pub custom_spawn_rules: Option<NbtCompound>,
@@ -162,20 +163,20 @@ impl SpawnData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WeightedSpawnData {
     pub data: SpawnData,
     pub weight: i32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WeightedLootTable {
     pub data: String,
     pub weight: i32,
 }
 
 /// Trial spawner configuration for a mode (normal or ominous).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TrialSpawnerConfig {
     pub spawn_range: i32,
     pub total_mobs: f32,
@@ -487,7 +488,7 @@ impl TrialSpawnerConfig {
 }
 
 /// Combined normal and ominous configuration with shared range and cooldown parameters.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TrialSpawnerFullConfig {
     pub normal: TrialSpawnerConfig,
     pub ominous: TrialSpawnerConfig,
@@ -582,7 +583,7 @@ impl TrialSpawnerFullConfig {
 }
 
 /// Dynamic state data tracking current progress of a trial spawner.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TrialSpawnerStateData {
     pub registered_players: FxHashSet<Uuid>,
     pub current_mobs: FxHashSet<Uuid>,
@@ -751,7 +752,7 @@ impl TrialSpawnerStateData {
 }
 
 /// Core Trial Spawner engine and state machine logic.
-#[derive(Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct TrialSpawner {
     pub data: TrialSpawnerStateData,
     pub config: TrialSpawnerFullConfig,
@@ -976,106 +977,116 @@ impl TrialSpawner {
         level_info.game_rules.spawn_mobs
     }
 
-    #[allow(clippy::too_many_lines)]
     pub fn spawn_mob(&mut self, world: &Arc<World>, spawner_pos: BlockPos) -> Option<Uuid> {
-        let (entity_type, spawn_range, equipment_loot_table, is_baby, slime_size, only_id) = {
+        self.spawn_mob_validated(world, spawner_pos, &|| true)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn spawn_mob_validated(
+        &mut self,
+        world: &Arc<World>,
+        spawner_pos: BlockPos,
+        validate: &dyn Fn() -> bool,
+    ) -> Option<Uuid> {
+        let (entity_type, spawn_range, equipment, custom_rules, entity_nbt, only_id) = {
             let active_cfg = if self.is_ominous {
                 &self.config.ominous
             } else {
                 &self.config.normal
             };
-            let spawn_data = self.data.get_or_create_next_spawn_data(active_cfg);
-            let ent_type = spawn_data.and_then(|sd| sd.entity_type)?;
-            let equip = spawn_data
-                .and_then(|sd| {
-                    sd.equipment
-                        .as_ref()
-                        .and_then(|eq| eq.get_string("loot_table"))
-                })
-                .map(ToString::to_string);
-            let raw = spawn_data.and_then(|sd| sd.raw_entity_nbt.as_ref());
-            let baby = raw
-                .and_then(|r| {
-                    r.get_bool("IsBaby")
-                        .or_else(|| r.get_byte("IsBaby").map(|b| b != 0))
-                })
-                .unwrap_or(false);
-            let size = raw.and_then(|r| {
-                r.get_byte("Size")
-                    .or_else(|| r.get_int("Size").map(|i| i as i8))
-            });
-            // finalizes only when the entity compound is just the id.
-            let only_id = raw.is_none_or(|r| r.child_tags.len() <= 1);
-            (ent_type, active_cfg.spawn_range, equip, baby, size, only_id)
+            let spawn_data = self.data.get_or_create_next_spawn_data(active_cfg)?;
+            let ent_type = spawn_data.entity_type?;
+            let equip = spawn_data.equipment.clone();
+            let custom_rules = spawn_data.custom_spawn_rules.clone();
+            let mut raw = spawn_data.raw_entity_nbt.clone().unwrap_or_default();
+            raw.put_string("id", format!("minecraft:{}", ent_type.resource_name));
+            let only_id = raw.child_tags.len() == 1;
+            (
+                ent_type,
+                active_cfg.spawn_range,
+                equip,
+                custom_rules,
+                raw,
+                only_id,
+            )
         };
 
         let mut rng = rand::rng();
 
-        let mut chosen_pos = None;
-        for _ in 0..20 {
-            let spawn_pos = Vector3::new(
-                f64::from(spawner_pos.0.x)
-                    + (rng.random::<f64>() - rng.random::<f64>()) * f64::from(spawn_range)
-                    + 0.5,
-                f64::from(spawner_pos.0.y + rng.random_range(0..3) - 1),
-                f64::from(spawner_pos.0.z)
-                    + (rng.random::<f64>() - rng.random::<f64>()) * f64::from(spawn_range)
-                    + 0.5,
-            );
+        let spawn_pos = crate::entity::mob::spawn::configured_spawn_position(&entity_nbt)
+            .unwrap_or_else(|| {
+                Vector3::new(
+                    f64::from(spawner_pos.0.x)
+                        + (rng.random::<f64>() - rng.random::<f64>()) * f64::from(spawn_range)
+                        + 0.5,
+                    f64::from(spawner_pos.0.y + rng.random_range(0..3) - 1),
+                    f64::from(spawner_pos.0.z)
+                        + (rng.random::<f64>() - rng.random::<f64>()) * f64::from(spawn_range)
+                        + 0.5,
+                )
+            });
 
-            let bb = entity_type.get_spawn_bounding_box(spawn_pos.x, spawn_pos.y, spawn_pos.z);
-            if !world.is_space_empty(bb) {
-                continue;
-            }
-
-            let center = spawner_pos.to_centered_f64();
-            if !Self::in_line_of_sight(world, center, spawn_pos) {
-                continue;
-            }
-
-            chosen_pos = Some(spawn_pos);
-            break;
+        let bb = entity_type.get_spawn_bounding_box(spawn_pos.x, spawn_pos.y, spawn_pos.z);
+        if !world.is_space_empty(bb) {
+            return None;
         }
 
-        let spawn_pos = chosen_pos?;
-        let entity_uuid = Uuid::new_v4();
-        let entity = crate::entity::r#type::from_type(entity_type, spawn_pos, world, entity_uuid);
-
-        let yaw = rng.random::<f32>() * 360.0;
-        entity.get_entity().set_rotation(yaw, 0.0);
-
-        if is_baby && let Some(mob) = entity.get_mob() {
-            // Each mob type syncs its own baby flag (zombie, piglin, ageable...); poking a
-            // single tracked-data key here would send the wrong field type to some mobs.
-            mob.spawn_as_baby();
+        let center = spawner_pos.to_centered_f64();
+        if !Self::in_line_of_sight(world, center, spawn_pos) {
+            return None;
         }
 
-        if let Some(size) = slime_size {
-            entity
-                .get_entity()
-                .set_synced_data(pumpkin_data::tracked_data::slime::ID_SIZE, i32::from(size));
+        // TrialSpawner.spawnMob checks placement and custom rules before loading any entity.
+        let block_pos = BlockPos::floored(spawn_pos.x, spawn_pos.y, spawn_pos.z);
+        if !crate::entity::r#type::check_spawn_rules_with_reason(
+            entity_type,
+            world,
+            &block_pos,
+            world.is_thundering(),
+            crate::entity::mob::spawn::SpawnReason::TrialSpawner,
+        ) || custom_rules.as_ref().is_some_and(|rules| {
+            !super::mob_spawner::MobSpawnerBlockEntity::custom_rules_pass(
+                rules,
+                world.get_block_light_level(&block_pos).unwrap_or(0),
+                world
+                    .get_sky_light_level(&block_pos)
+                    .saturating_sub(world.get_sky_darken() as u8),
+            )
+        }) {
+            return None;
         }
-
-        if let Some(equip) = equipment_loot_table
-            && let Some(loot_table) = world.get_loot_table(&equip)
-            && let Some(living) = entity.get_living_entity()
+        let entity = crate::entity::mob::spawn::load_spawn_entity(world, &entity_nbt, spawn_pos)?;
+        let mut riding_tree = crate::entity::spawn_mount::UnpublishedRidingTree::new(&entity);
+        let entity_uuid = entity.get_entity().entity_uuid;
+        entity
+            .get_entity()
+            .set_rotation(rng.random::<f32>() * 360.0, 0.0);
+        if entity
+            .get_mob()
+            .is_some_and(|mob| !mob.check_spawn_obstruction(world))
         {
-            let seed = rand::random::<i64>();
-            let items = loot_table.generate_loot(seed);
-            let mut equipment = living
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut equipment_changes = Vec::new();
-            for item in items {
-                let slot = item
-                    .get_data_component::<pumpkin_data::data_component_impl::EquippableImpl>()
-                    .map_or(EquipmentSlot::MAIN_HAND, |eq| eq.slot.clone());
-                equipment.put(&slot, item.clone());
-                equipment_changes.push((slot, item));
-            }
-            drop(equipment);
-            living.send_equipment_changes(&equipment_changes);
+            return None;
+        }
+
+        // TrialSpawner.spawnMob finalizes only an unconfigured root, then equips it.
+        if only_id {
+            crate::entity::mob::spawn::finalize_spawn_with_reason(
+                &entity,
+                world,
+                crate::entity::mob::spawn::SpawnReason::TrialSpawner,
+                None,
+            );
+        }
+        if let Some(mob) = entity.get_mob() {
+            mob.get_mob_entity()
+                .persistence_required
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        if let Some(equipment) = equipment.as_ref()
+            && let Some(mob) = entity.get_mob()
+        {
+            crate::entity::mob::equipment::equip_from_spawn_data(mob, world, equipment);
         }
 
         let mut event =
@@ -1090,11 +1101,10 @@ impl TrialSpawner {
             return None;
         }
 
-        // TODO: load the spawn data entity NBT into the mob instead of the baby/slime-size special cases.
-        if only_id {
-            crate::entity::mob::spawn::finalize_spawn(&entity, world, None);
+        if !world.admit_spawn_tree(&entity, true, validate) {
+            return None;
         }
-        world.spawn_entity(entity);
+        riding_tree.keep_links();
 
         let flame_data = i32::from(self.is_ominous);
         world.sync_world_event(
@@ -1155,6 +1165,16 @@ impl TrialSpawner {
     }
 
     pub fn tick_server(&mut self, world: &Arc<World>, spawner_pos: BlockPos, is_ominous: bool) {
+        self.tick_server_validated(world, spawner_pos, is_ominous, &|| true);
+    }
+
+    fn tick_server_validated(
+        &mut self,
+        world: &Arc<World>,
+        spawner_pos: BlockPos,
+        is_ominous: bool,
+        validate: &dyn Fn() -> bool,
+    ) {
         self.is_ominous = is_ominous;
         let current_state = self.get_state(world, spawner_pos);
 
@@ -1183,7 +1203,7 @@ impl TrialSpawner {
                 game_time + i64::from(self.active_config().ticks_between_spawn);
         }
 
-        let next_state = self.tick_and_get_next(world, spawner_pos, current_state);
+        let next_state = self.tick_and_get_next(world, spawner_pos, current_state, validate);
         if next_state != current_state {
             self.set_state(world, spawner_pos, next_state);
         }
@@ -1195,6 +1215,7 @@ impl TrialSpawner {
         world: &Arc<World>,
         spawner_pos: BlockPos,
         current_state: TrialSpawnerState,
+        validate: &dyn Fn() -> bool,
     ) -> TrialSpawnerState {
         let game_time = world
             .level_time
@@ -1275,7 +1296,7 @@ impl TrialSpawner {
                     if self.data.total_mobs_spawned < total_mobs_needed
                         && (self.data.current_mobs.len() as i32) < max_simultaneous
                         && game_time >= self.data.next_mob_spawns_at
-                        && let Some(uuid) = self.spawn_mob(world, spawner_pos)
+                        && let Some(uuid) = self.spawn_mob_validated(world, spawner_pos, validate)
                     {
                         self.data.current_mobs.insert(uuid);
                         self.data.total_mobs_spawned += 1;
@@ -1389,9 +1410,7 @@ impl BlockEntity for TrialSpawnerBlockEntity {
             false
         };
 
-        if let Ok(mut spawner) = self.trial_spawner.lock() {
-            spawner.tick_server(world, self.position, is_ominous);
-        }
+        self.tick_without_guard(world, is_ominous);
     }
 
     fn from_nbt(nbt: &NbtCompound, position: BlockPos) -> Self

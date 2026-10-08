@@ -76,6 +76,17 @@ impl AgeableMob for TadpoleEntity {
 }
 
 impl Mob for TadpoleEntity {
+    // Tadpole.fromBucket always returns true, even for naturally hatched tadpoles.
+    fn spawned_from_bucket(&self) -> bool {
+        true
+    }
+    fn requires_custom_persistence(&self) -> bool {
+        true
+    }
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        false
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

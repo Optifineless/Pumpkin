@@ -233,6 +233,13 @@ impl Animal for AxolotlEntity {
 }
 
 impl Mob for AxolotlEntity {
+    fn spawned_from_bucket(&self) -> bool {
+        self.is_from_bucket()
+    }
+    fn set_spawned_from_bucket(&self, value: bool) {
+        self.set_from_bucket(value);
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

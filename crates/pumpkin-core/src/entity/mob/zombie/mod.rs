@@ -1,3 +1,5 @@
+mod drowned_spawn;
+pub(super) mod finalize;
 use super::{Mob, MobEntity};
 use crate::entity::ai::goal::break_door::BreakDoorGoal;
 use crate::entity::ai::goal::destroy_egg::DestroyEggGoal;
@@ -135,24 +137,103 @@ impl ZombieEntityBase {
 }
 
 impl ZombieEntityBase {
-    /// Vanilla `Zombie.setBaby`: the baby state is only the synced flag, it never ages up.
-    // TODO: vanilla baby zombies get the +50% SPEED_MODIFIER_BABY and 2.5x XP
-    // (`Zombie.getBaseExperienceReward`), unlike passive babies which drop none.
+    /// Updates zombie baby state, movement speed and collision dimensions.
     pub fn set_baby(&self, baby: bool) {
         self.mob_entity.set_baby_flag(
             &self.is_baby,
             pumpkin_data::tracked_data::zombie::BABY,
             baby,
         );
+        let living = &self.mob_entity.living_entity;
+        if let Some(speed) = living
+            .attributes
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_mut(&pumpkin_data::attributes::Attributes::MOVEMENT_SPEED.id)
+        {
+            apply_baby_speed_modifier(speed, baby);
+        }
+        // Zombie.getDefaultDimensions: BABY_DIMENSIONS (Zombie.java:91), independent of age ticking.
+        let entity = &living.entity;
+        let dimensions = if baby {
+            pumpkin_util::math::boundingbox::EntityDimensions::new(0.49, 0.98, 0.775)
+        } else {
+            Entity::type_dimensions(entity.entity_type)
+        };
+        entity.entity_dimension.store(dimensions);
+        let pos = entity.pos.load();
+        entity
+            .bounding_box
+            .store(pumpkin_util::math::boundingbox::BoundingBox::new_from_pos(
+                pos.x,
+                pos.y,
+                pos.z,
+                &dimensions,
+            ));
     }
 
     #[must_use]
     pub fn is_baby(&self) -> bool {
         self.is_baby.load(Ordering::Relaxed)
     }
+
+    /// Runs Zombie.finalizeSpawn, with this subtype's door-breaking capability.
+    pub fn finalize_zombie_spawn(
+        &self,
+        caller: &dyn Mob,
+        entity: &Arc<dyn crate::entity::EntityBase>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        difficulty: &RegionalDifficulty,
+        reason: super::spawn::SpawnReason,
+        group_data: Option<super::spawn::SpawnGroupData>,
+    ) -> Option<super::spawn::SpawnGroupData> {
+        Some(finalize::finalize_spawn(
+            caller,
+            entity,
+            view,
+            difficulty,
+            reason,
+            group_data,
+            |enabled| {
+                let enabled = enabled && caller.get_entity().entity_type != &EntityType::DROWNED;
+                self.set_can_break_doors(enabled, caller);
+                self.mob_entity
+                    .navigator
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .set_can_open_doors(enabled);
+            },
+        ))
+    }
+}
+
+pub(super) fn apply_baby_speed_modifier(
+    speed: &mut crate::entity::attributes::AttributeInstance,
+    baby: bool,
+) {
+    // Zombie.setBaby / SPEED_MODIFIER_BABY: +50% of base speed, never serialized.
+    speed.remove_modifier("minecraft:baby");
+    if baby {
+        speed.add_or_replace_modifier(crate::entity::attributes::Modifier {
+            id: "minecraft:baby".to_string(),
+            amount: 0.5,
+            operation: crate::entity::attributes::ModifierOperation::MultiplyBase,
+            permanent: false,
+        });
+    }
 }
 
 impl Mob for ZombieEntityBase {
+    fn finalize_spawn_with_context(
+        &self,
+        entity: &Arc<dyn crate::entity::EntityBase>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        difficulty: &RegionalDifficulty,
+        reason: super::spawn::SpawnReason,
+        group_data: Option<super::spawn::SpawnGroupData>,
+    ) -> Option<super::spawn::SpawnGroupData> {
+        self.finalize_zombie_spawn(self, entity, view, difficulty, reason, group_data)
+    }
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }
@@ -271,5 +352,21 @@ mod death_experience_tests {
     fn baby_zombie_experience_truncates_before_equipment_bonus() {
         assert_eq!(super::zombie_experience_base(5, true), 12);
         assert_eq!(super::zombie_experience_base(5, false), 5);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn baby_speed_is_transient_and_removed_when_becoming_adult() {
+        let mut speed = crate::entity::attributes::AttributeInstance::new(0.2);
+        apply_baby_speed_modifier(&mut speed, true);
+        apply_baby_speed_modifier(&mut speed, true);
+        assert!((speed.value() - 0.3).abs() < f64::EPSILON);
+        assert!(speed.pack().is_empty());
+        apply_baby_speed_modifier(&mut speed, false);
+        assert!((speed.value() - 0.2).abs() < f64::EPSILON);
     }
 }

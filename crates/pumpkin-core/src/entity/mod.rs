@@ -96,6 +96,7 @@ pub mod passive;
 pub mod player;
 pub mod projectile;
 pub mod projectile_deflection;
+pub(crate) mod spawn_mount;
 pub mod spawn_util;
 pub mod synched_entity_data;
 pub mod tnt;
@@ -151,6 +152,9 @@ pub trait EntityBase: Send + Sync + std::any::Any {
 
     fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
         self.get_entity().read_nbt_non_mut(nbt);
+        if let Some(mob) = self.get_mob() {
+            mob.mob_pre_load_nbt(nbt);
+        }
         if let Some(living) = self.get_living_entity() {
             living.read_living_nbt_non_mut(nbt);
         }

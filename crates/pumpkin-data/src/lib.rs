@@ -506,3 +506,7 @@ pub mod block_transformer;
 #[rustfmt::skip]
 #[path = "generated/trial_spawner.rs"]
 pub mod trial_spawner;
+
+#[rustfmt::skip]
+#[path = "generated/spawn_variant.rs"]
+pub mod spawn_variant;

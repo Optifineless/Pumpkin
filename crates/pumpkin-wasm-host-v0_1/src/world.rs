@@ -1217,7 +1217,16 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         let spawned_entity = Arc::clone(&entity);
         plugin
             .store
-            .pump_blocking(&mut host, move || world.spawn_entity(spawned_entity))
+            .pump_blocking(&mut host, move || {
+                // EntityType.create-style initialization; COMMAND is the explicit-spawn analogue.
+                pumpkin_core::entity::mob::spawn::finalize_spawn_with_reason(
+                    &spawned_entity,
+                    &world,
+                    pumpkin_core::entity::mob::spawn::SpawnReason::Command,
+                    None,
+                );
+                world.spawn_entity(spawned_entity)
+            })
             .await?;
         host.get().add(entity)
     }

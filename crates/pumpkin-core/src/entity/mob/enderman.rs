@@ -396,6 +396,13 @@ impl NeutralMob for EndermanEntity {
 }
 
 impl Mob for EndermanEntity {
+    fn requires_custom_persistence(&self) -> bool {
+        // Enderman.requiresCustomPersistence.
+        self.get_entity().has_vehicle()
+            || self.get_entity().is_leashed()
+            || self.get_carried_block().is_some()
+    }
+
     fn as_neutral(&self) -> Option<&dyn NeutralMob> {
         Some(self)
     }

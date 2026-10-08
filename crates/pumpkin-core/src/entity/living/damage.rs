@@ -52,6 +52,9 @@ impl LivingEntity {
             player.wake_up();
         }
 
+        // LivingEntity.hurtServer resets inactivity before blocking and cooldown rejection.
+        self.no_action_time.store(0, Relaxed);
+
         let blocking_item = self.get_item_blocking_with();
         let blocked = self.apply_item_blocking(caller, &damage_type, amount, position, source);
         amount -= blocked;

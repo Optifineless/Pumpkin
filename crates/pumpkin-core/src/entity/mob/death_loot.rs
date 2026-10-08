@@ -16,7 +16,8 @@ pub(super) fn should_drop_experience<T: Mob + ?Sized>(mob: &T) -> bool {
     mob_death_experience_allowed(entity.entity_type, entity.age.load(Relaxed) < 0)
 }
 
-pub(super) fn get_base_experience_reward<T: Mob + ?Sized>(mob: &T) -> u32 {
+/// Returns the inherited Mob/Animal XP reward for species with conditional overrides.
+pub fn get_base_experience_reward<T: Mob + ?Sized>(mob: &T) -> u32 {
     // Animal, WaterAnimal and AgeableWaterCreature.getBaseExperienceReward
     let entity_type = mob.get_entity().entity_type;
     if mob.as_animal().is_some()
@@ -89,6 +90,7 @@ pub fn equipped_mob_experience(living: &LivingEntity, base: u32) -> u32 {
     if base == 0 {
         return 0;
     }
+    // Shared lock order with spawn equipment: equipment before drop chances.
     let equipment = living
         .entity_equipment
         .lock()

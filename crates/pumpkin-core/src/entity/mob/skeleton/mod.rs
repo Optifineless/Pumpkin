@@ -9,7 +9,7 @@ use pumpkin_util::Difficulty;
 use crate::entity::{
     Entity,
     ai::goal::{
-        active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal, bow_attack::BowAttackGoal,
+        active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal,
         look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
         melee_attack::MeleeAttackGoal, revenge::RevengeGoal, swim::SwimGoal,
         wander_around::WanderAroundGoal,
@@ -23,6 +23,7 @@ pub mod parched;
 #[allow(clippy::module_inception)]
 pub mod skeleton;
 pub mod stray;
+pub(crate) mod weapon_goal;
 pub mod wither;
 
 pub struct SkeletonEntityBase {
@@ -30,6 +31,23 @@ pub struct SkeletonEntityBase {
 }
 
 impl SkeletonEntityBase {
+    /// AbstractSkeleton.finalizeSpawn equips and enchants once before insertion.
+    pub fn finalize_skeleton_spawn(
+        &self,
+        caller: &dyn Mob,
+        world: &Arc<World>,
+        difficulty: &RegionalDifficulty,
+        group_data: Option<super::spawn::SpawnGroupData>,
+    ) -> Option<super::spawn::SpawnGroupData> {
+        self.mob_entity.finalize_spawn_base();
+        super::equipment::equip_mob_on_spawn(caller, world, difficulty);
+        weapon_goal::reassess_weapon_goal(caller);
+        self.mob_entity
+            .set_can_pick_up_loot(rand::random::<f32>() < 0.55 * difficulty.special_multiplier);
+        super::equipment::equip_halloween_head(&self.mob_entity);
+        group_data
+    }
+
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
         let mob = Self { mob_entity };
@@ -51,8 +69,7 @@ impl SkeletonEntityBase {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
-            goal_selector.add_goal(2, Box::new(BowAttackGoal::new(1.0, 20, 15.0)));
-            goal_selector.add_goal(3, Box::new(MeleeAttackGoal::new(1.2, false)));
+            goal_selector.add_goal(4, Box::new(MeleeAttackGoal::new(1.2, false)));
             goal_selector.add_goal(
                 3,
                 Box::new(AvoidEntityGoal::new(&EntityType::WOLF, 6.0, 1.0, 1.2)),

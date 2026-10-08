@@ -1,6 +1,12 @@
 /// Sunlight from here on counts as daylight. Spiders calm down at it, undead burn above it.
 pub const DAYLIGHT_BRIGHTNESS: f32 = 0.5;
 
+impl super::World {
+    pub(super) fn spawn_sky_darken(&self) -> u8 {
+        self.get_sky_darken() as u8
+    }
+}
+
 /// Vanilla `getLightLevelDependentMagicValue` curve. `raw_brightness` is 0–15.
 #[must_use]
 pub fn light_level_curve(raw_brightness: u8, ambient_light: f32) -> f32 {

@@ -63,6 +63,13 @@ use crate::generation::structure::template::BlockPlacer;
 use crate::tick::{ScheduledTick, TickPriority};
 
 pub trait GenerationCache: HeightLimitView + BlockAccessor {
+    /// Reads lighting from this generation region, never from the published world.
+    fn get_brightness(&self, pos: &Vector3<i32>, sky: bool) -> u8 {
+        self.get_chunk(pos.x >> 4, pos.z >> 4).map_or(0, |chunk| {
+            super::spawn_entities::light_at(&chunk.light, chunk.bottom_y() as i32, pos, sky)
+        })
+    }
+
     fn get_center_chunk_mut(&mut self) -> &mut ProtoChunk;
     fn get_center_chunk(&self) -> &ProtoChunk;
 
@@ -136,6 +143,8 @@ pub struct ProtoChunk {
     pub flat_motion_blocking_height_map: [i16; CHUNK_AREA],
     pub flat_motion_blocking_no_leaves_height_map: [i16; CHUNK_AREA],
     structure_starts: FxHashMap<StructureKeys, StructureInstance>,
+    pub spawn_structures: Vec<super::spawn_structures::StructureSpawnBounds>,
+    pub(crate) spawn_structure_references: Vec<super::spawn_structures::SpawnStructureReference>,
 
     height: u16,
     bottom_y: i8,
@@ -146,6 +155,7 @@ pub struct ProtoChunk {
     pub blending_data: Option<crate::generation::blender::blending_data::BlendingData>,
     pub pending_block_entities: Vec<NbtCompound>,
     pending_structure_entities: Vec<NbtCompound>,
+    pub pending_entities: Vec<NbtCompound>,
     pub fluid_ticks: Vec<ScheduledTick<&'static Fluid>>,
 }
 
@@ -238,6 +248,8 @@ impl ProtoChunk {
             flat_motion_blocking_height_map: default_heightmap,
             flat_motion_blocking_no_leaves_height_map: default_heightmap,
             structure_starts: FxHashMap::default(),
+            spawn_structures: Vec::new(),
+            spawn_structure_references: Vec::new(),
             height,
             bottom_y,
             generation_height,
@@ -254,6 +266,7 @@ impl ProtoChunk {
             blending_data: None,
             pending_block_entities: Vec::new(),
             pending_structure_entities: Vec::new(),
+            pending_entities: Vec::new(),
             fluid_ticks: Vec::new(),
         }
     }
@@ -265,6 +278,7 @@ impl ProtoChunk {
     ) -> Self {
         let mut proto_chunk = Self::new(chunk_data.x, chunk_data.z, generator);
 
+        proto_chunk.pending_entities = super::spawn_entities::read_generated_entities(chunk_data);
         proto_chunk.light = chunk_data
             .light_engine
             .lock()
@@ -364,6 +378,8 @@ impl ProtoChunk {
             }
         }
 
+        proto_chunk.spawn_structures =
+            super::spawn_structures::structure_bounds_from_chunk(chunk_data);
         let saved_stage = StagedChunkEnum::from(chunk_data.status);
         proto_chunk.stage = saved_stage;
         if let super::generator::WorldGenerator::Noise(generator) = generator
@@ -909,7 +925,7 @@ impl ProtoChunk {
         let entities = cache
             .get_center_chunk_mut()
             .take_pending_structure_entities();
-        block_registry.spawn_structure_entities(entities);
+        block_registry.spawn_structure_entities(cache, entities);
 
         cache.get_center_chunk_mut().stage = StagedChunkEnum::Spawn;
     }
@@ -1165,6 +1181,9 @@ impl ProtoChunk {
             }
         }
 
+        cache
+            .get_center_chunk_mut()
+            .refresh_spawn_structure_bounds();
         cache.get_center_chunk_mut().stage = StagedChunkEnum::Features;
     }
 
@@ -1437,6 +1456,7 @@ impl ProtoChunk {
             crate::generation::structure::height_sampler::NoiseHeightSampler::new(generator);
 
         let mut references = Vec::new();
+        let mut spawn_references = Vec::new();
         // Constant across every chunk in the dimension, so hoist it out of the loop
         // and out of the (cached) structure-start computation below.
         // Matches vanilla WorldGenerationContext:
@@ -1545,6 +1565,16 @@ impl ProtoChunk {
                         );
 
                         if let Some(start_data) = start_data {
+                            if !structure.spawn_overrides.is_empty()
+                                && super::spawn_structures::adjusted_bounds(
+                                    structure,
+                                    start_data.get_bounding_box(),
+                                )
+                                .intersects_raw_xz(start_x, start_z, end_x, end_z)
+                            {
+                                spawn_references
+                                    .push((entry.structure, start_data.collector.clone()));
+                            }
                             if start_data
                                 .get_bounding_box()
                                 .intersects_raw_xz(start_x, start_z, end_x, end_z)
@@ -1557,6 +1587,11 @@ impl ProtoChunk {
                 }
             }
         }
+
+        // ChunkGenerator.createReferences: keep all intersecting starts, including multiple of one type.
+        self.spawn_structure_references = spawn_references;
+        self.spawn_structures.clear();
+        self.refresh_spawn_structure_bounds();
 
         for (key, pos) in references {
             self.structure_starts

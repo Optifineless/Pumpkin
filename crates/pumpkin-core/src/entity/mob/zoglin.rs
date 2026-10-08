@@ -145,6 +145,7 @@ impl Mob for ZoglinEntity {
     fn finalize_spawn(
         &self,
         _world: &Arc<World>,
+        _view: &crate::world::spawn_view::SpawnView<'_>,
         group_data: Option<crate::entity::mob::spawn::SpawnGroupData>,
     ) -> Option<crate::entity::mob::spawn::SpawnGroupData> {
         if rand::random::<f32>() < 0.2 {

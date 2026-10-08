@@ -17,6 +17,18 @@ pub(super) struct ActiveChunkTracker {
 }
 
 impl ActiveChunkTracker {
+    /// Counts the union of eligible players' fixed spawning ranges, independent of ticking tickets.
+    pub fn spawning_chunk_count(centers: impl Iterator<Item = Vector2<i32>>) -> i32 {
+        // DistanceManager.PlayerTicketTracker uses an eight-chunk Chebyshev spawning range.
+        let mut chunks = FxHashSet::default();
+        for center in centers {
+            for &(dx, dz) in pumpkin_data::chunk_view_lut::get_chebyshev_square(8) {
+                chunks.insert(center.add_raw(dx as i32, dz as i32));
+            }
+        }
+        chunks.len() as i32
+    }
+
     fn add_chunk(
         &mut self,
         pos: Vector2<i32>,
@@ -167,6 +179,38 @@ mod tests {
         assert_eq!(newly_active.len(), 3);
         assert!(!active.contains(&Vector2::new(-1, 0)));
         assert!(active.contains(&Vector2::new(2, 0)));
+    }
+
+    #[test]
+    fn spawn_union_is_independent_of_simulation_and_force_tickets() {
+        let mut tracker = ActiveChunkTracker::default();
+        let mut active = FxHashSet::default();
+        let mut newly_active = Vec::new();
+        tracker.update_player(
+            Uuid::from_u128(1),
+            area(0, 0, 4),
+            &mut active,
+            &mut newly_active,
+        );
+        let forced = std::iter::once(Vector2::new(100, 100)).collect();
+        tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
+        assert_eq!(active.len(), 82);
+        assert_eq!(
+            ActiveChunkTracker::spawning_chunk_count(
+                [Vector2::new(0, 0), Vector2::new(0, 0)].into_iter()
+            ),
+            289
+        );
+        assert_eq!(
+            ActiveChunkTracker::spawning_chunk_count(
+                [Vector2::new(0, 0), Vector2::new(1, 0)].into_iter()
+            ),
+            306
+        );
+        assert_eq!(
+            ActiveChunkTracker::spawning_chunk_count(std::iter::empty()),
+            0
+        );
     }
 
     #[test]

@@ -338,6 +338,14 @@ impl Chunk {
             custom_data: Mutex::new(NbtCompound::new()),
         };
 
+        crate::generation::spawn_structures::record_structure_spawn_bounds(
+            &chunk,
+            &proto_chunk.spawn_structures,
+        );
+        crate::generation::spawn_entities::store_generated_entities(
+            &chunk,
+            proto_chunk.pending_entities,
+        );
         *self = Self::Level(Arc::new(chunk));
     }
 }
