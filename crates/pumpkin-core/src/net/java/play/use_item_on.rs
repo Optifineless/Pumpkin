@@ -75,6 +75,12 @@ impl JavaClient {
         let off_hand_item_empty = off_hand_item.is_empty();
 
         let mut item = inventory.get_stack_in_hand(hand);
+        let before = item.clone();
+        let slot_index = if matches!(hand, Hand::Right) {
+            inventory.get_selected_slot() as usize
+        } else {
+            PlayerInventory::OFF_HAND_SLOT
+        };
         let item_id = item.item.id;
         player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
 
@@ -125,7 +131,13 @@ impl JavaClient {
             );
             if result.consumes_action() {
                 // TODO: Trigger ANY_BLOCK_USE Criteria
-
+                // ServerPlayerGameMode.useItemOn hands BlockBehaviour.useItemOn the live
+                // stack, so a block that split or exchanged it (jukebox, composter,
+                // cauldron) must reach the inventory before this returns.
+                if !item.are_equal(&before) {
+                    player.sync_hand_slot(slot_index, item.clone());
+                    inventory.set_stack_in_hand(hand, item);
+                }
                 if matches!(result, BlockActionResult::SuccessServer) {
                     player.swing_hand(hand, true);
                 }
@@ -133,19 +145,11 @@ impl JavaClient {
             }
         }
 
-        let slot_index = if matches!(hand, Hand::Right) {
-            inventory.get_selected_slot() as usize
-        } else {
-            PlayerInventory::OFF_HAND_SLOT
-        };
-
         if item.is_empty() {
             // TODO item cool down
             // If the hand is empty we stop here
             return Ok(());
         }
-
-        let before = item.clone();
 
         let item_result = server
             .item_registry
