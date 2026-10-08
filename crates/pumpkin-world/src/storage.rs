@@ -13,6 +13,14 @@ pub fn temporary_path(path: &Path) -> PathBuf {
 
 // Windows has no supported directory FlushFileBuffers equivalent; replace uses
 // MoveFileExW WRITE_THROUGH to complete namespace publication before returning.
+#[cfg_attr(
+    not(unix),
+    expect(
+        clippy::unnecessary_wraps,
+        clippy::missing_const_for_fn,
+        reason = "the Unix build does real I/O here; keep one signature for both platforms"
+    )
+)]
 pub fn sync_parent(path: &Path) -> io::Result<()> {
     #[cfg(not(unix))]
     let _ = path;

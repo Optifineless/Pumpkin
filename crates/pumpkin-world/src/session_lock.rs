@@ -104,12 +104,14 @@ mod tests {
     fn rejects_second_holder_and_releases_on_drop() {
         let directory = tempfile::tempdir().unwrap();
         let lock = acquire(directory.path()).unwrap();
+        assert!(acquire(directory.path()).is_err());
+        drop(lock);
+        // Windows enforces the exclusive lock against readers too, so inspect the
+        // snowman only after release (DirectoryLock.create wrote it before locking).
         assert_eq!(
             std::fs::read(directory.path().join("session.lock")).unwrap(),
             "☃".as_bytes()
         );
-        assert!(acquire(directory.path()).is_err());
-        drop(lock);
         let _lock = acquire(directory.path()).unwrap();
     }
 
