@@ -20,6 +20,8 @@ use pumpkin_util::math::vector3::Vector3;
 
 pub struct BrewingStandBlockEntity {
     pub position: BlockPos,
+    // recipe eligibility also includes the world's loaded recipes.
+    recipe_world: StdMutex<std::sync::Weak<crate::world::World>>,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
@@ -38,6 +40,7 @@ impl BrewingStandBlockEntity {
         use std::array::from_fn;
         Self {
             position,
+            recipe_world: StdMutex::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -271,22 +274,9 @@ impl BrewingStandBlockEntity {
             }
         }
 
-        // Check if we can immediately start the next brew
-        if let Ok(items) = self.items.read() {
-            let ingredient = items[3].clone();
-            drop(items);
-            if self.fuel.load(Ordering::Relaxed) > 0 && self.is_brewable(&ingredient, world) {
-                self.fuel.fetch_sub(1, Ordering::Relaxed);
-                self.brew_time.store(400, Ordering::Relaxed);
-                *self
-                    .ingredient_item
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                    Some(ingredient.get_item());
-            } else {
-                self.brew_time.store(0, Ordering::Relaxed);
-            }
-        }
+        // BrewingStandBlockEntity.serverTick finishes at zero;
+        // the next tick's ordinary start path fires BrewingStartEvent.
+        self.brew_time.store(0, Ordering::Relaxed);
 
         // Play sound at the center of the block
         let pos = Vector3::new(
@@ -420,29 +410,50 @@ impl pumpkin_inventory::Inventory for BrewingStandBlockEntity {
         self
     }
 
+    // BrewingStandBlockEntity.canPlaceItem.
     fn is_valid_slot_for(&self, slot: usize, stack: &ItemStack) -> bool {
-        if stack.is_empty() {
-            return true;
-        }
+        self.can_place_item(slot, stack) && (slot >= 3 || self.get_stack(slot).is_empty())
+    }
 
+    // BrewingStandMenu.PotionSlot.mayPlace ignores occupancy; hoppers use canPlaceItem above.
+    fn can_place_item(&self, slot: usize, stack: &ItemStack) -> bool {
+        if stack.is_empty() {
+            return false;
+        }
+        if slot == 4 {
+            return stack.get_data_component::<BrewingFuelImpl>().is_some();
+        }
+        let world = self
+            .recipe_world
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .upgrade();
+        let dynamic = world
+            .and_then(|world| world.server.upgrade())
+            .map(|server| server.recipe_manager.get_dynamic_recipes_internal())
+            .unwrap_or_default();
+        let key = format!("minecraft:{}", stack.item.registry_key);
         match slot {
-            // Slots 0-2 - potion bottles
-            0..=2 => stack
-                .get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>()
-                .is_some(),
-            // Slot 3 - ingredient (must be tagged as brewable)
             3 => {
-                // Fuel items belong in slot 4, not the ingredient slot.
-                if stack.get_data_component::<BrewingFuelImpl>().is_some() {
-                    return false;
-                }
-                // Allow any item that's not fuel (ingredient validation happens during brewing)
-                true
+                // RecipePropertySet.BREWING_REAGENTS; fuel may also be a reagent.
+                BREWING_RECIPES.iter().any(|recipe| recipe.ingredient() == stack.item)
+                    || dynamic.iter().any(|recipe| {
+                        matches!(recipe, DynamicRecipe::Brewing(recipe) if recipe.reagent == key)
+                    })
             }
-            // Slot 4 - fuel (`minecraft:brewing_fuel` data component, 26.3+)
-            4 => stack.get_data_component::<BrewingFuelImpl>().is_some(),
+            0..=2 => {
+                pumpkin_inventory::brewing::brewing_screen_handler::is_potion_item(stack.item)
+                    || dynamic.iter().any(|recipe| {
+                        matches!(recipe, DynamicRecipe::Brewing(recipe) if recipe.input_item == key)
+                    })
+            }
             _ => false,
         }
+    }
+
+    // BrewingStandBlockEntity.canTakeItemThroughFace (hopper below).
+    fn can_transfer_to(&self, _to: &dyn Inventory, slot: usize, stack: &ItemStack) -> bool {
+        slot < 3 || (slot == 3 && stack.item == &Item::GLASS_BOTTLE)
     }
 }
 
@@ -568,6 +579,10 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
 
     #[allow(clippy::too_many_lines)]
     fn tick(&self, world: &Arc<crate::world::World>) {
+        *self
+            .recipe_world
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(world);
         // Refill fuel counter from fuel item if needed
         let fuel_refilled = self.try_refill_fuel(world);
 

@@ -60,13 +60,15 @@ impl<'a> ServerPacket<'a> for SClickSlot {
         }
         let mut array_of_changed_slots = Vec::with_capacity(length_of_array.0 as usize);
         for _ in 0..length_of_array.0 {
-            array_of_changed_slots.push((
-                bytebuf.get_i16_be()?,
-                OptionalItemStackHash::read(&mut bytebuf)?,
-            ));
+            // this version carries HashedStack claims, not full components.
+            let slot = bytebuf.get_i16_be()?;
+            let stack = OptionalItemStackHash::read(&mut bytebuf)?;
+            stack.validate_incoming()?;
+            array_of_changed_slots.push((slot, stack));
         }
 
         let carried_item = OptionalItemStackHash::read(&mut bytebuf)?;
+        carried_item.validate_incoming()?;
 
         Ok(Self {
             sync_id,

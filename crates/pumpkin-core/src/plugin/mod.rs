@@ -34,8 +34,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Bump this whenever the public plugin API or any event layout changes in a way
 /// that makes old binary plugins incompatible.
-// v6 adds fallible storage lifecycle APIs and layout changes to the v5 codec API.
-pub const PLUGIN_API_VERSION: u32 = 6;
+// v7 adds harvest death hooks, bucket layouts and inventory predicates to the v6 storage API.
+pub const PLUGIN_API_VERSION: u32 = 7;
 
 const PLUGIN_DIR: &str = "./plugins";
 

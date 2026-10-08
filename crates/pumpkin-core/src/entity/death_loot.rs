@@ -245,8 +245,9 @@ impl LivingEntity {
                 &params,
             );
             self.drop_loot(&params);
-            if caller.get_mob().is_some() {
+            if let Some(mob) = caller.get_mob() {
                 self.drop_equipment(player_killed, source, killer);
+                mob.drop_custom_death_loot();
             }
         }
         if let Some(player) = caller.get_player() {

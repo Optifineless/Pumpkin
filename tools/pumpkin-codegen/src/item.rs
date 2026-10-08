@@ -819,7 +819,7 @@ impl ToTokens for ItemComponents {
             tokens.extend(quote! { (BreakSound, &BreakSoundImpl), });
         }
         if self.bucket_entity_data.is_some() {
-            tokens.extend(quote! { (BucketEntityData, &BucketEntityDataImpl), });
+            tokens.extend(quote! { (BucketEntityData, &BucketEntityDataImpl { nbt: None }), });
         }
         if self.bundle_contents.is_some() {
             tokens.extend(quote! { (BundleContents, &BundleContentsImpl { items: Vec::new() }), });

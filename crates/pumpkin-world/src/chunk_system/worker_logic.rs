@@ -32,6 +32,10 @@ fn needs_relighting(chunk: &crate::chunk::ChunkData, config: LightingEngineConfi
         return false;
     }
 
+    // discarded layers require repair even if other layers look complex.
+    if chunk.lighting_invalid.load(Relaxed) {
+        return true;
+    }
     // If the chunk says it's already lit, believe it.
     if chunk.light_populated.load(Relaxed) {
         return false;
@@ -60,9 +64,13 @@ fn load_proto_chunk(chunk: &crate::chunk::ChunkData, level: &Level) -> ProtoChun
 }
 
 fn process_loaded_chunk(chunk: Arc<crate::chunk::ChunkData>, level: &Level) -> Chunk {
+    // SerializableChunkData.read -> Heightmap.primeHeightmaps.
+    chunk.prime_heightmaps(level.world_gen.load().dimension().height);
     let pos = ChunkPos::new(chunk.x, chunk.z);
-    if chunk.status == ChunkStatus::Full {
-        let needs_relight = needs_relighting(&chunk, level.lighting_config);
+    // repair invalid saved lighting at intermediate stages too.
+    let needs_relight = needs_relighting(&chunk, level.lighting_config);
+    if chunk.status == ChunkStatus::Full || (chunk.lighting_invalid.load(Relaxed) && needs_relight)
+    {
         if needs_relight {
             debug!(
                 "Chunk {pos:?} has uniform lighting, downgrading to Features stage for relighting"
@@ -78,7 +86,8 @@ fn process_loaded_chunk(chunk: Arc<crate::chunk::ChunkData>, level: &Level) -> C
             proto.light.block_light = (0..section_count)
                 .map(|_| LightContainer::new_empty(0))
                 .collect();
-            proto.stage = StagedChunkEnum::Features;
+            // SerializableChunkData.read must preserve unfinished generation before lighting.
+            proto.stage = proto.stage.min(StagedChunkEnum::Features);
             Chunk::Proto(Box::new(proto))
         } else {
             Chunk::Level(chunk)
@@ -318,5 +327,56 @@ pub fn run_generation(
                 error: msg.to_string(),
             }
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn discarded_light_overrides_saved_lit_flag_and_complex_layers() {
+        use pumpkin_config::lighting::LightingEngineConfig;
+        use std::sync::atomic::Ordering::Relaxed;
+        let chunk = crate::chunk::ChunkData::empty(0, 0);
+        chunk.light_populated.store(true, Relaxed);
+        chunk.lighting_invalid.store(true, Relaxed);
+        chunk
+            .light_engine
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .sky_light = vec![crate::chunk::format::LightContainer::Empty(7)].into_boxed_slice();
+        assert!(super::needs_relighting(
+            &chunk,
+            LightingEngineConfig::Default
+        ));
+    }
+    #[tokio::test]
+    #[expect(
+        clippy::unwrap_used,
+        clippy::panic,
+        reason = "Regression fixture requires a scratch level and a proto chunk"
+    )]
+    async fn discarded_light_preserves_unfinished_terrain_generation() {
+        use pumpkin_config::world::LevelConfig;
+        use pumpkin_data::{chunk::ChunkStatus, dimension::Dimension};
+        use std::sync::{Arc, atomic::Ordering::Relaxed};
+        let directory = tempfile::tempdir().unwrap();
+        let level = crate::level::Level::from_root_folder(
+            &LevelConfig::default(),
+            directory.path().into(),
+            0,
+            Dimension::OVERWORLD,
+        );
+        for (status, expected) in [
+            (ChunkStatus::Terrain, super::StagedChunkEnum::Noise),
+            (ChunkStatus::Full, super::StagedChunkEnum::Features),
+        ] {
+            let mut chunk = crate::chunk::ChunkData::empty(0, 0);
+            chunk.status = status;
+            chunk.lighting_invalid.store(true, Relaxed);
+            match super::process_loaded_chunk(Arc::new(chunk), &level) {
+                super::Chunk::Proto(proto) => assert_eq!(proto.stage, expected),
+                super::Chunk::Level(_) => panic!("Discarded light must be regenerated"),
+            }
+        }
+        level.shutdown().await.unwrap();
     }
 }

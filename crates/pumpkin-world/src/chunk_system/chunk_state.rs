@@ -239,8 +239,9 @@ impl Chunk {
         ChunkSections::from_palettes(block_sections, biome_sections, dimension.min_y)
     }
 
-    fn build_level_heightmaps(proto_chunk: &ProtoChunk, min_y: i32) -> ChunkHeightmaps {
-        let mut heightmaps = ChunkHeightmaps::default();
+    fn build_level_heightmaps(proto_chunk: &ProtoChunk, dimension: &Dimension) -> ChunkHeightmaps {
+        let min_y = dimension.min_y;
+        let mut heightmaps = ChunkHeightmaps::new(dimension.height);
         for x in 0..16 {
             for z in 0..16 {
                 let source_index = x * 16 + z;
@@ -284,6 +285,7 @@ impl Chunk {
                 pending_block_entities: Mutex::default(),
                 light_engine: Mutex::new(ChunkLight::default()),
                 light_populated: AtomicBool::new(false),
+                lighting_invalid: AtomicBool::new(false),
                 status: ChunkStatus::Empty,
                 blending_data: None,
                 dirty: crate::chunk::io::DirtyFlag::new(false),
@@ -298,7 +300,7 @@ impl Chunk {
         let proto_chunk = *proto_chunk_box;
 
         let sections = Self::build_level_sections(&proto_chunk, dimension);
-        let heightmaps = Self::build_level_heightmaps(&proto_chunk, dimension.min_y);
+        let heightmaps = Self::build_level_heightmaps(&proto_chunk, dimension);
 
         // Move the light data instead of cloning it
         // By taking ownership of proto_chunk, we can move the light data directly
@@ -324,6 +326,7 @@ impl Chunk {
         let chunk = ChunkData {
             light_engine: Mutex::new(light_data),
             light_populated: AtomicBool::new(is_lit),
+            lighting_invalid: AtomicBool::new(false),
             section: sections,
             heightmap: Mutex::new(heightmaps),
             x: proto_chunk.x,

@@ -10,7 +10,7 @@ use pumpkin_util::version::JavaMinecraftVersion;
 use std::borrow::Cow;
 use std::{collections::HashMap, io::Write};
 
-use crate::codec::item_stack_seralizer::ItemStackTemplateSerializer;
+use crate::codec::item_stack_seralizer::ItemStackSerializer;
 use crate::{ClientPacket, VarInt, WritingError, ser::NetworkWriteExt};
 
 // Recipe Display type IDs
@@ -85,7 +85,7 @@ fn write_item_stack_slot_display(
         return write_empty_slot_display(write, version);
     }
     write.write_var_int(&VarInt(SLOT_DISPLAY_ITEM_STACK as i32))?;
-    ItemStackTemplateSerializer::from(stack).write_with_version(write, &version)
+    ItemStackSerializer(Cow::Owned(stack)).write_template_with_version(write, &version)
 }
 
 fn write_empty_slot_display(

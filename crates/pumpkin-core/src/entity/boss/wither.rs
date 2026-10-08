@@ -332,10 +332,6 @@ impl WitherEntity {
 
         if !entity.is_alive() || self.mob_entity.living_entity.health.load() <= 0.0 {
             self.remove_all_bossbar(&world);
-            if !self.dropped_loot.swap(true, Ordering::SeqCst) {
-                let pos = entity.block_pos.load();
-                world.drop_stack(&pos, ItemStack::new(1, &Item::NETHER_STAR));
-            }
             return;
         }
 
@@ -657,15 +653,38 @@ impl Mob for WitherEntity {
         }
     }
 
+    // WitherBoss.dropCustomDeathLoot, after superclass equipment loot.
+    fn drop_custom_death_loot(&self) {
+        if self.dropped_loot.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let entity = self.get_entity();
+        let world = entity.world.load_full();
+        let pos = entity.pos.load();
+        let item_entity = Entity::new(world.clone(), pos, &EntityType::ITEM);
+        let mut event = crate::plugin::api::events::entity::item_spawn::ItemSpawnEvent::new(
+            item_entity.entity_id,
+            pos,
+            Item::NETHER_STAR.registry_key.to_string(),
+        );
+        if let Some(server) = world.server.upgrade() {
+            server.plugin_manager.fire_blocking(&server, &mut event);
+        }
+        if event.cancelled {
+            return;
+        }
+        let star = crate::entity::item::ItemEntity::new(
+            item_entity,
+            ItemStack::new(1, &Item::NETHER_STAR),
+        );
+        star.set_extended_lifetime();
+        world.spawn_entity(Arc::new(star));
+    }
     fn post_tick(&self) {
         let entity = &self.mob_entity.living_entity.entity;
         if !entity.is_alive() || self.mob_entity.living_entity.health.load() <= 0.0 {
             let world = entity.world.load_full();
             self.remove_all_bossbar(&world);
-            if !self.dropped_loot.swap(true, Ordering::SeqCst) {
-                let pos = entity.get_entity().block_pos.load();
-                world.drop_stack(&pos, ItemStack::new(1, &Item::NETHER_STAR));
-            }
         }
     }
 

@@ -46,14 +46,22 @@ impl DataComponentImpl for EntityDataImpl {
     default_impl!(EntityData);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BucketEntityDataImpl;
+// DataComponents.BUCKET_ENTITY_DATA uses CustomData.CODEC.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BucketEntityDataImpl {
+    pub nbt: Option<NbtCompound>,
+}
 impl BucketEntityDataImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        Some(Self {
+            nbt: Some(data.extract_compound()?.clone()),
+        })
     }
 }
 impl DataComponentImpl for BucketEntityDataImpl {
+    fn write_data(&self) -> NbtTag {
+        NbtTag::Compound(self.nbt.clone().unwrap_or_default())
+    }
     default_impl!(BucketEntityData);
 }
 

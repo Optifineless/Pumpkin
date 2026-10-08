@@ -229,7 +229,7 @@ impl ChunkData {
         let mut sky_lights = vec![LightContainer::Empty(0); section_count];
         let mut block_palettes = vec![BlockPalette::default(); section_count];
         let mut biome_palettes = vec![BiomePalette::default(); section_count];
-
+        let mut lighting_invalid = false;
         if let Some(sections_list) = root_tag.get_list("sections") {
             for section_tag in sections_list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(section_compound) = section_tag {
@@ -267,6 +267,13 @@ impl ChunkData {
                     // `Full` skips the length check `LightContainer::new` makes,
                     // and every reader indexes it up to `ARRAY_SIZE`, so a
                     // short array from disk is dropped instead of stored.
+                    // discarded layers must re-enter normal lighting (SerializableChunkData.read).
+                    lighting_invalid |= ["BlockLight", "SkyLight"].iter().any(|name| {
+                        section_compound.get(name).is_some_and(|tag| {
+                            tag.extract_byte_array()
+                                .is_none_or(|data| data.len() != LightContainer::ARRAY_SIZE)
+                        })
+                    });
                     block_lights[index] = block_light
                         .filter(|data| data.len() == LightContainer::ARRAY_SIZE)
                         .map_or(LightContainer::Empty(0), LightContainer::Full);
@@ -328,24 +335,24 @@ impl ChunkData {
 
         let heightmaps = root_tag.get_compound("Heightmaps").map_or(
             ChunkHeightmaps {
+                // validate against the configured dimension at the load boundary.
+                height_bits: ChunkHeightmaps::new(section_count as i32 * 16).height_bits,
                 world_surface: None,
                 motion_blocking: None,
                 motion_blocking_no_leaves: None,
             },
-            // A heightmap of the wrong length is dropped rather than stored:
-            // every reader indexes it by column and would run off the end.
+            // the load boundary validates length against the dimension
+            // and primes missing maps before publishing this chunk.
             |h_compound| ChunkHeightmaps {
+                height_bits: ChunkHeightmaps::new(section_count as i32 * 16).height_bits,
                 world_surface: h_compound
                     .get_long_array("WORLD_SURFACE")
-                    .filter(|a| a.len() == ChunkHeightmaps::LONGS)
                     .map(|a| a.to_vec().into_boxed_slice()),
                 motion_blocking: h_compound
                     .get_long_array("MOTION_BLOCKING")
-                    .filter(|a| a.len() == ChunkHeightmaps::LONGS)
                     .map(|a| a.to_vec().into_boxed_slice()),
                 motion_blocking_no_leaves: h_compound
                     .get_long_array("MOTION_BLOCKING_NO_LEAVES")
-                    .filter(|a| a.len() == ChunkHeightmaps::LONGS)
                     .map(|a| a.to_vec().into_boxed_slice()),
             },
         );
@@ -419,7 +426,8 @@ impl ChunkData {
             fluid_ticks: ChunkTickScheduler::from_iter(fluid_ticks),
             pending_block_entities: std::sync::Mutex::new(block_entities),
             light_engine: std::sync::Mutex::new(light_engine),
-            light_populated: AtomicBool::new(light_correct),
+            light_populated: AtomicBool::new(light_correct && !lighting_invalid),
+            lighting_invalid: AtomicBool::new(lighting_invalid),
             status,
             blending_data: None,
             inhabited_time: AtomicU64::new(root_tag.get_long("InhabitedTime").unwrap_or(0) as u64),
@@ -947,6 +955,48 @@ impl Default for LightContainer {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn discarded_light_is_marked_even_when_saved_chunk_claims_to_be_lit() {
+        let mut section = NbtCompound::new();
+        section.put_byte("Y", 0);
+        section.put(
+            "BlockLight",
+            NbtTag::ByteArray(vec![0; 1].into_boxed_slice()),
+        );
+        // Other valid complex lighting cannot suppress repair of the discarded layer.
+        section.put(
+            "SkyLight",
+            NbtTag::ByteArray(vec![0x12; 2048].into_boxed_slice()),
+        );
+        let mut nbt = test_chunk(vec![section]);
+        nbt.root_tag.put_int(
+            "yPos",
+            pumpkin_data::dimension::Dimension::OVERWORLD
+                .min_y
+                .div_euclid(16),
+        );
+        nbt.root_tag.put_bool("isLightOn", true);
+        let bytes = nbt.write();
+        let result = ChunkData::internal_from_bytes(
+            &bytes,
+            pumpkin_util::math::vector2::Vector2::new(0, 0),
+            &pumpkin_data::dimension::Dimension::OVERWORLD,
+        );
+        assert!(result.is_ok());
+        if let Ok(chunk) = result {
+            assert!(
+                chunk
+                    .lighting_invalid
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            );
+            assert!(
+                !chunk
+                    .light_populated
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            );
+        }
+    }
+
     use super::*;
     use pumpkin_data::Block;
     use pumpkin_nbt::compound::NbtCompound;

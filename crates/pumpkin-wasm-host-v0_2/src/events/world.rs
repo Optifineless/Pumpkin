@@ -85,6 +85,8 @@ impl ToFromWasmEvent for ChunkLoad {
                     ),
                     light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
+                    // an empty Wasm event chunk has no discarded lighting.
+                    lighting_invalid: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
                     dirty: pumpkin_world::chunk::io::DirtyFlag::new(false),
@@ -138,6 +140,8 @@ impl ToFromWasmEvent for ChunkSave {
                     ),
                     light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
+                    // an empty Wasm event chunk has no discarded lighting.
+                    lighting_invalid: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
                     dirty: pumpkin_world::chunk::io::DirtyFlag::new(false),
@@ -187,6 +191,8 @@ impl ToFromWasmEvent for ChunkSend {
                     ),
                     light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
+                    // an empty Wasm event chunk has no discarded lighting.
+                    lighting_invalid: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
                     dirty: pumpkin_world::chunk::io::DirtyFlag::new(false),

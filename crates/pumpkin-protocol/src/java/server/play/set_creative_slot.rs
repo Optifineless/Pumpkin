@@ -28,11 +28,8 @@ impl<'a> ServerPacket<'a> for SSetCreativeSlot {
         } else {
             read.get_i16_be()?
         };
-        let clicked_item = if *version >= JavaMinecraftVersion::V_1_21_5 {
-            ItemStackSerializer::read_length_prefixed_optional(&mut read)?
-        } else {
-            ItemStackSerializer::read(&mut read)?
-        };
+        // ServerboundSetCreativeModeSlotPacket uses validatedStreamCodec.
+        let clicked_item = ItemStackSerializer::read_validated_with_version(&mut read, version)?;
         Ok(Self { slot, clicked_item })
     }
 }

@@ -9,6 +9,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::potion_brewing::BREWING_RECIPES;
 use pumpkin_data::screen::WindowType;
+use pumpkin_data::tag::{self, Taggable};
 
 use crate::player::player_inventory::PlayerInventory;
 use crate::screen_handler::{
@@ -27,11 +28,12 @@ pub fn is_ingredient(item: &Item) -> bool {
 }
 
 #[must_use]
-pub const fn is_potion_item(item: &Item) -> bool {
-    item.id == Item::POTION.id
-        || item.id == Item::SPLASH_POTION.id
-        || item.id == Item::LINGERING_POTION.id
-        || item.id == Item::GLASS_BOTTLE.id
+pub fn is_potion_item(item: &Item) -> bool {
+    // PotionIngredient.isPotionInput uses recipe inputs and the input tag.
+    item.has_tag(&tag::Item::MINECRAFT_BREWING_POTION_INPUTS)
+        || BREWING_RECIPES
+            .iter()
+            .any(|recipe| recipe.from_item() == item)
 }
 
 pub struct BrewingScreenHandler {
@@ -142,7 +144,7 @@ impl ScreenHandler for BrewingScreenHandler {
             if slot_index >= 5 {
                 if is_fuel(&clicked) {
                     if self.insert_item(&mut stack, 4, 5, false)
-                        || (is_ingredient(clicked.item)
+                        || (self.inventory.can_place_item(3, &clicked)
                             && !self.insert_item(&mut stack, 3, 4, false))
                     {
                         // Unlike the arms below this one returns after a successful
@@ -154,11 +156,11 @@ impl ScreenHandler for BrewingScreenHandler {
                         }
                         return ItemStack::EMPTY.clone();
                     }
-                } else if is_ingredient(clicked.item) {
+                } else if self.inventory.can_place_item(3, &clicked) {
                     if !self.insert_item(&mut stack, 3, 4, false) {
                         return ItemStack::EMPTY.clone();
                     }
-                } else if is_potion_item(clicked.item) {
+                } else if (0..3).any(|slot| self.inventory.can_place_item(slot, &clicked)) {
                     if !self.insert_item(&mut stack, 0, 3, false) {
                         return ItemStack::EMPTY.clone();
                     }
@@ -227,7 +229,8 @@ impl Slot for BrewingPotionSlot {
     }
 
     fn can_insert(&self, stack: &ItemStack) -> bool {
-        is_potion_item(stack.item)
+        // the backing inventory includes loaded recipe property sets.
+        self.inventory.can_place_item(self.index, stack)
     }
 
     fn get_max_item_count(&self) -> u8 {
@@ -292,7 +295,7 @@ impl Slot for BrewingIngredientSlot {
     }
 
     fn can_insert(&self, stack: &ItemStack) -> bool {
-        is_ingredient(stack.item)
+        self.inventory.can_place_item(self.index, stack)
     }
 
     fn get_stack(&self) -> ItemStack {

@@ -309,7 +309,6 @@ use crate::plugin::player::inventory_interact::InventoryClickEvent;
 use crate::plugin::player::player_change_world::PlayerChangeWorldEvent;
 use crate::plugin::player::player_gamemode_change::PlayerGamemodeChangeEvent;
 use crate::plugin::player::player_permission_check::PlayerPermissionCheckEvent;
-use crate::plugin::player::player_teleport::PlayerTeleportEvent;
 use crate::plugin::server::packet::PacketSentEvent;
 use crate::server::Server;
 use crate::world::{BlockBreakingProgress, World};
@@ -3653,7 +3652,8 @@ impl Player {
                 new_world.send_world_info(&player);
                 new_world.send_center_chunk(&player).await;
 
-                player.request_teleport(position, yaw, pitch);
+                // cancellation leaves the current position untouched.
+                let _ = player.request_teleport(position, yaw, pitch);
 
                 let mut changed_world_event = crate::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent {
                     player: player.clone(),
@@ -3669,25 +3669,13 @@ impl Player {
     /// `yaw` and `pitch` are in degrees.
     /// Rarly used, for example when waking up the player from a bed or their first time spawn. Otherwise, the `teleport` method should be used.
     /// The player should respond with the `SConfirmTeleport` packet.
-    pub fn request_teleport(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
-        // This is the ultra special magic code used to create the teleport id
-        // This returns the old value
-        // This operation wraps around on overflow.
-        let Some(server) = self.world().server.upgrade() else {
-            return;
-        };
-        if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id) {
-            let mut event = PlayerTeleportEvent {
-                player: player_arc,
-                from: self.living_entity.entity.pos.load(),
-                to: position,
-                cancelled: false,
-            };
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
-        }
+    pub fn request_teleport(
+        &self,
+        position: Vector3<f64>,
+        yaw: f32,
+        pitch: f32,
+    ) -> Option<Vector3<f64>> {
+        let position = self.accept_teleport_destination(position)?;
 
         let i = self.teleport_id_count.fetch_add(1, Ordering::Relaxed);
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
@@ -3738,6 +3726,11 @@ impl Player {
                 }
             }
         }
+        // ServerChunkCache.move / ChunkMap.move use the accepted position.
+        if let Some(player) = self.world().get_player_by_uuid(self.gameprofile.id) {
+            crate::world::chunker::update_position(&player);
+        }
+        Some(position)
     }
 
     pub fn block_interaction_range(&self) -> f64 {
@@ -6323,7 +6316,10 @@ impl EntityBase for Player {
             // Same world
             let yaw = yaw.unwrap_or_else(|| self.living_entity.entity.yaw.load());
             let pitch = pitch.unwrap_or_else(|| self.living_entity.entity.pitch.load());
-            self.request_teleport(position, yaw, pitch);
+            // cancellation must also suppress the watcher broadcast.
+            let Some(position) = self.request_teleport(position, yaw, pitch) else {
+                return;
+            };
             let entity = self.get_entity();
             let chunk_pos = entity.chunk_pos.load();
             entity.world.load().broadcast_to_chunk_except(

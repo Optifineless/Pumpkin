@@ -414,7 +414,22 @@ impl HopperBlockEntity {
                     // `dst.is_empty()` branch and reports a transfer that never happened.
                     continue;
                 };
-                if Self::add_one_item(self, container.as_ref(), &extraction.one_item) {
+                // HopperBlockEntity.addItem supplies the destination face.
+                let incoming_face = match facing {
+                    FacingHopper::Down => pumpkin_data::BlockDirection::Up,
+                    FacingHopper::North => pumpkin_data::BlockDirection::South,
+                    FacingHopper::South => pumpkin_data::BlockDirection::North,
+                    FacingHopper::West => pumpkin_data::BlockDirection::East,
+                    FacingHopper::East => pumpkin_data::BlockDirection::West,
+                };
+                if Self::add_item_from_face(
+                    Some(self),
+                    container.as_ref(),
+                    extraction.one_item.clone(),
+                    Some(incoming_face),
+                )
+                .is_empty()
+                {
                     return true;
                 }
                 if let Some(leftover) = self.put_back(slot, extraction) {
@@ -452,13 +467,35 @@ impl HopperBlockEntity {
 
     /// Vanilla `addItem(Container, Container, ItemStack, Direction)`: offers `stack` to each slot
     /// of `to` in order and returns what didn't fit.
-    fn add_item(
+    fn add_item(from: Option<&dyn Inventory>, to: &dyn Inventory, stack: ItemStack) -> ItemStack {
+        Self::add_item_from_face(from, to, stack, None)
+    }
+
+    fn add_item_from_face(
         from: Option<&dyn Inventory>,
         to: &dyn Inventory,
         mut stack: ItemStack,
+        face: Option<pumpkin_data::BlockDirection>,
     ) -> ItemStack {
-        // TODO WorldlyContainer
+        // BrewingStandBlockEntity.getSlotsForFace.
+        let slots: &[usize] = if to
+            .as_any()
+            .is::<super::brewing_stand::BrewingStandBlockEntity>()
+        {
+            match face {
+                Some(pumpkin_data::BlockDirection::Up) => &[3],
+                Some(pumpkin_data::BlockDirection::Down) => &[0, 1, 2, 3],
+                Some(_) => &[0, 1, 2, 4],
+                None => &[0, 1, 2, 3, 4],
+            }
+        } else {
+            &[]
+        };
         for slot in 0..to.size() {
+            if !slots.is_empty() && !slots.contains(&slot) {
+                continue;
+            }
+
             if stack.is_empty() {
                 break;
             }
@@ -794,5 +831,48 @@ mod tests {
         assert!(leftover.is_empty());
         assert_eq!(hopper.get_stack(0).item_count, 64);
         assert_eq!(hopper.get_stack(1).item_count, 35);
+    }
+    #[test]
+    fn brewing_stand_hopper_insertion_obeys_the_destination_face() {
+        use crate::block::entities::brewing_stand::BrewingStandBlockEntity;
+        use pumpkin_data::BlockDirection;
+        let stand = BrewingStandBlockEntity::new(BlockPos::new(0, 64, 0));
+        let fuel = ItemStack::new(1, &Item::BLAZE_POWDER);
+        assert!(
+            HopperBlockEntity::add_item_from_face(
+                None,
+                &stand,
+                fuel.clone(),
+                Some(BlockDirection::Up)
+            )
+            .is_empty()
+        );
+        assert_eq!(stand.get_stack(3).item, &Item::BLAZE_POWDER);
+        assert!(stand.get_stack(4).is_empty());
+        assert!(
+            HopperBlockEntity::add_item_from_face(None, &stand, fuel, Some(BlockDirection::North))
+                .is_empty()
+        );
+        assert_eq!(stand.get_stack(4).item, &Item::BLAZE_POWDER);
+        let potion = ItemStack::new(1, &Item::POTION);
+        assert!(
+            !HopperBlockEntity::add_item_from_face(
+                None,
+                &stand,
+                potion.clone(),
+                Some(BlockDirection::Up)
+            )
+            .is_empty()
+        );
+        assert!(
+            HopperBlockEntity::add_item_from_face(
+                None,
+                &stand,
+                potion,
+                Some(BlockDirection::North)
+            )
+            .is_empty()
+        );
+        assert_eq!(stand.get_stack(0).item, &Item::POTION);
     }
 }

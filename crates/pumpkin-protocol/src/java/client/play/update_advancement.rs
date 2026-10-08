@@ -1,10 +1,11 @@
-use crate::codec::item_stack_seralizer::ItemStackTemplateSerializer;
+use crate::codec::item_stack_seralizer::ItemStackSerializer;
 use crate::codec::var_int::VarInt;
 use pumpkin_data::Advancement;
 use pumpkin_data::advancement_data::AdvancementProgressData;
 use pumpkin_data::packet::clientbound::play::UPDATE_ADVANCEMENTS;
 use pumpkin_macros::java_packet;
 use pumpkin_util::identifier::Identifier;
+use std::borrow::Cow;
 
 use crate::ClientPacket;
 use crate::ser::NetworkWriteExt;
@@ -65,8 +66,8 @@ impl ClientPacket for CUpdateAdvancements {
                 write.write_component(&display.get_description(), version)?;
 
                 // Item icon
-                ItemStackTemplateSerializer::from(display.item_icon.clone())
-                    .write_with_version(&mut write, version)?;
+                ItemStackSerializer(Cow::Borrowed(&display.item_icon))
+                    .write_template_with_version(&mut write, version)?;
 
                 write.write_var_int(&VarInt(display.frame_type as i32))?;
                 let flags = (display.has_background() as i32)

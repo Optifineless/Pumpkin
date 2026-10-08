@@ -81,6 +81,11 @@ pub trait Inventory: Send + Sync + Clearable {
         sync_read_items_from_nbt(nbt, stacks);
     }
 
+    /// Checks item eligibility without slot occupancy, for menu insertion and swapping.
+    fn can_place_item(&self, slot: usize, stack: &ItemStack) -> bool {
+        self.is_valid_slot_for(slot, stack)
+    }
+
     fn is_valid_slot_for(&self, _slot: usize, _stack: &ItemStack) -> bool {
         true
     }

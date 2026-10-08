@@ -33,10 +33,7 @@ use crate::entity::vehicle::minecart::MinecartEntity;
 use crate::entity::{Entity, EntityBase};
 use crate::item::ItemMetadata;
 use crate::item::items::boat::BoatItem;
-use crate::item::items::bucket::{
-    FilledBucketItem, check_extra_content, play_bucket_evaporation, play_empty_sound,
-    should_evaporate_in_nether, try_pickup_fluid_at, try_place_filled_bucket,
-};
+use crate::item::items::bucket::{FilledBucketItem, check_extra_content, try_pickup_fluid_at};
 use crate::item::items::honeycomb::try_wax_block;
 use crate::item::items::ignite::ignition::Ignition;
 use crate::item::items::minecart::MinecartItem;
@@ -63,7 +60,7 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::translation;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_data::{Block, BlockStateId, FacingExt};
+use pumpkin_data::{Block, BlockStateId};
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::generic_container_screen_handler::create_generic_3x3;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
@@ -831,29 +828,11 @@ impl DispenserBlock {
     }
 
     fn dispense_filled_bucket(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+        // DefaultDispenseItemBehavior's bucket path passes the full stack.
         let front = Self::target_position(ctx);
-        let (front_block, front_state) = ctx.world.get_block_and_state(&front);
-        let can_place_fluid_inside =
-            front_state.is_air() || front_state.is_liquid() || front_block.is_waterloggable();
-
-        let emptied = if can_place_fluid_inside && should_evaporate_in_nether(item.item, ctx.world)
-        {
-            play_bucket_evaporation(ctx.world, &front.to_f64());
-            true
-        } else if try_place_filled_bucket(
-            ctx.world,
-            item.item,
-            *ctx.position,
-            ctx.facing.to_block_direction(),
-        ) {
-            play_empty_sound(ctx.world, item.item, front);
-            true
-        } else {
-            false
-        };
-
-        if emptied {
-            check_extra_content(ctx.world, item.item, front);
+        let destination = crate::item::items::bucket::empty_bucket_at(ctx.world, item.item, front);
+        if let Some(destination) = destination {
+            check_extra_content(ctx.world, item, destination);
             *item = ItemStack::new(1, &Item::BUCKET);
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
         } else {

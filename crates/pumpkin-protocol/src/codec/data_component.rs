@@ -1288,51 +1288,23 @@ impl DataComponentCodec<Self> for UseCooldownImpl {
     }
 }
 
+// ItemStackTemplate.STREAM_CODEC uses item id, count, then the normal patch.
 fn deserialize_item_stack_template(
     seq: &mut impl NetworkReadExt,
 ) -> Result<pumpkin_data::item_stack::ItemStack, ReadingError> {
-    // ItemStackTemplate.STREAM_CODEC uses the plain DataComponentPatch codec, without lengths.
-    crate::codec::item_stack_seralizer::ItemStackSerializer::read_template0(
+    super::item_stack_seralizer::ItemStackSerializer::read_template0(
         seq,
         &JavaMinecraftVersion::V_26_3,
     )
-    .map(crate::codec::item_stack_seralizer::ItemStackSerializer::to_stack)
+    .map(super::item_stack_seralizer::ItemStackSerializer::to_stack)
 }
 
 fn serialize_item_stack_template(
     stack: &pumpkin_data::item_stack::ItemStack,
     seq: &mut impl NetworkWriteExt,
 ) -> Result<(), WritingError> {
-    seq.write_var_int(&VarInt::from(stack.item.id))?;
-    seq.write_var_int(&VarInt::from(stack.item_count))?;
-
-    let mut to_add = 0u8;
-    let mut to_remove = 0u8;
-    for (_id, data) in &stack.patch {
-        if data.is_none() {
-            to_remove += 1;
-        } else {
-            to_add += 1;
-        }
-    }
-
-    seq.write_var_int(&VarInt::from(to_add))?;
-    seq.write_var_int(&VarInt::from(to_remove))?;
-
-    for (id, data) in &stack.patch {
-        if let Some(data) = data {
-            seq.write_var_int(&VarInt::from(id.to_id()))?;
-            serialize(*id, data.as_ref(), seq)?;
-        }
-    }
-
-    for (id, data) in &stack.patch {
-        if data.is_none() {
-            seq.write_var_int(&VarInt::from(id.to_id()))?;
-        }
-    }
-
-    Ok(())
+    super::item_stack_seralizer::ItemStackSerializer(std::borrow::Cow::Borrowed(stack))
+        .write_template0(seq, &JavaMinecraftVersion::V_26_3)
 }
 
 impl DataComponentCodec<Self> for BundleContentsImpl {
@@ -1376,11 +1348,11 @@ codec_string_variant!(WolfVariantImpl);
 codec_string_variant!(WolfSoundVariantImpl);
 codec_string_variant!(WolfCollarImpl);
 codec_string_variant!(FoxVariantImpl);
-codec_string_variant!(SalmonSizeImpl);
+// SalmonSizeImpl uses its enum codec in bucket_variants.
 codec_string_variant!(ParrotVariantImpl);
-codec_string_variant!(TropicalFishPatternImpl);
-codec_string_variant!(TropicalFishBaseColorImpl);
-codec_string_variant!(TropicalFishPatternColorImpl);
+// TropicalFishPatternImpl uses its enum codec in bucket_variants.
+// TropicalFishBaseColorImpl uses its enum codec in bucket_variants.
+// TropicalFishPatternColorImpl uses its enum codec in bucket_variants.
 codec_string_variant!(MooshroomVariantImpl);
 codec_string_variant!(RabbitVariantImpl);
 codec_string_variant!(PigVariantImpl);
@@ -1393,7 +1365,7 @@ codec_string_variant!(ZombieNautilusVariantImpl);
 codec_string_variant!(FrogVariantImpl);
 codec_string_variant!(HorseVariantImpl);
 codec_string_variant!(LlamaVariantImpl);
-codec_string_variant!(AxolotlVariantImpl);
+// AxolotlVariantImpl uses its enum codec in bucket_variants.
 codec_string_variant!(CatVariantImpl);
 codec_string_variant!(CatSoundVariantImpl);
 codec_string_variant!(CatCollarImpl);
@@ -2178,14 +2150,18 @@ impl DataComponentCodec<Self> for EntityDataImpl {
     }
 }
 
+// Bucketable.loadFromBucketTag requires the full CustomData payload.
 impl DataComponentCodec<Self> for BucketEntityDataImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_nbt(NbtTag::Compound(pumpkin_nbt::compound::NbtCompound::new()))
+        seq.write_nbt(NbtTag::Compound(self.nbt.clone().unwrap_or_default()))
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _nbt = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_2)?;
-        Ok(Self)
+        let nbt = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_3)?;
+        match nbt {
+            Some(NbtTag::Compound(nbt)) => Ok(Self { nbt: Some(nbt) }),
+            _ => Err(ReadingError::Message("Invalid bucket entity data".into())),
+        }
     }
 }
 

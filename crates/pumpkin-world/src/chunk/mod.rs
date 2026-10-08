@@ -79,6 +79,8 @@ pub struct ChunkData {
     pub pending_block_entities: std::sync::Mutex<FxHashMap<BlockPos, NbtCompound>>,
     pub light_engine: std::sync::Mutex<ChunkLight>,
     pub light_populated: AtomicBool,
+    // force repair when saved lighting was discarded.
+    pub lighting_invalid: AtomicBool,
     pub status: ChunkStatus,
     pub blending_data: Option<crate::generation::blender::blending_data::BlendingData>,
     pub dirty: io::DirtyFlag,
@@ -209,14 +211,29 @@ impl ChunkHeightmapType {
 
 #[derive(Debug, Clone)]
 pub struct ChunkHeightmaps {
+    // Heightmap uses ceil(log2(dimension height + 1)).
+    pub height_bits: u32,
     pub world_surface: Option<Box<[i64]>>,
     pub motion_blocking: Option<Box<[i64]>>,
     pub motion_blocking_no_leaves: Option<Box<[i64]>>,
 }
 
 impl ChunkHeightmaps {
-    /// Longs a heightmap occupies: 256 columns of 9 bits, 7 columns per long.
-    pub const LONGS: usize = 37;
+    // Heightmap constructor and SimpleBitStorage layout.
+    #[must_use]
+    pub const fn new(height: i32) -> Self {
+        Self {
+            height_bits: (height as u32 + 1).next_power_of_two().trailing_zeros(),
+            world_surface: None,
+            motion_blocking: None,
+            motion_blocking_no_leaves: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn longs(&self) -> usize {
+        256usize.div_ceil(64 / self.height_bits as usize)
+    }
 
     pub fn set(&mut self, heightmap: ChunkHeightmapType, x: i32, z: i32, height: i32, min_y: i32) {
         let data = match heightmap {
@@ -224,25 +241,25 @@ impl ChunkHeightmaps {
             ChunkHeightmapType::MotionBlocking => &mut self.motion_blocking,
             ChunkHeightmapType::MotionBlockingNoLeaves => &mut self.motion_blocking_no_leaves,
         };
-
-        let data = data.get_or_insert_with(|| vec![0; Self::LONGS].into_boxed_slice());
+        let values_per_long = 64 / self.height_bits as usize;
+        let longs = 256usize.div_ceil(values_per_long);
+        let data = data.get_or_insert_with(|| vec![0; longs].into_boxed_slice());
 
         let local_x = (x & 15) as usize;
         let local_z = (z & 15) as usize;
         let column_idx = local_z * 16 + local_x;
 
         // In Minecraft 1.16+, height is stored as (y - min_y + 1). 0 means below min_y.
-        // It uses 9 bits per value, packed such that they do not cross u64 boundaries.
-        // 64 / 9 = 7 values per u64.
+        // values never cross long boundaries.
         let val = (height - min_y + 1).max(0) as u64;
+        let array_idx = column_idx / values_per_long;
+        let shift = (column_idx % values_per_long) * self.height_bits as usize;
 
-        let array_idx = column_idx / 7;
-        let shift = (column_idx % 7) * 9;
-
-        let mask = 0x1FFu64 << shift;
+        let value_mask = (1u64 << self.height_bits) - 1;
+        let mask = value_mask << shift;
 
         let mut current = data[array_idx] as u64;
-        current = (current & !mask) | ((val & 0x1FF) << shift);
+        current = (current & !mask) | ((val & value_mask) << shift);
         data[array_idx] = current as i64;
     }
 
@@ -261,12 +278,12 @@ impl ChunkHeightmaps {
         let local_x = (x & 15) as usize;
         let local_z = (z & 15) as usize;
         let column_idx = local_z * 16 + local_x;
-
-        let array_idx = column_idx / 7;
-        let shift = (column_idx % 7) * 9;
+        let values_per_long = 64 / self.height_bits as usize;
+        let array_idx = column_idx / values_per_long;
+        let shift = (column_idx % values_per_long) * self.height_bits as usize;
 
         let current = data[array_idx] as u64;
-        let val = (current >> shift) & 0x1FF;
+        let val = (current >> shift) & ((1u64 << self.height_bits) - 1);
 
         (val as i32) + min_y - 1
     }
@@ -312,13 +329,10 @@ impl ChunkHeightmaps {
 }
 
 /// The Heightmap for a completely empty chunk
+// only legacy empty/test chunks use the default dimension.
 impl Default for ChunkHeightmaps {
     fn default() -> Self {
-        Self {
-            motion_blocking: None,
-            motion_blocking_no_leaves: None,
-            world_surface: None,
-        }
+        Self::new(pumpkin_data::dimension::Dimension::OVERWORLD.height)
     }
 }
 
@@ -637,6 +651,49 @@ impl ChunkSections {
 }
 
 impl ChunkData {
+    /// Validates and primes saved heightmaps before the loaded chunk becomes visible.
+    pub(crate) fn prime_heightmaps(&self, dimension_height: i32) {
+        let mut maps = self
+            .heightmap
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let layout = ChunkHeightmaps::new(dimension_height);
+        let longs = layout.longs();
+        maps.height_bits = layout.height_bits;
+        let repair = [
+            maps.world_surface
+                .as_ref()
+                .is_none_or(|data| data.len() != longs),
+            maps.motion_blocking
+                .as_ref()
+                .is_none_or(|data| data.len() != longs),
+            maps.motion_blocking_no_leaves
+                .as_ref()
+                .is_none_or(|data| data.len() != longs),
+        ];
+        if !repair.iter().any(|invalid| *invalid) {
+            return;
+        }
+        // Heightmap.primeHeightmaps scans only the missing types, preserving valid saved maps.
+        let mut primed = layout;
+        let highest = self.get_highest_non_empty_subchunk();
+        for x in 0..16 {
+            for z in 0..16 {
+                self.populate_heightmaps(&mut primed, highest, x, z);
+            }
+        }
+        if repair[0] {
+            maps.world_surface = primed.world_surface;
+        }
+        if repair[1] {
+            maps.motion_blocking = primed.motion_blocking;
+        }
+        if repair[2] {
+            maps.motion_blocking_no_leaves = primed.motion_blocking_no_leaves;
+        }
+        self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     #[must_use]
     pub fn empty(x: i32, z: i32) -> Self {
         Self {
@@ -649,6 +706,7 @@ impl ChunkData {
             pending_block_entities: std::sync::Mutex::new(FxHashMap::default()),
             light_engine: std::sync::Mutex::new(ChunkLight::default()),
             light_populated: std::sync::atomic::AtomicBool::new(false),
+            lighting_invalid: AtomicBool::new(false),
             status: ChunkStatus::Full,
             blending_data: None,
             dirty: io::DirtyFlag::new(false),
@@ -886,7 +944,7 @@ impl ChunkData {
     //TODO: Tracking heightmaps update.
     pub fn calculate_heightmap(&self) -> ChunkHeightmaps {
         let highest_non_empty_subchunk = self.get_highest_non_empty_subchunk();
-        let mut heightmaps = ChunkHeightmaps::default();
+        let mut heightmaps = ChunkHeightmaps::new(self.section.count as i32 * 16);
 
         for x in 0..16 {
             for z in 0..16 {
@@ -910,7 +968,8 @@ impl ChunkData {
         x: usize,
         z: usize,
     ) {
-        let start_height = (start_sub_chunk as i32) * 16 - self.section.min_y.abs() + 15;
+        // Heightmap.primeHeightmaps scans absolute section heights.
+        let start_height = (start_sub_chunk as i32) * 16 + self.section.min_y + 15;
         let mut has_found = [false, false, false];
 
         for y in (self.section.min_y..=start_height).rev() {
@@ -981,6 +1040,24 @@ pub enum ChunkSerializingError {
 
 #[cfg(test)]
 mod tests {
+    use super::{ChunkData, ChunkHeightmapType};
+    #[test]
+    fn heightmap_layout_and_priming_follow_dimension_height() {
+        let mut chunk = ChunkData::empty(0, 0);
+        chunk.section = ChunkSections::new(8, 0);
+        chunk
+            .section
+            .set_block_no_heightmap_update(15, 127, 15, Block::STONE.default_state.id);
+        chunk.prime_heightmaps(128);
+        let maps = chunk
+            .heightmap
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(maps.world_surface.as_ref().map(|data| data.len()), Some(32));
+        assert_eq!(maps.get(ChunkHeightmapType::WorldSurface, 15, 15, 0), 127);
+        assert_eq!(maps.get(ChunkHeightmapType::MotionBlocking, 0, 0, 0), -1);
+    }
+
     use super::{ChunkSections, RandomTickMembership};
     use crate::chunk::palette::BlockPalette;
     use pumpkin_data::{Block, block_properties::has_random_ticks};

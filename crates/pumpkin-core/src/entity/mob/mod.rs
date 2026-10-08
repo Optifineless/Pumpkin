@@ -723,6 +723,9 @@ impl MobEntity {
 }
 
 pub trait Mob: EntityBase + Send + Sync {
+    /// Runs mob-specific loot after Mob.dropCustomDeathLoot's equipment drops.
+    fn drop_custom_death_loot(&self) {}
+
     /// Overrides `LivingEntity.getSecondsToDisableBlocking` for mobs with a fixed duration.
     fn blocking_disable_seconds_override(&self) -> Option<f32> {
         None

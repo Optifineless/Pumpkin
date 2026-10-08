@@ -15,9 +15,7 @@ use std::io::Cursor;
 
 #[derive(Clone)]
 pub struct ItemStackSerializer<'a>(pub Cow<'a, ItemStack>);
-
-/// Upper bound on the number of entries in a component patch. The readers reject
-/// a longer patch, and the item stack writers refuse to emit one.
+/// Fork resource policy, not a vanilla protocol limit: cap component patches at 256 entries.
 const MAX_COMPONENTS: i32 = 256;
 
 fn item_component_counts(stack: &ItemStack) -> Result<(VarInt, VarInt), WritingError> {
@@ -301,7 +299,8 @@ impl ItemStackSerializer<'_> {
         let _scope = crate::ser::decode_budget::DecodeScope::packet();
 
         let item_count = read.get_var_int()?;
-        if item_count.0 == 0 {
+        // ItemStack.OPTIONAL_STREAM_CODEC accepts any non-positive count.
+        if item_count.0 <= 0 {
             return Ok(ItemStackSerializer(Cow::Borrowed(ItemStack::EMPTY)));
         }
         let item_count_u8: u8 = item_count
@@ -353,7 +352,8 @@ impl ItemStackSerializer<'_> {
         Ok(ItemStackSerializer(Cow::Owned(
             ItemStack::new_with_component(
                 item_count_u8,
-                Item::from_id(item_id_u16).unwrap_or(&Item::AIR),
+                Item::from_id(item_id_u16)
+                    .ok_or_else(|| ReadingError::Message("Unknown item registry id".into()))?,
                 patch.finish(),
             ),
         )))
@@ -423,6 +423,15 @@ impl ItemStackSerializer<'_> {
             Self::read_with_version(read, version)
         }
     }
+    /// Validates full incoming stacks after decoding their version-specific framing.
+    pub fn read_validated_with_version(
+        read: &mut impl NetworkReadExt,
+        version: &JavaMinecraftVersion,
+    ) -> Result<ItemStackSerializer<'static>, ReadingError> {
+        let stack = Self::read_untrusted_with_version(read, version)?;
+        super::item_stack_validation::validate_persistent(&stack.0)?;
+        Ok(stack)
+    }
 
     pub fn read_template_with_version(
         read: &mut impl NetworkReadExt,
@@ -461,7 +470,8 @@ impl ItemStackSerializer<'_> {
             .0
             .try_into()
             .map_err(|_| ReadingError::Message("Invalid item id!".into()))?;
-        let item = Item::from_id(item_id_u16).unwrap_or(&Item::AIR);
+        let item = Item::from_id(item_id_u16)
+            .ok_or_else(|| ReadingError::Message("Unknown item registry id".into()))?;
 
         let num_to_add = read.get_var_int()?.0;
         let num_to_remove = read.get_var_int()?.0;
@@ -522,7 +532,8 @@ impl ItemStackSerializer<'_> {
         let _scope = crate::ser::decode_budget::DecodeScope::packet();
 
         let item_count = read.get_var_int()?;
-        if item_count.0 == 0 {
+        // ItemStack.OPTIONAL_STREAM_CODEC accepts any non-positive count.
+        if item_count.0 <= 0 {
             return Ok(ItemStackSerializer(Cow::Borrowed(ItemStack::EMPTY)));
         }
         let item_count_u8 = item_count
@@ -568,7 +579,8 @@ impl ItemStackSerializer<'_> {
         Ok(ItemStackSerializer(Cow::Owned(
             ItemStack::new_with_component(
                 item_count_u8,
-                Item::from_id(item_id_u16).unwrap_or(&Item::AIR),
+                Item::from_id(item_id_u16)
+                    .ok_or_else(|| ReadingError::Message("Unknown item registry id".into()))?,
                 patch.finish(),
             ),
         )))
@@ -775,6 +787,20 @@ fn claim_matching<T>(entries: &[T], claimed: &mut [bool], matches: impl Fn(&T) -
 pub struct OptionalItemStackHash(pub Option<ItemStackHash>);
 
 impl OptionalItemStackHash {
+    // container clicks carry HashedStack claims without component values.
+    pub(crate) fn validate_incoming(&self) -> Result<(), ReadingError> {
+        if let Some(stack) = &self.0
+            && (u16::try_from(stack.item_id.0)
+                .ok()
+                .and_then(Item::from_id)
+                .is_none())
+        {
+            return Err(ReadingError::Message("Invalid incoming stack claim".into()));
+        }
+
+        Ok(())
+    }
+
     pub fn read(read: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let is_some = read.get_bool()?;
         if is_some {
@@ -843,29 +869,6 @@ impl OptionalItemStackHash {
         } else {
             other.is_empty()
         }
-    }
-}
-
-pub struct ItemStackTemplateSerializer<'a>(pub Cow<'a, ItemStack>);
-
-impl ItemStackTemplateSerializer<'_> {
-    pub fn write_with_version(
-        &self,
-        write: &mut impl NetworkWriteExt,
-        version: &JavaMinecraftVersion,
-    ) -> Result<(), WritingError> {
-        let serializer = ItemStackSerializer(Cow::Borrowed(self.0.as_ref()));
-        serializer.write_template_with_version(write, version)
-    }
-
-    pub fn write(&self, write: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        self.write_with_version(write, &JavaMinecraftVersion::V_26_3)
-    }
-}
-
-impl From<ItemStack> for ItemStackTemplateSerializer<'_> {
-    fn from(item: ItemStack) -> Self {
-        ItemStackTemplateSerializer(Cow::Owned(item))
     }
 }
 
@@ -1119,7 +1122,8 @@ mod tests {
 
     #[test]
     fn an_item_count_that_does_not_fit_a_byte_is_rejected() {
-        for count in [-1, 256, 257, 100_000] {
+        // negative optional counts are empty, not malformed.
+        for count in [256, 257, 100_000] {
             let bytes = stack_bytes(count, Item::DIAMOND_SWORD.id, &[], &[]);
             assert!(
                 ItemStackSerializer::read(&mut bytes.as_slice()).is_err(),

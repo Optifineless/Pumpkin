@@ -139,7 +139,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Shields respect piercing shots, cooldowns and hand changes; death protectors use their configured effects (combat task 2 review follow-up, related to #3520) | Not yet |
 | Disconnect counts games quit once and keeps the saved statistic consistent with plugin changes and the scoreboard | Not yet |
 
-## Native plugin API 6
+## Native plugin API 7
 
 The native plugin API has moved three times in this fork; rebuild native plugins against this checkout. The Wasm WIT is unchanged throughout.
 
@@ -151,3 +151,23 @@ The second shield/totem review adds authoritative item transactions, effect life
 
 
 Known incomplete (movement): Movement behavior hooks for bee pollination, turtle homeward travel and migration, phantom swoops and drowned land searches are stubs until their species goals or Brain behaviors set them. Parrot taming and sitting still need separate tests. These hooks do not implement the missing behaviors by themselves.
+
+## Harvest round two follow-up
+
+The following ports and corrections are checked against the supplied vanilla 26.3 source. The owner has not yet confirmed their in-game behavior.
+
+| Source | Change | Checked in-game |
+|:--|:--|:--|
+| [#3865](https://github.com/Pumpkin-MC/Pumpkin/pull/3865), ydw1904 | Withers drop one star at their position during death processing; its extra five minutes survive a restart. | Not yet|
+| [#3666](https://github.com/Pumpkin-MC/Pumpkin/pull/3666) | Damageability respects unbreakability and removed damage components; damage reads are clamped before stacking decisions. | Not yet|
+| [#3920](https://github.com/Pumpkin-MC/Pumpkin/pull/3920) | Dispensers release the full mob bucket contents, including names, variants, health and bucket persistence; shared fluid placement accepts replaceable plants and honours emptying cancellation before placement. | Not yet|
+| [#3916](https://github.com/Pumpkin-MC/Pumpkin/pull/3916) | Saved heightmaps use the dimension's height; discarded heightmaps and lighting are repaired before normal chunk exposure. | Not yet|
+| [#3706](https://github.com/Pumpkin-MC/Pumpkin/pull/3706) | Incoming item stacks check persistent count/component constraints; unknown item registry ids fail decoding. | Not yet|
+| [#3775](https://github.com/Pumpkin-MC/Pumpkin/pull/3775) | Painting metadata uses registry holder ids, including the first variant. | Not yet|
+| [#3897](https://github.com/Pumpkin-MC/Pumpkin/pull/3897), selective port | Saved item counts default to one and stay within 1–99; empty templates are rejected. Charged-projectile codecs come from the crash-codec merge. | Not yet|
+| [#3524](https://github.com/Pumpkin-MC/Pumpkin/pull/3524) | Plugins can cancel the final falling-block placement without creating a block or item drop. Both existing piston fixes remain. | Not yet|
+| [#3412](https://github.com/Pumpkin-MC/Pumpkin/pull/3412), selective port | Chained brewing fires a fresh start event; recipe inputs, reagents and fuel govern slots and hopper faces. | Not yet|
+| Alb11747 `contrib/teleport-chunk-view`, reimplemented from vanilla | Accepted same-world teleports refresh the chunk view using the accepted destination; cancellation suppresses movement and broadcasts. | Not yet|
+
+Mob death hooks, bucket-data layouts, item lifetime fields, chunk repair fields, teleport outcomes and the occupancy-free inventory predicate change the native API, raising `PLUGIN_API_VERSION` from storage API 6 to 7. Rebuild native plugins. The Wasm WIT is unchanged.
+

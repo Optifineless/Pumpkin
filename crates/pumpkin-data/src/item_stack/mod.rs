@@ -34,6 +34,11 @@ pub enum DamageResult {
     Broken,
 }
 
+// Item.ABSOLUTE_MAX_STACK_SIZE bounds persistent values and incoming packets.
+impl Item {
+    pub const ABSOLUTE_MAX_STACK_SIZE: u8 = 99;
+}
+
 #[derive(Clone)]
 pub struct ItemStack {
     pub item_count: u8,
@@ -293,8 +298,10 @@ impl ItemStack {
 
     #[must_use]
     pub fn get_damage(&self) -> i32 {
+        // ItemStack.getDamageValue clamps to the effective maximum.
         self.get_data_component::<DamageImpl>()
             .map_or(0, |value| value.damage)
+            .clamp(0, self.get_max_damage().unwrap_or(0).max(0))
     }
 
     #[must_use]
@@ -335,7 +342,15 @@ impl ItemStack {
 
     #[must_use]
     pub fn is_damageable(&self) -> bool {
-        self.get_max_damage().unwrap_or(0) > 0
+        // ItemStack.isDamageableItem tests component presence.
+        self.get_max_damage().is_some()
+            && !self.is_unbreakable()
+            && self.get_data_component::<DamageImpl>().is_some()
+    }
+    #[must_use]
+    pub fn is_damaged(&self) -> bool {
+        // ItemStack.isDamaged
+        self.is_damageable() && self.get_damage() > 0
     }
 
     pub fn repair_item(&mut self, amount: i32) -> i32 {
@@ -436,7 +451,8 @@ impl ItemStack {
 
     #[must_use]
     pub fn is_stackable(&self) -> bool {
-        self.get_max_stack_size() > 1 && (!self.is_damageable() || self.get_damage() == 0)
+        // ItemStack.isStackable
+        self.get_max_stack_size() > 1 && (!self.is_damageable() || !self.is_damaged())
     }
 
     #[must_use]
@@ -823,7 +839,14 @@ impl ItemStack {
         // Try to get item by registry key
         let item = Item::from_registry_key(registry_key)?;
 
-        let count = compound.get_int("count")? as u8;
+        // ItemStack.MAP_CODEC defaults count to one and bounds it to 1..=99.
+        let count = compound
+            .get("count")
+            .map_or(Some(1), pumpkin_nbt::tag::NbtTag::extract_int)?;
+        if !(1..=i32::from(Item::ABSOLUTE_MAX_STACK_SIZE)).contains(&count) {
+            return None;
+        }
+        let count = u8::try_from(count).ok()?;
 
         // Create the item stack
         let mut item_stack = Self::new(count, item);
@@ -858,6 +881,25 @@ impl From<&RecipeResultStruct> for ItemStack {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn persistent_count_defaults_to_one_and_rejects_out_of_range_values() {
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", "minecraft:stone".into());
+        assert_eq!(
+            ItemStack::read_item_stack(&nbt).map(|stack| stack.item_count),
+            Some(1)
+        );
+        nbt.put_int("count", 99);
+        assert_eq!(
+            ItemStack::read_item_stack(&nbt).map(|stack| stack.item_count),
+            Some(99)
+        );
+        for count in [-1, 0, 100, 256, 257] {
+            nbt.put_int("count", count);
+            assert!(ItemStack::read_item_stack(&nbt).is_none());
+        }
+    }
+
     use super::*;
     use crate::data_component::DataComponent;
     use crate::data_component_impl::{
@@ -875,13 +917,30 @@ mod tests {
 
     #[test]
     fn damaged_damageable_item_is_not_stackable() {
+        // legal damageable items have maximum stack size one.
         let mut stack = iron_sword();
-        stack.set_data_component(MaxStackSizeImpl { size: 64 });
-
-        assert!(stack.is_stackable());
-
-        stack.set_damage(1);
         assert!(!stack.is_stackable());
+        assert!(stack.is_damageable());
+        assert!(!stack.is_damaged());
+        stack.set_damage(1);
+        assert!(stack.is_damaged());
+        assert!(!stack.is_stackable());
+        stack.set_data_component(UnbreakableImpl {});
+        assert!(!stack.is_damageable());
+        assert!(!stack.is_damaged());
+        stack.remove_data_component(DataComponent::Unbreakable);
+        stack.remove_data_component(DataComponent::Damage);
+        assert!(!stack.is_damageable());
+        assert!(!stack.is_damaged());
+    }
+    #[test]
+    fn damage_value_is_clamped_before_testing_damage() {
+        let mut stack = iron_sword();
+        stack.set_data_component(DamageImpl { damage: -1 });
+        assert_eq!(stack.get_damage(), 0);
+        assert!(!stack.is_damaged());
+        stack.set_data_component(DamageImpl { damage: 1000 });
+        assert_eq!(stack.get_damage(), 250);
     }
 
     #[test]

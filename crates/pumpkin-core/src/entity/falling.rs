@@ -93,6 +93,19 @@ impl EntityBase for FallingEntity {
                     {
                         state_id = concrete.default_state.id;
                     }
+                    // wrap FallingBlockEntity.tick's final resolved placement.
+                    let mut event = crate::plugin::api::events::entity::entity_change_block::EntityChangeBlockEvent::new(
+                        entity.entity_id,
+                        landing_pos,
+                        Block::from_state_id(state_id).name.to_string(),
+                    );
+                    if let Some(server) = world.server.upgrade() {
+                        server.plugin_manager.fire_blocking(&server, &mut event);
+                    }
+                    if event.cancelled {
+                        entity.remove();
+                        return;
+                    }
                     world.set_block_state(&landing_pos, state_id, BlockFlags::NOTIFY_ALL);
                     // block updates to watchers before the despawn, else a invisible block gap until the tick flush.
                     let placed = world.get_block_state_id(&landing_pos);

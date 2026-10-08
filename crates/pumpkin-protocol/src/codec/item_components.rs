@@ -29,12 +29,8 @@ impl DataComponentCodec<Self> for ChargedProjectilesImpl {
         }
         seq.write_var_int(&VarInt(count))?;
         for projectile in &self.projectiles {
-            // ItemStackTemplate.MAP_CODEC.optionalFieldOf("count", 1).
-            let mut template = Cow::Borrowed(projectile);
-            if projectile.get("count").is_none() {
-                template.to_mut().put_int("count", 1);
-            }
-            let stack = ItemStack::read_item_stack(&template)
+            // ItemStackTemplate.MAP_CODEC defaults count to one through the persistent reader.
+            let stack = ItemStack::read_item_stack(projectile)
                 .filter(|stack| !stack.is_empty())
                 .ok_or_else(|| WritingError::Message("Invalid charged projectile".into()))?;
             ItemStackSerializer(Cow::Owned(stack))

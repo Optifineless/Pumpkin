@@ -3504,7 +3504,8 @@ impl World {
         let velocity = player.living_entity.entity.velocity.load();
 
         debug!("Sending player teleport to {}", player.gameprofile.name);
-        player.request_teleport(position, yaw, pitch);
+        // cancellation leaves the current position untouched.
+        let _ = player.request_teleport(position, yaw, pitch);
 
         let gameprofile = &player.gameprofile;
         let bedrock_player_list = CPlayerList {
@@ -4383,7 +4384,8 @@ impl World {
         target_world.send_center_chunk(player).await;
 
         // Send teleport packet after at least the center chunk was delivered
-        player.request_teleport(position, yaw, pitch);
+        // cancellation leaves the current position untouched.
+        let _ = player.request_teleport(position, yaw, pitch);
 
         target_world.refresh_java_player_for_bedrock(player).await;
     }

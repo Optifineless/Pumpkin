@@ -25,7 +25,7 @@ use std::sync::atomic::Ordering::{AcqRel, Relaxed};
 use std::sync::{
     Arc, Mutex,
     atomic::{
-        AtomicBool, AtomicU8, AtomicU32,
+        AtomicBool, AtomicI32, AtomicU8,
         Ordering::{self},
     },
 };
@@ -34,7 +34,8 @@ use super::{Entity, EntityBase, living::LivingEntity, player::Player};
 
 pub struct ItemEntity {
     entity: Entity,
-    item_age: AtomicU32,
+    // ItemEntity.age must retain negative extended lifetimes.
+    item_age: AtomicI32,
     // These cannot be atomic values because we mutate their state based on what they are; we run
     // into the ABA problem
     item_stack: Mutex<ItemStack>,
@@ -85,7 +86,7 @@ impl Drop for ItemMergeReservation<'_> {
 }
 
 /// Vanilla `ItemEntity.LIFETIME`.
-const LIFETIME: u32 = 6000; // 5 minutes in ticks
+const LIFETIME: i32 = 6000; // 5 minutes in ticks
 /// Vanilla `ItemEntity.merge(to, from, 64)`: cap on top of `getMaxStackSize`.
 const MERGE_MAX_COUNT: u8 = 64;
 
@@ -104,7 +105,7 @@ impl ItemEntity {
         Self {
             entity,
             item_stack: Mutex::new(item_stack),
-            item_age: AtomicU32::new(0),
+            item_age: AtomicI32::new(0),
             pickup_delay: AtomicU8::new(Self::DEFAULT_PICKUP_DELAY),
             health: AtomicF32::new(5.0),
             never_despawn: AtomicBool::new(false),
@@ -126,7 +127,7 @@ impl ItemEntity {
         Self {
             entity,
             item_stack: Mutex::new(item_stack),
-            item_age: AtomicU32::new(0),
+            item_age: AtomicI32::new(0),
             pickup_delay: AtomicU8::new(pickup_delay), // Vanilla pickup delay is 10 ticks
             health: AtomicF32::new(5.0),
             never_despawn: AtomicBool::new(false),
@@ -141,7 +142,7 @@ impl ItemEntity {
         Self {
             entity,
             item_stack: Mutex::new(ItemStack::new(1, &pumpkin_data::item::Item::AIR)),
-            item_age: AtomicU32::new(0),
+            item_age: AtomicI32::new(0),
             pickup_delay: AtomicU8::new(0),
             health: AtomicF32::new(5.0),
             never_despawn: AtomicBool::new(false),
@@ -152,6 +153,10 @@ impl ItemEntity {
 
     pub const fn get_item_stack(&self) -> &Mutex<ItemStack> {
         &self.item_stack
+    }
+    /// Mirrors ItemEntity.setExtendedLifetime; persisted Age remains signed.
+    pub fn set_extended_lifetime(&self) {
+        self.item_age.store(-LIFETIME, Relaxed);
     }
 
     pub fn get_pickup_delay(&self) -> u8 {
@@ -787,9 +792,11 @@ impl EntityBase for ItemEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = stack;
         }
 
-        // Vanilla stores Age as a short
-        self.item_age
-            .store(nbt.get_short("Age").unwrap_or(0) as u32, Ordering::Relaxed);
+        // ItemEntity.readAdditionalSaveData reads a signed short.
+        self.item_age.store(
+            i32::from(nbt.get_short("Age").unwrap_or(0)),
+            Ordering::Relaxed,
+        );
 
         // Vanilla stores PickupDelay as a short
         if let Some(delay) = nbt.get_short("PickupDelay") {
@@ -861,7 +868,28 @@ impl EntityBase for ItemEntity {
 
 #[cfg(test)]
 mod tests {
-    use super::ItemEntity;
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn extended_lifetime_survives_reload_and_ticks_towards_normal_despawn() {
+        let fixture = crate::entity::death_test_world::DeathTestWorld::new().await;
+        let item = ItemEntity::new_empty(Entity::new(
+            fixture.world(),
+            pumpkin_util::math::vector3::Vector3::new(0.0, 64.0, 0.0),
+            &pumpkin_data::entity::EntityType::ITEM,
+        ));
+        let mut saved = pumpkin_nbt::compound::NbtCompound::new();
+        item.set_extended_lifetime();
+        item.write_custom_nbt(&mut saved);
+        assert_eq!(saved.get_short("Age"), Some(-6000));
+        item.item_age.store(0, std::sync::atomic::Ordering::Relaxed);
+        item.read_custom_nbt(&saved);
+        assert!(item.process_age_and_merge());
+        item.write_custom_nbt(&mut saved);
+        assert_eq!(saved.get_short("Age"), Some(-5999));
+        item.item_age
+            .store(5999, std::sync::atomic::Ordering::Relaxed);
+        assert!(!item.process_age_and_merge());
+    }
+    use super::{Entity, EntityBase, ItemEntity};
     use pumpkin_data::data_component_impl::{CustomDataImpl, CustomNameImpl};
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;

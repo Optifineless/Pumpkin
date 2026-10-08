@@ -4,6 +4,7 @@ pub mod armadillo;
 pub mod axolotl;
 mod axolotl_air;
 pub mod bee;
+pub(crate) mod bucketable;
 pub mod camel;
 pub mod cat;
 pub mod chicken;

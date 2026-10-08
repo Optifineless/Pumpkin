@@ -81,7 +81,8 @@ impl PaintingEntity {
     pub fn sync_variant(&self) {
         self.entity.set_synced_data(
             pumpkin_data::tracked_data::painting::DATA_PAINTING_VARIANT_ID,
-            VarInt(self.variant().id() as i32),
+            // PaintingVariant.STREAM_CODEC encodes registry holders as id + 1.
+            VarInt(self.variant().id() as i32 + 1),
         );
     }
 
@@ -248,7 +249,8 @@ impl EntityBase for PaintingEntity {
         let mut metadata = Vec::new();
         Metadata::new(
             pumpkin_data::tracked_data::painting::DATA_PAINTING_VARIANT_ID,
-            VarInt(self.variant().id() as i32),
+            // PaintingVariant.STREAM_CODEC encodes registry holders as id + 1.
+            VarInt(self.variant().id() as i32 + 1),
         )
         .write(&mut metadata, &version)
         .ok()?;
@@ -286,6 +288,34 @@ impl EntityBase for PaintingEntity {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn painting_spawn_and_changed_metadata_use_holder_ids() {
+        let fixture = crate::entity::death_test_world::DeathTestWorld::new().await;
+        let painting = PaintingEntity::new(Entity::new(
+            fixture.world(),
+            Vector3::new(0.0, 64.0, 0.0),
+            &pumpkin_data::entity::EntityType::PAINTING,
+        ));
+        // First two registry entries, with vanilla holder id + 1 and metadata terminator.
+        for (variant, expected_holder) in [(PaintingVariant::Alban, 1), (PaintingVariant::Aztec, 2)]
+        {
+            painting.set_variant(variant);
+            let expected = vec![9, 34, expected_holder, 255].into_boxed_slice();
+            assert_eq!(
+                painting.java_spawn_metadata(JavaMinecraftVersion::V_26_3),
+                Some(expected.clone())
+            );
+            assert_eq!(
+                painting
+                    .entity
+                    .synched_data
+                    .pack_dirty_for_version(&JavaMinecraftVersion::V_26_3),
+                Some(expected)
+            );
+            painting.entity.synched_data.clear_dirty();
+        }
+    }
+
     use super::*;
 
     #[test]

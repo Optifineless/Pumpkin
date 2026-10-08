@@ -1,6 +1,8 @@
 pub mod death_loot;
 #[cfg(test)]
 pub(crate) mod death_test_world;
+#[cfg(test)]
+mod harvest_tests;
 pub mod kill_credit;
 use crate::{
     entity::item::ItemEntity,
@@ -95,6 +97,7 @@ pub mod mob;
 pub mod passive;
 pub mod player;
 pub(crate) mod player_skin;
+mod player_teleport;
 pub mod projectile;
 pub mod projectile_deflection;
 pub(crate) mod spawn_mount;
