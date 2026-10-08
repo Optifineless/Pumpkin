@@ -43,13 +43,13 @@ use crate::entity::{
         },
         pathfinder::Navigator,
     },
-    experience_orb::ExperienceOrbEntity,
     mob::{Mob, MobEntity},
 };
 use crate::world::World;
 use crate::world::villager_poi::profession_for_block;
 
 pub mod data;
+mod reward_trade_xp;
 pub use data::{
     BREEDING_FOOD_THRESHOLD, GossipType, VillagerData, VillagerProfession, VillagerType,
     get_food_points,
@@ -872,7 +872,7 @@ impl VillagerEntity {
             (offer.xp, offer.reward_exp)
         };
 
-        let current_xp = self.xp.fetch_add(xp_gain, Ordering::Relaxed) + xp_gain;
+        let current_xp = self.reward_trade_xp(world, xp_gain, reward_exp);
         let villager_data = *self
             .villager_data
             .lock()
@@ -881,10 +881,6 @@ impl VillagerEntity {
         self.get_entity()
             .set_synced_data(tracked_data::villager::VILLAGER_DATA, villager_data);
         self.get_entity().send_bedrock_actor_data(&bedrock_metadata);
-
-        if reward_exp {
-            ExperienceOrbEntity::spawn(world, self.get_entity().pos.load(), xp_gain as u32);
-        }
 
         if let Some(player) = world.get_player_by_uuid(player_uuid) {
             {

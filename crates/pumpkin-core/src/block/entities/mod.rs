@@ -27,6 +27,7 @@ pub mod dropper;
 pub mod end_portal;
 pub mod ender_chest;
 pub mod furnace;
+pub mod furnace_experience;
 pub mod furnace_like_block_entity;
 pub mod hopper;
 pub mod jigsaw_block;
@@ -143,9 +144,11 @@ pub trait BlockEntity: Any + Send + Sync {
     /// belong here: by the time `BlockBehaviour::broken` runs, the entity is already gone.
     fn on_block_replaced(self: Arc<Self>, world: &Arc<World>, position: &BlockPos) {
         if let Some(experience) = self.clone().to_experience_container() {
-            let xp = experience.extract_experience();
-            if xp > 0 {
-                ExperienceOrbEntity::spawn(world, position.to_f64(), xp as u32);
+            // AbstractFurnaceBlockEntity.preRemoveSideEffects awards each recipe at Vec3.atCenterOf.
+            for xp in experience.extract_experience_per_recipe() {
+                if xp > 0 {
+                    ExperienceOrbEntity::award(world, position.to_centered_f64(), xp as u32);
+                }
             }
         }
         if let Some(inventory) = self.get_inventory() {

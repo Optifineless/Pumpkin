@@ -516,7 +516,7 @@ impl WanderingTraderEntity {
     }
 
     fn complete_trade(&self, offer_index: usize, world: &Arc<World>, player_uuid: Uuid) {
-        let (reward_exp, reward_amount) = {
+        let reward_exp = {
             let mut offers = self
                 .offers
                 .lock()
@@ -525,8 +525,7 @@ impl WanderingTraderEntity {
                 return;
             };
             offer.uses += 1;
-            let reward_xp = rand::rng().random_range(3..=6);
-            (offer.reward_exp, reward_xp)
+            offer.reward_exp
         };
 
         self.get_entity()
@@ -534,8 +533,10 @@ impl WanderingTraderEntity {
         self.trade_sound_cooldown.store(20, Ordering::Relaxed);
 
         if reward_exp {
+            let reward_amount = 3 + rand::rng().random_range(0..4);
             let position = self.get_entity().pos.load().add_raw(0.0, 0.5, 0.0);
-            ExperienceOrbEntity::spawn(world, position, reward_amount);
+            // WanderingTrader.rewardTradeXp constructs one orb, without award-time merging.
+            ExperienceOrbEntity::spawn_single(world, position, reward_amount);
         }
 
         if let Some(player) = world.get_player_by_uuid(player_uuid) {
@@ -1307,6 +1308,34 @@ impl Goal for WanderingTraderUseItemGoal {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn wandering_trades_drop_raw_reward_as_one_orb() {
+        use crate::server::combat_test_support::{server, world};
+        let dir = tempfile::tempdir().unwrap();
+        let server = server(dir.path());
+        let world = world(&server, dir.path());
+        let pos = Vector3::new(8.0, 100.0, 8.0);
+        let trader = WanderingTraderEntity::new(Entity::new(
+            world.clone(),
+            pos,
+            &EntityType::WANDERING_TRADER,
+        ));
+        trader.generate_trades();
+        trader.offers.lock().unwrap()[0].reward_exp = true;
+        for _ in 0..32 {
+            world.entities.store(Arc::new(Vec::new()));
+            trader.complete_trade(0, &world, Uuid::nil());
+            let entities = world.entities.load_full();
+            assert_eq!(entities.len(), 1);
+            let orb = entities[0]
+                .cast_any()
+                .downcast_ref::<ExperienceOrbEntity>()
+                .unwrap();
+            assert!((3..=6).contains(&orb.get_value()));
+            assert_eq!(orb.get_entity().pos.load(), pos.add_raw(0.0, 0.5, 0.0));
+        }
+    }
 
     #[test]
     fn default_wandering_trader_despawn_delay_is_zero() {

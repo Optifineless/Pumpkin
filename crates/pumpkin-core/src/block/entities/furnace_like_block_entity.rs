@@ -18,7 +18,7 @@ pub trait CookingBlockEntityBase:
     fn add_recipe_used(&self, recipe: &CookingRecipe);
     /// Extract and reset accumulated experience, returning the total as an integer
     /// Calculates XP from tracked recipes and clears the `recipes_used` map
-    fn extract_experience_from_recipes(&self) -> i32;
+    fn extract_experience_from_recipes(&self) -> Vec<i32>;
 
     fn get_input_item(&self) -> ItemStack;
     fn get_fuel_item(&self) -> ItemStack;
@@ -109,21 +109,29 @@ macro_rules! impl_cooking_block_entity_base {
                 *recipes.entry(recipe_id).or_insert(0) += 1;
             }
 
-            fn extract_experience_from_recipes(&self) -> i32 {
-                // Calculate total XP from tracked recipes and clear the map (vanilla behavior)
+            fn extract_experience_from_recipes(&self) -> Vec<i32> {
+                // AbstractFurnaceBlockEntity.getRecipesToAwardAndPopExperience: one rounded
+                // amount per tracked recipe, then the map is cleared.
                 let mut recipes = self
                     .recipes_used
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let mut total_xp: f32 = 0.0;
+                let mut amounts = Vec::with_capacity(recipes.len());
+                let mut random = rand::rng();
                 for (recipe_id, count) in recipes.iter() {
                     // Look up the recipe's XP value
                     if let Some(xp) = pumpkin_data::recipes::get_recipe_experience(recipe_id) {
-                        total_xp += xp * (*count as f32);
+                        amounts.push(
+                            $crate::block::entities::furnace_experience::recipe_experience(
+                                *count,
+                                xp,
+                                &mut random,
+                            ),
+                        );
                     }
                 }
                 recipes.clear();
-                total_xp.floor() as i32
+                amounts
             }
 
             fn can_accept_recipe_output(
@@ -258,7 +266,7 @@ macro_rules! impl_experience_container_for_cooking {
         impl $crate::block::entities::furnace_like_block_entity::ExperienceContainer
             for $struct_name
         {
-            fn extract_experience(&self) -> i32 {
+            fn extract_experience_per_recipe(&self) -> Vec<i32> {
                 // Delegate to the CookingBlockEntityBase method
                 self.extract_experience_from_recipes()
             }

@@ -188,7 +188,7 @@ pub trait InventoryPlayer: Send + Sync {
     /// Sends an equipment change packet.
     fn enqueue_equipment_change(&self, slot: &EquipmentSlot, stack: &ItemStack);
 
-    /// Awards experience points to the player (used for furnace smelting, etc.)
+    /// Awards collectible experience orbs at the player (used for furnace output).
     fn award_experience(&self, amount: i32);
 
     /// Increments a statistic for the player.

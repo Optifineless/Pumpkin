@@ -148,12 +148,13 @@ impl Slot for FurnaceOutputSlot {
             stack.item.id as i32,
             stack.item_count as i32,
         );
-        // Extract accumulated experience and award to player
-        let experience = self.experience_container.extract_experience();
-        debug!("FurnaceOutputSlot: extracted experience = {experience}");
-        if experience > 0 {
-            debug!("FurnaceOutputSlot: awarding {experience} xp to player");
-            player.award_experience(experience);
+        // FurnaceResultSlot.checkTakeAchievements -> AbstractFurnaceBlockEntity.createExperience,
+        // once per recipe entry.
+        for experience in self.experience_container.extract_experience_per_recipe() {
+            debug!("FurnaceOutputSlot: extracted experience = {experience}");
+            if experience > 0 {
+                player.award_experience(experience);
+            }
         }
         self.mark_dirty();
     }

@@ -151,5 +151,10 @@ pub trait PropertyDelegate: Sync + Send {
 /// Trait for extracting smelting experience from cooking block entities.
 pub trait ExperienceContainer: Send + Sync {
     /// Extract and reset accumulated experience, returning the total as an integer
-    fn extract_experience(&self) -> i32;
+    fn extract_experience(&self) -> i32 {
+        self.extract_experience_per_recipe().iter().sum()
+    }
+    /// Extract and reset accumulated experience, one rounded amount per tracked recipe.
+    // AbstractFurnaceBlockEntity.getRecipesToAwardAndPopExperience awards each recipe separately.
+    fn extract_experience_per_recipe(&self) -> Vec<i32>;
 }

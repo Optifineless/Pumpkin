@@ -182,6 +182,7 @@ pub mod dragon_fight;
 pub mod end_podium;
 pub mod entity_tracker;
 pub mod environment;
+mod experience_orbs;
 mod game_events;
 pub(crate) mod generation_spawning;
 pub mod natural_spawner;
@@ -324,6 +325,7 @@ pub struct World {
     /// A map of active entities within the world, keyed by their unique UUID.
     /// This does not include players.
     pub entities: ArcSwap<Vec<Arc<dyn EntityBase>>>,
+    pub(crate) ticking_experience_orbs: arc_swap::ArcSwapOption<Vec<Arc<dyn EntityBase>>>,
     dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
     spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
     /// The world's scoreboard, used for tracking scores, objectives, and display information.
@@ -504,6 +506,7 @@ impl World {
             raids: std::sync::Mutex::new(raid::Raids::default()),
             dragon_fight,
             spawn_state: ArcSwap::new(Arc::new(SpawnState::empty())),
+            ticking_experience_orbs: arc_swap::ArcSwapOption::empty(),
             active_chunks: RwLock::new(FxHashSet::default()),
             active_chunk_tracker: std::sync::Mutex::new(ActiveChunkTracker::default()),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
@@ -1798,6 +1801,7 @@ impl World {
         let player_elapsed = t_players.elapsed();
 
         let entities_to_tick = self.entities.load();
+        let experience_orbs = self.begin_experience_orb_tick(&entities_to_tick);
         let entity_count = entities_to_tick.len();
         let active_chunks = self
             .active_chunks
@@ -1836,6 +1840,11 @@ impl World {
                     entity.tick(entity.as_ref(), server_ref);
 
                     let entity_inner = entity.get_entity();
+                    if entity_inner.is_removed()
+                        || entity_inner.entity_type == &EntityType::EXPERIENCE_ORB
+                    {
+                        continue;
+                    }
                     let entity_pos = entity_inner.pos.load();
                     let entity_bb = entity_inner.bounding_box.load();
 
@@ -1853,6 +1862,8 @@ impl World {
                     }
                 }
             });
+        crate::entity::experience_orb::collect_nearby_orbs(&players, &experience_orbs);
+        self.ticking_experience_orbs.store(None);
         let entity_elapsed = t_entities.elapsed();
 
         self.entity_tracker.update_all(self);

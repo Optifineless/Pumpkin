@@ -45,6 +45,7 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 
 | Upstream issue | Fixed by | Checked in-game |
 |:--|:--|:--|
+| [#3092](https://github.com/Pumpkin-MC/Pumpkin/issues/3092) XP orbs do not absorb, [#3624](https://github.com/Pumpkin-MC/Pumpkin/issues/3624) XP orbs sink in water | vanilla 26.3 orb award/merge, motion, collection, damage, metadata, persistence and Mending port; upstream #3644's buoyancy approach checked, with 26.3's eye-in-water eligibility | Not yet |
 | [#3511](https://github.com/Pumpkin-MC/Pumpkin/issues/3511) Player saves truncate the last good file | durable temporary replacement, backup recovery and retained retries | Not yet |
 | [#3512](https://github.com/Pumpkin-MC/Pumpkin/issues/3512) Older snapshots overwrite disconnect saves | ordered snapshots, a tick barrier during disconnect capture/removal and a UUID gate through final publication | Not yet |
 | [#3468](https://github.com/Pumpkin-MC/Pumpkin/issues/3468) Aquatic mob AI (fish and squid movement only) | port of upstream PR #3718 | Yes, 2026-10-07 |
@@ -156,14 +157,18 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Shields respect piercing shots, cooldowns and hand changes; death protectors use their configured effects (combat task 2 review follow-up, related to #3520) | Not yet |
 | Disconnect counts games quit once and keeps the saved statistic consistent with plugin changes and the scoreboard | Not yet |
 
-## Native plugin API 7
+## Native plugin API 8
 
-The native plugin API has moved three times in this fork; rebuild native plugins against this checkout. The Wasm WIT is unchanged throughout.
+Rebuild native plugins against this checkout. The Wasm WIT is unchanged throughout.
 
 - API 4: shield and totem integration changed native trait/component layouts. `EntityDamageByEntityEvent.damager_id` now identifies the direct projectile for projectile hits; it previously identified the shooter. Resolve the projectile's owner for player attribution. Mob damage hooks carry separate direct and causing entities.
 - API 5: the crash-codec audit changes `InstrumentImpl` from a unit component to registered or inline instrument data.
 - API 6: durable storage. `ChunkData.dirty` and `ChunkEntityData.dirty` are `DirtyFlag` instead of `AtomicBool` (carried by the chunk load, save and send events); `ChunkSections.randomly_ticking_mask` is `RandomTickMembership`; `Server` gains `tick_gate` and a session lock and `Player` gains `storage_session` (layout changes); `Server::add_player` is async; `Level::shutdown`, `get_entity_chunk`, `get_or_fetch_chunk` and `get_or_fetch_entity_chunk` return `Result`. Mob movement (same version) changes `MobEntity.look_control` to `Box<dyn LookControlTrait>`, adds public movement fields, and changes `PathNavigationTrait::tick` to take the owning mob and its collision context.
 - API 6 (same version): command robustness adds methods to `CommandSource`, `ReturnValueCallable` and both `CommandExecutor` traits, the public `RedirectModifier::CustomUncharged` variant (update exhaustive matches), a `FunctionRunError::EmptyTag` variant and a new `DatapackManager` field, removes `MAX_FUNCTION_CHAIN_DEPTH`/`MAX_FUNCTION_CHAIN_COMMANDS`, and `reload_datapacks` no longer runs `#minecraft:load` synchronously. `CommandDispatcher::execute` installs a command quota context; a plugin's reentrant `handle_command` joins the caller's quota. `/function` and nested `execute_function` calls return 0 when scheduled; `/function` sends "Running function..." feedback before execution and reports an explicit function return later, including its result callbacks.
+- API 7: harvest integration changes mob death hooks, bucket data, item lifetime fields, chunk repair fields, teleport outcomes and the occupancy-free inventory predicate (retained from the fork head).
+- API 8: XP orbs. `Player.experience_pick_up_delay` is now an `AtomicU32`, replacing `Mutex<u32>`, and `EnchantmentHelper::modify_durability_to_repair_from_xp` takes and returns `i32`. `World` gains a temporary orb snapshot (layout change). Additive helpers: `ExperienceOrbEntity::{award, award_with_direction, spawn_single, new_empty, get_value}`, `collect_nearby_orbs`, `Entity::move_towards_closest_space`, `EnchantmentHelper::get_random_item_with_repair_effect`, and `furnace_experience::recipe_experience`. `InventoryPlayer::award_experience` now drops collectible orbs at the player for furnace output. Native plugins must be rebuilt; Wasm is unaffected.
+
+The XP orb review fixes breeding/trading single-orb rewards, furnace collection and fractional XP, summon defaults, follow selection and collection after a dimension change. In-game verification remains **Not yet**. Merging is selective: only equal values in the same one-of-40 entity ID group combine; a small mob kill pile normally retains many visible orbs.
 
 Command execution contexts are thread-local, as in vanilla `Commands.executeCommandInContext`. Work handed to another Rayon worker starts a separate context, while unrelated work invoked on the same worker during dispatch can join the active context. Reentrant command dispatch currently runs inline with the shared quota; vanilla queues it at the front for execution after the current command. Plugins must account for that ordering difference.
 

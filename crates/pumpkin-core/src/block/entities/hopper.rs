@@ -1,5 +1,4 @@
 use crate::block::entities::BlockEntity;
-use crate::entity::experience_orb::ExperienceOrbEntity;
 use crate::entity::item::ItemEntity;
 use crate::world::World;
 use pumpkin_data::block_properties::{FacingHopper, HopperLikeProperties};
@@ -258,18 +257,7 @@ impl HopperBlockEntity {
                     let one_item = item.split(1);
                     if Self::add_one_item(container.as_ref(), self, &one_item) {
                         container.set_stack(i, item);
-                        // If extracting from furnace output slot (index 2), drop XP as orbs
-                        let furnace_output_slot: usize = 2;
-                        if i == furnace_output_slot
-                            && let Some(experience_container) =
-                                entity.clone().to_experience_container()
-                        {
-                            let xp = experience_container.extract_experience();
-                            if xp > 0 {
-                                let pos = self.position.to_f64();
-                                ExperienceOrbEntity::spawn(world, pos, xp as u32);
-                            }
-                        }
+                        // HopperBlockEntity.tryTakeInItemFromSlot never drains the furnace's recipe XP.
                         return true;
                     }
                 }
@@ -658,6 +646,31 @@ impl Clearable for HopperBlockEntity {
 mod tests {
     use super::*;
     use pumpkin_data::{Block, item::Item};
+
+    #[tokio::test]
+    async fn hopper_furnace_extraction_keeps_recipe_xp_and_spawns_no_orbs() {
+        use crate::block::entities::furnace::FurnaceBlockEntity;
+        use crate::world::spawn_test_support::Fixture;
+        let fixture = Fixture::new();
+        let hopper = HopperBlockEntity::new(BlockPos::new(8, 100, 8), FacingHopper::Down);
+        let furnace = Arc::new(FurnaceBlockEntity::new(hopper.position.up()));
+        furnace.set_stack(2, ItemStack::new(1, &Item::IRON_INGOT));
+        furnace
+            .recipes_used
+            .lock()
+            .unwrap()
+            .insert("minecraft:iron_ingot_from_smelting_iron_ore".into(), 10);
+        fixture.world.add_block_entity(furnace.clone());
+        assert!(hopper.suck_in_items(&fixture.world));
+        assert_eq!(hopper.get_stack(0).item_count, 1);
+        assert!(furnace.get_stack(2).is_empty());
+        assert!(fixture.world.entities.load().is_empty());
+        assert_eq!(
+            furnace.recipes_used.lock().unwrap().values().sum::<u32>(),
+            10
+        );
+        fixture.finish().await;
+    }
 
     #[test]
     fn hopper_state_yields_its_properties() {

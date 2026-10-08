@@ -199,14 +199,15 @@ impl EnchantmentHelper {
 
     /// Modifies durability to repair from experience using data-driven effects (e.g. Mending).
     #[must_use]
-    pub fn modify_durability_to_repair_from_xp(item: &ItemStack, base_repair: f32) -> f32 {
-        let mut repair = base_repair;
+    pub fn modify_durability_to_repair_from_xp(item: &ItemStack, base_repair: i32) -> i32 {
+        let mut repair = base_repair as f32;
         if let Some(enchantments) = item.get_data_component::<EnchantmentsImpl>() {
             for (enchantment, level) in enchantments.enchantment.iter() {
                 enchantment.modify_durability_to_repair_from_xp(*level, &mut repair);
             }
         }
-        repair
+        // EnchantmentHelper.modifyDurabilityToRepairFromXp truncates and clamps after all effects.
+        (repair as i32).max(0)
     }
 
     /// Modifies trident return acceleration using data-driven effects (e.g. Loyalty).

@@ -107,8 +107,15 @@ impl BreedGoal {
         world_full.spawn_entity(baby);
 
         world_full.send_entity_status(entity, EntityStatus::InLoveHearts, None);
-        // TODO: gate on the `animalBreedingDropsXp` game rule once it exists.
-        ExperienceOrbEntity::spawn(&world_full, parent_pos, mob.get_random().random_range(1..8));
+        // Animal.finalizeSpawnChildFromBreeding (also Fox/Turtle): one raw-value orb at the
+        // parent, only while the mobDrops game rule allows it.
+        if world_full.level_info.load().game_rules.mob_drops {
+            ExperienceOrbEntity::spawn_single(
+                &world_full,
+                parent_pos,
+                mob.get_random().random_range(1..8),
+            );
+        }
     }
 }
 
@@ -196,6 +203,27 @@ mod tests {
     use pumpkin_data::entity::EntityType;
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_util::math::vector3::Vector3;
+
+    #[tokio::test]
+    async fn breeding_drops_one_raw_value_orb_at_the_parent() {
+        let fixture = Fixture::new();
+        let pos = Vector3::new(8.0, 100.0, 8.0);
+        let parent = from_type(&EntityType::COW, pos, &fixture.world, Uuid::new_v4());
+        let partner = from_type(&EntityType::COW, pos, &fixture.world, Uuid::new_v4());
+        for _ in 0..32 {
+            fixture.world.entities.store(Arc::new(Vec::new()));
+            BreedGoal::breed(parent.get_mob().unwrap(), partner.as_ref());
+            let entities = fixture.world.entities.load();
+            let orbs: Vec<_> = entities
+                .iter()
+                .filter_map(|entity| entity.cast_any().downcast_ref::<ExperienceOrbEntity>())
+                .collect();
+            assert_eq!(orbs.len(), 1);
+            assert!((1..=7).contains(&orbs[0].get_value()));
+            assert_eq!(orbs[0].get_entity().pos.load(), pos);
+        }
+        fixture.finish().await;
+    }
 
     #[tokio::test]
     async fn breeding_keeps_parent_variants_after_constructor_defers_selection() {

@@ -272,7 +272,9 @@ pub fn from_type(
         id if id == EntityType::FALLING_BLOCK.id => {
             Arc::new(FallingEntity::new(entity, Block::SAND.default_state.id))
         }
-        id if id == EntityType::EXPERIENCE_ORB.id => Arc::new(ExperienceOrbEntity::new(entity, 1)),
+        id if id == EntityType::EXPERIENCE_ORB.id => {
+            Arc::new(ExperienceOrbEntity::new_empty(entity))
+        }
         id if id == EntityType::TNT.id => Arc::new(TNTEntity::new(
             entity,
             TNTEntity::DEFAULT_POWER,

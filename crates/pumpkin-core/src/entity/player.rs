@@ -1,5 +1,6 @@
 pub mod advancement;
 mod death;
+mod experience_orb;
 mod known_movement;
 mod mace;
 mod melee;
@@ -502,7 +503,7 @@ pub struct Player {
     /// The player's total experience points.
     pub experience_points: AtomicI32,
     pub item_cooldowns: std::sync::Mutex<HashMap<String, ItemCooldown>>,
-    pub experience_pick_up_delay: Mutex<u32>,
+    pub experience_pick_up_delay: AtomicU32,
     pub chunk_sender: Mutex<crate::net::ChunkSender>,
     pub chunk_listener: Mutex<Receiver<(Vector2<i32>, Weak<ChunkData>)>>,
     pub held_chunk_tickets: Mutex<Option<(Option<i8>, Option<i8>)>>,
@@ -664,7 +665,7 @@ impl Player {
             start_mining_time: AtomicI32::new(0),
             last_input: AtomicI8::new(0),
             carried_item: Mutex::new(None),
-            experience_pick_up_delay: Mutex::new(0),
+            experience_pick_up_delay: AtomicU32::new(0),
             teleport_id_count: AtomicI32::new(0),
             mining: AtomicBool::new(false),
             mining_pos: Mutex::new(BlockPos::ZERO),
@@ -2331,11 +2332,7 @@ impl Player {
             }
         }
 
-        if let Ok(mut xp) = self.experience_pick_up_delay.try_lock()
-            && *xp > 0
-        {
-            *xp -= 1;
-        }
+        self.tick_experience_pickup_delay();
         self.warden_spawn_tracker
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -5018,79 +5015,6 @@ impl Player {
         self.set_experience(new_level, progress, new_points);
     }
 
-    pub fn apply_mending_from_xp(&self, mut xp: i32) -> i32 {
-        if xp <= 0 {
-            return xp;
-        }
-
-        let mut candidates: Vec<(usize, EquipmentSlot, ItemStack)> = Vec::new();
-
-        let selected_slot = self.inventory.get_selected_slot() as usize;
-        let mut slot_pairs: Vec<(usize, EquipmentSlot)> = vec![
-            (selected_slot, EquipmentSlot::MAIN_HAND),
-            (PlayerInventory::OFF_HAND_SLOT, EquipmentSlot::OFF_HAND),
-        ];
-        for (slot_index, slot) in self.inventory.equipment_slots.iter() {
-            if slot.is_armor_slot() {
-                slot_pairs.push((*slot_index, slot.clone()));
-            }
-        }
-
-        for (slot_index, equipment_slot) in slot_pairs {
-            let stack = self.inventory.get_slot(slot_index);
-            if stack.get_enchantment_level(&Enchantment::MENDING) > 0 && stack.get_damage() > 0 {
-                candidates.push((slot_index, equipment_slot, stack));
-            }
-        }
-
-        if candidates.is_empty() {
-            return xp;
-        }
-
-        let idx = rand::random::<u32>() as usize % candidates.len();
-        let (slot_index, equipment_slot, mut stack) = candidates.swap_remove(idx);
-
-        let repaired = stack.repair_item(xp.saturating_mul(2));
-        if repaired <= 0 {
-            return xp;
-        }
-
-        let xp_used = (repaired + 1) / 2;
-
-        if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
-            && let Some(server) = self.world().server.upgrade()
-        {
-            let mut event =
-                crate::plugin::api::events::player::player_item_mend::PlayerItemMendEvent {
-                    player: player_arc,
-                    item_name: stack.item.registry_key.to_string(),
-                    repair_amount: repaired,
-                    exp_consumed: xp_used,
-                    cancelled: false,
-                };
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return xp;
-            }
-        }
-
-        let updated_stack = stack.clone();
-        self.inventory.set_slot(slot_index, updated_stack.clone());
-
-        xp = xp.saturating_sub(xp_used);
-
-        self.try_send_slot_set_packet(&CSetPlayerInventory::new(
-            (slot_index as i32).into(),
-            &ItemStackSerializer::from(updated_stack.clone()),
-        ));
-        self.sync_inventory_to_client();
-
-        self.living_entity
-            .send_equipment_changes(&[(equipment_slot, updated_stack)]);
-
-        xp
-    }
-
     pub fn increment_screen_handler_sync_id(&self) {
         let current_id = self.screen_handler_sync_id.load(Ordering::Relaxed);
         self.screen_handler_sync_id
@@ -7395,13 +7319,13 @@ impl InventoryPlayer for Player {
     }
 
     fn award_experience(&self, amount: i32) {
-        debug!("Player::award_experience called with amount={amount}");
         if amount > 0 {
-            debug!("Player: adding {amount} experience points");
-            let player = self.world().get_player_by_uuid(self.gameprofile.id);
-            if let Some(player) = player {
-                player.add_experience_points(amount);
-            }
+            // AbstractFurnaceBlockEntity.createExperience awards collectible orbs at the player.
+            crate::entity::experience_orb::ExperienceOrbEntity::award(
+                &self.world(),
+                self.position(),
+                amount as u32,
+            );
         }
     }
 

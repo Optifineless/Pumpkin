@@ -35,7 +35,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// Bump this whenever the public plugin API or any event layout changes in a way
 /// that makes old binary plugins incompatible.
 // v7 adds harvest death hooks, bucket layouts and inventory predicates to the v6 storage API.
-pub const PLUGIN_API_VERSION: u32 = 7;
+// v8 adds the orb snapshot and replaces the player's locked XP pickup delay with an atomic.
+pub const PLUGIN_API_VERSION: u32 = 8;
 
 const PLUGIN_DIR: &str = "./plugins";
 

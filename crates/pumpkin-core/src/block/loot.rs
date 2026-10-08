@@ -75,7 +75,8 @@ pub fn drop_loot(
                 server.plugin_manager.fire_blocking(&server, &mut event);
             }
             if event.exp > 0 {
-                ExperienceOrbEntity::spawn(world, pos.to_f64(), event.exp as u32);
+                // Block.popExperience uses Vec3.atCenterOf.
+                ExperienceOrbEntity::award(world, pos.to_centered_f64(), event.exp as u32);
             }
         }
     }
