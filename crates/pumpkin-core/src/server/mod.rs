@@ -1,5 +1,7 @@
 #[cfg(test)]
 pub(crate) mod combat_test_support;
+#[cfg(test)]
+mod startup_tests;
 use crate::block::registry::BlockRegistry;
 use crate::command::commands::default_dispatcher;
 use crate::command::commands::defaultgamemode::DefaultGamemode;
@@ -380,7 +382,8 @@ impl Server {
             });
         }
 
-        if server.advanced_config.networking.bedrock.online_mode
+        if server.advanced_config.networking.bedrock.enabled
+            && server.advanced_config.networking.bedrock.online_mode
             && server
                 .advanced_config
                 .networking
