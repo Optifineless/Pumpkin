@@ -48,7 +48,29 @@ string_variant!(ChickenSoundVariant, ChickenSoundVariantImpl);
 string_variant!(ZombieNautilusVariant, ZombieNautilusVariantImpl);
 string_variant!(FrogVariant, FrogVariantImpl);
 string_variant!(HorseVariant, HorseVariantImpl);
-string_variant!(PaintingVariant, PaintingVariantImpl);
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct PaintingVariantImpl {
+    pub value: Cow<'static, str>,
+}
+impl PaintingVariantImpl {
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        // PaintingVariant.CODEC resolves the registry holder before accepting the item.
+        let name = data.extract_string()?;
+        let variant = crate::painting_variant::PaintingVariant::from_name(name)?;
+        Some(Self {
+            value: Cow::Borrowed(variant.asset_id()),
+        })
+    }
+}
+impl DataComponentImpl for PaintingVariantImpl {
+    fn write_data(&self) -> NbtTag {
+        NbtTag::String(self.value.clone().into_owned().into())
+    }
+    fn get_hash(&self) -> i32 {
+        crate::data_component_impl::get_str_hash(self.value.as_ref()) as i32
+    }
+    default_impl!(PaintingVariant);
+}
 string_variant!(LlamaVariant, LlamaVariantImpl);
 string_variant!(AxolotlVariant, AxolotlVariantImpl);
 string_variant!(CatVariant, CatVariantImpl);
@@ -56,3 +78,21 @@ string_variant!(CatSoundVariant, CatSoundVariantImpl);
 string_variant!(CatCollar, CatCollarImpl);
 string_variant!(SheepColor, SheepColorImpl);
 string_variant!(ShulkerColor, ShulkerColorImpl);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn painting_nbt_rejects_unknown_registry_names() {
+        assert!(
+            PaintingVariantImpl::read_data(&NbtTag::String("minecraft:missing".into())).is_none()
+        );
+        assert_eq!(
+            PaintingVariantImpl::read_data(&NbtTag::String("minecraft:alban".into()))
+                .unwrap()
+                .value,
+            "minecraft:alban"
+        );
+    }
+}

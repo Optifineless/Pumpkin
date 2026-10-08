@@ -25,11 +25,13 @@ use tracing::{debug, error, info, trace, warn};
 mod active_chunks;
 pub mod brightness;
 pub mod chunker;
+mod dragon_parts;
 mod entity_persistence;
 pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
 pub mod map;
+mod particle_senders;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -320,6 +322,7 @@ pub struct World {
     /// A map of active entities within the world, keyed by their unique UUID.
     /// This does not include players.
     pub entities: ArcSwap<Vec<Arc<dyn EntityBase>>>,
+    dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
     spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
     /// The world's scoreboard, used for tracking scores, objectives, and display information.
     pub scoreboard: std::sync::Mutex<Scoreboard>,
@@ -472,6 +475,7 @@ impl World {
             level_info,
             players: ArcSwap::new(Arc::new(Vec::new())),
             entities: ArcSwap::new(Arc::new(Vec::new())),
+            dragon_parts: DashMap::new(),
             spawn_uuids: std::sync::Mutex::default(),
             scoreboard: std::sync::Mutex::new(Scoreboard::default()),
             worldborder: std::sync::Mutex::new(Worldborder::new(

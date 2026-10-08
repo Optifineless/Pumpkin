@@ -467,9 +467,8 @@ impl ItemStackSerializer<'_> {
 
         let stack = ItemStack::new_with_component(item_count_u8, item, patch);
         if stack.is_empty() {
-            return Err(ReadingError::Message(
-                "Can't read empty item stack template".into(),
-            ));
+            // ItemStackTemplate's constructor rejects air and count zero.
+            return Err(ReadingError::Message("Item must be non-empty".into()));
         }
 
         Ok(ItemStackSerializer(Cow::Owned(stack)))

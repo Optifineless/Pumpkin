@@ -32601,7 +32601,10 @@ impl Item {
                     enchantment: Cow::Borrowed(&[]),
                 },
             ),
-            (Instrument, &InstrumentImpl),
+            (
+                Instrument,
+                &InstrumentImpl::Reference(crate::instrument::Instrument::PonderGoatHorn),
+            ),
             (
                 ItemModel,
                 &ItemModelImpl {

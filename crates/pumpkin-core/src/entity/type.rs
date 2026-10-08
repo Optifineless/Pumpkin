@@ -137,7 +137,13 @@ pub fn from_type(
     world: &Arc<World>,
     uuid: Uuid,
 ) -> Arc<dyn EntityBase> {
-    let entity = Entity::from_uuid(uuid, world.clone(), position, entity_type);
+    let entity = if entity_type == &EntityType::ENDER_DRAGON {
+        // EnderDragon.recreateFromPacket derives part IDs from the parent; reserve atomically.
+        let id = Entity::reserve_ids(1 + super::boss::ender_dragon::PART_COUNT);
+        Entity::from_uuid_with_id(id, uuid, world.clone(), position, entity_type)
+    } else {
+        Entity::from_uuid(uuid, world.clone(), position, entity_type)
+    };
 
     let mob: Arc<dyn EntityBase> = match entity_type.id {
         // Zombie

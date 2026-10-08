@@ -3,6 +3,16 @@
 #[path = "combat_component.rs"]
 mod combat_component;
 
+#[path = "item_components.rs"]
+mod item_components;
+
+#[path = "book_components.rs"]
+mod book_components;
+
+#[cfg(test)]
+#[path = "component_crash_tests.rs"]
+mod component_crash_tests;
+
 use std::borrow::Cow;
 
 use crate::codec::var_int::VarInt;
@@ -1426,7 +1436,6 @@ codec_string_variant!(ChickenSoundVariantImpl);
 codec_string_variant!(ZombieNautilusVariantImpl);
 codec_string_variant!(FrogVariantImpl);
 codec_string_variant!(HorseVariantImpl);
-codec_string_variant!(PaintingVariantImpl);
 codec_string_variant!(LlamaVariantImpl);
 codec_string_variant!(AxolotlVariantImpl);
 codec_string_variant!(CatVariantImpl);
@@ -1735,16 +1744,6 @@ impl DataComponentCodec<Self> for EnchantmentGlintOverrideImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let _ = seq.get_bool()?;
-        Ok(Self)
-    }
-}
-
-impl DataComponentCodec<Self> for IntangibleProjectileImpl {
-    fn serialize(&self, _seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        Ok(())
-    }
-
-    fn deserialize(_seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         Ok(Self)
     }
 }
@@ -2141,29 +2140,6 @@ impl DataComponentCodec<Self> for MapPostProcessingImpl {
     }
 }
 
-impl DataComponentCodec<Self> for ChargedProjectilesImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt::from(self.projectiles.len() as i32))?;
-        for _ in &self.projectiles {
-            seq.write_var_int(&VarInt(0))?;
-            seq.write_var_int(&VarInt(0))?;
-            seq.write_var_int(&VarInt(0))?;
-            seq.write_var_int(&VarInt(0))?;
-        }
-        Ok(())
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let len = seq.get_var_int()?.0 as usize;
-        let mut projectiles = Vec::with_capacity(len);
-        for _ in 0..len {
-            let _ = deserialize_item_stack_template(seq)?;
-            projectiles.push(pumpkin_nbt::compound::NbtCompound::new());
-        }
-        Ok(Self { projectiles })
-    }
-}
-
 impl DataComponentCodec<Self> for PotionDurationScaleImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
         seq.write_f32(self.scale)
@@ -2172,74 +2148,6 @@ impl DataComponentCodec<Self> for PotionDurationScaleImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let scale = seq.get_f32()?;
         Ok(Self { scale })
-    }
-}
-
-impl DataComponentCodec<Self> for WritableBookContentImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt::from(self.pages.len() as i32))?;
-        for page in &self.pages {
-            seq.write_string(page)?;
-            seq.write_bool(false)?;
-        }
-        Ok(())
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let len = seq.get_var_int()?.0 as usize;
-        let mut pages = Vec::with_capacity(len);
-        for _ in 0..len {
-            let raw = seq.get_str()?.to_string();
-            let has_filtered = seq.get_bool()?;
-            if has_filtered {
-                let _ = seq.get_str()?;
-            }
-            pages.push(raw);
-        }
-        Ok(Self { pages })
-    }
-}
-
-impl DataComponentCodec<Self> for WrittenBookContentImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_string(&self.title)?;
-        seq.write_bool(false)?;
-        seq.write_string(&self.author)?;
-        seq.write_var_int(&VarInt(0))?;
-        seq.write_var_int(&VarInt::from(self.pages.len() as i32))?;
-        for page in &self.pages {
-            seq.write_slice(&page.encode_for_version(&JavaMinecraftVersion::V_26_2))?;
-            seq.write_bool(false)?;
-        }
-        seq.write_bool(true)
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let title = seq.get_str()?.to_string();
-        if seq.get_bool()? {
-            let _ = seq.get_str()?;
-        }
-        let author = seq.get_str()?.to_string();
-        let _generation = seq.get_var_int()?.0;
-        let pages_len = seq.get_var_int()?.0 as usize;
-        let mut pages = Vec::with_capacity(pages_len);
-        for _ in 0..pages_len {
-            let tag = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_2)?;
-            let comp = tag.as_ref().map_or_else(
-                pumpkin_util::text::TextComponent::empty,
-                pumpkin_util::text::TextComponent::from_nbt,
-            );
-            if seq.get_bool()? {
-                let _ = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_2)?;
-            }
-            pages.push(comp);
-        }
-        let _resolved = seq.get_bool()?;
-        Ok(Self {
-            title,
-            author,
-            pages,
-        })
     }
 }
 
@@ -2328,17 +2236,6 @@ impl DataComponentCodec<Self> for BlockEntityDataImpl {
             pumpkin_nbt::compound::NbtCompound::new()
         };
         Ok(Self { nbt })
-    }
-}
-
-impl DataComponentCodec<Self> for InstrumentImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt(0))
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _ = seq.get_var_int()?;
-        Ok(Self)
     }
 }
 

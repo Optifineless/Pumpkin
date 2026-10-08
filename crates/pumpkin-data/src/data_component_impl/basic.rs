@@ -445,17 +445,6 @@ impl DataComponentImpl for BaseColorImpl {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct InstrumentImpl;
-impl InstrumentImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
-    }
-}
-impl DataComponentImpl for InstrumentImpl {
-    default_impl!(Instrument);
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ProvidesTrimMaterialImpl;
 impl ProvidesTrimMaterialImpl {
     pub const fn read_data(_data: &NbtTag) -> Option<Self> {

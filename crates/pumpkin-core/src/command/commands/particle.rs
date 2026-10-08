@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pumpkin_data::particle::Particle;
 use pumpkin_data::translation;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::CParticle;
@@ -14,7 +13,7 @@ use crate::command::argument_types::coordinates::vec3::Vec3ArgumentType;
 use crate::command::argument_types::core::float::FloatArgumentType;
 use crate::command::argument_types::core::integer::IntegerArgumentType;
 use crate::command::argument_types::entity::EntityArgumentType;
-use crate::command::argument_types::particle::ParticleArgumentType;
+use crate::command::argument_types::particle::{ParticleArgument, ParticleArgumentType};
 use crate::command::context::command_context::CommandContext;
 use crate::command::context::command_source::CommandSource;
 use crate::command::errors::command_syntax_error::CommandSyntaxError;
@@ -34,7 +33,7 @@ const ERROR_FAILED: CommandErrorType<0> = CommandErrorType::new(
 #[allow(clippy::too_many_arguments)]
 fn send_particles(
     source: &CommandSource,
-    particle: Particle,
+    particle: &ParticleArgument,
     pos: Vector3<f64>,
     delta: Vector3<f64>,
     speed: f32,
@@ -53,8 +52,9 @@ fn send_particles(
         offset,
         speed,
         count,
-        VarInt(i32::from(particle.to_id())),
-        &[],
+        // ParticleCommand.sendParticles forwards the complete ParticleOptions argument.
+        VarInt(i32::from(particle.particle.to_id())),
+        &particle.data,
     );
 
     let max_dist_sq = if force { 512.0 * 512.0 } else { 32.0 * 32.0 };
@@ -79,7 +79,7 @@ fn send_particles(
         return Err(ERROR_FAILED.create_without_context());
     }
 
-    let particle_name = format!("{particle:?}").to_lowercase();
+    let particle_name = format!("{:?}", particle.particle).to_lowercase();
     source.send_feedback(
         TextComponent::translate_cross(
             translation::java::COMMANDS_PARTICLE_SUCCESS,

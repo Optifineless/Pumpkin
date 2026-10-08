@@ -3,6 +3,13 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
 
+// WritableBookContent and WrittenBookContent's title constants (vanilla 26.3).
+const MAX_PAGES: usize = 100;
+const PAGE_EDIT_LENGTH: usize = 1024;
+const TITLE_MAX_LENGTH: usize = 32;
+// FriendlyByteBuf.MAX_STRING_LENGTH, used by WrittenBookContent.STREAM_CODEC's author.
+const MAX_STRING_LENGTH: usize = 32767;
+
 /// Reads a filterable text, which vanilla stores either as a plain string or as
 /// a compound with a `raw` field, e.g. `{raw: "A Partner"}`. The raw value is a
 /// text component of its own, so it may also be a styled compound such as
@@ -25,7 +32,10 @@ fn read_text(tag: &NbtTag) -> Option<String> {
 }
 
 fn text_tag(value: &str) -> NbtTag {
-    text_component_tag(&TextComponent::text(value.to_string()))
+    // Filterable.codec(Codec.STRING), used by WritableBookContent.CODEC and written titles.
+    let mut compound = NbtCompound::new();
+    compound.put_string("raw", value.to_string());
+    NbtTag::Compound(compound)
 }
 
 fn text_component_tag(component: &TextComponent) -> NbtTag {
@@ -44,8 +54,15 @@ impl WritableBookContentImpl {
         if let NbtTag::Compound(c) = tag
             && let Some(NbtTag::List(l)) = c.get("pages")
         {
+            if l.len() > MAX_PAGES {
+                return None;
+            }
             for item in l {
                 if let Some(page) = read_text(item) {
+                    // WritableBookContent.CODEC uses Java String.length (UTF-16).
+                    if page.encode_utf16().nth(PAGE_EDIT_LENGTH).is_some() {
+                        return None;
+                    }
                     pages.push(page);
                 }
             }
@@ -78,14 +95,34 @@ impl WrittenBookContentImpl {
         let mut author = String::new();
         if let NbtTag::Compound(c) = tag {
             if let Some(value) = c.get("title").and_then(read_text) {
+                // WrittenBookContent.CODEC's Filterable<Codec.string(0, 32)>.
+                if value.encode_utf16().nth(TITLE_MAX_LENGTH).is_some() {
+                    return None;
+                }
                 title = value;
             }
             if let Some(s) = c.get_string("author") {
+                if s.encode_utf16().nth(MAX_STRING_LENGTH).is_some() {
+                    return None;
+                }
                 author = s.to_string();
             }
             if let Some(NbtTag::List(l)) = c.get("pages") {
+                // Fork load policy: apply editable-book page limits to signed books too.
+                if l.len() > MAX_PAGES {
+                    return None;
+                }
                 for item in l {
                     if let Some(page) = read_component(item) {
+                        if page
+                            .clone()
+                            .get_text()
+                            .encode_utf16()
+                            .nth(PAGE_EDIT_LENGTH)
+                            .is_some()
+                        {
+                            return None;
+                        }
                         pages.push(page);
                     }
                 }
@@ -120,6 +157,10 @@ impl DebugStickStateImpl {
 impl DataComponentImpl for DebugStickStateImpl {
     default_impl!(DebugStickState);
 }
+
+#[cfg(test)]
+#[path = "book_load_tests.rs"]
+mod load_tests;
 
 #[cfg(test)]
 mod tests {
@@ -200,6 +241,30 @@ mod tests {
         let tag = compound(&[("pages", raw_list(&["hello"]))]);
         let content = WritableBookContentImpl::read_data(&tag).unwrap();
         assert_eq!(content.pages, ["hello"]);
+    }
+
+    #[test]
+    fn plain_filterable_values_are_written_as_strings() {
+        // Filterable.codec(Codec.STRING): titles and editable pages are strings, not components.
+        let title = text_tag("Title");
+        let NbtTag::Compound(wrapper) = title else {
+            panic!("expected filterable wrapper");
+        };
+        assert_eq!(wrapper.get_string("raw"), Some("Title"));
+        let writable = WritableBookContentImpl {
+            pages: vec!["one".into(), "two".into()],
+        };
+        let NbtTag::Compound(saved) = writable.write_data() else {
+            panic!("expected book compound");
+        };
+        let pages = saved.get_list("pages").unwrap();
+        assert_eq!(pages.len(), 2);
+        for (page, expected) in pages.iter().zip(["one", "two"]) {
+            let NbtTag::Compound(wrapper) = page else {
+                panic!("expected filterable page")
+            };
+            assert_eq!(wrapper.get_string("raw"), Some(expected));
+        }
     }
 
     #[test]

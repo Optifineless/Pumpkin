@@ -7,6 +7,7 @@ use pumpkin_data::{
     particle::Particle,
     sound::{Sound, SoundCategory},
 };
+use pumpkin_protocol::codec::particle_options::ParticleOptions;
 use pumpkin_util::{
     Difficulty,
     math::{position::BlockPos, vector3::Vector3},
@@ -24,6 +25,9 @@ use crate::{
 
 const EYEBLOSSOM_XZ_RANGE: i32 = 3;
 const EYEBLOSSOM_Y_RANGE: i32 = 2;
+// EyeblossomBlock.Type.particleColor (Java lines 107-108).
+const OPEN_PARTICLE_COLOR: i32 = 0xFC7812;
+const CLOSED_PARTICLE_COLOR: i32 = 0x5F5F5F;
 
 pub struct EyeblossomBlock;
 
@@ -130,15 +134,16 @@ pub fn try_changing_state(world: &Arc<World>, current_block: &Block, pos: &Block
 
     world.set_block_state(pos, new_block.default_state.id, BlockFlags::NOTIFY_ALL);
 
-    world.spawn_particle(
+    let mut rng = rand::rng();
+    world.spawn_particle_with_options(
         pos.to_centered_f64(),
         Vector3::new(0.0, 0.0, 0.0),
         0.0,
         1,
         Particle::Trail,
+        &transform_particle(new_block, pos, &mut rng),
     );
 
-    let mut rng = rand::rng();
     for dx in -EYEBLOSSOM_XZ_RANGE..=EYEBLOSSOM_XZ_RANGE {
         for dy in -EYEBLOSSOM_Y_RANGE..=EYEBLOSSOM_Y_RANGE {
             for dz in -EYEBLOSSOM_XZ_RANGE..=EYEBLOSSOM_XZ_RANGE {
@@ -170,3 +175,31 @@ pub fn try_changing_state(world: &Arc<World>, current_block: &Block, pos: &Block
 
     true
 }
+
+fn transform_particle(
+    new_block: &Block,
+    pos: &BlockPos,
+    rng: &mut impl RngExt,
+) -> ParticleOptions<'static> {
+    // EyeblossomBlock.Type.spawnTransformParticle, adapted from upstream #3079/#3509.
+    let start = pos.to_centered_f64();
+    let lifetime = 0.5 + rng.random::<f64>();
+    let velocity = Vector3::new(
+        rng.random::<f64>() - 0.5,
+        rng.random::<f64>() + 1.0,
+        rng.random::<f64>() - 0.5,
+    );
+    ParticleOptions::Trail {
+        target: start + velocity * lifetime,
+        color: if new_block == &Block::OPEN_EYEBLOSSOM {
+            OPEN_PARTICLE_COLOR
+        } else {
+            CLOSED_PARTICLE_COLOR
+        },
+        duration: (20.0 * lifetime) as i32,
+    }
+}
+
+#[cfg(test)]
+#[path = "eyeblossom_tests.rs"]
+mod tests;

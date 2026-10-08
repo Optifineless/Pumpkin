@@ -835,6 +835,7 @@ impl EntityTracker {
     }
 
     pub fn add_entity(&self, entity: &Arc<dyn EntityBase>, world: &World) {
+        world.start_tracking_dragon_parts(entity.as_ref());
         let entity_type = entity.get_entity().entity_type;
         let range = entity_type.client_tracking_range;
         if range == 0 {
@@ -904,6 +905,7 @@ impl EntityTracker {
     }
 
     pub fn remove_entity(&self, entity: &dyn EntityBase, world: &World) {
+        world.stop_tracking_dragon_parts(entity);
         let entity_id = entity.get_entity().entity_id;
         if let Some(player) = entity.get_player() {
             for entry in &self.entity_map {

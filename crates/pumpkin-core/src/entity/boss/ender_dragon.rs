@@ -21,6 +21,8 @@ use flight_history::DragonFlightHistory;
 use phase::{EnderDragonPhase, PhaseManager};
 
 pub const NODE_COUNT: usize = 24;
+// EnderDragon.subEntities: head, neck, body, three tails and two wings (Java line 101).
+pub const PART_COUNT: i32 = 8;
 pub const NODE_Y: i32 = 105;
 pub const NODE_REACH_SQ: f64 = 64.0;
 pub const DEATH_TIMER_MAX: i32 = 200;
@@ -160,17 +162,34 @@ impl EntityBase for EnderDragonPart {
         &self.entity
     }
 
-    fn damage(&self, source: &dyn EntityBase, amount: f32, damage_type: DamageType) -> bool {
+    fn damage_with_context(
+        &self,
+        _caller: &dyn EntityBase,
+        amount: f32,
+        damage_type: DamageType,
+        position: Option<Vector3<f64>>,
+        source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+    ) -> bool {
         let world = self.entity.world.load();
-        if let Some(dragon_base) = world
-            .entities
-            .load()
-            .iter()
-            .find(|e| e.get_entity().entity_uuid == self.dragon_uuid)
-        {
-            return dragon_base.damage(source, amount, damage_type);
-        }
-        false
+        let Some(dragon) = world.get_entity_by_uuid(self.dragon_uuid) else {
+            return false;
+        };
+        // EnderDragonPart.hurtServer -> EnderDragon.hurt(level, part, source, damage), lines 452-454.
+        let head_or_neck = self.entity.entity_id <= dragon.get_entity().entity_id + 2;
+        let damage = if head_or_neck {
+            amount
+        } else {
+            amount / 4.0 + amount.min(1.0)
+        };
+        dragon.damage_with_context(
+            dragon.as_ref(),
+            damage,
+            damage_type,
+            position,
+            source,
+            cause,
+        )
     }
 
     fn cast_any(&self) -> &dyn std::any::Any {
@@ -227,10 +246,9 @@ impl EnderDragonEntity {
         let dragon_uuid = entity.entity_uuid;
         let world = entity.world.load();
 
-        let _ = Entity::reserve_ids(8);
-
         let mut parts = Vec::new();
-        for i in 1..=8 {
+        // EnderDragon.recreateFromPacket uses the eight IDs reserved by from_type.
+        for i in 1..=PART_COUNT {
             let part_entity = Entity::from_uuid_with_id(
                 base_id + i,
                 uuid::Uuid::new_v4(),
@@ -239,7 +257,6 @@ impl EnderDragonEntity {
                 &EntityType::ENDER_DRAGON,
             );
             let part = Arc::new(EnderDragonPart::new(part_entity, dragon_uuid));
-            // TODO: world.add_entity_silent(part.clone() as Arc<dyn EntityBase>);
             parts.push(part);
         }
 

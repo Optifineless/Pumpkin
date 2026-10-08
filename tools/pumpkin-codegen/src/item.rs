@@ -947,8 +947,12 @@ impl ToTokens for ItemComponents {
         if self.glider.is_some() {
             tokens.extend(quote! { (Glider, &GliderImpl), });
         }
-        if self.instrument.is_some() {
-            tokens.extend(quote! { (Instrument, &InstrumentImpl), });
+        if let Some(instrument) = self.instrument.as_ref().and_then(serde_json::Value::as_str) {
+            let name = instrument.strip_prefix("minecraft:").unwrap_or(instrument);
+            let variant = format_ident!("{}", name.to_pascal_case());
+            tokens.extend(quote! {
+                (Instrument, &InstrumentImpl::Reference(crate::instrument::Instrument::#variant)),
+            });
         }
         if let Some(model) = &self.item_model {
             let model_lit = LitStr::new(model, Span::call_site());

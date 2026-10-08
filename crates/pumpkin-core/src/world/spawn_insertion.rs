@@ -59,19 +59,42 @@ impl World {
             .spawn_uuids
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if ids.len() != members.len()
-            || ids.iter().any(|uuid| reserved.contains(uuid))
-            || self
-                .entities
-                .load()
+        // ServerLevel.addFreshEntity -> PersistentEntitySectionManager.addEntity / EntityLookup.add.
+        let duplicate_uuid = (ids.len() != members.len())
+            .then(|| {
+                let mut seen = FxHashSet::default();
+                members
+                    .iter()
+                    .map(|member| member.get_entity().entity_uuid)
+                    .find(|uuid| !seen.insert(*uuid))
+            })
+            .flatten()
+            .or_else(|| ids.iter().find(|uuid| reserved.contains(uuid)).copied())
+            .or_else(|| {
+                self.entities
+                    .load()
+                    .iter()
+                    .map(|entity| entity.get_entity().entity_uuid)
+                    .find(|uuid| ids.contains(uuid))
+            })
+            .or_else(|| {
+                self.players
+                    .load()
+                    .iter()
+                    .map(|player| player.get_entity().entity_uuid)
+                    .find(|uuid| ids.contains(uuid))
+            });
+        if let Some(member) = duplicate_uuid.and_then(|uuid| {
+            members
                 .iter()
-                .any(|entity| ids.contains(&entity.get_entity().entity_uuid))
-            || self
-                .players
-                .load()
-                .iter()
-                .any(|player| ids.contains(&player.get_entity().entity_uuid))
-        {
+                .find(|member| member.get_entity().entity_uuid == uuid)
+        }) {
+            let entity = member.get_entity();
+            tracing::warn!(
+                entity_type = entity.entity_type.resource_name,
+                "UUID of added entity already exists: {}",
+                entity.entity_uuid
+            );
             return None;
         }
         reserved.extend(ids.iter().copied());
@@ -85,13 +108,14 @@ impl World {
         skip_accounting: Option<uuid::Uuid>,
         existing_mounts: &[ExistingMount],
     ) -> bool {
-        use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
         let accepted = AtomicBool::new(false);
+        let rejected_index = AtomicUsize::new(0);
         for member in members {
             member.init_data_tracker();
         }
         self.entities.rcu(|current| {
-            let duplicate = members.iter().any(|member| {
+            let duplicate = members.iter().position(|member| {
                 let uuid = member.get_entity().entity_uuid;
                 current
                     .iter()
@@ -102,8 +126,9 @@ impl World {
                         .iter()
                         .any(|player| player.get_entity().entity_uuid == uuid)
             });
-            accepted.store(!duplicate, Relaxed);
-            if duplicate {
+            accepted.store(duplicate.is_none(), Relaxed);
+            if let Some(index) = duplicate {
+                rejected_index.store(index, Relaxed);
                 return (**current).clone();
             }
             let mut next = (**current).clone();
@@ -111,6 +136,12 @@ impl World {
             next
         });
         if !accepted.load(Relaxed) {
+            let entity = members[rejected_index.load(Relaxed)].get_entity();
+            tracing::warn!(
+                entity_type = entity.entity_type.resource_name,
+                "UUID of added entity already exists: {}",
+                entity.entity_uuid
+            );
             return false;
         }
         for (rider, mount) in existing_mounts {
@@ -160,6 +191,12 @@ impl World {
         let mut uuids = FxHashSet::default();
         while let Some(member) = pending.pop() {
             if !uuids.insert(member.get_entity().entity_uuid) {
+                let entity = member.get_entity();
+                tracing::warn!(
+                    entity_type = entity.entity_type.resource_name,
+                    "UUID of added entity already exists: {}",
+                    entity.entity_uuid
+                );
                 return false;
             }
             spawn_mount::materialize_pending_riders(&member);
@@ -288,3 +325,7 @@ impl World {
         true
     }
 }
+
+#[cfg(test)]
+#[path = "uuid_insertion_tests.rs"]
+mod tests;

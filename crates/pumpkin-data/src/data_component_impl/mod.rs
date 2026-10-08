@@ -541,6 +541,8 @@ pub mod block_entity;
 pub mod book;
 pub mod combat;
 pub mod entity_variant;
+pub mod instrument;
+pub use instrument::InstrumentImpl;
 pub mod food;
 pub mod utility;
 

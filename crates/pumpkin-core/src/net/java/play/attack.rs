@@ -26,16 +26,9 @@ impl JavaClient {
         }
 
         let player_target = world.get_player_by_id(entity_id.0);
-        let target: Option<Arc<dyn EntityBase>> = player_target
-            .as_ref()
-            .map(|p| Arc::clone(p) as Arc<dyn EntityBase>)
-            .or_else(|| world.get_entity_by_id(entity_id.0));
+        let target = world.get_entity_or_part(entity_id.0);
+        // ServerGamePacketListenerImpl.handleInteract ignores a target that has disappeared.
         let Some(target) = target else {
-            self.try_kick(&TextComponent::translate_cross(
-                translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED,
-                translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED,
-                [],
-            ));
             return;
         };
         if let Some(player_victim) = &player_target {

@@ -9,6 +9,10 @@ use crate::{
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt, ReadingError, WritingError},
 };
 
+#[cfg(test)]
+#[path = "particle_crash_tests.rs"]
+mod particle_crash_tests;
+
 /// Spawns a cluster of particles at a specific location.
 ///
 /// This is the most versatile visual packet in the protocol. It allows for
@@ -164,6 +168,10 @@ impl ClientPacket for CParticle<'_> {
         version: &JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
         let mut write = write;
+
+        if *version >= JavaMinecraftVersion::V_26_3 {
+            crate::codec::particle_options::validate_options(self.particle_id, self.data)?;
+        }
 
         if *version <= JavaMinecraftVersion::V_1_7_6 {
             let name = pumpkin_data::particle::Particle::from_id(self.particle_id.0 as u16)
