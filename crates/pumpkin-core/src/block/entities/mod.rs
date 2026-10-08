@@ -30,6 +30,7 @@ pub mod furnace;
 pub mod furnace_experience;
 pub mod furnace_like_block_entity;
 pub mod hopper;
+mod hopper_container;
 pub mod jigsaw_block;
 pub mod jukebox;
 pub mod lectern;

@@ -1,3 +1,4 @@
+use super::hopper_container::get_container_at;
 use crate::block::entities::BlockEntity;
 use crate::entity::item::ItemEntity;
 use crate::world::World;
@@ -229,8 +230,7 @@ impl HopperBlockEntity {
             return false;
         }
 
-        if let Some(entity) = world.get_block_entity(pos_up)
-            && let Some(container) = entity.clone().get_inventory()
+        if let Some(container) = get_container_at(world, pos_up)
         {
             // TODO check WorldlyContainer
             for i in 0..container.size() {
@@ -359,8 +359,7 @@ impl HopperBlockEntity {
         // TODO getEntityContainer
 
         let target_pos = self.position.offset(to_offset(&facing));
-        if let Some(entity) = world.get_block_entity(&target_pos)
-            && let Some(container) = entity.get_inventory()
+        if let Some(container) = get_container_at(world, &target_pos)
         {
             // TODO check WorldlyContainer
             let mut is_full = true;
