@@ -5,7 +5,6 @@ use crate::block::entities::chest::ChestBlockEntity;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{ChestLikeProperties, ChestType, HorizontalFacing};
 use pumpkin_data::entity::EntityPose;
-use pumpkin_data::loot_table::get_loot_table;
 use pumpkin_data::{Block, BlockDirection, translation};
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::double::DoubleInventory;
@@ -30,7 +29,7 @@ use crate::block::{
 use crate::entity::EntityBase;
 use crate::entity::player::Player;
 use crate::world::World;
-use crate::world::loot::fill_chest_inventory;
+use crate::world::loot::{build_container_loot_context, fill_chest_inventory_with_context};
 use pumpkin_data::BlockState;
 
 struct ChestScreenFactory(Arc<dyn Inventory>);
@@ -186,10 +185,15 @@ fn get_chest_screen_handler_factory(
 
     let unpack = |entity: &Arc<dyn BlockEntity>| {
         if let Some((loot_key, seed)) = entity.take_loot_table()
-            && let Some(table) = get_loot_table(&loot_key)
+            && let Some(table) = args.world.get_loot_table(&loot_key)
             && let Some(inv) = entity.clone().get_inventory()
         {
-            fill_chest_inventory(&inv, table, seed);
+            let params = build_container_loot_context(
+                args.world,
+                entity.get_position().to_f64().add_raw(0.5, 0.5, 0.5),
+                Some(args.player),
+            );
+            fill_chest_inventory_with_context(&inv, &table, seed, &params);
             inv.mark_dirty();
         }
     };

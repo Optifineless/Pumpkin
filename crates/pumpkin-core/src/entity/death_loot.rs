@@ -4,7 +4,7 @@ use super::{
     living::{LivingEntity, attribute_modifier_slot_matches},
     mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE,
 };
-use crate::world::loot::LootContextParameters;
+use crate::world::loot::{LootContextParameters, build_entity_death_loot_context};
 use pumpkin_data::{
     Enchantment,
     attributes::Attributes,
@@ -223,22 +223,27 @@ impl LivingEntity {
                     .map_or(0.0, |player| {
                         player.living_entity.get_attribute_value(&Attributes::LUCK) as f32
                     }),
-                last_damage_player: last_player.filter(|_| player_killed),
                 this_entity: Some(self.entity.entity_type),
                 killer_entity: killer.map(|entity| entity.get_entity().entity_type),
                 direct_killer_entity: source.map(|entity| entity.get_entity().entity_type),
                 position: Some(self.entity.pos.load()),
                 world_time: world.level_info.load().day_time as u64,
                 damage_type: Some(damage_type),
-                looting_level: Some(Self::equipment_enchantment_level(
-                    killer,
-                    &Enchantment::LOOTING,
-                )),
                 is_raining: Some(world.is_raining()),
                 is_thundering: Some(world.is_thundering()),
                 is_on_fire: Some(self.entity.fire_ticks.load(Relaxed) > 0),
                 ..Default::default()
             };
+            let params = build_entity_death_loot_context(
+                caller,
+                killer,
+                source,
+                last_player
+                    .as_deref()
+                    .filter(|_| player_killed)
+                    .map(|player| player as &dyn EntityBase),
+                &params,
+            );
             self.drop_loot(&params);
             if caller.get_mob().is_some() {
                 self.drop_equipment(player_killed, source, killer);
@@ -391,21 +396,6 @@ impl LivingEntity {
         for (slot, stack) in equipment {
             visit_equipment_enchantments(&slot, &stack, &mut visitor);
         }
-    }
-
-    fn equipment_enchantment_level(
-        caller: Option<&dyn EntityBase>,
-        enchantment: &'static Enchantment,
-    ) -> i32 {
-        let mut result = 0;
-        if let Some(caller) = caller {
-            Self::for_each_equipment_enchantment(caller, |equipped, level| {
-                if equipped == enchantment {
-                    result = result.max(level);
-                }
-            });
-        }
-        result
     }
 
     /// Applies the killer's slot-matching mob-experience effects, truncating only after all effects.

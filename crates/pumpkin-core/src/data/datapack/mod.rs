@@ -3,6 +3,7 @@ pub mod context_provider_loader;
 pub mod damage_type_loader;
 pub mod dynamic_registry_loader;
 pub mod function_loader;
+pub(crate) mod loot_registry;
 pub mod loot_table_loader;
 pub mod recipe_loader;
 pub mod structure_loader;
@@ -83,7 +84,7 @@ pub struct DatapackManager {
     context_int_providers: RwLock<ContextProviderRegistry>,
     context_float_providers: RwLock<ContextProviderRegistry>,
     damage_types: RwLock<DamageTypeRegistry>,
-    loot_tables: RwLock<HashMap<String, Arc<DynamicLootTable>>>,
+    loot_registry: RwLock<loot_registry::LootRegistry>,
     dynamic_registries: RwLock<HashMap<String, HashMap<String, RegistryEntryData>>>,
     trade_registry: RwLock<TradeRegistry>,
 }
@@ -196,7 +197,7 @@ impl DatapackManager {
             context_int_providers: RwLock::new(HashMap::new()),
             context_float_providers: RwLock::new(HashMap::new()),
             damage_types: RwLock::new(HashMap::new()),
-            loot_tables: RwLock::new(HashMap::new()),
+            loot_registry: RwLock::new(loot_registry::LootRegistry::default()),
             dynamic_registries: RwLock::new(HashMap::new()),
             trade_registry: RwLock::new(TradeRegistry::new()),
         }
@@ -219,6 +220,7 @@ impl DatapackManager {
         let mut all_context_float_providers: ContextProviderRegistry = HashMap::new();
         let mut all_damage_type_defs: HashMap<String, DamageTypeDefinition> = HashMap::new();
         let mut all_loot_tables: HashMap<String, Arc<DynamicLootTable>> = HashMap::new();
+        let mut all_loot_registry_documents = HashMap::new();
 
         // Embedded test instances are compile-time constants and always load,
         // so on-disk packs can override them by id.
@@ -249,6 +251,7 @@ impl DatapackManager {
             context_int_providers: &mut all_context_int_providers,
             context_float_providers: &mut all_context_float_providers,
             loot_tables: &mut all_loot_tables,
+            loot_registry_documents: &mut all_loot_registry_documents,
             dynamic_registries: &mut all_dynamic_registries,
             trade_registry: &mut all_trade_registry,
         };
@@ -294,9 +297,10 @@ impl DatapackManager {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = damage_type_registry;
         *self
-            .loot_tables
+            .loot_registry
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = all_loot_tables;
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            loot_registry::LootRegistry::new(all_loot_tables, all_loot_registry_documents);
         *self
             .dynamic_registries
             .write()
@@ -404,11 +408,15 @@ impl DatapackManager {
         };
 
         let guard = self
-            .loot_tables
+            .loot_registry
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        if let Some(table) = guard.get(&full_key).or_else(|| guard.get(key)) {
+        if let Some(table) = guard
+            .tables
+            .get(&full_key)
+            .or_else(|| guard.tables.get(key))
+        {
             return Some(LootTableHandle::Dynamic(table.clone()));
         }
 
@@ -417,21 +425,58 @@ impl DatapackManager {
             .map(LootTableHandle::Static)
     }
 
+    /// Resolve a predicate or modifier document after datapack precedence has been applied.
+    #[must_use]
+    pub fn get_loot_registry_document(&self, kind: &str, name: &str) -> Option<serde_json::Value> {
+        let name = if name.contains(':') {
+            name.to_owned()
+        } else {
+            format!("minecraft:{name}")
+        };
+        self.loot_registry
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .document(kind, &name)
+    }
+
+    /// Parse a predicate once per registry reload, retaining references as holders.
+    pub fn get_loot_predicate(
+        &self,
+        name: &str,
+    ) -> Option<Arc<pumpkin_util::loot_table::LootCondition>> {
+        self.loot_registry
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .predicate(name)
+    }
+
+    /// Parse an item modifier once per registry reload, retaining reference order.
+    pub fn get_loot_modifier(
+        &self,
+        name: &str,
+    ) -> Option<Arc<[pumpkin_util::loot_table::LootFunction]>> {
+        self.loot_registry
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .modifier(name)
+    }
+
     #[must_use]
     pub fn get_loot_table_names(&self) -> Vec<String> {
         let guard = self
-            .loot_tables
+            .loot_registry
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut names: Vec<_> = guard.keys().cloned().collect();
+        let mut names: Vec<_> = guard.tables.keys().cloned().collect();
         names.sort_unstable();
         names
     }
 
     pub fn insert_loot_table(&self, key: String, table: Arc<DynamicLootTable>) {
-        self.loot_tables
+        self.loot_registry
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tables
             .insert(key, table);
     }
 
@@ -1327,6 +1372,7 @@ struct PackContentAccumulators<'a> {
     context_int_providers: &'a mut ContextProviderRegistry,
     context_float_providers: &'a mut ContextProviderRegistry,
     loot_tables: &'a mut HashMap<String, Arc<DynamicLootTable>>,
+    loot_registry_documents: &'a mut HashMap<(String, String), serde_json::Value>,
     dynamic_registries: &'a mut HashMap<String, HashMap<String, RegistryEntryData>>,
     trade_registry: &'a mut TradeRegistry,
 }
@@ -1369,7 +1415,15 @@ fn scan_datapacks_dir(
         }
     };
 
-    for entry in entries.flatten() {
+    // FallbackResourceManager.listResources applies packs in order, with later packs overriding.
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|entry| {
+        let name = entry.file_name().to_string_lossy().to_string();
+        enabled_packs
+            .iter()
+            .position(|pack| pack == &name || pack == &format!("file/{name}"))
+    });
+    for entry in entries {
         let pack_path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
 
@@ -1517,6 +1571,12 @@ fn load_pack_contents(
                         );
                 }
             }
+
+            loot_table_loader::load_loot_registry_documents(
+                &namespace,
+                &ns_path,
+                acc.loot_registry_documents,
+            );
 
             // Load loot tables
             for lt_sub in ["loot_table", "loot_tables"] {

@@ -1127,7 +1127,7 @@ interface java-packets {
     /// Set to 0 if there is no specific entity cause.
     source-cause-id: s32,
     /// The Entity ID of the direct damager (e.g., the arrow entity itself).
-    /// Set to 0 if this is the same as the cause or if not applicable.
+    /// Set to 0 only when the direct entity is absent.
     source-direct-id: s32,
     /// The coordinates of the damage source. Used by the client to calculate
     /// the direction of the "damage tilt" camera effect.

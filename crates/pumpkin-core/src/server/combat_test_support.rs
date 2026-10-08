@@ -72,9 +72,9 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         player_data_storage,
         command_storage: std::sync::Mutex::new(std::collections::HashMap::new()),
         stopwatches: std::sync::Mutex::new(crate::world::stopwatches::Stopwatches::new()),
-        random_sequences: std::sync::Mutex::new(
+        random_sequences: Arc::new(std::sync::Mutex::new(
             crate::world::random_sequences::RandomSequences::new(),
-        ),
+        )),
         advancement_manager,
         white_list,
         tick_rate_manager,

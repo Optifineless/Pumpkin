@@ -25,6 +25,12 @@ pub struct Xoroshiro {
 impl Xoroshiro {
     population_seed_fn!();
 
+    /// Current state words in Xoroshiro128PlusPlus.CODEC order, for saved random sequences.
+    #[must_use]
+    pub const fn state(&self) -> [i64; 2] {
+        [self.lo as i64, self.hi as i64]
+    }
+
     /// Creates a new Xoroshiro generator from the given seed.
     ///
     /// The seed is mixed using the Stafford 13 mixing function to ensure
@@ -43,6 +49,18 @@ impl Xoroshiro {
         Self::new(lo, hi)
     }
 
+    /// Seed a named sequence using RandomSequence.createSequence and RandomSupport.seedFromHashOf.
+    #[must_use]
+    pub fn from_seed_and_key(seed: u64, key: Option<&str>) -> Self {
+        let (mut lo, mut hi) = Self::mix_u64(seed);
+        if let Some(key) = key {
+            let hash = md5::compute(key.as_bytes());
+            lo ^= u64::from_be_bytes(std::array::from_fn(|index| hash[index]));
+            hi ^= u64::from_be_bytes(std::array::from_fn(|index| hash[hash.len() / 2 + index]));
+        }
+        Self::new(mix_stafford_13(lo), mix_stafford_13(hi))
+    }
+
     /// Creates a new Xoroshiro generator with the given state words.
     ///
     /// If both state words are zero, they are replaced with default values
@@ -53,8 +71,9 @@ impl Xoroshiro {
     /// - `hi` – The higher 64-bit state word.
     ///
     /// # Returns
-    /// A new `Xoroshiro` instance.
-    const fn new(lo: u64, hi: u64) -> Self {
+    /// A new `Xoroshiro` instance, using Xoroshiro128PlusPlus.CODEC word order.
+    #[must_use]
+    pub const fn new(lo: u64, hi: u64) -> Self {
         let (lo, hi) = if (lo | hi) == 0 {
             (0x9E3779B97F4A7C15, 0x6A09E667F3BCC909)
         } else {
@@ -179,7 +198,8 @@ impl RandomImpl for Xoroshiro {
         let mut m = l.wrapping_mul(bound as u64);
         let mut n = m & 0xFFFF_FFFF;
         if n < bound as u64 {
-            let i = ((!bound).wrapping_add(1) as u64) % (bound as u64);
+            // XoroshiroRandomSource.nextInt uses Integer.remainderUnsigned (32 bits).
+            let i = u64::from((bound as u32).wrapping_neg() % bound as u32);
             while n < i {
                 l = (self.next_i32() as u64) & 0xFFFF_FFFF;
                 m = l.wrapping_mul(bound as u64);
@@ -345,6 +365,20 @@ mod tests {
         ];
         for value in values {
             assert_eq!(xoroshiro.next_bounded_i32(0xFFFFFF), value);
+        }
+    }
+
+    #[test]
+    fn bounded_rejection_uses_unsigned_32_bit_threshold() {
+        // XoroshiroRandomSource.nextInt(1_000_000_000), seed 0; includes rejected draws.
+        let expected = [
+            962636082, 182003226, 152171728, 311415857, 882216618, 988991398, 330037109, 655669684,
+            363234493, 583219890, 28034837, 808277319, 436319505, 891068376, 802310110, 168344565,
+            651974048, 843174964, 271152607, 77703170,
+        ];
+        let mut random = Xoroshiro::from_seed(0);
+        for value in expected {
+            assert_eq!(random.next_bounded_i32(1_000_000_000), value);
         }
     }
 

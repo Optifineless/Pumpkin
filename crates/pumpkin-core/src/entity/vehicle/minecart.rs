@@ -748,7 +748,12 @@ impl EntityBase for MinecartEntity {
                 if let Some(container) = self.container()
                     && container.claim_drops()
                 {
-                    container.unpack_loot();
+                    let params = crate::world::loot::build_container_loot_context(
+                        &world,
+                        self.vehicle.entity.pos.load(),
+                        None,
+                    );
+                    container.unpack_loot(&params);
                     let inventory: Arc<dyn Inventory> = container.clone();
                     world.scatter_inventory(&position, &inventory);
                 }
@@ -765,7 +770,7 @@ impl EntityBase for MinecartEntity {
         match &self.kind {
             MinecartKind::Chest(minecart) => {
                 let custom_name = self.vehicle.entity.custom_name.load().as_ref().clone();
-                minecart.interact(custom_name, player);
+                minecart.interact(&self.vehicle.entity, custom_name, player);
                 true
             }
             MinecartKind::Furnace(minecart) => {
@@ -773,7 +778,7 @@ impl EntityBase for MinecartEntity {
             }
             MinecartKind::Hopper(minecart) => {
                 let custom_name = self.vehicle.entity.custom_name.load().as_ref().clone();
-                minecart.interact(custom_name, player);
+                minecart.interact(&self.vehicle.entity, custom_name, player);
                 true
             }
             MinecartKind::Rideable(_) => RideableMinecart::interact(&self.vehicle.entity, player),

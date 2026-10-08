@@ -87,7 +87,10 @@ impl MinecartInventory {
             .is_some()
     }
 
-    pub(super) fn unpack_loot(self: &Arc<Self>) {
+    pub(super) fn unpack_loot(
+        self: &Arc<Self>,
+        params: &crate::world::loot::LootContextParameters,
+    ) {
         let loot_table = self
             .loot_table
             .lock()
@@ -96,7 +99,10 @@ impl MinecartInventory {
         let Some((loot_table, seed)) = loot_table else {
             return;
         };
-        let Some(table) = crate::world::loot::get_loot_table(&loot_table) else {
+        let Some(table) = params.world.as_ref().map_or_else(
+            || crate::world::loot::get_loot_table(&loot_table),
+            |world| world.get_loot_table(&loot_table),
+        ) else {
             *self
                 .loot_table
                 .lock()
@@ -105,7 +111,7 @@ impl MinecartInventory {
         };
 
         let inventory: Arc<dyn Inventory> = self.clone();
-        crate::world::loot::fill_chest_inventory_handle(&inventory, &table, seed);
+        crate::world::loot::fill_chest_inventory_with_context(&inventory, &table, seed, params);
     }
 }
 
@@ -197,6 +203,7 @@ impl ScreenHandlerFactory for MinecartScreenFactory {
 }
 
 pub(super) fn open(
+    entity: &Entity,
     custom_name: Option<TextComponent>,
     player: &Arc<Player>,
     inventory: &Arc<MinecartInventory>,
@@ -207,7 +214,12 @@ pub(super) fn open(
         return false;
     }
     if !player.is_spectator() {
-        inventory.unpack_loot();
+        let params = crate::world::loot::build_container_loot_context(
+            &entity.world.load_full(),
+            entity.pos.load(),
+            Some(player),
+        );
+        inventory.unpack_loot(&params);
     }
 
     player
@@ -294,7 +306,7 @@ mod tests {
         assert_eq!(deferred.get_long("LootTableSeed"), Some(1234));
         assert!(deferred.get_list("Items").is_none());
 
-        inventory.unpack_loot();
+        inventory.unpack_loot(&crate::world::loot::LootContextParameters::default());
         assert!(!inventory.is_empty());
 
         let mut unpacked = NbtCompound::new();

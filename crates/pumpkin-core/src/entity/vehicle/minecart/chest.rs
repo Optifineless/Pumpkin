@@ -26,10 +26,12 @@ impl ChestMinecart {
 
     pub(super) fn interact(
         &self,
+        entity: &crate::entity::Entity,
         custom_name: Option<TextComponent>,
         player: &Arc<Player>,
     ) -> bool {
         container::open(
+            entity,
             custom_name,
             player,
             &self.inventory,

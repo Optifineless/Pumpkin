@@ -154,7 +154,7 @@ pub fn build() -> TokenStream {
                 visit_dir(&path, base, pools);
             } else if path.extension().is_some_and(|ext| ext == "json") {
                 let rel = path.strip_prefix(base).unwrap();
-                let stem = rel.with_extension("").to_string_lossy().into_owned();
+                let stem = rel.with_extension("").to_string_lossy().replace('\\', "/");
                 let content = fs::read_to_string(&path).expect("Failed to read template pool JSON");
                 let pool: RawTemplatePool =
                     serde_json::from_str(&content).expect("Failed to parse template pool JSON");

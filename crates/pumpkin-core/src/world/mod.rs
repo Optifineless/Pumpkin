@@ -309,6 +309,7 @@ impl PumpkinError for GetBlockError {
 /// - Stores and tracks active `Player` entities within the world.
 /// - Provides a central hub for interacting with the world's entities and environment.
 pub struct World {
+    pub(crate) loot_random: std::sync::Mutex<pumpkin_util::random::legacy_rand::LegacyRand>,
     /// Represents the World's Unique Identifier
     pub uuid: Uuid,
     /// The underlying level, responsible for chunk management and terrain generation.
@@ -463,6 +464,9 @@ impl World {
         };
 
         Self {
+            loot_random: std::sync::Mutex::new(
+                pumpkin_util::random::legacy_rand::LegacyRand::from_seed(get_seed()),
+            ),
             uuid: Uuid::new_v4(),
             level,
             level_info,
@@ -2116,6 +2120,11 @@ impl World {
             if self.level.autosave_ticks > 0 && self.level.save_enabled.load(Relaxed) {
                 let autosave = self.level.autosave_ticks as i64;
                 if autosave > 0 && level_time.world_age % autosave == 0 {
+                    if self.dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name
+                        && let Some(server) = self.server.upgrade()
+                    {
+                        server.schedule_random_sequence_save();
+                    }
                     self.level.should_save.store(true, Relaxed);
                     self.level.level_channel.notify();
                 }

@@ -125,7 +125,7 @@ pub struct Server {
     /// Global server stopwatches
     pub stopwatches: std::sync::Mutex<crate::world::stopwatches::Stopwatches>,
     /// Global server random sequences
-    pub random_sequences: std::sync::Mutex<crate::world::random_sequences::RandomSequences>,
+    pub random_sequences: Arc<std::sync::Mutex<crate::world::random_sequences::RandomSequences>>,
     // Manages player advancement
     pub advancement_manager: Arc<AdvancementManager>,
     // Whether the server whitelist is on or off
@@ -177,6 +177,13 @@ impl Server {
         );
 
         let world_path = basic_config.get_world_path();
+
+        let sequence_path = world_path.clone();
+        let random_sequences = tokio::task::spawn_blocking(move || {
+            crate::world::random_sequences::RandomSequences::load(&sequence_path)
+        })
+        .await
+        .map_err(|error| WorldInfoError::IoError(std::io::Error::other(error)))??;
 
         let block_registry = super::block::registry::default_registry();
 
@@ -305,9 +312,7 @@ impl Server {
             player_data_storage,
             command_storage: std::sync::Mutex::new(std::collections::HashMap::new()),
             stopwatches: std::sync::Mutex::new(crate::world::stopwatches::Stopwatches::new()),
-            random_sequences: std::sync::Mutex::new(
-                crate::world::random_sequences::RandomSequences::new(),
-            ),
+            random_sequences: Arc::new(std::sync::Mutex::new(random_sequences)),
             advancement_manager,
             white_list,
             tick_rate_manager,
@@ -584,8 +589,34 @@ impl Server {
         self.datapack_manager.is_feature_enabled(self, feature)
     }
 
+    /// Schedule dirty saved-data writes alongside the overworld autosave.
+    pub(crate) fn schedule_random_sequence_save(self: &Arc<Self>) {
+        let server = self.clone();
+        self.spawn_task(async move {
+            if let Err(error) = server.save_random_sequences().await {
+                error!("Failed to save random sequences: {error}");
+            }
+        });
+    }
+
+    async fn save_random_sequences(&self) -> Result<(), String> {
+        let sequences = self.random_sequences.clone();
+        let world_path = self.basic_config.get_world_path();
+        let data_version = self.level_info.load().data_version;
+        tokio::task::spawn_blocking(move || {
+            sequences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .save(&world_path, data_version)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+    }
+
     pub async fn save_all(&self) -> Result<(), String> {
         self.management_hub.broadcast_server_saving();
+        self.save_random_sequences().await?;
 
         if let Err(err) = self.save_world_info() {
             error!("Failed to save world info: {err}");
@@ -773,6 +804,9 @@ impl Server {
         info!("Starting worlds");
         for world in self.worlds.load().iter() {
             world.shutdown().await;
+        }
+        if let Err(error) = self.save_random_sequences().await {
+            error!("Failed to save random sequences: {error}");
         }
         let level_data = self.level_info.load();
         // then lets save the world info

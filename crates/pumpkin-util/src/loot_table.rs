@@ -1,218 +1,289 @@
-/// Conditions required for an entry or pool to be eligible for loot generation.
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+use serde_json::Value;
+use std::{collections::BTreeSet, sync::OnceLock};
+
+/// Entity components supplied by the live loot snapshot.
+pub const SUPPORTED_ENTITY_COMPONENTS: &[&str] = &[
+    "minecraft:sheep/color",
+    "minecraft:chicken/variant",
+    "minecraft:mooshroom/variant",
+];
+
+/// A generated table retains vanilla JSON and decodes it once on first use.
+#[derive(Debug)]
+pub struct LootTable {
+    json: &'static str,
+    parsed: OnceLock<DynamicLootTable>,
+}
+impl LootTable {
+    #[must_use]
+    pub const fn new(json: &'static str) -> Self {
+        Self {
+            json,
+            parsed: OnceLock::new(),
+        }
+    }
+    #[must_use]
+    pub const fn json(&self) -> &'static str {
+        self.json
+    }
+    #[must_use]
+    pub fn parsed(&self) -> &DynamicLootTable {
+        // Codegen validates these documents with this same decoder.
+        self.parsed
+            .get_or_init(|| parse_loot_table(self.json, &mut BTreeSet::new()).unwrap_or_default())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum LootCondition {
     #[default]
     None,
-    SilkTouch,
-    NoSilkTouch,
-    Shears,
-    SilkTouchOrShears,
-    NoSilkTouchOrShears,
+    Unsupported(String),
+    Reference(String),
     SurvivesExplosion,
     KilledByPlayer,
-    RandomChance {
-        chance: f32,
-    },
+    RandomChance(Value),
     RandomChanceWithEnchantedBonus {
-        unenchanted_chance: f32,
-        enchanted_chance_base: f32,
-        enchanted_chance_per_level_above_first: f32,
+        enchantment: String,
+        unenchanted: f32,
+        enchanted: Value,
     },
     TableBonus {
-        chances: &'static [f32],
+        enchantment: String,
+        chances: Vec<f32>,
     },
-    AllOf(&'static [Self]),
+    BlockStateProperty {
+        blocks: Value,
+        properties: Value,
+    },
+    MatchTool(Value),
+    EntityProperties {
+        entity: String,
+        predicate: Value,
+    },
+    AllOf(Vec<Self>),
+    AnyOf(Vec<Self>),
+    Inverted(Box<Self>),
+    WeatherCheck {
+        raining: Option<bool>,
+        thundering: Option<bool>,
+    },
 }
-
-/// Bonus count formulas when tools have fortune or looting enchantments.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LootBonusFormula {
     OreDrops,
     UniformBonusCount(i32),
     BinomialWithBonusCount { extra: i32, probability: f32 },
 }
-
-/// A single item entry inside a loot pool.
-#[derive(Clone, Copy, Debug)]
+/// Conditional modifiers remain ordered at entry, pool and table scope.
+#[derive(Clone, Debug)]
+pub struct LootFunction {
+    pub condition: LootCondition,
+    pub kind: String,
+    pub parameters: Value,
+    pub functions: Vec<Self>,
+}
+#[derive(Clone, Debug)]
+pub enum LootEntryKind {
+    Item(String),
+    Empty,
+    Tag {
+        items: Value,
+        expand: bool,
+    },
+    Tables {
+        tables: Vec<LootTableReference>,
+        expand: bool,
+    },
+    Alternatives(Vec<LootEntry>),
+    Group(Vec<LootEntry>),
+    Sequence(Vec<LootEntry>),
+    Unsupported,
+}
+#[derive(Clone, Debug)]
+pub enum LootTableReference {
+    Named(String),
+    Inline(Box<DynamicLootTable>),
+}
+#[derive(Clone, Debug)]
 pub struct LootEntry {
-    /// Registry name of the item (e.g. `"minecraft:diamond"`).
-    pub item: &'static str,
-    /// Relative probability weight; higher values are more likely.
+    pub kind: LootEntryKind,
     pub weight: i32,
-    /// Minimum stack size (inclusive).
-    pub min_count: i32,
-    /// Maximum stack size (inclusive).
-    pub max_count: i32,
-    /// Condition required for this entry to be eligible.
+    pub quality: i32,
     pub condition: LootCondition,
-    /// Bonus formula to apply with fortune / looting (if any).
-    pub bonus_formula: Option<LootBonusFormula>,
+    pub functions: Vec<LootFunction>,
 }
-
-/// One roll pool inside a loot table.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct LootPool {
-    /// Item entries eligible for selection each roll.
-    pub entries: &'static [LootEntry],
-    /// Minimum number of roll attempts (inclusive).
-    pub min_rolls: i32,
-    /// Maximum number of roll attempts (inclusive).
-    pub max_rolls: i32,
-    /// Weight of the implicit "empty" (no item) outcome per roll.
-    /// In vanilla this is modelled as a `minecraft:empty` entry with the given weight.
-    pub empty_weight: i32,
-    /// Condition required for this entire pool to run.
+    pub entries: Vec<LootEntry>,
+    pub rolls: Value,
+    pub bonus_rolls: Value,
     pub condition: LootCondition,
+    pub functions: Vec<LootFunction>,
 }
-
-/// A complete loot table consisting of one or more pools.
-#[derive(Clone, Copy, Debug)]
-pub struct LootTable {
-    /// All pools to roll when generating loot for this table.
-    pub pools: &'static [LootPool],
+#[derive(Clone, Debug, Default)]
+pub struct DynamicLootTable {
+    pub random_sequence: Option<String>,
+    pub pools: Vec<LootPool>,
+    pub functions: Vec<LootFunction>,
 }
-
+pub type DynamicLootCondition = LootCondition;
+pub type DynamicLootEntry = LootEntry;
+pub type DynamicLootPool = LootPool;
 pub type ChestLootEntry = LootEntry;
 pub type ChestLootPool = LootPool;
 pub type ChestLootTable = LootTable;
-
-/// Conditions required for an entry or pool to be eligible for dynamic loot generation.
-#[derive(Clone, Debug, PartialEq, Default)]
-pub enum DynamicLootCondition {
-    #[default]
-    None,
-    SilkTouch,
-    NoSilkTouch,
-    Shears,
-    SilkTouchOrShears,
-    NoSilkTouchOrShears,
-    SurvivesExplosion,
-    KilledByPlayer,
-    RandomChance {
-        chance: f32,
-    },
-    RandomChanceWithEnchantedBonus {
-        unenchanted_chance: f32,
-        enchanted_chance_base: f32,
-        enchanted_chance_per_level_above_first: f32,
-    },
-    TableBonus {
-        chances: Box<[f32]>,
-    },
-    AllOf(Vec<Self>),
-    AnyOf(Vec<Self>),
-    Inverted(Box<Self>),
-    EntityOnFire,
-    WeatherCheck {
-        raining: Option<bool>,
-        thundering: Option<bool>,
-    },
-}
-
-impl From<LootCondition> for DynamicLootCondition {
-    fn from(cond: LootCondition) -> Self {
-        match cond {
-            LootCondition::None => Self::None,
-            LootCondition::SilkTouch => Self::SilkTouch,
-            LootCondition::NoSilkTouch => Self::NoSilkTouch,
-            LootCondition::Shears => Self::Shears,
-            LootCondition::SilkTouchOrShears => Self::SilkTouchOrShears,
-            LootCondition::NoSilkTouchOrShears => Self::NoSilkTouchOrShears,
-            LootCondition::SurvivesExplosion => Self::SurvivesExplosion,
-            LootCondition::KilledByPlayer => Self::KilledByPlayer,
-            LootCondition::RandomChance { chance } => Self::RandomChance { chance },
-            LootCondition::RandomChanceWithEnchantedBonus {
-                unenchanted_chance,
-                enchanted_chance_base,
-                enchanted_chance_per_level_above_first,
-            } => Self::RandomChanceWithEnchantedBonus {
-                unenchanted_chance,
-                enchanted_chance_base,
-                enchanted_chance_per_level_above_first,
-            },
-            LootCondition::TableBonus { chances } => Self::TableBonus {
-                chances: chances.to_vec().into_boxed_slice(),
-            },
-            LootCondition::AllOf(conditions) => {
-                Self::AllOf(conditions.iter().copied().map(Self::from).collect())
-            }
-        }
-    }
-}
-
-/// A single item entry inside a dynamic loot pool.
-#[derive(Clone, Debug)]
-pub struct DynamicLootEntry {
-    /// Registry name of the item (e.g. `"minecraft:diamond"`).
-    pub item: String,
-    /// Relative probability weight; higher values are more likely.
-    pub weight: i32,
-    /// Minimum stack size (inclusive).
-    pub min_count: i32,
-    /// Maximum stack size (inclusive).
-    pub max_count: i32,
-    /// Condition required for this entry to be eligible.
-    pub condition: DynamicLootCondition,
-    /// Bonus formula to apply with fortune / looting (if any).
-    pub bonus_formula: Option<LootBonusFormula>,
-}
-
-impl From<LootEntry> for DynamicLootEntry {
-    fn from(e: LootEntry) -> Self {
-        Self {
-            item: e.item.to_string(),
-            weight: e.weight,
-            min_count: e.min_count,
-            max_count: e.max_count,
-            condition: DynamicLootCondition::from(e.condition),
-            bonus_formula: e.bonus_formula,
-        }
-    }
-}
-
-/// One roll pool inside a dynamic loot table.
-#[derive(Clone, Debug)]
-pub struct DynamicLootPool {
-    /// Item entries eligible for selection each roll.
-    pub entries: Vec<DynamicLootEntry>,
-    /// Minimum number of roll attempts (inclusive).
-    pub min_rolls: i32,
-    /// Maximum number of roll attempts (inclusive).
-    pub max_rolls: i32,
-    /// Weight of the implicit "empty" (no item) outcome per roll.
-    pub empty_weight: i32,
-    /// Condition required for this entire pool to run.
-    pub condition: DynamicLootCondition,
-}
-
-impl From<LootPool> for DynamicLootPool {
-    fn from(p: LootPool) -> Self {
-        Self {
-            entries: p
-                .entries
-                .iter()
-                .copied()
-                .map(DynamicLootEntry::from)
-                .collect(),
-            min_rolls: p.min_rolls,
-            max_rolls: p.max_rolls,
-            empty_weight: p.empty_weight,
-            condition: DynamicLootCondition::from(p.condition),
-        }
-    }
-}
-
-/// A complete dynamic loot table consisting of one or more pools.
-#[derive(Clone, Debug, Default)]
-pub struct DynamicLootTable {
-    /// All pools to roll when generating loot for this table.
-    pub pools: Vec<DynamicLootPool>,
-}
-
 impl From<&LootTable> for DynamicLootTable {
-    fn from(t: &LootTable) -> Self {
-        Self {
-            pools: t.pools.iter().copied().map(DynamicLootPool::from).collect(),
+    fn from(table: &LootTable) -> Self {
+        table.parsed().clone()
+    }
+}
+
+mod parse;
+pub use parse::{
+    number_provider_supported, parse_loot_condition, parse_loot_functions, parse_loot_table,
+};
+
+/// JSON codecs audited through conversion, decoding and value equality.
+#[must_use]
+pub fn component_codec_supported(name: &str) -> bool {
+    // DataComponentExactPredicate.test compares complete values. Compound/float/NBT,
+    // text, registry-holder and collection codecs are excluded until lossless; in
+    // particular enchantment vectors have order-sensitive equality and containers
+    // always compare unequal. Typed CopyComponentsFunction does not use this list.
+    matches!(
+        name.strip_prefix("minecraft:").unwrap_or(name),
+        "max_stack_size"
+            | "max_damage"
+            | "damage"
+            | "repair_cost"
+            | "map_id"
+            | "base_color"
+            | "rarity"
+    )
+}
+
+/// Typed copying bypasses JSON decoding and equality, but not placeholder storage.
+#[must_use]
+pub fn component_copy_supported(name: &str) -> bool {
+    matches!(
+        name.strip_prefix("minecraft:").unwrap_or(name),
+        "max_stack_size"
+            | "custom_data"
+            | "enchantments"
+            | "damage"
+            | "max_damage"
+            | "food"
+            | "tool"
+            | "enchantable"
+            | "damage_resistant"
+            | "potion_contents"
+            | "fireworks"
+            | "firework_explosion"
+            | "custom_name"
+            | "lore"
+            | "item_name"
+            | "item_model"
+            | "consumable"
+            | "equippable"
+            | "attack_range"
+            | "kinetic_weapon"
+            | "piercing_weapon"
+            | "damage_type"
+            | "use_cooldown"
+            | "repair_cost"
+            | "repairable"
+            | "map_id"
+            | "map_post_processing"
+            | "block_entity_data"
+            | "bundle_contents"
+            | "container"
+            | "block_state"
+            | "profile"
+            | "chicken/variant"
+            | "villager/variant"
+            | "wolf/variant"
+            | "wolf/sound_variant"
+            | "wolf/collar"
+            | "fox/variant"
+            | "salmon/size"
+            | "parrot/variant"
+            | "mooshroom/variant"
+            | "rabbit/variant"
+            | "pig/variant"
+            | "pig/sound_variant"
+            | "cow/variant"
+            | "cow/sound_variant"
+            | "frog/variant"
+            | "horse/variant"
+            | "painting/variant"
+            | "llama/variant"
+            | "axolotl/variant"
+            | "cat/variant"
+            | "cat/sound_variant"
+            | "cat/collar"
+            | "sheep/color"
+            | "shulker/color"
+            | "dyed_color"
+            | "base_color"
+            | "note_block_sound"
+            | "tooltip_style"
+            | "lock"
+            | "container_loot"
+            | "custom_model_data"
+            | "lodestone_tracker"
+            | "trim"
+            | "can_place_on"
+            | "can_break"
+            | "attack_animation"
+            | "rarity"
+            | "banner_patterns"
+            | "weapon"
+            | "entity_data"
+            | "jukebox_playable"
+            | "cooking_fuel"
+            | "compostable"
+    )
+}
+
+/// Reject unsupported exact values before a surrounding condition can invert them.
+#[must_use]
+pub fn component_predicate_supported(name: &str, value: &Value) -> bool {
+    if !component_codec_supported(name) {
+        return false;
+    }
+    // DataComponents' integer codecs; the current JSON-to-NBT bridge must not narrow values.
+    match name.strip_prefix("minecraft:").unwrap_or(name) {
+        "base_color" | "rarity" => value.is_string(),
+        "max_stack_size" => value.as_i64().is_some_and(|n| (1..=99).contains(&n)), // DataComponents:118
+        "max_damage" => value
+            .as_i64()
+            .is_some_and(|n| n > 0 && i32::try_from(n).is_ok()),
+        "damage" | "repair_cost" => value
+            .as_i64()
+            .is_some_and(|n| n >= 0 && i32::try_from(n).is_ok()),
+        "map_id" => value.as_i64().is_some_and(|n| i32::try_from(n).is_ok()),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unknown_conditions_and_missing_predicates_are_never_unconditional() {
+        let mut unsupported = BTreeSet::new();
+        for condition in [
+            serde_json::json!({"type":"minecraft:entity_scores"}),
+            serde_json::json!("custom:missing"),
+        ] {
+            let json = serde_json::json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:diamond","condition":condition}]}]});
+            let table = parse_loot_table(&json.to_string(), &mut unsupported).unwrap();
+            assert!(matches!(
+                table.pools[0].entries[0].condition,
+                LootCondition::Unsupported(_) | LootCondition::Reference(_)
+            ));
         }
+        assert_eq!(unsupported.len(), 1);
     }
 }

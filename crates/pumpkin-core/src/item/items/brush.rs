@@ -26,7 +26,13 @@ impl ItemMetadata for BrushItem {
         Box::new([Item::BRUSH.id])
     }
 }
-fn get_archaeology_loot(is_sand: bool, location: BlockPos, world: &World) -> ItemStack {
+fn get_archaeology_loot(
+    is_sand: bool,
+    location: BlockPos,
+    world: &std::sync::Arc<World>,
+    player: &Player,
+    brush: &ItemStack,
+) -> ItemStack {
     if let Some(block_entity) = world.get_block_entity(&location)
         && let Some(brushable) = block_entity
             .as_any()
@@ -44,7 +50,14 @@ fn get_archaeology_loot(is_sand: bool, location: BlockPos, world: &World) -> Ite
     };
 
     if let Some(table) = world.get_loot_table(loot_key) {
-        let items = table.generate_loot(rand::random());
+        // BrushableBlockEntity.unpackLootTable supplies the brushing player and tool.
+        let mut params = crate::world::loot::build_container_loot_context(
+            world,
+            location.to_f64().add_raw(0.5, 0.5, 0.5),
+            Some(player),
+        );
+        params.tool = Some(brush.clone());
+        let items = table.generate_loot_with_context(0, &params);
         if let Some(first) = items.into_iter().next() {
             return first;
         }
@@ -68,7 +81,7 @@ impl ItemBehaviour for BrushItem {
 
     fn use_on_block(
         &self,
-        _item: &mut ItemStack,
+        item: &mut ItemStack,
         player: &Player,
         location: BlockPos,
         _face: BlockDirection,
@@ -147,7 +160,7 @@ impl ItemBehaviour for BrushItem {
                 &block_center,
             );
 
-            let loot_item = get_archaeology_loot(is_sand, location, &world);
+            let loot_item = get_archaeology_loot(is_sand, location, &world, player, item);
             let spawn_pos = Vector3::new(
                 f64::from(location.0.x) + 0.5,
                 f64::from(location.0.y) + 1.0,
