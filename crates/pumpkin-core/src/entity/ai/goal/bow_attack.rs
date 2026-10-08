@@ -103,14 +103,6 @@ impl BowAttackGoal {
         let difficulty = world.level_info.load().difficulty as i32;
         arrow.set_base_damage_from_mob(Self::ARROW_SPEED, difficulty);
 
-        arrow.set_base_damage(crate::enchantment::EnchantmentHelper::modify_damage(
-            &bow_item,
-            arrow.get_base_damage(),
-        ));
-        arrow.punch_level.store(
-            crate::enchantment::EnchantmentHelper::modify_knockback(&bow_item, 0.0) as u8,
-            std::sync::atomic::Ordering::Relaxed,
-        );
         arrow.apply_on_projectile_spawned(&projectile);
         if entity.is_on_fire() {
             arrow.set_flame(true);

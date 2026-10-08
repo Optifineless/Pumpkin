@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
-use crate::entity::projectile::{ProjectileHit, is_projectile};
+use crate::entity::projectile::ProjectileHit;
 use crate::{
     entity::{Entity, EntityBase, living::LivingEntity, player::Player},
     server::Server,
@@ -12,7 +12,7 @@ use pumpkin_util::math::vector3::Vector3;
 
 pub struct FishingBobberEntity {
     pub entity: Entity,
-    pub owner_id: i32,
+    pub projectile: super::ownership::ProjectileState,
     pub hooked_entity_id: AtomicI32,
     pub in_ground: AtomicBool,
     pub has_hit: AtomicBool,
@@ -32,7 +32,9 @@ impl FishingBobberEntity {
 
         Self {
             entity,
-            owner_id: owner.living_entity.entity.entity_id,
+            projectile: super::ownership::ProjectileState::new(Some(
+                owner.get_entity().entity_uuid,
+            )),
             hooked_entity_id: AtomicI32::new(0),
             in_ground: AtomicBool::new(false),
             has_hit: AtomicBool::new(false),
@@ -188,24 +190,28 @@ impl FishingBobberEntity {
         entity.set_pos(new_pos);
 
         let candidates = world.get_all_at_box(&search_box);
-        // FishingHook.canHitEntity also permits live item entities.
-        for cand in candidates.into_iter().filter(|other| {
-            super::can_hit_entity(other)
-                || (other.get_entity().entity_type == &pumpkin_data::entity::EntityType::ITEM
-                    && other.get_entity().is_alive())
-        }) {
-            if cand.get_entity().entity_id == self.owner_id
-                || cand.get_entity().entity_id == entity.entity_id
+        // FishingHook.canHitEntity additionally permits live item entities.
+        for cand in candidates {
+            let other = cand.get_entity();
+            if !(self.projectile.can_hit(entity, &cand)
+                || other.entity_type == &pumpkin_data::entity::EntityType::ITEM && other.is_alive())
             {
                 continue;
             }
-
-            if is_projectile(cand.get_entity().entity_type) {
-                continue;
-            }
-
-            let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
+            let ebb = cand
+                .get_entity()
+                .bounding_box
+                .load()
+                .expand_all(super::collision::compute_margin(entity));
             if ebb.intersects(&search_box) {
+                let hit = ProjectileHit::Entity {
+                    entity: cand.clone(),
+                    hit_pos: new_pos,
+                    normal: Vector3::default(),
+                };
+                if super::deflection::hit_target_or_deflect_self(self, &hit) {
+                    return;
+                }
                 self.hooked_entity_id
                     .store(cand.get_entity().entity_id, Ordering::Relaxed);
                 entity.set_synced_data(
@@ -219,8 +225,8 @@ impl FishingBobberEntity {
 }
 
 impl EntityBase for FishingBobberEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        Some(self.owner_id)
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.projectile)
     }
 
     fn get_entity(&self) -> &Entity {
@@ -238,7 +244,10 @@ impl EntityBase for FishingBobberEntity {
         self.has_hit.store(true, Ordering::Relaxed);
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.projectile.tick(&self.entity);
+        // FishingHook.tick calls Projectile.tick -> Entity.tick before fishing movement.
+        EntityBase::tick(&self.entity, caller, server);
         self.process_tick(caller);
     }
 }

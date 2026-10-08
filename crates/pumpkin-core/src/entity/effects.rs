@@ -18,7 +18,8 @@ pub(super) struct HiddenEffect {
 }
 
 // LivingEntity.canBeAffected preserves the override order from vanilla 26.3.
-fn can_be_affected(entity: &EntityType, effect: &StatusEffect) -> bool {
+/// Checks the living entity type's effect immunity before consuming a cloud application.
+pub fn can_be_affected(entity: &EntityType, effect: &StatusEffect) -> bool {
     // Spider/AbstractNautilus, WitherBoss/WitherSkeleton and Parched.canBeAffected.
     if (effect == &StatusEffect::POISON
         && [

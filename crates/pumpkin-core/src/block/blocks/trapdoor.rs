@@ -44,7 +44,7 @@ fn can_open_trapdoor(block: &Block) -> bool {
     true
 }
 
-fn get_sound(block: &Block, open: bool) -> Sound {
+pub(crate) fn get_sound(block: &Block, open: bool) -> Sound {
     if open {
         if block.has_tag(&tag::Block::MINECRAFT_WOODEN_TRAPDOORS) {
             Sound::BlockWoodenTrapdoorOpen

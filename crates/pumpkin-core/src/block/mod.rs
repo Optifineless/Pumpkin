@@ -10,7 +10,7 @@ use crate::world::World;
 use std::sync::Arc;
 
 mod loot;
-pub use loot::{drop_loot, loot_table_name};
+pub use loot::{block_drops, drop_experience, drop_loot, loot_table_name};
 pub mod blocks;
 pub mod entities;
 pub mod fluid;
@@ -285,6 +285,7 @@ pub struct OnEntityStepArgs<'a> {
 }
 
 pub struct ExplodeArgs<'a> {
+    pub explosion: Option<&'a crate::world::Explosion>,
     pub world: &'a Arc<World>,
     pub block: &'a Block,
     pub position: &'a BlockPos,

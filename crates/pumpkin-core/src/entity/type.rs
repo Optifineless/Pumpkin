@@ -294,14 +294,16 @@ pub fn from_type(
         {
             Arc::new(MinecartEntity::new(entity))
         }
+        id if id == EntityType::DRAGON_FIREBALL.id => {
+            Arc::new(crate::entity::projectile::dragon_fireball::DragonFireballEntity::new(entity))
+        }
         id if id == EntityType::FIREBALL.id => Arc::new(FireballEntity::new(entity)),
         id if id == EntityType::SMALL_FIREBALL.id => Arc::new(SmallFireballEntity::new(entity)),
         id if id == EntityType::WITHER_SKULL.id => Arc::new(WitherSkullEntity::new(entity)),
         id if id == EntityType::WIND_CHARGE.id => {
             let thrown = ThrownItemEntity {
                 entity,
-                owner_id: None,
-                collides_with_projectiles: false,
+                projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
                 has_hit: AtomicBool::new(false),
                 gravity: WIND_CHARGE_GRAVITY,
             };
@@ -310,8 +312,7 @@ pub fn from_type(
         id if id == EntityType::BREEZE_WIND_CHARGE.id => {
             let thrown = ThrownItemEntity {
                 entity,
-                owner_id: None,
-                collides_with_projectiles: false,
+                projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
                 has_hit: AtomicBool::new(false),
                 gravity: WIND_CHARGE_GRAVITY,
             };

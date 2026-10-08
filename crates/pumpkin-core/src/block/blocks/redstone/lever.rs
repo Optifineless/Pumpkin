@@ -22,7 +22,7 @@ use crate::{
     world::World,
 };
 
-fn toggle_lever(world: &Arc<World>, block_pos: &BlockPos) {
+pub(crate) fn toggle_lever(world: &Arc<World>, block_pos: &BlockPos) {
     let (block, state) = world.get_block_and_state_id(block_pos);
 
     let mut lever_props = LeverLikeProperties::from_state_id(state);

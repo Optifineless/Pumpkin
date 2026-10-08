@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use pumpkin_data::damage::DamageType;
 use pumpkin_util::math::vector3::Vector3;
@@ -23,8 +23,7 @@ impl LlamaSpitEntity {
     pub const fn new(entity: Entity) -> Self {
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: LLAMA_SPIT_GRAVITY,
         };
@@ -45,8 +44,7 @@ impl LlamaSpitEntity {
 
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: Some(shooter.entity_id),
-            collides_with_projectiles: false,
+            projectile: super::ownership::ProjectileState::new(Some(shooter.entity_uuid)),
             has_hit: AtomicBool::new(false),
             gravity: LLAMA_SPIT_GRAVITY,
         };
@@ -56,16 +54,45 @@ impl LlamaSpitEntity {
 }
 
 impl EntityBase for LlamaSpitEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.thrown.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.thrown.projectile)
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        if self.get_entity().touching_water.load(Ordering::Relaxed) {
-            self.get_entity().remove();
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        // LlamaSpit.tick calls Projectile.tick first, hits using original motion, then drag/gravity.
+        let entity = self.get_entity();
+        self.thrown.projectile.tick(entity);
+        EntityBase::tick(entity, caller, server);
+        let movement = entity.velocity.load();
+        let start = entity.pos.load();
+        if let Some(hit) = self.thrown.find_hit(caller, start, movement) {
+            self.thrown.hit_target(caller, hit);
+        }
+        if !entity.is_alive() {
             return;
         }
-        self.thrown.process_tick(caller);
+        let bounds = entity.bounding_box.load();
+        let world = entity.world.load();
+        let touches_no_air = (bounds.min.x.floor() as i32..=bounds.max.x.floor() as i32).all(|x| {
+            (bounds.min.y.floor() as i32..=bounds.max.y.floor() as i32).all(|y| {
+                (bounds.min.z.floor() as i32..=bounds.max.z.floor() as i32).all(|z| {
+                    !world
+                        .get_block_state(&pumpkin_util::math::position::BlockPos::new(x, y, z))
+                        .is_air()
+                })
+            })
+        });
+        if touches_no_air || entity.is_in_water() {
+            entity.remove();
+            return;
+        }
+        let mut velocity = movement * f64::from(0.99f32);
+        if !entity.has_no_gravity() {
+            velocity.y -= LLAMA_SPIT_GRAVITY;
+        }
+        entity.velocity.store(velocity);
+        super::arrow::update_flight_rotation(entity, movement, true);
+        entity.set_pos(start + movement);
     }
 
     fn get_entity(&self) -> &Entity {
@@ -81,10 +108,11 @@ impl EntityBase for LlamaSpitEntity {
     }
 
     fn on_hit(&self, hit: ProjectileHit) {
+        if matches!(hit, ProjectileHit::Block { .. }) {
+            self.get_entity().remove();
+        }
         if let ProjectileHit::Entity { ref entity, .. } = hit {
-            let world = self.get_entity().world.load();
-            let owner_id = self.thrown.owner_id;
-            let owner = owner_id.and_then(|id| world.get_entity_by_id(id));
+            let owner = self.projectile_owner();
 
             // LlamaSpit.onHitEntity only hurts with a living owner.
             if let Some(owner) = owner

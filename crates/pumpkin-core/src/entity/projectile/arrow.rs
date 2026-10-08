@@ -2,21 +2,18 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
-use crate::entity::projectile::{ProjectileHit, calculate_ray_intersection};
+use crate::entity::projectile::ProjectileHit;
 use crate::{
     entity::{Entity, EntityBase, living::LivingEntity, player::Player},
     server::Server,
 };
 use bytes::BufMut;
-use pumpkin_data::damage::DamageType;
-use pumpkin_data::data_component_impl::PotionDurationScaleImpl;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_protocol::IdOr;
 use pumpkin_protocol::java::client::play::{CSoundEffect, Metadata};
-use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -84,14 +81,14 @@ fn can_harm_player(
 // AbstractArrow.canHitEntity also applies to ThrownTrident in vanilla.
 pub(super) fn can_hit_player(
     projectile: &Entity,
-    owner_id: Option<i32>,
+    owner: Option<&dyn EntityBase>,
     other: &Arc<dyn EntityBase>,
 ) -> bool {
     let Some(target) = other.get_player() else {
         return true;
     };
     let world = projectile.world.load();
-    let Some(owner) = owner_id.and_then(|id| world.get_player_by_id(id)) else {
+    let Some(owner) = owner.and_then(EntityBase::get_player) else {
         return true;
     };
     let Some(server) = world.server.upgrade() else {
@@ -134,14 +131,13 @@ impl ArrowPickup {
 
 pub struct ArrowEntity {
     pub entity: Entity,
-    pub owner_id: Option<i32>,
+    pub projectile: super::ownership::ProjectileState,
     pub item_stack: RwLock<ItemStack>,
     pub base_damage: AtomicU64,
-    pub pickup: ArrowPickup,
+    pub pickup: crossbeam::atomic::AtomicCell<ArrowPickup>,
     pub is_critical: AtomicBool,
     pub no_physics: AtomicBool,
     pub pierce_level: AtomicU8,
-    pub punch_level: AtomicU8,
     pub is_flame: AtomicBool,
     pub in_ground: AtomicBool,
     pub in_ground_time: AtomicU32,
@@ -172,15 +168,14 @@ impl ArrowEntity {
         pickup: ArrowPickup,
     ) -> Self {
         Self {
+            projectile: super::ownership::ProjectileState::from_id(&entity, owner_id),
             entity,
-            owner_id,
             item_stack: RwLock::new(item_stack.copy_with_count(1)),
             base_damage: AtomicU64::new(Self::ARROW_BASE_DAMAGE.to_bits()),
-            pickup,
+            pickup: crossbeam::atomic::AtomicCell::new(pickup),
             is_critical: AtomicBool::new(false),
             no_physics: AtomicBool::new(false),
             pierce_level: AtomicU8::new(0),
-            punch_level: AtomicU8::new(0),
             is_flame: AtomicBool::new(false),
             in_ground: AtomicBool::new(false),
             in_ground_time: AtomicU32::new(0),
@@ -215,14 +210,13 @@ impl ArrowEntity {
 
         Self {
             entity,
-            owner_id: Some(shooter.entity_id),
+            projectile: super::ownership::ProjectileState::new(Some(shooter.entity_uuid)),
             item_stack: RwLock::new(item_stack.copy_with_count(1)),
             base_damage: AtomicU64::new(Self::ARROW_BASE_DAMAGE.to_bits()),
-            pickup,
+            pickup: crossbeam::atomic::AtomicCell::new(pickup),
             is_critical: AtomicBool::new(false),
             no_physics: AtomicBool::new(false),
             pierce_level: AtomicU8::new(0),
-            punch_level: AtomicU8::new(0),
             is_flame: AtomicBool::new(false),
             in_ground: AtomicBool::new(false),
             in_ground_time: AtomicU32::new(0),
@@ -297,7 +291,7 @@ impl ArrowEntity {
         item_stack.copy_with_count(1)
     }
 
-    const fn spectral_glowing_effect() -> pumpkin_data::potion::Effect {
+    pub(super) const fn spectral_glowing_effect() -> pumpkin_data::potion::Effect {
         pumpkin_data::potion::Effect {
             effect_type: &pumpkin_data::effect::StatusEffect::GLOWING,
             duration: 200,
@@ -307,10 +301,6 @@ impl ArrowEntity {
             show_icon: true,
             blend: false,
         }
-    }
-
-    const fn should_apply_post_hurt_effects(damage_succeeded: bool) -> bool {
-        damage_succeeded
     }
 
     #[must_use]
@@ -344,113 +334,6 @@ impl ArrowEntity {
             }
         } else {
             -1
-        }
-    }
-
-    fn step_move_and_hit(
-        &self,
-        caller: &dyn EntityBase,
-        start_pos: Vector3<f64>,
-        new_pos: Vector3<f64>,
-        movement: Vector3<f64>,
-    ) {
-        let entity = &self.entity;
-        let world = entity.world.load();
-        // Check for collisions using raycasting
-        let search_box = BoundingBox::new(
-            Vector3::new(
-                start_pos.x.min(new_pos.x),
-                start_pos.y.min(new_pos.y),
-                start_pos.z.min(new_pos.z),
-            ),
-            Vector3::new(
-                start_pos.x.max(new_pos.x),
-                start_pos.y.max(new_pos.y),
-                start_pos.z.max(new_pos.z),
-            ),
-        )
-        .expand(0.3, 0.3, 0.3);
-
-        let mut closest_t = 1.0f64;
-        let mut hit = None;
-
-        // Block collisions
-        let (block_cols, block_positions) =
-            world.get_block_collisions(search_box, self.get_entity());
-        for (idx, bb) in block_cols.iter().enumerate() {
-            if let Some(t) = calculate_ray_intersection(&start_pos, &movement, bb)
-                && t < closest_t
-            {
-                closest_t = t;
-
-                // Map back to block pos
-                let mut curr = 0;
-                for (len, pos) in &block_positions {
-                    curr += len;
-                    if idx < curr {
-                        let hit_pos = start_pos.add(&movement.multiply(t, t, t));
-                        hit = Some(ProjectileHit::Block {
-                            pos: *pos,
-                            face: get_hit_face(hit_pos, *pos),
-                            hit_pos,
-                            normal: movement.normalize().multiply(-1.0, -1.0, -1.0),
-                        });
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Entity collisions
-        let candidates = world.get_all_at_box(&search_box);
-        for cand in candidates.into_iter().filter(super::can_hit_entity) {
-            if self.should_skip_collision(entity, &cand)
-                || !can_hit_player(entity, self.owner_id, &cand)
-            {
-                continue;
-            }
-
-            let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
-            if let Some(t) = calculate_ray_intersection(&start_pos, &movement, &ebb)
-                && t < closest_t
-            {
-                closest_t = t;
-                let hit_pos = start_pos.add(&movement.multiply(t, t, t));
-                hit = Some(ProjectileHit::Entity {
-                    entity: cand.clone(),
-                    hit_pos,
-                    normal: movement.normalize().multiply(-1.0, -1.0, -1.0),
-                });
-            }
-        }
-
-        // Handle hit
-        if let Some(h) = hit {
-            entity.set_pos(h.hit_pos());
-            match h {
-                ProjectileHit::Block { .. } => {
-                    if self.has_hit.swap(true, Ordering::SeqCst) {
-                        return;
-                    }
-                    caller.on_hit(h);
-                    entity.velocity_dirty.store(true, Ordering::Relaxed);
-                }
-                ProjectileHit::Entity { .. } => {
-                    let pierce = self.pierce_level.load(Ordering::Relaxed);
-                    let pierced_len = self
-                        .pierced_entities
-                        .read()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .len();
-                    if pierced_len >= pierce as usize && self.has_hit.swap(true, Ordering::SeqCst) {
-                        return;
-                    }
-                    caller.on_hit(h);
-                    entity.velocity_dirty.store(true, Ordering::Relaxed);
-                }
-            }
-        } else {
-            entity.set_pos(new_pos);
         }
     }
 
@@ -591,8 +474,8 @@ impl ArrowEntity {
 }
 
 impl EntityBase for ArrowEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.projectile)
     }
 
     fn write_custom_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
@@ -610,10 +493,25 @@ impl EntityBase for ArrowEntity {
             "PierceLevel",
             self.pierce_level.load(Ordering::Relaxed) as i8,
         );
-        nbt.put_byte("pickup", self.pickup.to_byte() as i8);
+        nbt.put_byte("pickup", self.pickup.load().to_byte() as i8);
+        if let Some(weapon) = self.get_weapon_item() {
+            let mut stored = pumpkin_nbt::compound::NbtCompound::new();
+            weapon.write_item_stack(&mut stored);
+            nbt.put_compound("weapon", stored);
+        }
     }
 
     fn read_custom_nbt(&self, nbt: &pumpkin_nbt::compound::NbtCompound) {
+        // AbstractArrow.readAdditionalSaveData restores pickup and the weapon used for hit effects.
+        self.pickup.store(ArrowPickup::from_byte(
+            nbt.get_byte("pickup").unwrap_or(0) as u8
+        ));
+        *self
+            .weapon
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = nbt
+            .get_compound("weapon")
+            .and_then(ItemStack::read_item_stack);
         if let Some(item_stack) = Self::read_item_stack_nbt(nbt) {
             *self
                 .item_stack
@@ -732,45 +630,16 @@ impl EntityBase for ArrowEntity {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         let entity = self.get_entity();
         let world = entity.world.load();
 
         // Fire & Extinguish logic
-        let mut fire_ticks = entity.fire_ticks.load(Ordering::Relaxed);
-        let touching_water = entity.touching_water.load(Ordering::Relaxed);
-        let in_water = touching_water || entity.is_in_water();
-        let block_pos = entity.block_pos.load();
-        let in_rain = world.is_raining_at(&block_pos);
-
-        if in_water || in_rain {
-            if entity.is_on_fire() || self.is_flame.load(Ordering::Relaxed) {
-                entity.extinguish();
-                self.is_flame.store(false, Ordering::Relaxed);
-            }
-        } else if fire_ticks > 0 {
-            fire_ticks -= 1;
-            entity.fire_ticks.store(fire_ticks, Ordering::Relaxed);
-            if fire_ticks <= 0 && self.is_flame.load(Ordering::Relaxed) {
-                self.is_flame.store(false, Ordering::Relaxed);
-                entity.set_on_fire(false);
-            }
+        let in_water = entity.is_in_water();
+        if in_water || world.is_raining_at(&entity.block_pos.load()) {
+            entity.extinguish();
+            self.is_flame.store(false, Ordering::Relaxed);
         }
-
-        // Check if arrow enters lava or fire block
-        let current_block = world.get_block(&block_pos);
-        if current_block == &pumpkin_data::Block::LAVA {
-            entity.set_on_fire_for(15.0);
-            self.is_flame.store(true, Ordering::Relaxed);
-        } else if current_block == &pumpkin_data::Block::FIRE
-            || current_block == &pumpkin_data::Block::SOUL_FIRE
-        {
-            entity.set_on_fire_for(8.0);
-            self.is_flame.store(true, Ordering::Relaxed);
-        }
-
-        let is_on_fire = entity.is_on_fire() || self.is_flame.load(Ordering::Relaxed);
-        entity.set_on_fire(is_on_fire);
 
         // Handle shake time
         let shake = self.shake_time.load(Ordering::Relaxed);
@@ -808,6 +677,10 @@ impl EntityBase for ArrowEntity {
             if life >= Self::DESPAWN_TIME {
                 entity.remove();
             }
+            // AbstractArrow.tick's grounded branch applies block effects without super.tick.
+            entity.tick_block_collisions(caller);
+            entity.set_on_fire(entity.fire_ticks.load(Ordering::Relaxed) > 0);
+            self.is_flame.store(entity.is_on_fire(), Ordering::Relaxed);
             return;
         }
 
@@ -817,6 +690,7 @@ impl EntityBase for ArrowEntity {
         } else {
             0.0
         };
+        self.projectile.check_left_owner(entity);
         let velocity = tick_flight(
             entity.velocity.load(),
             in_water,
@@ -831,6 +705,7 @@ impl EntityBase for ArrowEntity {
                     self.step_move_and_hit(caller, start_pos, new_pos, movement);
                 } else {
                     entity.set_pos(new_pos);
+                    super::block_effects::apply(caller, start_pos, new_pos);
                 }
                 (
                     entity.velocity.load(),
@@ -839,6 +714,10 @@ impl EntityBase for ArrowEntity {
             },
         );
         entity.velocity.store(velocity);
+        // AbstractArrow.tick calls Entity.tick after movement, inertia and gravity.
+        self.projectile.tick(entity);
+        EntityBase::tick(entity, caller, server);
+        self.is_flame.store(entity.is_on_fire(), Ordering::Relaxed);
     }
 
     #[allow(clippy::too_many_lines)]
@@ -888,7 +767,9 @@ impl EntityBase for ArrowEntity {
                 }
 
                 if block == &pumpkin_data::Block::TARGET
-                    && let Some(player) = self.owner_id.and_then(|id| world.get_player_by_id(id))
+                    && let Some(player) = self
+                        .get_owner_id()
+                        .and_then(|id| world.get_player_by_id(id))
                 {
                     player.trigger_advancement(
                         crate::entity::player::advancement::trigger::AdvancementTrigger::Bullseye,
@@ -935,109 +816,7 @@ impl EntityBase for ArrowEntity {
                 hit_pos,
                 ..
             } => {
-                let target_entity_id = target.get_entity().entity_id;
-                self.pierced_entities
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .push(target_entity_id);
-
-                // Calculate damage
-                let velocity = entity.velocity.load();
-                let power = velocity.length();
-                let mut damage = (power * self.get_base_damage()).ceil() as i32;
-
-                // Apply critical hit bonus
-                if self.is_critical.load(Ordering::Relaxed) {
-                    let bonus = (rand::random::<u32>() % (damage.max(0) / 2 + 2) as u32) as i32;
-                    damage = damage.saturating_add(bonus);
-                }
-
-                let is_enderman =
-                    target.get_entity().entity_type == &pumpkin_data::entity::EntityType::ENDERMAN;
-                let is_on_fire = entity.is_on_fire() || self.is_flame.load(Ordering::Relaxed);
-                let old_fire = target.get_entity().fire_ticks.load(Ordering::Relaxed);
-                if is_on_fire && !is_enderman {
-                    target.get_entity().set_on_fire_for(5.0);
-                }
-
-                let punch = self.punch_level.load(Ordering::Relaxed);
-                let is_spectral = entity.entity_type.id == EntityType::SPECTRAL_ARROW.id;
-                let owner_id = self.owner_id;
-                let pierce = self.pierce_level.load(Ordering::Relaxed);
-
-                let owner_entity = owner_id.and_then(|id| world.get_entity_by_id(id));
-
-                let damage_succeeded = super::damage::hurt_entity(
-                    target.as_ref(),
-                    damage as f32,
-                    DamageType::ARROW,
-                    self,
-                    owner_entity.as_deref().or(Some(self)),
-                );
-
-                // AbstractArrow.onHitEntity restores fire on rejected hits and only knocks back successful hits.
-                if !damage_succeeded {
-                    target
-                        .get_entity()
-                        .fire_ticks
-                        .store(old_fire, Ordering::Relaxed);
-                }
-                if let Some(living) = target.get_living_entity() {
-                    if damage_succeeded && punch > 0 {
-                        let norm = Vector3::new(velocity.x, 0.0, velocity.z).normalize();
-                        let push_scale = f64::from(punch) * 0.6;
-                        target.get_entity().velocity.store(
-                            target.get_entity().velocity.load().add(&Vector3::new(
-                                norm.x * push_scale,
-                                0.1,
-                                norm.z * push_scale,
-                            )),
-                        );
-                    }
-
-                    // Play hit sound
-                    let sound_pitch = 1.2 / (rand::random::<f32>() * 0.2 + 0.9);
-                    let sound_packet = CSoundEffect::new(
-                        IdOr::Id(Sound::EntityArrowHit as u16),
-                        SoundCategory::Neutral,
-                        &hit_pos,
-                        1.0,
-                        sound_pitch,
-                        0,
-                    );
-                    let chunk_pos = entity.chunk_pos.load();
-                    world.broadcast_to_chunk(chunk_pos, &sound_packet);
-
-                    if Self::should_apply_post_hurt_effects(damage_succeeded) {
-                        let item_stack = self
-                            .item_stack
-                            .read()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        let scale = item_stack
-                            .get_data_component::<PotionDurationScaleImpl>()
-                            .map_or(1.0, |component| component.scale);
-                        crate::item::potion::PotionContents::apply_effects_to(
-                            living,
-                            crate::item::potion::PotionContents::read_potion_effects(&item_stack),
-                            scale,
-                            crate::item::potion::PotionApplicationSource::Arrow,
-                        );
-
-                        if is_spectral {
-                            living.add_effect(Self::spectral_glowing_effect());
-                        }
-                    }
-                }
-
-                // Check pierce level
-                let pierced_count = self
-                    .pierced_entities
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .len();
-                if pierced_count > pierce as usize {
-                    entity.remove();
-                }
+                self.hit_entity(&target, hit_pos);
             }
         }
     }
@@ -1052,8 +831,10 @@ impl EntityBase for ArrowEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
-        // Only allow picking up grounded arrows
-        if !self.in_ground.load(Ordering::Relaxed) {
+        // AbstractArrow.playerTouch waits for the impact shake before allowing pickup.
+        if (!self.in_ground.load(Ordering::Relaxed) && !self.is_no_physics())
+            || self.shake_time.load(Ordering::Relaxed) > 0
+        {
             return;
         }
 
@@ -1062,7 +843,7 @@ impl EntityBase for ArrowEntity {
         }
 
         // Check pickup rules
-        match self.pickup {
+        match self.pickup.load() {
             ArrowPickup::Disallowed => return,
             ArrowPickup::CreativeOnly if !player.is_creative() => return,
             _ => {}
@@ -1106,7 +887,12 @@ impl EntityBase for ArrowEntity {
 }
 
 impl ArrowEntity {
-    fn should_skip_collision(&self, self_ent: &Entity, other: &Arc<dyn EntityBase>) -> bool {
+    pub(super) fn should_skip_collision(
+        &self,
+        self_ent: &Entity,
+        other: &Arc<dyn EntityBase>,
+        owner: Option<&Arc<dyn EntityBase>>,
+    ) -> bool {
         let other_ent = other.get_entity();
 
         // Don't collide with self
@@ -1114,8 +900,7 @@ impl ArrowEntity {
             return true;
         }
 
-        // Skip owner for initial frames (5 ticks)
-        if Some(other_ent.entity_id) == self.owner_id && self_ent.age.load(Ordering::Relaxed) < 5 {
+        if !self.projectile.can_hit_with_owner(self_ent, other, owner) {
             return true;
         }
 
@@ -1133,35 +918,12 @@ impl ArrowEntity {
         if (other_ent.entity_type == &pumpkin_data::entity::EntityType::ARROW
             || other_ent.entity_type == &pumpkin_data::entity::EntityType::SPECTRAL_ARROW)
             || other_ent.entity_type == &pumpkin_data::entity::EntityType::ITEM
-            || other_ent.entity_type == &pumpkin_data::entity::EntityType::FALLING_BLOCK
             || other_ent.entity_type == &pumpkin_data::entity::EntityType::AREA_EFFECT_CLOUD
         {
             return true;
         }
 
         false
-    }
-}
-
-/// Get the face of the block that was hit
-fn get_hit_face(hit_pos: Vector3<f64>, block_pos: BlockPos) -> pumpkin_data::BlockDirection {
-    use pumpkin_data::BlockDirection;
-
-    let local = hit_pos.sub(&block_pos.0.to_f64());
-    let eps = 1.0e-4;
-
-    if local.x <= eps {
-        BlockDirection::West
-    } else if local.x >= 1.0 - eps {
-        BlockDirection::East
-    } else if local.y <= eps {
-        BlockDirection::Down
-    } else if local.y >= 1.0 - eps {
-        BlockDirection::Up
-    } else if local.z <= eps {
-        BlockDirection::North
-    } else {
-        BlockDirection::South
     }
 }
 
@@ -1312,12 +1074,6 @@ mod tests {
         assert_eq!(effect.amplifier, 0);
         assert!(effect.show_particles);
         assert!(effect.show_icon);
-    }
-
-    #[test]
-    fn post_hurt_effects_require_successful_arrow_damage() {
-        assert!(!ArrowEntity::should_apply_post_hurt_effects(false));
-        assert!(ArrowEntity::should_apply_post_hurt_effects(true));
     }
 
     #[test]

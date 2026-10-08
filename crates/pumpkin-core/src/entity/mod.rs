@@ -149,6 +149,10 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         if let Some(living) = self.get_living_entity() {
             living.write_living_nbt(nbt);
         }
+        if let Some(projectile) = self.projectile_state() {
+            projectile.write_nbt(nbt);
+            projectile.write_motion_nbt(self.get_entity(), nbt);
+        }
         self.write_custom_nbt(nbt);
     }
 
@@ -161,6 +165,10 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         }
         if let Some(living) = self.get_living_entity() {
             living.read_living_nbt_non_mut(nbt);
+        }
+        if let Some(projectile) = self.projectile_state() {
+            projectile.read_nbt(nbt);
+            projectile.read_motion_nbt(self.get_entity(), nbt);
         }
         self.read_custom_nbt(nbt);
     }
@@ -205,8 +213,26 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         None
     }
 
-    fn get_owner_id(&self) -> Option<i32> {
+    /// Exposes Projectile ownership, persistence and deflection state.
+    fn projectile_state(&self) -> Option<&projectile::ownership::ProjectileState> {
         None
+    }
+
+    /// Resolves a projectile's owner across reloads and loaded dimensions.
+    fn projectile_owner(&self) -> Option<Arc<dyn EntityBase>> {
+        self.projectile_state().map_or_else(
+            || {
+                self.get_owner_id()
+                    .and_then(|id| self.get_entity().world.load().get_entity_by_id(id))
+            },
+            |state| state.owner(self.get_entity()),
+        )
+    }
+
+    fn get_owner_id(&self) -> Option<i32> {
+        self.projectile_state()?
+            .owner(self.get_entity())
+            .map(|owner| owner.get_entity().entity_id)
     }
 
     fn get_eye_pos(&self) -> Vector3<f64> {
@@ -241,6 +267,17 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         pitch: Option<f32>,
         world: Arc<World>,
     ) {
+        if self.projectile_state().is_some()
+            && projectile::ownership::teleport_projectile(
+                self.get_entity(),
+                position,
+                yaw,
+                pitch,
+                &world,
+            )
+        {
+            return;
+        }
         self.get_entity().teleport(position, yaw, pitch, &world);
     }
 

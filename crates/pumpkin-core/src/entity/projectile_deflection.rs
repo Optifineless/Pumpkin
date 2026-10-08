@@ -1,7 +1,7 @@
 use crate::entity::EntityBase;
 use std::sync::atomic::Ordering;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProjectileDeflectionType {
     None,
     Simple,
@@ -10,17 +10,31 @@ pub enum ProjectileDeflectionType {
 }
 
 impl ProjectileDeflectionType {
-    pub fn deflect(&self, projectile: &mut dyn EntityBase, hit_entity: Option<&dyn EntityBase>) {
+    pub fn deflect(&self, projectile: &dyn EntityBase, hit_entity: Option<&dyn EntityBase>) {
+        self.apply(
+            projectile,
+            hit_entity,
+            pumpkin_util::math::vector3::Vector3::new(1.0, 1.0, 1.0),
+        );
+    }
+
+    // ProjectileDeflection.REVERSE / AIM_DEFLECT / MOMENTUM_DEFLECT.
+    pub fn apply(
+        &self,
+        projectile: &dyn EntityBase,
+        hit_entity: Option<&dyn EntityBase>,
+        power: pumpkin_util::math::vector3::Vector3<f64>,
+    ) {
         match self {
             Self::None => {}
             Self::Simple => {
                 let vel = rand::random::<f32>().mul_add(20.0, 170.0);
 
-                let current_velocity = projectile
-                    .get_entity()
-                    .velocity
-                    .load()
-                    .multiply(-0.5, -0.5, -0.5);
+                let current_velocity = projectile.get_entity().velocity.load().multiply(
+                    -0.5 * power.x,
+                    -0.5 * power.y,
+                    -0.5 * power.z,
+                );
 
                 let entity = projectile.get_entity();
                 entity.velocity.store(current_velocity);
@@ -36,16 +50,26 @@ impl ProjectileDeflectionType {
                     let rotation_vector = hit_entity.get_entity().rotation();
 
                     let entity = projectile.get_entity();
-                    entity.velocity.store(rotation_vector.to_f64());
+                    entity
+                        .velocity
+                        .store(rotation_vector.to_f64().multiply(power.x, power.y, power.z));
                     entity.velocity_dirty.store(true, Ordering::Relaxed);
                 }
             }
             Self::TransferVelocityDirection => {
                 if let Some(hit_entity) = hit_entity {
-                    let hit_velocity = hit_entity.get_entity().velocity.load().normalize();
+                    let hit_velocity = hit_entity
+                        .get_player()
+                        .map_or_else(
+                            || hit_entity.get_entity().velocity.load(),
+                            super::player::Player::get_known_movement,
+                        )
+                        .normalize();
 
                     let entity = projectile.get_entity();
-                    entity.velocity.store(hit_velocity);
+                    entity
+                        .velocity
+                        .store(hit_velocity.multiply(power.x, power.y, power.z));
                     entity.velocity_dirty.store(true, Ordering::Relaxed);
                 }
             }

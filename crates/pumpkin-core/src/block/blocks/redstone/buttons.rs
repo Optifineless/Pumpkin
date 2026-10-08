@@ -43,7 +43,7 @@ fn get_sound(block: &Block, on: bool) -> Sound {
 /// Presses the button, unless it is already pressed. Returns whether it was
 /// pressed, so callers can tell the two cases apart the way vanilla's
 /// `ButtonBlock::useWithoutItem` does.
-fn click_button(world: &Arc<World>, block_pos: &BlockPos) -> bool {
+pub(crate) fn click_button(world: &Arc<World>, block_pos: &BlockPos) -> bool {
     let (block, state) = world.get_block_and_state_id(block_pos);
 
     let mut button_props = ButtonLikeProperties::from_state_id(state);

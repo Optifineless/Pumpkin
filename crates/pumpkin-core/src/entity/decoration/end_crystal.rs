@@ -81,17 +81,32 @@ impl EntityBase for EndCrystalEntity {
         damage_type: DamageType,
         _position: Option<Vector3<f64>>,
         _source: Option<&dyn EntityBase>,
-        _cause: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
     ) -> bool {
         if self.is_invulnerable() {
             return false;
         }
 
-        self.entity.remove();
         let world = self.entity.world.load();
+        let direct = world.get_entity_by_id(self.entity.entity_id);
+        self.entity.remove();
         if !damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_EXPLOSION) {
             let pos = self.entity.pos.load();
-            world.explode(pos, 6.0, crate::world::ExplosionInteraction::Block);
+            // EndCrystal.hurtServer preserves the triggering damage source's causing entity.
+            let cause = cause.and_then(|cause| {
+                crate::entity::projectile::ownership::resolve_owner(
+                    &world,
+                    cause.get_entity().entity_uuid,
+                )
+            });
+            let explosion = crate::world::Explosion::new(
+                6.0,
+                pos,
+                world.get_block_interaction(crate::world::ExplosionInteraction::Block),
+            )
+            .with_source(direct)
+            .with_cause(cause);
+            world.run_explosion(&explosion);
         }
 
         if let Some(ref fight_mutex) = world.dragon_fight

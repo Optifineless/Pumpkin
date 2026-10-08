@@ -24,8 +24,7 @@ impl SnowballEntity {
         // Initialize without owner
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: GRAVITY,
         };
@@ -41,12 +40,12 @@ impl SnowballEntity {
 }
 
 impl EntityBase for SnowballEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.thrown.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.thrown.projectile)
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        self.thrown.process_tick(caller);
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.thrown.process_tick(caller, server);
     }
 
     fn get_entity(&self) -> &Entity {
@@ -75,10 +74,7 @@ impl EntityBase for SnowballEntity {
             let is_blaze = entity.get_entity().entity_type.id == EntityType::BLAZE.id;
             let damage = if is_blaze { 3.0 } else { 0.0 }; // Only damage blazes
 
-            let owner = self
-                .thrown
-                .owner_id
-                .and_then(|id| world.get_entity_by_id(id));
+            let owner = self.projectile_owner();
             // Snowball.onHitEntity: direct projectile and causing owner.
             super::damage::hurt_entity(
                 entity.as_ref(),

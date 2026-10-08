@@ -27,8 +27,7 @@ impl EnderPearlEntity {
 
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: GRAVITY,
         };
@@ -44,12 +43,12 @@ impl EnderPearlEntity {
 }
 
 impl EntityBase for EnderPearlEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.thrown.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.thrown.projectile)
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        self.thrown.process_tick(caller);
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.thrown.process_tick(caller, server);
     }
 
     fn get_entity(&self) -> &Entity {
@@ -67,12 +66,8 @@ impl EntityBase for EnderPearlEntity {
         let entity = self.get_entity();
         let world = entity.world.load();
 
-        let attacker = self
-            .thrown
-            .owner_id
-            .and_then(|id| world.get_entity_by_id(id));
+        let attacker = self.projectile_owner();
 
-        let owner_id = self.thrown.owner_id;
         let teleport_pos = entity.last_pos.load();
 
         // ThrownEnderpearl.onHitEntity also delivers ownerless zero-damage hits.
@@ -89,8 +84,7 @@ impl EntityBase for EnderPearlEntity {
             );
         }
 
-        if let Some(owner_id) = owner_id
-            && let Some(owner) = world.get_entity_by_id(owner_id)
+        if let Some(owner) = self.projectile_owner()
             && owner.get_entity().is_alive()
             && owner.get_living_entity().is_none_or(|living| {
                 living.health.load() > 0.0 && owner.get_entity().pose.load() != EntityPose::Sleeping

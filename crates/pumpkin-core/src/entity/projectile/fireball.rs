@@ -1,5 +1,5 @@
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -26,7 +26,6 @@ pub const WATER_INERTIA: f64 = 0.8;
 pub struct FireballEntity {
     pub thrown: ThrownItemEntity,
     pub item_stack: RwLock<ItemStack>,
-    pub acceleration_power: AtomicU64,
     pub explosion_power: AtomicF32,
 }
 
@@ -35,8 +34,7 @@ impl FireballEntity {
     pub fn new(entity: Entity) -> Self {
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: 0.0,
         };
@@ -44,7 +42,6 @@ impl FireballEntity {
         Self {
             thrown,
             item_stack: RwLock::new(Self::get_default_item()),
-            acceleration_power: AtomicU64::new(INITIAL_ACCELERATION_POWER.to_bits()),
             explosion_power: AtomicF32::new(DEFAULT_EXPLOSION_POWER),
         }
     }
@@ -59,7 +56,6 @@ impl FireballEntity {
         Self {
             thrown,
             item_stack: RwLock::new(Self::get_default_item()),
-            acceleration_power: AtomicU64::new(accel.to_bits()),
             explosion_power: AtomicF32::new(DEFAULT_EXPLOSION_POWER),
         }
     }
@@ -72,11 +68,11 @@ impl FireballEntity {
     ) -> Self {
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: 0.0,
         };
+        thrown.projectile.set_acceleration_power(acceleration_power);
         let vel = direction.normalize().multiply(
             acceleration_power,
             acceleration_power,
@@ -87,7 +83,6 @@ impl FireballEntity {
         Self {
             thrown,
             item_stack: RwLock::new(Self::get_default_item()),
-            acceleration_power: AtomicU64::new(acceleration_power.to_bits()),
             explosion_power: AtomicF32::new(DEFAULT_EXPLOSION_POWER),
         }
     }
@@ -124,12 +119,11 @@ impl FireballEntity {
     }
 
     pub fn get_acceleration_power(&self) -> f64 {
-        f64::from_bits(self.acceleration_power.load(Ordering::Relaxed))
+        self.thrown.projectile.acceleration_power()
     }
 
     pub fn set_acceleration_power(&self, power: f64) {
-        self.acceleration_power
-            .store(power.to_bits(), Ordering::Relaxed);
+        self.thrown.projectile.set_acceleration_power(power);
     }
 
     pub fn get_explosion_power(&self) -> f32 {
@@ -138,15 +132,6 @@ impl FireballEntity {
 
     pub fn set_explosion_power(&self, power: f32) {
         self.explosion_power.store(power, Ordering::Relaxed);
-    }
-
-    pub fn on_deflection(&self, by_attack: bool) {
-        if by_attack {
-            self.set_acceleration_power(INITIAL_ACCELERATION_POWER);
-        } else {
-            let current = self.get_acceleration_power();
-            self.set_acceleration_power(current * DEFLECTION_SCALE);
-        }
     }
 
     pub fn should_render_at_sqr_distance(&self, distance_sqr: f64) -> bool {
@@ -168,25 +153,32 @@ impl FireballEntity {
 }
 
 impl EntityBase for FireballEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.thrown.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.thrown.projectile)
     }
 
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
-        nbt.put_double("acceleration_power", self.get_acceleration_power());
-        nbt.put_float("ExplosionPower", self.get_explosion_power());
+        // Fireball.addAdditionalSaveData / LargeFireball.addAdditionalSaveData.
+        let mut item = NbtCompound::new();
+        self.get_item().write_item_stack(&mut item);
+        nbt.put_compound("Item", item);
+        nbt.put_byte("ExplosionPower", self.get_explosion_power() as i8);
     }
 
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
-        if let Some(accel) = nbt
-            .get_double("acceleration_power")
-            .or_else(|| nbt.get_double("power"))
+        if let Some(item) = nbt
+            .get_compound("Item")
+            .and_then(ItemStack::read_item_stack)
         {
-            self.set_acceleration_power(accel);
+            self.set_item(item);
         }
-        if let Some(exp) = nbt.get_float("ExplosionPower") {
-            self.set_explosion_power(exp);
-        }
+        self.set_explosion_power(nbt.get_byte("ExplosionPower").map_or_else(
+            || {
+                nbt.get_float("ExplosionPower")
+                    .unwrap_or(DEFAULT_EXPLOSION_POWER)
+            },
+            f32::from,
+        ));
     }
 
     fn init_data_tracker(&self) {
@@ -202,28 +194,8 @@ impl EntityBase for FireballEntity {
         );
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        let entity = self.get_entity();
-        let mut velocity = entity.velocity.load();
-
-        let inertia = if entity.touching_water.load(Ordering::Relaxed) {
-            WATER_INERTIA
-        } else {
-            AIR_INERTIA
-        };
-
-        let accel = self.get_acceleration_power();
-        let speed = velocity.length();
-        if speed > 1e-6 {
-            let norm = velocity.normalize();
-            velocity = norm
-                .multiply(accel, accel, accel)
-                .add(&velocity)
-                .multiply(inertia, inertia, inertia);
-            entity.velocity.store(velocity);
-        }
-
-        self.thrown.process_tick(caller);
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.thrown.process_tick(caller, server);
     }
 
     fn get_entity(&self) -> &Entity {
@@ -242,10 +214,7 @@ impl EntityBase for FireballEntity {
         let world = self.get_entity().world.load();
 
         if let ProjectileHit::Entity { ref entity, .. } = hit {
-            let owner = self
-                .thrown
-                .owner_id
-                .and_then(|id| self.get_entity().world.load().get_entity_by_id(id));
+            let owner = self.projectile_owner();
             // LargeFireball.onHitEntity / DamageSources.fireball.
             let damage_type = if owner.is_some() {
                 pumpkin_data::damage::DamageType::FIREBALL
@@ -269,6 +238,12 @@ impl EntityBase for FireballEntity {
 
         let hit_pos = hit.hit_pos();
         let power = self.get_explosion_power();
-        world.explode(hit_pos, power, crate::world::ExplosionInteraction::Mob);
+        world.explode_from(
+            self,
+            hit_pos,
+            power,
+            crate::world::ExplosionInteraction::Mob,
+            world.level_info.load().game_rules.mob_griefing,
+        );
     }
 }

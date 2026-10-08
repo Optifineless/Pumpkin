@@ -108,8 +108,7 @@ identities only after verifying the player's ownership, using the same backup
 and UUID-reference procedure. Cross-edition linking requires a separately verified
 linking mechanism and is not provided by login claims. BungeeCord forwarding now
 requires a configured BungeeGuard secret on the proxy and backend.
-Native plugins must be rebuilt against plugin API version 4 because the session
-and command-source layouts changed. The Wasm API is unchanged.
+Native plugins must be rebuilt against plugin API version 8 (see Native plugin API below). The Wasm API is unchanged.
 
 Before upgrading an existing offline-mode world, run the UUID migration documented
 above and verify the migrated copy, including inventories and permissions.
@@ -156,6 +155,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Dust removed by water or explosions updates neighbours | Not yet |
 | Shields respect piercing shots, cooldowns and hand changes; death protectors use their configured effects (combat task 2 review follow-up, related to #3520) | Not yet |
 | Disconnect counts games quit once and keeps the saved statistic consistent with plugin changes and the scoreboard | Not yet |
+| Projectile and TNT owners persist by UUID; explosions, fireworks, splash potions and lingering clouds follow 26.3 damage and timing rules (combat task 4) | Not yet |
 
 ## Native plugin API 8
 
@@ -167,6 +167,7 @@ Rebuild native plugins against this checkout. The Wasm WIT is unchanged througho
 - API 6 (same version): command robustness adds methods to `CommandSource`, `ReturnValueCallable` and both `CommandExecutor` traits, the public `RedirectModifier::CustomUncharged` variant (update exhaustive matches), a `FunctionRunError::EmptyTag` variant and a new `DatapackManager` field, removes `MAX_FUNCTION_CHAIN_DEPTH`/`MAX_FUNCTION_CHAIN_COMMANDS`, and `reload_datapacks` no longer runs `#minecraft:load` synchronously. `CommandDispatcher::execute` installs a command quota context; a plugin's reentrant `handle_command` joins the caller's quota. `/function` and nested `execute_function` calls return 0 when scheduled; `/function` sends "Running function..." feedback before execution and reports an explicit function return later, including its result callbacks.
 - API 7: harvest integration changes mob death hooks, bucket data, item lifetime fields, chunk repair fields, teleport outcomes and the occupancy-free inventory predicate (retained from the fork head).
 - API 8: XP orbs. `Player.experience_pick_up_delay` is now an `AtomicU32`, replacing `Mutex<u32>`, and `EnchantmentHelper::modify_durability_to_repair_from_xp` takes and returns `i32`. `World` gains a temporary orb snapshot (layout change). Additive helpers: `ExperienceOrbEntity::{award, award_with_direction, spawn_single, new_empty, get_value}`, `collect_nearby_orbs`, `Entity::move_towards_closest_space`, `EnchantmentHelper::get_random_item_with_repair_effect`, and `furnace_experience::recipe_experience`. `InventoryPlayer::award_experience` now drops collectible orbs at the player for furnace output. Native plugins must be rebuilt; Wasm is unaffected.
+- API 8 (same version): projectile-state and explosion hooks change `EntityBase` vtables; `ExplodeArgs` carries the explosion context. Projectile ownership, cloud and explosion layouts also change. Rebuild native plugins against this checkout; API 7 from the harvest branch is incompatible. Wasm WIT is unchanged.
 
 The XP orb review fixes breeding/trading single-orb rewards, furnace collection and fractional XP, summon defaults, follow selection and collection after a dimension change. In-game verification remains **Not yet**. Merging is selective: only equal values in the same one-of-40 entity ID group combine; a small mob kill pile normally retains many visible orbs.
 
@@ -196,3 +197,10 @@ The following ports and corrections are checked against the supplied vanilla 26.
 
 Mob death hooks, bucket-data layouts, item lifetime fields, chunk repair fields, teleport outcomes and the occupancy-free inventory predicate change the native API, raising `PLUGIN_API_VERSION` from storage API 6 to 7. Rebuild native plugins. The Wasm WIT is unchanged.
 
+Combat task 4 changes projectile ownership, cloud and explosion layouts and adds projectile-state access to `EntityBase`, part of native API 8 (see the API section). Rebuild native plugins. Wasm WIT is unchanged. The 26.3 `deflects_projectiles` tag contains Breeze, not wind-charge entities.
+
+Combat task 4 leaves axolotl rehydration and detached weapon item-break callbacks to their mob and enchantment systems, which do not expose those operations on this base. Server and real-client play tests have not been run.
+
+Combat task 4 deep review: **Not yet** play tested. Healing splashes ignore zero amounts and dead targets; explosions use complete block loot; weapon enchantments survive arrow reloads; projectile ticks run the base lifecycle; trident pickups wait and respect ownership; spit continues after entity hits; strafing dragons launch travelling fireballs. Custom crystal and minecart damage attribution is independent of chained TNT ownership. Explosion rays stop at missing chunks and unknown terrain occludes exposure, a deliberate clamp until synchronous loading reads are available. Native API is 8. The unused melee deflection helper was removed; melee integration remains with its owning task.
+
+Combat task 4 verification follow-up: **Not yet** play tested. Pearl impacts teleport to the start of the impact tick; shulker bullets, rockets and fishing hooks run the base lifecycle. Explosion redirection uses the custom damage cause; broken unstable TNT and ownerless burning-arrow minecart blasts carry no owner. Hits are skipped after dimension changes, and Java shift-overflow healing can lower health. Missing projectile owners are retried once per world tick and after an owner or dimension change.

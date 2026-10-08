@@ -47,6 +47,9 @@ impl ItemMetadata for GlassBottleItem {
 
 impl ItemBehaviour for GlassBottleItem {
     fn normal_use(&self, _item: &Item, player: &Player) {
+        if crate::entity::area_effect_cloud::bottle::try_bottle(player) {
+            return;
+        }
         let world = player.world();
         let (start_pos, end_pos) = self.get_start_and_end_pos(player);
         let checker = |pos: &BlockPos, world_inner: &Arc<World>| {

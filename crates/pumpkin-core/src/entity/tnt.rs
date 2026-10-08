@@ -23,10 +23,10 @@ use std::{
 /// Vanilla `Entity.getAirDrag`, applied every tick.
 const AIR_DRAG: f32 = 0.98;
 
-// TODO: `owner` (igniter, projectile owner or explosion source): NBT, kill credit, damage source.
 // TODO: `block_state` NBT tag and `usedPortal` damage calculator.
 pub struct TNTEntity {
     entity: Entity,
+    owner_uuid: std::sync::Mutex<Option<uuid::Uuid>>,
     power: AtomicCell<f32>,
     fuse: AtomicU32,
 }
@@ -40,6 +40,7 @@ impl TNTEntity {
     pub const fn new(entity: Entity, power: f32, fuse: u32) -> Self {
         Self {
             entity,
+            owner_uuid: std::sync::Mutex::new(None),
             power: AtomicCell::new(power),
             fuse: AtomicU32::new(fuse),
         }
@@ -60,6 +61,25 @@ impl TNTEntity {
         Arc::new(Self::new(entity, Self::DEFAULT_POWER, fuse))
     }
 
+    /// Sets `PrimedTnt`'s living igniter, retained by UUID across saves and chain reactions.
+    pub fn set_owner(&self, owner: Option<&dyn EntityBase>) {
+        *self
+            .owner_uuid
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = owner
+            .filter(|owner| owner.get_living_entity().is_some())
+            .map(|owner| owner.get_entity().entity_uuid);
+    }
+
+    pub fn owner(&self) -> Option<Arc<dyn EntityBase>> {
+        let uuid = (*self
+            .owner_uuid
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner))?;
+        super::projectile::ownership::resolve_owner(&self.entity.world.load(), uuid)
+            .filter(|owner| owner.get_living_entity().is_some())
+    }
+
     /// Vanilla `PrimedTnt.getRandomShortFuse`.
     #[must_use]
     pub fn random_short_fuse(fuse: u32) -> u32 {
@@ -71,6 +91,13 @@ impl EntityBase for TNTEntity {
     /// Vanilla `PrimedTnt.addAdditionalSaveData`. Without it a chunk reload resets a
     /// nearly-detonated fuse and the TNT explodes late.
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
+        if let Some(owner) = *self
+            .owner_uuid
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            nbt.put_uuid("owner", owner);
+        }
         nbt.put_short("fuse", self.fuse.load(Relaxed) as i16);
         let power = self.power.load();
         if (power - Self::DEFAULT_POWER).abs() > f32::EPSILON {
@@ -80,6 +107,10 @@ impl EntityBase for TNTEntity {
 
     /// Vanilla `PrimedTnt.readAdditionalSaveData`.
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
+        *self
+            .owner_uuid
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = nbt.get_uuid("owner");
         let fuse = nbt
             .get_numeric_short("fuse")
             .map_or(Self::DEFAULT_FUSE, |fuse| fuse.max(0) as u32);
@@ -121,17 +152,20 @@ impl EntityBase for TNTEntity {
         );
 
         if fuse == 0 {
-            entity.remove();
             let world = entity.world.load_full();
+            let source = world.get_entity_by_id(entity.entity_id);
+            entity.remove();
             if world.level_info.load().game_rules.tnt_explodes {
                 // Vanilla `PrimedTnt.explode`: `getY(0.0625)`.
                 let pos = entity.pos.load();
                 let y = f64::from(entity.entity_type.dimension[1]).mul_add(0.0625, pos.y);
-                world.explode(
-                    Vector3::new(pos.x, y, pos.z),
+                let explosion = crate::world::Explosion::new(
                     self.power.load(),
-                    crate::world::ExplosionInteraction::Tnt,
-                );
+                    Vector3::new(pos.x, y, pos.z),
+                    world.get_block_interaction(crate::world::ExplosionInteraction::Tnt),
+                )
+                .with_source(source);
+                world.run_explosion(&explosion);
             }
         } else {
             entity.update_fluid_state(caller);

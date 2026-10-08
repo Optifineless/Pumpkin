@@ -736,8 +736,7 @@ impl DispenserBlock {
         );
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: WIND_CHARGE_GRAVITY,
         };
@@ -755,7 +754,7 @@ impl DispenserBlock {
     }
 
     fn dispense_firework_rocket(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let _ = item.split(1);
+        let rocket_item = item.split(1);
         let facing = to_normal(ctx.facing);
         // Vanilla spawns fireworks closer to the dispenser face and slightly above center.
         let position = ctx
@@ -764,7 +763,8 @@ impl DispenserBlock {
             .add(&(facing * (0.7 * 0.5125)))
             .add(&Vector3::new(0.0, 0.08, 0.0));
         let entity = Entity::new(ctx.world.clone(), position, &EntityType::FIREWORK_ROCKET);
-        let rocket = FireworkRocketEntity::new(entity);
+        let rocket = FireworkRocketEntity::with_item(entity, rocket_item, None, false);
+        rocket.set_shot_at_angle(true);
 
         // `FireworkRocketEntity` does not expose its inner projectile, so replicate
         // `ThrownItemEntity::set_velocity` here.

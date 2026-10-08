@@ -227,7 +227,7 @@ impl EntityBase for MinecartEntity {
                 } else if is_activator_rail {
                     match &self.kind {
                         MinecartKind::Tnt(minecart) => {
-                            minecart.prime(&self.vehicle.entity, 80);
+                            minecart.prime(&self.vehicle.entity, 80, None);
                         }
                         MinecartKind::Rideable(_) => {
                             if let Ok(passengers) = self.vehicle.entity.passengers.try_lock() {
@@ -436,6 +436,7 @@ impl EntityBase for MinecartEntity {
                 minecart.explode(
                     &self.vehicle.entity,
                     velocity.x.mul_add(velocity.x, velocity.z * velocity.z),
+                    None,
                 );
                 return;
             }
@@ -698,9 +699,17 @@ impl EntityBase for MinecartEntity {
             .contains(&projectile.get_entity().entity_type)
             && projectile.get_entity().is_on_fire()
         {
-            // MinecartTNT.hurtServer uses the burning direct AbstractArrow's velocity.
+            // MinecartTNT.hurtServer creates a fresh explosion source even with a null cause.
             let projectile_speed_squared = projectile.get_entity().velocity.load().length_squared();
-            minecart.explode(&self.vehicle.entity, projectile_speed_squared);
+            let source = crate::world::ExplosionDamageSource {
+                cause: cause.and_then(|cause| {
+                    crate::entity::projectile::ownership::resolve_owner(
+                        &self.vehicle.entity.world.load(),
+                        cause.get_entity().entity_uuid,
+                    )
+                }),
+            };
+            minecart.explode(&self.vehicle.entity, projectile_speed_squared, Some(source));
             if self.vehicle.entity.is_removed() {
                 return true;
             }
@@ -731,7 +740,7 @@ impl EntityBase for MinecartEntity {
                     .game_rules
                     .tnt_explodes
                 {
-                    minecart.prime(&self.vehicle.entity, fuse);
+                    minecart.prime(&self.vehicle.entity, fuse, cause);
                 } else {
                     minecart.set_fuse(fuse);
                 }

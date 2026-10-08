@@ -11,3 +11,5 @@ pub mod post_attack;
 mod post_attack_effects;
 mod repair;
 pub mod spawn_equipment;
+
+mod projectile_values;

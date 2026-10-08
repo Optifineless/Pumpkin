@@ -995,6 +995,7 @@ impl BlockRegistry {
         let pumpkin_block = self.get_pumpkin_block(block.id);
         if let Some(pumpkin_block) = pumpkin_block {
             pumpkin_block.explode(ExplodeArgs {
+                explosion: None,
                 world,
                 block,
                 position,

@@ -3,51 +3,8 @@ use crate::entity::living::test_support::armor_test_world;
 use pumpkin_data::{damage::DamageType, effect::StatusEffect};
 use std::sync::Mutex;
 
-#[derive(Debug, PartialEq)]
-struct Hit {
-    amount: f32,
-    kind: u8,
-    direct: Option<i32>,
-    cause: Option<i32>,
-    raw_position: Option<Vector3<f64>>,
-}
-struct Receiver {
-    living: LivingEntity,
-    hits: Mutex<Vec<Hit>>,
-    accepted: bool,
-}
-impl EntityBase for Receiver {
-    fn can_hit(&self) -> bool {
-        true
-    }
-    fn get_entity(&self) -> &Entity {
-        &self.living.entity
-    }
-    fn get_living_entity(&self) -> Option<&LivingEntity> {
-        Some(&self.living)
-    }
-    fn cast_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn damage_with_context(
-        &self,
-        _caller: &dyn EntityBase,
-        amount: f32,
-        kind: DamageType,
-        raw_position: Option<Vector3<f64>>,
-        direct: Option<&dyn EntityBase>,
-        cause: Option<&dyn EntityBase>,
-    ) -> bool {
-        self.hits.lock().unwrap().push(Hit {
-            amount,
-            kind: kind.id,
-            direct: direct.map(|e| e.get_entity().entity_id),
-            cause: cause.map(|e| e.get_entity().entity_id),
-            raw_position,
-        });
-        self.accepted
-    }
-}
+use super::test_support::{Hit, Receiver};
+
 fn hit(target: &Arc<Receiver>) -> ProjectileHit {
     ProjectileHit::Entity {
         entity: target.clone(),
@@ -82,7 +39,6 @@ async fn arrow_and_trident_hit_entry_points_deliver_owner_and_direct_without_raw
     );
     arrow.entity.velocity.store(Vector3::new(0.0, 0.0, 2.0));
     arrow.is_flame.store(true, Ordering::Relaxed);
-    arrow.punch_level.store(2, Ordering::Relaxed);
     arrow.on_hit(hit(&target));
     assert_eq!(
         target.hits.lock().unwrap()[0],
@@ -100,7 +56,15 @@ async fn arrow_and_trident_hit_entry_points_deliver_owner_and_direct_without_raw
         Entity::new(world, Vector3::default(), &EntityType::TRIDENT),
         Some(owner.entity.entity_id),
     );
+    trident.entity.velocity.store(Vector3::new(2.0, 3.0, 4.0));
     trident.on_hit(hit(&target));
+    assert_eq!(
+        trident.entity.velocity.load(),
+        Vector3::new(-0.02, -0.30000000000000004, -0.04)
+    );
+    let mut saved = pumpkin_nbt::compound::NbtCompound::new();
+    EntityBase::write_nbt(&trident, &mut saved);
+    assert_eq!(saved.get_bool("DealtDamage"), Some(true));
     let hits = target.hits.lock().unwrap();
     assert_eq!(hits[1].direct, Some(trident.entity.entity_id));
     assert_eq!(hits[1].cause, Some(owner.entity.entity_id));
@@ -161,12 +125,12 @@ async fn ownerless_and_nonliving_projectile_branches_match_vanilla_sources() {
         }
     );
     assert_eq!(target.get_entity().fire_ticks.load(Ordering::Relaxed), 11);
-    let mut skull = wither_skull::WitherSkullEntity::new(Entity::new(
+    let skull = wither_skull::WitherSkullEntity::new(Entity::new(
         world.clone(),
         Vector3::default(),
         &EntityType::WITHER_SKULL,
     ));
-    skull.thrown.owner_id = Some(owner.entity_id);
+    skull.thrown.projectile.set_owner(Some(&owner));
     skull.on_hit(hit(&target));
     assert_eq!(
         target.hits.lock().unwrap()[2],
@@ -179,13 +143,13 @@ async fn ownerless_and_nonliving_projectile_branches_match_vanilla_sources() {
         }
     );
     assert!(!target.living.has_effect(&StatusEffect::WITHER));
-    let mut spit = llama_spit::LlamaSpitEntity::new(Entity::new(
+    let spit = llama_spit::LlamaSpitEntity::new(Entity::new(
         world.clone(),
         Vector3::default(),
         &EntityType::LLAMA_SPIT,
     ));
     spit.on_hit(hit(&target));
-    spit.thrown.owner_id = Some(owner.entity_id);
+    spit.thrown.projectile.set_owner(Some(&owner));
     spit.on_hit(hit(&target));
     assert_eq!(target.hits.lock().unwrap().len(), 3);
     let pearl = ender_pearl::EnderPearlEntity::new(Entity::new(
@@ -413,12 +377,12 @@ async fn living_skull_owners_receive_eight_damage_context_and_only_success_appli
             hits: Mutex::default(),
             accepted,
         });
-        let mut skull = wither_skull::WitherSkullEntity::new(Entity::new(
+        let skull = wither_skull::WitherSkullEntity::new(Entity::new(
             world.clone(),
             Vector3::default(),
             &EntityType::WITHER_SKULL,
         ));
-        skull.thrown.owner_id = Some(owner.entity.entity_id);
+        skull.thrown.projectile.set_owner(Some(&owner.entity));
         skull.on_hit(hit(&target));
         assert_eq!(
             target.hits.lock().unwrap()[0],
@@ -519,4 +483,112 @@ async fn tnt_minecart_ignition_uses_the_direct_arrows_fire_state() {
         );
         assert_eq!(minecart.get_entity().is_removed(), arrow_burning);
     }
+}
+
+#[tokio::test]
+async fn attached_firework_uses_saved_component_damage_and_projectile_context() {
+    use pumpkin_data::data_component_impl::{
+        FireworkExplosionImpl, FireworkExplosionShape, FireworksImpl,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let world = armor_test_world(dir.path());
+    let target = Arc::new(Receiver {
+        living: LivingEntity::new(Entity::new(
+            world.clone(),
+            Vector3::default(),
+            &EntityType::COW,
+        )),
+        hits: Mutex::default(),
+        accepted: true,
+    });
+    world.entities.store(Arc::new(vec![target.clone()]));
+    let mut stack = ItemStack::new(1, &pumpkin_data::item::Item::FIREWORK_ROCKET);
+    stack.set_data_component(FireworksImpl::new(
+        3,
+        vec![FireworkExplosionImpl::new(
+            FireworkExplosionShape::SmallBall,
+            vec![0xff0000],
+            vec![],
+            false,
+            false,
+        )],
+    ));
+    let rocket = firework_rocket::FireworkRocketEntity::with_item(
+        Entity::new(
+            world.clone(),
+            Vector3::default(),
+            &EntityType::FIREWORK_ROCKET,
+        ),
+        stack,
+        Some(target.get_entity()),
+        true,
+    );
+    let mut nbt = pumpkin_nbt::compound::NbtCompound::new();
+    EntityBase::write_nbt(&rocket, &mut nbt);
+    assert!((40..=51).contains(&nbt.get_int("LifeTime").unwrap()));
+    assert!(nbt.get_compound("FireworksItem").is_some());
+    rocket.explode_and_remove(&world);
+    assert_eq!(
+        *target.hits.lock().unwrap(),
+        vec![Hit {
+            amount: 7.0,
+            kind: DamageType::FIREWORKS.id,
+            direct: Some(rocket.get_entity().entity_id),
+            cause: Some(target.get_entity().entity_id),
+            raw_position: None,
+        }]
+    );
+    assert!(rocket.get_entity().is_removed());
+}
+
+#[tokio::test]
+async fn piercing_arrow_hits_two_targets_in_one_tick_and_advances_to_the_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let world = armor_test_world(dir.path());
+    world.level.loaded_chunks.insert(
+        pumpkin_util::math::vector2::Vector2::new(0, 0),
+        pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
+    );
+    let first = Arc::new(Receiver {
+        living: LivingEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(3.0, 65.0, 8.0),
+            &EntityType::COW,
+        )),
+        hits: Mutex::default(),
+        accepted: true,
+    });
+    let second = Arc::new(Receiver {
+        living: LivingEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(5.0, 65.0, 8.0),
+            &EntityType::COW,
+        )),
+        hits: Mutex::default(),
+        accepted: true,
+    });
+    world
+        .entities
+        .store(Arc::new(vec![first.clone(), second.clone()]));
+    let start = Vector3::new(1.0, 65.5, 8.0);
+    let movement = Vector3::new(8.0, 0.0, 0.0);
+    let arrow = arrow::ArrowEntity::new(Entity::new(world, start, &EntityType::ARROW), None);
+    arrow.entity.velocity.store(movement);
+    arrow.set_pierce_level(2);
+    arrow.step_move_and_hit(&arrow, start, start + movement, movement);
+    for target in [first, second] {
+        assert_eq!(
+            *target.hits.lock().unwrap(),
+            vec![Hit {
+                amount: 16.0,
+                kind: DamageType::ARROW.id,
+                direct: Some(arrow.entity.entity_id),
+                cause: Some(arrow.entity.entity_id),
+                raw_position: None,
+            }]
+        );
+    }
+    assert_eq!(arrow.pierced_entities.read().unwrap().len(), 2);
+    assert_eq!(arrow.entity.pos.load(), start + movement);
+    assert!(!arrow.entity.is_removed());
 }

@@ -19,7 +19,7 @@ use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 
-fn ring_bell(
+pub(crate) fn ring_bell(
     position: BlockPos,
     world: &Arc<World>,
     hit_direction: Option<HorizontalFacing>,

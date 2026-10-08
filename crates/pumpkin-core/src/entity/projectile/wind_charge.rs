@@ -41,7 +41,7 @@ pub static WIND_CHARGE_EXPLOSION_DAMAGE_CALCULATOR: LazyLock<Arc<SimpleExplosion
     LazyLock::new(|| {
         Arc::new(SimpleExplosionDamageCalculator::new(
             false,
-            false,
+            true,
             Some(1.22),
             Some(&tag::Block::MINECRAFT_BLOCKS_WIND_CHARGE_EXPLOSIONS),
         ))
@@ -52,7 +52,7 @@ pub static BREEZE_WIND_CHARGE_EXPLOSION_DAMAGE_CALCULATOR: LazyLock<
 > = LazyLock::new(|| {
     Arc::new(SimpleExplosionDamageCalculator::new(
         false,
-        false,
+        true,
         None,
         Some(&tag::Block::MINECRAFT_BLOCKS_WIND_CHARGE_EXPLOSIONS),
     ))
@@ -60,7 +60,8 @@ pub static BREEZE_WIND_CHARGE_EXPLOSION_DAMAGE_CALCULATOR: LazyLock<
 
 impl WindChargeEntity {
     #[must_use]
-    pub const fn new_normal(thrown_item_entity: ThrownItemEntity) -> Self {
+    pub fn new_normal(thrown_item_entity: ThrownItemEntity) -> Self {
+        thrown_item_entity.projectile.set_acceleration_power(0.0);
         Self {
             kind: WindChargeKind::Normal {
                 deflect_cooldown: AtomicU8::new(DEFAULT_DEFLECT_COOLDOWN),
@@ -70,7 +71,8 @@ impl WindChargeEntity {
     }
 
     #[must_use]
-    pub const fn new_breeze(thrown_item_entity: ThrownItemEntity) -> Self {
+    pub fn new_breeze(thrown_item_entity: ThrownItemEntity) -> Self {
+        thrown_item_entity.projectile.set_acceleration_power(0.0);
         Self {
             kind: WindChargeKind::Breeze,
             thrown_item_entity,
@@ -101,7 +103,9 @@ impl WindChargeEntity {
                 Sound::EntityBreezeWindBurst,
             ),
         };
+        let world = self.get_entity().world.load();
         let explosion = Explosion::new(power, position, BlockInteraction::TriggerBlock)
+            .with_source(world.get_entity_by_id(self.get_entity().entity_id))
             .with_damage_calculator(calculator)
             .with_particles_and_sound(
                 Particle::GustEmitterSmall,
@@ -112,7 +116,7 @@ impl WindChargeEntity {
     }
 
     pub fn deflect(
-        &mut self,
+        &self,
         deflection: &ProjectileDeflectionType,
         deflector: Option<&dyn EntityBase>,
     ) -> bool {
@@ -122,18 +126,24 @@ impl WindChargeEntity {
             return false;
         }
 
-        deflection.deflect(self, deflector);
-        true
+        super::deflection::deflect(
+            self,
+            *deflection,
+            deflector,
+            deflector,
+            true,
+            Vector3::new(1.0, 1.0, 1.0),
+        )
     }
 }
 
 impl EntityBase for WindChargeEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.thrown_item_entity.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.thrown_item_entity.projectile)
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        self.thrown_item_entity.process_tick(caller);
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.thrown_item_entity.process_tick(caller, server);
 
         if let Some(cooldown) = self.deflect_cooldown() {
             let cooldown_ticks = cooldown.load(Ordering::Relaxed);
@@ -158,11 +168,12 @@ impl EntityBase for WindChargeEntity {
     fn on_hit(&self, hit: ProjectileHit) {
         let hit_pos = hit.hit_pos();
         if let ProjectileHit::Entity { ref entity, .. } = hit {
-            let world = self.get_entity().world.load();
-            let owner_id = self.thrown_item_entity.owner_id;
-            let owner = owner_id.and_then(|id| world.get_entity_by_id(id));
+            let owner = self.projectile_owner();
+            if let Some(living) = owner.as_deref().and_then(EntityBase::get_living_entity) {
+                living.set_last_hurt_mob(entity.as_ref());
+            }
 
-            let _ = super::damage::hurt_entity(
+            let damaged = super::damage::hurt_entity(
                 entity.as_ref(),
                 1.0,
                 DamageType::WIND_CHARGE,
@@ -171,6 +182,14 @@ impl EntityBase for WindChargeEntity {
                     .as_deref()
                     .filter(|owner| owner.get_living_entity().is_some()),
             );
+            if damaged && entity.get_living_entity().is_some() {
+                super::damage::post_attack(
+                    entity.as_ref(),
+                    DamageType::WIND_CHARGE,
+                    self,
+                    owner.as_deref(),
+                );
+            }
         }
         let explosion_pos = if let ProjectileHit::Block { face, .. } = hit {
             hit_pos + face.to_offset().to_f64() * JUMP_SCALE

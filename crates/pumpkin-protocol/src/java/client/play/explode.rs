@@ -27,8 +27,18 @@ pub struct CExplosion {
     pub particle: VarInt,
     /// The sound to play (e.g., `minecraft:entity.generic.explode`).
     pub sound: IdOr<SoundEvent>,
-    /// The size of the block particles pool, used for debris visuals in 1.21.9+.
-    pub block_particles_pool_size: VarInt,
+    /// Weighted debris particles used by 1.21.9 and newer clients.
+    pub block_particles: Vec<ExplosionParticleInfo>,
+    pub play_sound: bool,
+}
+
+/// `ClientboundExplodePacket`'s weighted `ExplosionParticleInfo` entries.
+#[derive(Clone, PartialEq)]
+pub struct ExplosionParticleInfo {
+    pub particle: VarInt,
+    pub scaling: f32,
+    pub speed: f32,
+    pub weight: VarInt,
 }
 
 impl CExplosion {
@@ -48,7 +58,8 @@ impl CExplosion {
             knockback,
             particle,
             sound,
-            block_particles_pool_size: VarInt(0),
+            block_particles: Vec::new(),
+            play_sound: true,
         }
     }
 }
@@ -90,12 +101,19 @@ impl ClientPacket for CExplosion {
             })?;
 
             if *version >= JavaMinecraftVersion::V_1_21_9 {
-                write.write_var_int(&self.block_particles_pool_size)?;
+                write.write_var_int(&VarInt(self.block_particles.len() as i32))?;
+                for entry in &self.block_particles {
+                    // ExplosionParticleInfo.STREAM_CODEC followed by Weighted.streamCodec's weight.
+                    write.write_var_int(&entry.particle)?;
+                    write.write_f32_be(entry.scaling)?;
+                    write.write_f32_be(entry.speed)?;
+                    write.write_var_int(&entry.weight)?;
+                }
             }
 
             // Whether the explosion sound is played, added in 26.3
             if *version >= JavaMinecraftVersion::V_26_3 {
-                write.write_bool(true)?;
+                write.write_bool(self.play_sound)?;
             }
         } else {
             write.write_f32_be(self.radius)?;
@@ -188,5 +206,29 @@ mod tests {
             encoded_particle_id(JavaMinecraftVersion::V_26_3),
             VarInt(29)
         );
+    }
+    #[test]
+    fn explosion_26_3_encodes_weight_after_particle_and_preserves_silence() {
+        // ClientboundExplodePacket.STREAM_CODEC / ExplosionParticleInfo.STREAM_CODEC / Weighted.streamCodec.
+        let mut packet = CExplosion::new(Vector3::default(), 4.0, 2, None, VarInt(29), IdOr::Id(0));
+        packet.block_particles.push(super::ExplosionParticleInfo {
+            particle: VarInt(29),
+            scaling: 0.5,
+            speed: 1.0,
+            weight: VarInt(2),
+        });
+        packet.play_sound = false;
+        let mut bytes = Vec::new();
+        packet
+            .write_packet_data(&mut bytes, &JavaMinecraftVersion::V_26_3)
+            .unwrap();
+        let mut expected = vec![0; 24];
+        expected.extend_from_slice(&[
+            0x40, 0x80, 0, 0, 0, 0, 0, 2, // radius and block count
+            0, 29, 1, 1, // absent knockback, particle, holder ID + 1, pool size
+            29, 0x3f, 0, 0, 0, 0x3f, 0x80, 0, 0, 2, // value then weight
+            0, // silent
+        ]);
+        assert_eq!(bytes, expected);
     }
 }

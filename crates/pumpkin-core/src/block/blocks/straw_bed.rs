@@ -296,11 +296,7 @@ impl StrawBedBlock {
         if world.dimension.bed_rule.explodes {
             world.break_block(&bed_head_pos, None, BlockFlags::SKIP_DROPS);
             world.break_block(&bed_foot_pos, None, BlockFlags::SKIP_DROPS);
-            world.explode(
-                bed_head_pos.to_centered_f64(),
-                5.0,
-                crate::world::ExplosionInteraction::Block,
-            );
+            world.explode_bad_respawn(bed_head_pos.to_centered_f64());
             return BlockActionResult::SuccessServer;
         }
 

@@ -66,15 +66,6 @@ impl ProjectileWeaponItem {
         let arrow =
             ArrowEntity::new_shot_with_weapon(arrow_entity, shooter, projectile, weapon, pickup);
 
-        // Apply data-driven weapon enchantment modifications
-        arrow.set_base_damage(EnchantmentHelper::modify_damage(
-            weapon,
-            arrow.get_base_damage(),
-        ));
-        arrow.punch_level.store(
-            EnchantmentHelper::modify_knockback(weapon, 0.0) as u8,
-            Ordering::Relaxed,
-        );
         arrow.set_pierce_level(EnchantmentHelper::process_projectile_piercing(weapon, 0));
 
         // Data-driven PROJECTILE_SPAWNED effects (e.g. Flame enchantment -> Ignite effect)
@@ -174,6 +165,17 @@ impl ProjectileWeaponItem {
             let angle = angle_offset + direction * (i.div_ceil(2) as f32) * angle_step;
             direction = -direction;
 
+            if projectile.item == &Item::FIREWORK_ROCKET {
+                crate::entity::projectile::firework_rocket::FireworkRocketEntity::shoot(
+                    world,
+                    shooter,
+                    projectile,
+                    pitch,
+                    yaw + angle,
+                    uncertainty,
+                );
+                continue;
+            }
             let arrow = Self::create_projectile(
                 world.clone(),
                 shooter,

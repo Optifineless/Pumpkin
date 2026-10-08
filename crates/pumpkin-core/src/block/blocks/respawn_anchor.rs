@@ -56,9 +56,7 @@ impl BlockBehaviour for RespawnAnchorBlock {
         if !args.world.dimension.respawn_anchor_works {
             args.world
                 .break_block(args.position, None, BlockFlags::SKIP_DROPS);
-            let center_pos = args.position.to_centered_f64();
-            args.world
-                .explode(center_pos, 5.0, crate::world::ExplosionInteraction::Block);
+            args.world.explode_respawn_anchor(*args.position);
             return BlockActionResult::SuccessServer;
         }
 

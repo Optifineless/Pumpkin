@@ -19,7 +19,7 @@ use pumpkin_world::world::BlockFlags;
 
 type FenceGateProperties = pumpkin_data::block_properties::OakFenceGateLikeProperties;
 
-fn get_sound(block: &Block, open: bool) -> Sound {
+pub(crate) fn get_sound(block: &Block, open: bool) -> Sound {
     match (block, open) {
         (b, true) if b == &Block::BAMBOO_FENCE_GATE => Sound::BlockBambooWoodFenceGateOpen,
         (b, false) if b == &Block::BAMBOO_FENCE_GATE => Sound::BlockBambooWoodFenceGateClose,

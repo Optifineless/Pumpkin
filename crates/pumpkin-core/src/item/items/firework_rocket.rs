@@ -43,7 +43,8 @@ impl ItemBehaviour for FireworkRocketItem {
             ),
             &EntityType::FIREWORK_ROCKET,
         );
-        let entity = FireworkRocketEntity::new(entity);
+        let entity =
+            FireworkRocketEntity::with_item(entity, item.clone(), Some(player.get_entity()), false);
         world.spawn_entity(Arc::new(entity));
         item.decrement_unless_creative(player.gamemode.load(), 1);
         BlockActionResult::Success
@@ -57,9 +58,6 @@ impl ItemBehaviour for FireworkRocketItem {
                 player.get_entity().pos.load(),
                 &EntityType::FIREWORK_ROCKET,
             );
-            let entity = FireworkRocketEntity::new_shot(entity, player.get_entity());
-            world.spawn_entity(Arc::new(entity));
-
             let mut held = player.inventory().held_item();
             let mut is_main = true;
             if held.is_empty() || held.item.id != Item::FIREWORK_ROCKET.id {
@@ -69,6 +67,13 @@ impl ItemBehaviour for FireworkRocketItem {
                     return;
                 }
             }
+            let rocket = FireworkRocketEntity::with_item(
+                entity,
+                held.clone(),
+                Some(player.get_entity()),
+                true,
+            );
+            world.spawn_entity(Arc::new(rocket));
             held.decrement_unless_creative(player.gamemode.load(), 1);
             if is_main {
                 player.inventory().set_held_item(held);

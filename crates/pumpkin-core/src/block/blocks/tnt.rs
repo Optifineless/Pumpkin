@@ -25,9 +25,20 @@ use crate::world::World;
 #[pumpkin_block("minecraft:tnt")]
 pub struct TNTBlock;
 
+#[cfg(test)]
+mod verification_tests;
+
 impl TNTBlock {
     /// Vanilla `TntBlock.prime` plus the block removal its callers do.
     pub fn prime(world: &Arc<World>, location: &BlockPos) -> bool {
+        Self::prime_with_owner(world, location, None)
+    }
+
+    fn prime_with_owner(
+        world: &Arc<World>,
+        location: &BlockPos,
+        owner: Option<&dyn EntityBase>,
+    ) -> bool {
         if !world.level_info.load().game_rules.tnt_explodes {
             return false;
         }
@@ -43,7 +54,7 @@ impl TNTBlock {
             return false;
         };
 
-        if Self::spawn_primed(world, location) {
+        if Self::spawn_primed_with_owner(world, location, owner) {
             return true;
         }
 
@@ -60,9 +71,18 @@ impl TNTBlock {
 
     /// Primes a TNT block the caller already took out of the world.
     pub fn spawn_primed(world: &Arc<World>, location: &BlockPos) -> bool {
+        Self::spawn_primed_with_owner(world, location, None)
+    }
+
+    fn spawn_primed_with_owner(
+        world: &Arc<World>,
+        location: &BlockPos,
+        owner: Option<&dyn EntityBase>,
+    ) -> bool {
         let Some(tnt) = Self::prepare(world, location) else {
             return false;
         };
+        tnt.set_owner(owner);
         Self::ignite(world, location, tnt);
         true
     }
@@ -121,7 +141,7 @@ impl BlockBehaviour for TNTBlock {
             return BlockActionResult::PassToDefaultBlockAction;
         }
 
-        if Self::prime(args.world, args.position) {
+        if Self::prime_with_owner(args.world, args.position, Some(args.player.as_ref())) {
             if args.player.gamemode.load() != GameMode::Creative {
                 if item_id == Item::FLINT_AND_STEEL.id {
                     let _ = args.item_stack.damage_item(1);
@@ -159,7 +179,8 @@ impl BlockBehaviour for TNTBlock {
         if args.player.gamemode.load() != GameMode::Creative {
             let props = TntLikeProperties::from_state_id(args.state.id);
             if props.r#unstable {
-                // `break_block` already swapped the TNT away, so `prime` would find no TNT here.
+                // TntBlock.playerWillDestroy primes unstable TNT without an owner.
+                // break_block already removed the block, so spawn directly.
                 Self::spawn_primed(args.world, args.position);
             }
         }
@@ -167,7 +188,8 @@ impl BlockBehaviour for TNTBlock {
 
     fn on_projectile_hit(&self, args: OnProjectileHitArgs<'_>) {
         if args.projectile.get_entity().is_on_fire() {
-            Self::prime(args.world, args.position);
+            let owner = args.projectile.projectile_owner();
+            Self::prime_with_owner(args.world, args.position, owner.as_deref());
         }
     }
 
@@ -178,6 +200,10 @@ impl BlockBehaviour for TNTBlock {
         }
         let fuse = TNTEntity::random_short_fuse(TNTEntity::DEFAULT_FUSE);
         let tnt = TNTEntity::primed(args.world, args.position, fuse);
+        let owner = args
+            .explosion
+            .and_then(crate::world::Explosion::indirect_source);
+        tnt.set_owner(owner.as_deref());
         args.world.spawn_entity(tnt);
     }
 

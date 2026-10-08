@@ -36,7 +36,11 @@ impl ItemBehaviour for CrossbowItem {
             return;
         }
 
-        let has_arrows = player.find_arrow().is_some();
+        let has_arrows =
+            crate::entity::projectile::firework_rocket::FireworkRocketEntity::crossbow_ammunition(
+                player,
+            )
+            .is_some();
         if !has_arrows && player.gamemode.load() != GameMode::Creative {
             return;
         }
@@ -55,7 +59,7 @@ impl ItemBehaviour for CrossbowItem {
             crate::enchantment::EnchantmentHelper::modify_crossbow_charge_time(&stack, 25);
 
         if use_ticks >= charge_time {
-            let arrow_slot = player.find_arrow();
+            let arrow_slot = crate::entity::projectile::firework_rocket::FireworkRocketEntity::crossbow_ammunition(player);
             let gamemode = player.gamemode.load();
             let is_creative = gamemode == GameMode::Creative;
 

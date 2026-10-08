@@ -21,8 +21,7 @@ impl SmallFireballEntity {
     pub const fn new(entity: Entity) -> Self {
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: GRAVITY,
         };
@@ -43,12 +42,12 @@ impl SmallFireballEntity {
 }
 
 impl EntityBase for SmallFireballEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.thrown.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.thrown.projectile)
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        self.thrown.process_tick(caller);
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.thrown.process_tick(caller, server);
     }
 
     fn get_entity(&self) -> &Entity {
@@ -70,10 +69,7 @@ impl EntityBase for SmallFireballEntity {
                     .fire_ticks
                     .load(std::sync::atomic::Ordering::Relaxed);
                 entity.get_entity().set_on_fire_for(5.0);
-                let owner = self
-                    .thrown
-                    .owner_id
-                    .and_then(|id| self.get_entity().world.load().get_entity_by_id(id));
+                let owner = self.projectile_owner();
                 // SmallFireball.onHitEntity / DamageSources.fireball.
                 let damage_type = if owner.is_some() {
                     pumpkin_data::damage::DamageType::FIREBALL
@@ -112,7 +108,28 @@ impl EntityBase for SmallFireballEntity {
                     pumpkin_data::BlockDirection::East => pos.east(),
                 };
                 let world = self.get_entity().world.load();
-                let fire_state = pumpkin_data::Block::FIRE.default_state.id;
+                // SmallFireball.onHitBlock only ignites empty space, respecting a mob owner's griefing rule.
+                let owner = self.projectile_owner();
+                if owner.as_ref().is_some_and(|owner| {
+                    owner.get_living_entity().is_some() && owner.get_player().is_none()
+                }) && !world.level_info.load().game_rules.mob_griefing
+                    || !world.get_block_state(&block_to_place).is_air()
+                {
+                    return;
+                }
+                let block = crate::block::blocks::fire::FireBlockBase::get_fire_type(
+                    &world,
+                    &block_to_place,
+                );
+                let fire_state = if block == pumpkin_data::Block::FIRE {
+                    crate::block::blocks::fire::fire::FireBlock.get_state_for_position(
+                        &world,
+                        &block,
+                        &block_to_place,
+                    )
+                } else {
+                    block.default_state.id
+                };
                 world.set_block_state(
                     &block_to_place,
                     fire_state,

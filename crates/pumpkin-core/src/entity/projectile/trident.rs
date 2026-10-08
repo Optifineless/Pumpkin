@@ -5,7 +5,6 @@ use crate::{
     entity::{Entity, EntityBase, living::LivingEntity, player::Player},
     server::Server,
 };
-use pumpkin_data::damage::DamageType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
@@ -20,19 +19,20 @@ use super::{ProjectileHit, calculate_ray_intersection};
 
 pub struct TridentEntity {
     pub entity: Entity,
-    pub owner_id: Option<i32>,
+    pub projectile: super::ownership::ProjectileState,
     pub item_stack: Arc<Mutex<ItemStack>>,
-    pub pickup: ArrowPickup,
+    pub pickup: crossbeam::atomic::AtomicCell<ArrowPickup>,
     pub in_ground: AtomicBool,
     pub in_ground_time: AtomicU32,
     pub life: AtomicU32,
     pub shake_time: AtomicU8,
     pub has_hit: AtomicBool,
+    pub(super) dealt_damage: AtomicBool,
     pub last_block_pos: Arc<std::sync::RwLock<Option<BlockPos>>>,
 }
 
 impl TridentEntity {
-    const BASE_DAMAGE: f64 = 8.0;
+    pub(super) const BASE_DAMAGE: f64 = 8.0;
     // ThrownTrident.getWaterInertia.
     const WATER_INERTIA: f64 = 0.99f32 as f64;
     const GRAVITY: f64 = 0.05;
@@ -40,15 +40,16 @@ impl TridentEntity {
 
     pub fn new(entity: Entity, owner_id: Option<i32>) -> Self {
         Self {
+            projectile: super::ownership::ProjectileState::from_id(&entity, owner_id),
             entity,
-            owner_id,
             item_stack: Arc::new(Mutex::new(ItemStack::new(1, &Item::TRIDENT))),
-            pickup: ArrowPickup::Disallowed,
+            pickup: crossbeam::atomic::AtomicCell::new(ArrowPickup::Disallowed),
             in_ground: AtomicBool::new(false),
             in_ground_time: AtomicU32::new(0),
             life: AtomicU32::new(0),
             shake_time: AtomicU8::new(0),
             has_hit: AtomicBool::new(false),
+            dealt_damage: AtomicBool::new(false),
             last_block_pos: Arc::new(std::sync::RwLock::new(None)),
         }
     }
@@ -66,14 +67,15 @@ impl TridentEntity {
 
         Self {
             entity,
-            owner_id: Some(shooter.entity_id),
+            projectile: super::ownership::ProjectileState::new(Some(shooter.entity_uuid)),
             item_stack: Arc::new(Mutex::new(item_stack)),
-            pickup,
+            pickup: crossbeam::atomic::AtomicCell::new(pickup),
             in_ground: AtomicBool::new(false),
             in_ground_time: AtomicU32::new(0),
             life: AtomicU32::new(0),
             shake_time: AtomicU8::new(0),
             has_hit: AtomicBool::new(false),
+            dealt_damage: AtomicBool::new(false),
             last_block_pos: Arc::new(std::sync::RwLock::new(None)),
         }
     }
@@ -155,46 +157,30 @@ impl TridentEntity {
         )
         .expand(0.3, 0.3, 0.3);
 
-        let mut closest_t = 1.0f64;
-        let mut hit = None;
-
-        // Block collisions
-        let (block_cols, block_positions) =
-            world.get_block_collisions(search_box, self.get_entity());
-        for (idx, bb) in block_cols.iter().enumerate() {
-            if let Some(t) = calculate_ray_intersection(&start_pos, &movement, bb)
-                && t < closest_t
-            {
-                closest_t = t;
-
-                // Map back to block pos
-                let mut curr = 0;
-                for (len, pos) in &block_positions {
-                    curr += len;
-                    if idx < curr {
-                        let hit_pos = start_pos.add(&movement.multiply(t, t, t));
-                        hit = Some(ProjectileHit::Block {
-                            pos: *pos,
-                            face: get_hit_face(hit_pos, *pos),
-                            hit_pos,
-                            normal: movement.normalize().multiply(-1.0, -1.0, -1.0),
-                        });
-                        break;
-                    }
-                }
-            }
-        }
+        let mut hit = super::collision::first_block_hit(caller, start_pos, movement);
+        let movement = hit
+            .as_ref()
+            .map_or(movement, |hit| hit.hit_pos() - start_pos);
+        let mut closest_t = 1.0;
 
         // Entity collisions
+        let owner = self.projectile_owner();
         let candidates = world.get_all_at_box(&search_box);
         for cand in candidates.into_iter().filter(super::can_hit_entity) {
-            if self.should_skip_collision(entity, &cand)
-                || !super::arrow::can_hit_player(entity, self.owner_id, &cand)
+            if self.dealt_damage.load(Ordering::Relaxed) {
+                break;
+            }
+            if self.should_skip_collision(entity, &cand, owner.as_ref())
+                || !super::arrow::can_hit_player(entity, owner.as_deref(), &cand)
             {
                 continue;
             }
 
-            let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
+            let ebb = cand
+                .get_entity()
+                .bounding_box
+                .load()
+                .expand_all(super::collision::compute_margin(entity));
             if let Some(t) = calculate_ray_intersection(&start_pos, &movement, &ebb)
                 && t < closest_t
             {
@@ -208,19 +194,29 @@ impl TridentEntity {
             }
         }
 
-        // Handle hit
+        // AbstractArrow.stepMoveAndHit applies swept effects at contact before deflection.
+        entity.set_pos(hit.as_ref().map_or(new_pos, ProjectileHit::hit_pos));
+        super::block_effects::apply(caller, start_pos, entity.pos.load());
+        if !entity.is_alive() {
+            return;
+        }
         if let Some(h) = hit {
-            entity.set_pos(h.hit_pos());
+            if super::deflection::hit_target_or_deflect_self(caller, &h) {
+                return;
+            }
             if !self.has_hit.swap(true, Ordering::SeqCst) {
-                caller.on_hit(h);
+                super::collision::on_hit(caller, h);
                 entity.velocity_dirty.store(true, Ordering::Relaxed);
             }
-        } else {
-            entity.set_pos(new_pos);
         }
     }
 
-    fn should_skip_collision(&self, self_ent: &Entity, other: &Arc<dyn EntityBase>) -> bool {
+    fn should_skip_collision(
+        &self,
+        self_ent: &Entity,
+        other: &Arc<dyn EntityBase>,
+        owner: Option<&Arc<dyn EntityBase>>,
+    ) -> bool {
         let other_ent = other.get_entity();
 
         // Don't collide with self
@@ -228,17 +224,7 @@ impl TridentEntity {
             return true;
         }
 
-        // Skip owner for initial frames (5 ticks)
-        if Some(other_ent.entity_id) == self.owner_id && self_ent.age.load(Ordering::Relaxed) < 5 {
-            return true;
-        }
-
-        // Skip other projectiles and item entities
-        if other_ent.entity_type == &pumpkin_data::entity::EntityType::ARROW
-            || other_ent.entity_type == &pumpkin_data::entity::EntityType::TRIDENT
-            || other_ent.entity_type == &pumpkin_data::entity::EntityType::ITEM
-            || other_ent.entity_type == &pumpkin_data::entity::EntityType::FALLING_BLOCK
-        {
+        if !self.projectile.can_hit_with_owner(self_ent, other, owner) {
             return true;
         }
 
@@ -247,12 +233,21 @@ impl TridentEntity {
 }
 
 impl EntityBase for TridentEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.owner_id
+    fn write_custom_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
+        self.write_trident(nbt);
+    }
+    fn read_custom_nbt(&self, nbt: &pumpkin_nbt::compound::NbtCompound) {
+        self.read_trident(nbt);
+    }
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.projectile)
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         let entity = self.get_entity();
+        if self.in_ground_time.load(Ordering::Relaxed) > 4 {
+            self.dealt_damage.store(true, Ordering::Relaxed);
+        }
         // Handle shake time
         let shake = self.shake_time.load(Ordering::Relaxed);
         if shake > 0 {
@@ -267,10 +262,13 @@ impl EntityBase for TridentEntity {
             if life >= Self::DESPAWN_TIME {
                 entity.remove();
             }
+            // AbstractArrow.tick's grounded branch applies block effects without super.tick.
+            entity.tick_block_collisions(caller);
             return;
         }
 
         // ThrownTrident.tick delegates its flight to AbstractArrow.tick.
+        self.projectile.check_left_owner(entity);
         let velocity = super::arrow::tick_flight(
             entity.velocity.load(),
             entity.touching_water.load(Ordering::Relaxed) || entity.is_in_water(),
@@ -292,6 +290,8 @@ impl EntityBase for TridentEntity {
             },
         );
         entity.velocity.store(velocity);
+        self.projectile.tick(entity);
+        EntityBase::tick(entity, caller, server);
     }
 
     fn get_entity(&self) -> &Entity {
@@ -347,59 +347,21 @@ impl EntityBase for TridentEntity {
                 hit_pos,
                 ..
             } => {
-                let mut damage = Self::BASE_DAMAGE;
-
-                // Apply Impaling enchantment extra damage
-                if let Some(enchantments) = self
-                    .item_stack
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .get_data_component::<pumpkin_data::data_component_impl::EnchantmentsImpl>()
-                {
-                    for (enchantment, level) in enchantments.enchantment.iter() {
-                        if **enchantment == pumpkin_data::Enchantment::IMPALING {
-                            let in_water =
-                                target.get_entity().touching_water.load(Ordering::Relaxed);
-                            if in_water {
-                                damage += 1.25 * f64::from(*level);
-                            }
-                        }
-                    }
-                }
-
-                let damage_val = damage as f32;
-                // ThrownTrident.onHitEntity keeps the projectile and its owner separate.
-                let owner = self.owner_id.and_then(|id| world.get_entity_by_id(id));
-                super::damage::hurt_entity(
-                    &*target,
-                    damage_val,
-                    DamageType::TRIDENT,
-                    self,
-                    owner.as_deref().or(Some(self)),
-                );
-
-                // Play hit sound
-                let sound_packet = CSoundEffect::new(
-                    IdOr::Id(Sound::ItemTridentHit as u16),
-                    SoundCategory::Neutral,
-                    &hit_pos,
-                    1.0,
-                    1.0,
-                    0,
-                );
-                let chunk_pos = entity.chunk_pos.load();
-                world.broadcast_to_chunk(chunk_pos, &sound_packet);
-
-                // Standard bounce/fall-back behavior
-                entity.velocity.store(Vector3::new(0.0, -0.1, 0.0));
-                self.has_hit.store(false, Ordering::Relaxed); // Let it hit the ground
+                self.hit_entity(target.as_ref(), hit_pos);
             }
         }
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
         // Can only pick up when on the ground
-        if !self.in_ground.load(Ordering::Relaxed) {
+        // ThrownTrident.playerTouch / AbstractArrow.playerTouch.
+        if (!self.in_ground.load(Ordering::Relaxed)
+            && !self.entity.no_physics.load(Ordering::Relaxed))
+            || self.shake_time.load(Ordering::Relaxed) > 0
+            || self.projectile_owner().is_some_and(|owner| {
+                owner.get_entity().entity_uuid != player.get_entity().entity_uuid
+            })
+        {
             return;
         }
 
@@ -407,10 +369,18 @@ impl EntityBase for TridentEntity {
             return;
         }
 
-        match self.pickup {
+        match self.pickup.load() {
             ArrowPickup::Disallowed => return,
             ArrowPickup::CreativeOnly if !player.is_creative() => return,
             _ => {}
+        }
+
+        if let Some(server) = player.world().server.upgrade() {
+            let mut event = crate::plugin::api::events::player::player_pickup_arrow::PlayerPickupArrowEvent::new(player.clone(), self.entity.entity_id);
+            server.plugin_manager.fire_blocking(&server, &mut event);
+            if event.cancelled {
+                return;
+            }
         }
 
         let mut stack = self
@@ -427,25 +397,5 @@ impl EntityBase for TridentEntity {
             player.living_entity.pickup(&self.entity, 1);
             self.get_entity().remove();
         }
-    }
-}
-
-/// Get the face of the block that was hit
-fn get_hit_face(hit_pos: Vector3<f64>, block_pos: BlockPos) -> pumpkin_data::BlockDirection {
-    let local = hit_pos.sub(&block_pos.0.to_f64());
-    let eps = 1.0e-4;
-
-    if local.x <= eps {
-        pumpkin_data::BlockDirection::West
-    } else if local.x >= 1.0 - eps {
-        pumpkin_data::BlockDirection::East
-    } else if local.y <= eps {
-        pumpkin_data::BlockDirection::Down
-    } else if local.y >= 1.0 - eps {
-        pumpkin_data::BlockDirection::Up
-    } else if local.z <= eps {
-        pumpkin_data::BlockDirection::North
-    } else {
-        pumpkin_data::BlockDirection::South
     }
 }

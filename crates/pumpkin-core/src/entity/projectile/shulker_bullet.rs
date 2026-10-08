@@ -29,7 +29,7 @@ const SPEED: f64 = 0.15;
 
 pub struct ShulkerBulletEntity {
     pub entity: Entity,
-    pub owner_id: i32,
+    pub projectile: super::ownership::ProjectileState,
     /// Entity id of the final target; -1 = no target, 0+ = valid target
     target_id: AtomicI32,
     /// Current movement direction (direction ordinal, or `DIR_NONE`)
@@ -73,7 +73,7 @@ impl ShulkerBulletEntity {
 
         let bullet = Self {
             entity,
-            owner_id: owner.entity_id,
+            projectile: super::ownership::ProjectileState::new(Some(owner.entity_uuid)),
             target_id: AtomicI32::new(target_id),
             current_dir: AtomicU8::new(DIR_UP),
             flight_steps: AtomicI32::new(0),
@@ -256,7 +256,7 @@ impl ShulkerBulletEntity {
     pub const fn orphan(entity: Entity) -> Self {
         Self {
             entity,
-            owner_id: 0,
+            projectile: super::ownership::ProjectileState::new(None),
             target_id: AtomicI32::new(-1),
             current_dir: AtomicU8::new(DIR_NONE),
             flight_steps: AtomicI32::new(0),
@@ -270,8 +270,8 @@ impl ShulkerBulletEntity {
 }
 
 impl EntityBase for ShulkerBulletEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        Some(self.owner_id)
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.projectile)
     }
 
     fn get_entity(&self) -> &Entity {
@@ -320,7 +320,10 @@ impl EntityBase for ShulkerBulletEntity {
         true
     }
     #[allow(clippy::too_many_lines)]
-    fn tick(&self, _caller: &dyn EntityBase, _server: &Server) {
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.projectile.tick(&self.entity);
+        // ShulkerBullet.tick calls Projectile.tick -> Entity.tick before steering.
+        EntityBase::tick(&self.entity, caller, server);
         if self.has_hit.load(Ordering::Relaxed) {
             return;
         }
@@ -443,12 +446,7 @@ impl EntityBase for ShulkerBulletEntity {
         let nearby = world.get_all_at_box(&bullet_bb);
         for hit_entity in nearby.into_iter().filter(super::can_hit_entity) {
             let he = hit_entity.get_entity();
-            // Skip self
-            if he.entity_id == entity.entity_id {
-                continue;
-            }
-            // Never hit the owner shulker
-            if he.entity_id == self.owner_id {
+            if !self.projectile.can_hit(entity, &hit_entity) {
                 continue;
             }
             // ShulkerBullet.canHitEntity excludes entities with noPhysics.
@@ -456,12 +454,20 @@ impl EntityBase for ShulkerBulletEntity {
                 continue;
             }
 
+            let hit = super::ProjectileHit::Entity {
+                entity: hit_entity.clone(),
+                hit_pos: entity.pos.load(),
+                normal: Vector3::default(),
+            };
+            if super::deflection::hit_target_or_deflect_self(self, &hit) {
+                return;
+            }
             if self.has_hit.swap(true, Ordering::SeqCst) {
                 break;
             }
 
             // Deal 4 (MOB_PROJECTILE) damage
-            let owner_arc = world.get_entity_by_id(self.owner_id);
+            let owner_arc = self.projectile_owner();
             let damaged = super::damage::hurt_entity(
                 hit_entity.as_ref(),
                 4.0,

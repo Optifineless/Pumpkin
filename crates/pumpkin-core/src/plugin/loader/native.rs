@@ -93,3 +93,35 @@ impl PluginLoader for NativePluginLoader {
         !cfg!(target_os = "windows")
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod review_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn native_loader_rejects_harvest_api_seven_before_reading_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("old_plugin.c");
+        let library = dir.path().join("old_plugin.so");
+        std::fs::write(&source, "const unsigned int PUMPKIN_API_VERSION = 7;\n").unwrap();
+        let output = std::process::Command::new("cc")
+            .args(["-shared", "-fPIC", "-o"])
+            .arg(&library)
+            .arg(&source)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result = NativePluginLoader.load(&library).await;
+        assert!(matches!(
+            result,
+            Err(LoaderError::ApiVersionMismatch {
+                plugin_version: 7,
+                server_version: 8
+            })
+        ));
+    }
+}

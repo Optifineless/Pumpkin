@@ -1,3 +1,4 @@
+pub(crate) use explosion::ExplosionDamageSource;
 mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
@@ -102,7 +103,7 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
 use pumpkin_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
 use pumpkin_protocol::java::client::play::{
-    CBlockUpdate, CDisguisedChatMessage, CExplosion, CRespawn, CSetBlockDestroyStage, CWorldEvent,
+    CBlockUpdate, CDisguisedChatMessage, CRespawn, CSetBlockDestroyStage, CWorldEvent,
     PlayerSpawnData,
 };
 use pumpkin_protocol::java::client::play::{
@@ -110,7 +111,7 @@ use pumpkin_protocol::java::client::play::{
 };
 use pumpkin_protocol::java::client::play::{CSetEntityMetadata, Metadata};
 use pumpkin_protocol::{
-    BClientPacket, ClientPacket, IdOr, SoundEvent,
+    BClientPacket, ClientPacket, IdOr,
     bedrock::{
         client::{
             block_event::CBlockEvent as CBedrockBlockEvent,
@@ -4037,7 +4038,9 @@ impl World {
         let position = explosion.pos;
         let power = explosion.power;
         let mut event = crate::plugin::api::events::entity::entity_explode::EntityExplodeEvent::new(
-            0, position, power,
+            explosion.source_id(),
+            position,
+            power,
         );
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
@@ -4047,12 +4050,6 @@ impl World {
         }
 
         let result = explosion.explode(self);
-        let particle = if power < 2.0 {
-            explosion.small_particle
-        } else {
-            explosion.large_particle
-        };
-        let sound = IdOr::<SoundEvent>::Id(explosion.sound as u16);
         for player in self.players.load().iter() {
             if player.position().squared_distance_to_vec(&position) > 4096.0 {
                 if let Some(knockback) = result.player_knockback.get(&player.entity_id()) {
@@ -4060,13 +4057,9 @@ impl World {
                 }
                 continue;
             }
-            player.try_send_client_packet(&CExplosion::new(
-                position,
-                power,
-                result.block_count as i32,
+            player.try_send_client_packet(&explosion.packet(
+                result.block_count,
                 result.player_knockback.get(&player.entity_id()).copied(),
-                VarInt(particle as i32),
-                sound.clone(),
             ));
         }
     }

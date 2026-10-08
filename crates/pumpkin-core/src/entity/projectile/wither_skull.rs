@@ -25,8 +25,7 @@ impl WitherSkullEntity {
     pub const fn new(entity: Entity) -> Self {
         let thrown = ThrownItemEntity {
             entity,
-            owner_id: None,
-            collides_with_projectiles: false,
+            projectile: crate::entity::projectile::ownership::ProjectileState::new(None),
             has_hit: AtomicBool::new(false),
             gravity: GRAVITY,
         };
@@ -45,7 +44,8 @@ impl WitherSkullEntity {
         direction: Vector3<f64>,
     ) -> Self {
         let thrown = ThrownItemEntity::new(entity, shooter, GRAVITY);
-        let speed = 0.95;
+        // AbstractHurtingProjectile.assignDirectionalMovement.
+        let speed = super::fireball::INITIAL_ACCELERATION_POWER;
         let vel = direction.normalize().multiply(speed, speed, speed);
         thrown.entity.velocity.store(vel);
 
@@ -75,8 +75,8 @@ impl WitherSkullEntity {
 }
 
 impl EntityBase for WitherSkullEntity {
-    fn get_owner_id(&self) -> Option<i32> {
-        self.thrown.owner_id
+    fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
+        Some(&self.thrown.projectile)
     }
 
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
@@ -97,8 +97,8 @@ impl EntityBase for WitherSkullEntity {
         );
     }
 
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        self.thrown.process_tick(caller);
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.thrown.process_tick(caller, server);
     }
 
     fn get_entity(&self) -> &Entity {
@@ -119,10 +119,7 @@ impl EntityBase for WitherSkullEntity {
         if let ProjectileHit::Entity { ref entity, .. } = hit {
             let difficulty = world.level_info.load().difficulty;
 
-            let owner = self
-                .thrown
-                .owner_id
-                .and_then(|id| world.get_entity_by_id(id));
+            let owner = self.projectile_owner();
             // WitherSkull.onHitEntity: living owners deal 8; all others deal 5 contextless magic.
             let damaged = owner
                 .as_deref()
@@ -184,6 +181,6 @@ impl EntityBase for WitherSkullEntity {
         }
 
         let hit_pos = hit.hit_pos();
-        world.explode(hit_pos, 1.0, ExplosionInteraction::Mob);
+        world.explode_from(self, hit_pos, 1.0, ExplosionInteraction::Mob, false);
     }
 }
