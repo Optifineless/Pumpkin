@@ -69,7 +69,13 @@ def main():
     positional = [a for a in sys.argv[1:] if not a.startswith("--")]
     base = positional[0] if positional else "upstream/master"
     if not git("rev-parse", "--verify", base).strip():
-        base = "master"
+        for fallback in ("master", "origin/murgicraft"):
+            if git("rev-parse", "--verify", fallback).strip():
+                base = fallback
+                break
+        else:
+            print("error: no size-check base ref is available")
+            return 1
     files = tracked_sources()
     if "--write-baseline" in sys.argv:
         write_baseline(files)
