@@ -14,6 +14,12 @@ use std::sync::Arc;
 /// non-wall counterpart but do not have their own loot table file.
 #[must_use]
 pub fn loot_table_name(block: &Block) -> &str {
+    // Blocks.wallVariant gives wall banners the standing variant's loot table.
+    if let Some(color) = block.name.strip_suffix("_wall_banner")
+        && let Some(standing) = Block::from_name(&format!("{color}_banner"))
+    {
+        return standing.name;
+    }
     match block.name {
         "wall_torch" => "torch",
         "soul_wall_torch" => "soul_torch",
