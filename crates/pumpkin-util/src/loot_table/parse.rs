@@ -267,6 +267,18 @@ impl Parser<'_> {
                             }
                         }
                     }
+                    "type_specific/fishing_hook" => {
+                        // FishingHookPredicate.CODEC reads one optional boolean, ignoring other keys.
+                        if part.as_object().is_none_or(|fields| {
+                            fields
+                                .get("in_open_water")
+                                .is_some_and(|value| !value.is_boolean())
+                        }) {
+                            self.unsupported
+                                .insert("fishing hook predicate parts".to_owned());
+                            supported = false;
+                        }
+                    }
                     "type_specific/sheep" => {
                         if part
                             .as_object()

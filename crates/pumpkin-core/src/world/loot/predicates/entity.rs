@@ -58,6 +58,15 @@ fn entity_predicate_with_ancestors<'a>(
                 }
                 true
             }
+            "type_specific/fishing_hook" => {
+                // FishingHookPredicate.CODEC/matches ignore unknown keys and accept no requirement.
+                value.as_object()?;
+                value.get("in_open_water").is_none_or(|expected| {
+                    entity
+                        .fishing_open_water
+                        .is_some_and(|actual| Some(actual) == expected.as_bool())
+                })
+            }
             "type_specific/sheep" => {
                 if value.as_object()?.keys().any(|key| key != "sheared") {
                     return None;

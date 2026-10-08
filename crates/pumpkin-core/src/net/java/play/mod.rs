@@ -22,7 +22,6 @@ use crate::log_at_level;
 use crate::net::PlayerConfig;
 use crate::net::java::JavaClient;
 use crate::plugin::player::changed_main_hand::PlayerChangedMainHandEvent;
-use crate::plugin::player::fish::{PlayerFishEvent, PlayerFishState};
 use crate::plugin::player::item_held::PlayerItemHeldEvent;
 use crate::plugin::player::player_chat::PlayerChatEvent;
 use crate::plugin::player::player_command_send::PlayerCommandSendEvent;

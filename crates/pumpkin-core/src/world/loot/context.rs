@@ -50,6 +50,8 @@ pub struct EntityLootState {
     pub components: BTreeMap<String, Value>,
     pub flags: BTreeMap<String, bool>,
     pub sheared: Option<bool>,
+    /// `FishingHookPredicate` reads the hook's latched open-water state.
+    pub fishing_open_water: Option<bool>,
     pub equipment: BTreeMap<String, ItemStack>,
     pub vehicle: Option<Box<Self>>,
     pub passengers: Vec<Self>,
@@ -135,6 +137,12 @@ pub(super) fn snapshot_entity(
         ("is_baby".to_owned(), baby),
     ]);
     snapshot_entity_components(entity, &mut state);
+    if let Some(hook) = entity
+        .cast_any()
+        .downcast_ref::<crate::entity::projectile::fishing_bobber::FishingBobberEntity>(
+    ) {
+        state.fishing_open_water = Some(hook.is_open_water_fishing());
+    }
     if let Some(living) = entity.get_living_entity() {
         state
             .equipment

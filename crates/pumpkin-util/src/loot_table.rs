@@ -271,6 +271,24 @@ pub fn component_predicate_supported(name: &str, value: &Value) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn fishing_hook_predicate_accepts_optional_boolean_and_unknown_keys() {
+        for (parts, supported) in [
+            (serde_json::json!({}), true),
+            (serde_json::json!({"in_open_water":true}), true),
+            (serde_json::json!({"in_open_water":false}), true),
+            (serde_json::json!({"in_open_water":"true"}), false),
+            (serde_json::json!({"unknown":true}), true),
+            (serde_json::json!({"in_open_water":true,"unknown":{}}), true),
+            (serde_json::json!(false), false),
+        ] {
+            let mut unsupported = BTreeSet::new();
+            let condition = serde_json::json!({"type":"minecraft:entity_properties","entity":"this","predicate":{"minecraft:type_specific/fishing_hook":parts}});
+            let table = serde_json::json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:cod","condition":condition}]}]});
+            parse_loot_table(&table.to_string(), &mut unsupported).unwrap();
+            assert_eq!(unsupported.is_empty(), supported);
+        }
+    }
+    #[test]
     fn unknown_conditions_and_missing_predicates_are_never_unconditional() {
         let mut unsupported = BTreeSet::new();
         for condition in [

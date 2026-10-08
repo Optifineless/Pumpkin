@@ -5,6 +5,29 @@ use serde_json::Value;
 use serde_json::json;
 
 #[test]
+fn fishing_hook_predicate_ignores_unknown_keys_and_keeps_open_water_requirement() {
+    // FishingHookPredicate.CODEC/matches ignore unknown keys without relaxing in_open_water.
+    let mut entity = EntityLootState {
+        fishing_open_water: Some(true),
+        ..Default::default()
+    };
+    let predicate =
+        json!({"minecraft:type_specific/fishing_hook":{"in_open_water":true,"unknown":{}}});
+    assert_eq!(entity_predicate(&predicate, &entity), Some(true));
+    entity.fishing_open_water = Some(false);
+    assert_eq!(entity_predicate(&predicate, &entity), Some(false));
+    entity.fishing_open_water = None;
+    assert_eq!(entity_predicate(&predicate, &entity), Some(false));
+    assert_eq!(
+        entity_predicate(
+            &json!({"minecraft:type_specific/fishing_hook":{"unknown":true}}),
+            &entity
+        ),
+        Some(true)
+    );
+}
+
+#[test]
 fn non_living_entities_ignore_only_living_entity_flags() {
     // EntityFlagsPredicate.matches ignores baby/fall-flying only on non-living entities.
     let mut entity = EntityLootState {
