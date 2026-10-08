@@ -7,6 +7,8 @@ mod combat_lifecycle_tests;
 mod damage;
 #[path = "death_protection.rs"]
 mod death_protection;
+#[cfg(test)]
+mod effect_load_tests;
 #[path = "effects.rs"]
 mod effects;
 mod equipment_modifiers;
@@ -2116,6 +2118,7 @@ impl LivingEntity {
                 }
             }
         }
+        self.restore_loaded_effect_metadata();
         // todo more...
     }
 

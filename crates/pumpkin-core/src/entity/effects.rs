@@ -293,6 +293,16 @@ impl LivingEntity {
         *version = version.wrapping_add(1);
     }
 
+    pub(super) fn restore_loaded_effect_metadata(&self) {
+        // LivingEntity.readAdditionalSaveData marks effects dirty, then
+        // updateDataBeforeSync restores their visibility without replaying add hooks.
+        self.entity
+            .set_invisible(self.has_effect(&StatusEffect::INVISIBILITY));
+        self.entity
+            .set_glowing(self.has_effect(&StatusEffect::GLOWING));
+        self.sync_effect_particles();
+    }
+
     pub(super) fn tick_effects_impl(&self) {
         // MobEffectInstance.tickServer executes the periodic callback before duration/promotion.
         let snapshots: Vec<_> = {
