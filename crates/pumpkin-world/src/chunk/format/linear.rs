@@ -12,7 +12,6 @@ use bytes::{Buf, BufMut, Bytes};
 use pumpkin_util::math::vector2::Vector2;
 use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
-use tokio::io::{AsyncWriteExt, BufWriter};
 use tracing::{error, warn};
 use xxhash_rust::xxh64::xxh64;
 
@@ -379,8 +378,8 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for LinearV2File<S>
     type WriteBackend = PathBuf;
     type ChunkConfig = ();
 
-    fn should_write(&self, is_watched: bool) -> bool {
-        !is_watched
+    fn should_write(&self, _is_watched: bool) -> bool {
+        true
     }
 
     fn get_chunk_key(chunk: &Vector2<i32>) -> String {
@@ -389,7 +388,6 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for LinearV2File<S>
     }
 
     async fn write(&self, path: &PathBuf) -> Result<(), std::io::Error> {
-        let temp_path = path.with_extension("tmp");
         let grid_size = self.grid_size;
         let chunks_data = self.chunks_data.clone();
         let timestamps = self.timestamps;
@@ -438,18 +436,14 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for LinearV2File<S>
         .await
         .map_err(|_| std::io::Error::other("linear serialization task failed"))?;
 
-        let file = tokio::fs::File::create(&temp_path).await?;
-        let mut writer = BufWriter::new(file);
-        writer.write_all(&header).await?;
-        for compressed in compressed_buckets {
-            writer.write_all(&compressed).await?;
-        }
-        writer.write_all(&SIGNATURE).await?;
-        writer.flush().await?;
-
-        // Atomic rename so a crash during write cannot produce a torn file.
-        tokio::fs::rename(temp_path, path).await?;
-        Ok(())
+        let mut parts = vec![Bytes::from(header)];
+        parts.extend(compressed_buckets.into_iter().map(Bytes::from));
+        parts.push(Bytes::from_static(&SIGNATURE));
+        // RegionFile.flush durability; the blocking job owns open/write/cleanup.
+        crate::storage::TemporaryFile::write(path, parts)
+            .await?
+            .publish(path)
+            .await
     }
 
     #[expect(clippy::large_stack_arrays)]
@@ -587,6 +581,7 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for LinearV2File<S>
         &self,
         chunks: Vec<Vector2<i32>>,
         stream: tokio::sync::mpsc::Sender<LoadedData<Self::Data, ChunkReadingError>>,
+        dimension: pumpkin_data::dimension::Dimension,
     ) {
         let chunk_items: Vec<(Vector2<i32>, Option<Bytes>)> = chunks
             .into_iter()
@@ -604,7 +599,7 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for LinearV2File<S>
             chunk_items.into_par_iter().for_each(|(chunk, data)| {
                 let result = data.map_or_else(
                     || LoadedData::Missing(chunk),
-                    |data| match S::from_bytes(&data, chunk) {
+                    |data| match S::from_bytes_in_dimension(&data, chunk, &dimension) {
                         Ok(c) => LoadedData::Loaded(c),
                         Err(err) => LoadedData::Error((chunk, err)),
                     },

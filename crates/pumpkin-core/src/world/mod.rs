@@ -1,3 +1,4 @@
+mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
 };
@@ -409,6 +410,7 @@ impl World {
                     .unwrap_or(Block::AIR.default_state.id)
             })
             .await
+            .unwrap_or(Block::AIR.default_state.id)
     }
 
     pub async fn get_block_state_async(&self, position: &BlockPos) -> &'static BlockState {
@@ -432,6 +434,7 @@ impl World {
                     .get(height_map, x, z, self.min_y)
             })
             .await
+            .unwrap_or(self.min_y)
     }
 
     #[must_use]
@@ -766,7 +769,10 @@ impl World {
             error!("Failed to save portal POI: {e}");
         }
 
-        self.level.shutdown().await;
+        if let Err(error) = self.level.shutdown().await {
+            error!("World shutdown left unsaved chunks: {error}");
+            crate::SERVER_EXIT_CODE.store(1, std::sync::atomic::Ordering::Release);
+        }
     }
 
     /// Writes `entities` into the saved data of the chunks they are in. A live chunk is
@@ -801,7 +807,13 @@ impl World {
                 };
                 chunk
             } else {
-                self.level.get_entity_chunk(pos).await
+                match self.level.get_entity_chunk(pos).await {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        error!("Entity snapshot cannot load chunk {pos:?}: {error}");
+                        continue;
+                    }
+                }
             };
             let live = chunk.live.load(Relaxed);
             if !live && records.is_empty() {
@@ -2880,7 +2892,9 @@ impl World {
         } else {
             let spawn_position = Vector2::new(level_info.spawn_x, level_info.spawn_z);
             let chunk_pos = Vector2::new(level_info.spawn_x >> 4, level_info.spawn_z >> 4);
-            self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
+            if self.load_player_chunk(chunk_pos, &player).await.is_none() {
+                return;
+            }
             let top = self.get_top_block(spawn_position);
             let pos_y = if top > self.dimension.min_y {
                 top + 1
@@ -3457,7 +3471,9 @@ impl World {
             let info = &self.level_info.load();
             let spawn_position = Vector2::new(info.spawn_x, info.spawn_z);
             let chunk_pos = Vector2::new(info.spawn_x >> 4, info.spawn_z >> 4);
-            self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
+            if self.load_player_chunk(chunk_pos, player).await.is_none() {
+                return;
+            }
             let top = self.get_top_block(spawn_position);
             let pos_y = if top > self.dimension.min_y {
                 top + 1
@@ -3480,10 +3496,9 @@ impl World {
         chunker::update_position(player);
 
         let center_chunk = player.living_entity.entity.chunk_pos.load();
-        let chunk = self
-            .level
-            .get_or_fetch_chunk(center_chunk, std::clone::Clone::clone)
-            .await;
+        let Some(chunk) = self.load_player_chunk(center_chunk, player).await else {
+            return;
+        };
         if let Some(server) = self.server.upgrade() {
             let mut event =
                 crate::plugin::world::chunk_send::ChunkSend::new(player.world(), chunk.clone());
@@ -4157,10 +4172,13 @@ impl World {
             // proper spawn position calculation (see #1381). The y-level calculation
             // needs to account for spawn radius and find a safe spawn position.
             let chunk_pos = Vector2::new(spawn_x >> 4, spawn_z >> 4);
-            default_world
-                .level
-                .get_or_fetch_chunk(chunk_pos, |_| ())
-                .await;
+            if default_world
+                .load_player_chunk(chunk_pos, player)
+                .await
+                .is_none()
+            {
+                return;
+            }
             let top = default_world.get_top_block(Vector2::new(spawn_x, spawn_z));
             let pos_y = if top > default_world.dimension.min_y {
                 top + 1
@@ -4515,23 +4533,13 @@ impl World {
         });
     }
 
-    /// First watcher: consume the serialized entities and make them live. The live
-    /// entity list becomes the single source of truth, so the chunk's NBT is taken
-    /// (cleared) to avoid keeping a duplicate copy that would be re-appended on the
-    /// next unload and doubled on every reload. `player`, when present, gets vehicle
-    /// restore for the entities it just loaded.
+    /// Makes the saved entity copy live once; the next snapshot replaces saved records.
     fn make_chunk_entities_live(
         self: &Arc<Self>,
         chunk: &Arc<ChunkEntityData>,
         player: Option<&Arc<Player>>,
     ) {
-        let entity_nbts = std::mem::take(
-            &mut *chunk
-                .data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        chunk.live.store(true, Relaxed);
+        let entity_nbts = chunk.entities_for_activation();
         for entity_nbt in &entity_nbts {
             self.restore_entity_tree(entity_nbt, player);
         }
@@ -4918,10 +4926,9 @@ impl World {
             return;
         };
         let center_chunk = player.get_entity().chunk_pos.load();
-        let chunk = self
-            .level
-            .get_or_fetch_chunk(center_chunk, std::clone::Clone::clone)
-            .await;
+        let Some(chunk) = self.load_player_chunk(center_chunk, player).await else {
+            return;
+        };
         java_client.send_chunks(&[chunk]).await;
         player
             .chunk_sender

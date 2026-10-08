@@ -251,8 +251,10 @@ impl ServerGameTestWorld {
         // World::set_block_state is intentionally synchronous and only mutates an
         // already-loaded chunk. Vanilla force-loads the complete GameTest structure
         // before placing it; make the async GameTest adapter provide that guarantee.
-        if !self.world.level.is_chunk_loaded(&chunk) {
-            self.world.level.get_or_fetch_chunk(chunk, |_| ()).await;
+        if !self.world.level.is_chunk_loaded(&chunk)
+            && let Err(error) = self.world.level.get_or_fetch_chunk(chunk, |_| ()).await
+        {
+            tracing::error!("GameTest chunk {chunk:?} could not be loaded: {error}");
         }
     }
 

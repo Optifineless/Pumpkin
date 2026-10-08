@@ -15,6 +15,7 @@ use tracing::{debug, error, warn};
 
 pub enum RecvChunk {
     IO(Chunk),
+    IOFailure(String),
     Generation(Cache),
     GenerationFailure {
         pos: ChunkPos,
@@ -124,6 +125,7 @@ pub async fn io_read_work(
         let (t_send, mut t_recv) = tokio::sync::mpsc::channel(1000);
 
         let batch_len = batch.len();
+        let mut pending: std::collections::HashSet<_> = batch.iter().copied().collect();
         let level_clone = level.clone();
 
         let fetch_task = tokio::spawn(async move {
@@ -138,6 +140,11 @@ pub async fn io_read_work(
                 break;
             };
 
+            let pos = match &data {
+                Loaded(chunk) => ChunkPos::new(chunk.x, chunk.z),
+                LoadedData::Error((pos, _)) | LoadedData::Missing(pos) => *pos,
+            };
+            pending.remove(&pos);
             match data {
                 Loaded(chunk) => {
                     let pos = ChunkPos::new(chunk.x, chunk.z);
@@ -145,17 +152,21 @@ pub async fn io_read_work(
                     let result = run_blocking(move || process_loaded_chunk(chunk, &level)).await;
                     let received = match result {
                         Ok(processed) => RecvChunk::IO(processed),
-                        Err(err) => RecvChunk::GenerationFailure {
-                            pos,
-                            stage: StagedChunkEnum::Empty,
-                            error: err.to_string(),
-                        },
+                        Err(err) => RecvChunk::IOFailure(err.to_string()),
                     };
                     if send.send((pos, received)).is_err() {
                         break;
                     }
                 }
-                LoadedData::Missing(pos) | LoadedData::Error((pos, _)) => {
+                LoadedData::Error((pos, error)) => {
+                    if send
+                        .send((pos, RecvChunk::IOFailure(error.to_string())))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                LoadedData::Missing(pos) => {
                     if send
                         .send((
                             pos,
@@ -173,6 +184,12 @@ pub async fn io_read_work(
             }
         }
         let _ = fetch_task.await;
+        for pos in pending {
+            let _ = send.send((
+                pos,
+                RecvChunk::IOFailure("Chunk read worker ended without a result".into()),
+            ));
+        }
     }
     debug!("io read thread stop");
 }

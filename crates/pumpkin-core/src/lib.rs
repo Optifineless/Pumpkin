@@ -242,6 +242,7 @@ pub struct PumpkinServer {
     pub tcp_listener: Option<TcpListener>,
     pub bedrock_status: Option<StatusResponder>,
     pub nethernet_listener: Option<NetherNetListener>,
+    ticker: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl PumpkinServer {
@@ -330,19 +331,14 @@ impl PumpkinServer {
             None
         };
 
-        // Ticker
-        {
-            let ticker_server = server.clone();
-            if let Err(err) = std::thread::Builder::new()
-                .name("Server-Ticker".into())
-                .spawn(move || {
-                    Ticker::run(&ticker_server);
-                })
-            {
+        let ticker_server = server.clone();
+        let ticker = std::thread::Builder::new()
+            .name("Server-Ticker".into())
+            .spawn(move || Ticker::run(&ticker_server))
+            .unwrap_or_else(|err| {
                 error!("Failed to spawn Server-Ticker thread: {err}");
                 std::process::exit(1);
-            }
-        };
+            });
 
         let (bedrock_status, ice_socket) = match Self::bind_bedrock_status(&server).await {
             Some((status, ice)) => (Some(status), Some(ice)),
@@ -355,6 +351,7 @@ impl PumpkinServer {
             tcp_listener,
             bedrock_status,
             nethernet_listener,
+            ticker: std::sync::Mutex::new(Some(ticker)),
         })
     }
 
@@ -506,10 +503,28 @@ impl PumpkinServer {
 
         info!("Stopped accepting incoming connections");
 
+        // MinecraftServer.stopServer finishes tick mutations before final storage drains.
+        STOP_INTERRUPT.cancel();
+        let ticker = self
+            .ticker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(ticker) = ticker {
+            let joined = tokio::task::spawn_blocking(move || ticker.join()).await;
+            if !matches!(joined, Ok(Ok(()))) {
+                error!("Server ticker failed during shutdown");
+                SERVER_EXIT_CODE.store(1, Ordering::Release);
+            }
+        }
+
+        // Fence the final player list against a login that completed during cancellation.
+        let shutdown_players = self.server.tick_gate.lock().await;
         if let Err(e) = self
             .server
             .player_data_storage
             .save_all_players(&self.server)
+            .await
         {
             error!("Error saving all players during shutdown: {e}");
         }
@@ -528,6 +543,7 @@ impl PumpkinServer {
             player.kick(DisconnectReason::Shutdown, &kick_message);
         }
 
+        drop(shutdown_players);
         info!("Ending player tasks");
 
         tasks.close();
@@ -597,7 +613,7 @@ impl PumpkinServer {
                                      java_client.start_outgoing_packet_task();
 
                                      if let Some((player, world)) = server_clone
-                                         .add_player(Arc::new(ClientPlatform::Java(java_client)), profile, Some(config))
+                                         .add_player(Arc::new(ClientPlatform::Java(java_client)), profile, Some(config)).await
                                  {
 
                                      if let ClientPlatform::Java(client) = player.client.as_ref() {
@@ -614,19 +630,13 @@ impl PumpkinServer {
                                          client.close();
                                          client.await_tasks().await;
                                      }
-                                     player.remove().await;
-                                     server_clone.remove_player(&player);
                                     if let Err(e) = server_clone
                                         .player_data_storage
-                                        .handle_player_leave(&player)
+                                        .handle_player_leave(&player, &server_clone).await
                                     {
                                         error!("Failed to save player data on disconnect: {e}");
                                     }
-                                    if let Err(e) = server_clone.advancement_manager
-                                        .save_player(&player)
-                                        .await {
-                                            error!("Failed to save player advancement on disconnect: {e}");
-                                        }
+                                    player.storage_session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
                                     }
                                 },
                             }
@@ -711,21 +721,30 @@ impl PumpkinServer {
                     client.await_tasks().await;
                 }
                 PacketHandlerResult::ReadyToPlay(profile, config) => {
-                    if let Some((player, _world)) = server.add_player(
-                        Arc::new(ClientPlatform::Bedrock(client.clone())),
-                        profile,
-                        Some(config),
-                    ) {
+                    if let Some((player, _world)) = server
+                        .add_player(
+                            Arc::new(ClientPlatform::Bedrock(client.clone())),
+                            profile,
+                            Some(config),
+                        )
+                        .await
+                    {
                         client.set_player(player.clone());
                         client.progress_player_packets(&player).await;
                         client.close().await;
                         client.await_tasks().await;
-                        player.remove().await;
-                        server.remove_player(&player);
-                        if let Err(error) = server.player_data_storage.handle_player_leave(&player)
+                        if let Err(error) = server
+                            .player_data_storage
+                            .handle_player_leave(&player, &server)
+                            .await
                         {
                             error!("Failed to save player data on disconnect: {error}");
                         }
+                        player
+                            .storage_session
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .take();
                     }
                 }
             }

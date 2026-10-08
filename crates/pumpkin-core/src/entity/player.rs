@@ -404,6 +404,7 @@ pub enum SpamType {
 }
 
 pub struct Player {
+    pub(crate) storage_session: Mutex<Option<crate::data::player_server::PlayerStorageSession>>,
     /// The underlying living entity object that represents the player.
     pub living_entity: LivingEntity,
     pub(crate) known_movement: KnownMovement,
@@ -815,6 +816,7 @@ impl Player {
             subscribed_debug_sample: AtomicBool::new(false),
             has_played_before: AtomicBool::new(false),
             root_vehicle_uuid: AtomicCell::new(None),
+            storage_session: Mutex::new(None),
             chat_session: Arc::new(Mutex::new(ChatSession::default())), // Placeholder value until the player actually sets their session id
             signature_cache: Mutex::new(MessageCache::default()),
             player_screen_handler: player_screen_handler.clone(),
@@ -1211,10 +1213,6 @@ impl Player {
                 .remove_passenger_on_disconnect(self.entity_id());
         }
 
-        self.stats
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .increment_custom(statistics::CustomStatistic::LeaveGame, 1);
         let world = self.world();
         world.remove_player(self, true).await;
 
@@ -1555,7 +1553,8 @@ impl Player {
                 world
                     .level
                     .get_or_fetch_chunk(Vector2::new(cx, cz), |_| ())
-                    .await;
+                    .await
+                    .ok()?;
             }
         }
 

@@ -70,6 +70,7 @@ use crate::data::advancement_data::AdvancementManager;
 
 /// Represents a Minecraft server instance.
 pub struct Server {
+    _session_lock: pumpkin_world::session_lock::SessionLock,
     pub basic_config: BasicConfiguration,
     pub advanced_config: AdvancedConfiguration,
     pub telemetry_config: TelemetryConfig,
@@ -119,6 +120,7 @@ pub struct Server {
     pub defaultgamemode: std::sync::Mutex<DefaultGamemode>,
     /// Manages player data storage
     pub player_data_storage: ServerPlayerData,
+    pub(crate) tick_gate: tokio::sync::Mutex<()>,
     /// Command storage for `/data` command
     pub command_storage:
         std::sync::Mutex<std::collections::HashMap<String, pumpkin_nbt::compound::NbtCompound>>,
@@ -177,6 +179,15 @@ impl Server {
         );
 
         let world_path = basic_config.get_world_path();
+        // LevelStorageAccess retains DirectoryLock before any world or player storage access.
+        let lock_path = world_path.clone();
+        let session_lock = tokio::task::spawn_blocking(move || {
+            let lock = pumpkin_world::session_lock::acquire(&lock_path)?;
+            pumpkin_world::recover_temporaries(&lock_path)?;
+            Ok::<_, std::io::Error>(lock)
+        })
+        .await
+        .map_err(std::io::Error::other)??;
 
         let sequence_path = world_path.clone();
         let random_sequences = tokio::task::spawn_blocking(move || {
@@ -286,6 +297,7 @@ impl Server {
         ));
 
         let server = Self {
+            _session_lock: session_lock,
             basic_config,
             advanced_config,
             telemetry_config,
@@ -310,6 +322,7 @@ impl Server {
             map_manager: MapManager::new(),
             defaultgamemode,
             player_data_storage,
+            tick_gate: tokio::sync::Mutex::new(()),
             command_storage: std::sync::Mutex::new(std::collections::HashMap::new()),
             stopwatches: std::sync::Mutex::new(crate::world::stopwatches::Stopwatches::new()),
             random_sequences: Arc::new(std::sync::Mutex::new(random_sequences)),
@@ -623,7 +636,7 @@ impl Server {
             return Err(format!("Failed to save world info: {err}"));
         }
 
-        if let Err(err) = self.player_data_storage.save_all_players(self) {
+        if let Err(err) = self.player_data_storage.save_all_players(self).await {
             error!("Failed to save player data: {err}");
             return Err(format!("Failed to save player data: {err}"));
         }
@@ -671,7 +684,7 @@ impl Server {
     /// # Note
     ///
     /// You still have to spawn the `Player` in a `World` to let them join and make them visible.
-    pub fn add_player(
+    pub async fn add_player(
         self: &Arc<Self>,
         client: Arc<ClientPlatform>,
         profile: GameProfile,
@@ -685,7 +698,20 @@ impl Server {
 
         let first_world = self.worlds.load().first().cloned()?;
 
-        let (world, nbt) = if let Ok(Some(data)) = self.player_data_storage.load_data(&profile.id) {
+        // PlayerDataStorage.load must finish backup recovery/quarantine before a fresh login.
+        let (storage_session, saved_data) = self
+            .player_data_storage
+            .load_client_data(&profile.id, &client)
+            .await
+            .map_err(|error| {
+                error!("Player data recovery failed for {}: {error}", profile.id);
+            })
+            .ok()?;
+        let _join = self.tick_gate.lock().await;
+        if crate::STOP_INTERRUPT.is_cancelled() {
+            return None;
+        }
+        let (world, nbt) = if let Some(data) = saved_data {
             if let Some(dimension_key) = data.get_string("Dimension") {
                 if let Some(dimension) = Dimension::from_name(dimension_key) {
                     let world = self.get_world_from_dimension(dimension);
@@ -699,7 +725,7 @@ impl Server {
                 (first_world, Some(data))
             }
         } else {
-            // No player data found or an error occurred, default to the Overworld.
+            // No player data found, default to the Overworld.
             (first_world, None)
         };
 
@@ -717,6 +743,11 @@ impl Server {
             // sessions could persist HasPlayedBefore as false and mask a valid Pos.
             player.has_played_before.store(true, Ordering::Relaxed);
         }
+
+        *player
+            .storage_session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(storage_session);
 
         // Wrap in Arc after data is loaded
         let player = Arc::new(player);
@@ -781,11 +812,6 @@ impl Server {
         );
         self.management_hub.broadcast_player_left(&player_dto);
 
-        player.increment_stat(
-            pumpkin_data::statistic::StatisticCategory::Custom,
-            pumpkin_data::statistic::CustomStatistic::LeaveGame as i32,
-            1,
-        );
         // TODO: Config if we want decrease online
         self.listing
             .lock()
@@ -801,6 +827,10 @@ impl Server {
         self.tasks.wait().await;
         debug!("Done awaiting tasks for server");
 
+        if let Err(error) = self.player_data_storage.drain().await {
+            error!("Final player shutdown drain failed: {error}");
+            crate::SERVER_EXIT_CODE.store(1, Ordering::Release);
+        }
         info!("Starting worlds");
         for world in self.worlds.load().iter() {
             world.shutdown().await;

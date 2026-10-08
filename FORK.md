@@ -39,6 +39,8 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 
 | Upstream issue | Fixed by | Checked in-game |
 |:--|:--|:--|
+| [#3511](https://github.com/Pumpkin-MC/Pumpkin/issues/3511) Player saves truncate the last good file | durable temporary replacement, backup recovery and retained retries | Not yet |
+| [#3512](https://github.com/Pumpkin-MC/Pumpkin/issues/3512) Older snapshots overwrite disconnect saves | ordered snapshots, a tick barrier during disconnect capture/removal and a UUID gate through final publication | Not yet |
 | [#3468](https://github.com/Pumpkin-MC/Pumpkin/issues/3468) Aquatic mob AI (fish and squid movement only) | port of upstream PR #3718 | Yes, 2026-10-07 |
 | [#3388](https://github.com/Pumpkin-MC/Pumpkin/issues/3388) Arrows have glitchy particles | remove server-generated arrow trails | Not yet |
 | [#3520](https://github.com/Pumpkin-MC/Pumpkin/issues/3520) Shields cannot block player melee | `fix(combat): let shields block melee hits` | Yes, 2026-10-07 (blocked a zombie) |
@@ -89,11 +91,14 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Scheduled ticks run on time and survive a restart | Not yet |
 | Dust removed by water or explosions updates neighbours | Not yet |
 | Shields respect piercing shots, cooldowns and hand changes; death protectors use their configured effects (combat task 2 review follow-up, related to #3520) | Not yet |
+| Disconnect counts games quit once and keeps the saved statistic consistent with plugin changes and the scoreboard | Not yet |
 
-## Native plugin API 5
+## Native plugin API 6
 
-Shield and totem integration changes native trait/component layouts and bumps `PLUGIN_API_VERSION` from 3 to 4. Rebuild native plugins. `EntityDamageByEntityEvent.damager_id` now identifies the direct projectile for projectile hits; it previously identified the shooter. Resolve the projectile's owner for player attribution. Mob damage hooks carry separate direct and causing entities. The Wasm WIT is unchanged.
+The native plugin API has moved three times in this fork; rebuild native plugins against this checkout. The Wasm WIT is unchanged throughout.
 
-The crash-codec audit changes `InstrumentImpl` from a unit component to registered or inline instrument data, bumping the native API from 4 to 5. Rebuild native plugins against this checkout.
+- API 4: shield and totem integration changed native trait/component layouts. `EntityDamageByEntityEvent.damager_id` now identifies the direct projectile for projectile hits; it previously identified the shooter. Resolve the projectile's owner for player attribution. Mob damage hooks carry separate direct and causing entities.
+- API 5: the crash-codec audit changes `InstrumentImpl` from a unit component to registered or inline instrument data.
+- API 6: durable storage. `ChunkData.dirty` and `ChunkEntityData.dirty` are `DirtyFlag` instead of `AtomicBool` (carried by the chunk load, save and send events); `ChunkSections.randomly_ticking_mask` is `RandomTickMembership`; `Server` gains `tick_gate` and a session lock and `Player` gains `storage_session` (layout changes); `Server::add_player` is async; `Level::shutdown`, `get_entity_chunk`, `get_or_fetch_chunk` and `get_or_fetch_entity_chunk` return `Result`.
 
 The second shield/totem review adds authoritative item transactions, effect lifecycle corrections, projectile owner handling and teleport destination checks. Play testing remains **Not yet**. Hurt-cooldown admission, full-block damage history and specialized `blockUsingItem`/`blockedByItem` orchestration still require the separate damage-pipeline integration; this branch preserves that boundary.

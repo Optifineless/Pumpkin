@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{
     path::PathBuf,
     str::FromStr,
@@ -34,11 +35,21 @@ use super::{
 pub mod anvil;
 pub mod linear;
 pub mod pump;
+mod section_bounds;
 
 impl SingleChunkDataSerializer for ChunkData {
     #[inline]
     fn from_bytes(bytes: &Bytes, pos: Vector2<i32>) -> Result<Self, ChunkReadingError> {
-        Self::internal_from_bytes(bytes, pos).map_err(ChunkReadingError::ParsingError)
+        Self::internal_from_bytes(bytes, pos, &pumpkin_data::dimension::Dimension::OVERWORLD)
+            .map_err(ChunkReadingError::ParsingError)
+    }
+
+    fn from_bytes_in_dimension(
+        bytes: &Bytes,
+        pos: Vector2<i32>,
+        dimension: &pumpkin_data::dimension::Dimension,
+    ) -> Result<Self, ChunkReadingError> {
+        Self::internal_from_bytes(bytes, pos, dimension).map_err(ChunkReadingError::ParsingError)
     }
 
     #[inline]
@@ -60,6 +71,13 @@ impl PathFromLevelFolder for ChunkData {
 }
 
 impl Dirtiable for ChunkData {
+    fn dirty_version(&self) -> Option<u64> {
+        Some(self.dirty.version())
+    }
+    fn clear_published(&self, version: u64) {
+        self.dirty.clear_published(version);
+    }
+
     #[inline]
     fn mark_dirty(&self, flag: bool) {
         self.dirty.store(flag, Ordering::Relaxed);
@@ -74,34 +92,16 @@ impl Dirtiable for ChunkData {
 /// The section stores `Y` as a byte, short, int or long depending on who wrote
 /// the file. The datafixer writes ints. Reading only bytes would map every int
 /// section to `Y = 0`, and they would overwrite each other.
-fn section_y(section: &NbtCompound) -> i32 {
+fn section_y(section: &NbtCompound) -> Result<i32, ChunkParsingError> {
     use pumpkin_nbt::tag::NbtTag;
-
-    match section.get("Y") {
-        Some(NbtTag::Byte(value)) => i32::from(*value),
-        Some(NbtTag::Short(value)) => i32::from(*value),
-        Some(NbtTag::Int(value)) => *value,
-        Some(NbtTag::Long(value)) => i32::try_from(*value).unwrap_or(0),
-        _ => 0,
-    }
-}
-
-/// What vanilla does when `yPos` is missing, for example after it upgrades a
-/// world in place: the lowest section that stores biomes, and never above 0.
-/// That gives `-4` in the Overworld and `0` in the Nether and End, which are
-/// the section minimums of those dimensions.
-fn lowest_biome_section_y(root_tag: &NbtCompound) -> Option<i32> {
-    let sections = root_tag.get_list("sections")?;
-    sections
-        .iter()
-        .filter_map(|tag| match tag {
-            pumpkin_nbt::tag::NbtTag::Compound(compound) if compound.has("biomes") => {
-                Some(section_y(compound))
-            }
-            _ => None,
-        })
-        .min()
-        .map(|y| y.min(0))
+    let value = match section.get("Y") {
+        Some(NbtTag::Byte(value)) => Some(i32::from(*value)),
+        Some(NbtTag::Short(value)) => Some(i32::from(*value)),
+        Some(NbtTag::Int(value)) => Some(*value),
+        Some(NbtTag::Long(value)) => i32::try_from(*value).ok(),
+        _ => None,
+    };
+    value.ok_or_else(|| ChunkParsingError::ErrorDeserializingChunk("Invalid section Y".into()))
 }
 
 fn extract_u16_array(tag: &pumpkin_nbt::tag::NbtTag) -> Option<Box<[BlockStateId]>> {
@@ -189,6 +189,7 @@ impl ChunkData {
     pub fn internal_from_bytes(
         chunk_data: &[u8],
         position: Vector2<i32>,
+        dimension: &pumpkin_data::dimension::Dimension,
     ) -> Result<Self, ChunkParsingError> {
         let is_named = chunk_data.len() >= 3
             && chunk_data[0] == 0x0a
@@ -220,29 +221,10 @@ impl ChunkData {
             )));
         }
 
-        // Vanilla omits yPos when it upgrades a world in place. It uses the
-        // dimension minimum for such chunks, which is the lowest section that
-        // stores biomes. Do the same instead of rejecting the chunk.
-        let min_y_section = match root_tag.get_int("yPos") {
-            Some(y_pos) => y_pos,
-            None => lowest_biome_section_y(&root_tag).ok_or_else(|| {
-                ChunkParsingError::ErrorDeserializingChunk("Missing yPos".to_string())
-            })?,
-        };
-
-        let mut max_y_section = min_y_section as i8;
-        if let Some(sections_list) = root_tag.get_list("sections") {
-            for section_tag in sections_list {
-                if let pumpkin_nbt::tag::NbtTag::Compound(section_compound) = section_tag {
-                    let y = section_y(section_compound) as i8;
-                    if y > max_y_section {
-                        max_y_section = y;
-                    }
-                }
-            }
-        }
-
-        let section_count = (max_y_section as i32 - min_y_section + 1).max(0) as usize;
+        // SerializableChunkData.parse/read allocates from LevelHeightAccessor, never disk Y values.
+        let bounds = section_bounds::SectionBounds::new(&root_tag, dimension)?;
+        let min_y_section = bounds.min;
+        let section_count = bounds.count;
         let mut block_lights = vec![LightContainer::Empty(0); section_count];
         let mut sky_lights = vec![LightContainer::Empty(0); section_count];
         let mut block_palettes = vec![BlockPalette::default(); section_count];
@@ -251,11 +233,10 @@ impl ChunkData {
         if let Some(sections_list) = root_tag.get_list("sections") {
             for section_tag in sections_list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(section_compound) = section_tag {
-                    let y = section_y(section_compound);
-                    let index = (y - min_y_section) as usize;
-                    if index >= section_count {
+                    let y = section_y(section_compound)?;
+                    let Some(index) = bounds.index(y, section_compound)? else {
                         continue;
-                    }
+                    };
 
                     let block_light = section_compound
                         .get("BlockLight")
@@ -335,7 +316,7 @@ impl ChunkData {
             count: block_palettes.len(),
             block_sections: RwLock::new(block_palettes.into_boxed_slice()),
             random_tick_sections: RwLock::new(random_tick_sections),
-            randomly_ticking_mask: std::sync::atomic::AtomicU32::new(randomly_ticking_mask),
+            randomly_ticking_mask: super::RandomTickMembership::new(randomly_ticking_mask),
             biome_sections: RwLock::new(biome_palettes.into_boxed_slice()),
             min_y,
         };
@@ -423,7 +404,7 @@ impl ChunkData {
             x: position.x,
             z: position.y,
             // This chunk is read from disk, so it has not been modified
-            dirty: AtomicBool::new(false),
+            dirty: crate::chunk::io::DirtyFlag::new(false),
             block_ticks: ChunkTickScheduler::from_iter(block_ticks),
             fluid_ticks: ChunkTickScheduler::from_iter(fluid_ticks),
             pending_block_entities: std::sync::Mutex::new(block_entities),
@@ -691,6 +672,29 @@ impl PathFromLevelFolder for ChunkEntityData {
 }
 
 impl Dirtiable for ChunkEntityData {
+    fn copy_for_load(self: &Arc<Self>) -> Arc<Self> {
+        // IOWorker.PendingStore.copyData: activation must not consume a retained save.
+        Arc::new(Self {
+            x: self.x,
+            z: self.z,
+            data: std::sync::Mutex::new(
+                self.data
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
+            live: std::sync::atomic::AtomicBool::new(false),
+            dirty: crate::chunk::io::DirtyFlag::new(false),
+        })
+    }
+
+    fn dirty_version(&self) -> Option<u64> {
+        Some(self.dirty.version())
+    }
+    fn clear_published(&self, version: u64) {
+        self.dirty.clear_published(version);
+    }
+
     #[inline]
     fn mark_dirty(&self, flag: bool) {
         self.dirty.store(flag, Ordering::Relaxed);
@@ -777,7 +781,7 @@ impl ChunkEntityData {
             z: position.y,
             data: std::sync::Mutex::new(entities),
             live: AtomicBool::new(false),
-            dirty: AtomicBool::new(false),
+            dirty: crate::chunk::io::DirtyFlag::new(false),
         })
     }
 
@@ -995,7 +999,7 @@ mod tests {
     }
 
     #[test]
-    fn chunk_without_y_pos_uses_the_lowest_biome_section() {
+    fn chunk_without_y_pos_uses_dimension_minimum() {
         use crate::chunk::ChunkData;
         use pumpkin_util::math::vector2::Vector2;
 
@@ -1060,7 +1064,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_ignores_light_only_sections_below_zero() {
+    fn light_only_sections_do_not_determine_allocation() {
         use crate::chunk::ChunkData;
         use pumpkin_util::math::vector2::Vector2;
 
@@ -1084,11 +1088,14 @@ mod tests {
             chunk.section.get_block_absolute_y(0, 0, 0),
             Some(Block::STONE.default_state.id)
         );
-        assert_eq!(chunk.section.get_block_absolute_y(0, -1, 0), None);
+        assert_eq!(
+            chunk.section.get_block_absolute_y(0, -1, 0),
+            Some(Block::AIR.default_state.id)
+        );
     }
 
     #[test]
-    fn fallback_never_goes_above_zero() {
+    fn sparse_chunk_allocates_the_entire_dimension() {
         use crate::chunk::ChunkData;
         use pumpkin_util::math::vector2::Vector2;
 
@@ -1108,22 +1115,19 @@ mod tests {
     }
 
     #[test]
-    fn chunk_without_y_pos_or_biomes_still_fails() {
-        use crate::chunk::ChunkData;
-        use pumpkin_util::math::vector2::Vector2;
-
+    fn chunk_without_y_pos_or_biomes_uses_dimension_bounds() {
         let mut light_section = NbtCompound::new();
         light_section.put_byte("Y", -1);
-        light_section.put(
-            "BlockLight",
-            NbtTag::ByteArray(vec![0x0Fi8; 2048].into_boxed_slice()),
-        );
-
         let bytes = test_chunk(vec![light_section]).write();
-        let Err(error) = ChunkData::from_bytes(&bytes, Vector2::new(0, 0)) else {
-            panic!("chunk without yPos and without biomes must fail");
-        };
-        assert!(format!("{error:?}").contains("Missing yPos"));
+        let chunk = ChunkData::from_bytes(&bytes, Vector2::new(0, 0)).unwrap();
+        assert_eq!(
+            chunk.section.min_y,
+            pumpkin_data::dimension::Dimension::OVERWORLD.min_y
+        );
+        assert_eq!(
+            chunk.section.count as i32 * 16,
+            pumpkin_data::dimension::Dimension::OVERWORLD.height
+        );
     }
 
     #[test]

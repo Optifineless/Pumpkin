@@ -1,3 +1,4 @@
+mod random_tick_membership;
 use crate::chunk::format::LightContainer;
 use crate::tick::scheduler::ChunkTickScheduler;
 use palette::{BiomePalette, BlockPalette, has_random_ticking_fluid};
@@ -8,6 +9,7 @@ use pumpkin_data::tag::Block::MINECRAFT_LEAVES;
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
+use random_tick_membership::RandomTickMembership;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use std::sync::RwLock;
@@ -79,7 +81,7 @@ pub struct ChunkData {
     pub light_populated: AtomicBool,
     pub status: ChunkStatus,
     pub blending_data: Option<crate::generation::blender::blending_data::BlendingData>,
-    pub dirty: AtomicBool,
+    pub dirty: io::DirtyFlag,
     pub inhabited_time: AtomicU64,
     pub custom_data: std::sync::Mutex<NbtCompound>,
 }
@@ -90,11 +92,27 @@ pub struct ChunkEntityData {
     /// Chunk Z
     pub z: i32,
     pub data: std::sync::Mutex<Vec<NbtCompound>>,
-    /// Set once the serialized entities have been consumed and spawned. From then on the
+    /// Set once the serialized entities have been copied for spawning. From then on the
     /// live entity list is the source of truth and `data` is rebuilt from it on every save.
     pub live: AtomicBool,
 
-    pub dirty: AtomicBool,
+    pub dirty: io::DirtyFlag,
+}
+
+impl ChunkEntityData {
+    /// Returns saved entities once for activation without consuming a pending save.
+    pub fn entities_for_activation(&self) -> Vec<NbtCompound> {
+        // PersistentEntitySectionManager.processPendingLoads consumes copied storage NBT.
+        let data = self
+            .data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.live.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            Vec::new()
+        } else {
+            data.clone()
+        }
+    }
 }
 
 /// Represents pure block data for a chunk.
@@ -107,7 +125,7 @@ pub struct ChunkSections {
     pub count: usize,
     pub block_sections: RwLock<Box<[BlockPalette]>>,
     pub random_tick_sections: RwLock<Option<Box<[RandomTickSectionCache]>>>,
-    pub randomly_ticking_mask: std::sync::atomic::AtomicU32,
+    pub randomly_ticking_mask: RandomTickMembership,
     pub biome_sections: RwLock<Box<[BiomePalette]>>,
     pub min_y: i32,
 }
@@ -305,8 +323,8 @@ impl ChunkSections {
     #[must_use]
     pub fn build_random_tick_sections_cache(
         block_sections: &[BlockPalette],
-    ) -> (Option<Box<[RandomTickSectionCache]>>, u32) {
-        let mut mask = 0;
+    ) -> (Option<Box<[RandomTickSectionCache]>>, Vec<bool>) {
+        let mut mask = vec![false; block_sections.len()];
         let mut has_ticks = false;
         let cache = block_sections
             .iter()
@@ -315,7 +333,7 @@ impl ChunkSections {
                 let (random_ticking_block_count, random_ticking_fluid_count) =
                     section.random_ticking_counts();
                 if random_ticking_block_count > 0 || random_ticking_fluid_count > 0 {
-                    mask |= 1 << i;
+                    mask[i] = true;
                     has_ticks = true;
                 }
                 RandomTickSectionCache {
@@ -329,7 +347,7 @@ impl ChunkSections {
         if has_ticks {
             (Some(cache), mask)
         } else {
-            (None, 0)
+            (None, mask)
         }
     }
 
@@ -344,7 +362,7 @@ impl ChunkSections {
             count: num_sections,
             block_sections: RwLock::new(block_sections),
             random_tick_sections: RwLock::new(random_tick_sections),
-            randomly_ticking_mask: std::sync::atomic::AtomicU32::new(randomly_ticking_mask),
+            randomly_ticking_mask: RandomTickMembership::new(randomly_ticking_mask),
             biome_sections: RwLock::new(biome_sections),
             min_y,
         }
@@ -369,7 +387,7 @@ impl ChunkSections {
             count,
             block_sections: RwLock::new(block_sections),
             random_tick_sections: RwLock::new(random_tick_sections),
-            randomly_ticking_mask: std::sync::atomic::AtomicU32::new(randomly_ticking_mask),
+            randomly_ticking_mask: RandomTickMembership::new(randomly_ticking_mask),
             biome_sections: RwLock::new(biome_sections),
             min_y,
         }
@@ -549,17 +567,8 @@ impl ChunkSections {
                         .saturating_add(1);
                 }
 
-                // Update the bitmask
-                let mut mask = self
-                    .randomly_ticking_mask
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                if random_tick_cache.is_randomly_ticking() {
-                    mask |= 1 << section_index;
-                } else {
-                    mask &= !(1 << section_index);
-                }
                 self.randomly_ticking_mask
-                    .store(mask, std::sync::atomic::Ordering::Relaxed);
+                    .set(section_index, random_tick_cache.is_randomly_ticking());
             }
 
             return Some(replaced_block_state_id);
@@ -639,7 +648,7 @@ impl ChunkData {
             light_populated: std::sync::atomic::AtomicBool::new(false),
             status: ChunkStatus::Full,
             blending_data: None,
-            dirty: std::sync::atomic::AtomicBool::new(false),
+            dirty: io::DirtyFlag::new(false),
             inhabited_time: std::sync::atomic::AtomicU64::new(0),
             custom_data: std::sync::Mutex::new(NbtCompound::new()),
         }
@@ -765,18 +774,9 @@ impl ChunkData {
                                 .saturating_add(1);
                         }
 
-                        let mut mask = self
-                            .section
-                            .randomly_ticking_mask
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        if random_tick_cache.is_randomly_ticking() {
-                            mask |= 1 << section_index;
-                        } else {
-                            mask &= !(1 << section_index);
-                        }
                         self.section
                             .randomly_ticking_mask
-                            .store(mask, std::sync::atomic::Ordering::Relaxed);
+                            .set(section_index, random_tick_cache.is_randomly_ticking());
                     }
                 }
                 results.push((rel_x, y, rel_z, replaced_id));
@@ -978,9 +978,21 @@ pub enum ChunkSerializingError {
 
 #[cfg(test)]
 mod tests {
-    use super::ChunkSections;
+    use super::{ChunkSections, RandomTickMembership};
     use crate::chunk::palette::BlockPalette;
     use pumpkin_data::{Block, block_properties::has_random_ticks};
+
+    #[test]
+    fn random_ticks_above_section_31_do_not_overflow() {
+        let mut palettes = vec![BlockPalette::default(); 40];
+        palettes[35].set(0, 0, 0, Block::LAVA.default_state.id);
+        let (_, membership) = ChunkSections::build_random_tick_sections_cache(&palettes);
+        let membership = RandomTickMembership::new(membership);
+        assert!(membership.contains(35));
+        assert!(!membership.contains(3));
+        membership.set(35, false);
+        assert!(!membership.any());
+    }
 
     #[test]
     fn random_tick_cache_initializes_from_palette_contents() {

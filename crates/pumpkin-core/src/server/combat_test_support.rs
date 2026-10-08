@@ -3,6 +3,7 @@ use super::*;
 use std::sync::RwLock;
 
 pub fn server(path: &std::path::Path) -> Arc<Server> {
+    let session_lock = pumpkin_world::session_lock::acquire(path).unwrap();
     let basic_config = BasicConfiguration::default();
     let advanced_config = AdvancedConfiguration::default();
     let telemetry_config = TelemetryConfig::default();
@@ -46,6 +47,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
     let tick_rate_manager = Arc::new(ServerTickRateManager::new(basic_config.tps));
     let dimensions = vec![Dimension::OVERWORLD];
     let server = Server {
+        _session_lock: session_lock,
         basic_config,
         advanced_config,
         telemetry_config,
@@ -70,6 +72,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         map_manager: MapManager::new(),
         defaultgamemode,
         player_data_storage,
+        tick_gate: tokio::sync::Mutex::new(()),
         command_storage: std::sync::Mutex::new(std::collections::HashMap::new()),
         stopwatches: std::sync::Mutex::new(crate::world::stopwatches::Stopwatches::new()),
         random_sequences: Arc::new(std::sync::Mutex::new(

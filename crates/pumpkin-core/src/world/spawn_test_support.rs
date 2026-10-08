@@ -45,7 +45,7 @@ impl Fixture {
         Self::from_dir(self.dir)
     }
     pub async fn finish(self) {
-        self.world.level.shutdown().await;
+        self.world.level.shutdown().await.unwrap();
     }
 }
 

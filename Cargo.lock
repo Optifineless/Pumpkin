@@ -3532,6 +3532,7 @@ dependencies = [
  "flate2",
  "futures",
  "itertools 0.15.0",
+ "libc",
  "lz4-java-wrc",
  "pumpkin-config",
  "pumpkin-data",

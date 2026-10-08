@@ -87,6 +87,8 @@ impl Ticker {
             // following iteration catch-up-runs with no park.
             schedule.next_tick_nanos += this_tick_nanos;
 
+            // PlayerList.remove is serialized with the entire tick, including plugin callbacks.
+            let tick = server.tick_gate.blocking_lock();
             manager.tick();
 
             let tick_number = server.tick_count.load(Ordering::Relaxed);
@@ -129,6 +131,7 @@ impl Ticker {
             }
 
             server.update_tick_times(tick_duration_nanos);
+            drop(tick);
 
             if STOP_INTERRUPT.is_cancelled() {
                 break 'ticker;

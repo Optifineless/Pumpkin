@@ -70,11 +70,34 @@ impl AdvancementManager {
             return Err(AdvancementDataError::Io(e));
         }
         for (path, json) in to_write {
-            tokio::fs::write(&path, json)
+            tokio::task::spawn_blocking(move || Self::write_advancements(&path, &json))
                 .await
+                .map_err(|error| AdvancementDataError::Io(std::io::Error::other(error)))?
                 .map_err(AdvancementDataError::Io)?;
         }
         Ok(())
+    }
+
+    // PlayerAdvancements.save payload, with PlayerDataStorage.save / Util.safeReplaceFile
+    // publication so an interrupted save cannot truncate the previous advancements.
+    fn write_advancements(path: &std::path::Path, json: &str) -> std::io::Result<()> {
+        use pumpkin_world::{safe_replace_file, temporary_path};
+        use std::io::Write;
+        let temporary = temporary_path(path);
+        let result = (|| {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)?;
+            file.write_all(json.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+            safe_replace_file(path, &temporary, &path.with_extension("json_old"))
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(temporary);
+        }
+        result
     }
 
     /// Saves the advancements of a specific player.
@@ -87,6 +110,27 @@ impl AdvancementManager {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn advancement_publication_keeps_previous_file_and_survives_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("player.json");
+        let backup = path.with_extension("json_old");
+        AdvancementManager::write_advancements(&path, "{\"revision\":1}").unwrap();
+        let inode = directory.path().join("original-inode");
+        std::fs::hard_link(&path, &inode).unwrap();
+        AdvancementManager::write_advancements(&path, "{\"revision\":2}").unwrap();
+        assert_eq!(std::fs::read_to_string(&inode).unwrap(), "{\"revision\":1}");
+        assert_eq!(
+            std::fs::read(&backup).unwrap(),
+            std::fs::read(&inode).unwrap()
+        );
+        std::fs::remove_file(&backup).unwrap();
+        std::fs::create_dir(&backup).unwrap();
+        assert!(AdvancementManager::write_advancements(&path, "{\"revision\":3}").is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"revision\":2}");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 3);
+    }
 
     #[test]
     fn advancement_manager_new() {

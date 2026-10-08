@@ -100,9 +100,11 @@ impl PortalType {
                                     dest_world
                                         .level
                                         .get_or_fetch_chunk(center_chunk, |_| ())
-                                        .await;
-                                });
-                            });
+                                        .await
+                                        .ok()?;
+                                    Some(())
+                                })
+                            })?;
                         }
 
                         // Generate/regenerate the obsidian platform (5x5 obsidian at Y=48, and 5x5x3 air above it)
@@ -221,11 +223,13 @@ impl PortalType {
                                         dest_world
                                             .level
                                             .get_or_fetch_chunk(chunk_pos, |_| ())
-                                            .await;
+                                            .await
+                                            .ok()?;
                                     }
                                 }
-                            });
-                        });
+                                Some(())
+                            })
+                        })?;
                     }
 
                     if let Some((build_pos, axis, is_fallback)) = NetherPortal::find_safe_location(

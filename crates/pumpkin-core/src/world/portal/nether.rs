@@ -539,12 +539,14 @@ impl NetherPortal {
                                         Vector2::new(chunk.x + dx, chunk.y + dz),
                                         |_| (),
                                     )
-                                    .await;
+                                    .await
+                                    .ok()?;
                             }
                         }
                     }
-                });
-            });
+                    Some(())
+                })
+            })?;
         }
 
         let worldborder = world

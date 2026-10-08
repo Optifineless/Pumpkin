@@ -1,3 +1,6 @@
+#[path = "storage_failure.rs"]
+mod storage_failure;
+
 use super::channel::LevelChange;
 use super::chunk_holder::ChunkHolder;
 use super::chunk_state::{Chunk, StagedChunkEnum};
@@ -48,6 +51,7 @@ impl Ord for TaskHeapNode {
 }
 
 pub struct GenerationSchedule {
+    failed_loads: HashMap<ChunkPos, std::time::Instant>,
     queue: BinaryHeap<TaskHeapNode>,
     graph: DAG,
 
@@ -149,6 +153,7 @@ impl GenerationSchedule {
             .name("Schedule".to_string())
             .spawn(move || {
                 let scheduler = Self {
+                    failed_loads: HashMap::new(),
                     queue: BinaryHeap::new(),
                     graph: DAG::default(),
                     last_level: ChunkLevel::default(),
@@ -832,6 +837,7 @@ impl GenerationSchedule {
         }
 
         for pos in empty_holders {
+            self.listener.clear_failure(pos);
             if let Some(mut holder) = self.chunk_map.remove(&pos) {
                 self.graph.drop_edge_chain(holder.occupied_by);
                 holder.occupied_by = EdgeKey::null();
@@ -857,12 +863,18 @@ impl GenerationSchedule {
                 self.chunk_map.insert(pos, holder);
                 continue;
             }
+            if self.failed_loads.remove(&pos).is_some() {
+                self.drop_node(holder.occupied);
+                holder.occupied = NodeKey::null();
+                self.listener.clear_failure(pos);
+            }
             if !holder.occupied.is_null() {
                 self.chunk_map.insert(pos, holder);
                 self.unload_chunks.insert(pos);
                 continue;
             }
 
+            self.listener.clear_failure(pos);
             for task in holder.tasks {
                 if !task.is_null() {
                     let is_in_flight = self.graph.nodes.get(task).is_some_and(|n| n.in_flight);
@@ -1013,6 +1025,7 @@ impl GenerationSchedule {
     fn receive_chunk(&mut self, pos: ChunkPos, data: RecvChunk) {
         match data {
             RecvChunk::IO(chunk) => {
+                self.listener.clear_failure(pos);
                 let mut holder = self.chunk_map.remove(&pos).expect("holder exists");
                 if holder.chunk.is_some() {
                     warn!(
@@ -1176,6 +1189,10 @@ impl GenerationSchedule {
                 // Neighbor chunks returned to holders — unblock waiting tasks
                 self.check_waiting_tasks();
             }
+            RecvChunk::IOFailure(error) => {
+                error!("Chunk {pos:?} remains unloaded after storage failure: {error}");
+                self.fail_storage_read(pos, &error);
+            }
             RecvChunk::GenerationFailure {
                 pos: fail_pos,
                 stage,
@@ -1267,10 +1284,10 @@ impl GenerationSchedule {
                 info!("Saving chunks before shutdown...");
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();
-                self.save_all_chunk(true);
                 break;
             }
 
+            self.retry_storage_reads();
             // 1. Get latest world state (player moves, etc)
             if self.resort_work(self.send_level.get()) {
                 self.garbage_collect_dependencies();
@@ -1303,7 +1320,6 @@ impl GenerationSchedule {
                 if level.shut_down_chunk_system.load(Relaxed) {
                     self.queue.push(task);
                     info!("Shutdown detected during task processing, saving chunks...");
-                    self.save_all_chunk(true);
                     break 'out2;
                 }
 
@@ -1609,7 +1625,13 @@ impl GenerationSchedule {
                     }
                     debug_assert!(self.debug_check());
                     debug_assert_eq!(self.running_task_count, 0);
-                    if self.resort_work(self.send_level.wait_and_get(level)) {
+                    let changes = if self.failed_loads.is_empty() {
+                        self.send_level.wait_and_get(level)
+                    } else {
+                        thread::park_timeout(Duration::from_millis(50));
+                        self.send_level.get()
+                    };
+                    if self.resort_work(changes) {
                         self.garbage_collect_dependencies();
                     }
                 }
@@ -1644,60 +1666,7 @@ impl GenerationSchedule {
             "schedule: waiting for {} generation tasks to finish",
             self.running_task_count
         );
-        let mut wait_iterations = 0;
-        let max_wait_iterations = 100; // 5 seconds max wait
-        while self.running_task_count > 0 && wait_iterations < max_wait_iterations {
-            if let Ok((pos, data)) = self.recv_chunk.try_recv() {
-                self.receive_chunk(pos, data);
-                wait_iterations = 0;
-            } else {
-                wait_iterations += 1;
-                if wait_iterations % 20 == 0 {
-                    warn!(
-                        "Still waiting for {} tasks to complete (waited {}ms)",
-                        self.running_task_count,
-                        wait_iterations * 50
-                    );
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-        }
-
-        if self.running_task_count > 0 {
-            warn!(
-                "Cancelling {} in-flight generation tasks",
-                self.running_task_count
-            );
-            let mut nodes_to_drop = Vec::new();
-
-            for holder in self.chunk_map.values_mut() {
-                for task in &mut holder.tasks {
-                    if !task.is_null() {
-                        self.waiting_for_chunks.remove(task);
-                        nodes_to_drop.push(*task);
-                        *task = NodeKey::null();
-                    }
-                }
-
-                if !holder.occupied.is_null()
-                    && let Some(node) = self.graph.nodes.get(holder.occupied)
-                    && node.pos.x == i32::MAX
-                    && node.pos.y == i32::MAX
-                {
-                    nodes_to_drop.push(holder.occupied);
-                    holder.occupied = NodeKey::null();
-                }
-
-                self.graph.drop_edge_chain(holder.occupied_by);
-                holder.occupied_by = EdgeKey::null();
-            }
-
-            for node_key in nodes_to_drop {
-                self.drop_node(node_key);
-            }
-
-            self.running_task_count = 0;
-        }
+        self.finish_storage();
 
         drop(self.io_write);
 
@@ -1712,6 +1681,9 @@ impl GenerationSchedule {
     }
 
     fn debug_check(&self) -> bool {
+        if !self.failed_loads.is_empty() {
+            return self.debug_check_storage_barriers();
+        }
         if !self.graph.nodes.is_empty() {
             for (key, value) in &self.graph.nodes {
                 error!("unrelease node {key:?}: {value:?}");
@@ -1741,3 +1713,7 @@ impl GenerationSchedule {
         true
     }
 }
+
+#[cfg(test)]
+#[path = "storage_failure_tests.rs"]
+mod storage_failure_tests;

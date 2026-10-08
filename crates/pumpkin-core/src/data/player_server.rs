@@ -11,7 +11,7 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
-use tracing::{debug, error};
+use tracing::error;
 
 /// Helper for managing player data in the server context.
 ///
@@ -21,6 +21,13 @@ pub struct ServerPlayerData {
     storage: Arc<PlayerDataStorage>,
     save_interval: Duration,
     last_save: AtomicCell<Instant>,
+    jobs: tokio_util::task::TaskTracker,
+    drain_gate: tokio::sync::Mutex<()>,
+}
+
+pub struct PlayerStorageSession {
+    _gate: tokio::sync::OwnedMutexGuard<()>,
+    retired: bool,
 }
 
 impl ServerPlayerData {
@@ -30,152 +37,181 @@ impl ServerPlayerData {
             storage: Arc::new(PlayerDataStorage::new(data_path, enabled)),
             save_interval,
             last_save: AtomicCell::new(Instant::now()),
+            jobs: tokio_util::task::TaskTracker::new(),
+            drain_gate: tokio::sync::Mutex::new(()),
         }
     }
 
-    /// Handles a player leaving the server.
-    ///
-    /// This function saves player data when they disconnect.
-    ///
-    /// # Arguments
-    ///
-    /// * `player` - The player who left.
-    ///
-    /// # Returns
-    ///
-    /// A Result indicating success or the error that occurred.
-    pub fn handle_player_leave(&self, player: &Arc<Player>) -> Result<(), PlayerDataError> {
+    /// Saves before PlayerList.remove makes the UUID available to another session.
+    pub async fn handle_player_leave(
+        &self,
+        player: &Arc<Player>,
+        server: &Arc<Server>,
+    ) -> Result<(), PlayerDataError> {
+        // PlayerList.remove runs on vanilla's server thread. Fence Pumpkin's entire
+        // tick (including collisions/combat) through capture and simulation removal.
+        // The connection owner has already joined this player's packet tasks.
+        let tick = server.tick_gate.lock().await;
+        // PlayerList.remove awards LEAVE_GAME before capturing the final save.
+        player.increment_custom_stat(
+            crate::entity::player::statistics::CustomStatistic::LeaveGame,
+            1,
+        );
         player
             .player_screen_handler
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_closed(player.as_ref());
         player.on_handled_screen_closed();
-
-        let mut nbt = NbtCompound::new();
-        player.write_nbt(&mut nbt);
-
-        self.storage.save_player_data(&player.gameprofile.id, nbt)?;
-        Ok(())
+        let snapshot = {
+            let mut session = player
+                .storage_session
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(session) = session.as_mut() else {
+                return Ok(());
+            };
+            session.retired = true;
+            self.storage.snapshot(&player.gameprofile.id, || {
+                let mut nbt = NbtCompound::new();
+                player.write_nbt(&mut nbt);
+                nbt
+            })
+        };
+        player.remove().await;
+        server.remove_player(player);
+        drop(tick);
+        // The UUID session remains held while disk publication runs outside the tick fence.
+        let storage = self.storage.clone();
+        let saved = self
+            .jobs
+            .spawn_blocking(move || storage.save_snapshot(snapshot))
+            .await
+            .map_err(|error| PlayerDataError::Io(std::io::Error::other(error)))
+            .and_then(std::convert::identity);
+        // PlayerList.save includes advancements; finish them before releasing the UUID gate.
+        let advancements = server
+            .advancement_manager
+            .save_player(player)
+            .await
+            .map_err(|error| PlayerDataError::Io(std::io::Error::other(error)));
+        saved.and(advancements)
     }
 
-    /// Performs periodic maintenance tasks.
-    ///
-    /// This function is called synchronously on the server tick loop to check
-    /// if it is time to save player data.
-    pub fn tick(&self, server: &Server) {
-        let now = Instant::now();
-
-        // Only save players periodically based on save_interval
-        let last_save = self.last_save.load();
-        let should_save = now.duration_since(last_save) >= self.save_interval;
-
-        if should_save && self.storage.is_save_enabled() {
-            self.last_save.store(now);
-            // Snapshot all online players periodically across all worlds
-            let mut snapshots = Vec::new();
-            for world in server.worlds.load().iter() {
-                for player in world.players.load().iter() {
-                    let mut nbt = NbtCompound::new();
-                    player.write_nbt(&mut nbt);
-                    snapshots.push((player.gameprofile.id, nbt));
-                }
-            }
-
-            if snapshots.is_empty() {
-                return;
-            }
-
-            let storage = self.storage.clone();
-            rayon::spawn(move || {
-                for (uuid, nbt) in snapshots {
-                    if let Err(e) = storage.save_player_data(&uuid, nbt) {
-                        error!("Failed to save player data for {uuid}: {e}");
-                    }
-                }
-                debug!("Periodic player data save completed");
+    fn capture_player(&self, player: &Player) {
+        let session = player
+            .storage_session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if session.as_ref().is_some_and(|session| !session.retired) {
+            self.storage.snapshot(&player.gameprofile.id, || {
+                let mut nbt = NbtCompound::new();
+                player.write_nbt(&mut nbt);
+                nbt
             });
         }
     }
 
-    /// Saves all players' data immediately.
-    ///
-    /// This function immediately saves all online players' data to disk.
-    /// Useful for server shutdown or backup operations.
-    pub fn save_all_players(&self, server: &Server) -> Result<(), PlayerDataError> {
-        let mut total_players = 0;
+    pub fn tick(&self, server: &Server) {
+        let now = Instant::now();
+        if now.duration_since(self.last_save.load()) >= self.save_interval
+            && self.storage.is_save_enabled()
+        {
+            self.last_save.store(now);
+            for world in server.worlds.load().iter() {
+                for player in world.players.load().iter() {
+                    self.capture_player(player);
+                }
+            }
+            let storage = self.storage.clone();
+            self.jobs.spawn_blocking(move || {
+                if let Err(error) = storage.flush_all() {
+                    error!("Periodic player save failed: {error}");
+                }
+            });
+        }
+    }
 
-        // Save players from all worlds
+    /// Joins all player storage jobs and retries retained snapshots on the blocking pool.
+    pub async fn drain(&self) -> Result<(), PlayerDataError> {
+        // PlayerList.saveAll runs serially on vanilla's server thread; keep each barrier intact.
+        let _drain = self.drain_gate.lock().await;
+        self.jobs.close();
+        self.jobs.wait().await;
+        self.jobs.reopen();
+        let storage = self.storage.clone();
+        self.jobs
+            .spawn_blocking(move || storage.flush_all())
+            .await
+            .map_err(|error| PlayerDataError::Io(std::io::Error::other(error)))?
+    }
+
+    pub async fn save_all_players(&self, server: &Server) -> Result<(), PlayerDataError> {
         for world in server.worlds.load().iter() {
             for player in world.players.load().iter() {
-                self.extract_data_and_save_player(player)?;
-                total_players += 1;
+                self.capture_player(player);
             }
         }
-
-        debug!("Saved data for {total_players} online players");
-        Ok(())
+        self.drain().await
     }
 
-    /// Loads player data and applies it to a player.
-    ///
-    /// This function loads a player's data and applies it to their Player instance.
-    /// For new players, it creates default data without errors.
-    ///
-    /// # Arguments
-    ///
-    /// * `player` - The player to load data for and apply to.
-    ///
-    /// # Returns
-    ///
-    /// A Result indicating success or the error that occurred.
-    pub fn load_data(&self, uuid: &uuid::Uuid) -> Result<Option<NbtCompound>, PlayerDataError> {
-        let result = self.storage.load_player_data(uuid);
+    pub(crate) async fn load_client_data(
+        &self,
+        uuid: &uuid::Uuid,
+        client: &crate::net::ClientPlatform,
+    ) -> Result<(PlayerStorageSession, Option<NbtCompound>), PlayerDataError> {
+        self.load_data_cancellable(uuid, async {
+            tokio::select! {
+                () = crate::STOP_INTERRUPT.cancelled() => {},
+                () = async {
+                    match client {
+                        crate::net::ClientPlatform::Java(client) => client.await_close_interrupt().await,
+                        crate::net::ClientPlatform::Bedrock(client) => client.await_close_interrupt().await,
+                    }
+                } => {},
+            }
+        }).await
+    }
 
-        match result {
-            Ok((should_load, data)) => {
-                if !should_load {
-                    // No data to load, continue with default data
-                    return Ok(None);
-                }
-                Ok(Some(data))
-            }
-            Err(e) => {
-                if self.storage.is_save_enabled() {
-                    // Only log as error if player data saving is enabled
-                    error!("Error loading player data for {uuid}: {e}");
-                } else {
-                    // Otherwise just log as info since it's expected
-                    debug!("Not loading player data for {uuid} (saving disabled)");
-                }
-                // Continue with default data even if there's an error
-                Ok(None)
-            }
+    /// Cancels a waiting login without bypassing an active or failed session's saved data.
+    pub(crate) async fn load_data_cancellable(
+        &self,
+        uuid: &uuid::Uuid,
+        cancelled: impl Future<Output = ()>,
+    ) -> Result<(PlayerStorageSession, Option<NbtCompound>), PlayerDataError> {
+        tokio::select! {
+            biased;
+            () = cancelled => Err(PlayerDataError::Io(std::io::Error::new(
+                std::io::ErrorKind::Interrupted, "Player login cancelled"))),
+            result = self.load_data(uuid) => result,
         }
     }
 
-    /// Extracts and saves data from a player.
-    ///
-    /// This function extracts NBT data from a player and saves it to disk.
-    ///
-    /// # Arguments
-    ///
-    /// * `player` - The player to extract and save data for.
-    ///
-    /// # Returns
-    ///
-    /// A Result indicating success or the error that occurred.
-    pub fn extract_data_and_save_player(&self, player: &Player) -> Result<(), PlayerDataError> {
-        if !self.storage.is_save_enabled() {
-            return Ok(());
-        }
-
-        let uuid = player.gameprofile.id;
-        let mut nbt = NbtCompound::new();
-        player.write_nbt(&mut nbt);
-
-        self.storage.save_player_data(&uuid, nbt)?;
-        Ok(())
+    /// Holds the UUID gate from recovery until final save and player removal finish.
+    pub async fn load_data(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Result<(PlayerStorageSession, Option<NbtCompound>), PlayerDataError> {
+        let gate = self.storage.acquire_session(uuid).await?;
+        let storage = self.storage.clone();
+        let uuid = *uuid;
+        let (gate, loaded) = self
+            .jobs
+            .spawn_blocking(move || {
+                // IOWorker.close: cancellation must not release ownership or bypass the drain.
+                let loaded = storage.load_player_data(&uuid);
+                (gate, loaded)
+            })
+            .await
+            .map_err(|error| PlayerDataError::Io(std::io::Error::other(error)))?;
+        let (should_load, data) = loaded?;
+        Ok((
+            PlayerStorageSession {
+                _gate: gate,
+                retired: false,
+            },
+            should_load.then_some(data),
+        ))
     }
 }
 
@@ -188,6 +224,213 @@ mod test {
     use std::time::Instant;
     use tempfile::tempdir;
     use uuid::Uuid;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn disconnect_saves_the_single_plugin_approved_leave_statistic() {
+        use crate::{
+            entity::{
+                death_test_world::DeathTestWorld,
+                player::statistics::{CustomStatistic, StatisticCategory, Statistics},
+            },
+            plugin::{
+                BoxFuture, EventHandler, EventPriority,
+                api::events::player::player_statistic_increment::PlayerStatisticIncrementEvent,
+            },
+            server::Server,
+            world::scoreboard::{NoTarget, ScoreboardObjective},
+        };
+        use pumpkin_protocol::java::client::play::RenderType;
+        use pumpkin_util::text::TextComponent;
+        use std::sync::Arc;
+
+        struct ChangeLeaveCount;
+        impl EventHandler<PlayerStatisticIncrementEvent> for ChangeLeaveCount {
+            fn handle_blocking<'a>(
+                &'a self,
+                _server: &'a Arc<Server>,
+                event: &'a mut PlayerStatisticIncrementEvent,
+            ) -> BoxFuture<'a, ()> {
+                Box::pin(async move {
+                    assert_eq!(
+                        event.statistic_id,
+                        format!("Custom:{}", CustomStatistic::LeaveGame as i32)
+                    );
+                    event.amount = 3;
+                })
+            }
+        }
+
+        let fixture = DeathTestWorld::new().await;
+        let server = &fixture.server;
+        let player = fixture.player("Disconnect");
+        server
+            .plugin_manager
+            .register(Arc::new(ChangeLeaveCount), EventPriority::Normal, true);
+        fixture.world().scoreboard.lock().unwrap().add_objective(
+            &NoTarget,
+            ScoreboardObjective::new(
+                "quits",
+                TextComponent::text("quits"),
+                RenderType::Integer,
+                None,
+                "minecraft.custom:minecraft.leave_game",
+            ),
+        );
+        let storage = &server.player_data_storage;
+        let (session, _) = storage.load_data(&player.gameprofile.id).await.unwrap();
+        *player.storage_session.lock().unwrap() = Some(session);
+        storage.handle_player_leave(&player, server).await.unwrap();
+        let (_, saved) = storage
+            .storage
+            .load_player_data(&player.gameprofile.id)
+            .unwrap();
+        let mut saved_stats = Statistics::default();
+        saved_stats.read_nbt(&saved);
+        player.storage_session.lock().unwrap().take();
+        server.shutdown().await;
+
+        assert_eq!(player.get_custom_stat(CustomStatistic::LeaveGame), 3);
+        assert_eq!(
+            saved_stats.get(StatisticCategory::Custom, CustomStatistic::LeaveGame as i32),
+            3,
+        );
+        assert_eq!(
+            fixture
+                .world()
+                .scoreboard
+                .lock()
+                .unwrap()
+                .get_score_value("Disconnect", "quits"),
+            Some(3),
+        );
+    }
+
+    #[tokio::test]
+    async fn login_recovery_waits_for_previous_session_final_save() {
+        let directory = tempdir().unwrap();
+        let data = ServerPlayerData::new(directory.path(), Duration::from_secs(60), true);
+        let uuid = Uuid::new_v4();
+        let (session, _) = data.load_data(&uuid).await.unwrap();
+        // The session returned by the real login path must own storage's UUID gate.
+        let mut same_uuid = Box::pin(data.storage.acquire_session(&uuid));
+        assert!(
+            std::future::Future::poll(
+                same_uuid.as_mut(),
+                &mut std::task::Context::from_waker(std::task::Waker::noop())
+            )
+            .is_pending()
+        );
+        drop(same_uuid);
+        let mut reconnect = Box::pin(data.load_data(&uuid));
+        assert!(
+            std::future::Future::poll(
+                reconnect.as_mut(),
+                &mut std::task::Context::from_waker(std::task::Waker::noop())
+            )
+            .is_pending()
+        );
+        let mut nbt = NbtCompound::new();
+        nbt.put_int("InventoryRevision", 2);
+        data.storage.snapshot(&uuid, || nbt);
+        data.drain().await.unwrap();
+        drop(session);
+        let (_session, loaded) = reconnect.await.unwrap();
+        assert_eq!(loaded.unwrap().get_int("InventoryRevision"), Some(2));
+    }
+
+    #[tokio::test]
+    async fn waiting_login_cancels_without_releasing_the_previous_session() {
+        let directory = tempdir().unwrap();
+        let data = ServerPlayerData::new(directory.path(), Duration::from_secs(60), true);
+        let uuid = Uuid::new_v4();
+        let (session, _) = data.load_data(&uuid).await.unwrap();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let mut reconnect = Box::pin(data.load_data_cancellable(&uuid, cancel.cancelled()));
+        assert!(
+            std::future::Future::poll(
+                reconnect.as_mut(),
+                &mut std::task::Context::from_waker(std::task::Waker::noop())
+            )
+            .is_pending()
+        );
+        cancel.cancel();
+        assert!(
+            matches!(tokio::time::timeout(Duration::from_secs(1), reconnect).await.unwrap(), Err(pumpkin_world::data::player_data::PlayerDataError::Io(error)) if error.kind() == std::io::ErrorKind::Interrupted)
+        );
+        let mut another = Box::pin(data.load_data(&uuid));
+        assert!(
+            std::future::Future::poll(
+                another.as_mut(),
+                &mut std::task::Context::from_waker(std::task::Waker::noop())
+            )
+            .is_pending()
+        );
+        drop(session);
+        assert!(another.await.is_ok());
+    }
+
+    #[test]
+    fn cancelled_recovery_remains_in_the_shutdown_barrier() {
+        let directory = tempdir().unwrap();
+        let data = ServerPlayerData::new(directory.path(), Duration::from_secs(60), true);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let (release, held) = std::sync::mpsc::channel();
+        runtime.spawn_blocking(move || held.recv().unwrap());
+        runtime.block_on(async {
+            let uuid = Uuid::new_v4();
+            let mut login = Box::pin(data.load_data(&uuid));
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(std::future::Future::poll(login.as_mut(), &mut context).is_pending());
+            drop(login);
+            // Exercise drain's producer barrier while recovery is still queued on the pool.
+            data.jobs.close();
+            let mut barrier = Box::pin(data.jobs.wait());
+            let finished_early =
+                std::future::Future::poll(barrier.as_mut(), &mut context).is_ready();
+            release.send(()).unwrap();
+            barrier.await;
+            data.drain().await.unwrap();
+            assert!(
+                !finished_early,
+                "shutdown abandoned cancelled login recovery"
+            );
+        });
+    }
+
+    #[test]
+    fn storage_review_concurrent_drains_do_not_interleave_tracker_cycles() {
+        let directory = tempdir().unwrap();
+        let data = ServerPlayerData::new(directory.path(), Duration::from_secs(60), true);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let (release, held) = std::sync::mpsc::channel();
+        runtime.spawn_blocking(move || held.recv().unwrap());
+        runtime.block_on(async {
+            let mut first = Box::pin(data.drain());
+            let mut second = Box::pin(data.drain());
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(std::future::Future::poll(first.as_mut(), &mut context).is_pending());
+            assert!(!data.jobs.is_closed());
+            assert!(std::future::Future::poll(second.as_mut(), &mut context).is_pending());
+            // The first drain is still publishing; the second cannot start another close/wait.
+            let interleaved = data.jobs.is_closed();
+            release.send(()).unwrap();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                first.await.unwrap();
+                second.await.unwrap();
+            })
+            .await
+            .unwrap();
+            assert!(!interleaved);
+        });
+    }
 
     #[tokio::test]
     async fn player_data_storage_new() {

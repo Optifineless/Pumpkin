@@ -73,5 +73,5 @@ async fn dragon_parts_forward_damage_with_head_and_neck_exemptions() {
             before - expected
         );
     }
-    world.level.shutdown().await;
+    world.level.shutdown().await.unwrap();
 }

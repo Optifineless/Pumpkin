@@ -67,7 +67,11 @@ where
         })
         .await
         .map_err(|_| std::io::Error::other("pump serialization task failed"))?;
-        tokio::fs::write(backend, bytes).await
+        // Util.safeReplaceFile's temporary-file publication, with RegionFile.flush durability.
+        crate::storage::TemporaryFile::write(backend, vec![bytes])
+            .await?
+            .publish(backend)
+            .await
     }
 
     fn read(r: Bytes) -> Result<Self, ChunkReadingError> {
@@ -133,6 +137,7 @@ where
         &self,
         chunks: Vec<Vector2<i32>>,
         stream: tokio::sync::mpsc::Sender<LoadedData<Self::Data, ChunkReadingError>>,
+        dimension: pumpkin_data::dimension::Dimension,
     ) {
         let chunk_items: Vec<(Vector2<i32>, Option<Bytes>)> = chunks
             .into_iter()
@@ -162,7 +167,7 @@ where
                             std::io::Read::read_to_end(&mut decoder, &mut decompressed)
                                 .map_err(ChunkReadingError::IoError)?;
                             let bytes = Bytes::from(decompressed);
-                            D::from_bytes(&bytes, pos)
+                            D::from_bytes_in_dimension(&bytes, pos, &dimension)
                         })();
                         match res {
                             Ok(data) => LoadedData::Loaded(data),
@@ -246,6 +251,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replacement_does_not_truncate_the_previous_region_inode() {
+        let directory = TempDir::new().unwrap();
+        let path = directory.path().join("r.0.0.pump");
+        let retained = directory.path().join("previous-region");
+        let mut file = PumpFile::<MockChunk>::default();
+        file.update_chunk(
+            Arc::new(MockChunk {
+                x: 0,
+                z: 0,
+                data: vec![1, 2, 3],
+            }),
+            &(),
+        )
+        .await
+        .unwrap();
+        file.write(&path).await.unwrap();
+        let previous = std::fs::read(&path).unwrap();
+        std::fs::hard_link(&path, &retained).unwrap();
+        file.update_chunk(
+            Arc::new(MockChunk {
+                x: 0,
+                z: 0,
+                data: vec![4, 5, 6],
+            }),
+            &(),
+        )
+        .await
+        .unwrap();
+        file.write(&path).await.unwrap();
+        assert_eq!(std::fs::read(retained).unwrap(), previous);
+        assert_ne!(std::fs::read(path).unwrap(), previous);
+    }
+
+    #[tokio::test]
     async fn pump_file_roundtrip() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("r.0.0.pump");
@@ -266,7 +305,11 @@ mod tests {
         assert_eq!(read_file.data.chunks.len(), 1);
         let (stream_tx, mut stream_rx) = tokio::sync::mpsc::channel(1);
         read_file
-            .get_chunks(vec![Vector2::new(0, 0)], stream_tx)
+            .get_chunks(
+                vec![Vector2::new(0, 0)],
+                stream_tx,
+                pumpkin_data::dimension::Dimension::OVERWORLD,
+            )
             .await;
 
         let loaded = stream_rx.recv().await.unwrap();

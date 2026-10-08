@@ -55,6 +55,7 @@ tokio-util = { workspace = true, features = ["rt"] }
 rand.workspace = true
 rustc-hash.workspace = true
 slotmap.workspace = true
+libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

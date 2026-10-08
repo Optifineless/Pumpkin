@@ -131,7 +131,7 @@ async fn ordinary_unload_and_restart_restore_nested_riders_and_equipment() {
         .get_entity()
         .set_pos(Vector3::new(16.1, 65.0, 8.5));
     let pos = Vector2::new(0, 0);
-    let chunk = world.level.get_entity_chunk(pos).await;
+    let chunk = world.level.get_entity_chunk(pos).await.unwrap();
     world.make_chunk_entities_live(&chunk, None);
     world.remove_entities_in_chunks([pos]).await;
     assert!(world.entities.load().is_empty());
@@ -146,7 +146,7 @@ async fn ordinary_unload_and_restart_restore_nested_riders_and_equipment() {
     world.level.clean_entity_chunks([pos]);
     let fixture = fixture.restart().await;
     let world = &fixture.world;
-    let chunk = world.level.get_entity_chunk(pos).await;
+    let chunk = world.level.get_entity_chunk(pos).await.unwrap();
     assert_eq!(chunk.data.lock().unwrap().len(), 1);
     world.make_chunk_entities_live(&chunk, None);
     assert_eq!(world.entities.load().len(), 3);

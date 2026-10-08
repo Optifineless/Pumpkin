@@ -1,4 +1,4 @@
-use std::{error, sync::Arc};
+use std::{error, path::Path, sync::Arc};
 
 use bytes::Bytes;
 use pumpkin_util::math::vector2::Vector2;
@@ -6,7 +6,9 @@ use pumpkin_util::math::vector2::Vector2;
 use super::{ChunkReadingError, ChunkWritingError};
 use crate::level::LevelFolder;
 
+mod dirty_flag;
 pub mod file_manager;
+pub use dirty_flag::DirtyFlag;
 
 pub(crate) async fn run_blocking<T, F>(task: F) -> Result<T, tokio::task::JoinError>
 where
@@ -42,8 +44,19 @@ impl<D: Send, E: error::Error> LoadedData<D, E> {
 }
 
 pub trait Dirtiable {
+    /// Copies retained data when a loader can consume or mutate the returned object.
+    fn copy_for_load(self: &Arc<Self>) -> Arc<Self> {
+        self.clone()
+    }
+
     fn is_dirty(&self) -> bool;
     fn mark_dirty(&self, flag: bool);
+    /// Returns a mutation version when this type supports clearing after publication.
+    fn dirty_version(&self) -> Option<u64> {
+        None
+    }
+    /// Clears only the version successfully published; newer mutations must remain dirty.
+    fn clear_published(&self, _version: u64) {}
 }
 
 /// Trait to handle the IO of chunks
@@ -67,11 +80,24 @@ where
         stream: tokio::sync::mpsc::Sender<LoadedData<Self::Data, ChunkReadingError>>,
     ) -> impl Future<Output = ()> + Send + 'a;
 
+    /// Registers dirty data synchronously before unload makes the chunk available to readers.
+    /// Submissions replace pending work in arrival order; callers must fence snapshot lifecycles.
+    /// Registration retains the original for retries; it does not acknowledge disk publication.
+    /// Entity reads receive copies, so activation cannot consume a retained snapshot.
+    fn queue_chunks(&self, folder: &LevelFolder, chunks: Vec<(Vector2<i32>, Self::Data)>);
+
     /// Persist the chunks data
     fn save_chunks<'a>(
         &'a self,
         folder: &'a LevelFolder,
         chunks_data: Vec<(Vector2<i32>, Self::Data)>,
+    ) -> impl Future<Output = Result<(), ChunkWritingError>> + Send + 'a;
+
+    /// Publishes pending data only in the supplied chunks' regions, without requeuing snapshots.
+    fn flush_chunks<'a>(
+        &'a self,
+        folder: &'a LevelFolder,
+        chunks: &'a [Vector2<i32>],
     ) -> impl Future<Output = Result<(), ChunkWritingError>> + Send + 'a;
 
     /// Tells the `ChunkIO` that these chunks are currently loaded in memory
@@ -91,8 +117,13 @@ where
     /// Tells the `ChunkIO` that no more chunks are loaded in memory
     fn clear_watched_chunks(&self) -> impl Future<Output = ()> + Send + '_;
 
-    /// Ensure that all ongoing operations are finished
-    fn block_and_await_ongoing_tasks(&self) -> impl Future<Output = ()> + Send + '_;
+    /// Retries pending originals and modified serializers, reporting publication failures.
+    /// Stop producers and await their tasks before using this as a final shutdown barrier.
+    /// Returns success only after pending work is empty; bounded passes report an error if
+    /// mutations continue. Unversioned dirty data is retained and reported as an error.
+    fn block_and_await_ongoing_tasks(
+        &self,
+    ) -> impl Future<Output = Result<(), ChunkWritingError>> + Send + '_;
 }
 
 /// Trait to serialize and deserialize the chunk data to and from bytes.
@@ -119,6 +150,11 @@ pub trait ChunkSerializer: Send + Sync + Default + 'static {
     /// Create a new instance from bytes
     fn read(r: Bytes) -> Result<Self, ChunkReadingError>;
 
+    /// Reads a region with its filesystem path available for external chunk streams.
+    fn read_with_path(r: Bytes, _path: &Path) -> Result<Self, ChunkReadingError> {
+        Self::read(r)
+    }
+
     /// Add the chunk data to the serializer
     fn update_chunk(
         &mut self,
@@ -131,5 +167,6 @@ pub trait ChunkSerializer: Send + Sync + Default + 'static {
         &self,
         chunks: Vec<Vector2<i32>>,
         stream: tokio::sync::mpsc::Sender<LoadedData<Self::Data, ChunkReadingError>>,
+        dimension: pumpkin_data::dimension::Dimension,
     ) -> impl Future<Output = ()> + Send;
 }
