@@ -58,20 +58,20 @@ impl MoveControlTrait for FlyingMoveControl {
             let y_rot_d = (zd.atan2(xd).to_degrees() as f32) - 90.0;
             entity
                 .yaw
-                .store(self.change_angle(entity.yaw.load(), y_rot_d, 90.0));
+                .store(self.rotlerp(entity.yaw.load(), y_rot_d, 90.0));
 
-            let speed = if entity.on_ground.load(Ordering::Relaxed) {
-                let movement_speed = living_entity.get_attribute_value(&Attributes::MOVEMENT_SPEED);
-                (self.speed_modifier * movement_speed) as f32
+            let attribute = if entity.on_ground.load(Ordering::Relaxed) {
+                &Attributes::MOVEMENT_SPEED
             } else {
-                let flying_speed = living_entity.get_attribute_value(&Attributes::FLYING_SPEED);
-                (self.speed_modifier * flying_speed) as f32
+                &Attributes::FLYING_SPEED
             };
+            let speed = (self.speed_modifier * living_entity.get_attribute_value(attribute)) as f32;
 
+            mob_entity.movement_speed.store(speed);
             let sd = xd.hypot(zd);
             if yd.abs() > 1.0E-5 || sd > 1.0E-5 {
                 let x_rot_d = -((yd.atan2(sd).to_degrees()) as f32);
-                entity.pitch.store(self.change_angle(
+                entity.pitch.store(self.rotlerp(
                     entity.pitch.load(),
                     x_rot_d,
                     self.max_turn as f32,

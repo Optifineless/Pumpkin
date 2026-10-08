@@ -2,6 +2,7 @@ pub mod allay;
 pub mod animal;
 pub mod armadillo;
 pub mod axolotl;
+mod axolotl_air;
 pub mod bee;
 pub mod camel;
 pub mod cat;
@@ -37,6 +38,7 @@ pub mod sniffer;
 pub mod snow_golem;
 pub mod squid;
 pub mod strider;
+pub mod strider_movement;
 pub mod tadpole;
 pub mod tamable;
 pub mod trader_llama;
@@ -48,3 +50,18 @@ pub mod wolf;
 pub mod zombie_horse;
 
 pub mod zombie_nautilus;
+
+mod rabbit_movement;
+
+mod rabbit_goals;
+
+mod dolphin_movement;
+
+#[cfg(test)]
+mod movement_integration_tests;
+
+#[cfg(test)]
+mod movement_timing_tests;
+
+#[cfg(test)]
+mod movement_review_tests;

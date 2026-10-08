@@ -6,7 +6,7 @@ use crate::entity::{
     Entity,
     ai::goal::{
         active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
 };
@@ -32,7 +32,11 @@ impl BreezeEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // BreezeAi.initCoreActivity: Brain core Swim(0.8F), adapted to the goal selector.
+            goal_selector.add_goal(
+                0,
+                Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
+            );
             goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
                 6,
@@ -56,6 +60,16 @@ impl BreezeEntity {
 }
 
 impl Mob for BreezeEntity {
+    // Breeze.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        30.0
+    }
+
+    // Breeze.getHeadRotSpeed.
+    fn get_max_look_yaw_change(&self) -> f32 {
+        25.0
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }

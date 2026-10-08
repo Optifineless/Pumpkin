@@ -1,3 +1,6 @@
+use crate::entity::ai::{
+    control::guardian_move_control::GuardianMoveControl, pathfinder::Navigator,
+};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -11,7 +14,7 @@ use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
         active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
 };
@@ -24,6 +27,9 @@ pub struct ElderGuardianEntity {
 impl ElderGuardianEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Guardian constructor / createNavigation, inherited by ElderGuardian.
+        let navigation = Navigator::water_bound(false);
+        mob_entity.configure_movement(navigation, GuardianMoveControl::default());
         let guardian = Self {
             mob_entity,
             tick_count: AtomicI32::new(0),
@@ -41,8 +47,7 @@ impl ElderGuardianEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
-            goal_selector.add_goal(4, Box::new(WanderAroundGoal::new(1.0)));
+            goal_selector.add_goal(4, Box::new(WanderAroundGoal::swimming(1.0, 80)));
             goal_selector.add_goal(
                 5,
                 LookAtEntityGoal::with_default(mob_weak.clone(), &EntityType::PLAYER, 8.0),
@@ -65,11 +70,29 @@ impl ElderGuardianEntity {
 }
 
 impl Mob for ElderGuardianEntity {
+    // Guardian.getMaxHeadXRot.
+    fn get_max_look_pitch_change(&self) -> f32 {
+        180.0
+    }
+
+    // Guardian.travelInWater.
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        let sink = !self
+            .mob_entity
+            .move_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_moving()
+            && self.mob_entity.get_target().is_none();
+        crate::entity::mob::movement::travel_in_water(self, caller, 0.1, sink)
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }
 
     fn mob_tick(&self, _caller: &dyn EntityBase) {
+        super::movement::flop_on_land(self, 0.4);
         let entity = &self.mob_entity.living_entity.entity;
         if !entity.is_alive() {
             return;

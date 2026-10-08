@@ -18,7 +18,6 @@ pub struct PowderSnowBlock;
 
 const FALLING_COLLISION_SHAPE: BoundingBox =
     BoundingBox::new_array([0.0, 0.0, 0.0], [1.0, 0.9, 1.0]);
-const WALK_ON_EPSILON: f64 = 1.0e-7;
 
 pub(crate) fn can_entity_walk_on_powder_snow(entity: &dyn EntityBase) -> bool {
     let base = entity.get_entity();
@@ -42,13 +41,12 @@ pub(crate) fn can_entity_walk_on_powder_snow(entity: &dyn EntityBase) -> bool {
 }
 
 fn is_entity_above_block(entity: &crate::entity::Entity, position: &BlockPos) -> bool {
-    let bb = entity.bounding_box.load();
-    let block_top = f64::from(position.0.y) + 1.0;
-    bb.min.y >= block_top - WALK_ON_EPSILON
+    crate::world::collision_shapes::is_above(entity.bounding_box.load().min.y, position.0.y, 1.0)
 }
 
 fn is_entity_descending(entity: &crate::entity::Entity) -> bool {
-    entity.velocity.load().y < 0.0
+    // Entity.isDescending means holding sneak, not negative vertical velocity.
+    entity.is_sneaking()
 }
 
 pub(crate) fn collision_shape_for_entity(

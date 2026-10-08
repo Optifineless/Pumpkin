@@ -9,7 +9,7 @@ use crate::entity::ai::pathfinder::{
 
 pub struct SwimNodeEvaluator {
     pub base: BaseNodeEvaluator,
-    allow_breaching: bool,
+    pub(super) allow_breaching: bool,
     path_types_cache: FxHashMap<Vector3<i32>, PathType>,
 }
 
@@ -84,6 +84,8 @@ impl SwimNodeEvaluator {
 
 impl NodeEvaluator for SwimNodeEvaluator {
     fn prepare(&mut self, context: PathfindingContext, mob_data: MobData) {
+        // NodeEvaluator.prepare discards nodes from the previous search.
+        self.base.nodes.clear();
         self.base.entity_width = mob_data.get_bb_width();
         self.base.entity_height = mob_data.get_bb_height();
         self.base.entity_depth = mob_data.get_bb_width();
@@ -184,7 +186,12 @@ impl NodeEvaluator for SwimNodeEvaluator {
             }
         }
 
-        let p = pos.to_block_pos();
+        // SwimNodeEvaluator.getPathTypeOfMob checks the final mutable position.
+        let p = BlockPos::new(
+            pos.x + self.base.entity_width - 1,
+            pos.y + self.base.entity_height - 1,
+            pos.z + self.base.entity_depth - 1,
+        );
         if context.is_pathfindable(&p, PathComputationType::Water) {
             PathType::Water
         } else {
@@ -199,8 +206,10 @@ impl NodeEvaluator for SwimNodeEvaluator {
             height: 1.95,
             max_step_height: 1.0,
             max_fall_distance: 3.0,
+            fall_distance: 0.0,
             can_swim: true,
             can_walk_on_water: false,
+            can_stand_on_lava: false,
             avoids_fire: true,
             avoids_water: false,
             on_ground: false,

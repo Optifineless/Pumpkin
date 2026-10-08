@@ -19,11 +19,8 @@ pub struct BinaryHeap {
 impl BinaryHeap {
     #[must_use]
     pub fn new() -> Self {
-        let mut heap = Vec::with_capacity(1024);
-        heap.push(None);
-
         Self {
-            heap,
+            heap: Vec::new(),
             position_map: FxHashMap::default(),
             size: 0,
         }
@@ -52,13 +49,22 @@ impl BinaryHeap {
     }
 
     pub fn clear(&mut self) {
-        self.heap.clear();
-        self.heap.push(None);
+        self.heap.truncate(1);
         self.position_map.clear();
         self.size = 0;
     }
 
+    /// Allocates the open set only when a path search first needs it.
+    pub(super) fn reserve_for_search(&mut self) {
+        if self.heap.is_empty() {
+            // Preserve Pumpkin's search capacity without allocating it for every idle mob.
+            self.heap.reserve(1024);
+            self.heap.push(None);
+        }
+    }
+
     pub fn insert(&mut self, mut node: Node) {
+        self.reserve_for_search();
         self.size += 1;
 
         if self.heap.len() <= self.size {
@@ -153,8 +159,11 @@ impl BinaryHeap {
 
     /// Drain all nodes from the heap, returning them as a Vec.
     pub fn drain(&mut self) -> Vec<Node> {
-        let nodes: Vec<Node> = self.heap[1..=self.size]
+        let nodes: Vec<Node> = self
+            .heap
             .iter()
+            .skip(1)
+            .take(self.size)
             .filter_map(|node_opt| *node_opt)
             .collect();
         self.clear();
@@ -163,8 +172,10 @@ impl BinaryHeap {
 
     #[must_use]
     pub fn get_heap(&self) -> Vec<Node> {
-        self.heap[1..=self.size]
+        self.heap
             .iter()
+            .skip(1)
+            .take(self.size)
             .filter_map(|node_opt| *node_opt)
             .collect()
     }
@@ -236,5 +247,29 @@ impl BinaryHeap {
 impl Default for BinaryHeap {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_util::math::position::BlockPos;
+
+    #[test]
+    fn idle_heap_is_lazy_and_search_storage_is_reused() {
+        let mut heap = BinaryHeap::new();
+        assert!(heap.get_heap().is_empty());
+        assert!(heap.drain().is_empty());
+        assert_eq!(heap.heap.capacity(), 0);
+        heap.insert(Node::new(BlockPos::new(1, 2, 3)));
+        let capacity = heap.heap.capacity();
+        assert_eq!(
+            heap.pop().map(|node| node.pos),
+            Some(BlockPos::new(1, 2, 3))
+        );
+        heap.clear();
+        heap.insert(Node::new(BlockPos::new(4, 5, 6)));
+        assert_eq!(heap.heap.capacity(), capacity);
+        assert_eq!(heap.drain().len(), 1);
     }
 }

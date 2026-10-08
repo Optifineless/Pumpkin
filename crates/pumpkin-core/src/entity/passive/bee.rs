@@ -1,3 +1,5 @@
+use crate::entity::ai::{control::flying_move_control::FlyingMoveControl, pathfinder::Navigator};
+use std::sync::atomic::AtomicBool;
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicI32, AtomicU8, Ordering},
@@ -23,7 +25,7 @@ use crate::entity::{
         revenge::RevengeGoal,
         swim::SwimGoal,
         tempt::TemptGoal,
-        wander_around::WanderAroundGoal,
+        water_avoiding_random_flying::WaterAvoidingRandomFlyingGoal,
     },
     mob::{
         Mob, MobEntity,
@@ -55,6 +57,9 @@ pub struct BeeEntity {
     pub ageable_data: AgeableData,
     pub neutral_data: NeutralData,
     pub flags: AtomicU8,
+    /// Pollination goals hold this true to pause navigation and preserve look pitch.
+    /// Stub for `BeePollinateGoal`, not yet registered; selects hovering look behavior.
+    pub pollinating: AtomicBool,
     pub ticks_without_nectar: AtomicI32,
     pub cannot_enter_hive_ticks: AtomicI32,
     pub crops_grown_since_pollination: AtomicI32,
@@ -64,11 +69,19 @@ pub struct BeeEntity {
 impl BeeEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Bee constructor / createNavigation.
+        let mut navigation = Navigator::bee();
+        navigation.set_can_open_doors(false);
+        navigation.set_can_float(false);
+        navigation.set_required_path_length(48.0);
+        mob_entity.configure_movement(navigation, FlyingMoveControl::new(20, true));
+
         let bee = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
             neutral_data: NeutralData::default(),
             flags: AtomicU8::new(0),
+            pollinating: AtomicBool::new(false),
             ticks_without_nectar: AtomicI32::new(0),
             cannot_enter_hive_ticks: AtomicI32::new(0),
             crops_grown_since_pollination: AtomicI32::new(0),
@@ -94,7 +107,7 @@ impl BeeEntity {
             goal_selector.add_goal(2, BreedGoal::new(1.0));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.25, &[], false)));
             goal_selector.add_goal(5, Box::new(FollowParentGoal::new(1.25)));
-            goal_selector.add_goal(8, Box::new(WanderAroundGoal::new(1.0)));
+            goal_selector.add_goal(8, Box::new(WaterAvoidingRandomFlyingGoal::new(1.0)));
             goal_selector.add_goal(9, Box::new(SwimGoal::default()));
             goal_selector.add_goal(
                 10,
@@ -201,6 +214,21 @@ impl NeutralMob for BeeEntity {
 }
 
 impl Mob for BeeEntity {
+    fn omnidirectional_air_mover(&self) -> bool {
+        true
+    }
+
+    // BeeLookControl.tick / resetXRotOnTick.
+    fn can_tick_look_control(&self) -> bool {
+        !self.is_angry()
+    }
+    fn can_tick_navigation(&self) -> bool {
+        !self.pollinating.load(Ordering::Relaxed)
+    }
+    fn reset_look_pitch(&self) -> bool {
+        !self.pollinating.load(Ordering::Relaxed)
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

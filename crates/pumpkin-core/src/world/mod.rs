@@ -26,6 +26,7 @@ use tracing::{debug, error, info, trace, warn};
 mod active_chunks;
 pub mod brightness;
 pub mod chunker;
+pub(crate) mod collision_shapes;
 mod dragon_parts;
 mod entity_persistence;
 pub mod explosion;
@@ -2554,28 +2555,14 @@ impl World {
                 continue;
             }
 
-            let block = Block::from_state_id(state.id);
             let mut collided = false;
-
-            if block == &Block::POWDER_SNOW {
-                if let Some(shape) =
-                    crate::block::blocks::powder_snow::collision_shape_for_entity(entity, &pos)
-                {
-                    let shape = shape.at_pos(pos);
-                    if shape.intersects(&bounding_box) {
-                        collided = true;
-                        collisions.push(shape);
-                    }
+            self.for_each_collision_shape(state, &pos, Some(entity), &mut |shape| {
+                let shape = shape.at_pos(pos);
+                if shape.intersects(&bounding_box) {
+                    collided = true;
+                    collisions.push(shape);
                 }
-            } else {
-                for shape in state.get_block_collision_shapes_at(&pos) {
-                    let shape = shape.at_pos(pos);
-                    if shape.intersects(&bounding_box) {
-                        collided = true;
-                        collisions.push(shape);
-                    }
-                }
-            }
+            });
 
             if collided {
                 positions.push((collisions.len(), pos));

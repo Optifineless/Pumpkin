@@ -18,6 +18,13 @@ use pumpkin_util::math::vector3::Vector3;
 
 use crate::entity::{
     Entity, EntityBase,
+    ai::{
+        control::{
+            smooth_swimming_look_control::SmoothSwimmingLookControl,
+            smooth_swimming_move_control::SmoothSwimmingMoveControl,
+        },
+        pathfinder::Navigator,
+    },
     custom_sound::CustomSound,
     mob::{Mob, MobEntity},
     passive::animal::Animal,
@@ -37,6 +44,23 @@ pub struct NautilusEntity {
 impl NautilusEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // AbstractNautilus constructor / createNavigation.
+        mob_entity.configure_movement(
+            Navigator::water_bound(false),
+            SmoothSwimmingMoveControl::new(85, 10, 0.011, 0.0, true),
+        );
+        mob_entity.configure_look(SmoothSwimmingLookControl::new(10));
+        {
+            // AbstractNautilus constructor and Animal constructor, including ZombieNautilus.
+            use crate::entity::ai::pathfinder::node::PathType;
+            let mut navigation = mob_entity
+                .navigator
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            navigation.set_pathfinding_malus(PathType::Water, 0.0);
+            navigation.set_pathfinding_malus(PathType::DangerFire, 16.0);
+            navigation.set_pathfinding_malus(PathType::DamageFire, -1.0);
+        };
         let nautilus = Self {
             mob_entity,
             is_tame: AtomicBool::new(false),
@@ -207,6 +231,19 @@ impl Mob for NautilusEntity {
     fn requires_custom_persistence(&self) -> bool {
         // AbstractNautilus.requiresCustomPersistence.
         self.get_entity().has_vehicle() || self.get_entity().is_leashed() || self.is_tame()
+    }
+
+    fn mob_is_pushed_by_fluids(&self) -> bool {
+        false
+    }
+    // AbstractNautilus.travelInWater.
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        crate::entity::mob::movement::travel_in_water(
+            self,
+            caller,
+            self.mob_entity.movement_speed.load(),
+            false,
+        )
     }
 
     fn as_custom_sound(&self) -> Option<&dyn crate::entity::custom_sound::CustomSound> {

@@ -309,6 +309,21 @@ impl ShulkerEntity {
 }
 
 impl Mob for ShulkerEntity {
+    // Shulker.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        180.0
+    }
+
+    // Shulker.getMaxHeadXRot.
+    fn get_max_look_pitch_change(&self) -> f32 {
+        180.0
+    }
+
+    // Shulker.createBodyControl / clientTick.
+    fn custom_body_rotation(&self) -> bool {
+        true
+    }
+
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_byte("AttachFace", self.attach_face.load(Ordering::Relaxed) as i8);
         nbt.put_byte("PeekAmount", self.peek_amount.load(Ordering::Relaxed) as i8);

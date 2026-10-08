@@ -15,8 +15,8 @@ use crate::entity::{
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         breed::BreedGoal, escape_danger::EscapeDangerGoal, follow_parent::FollowParentGoal,
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        tempt::TemptGoal, wander_around::WanderAroundGoal,
+        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, tempt::TemptGoal,
+        wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     passive::animal::Animal,
@@ -41,6 +41,12 @@ pub struct CamelEntity {
 impl CamelEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Vanilla constructor enables navigation floating independently of FloatGoal.
+        mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_float(true);
         let camel = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
@@ -60,7 +66,11 @@ impl CamelEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // CamelAi.initCoreActivity: Brain core Swim(0.8F), adapted to the goal selector.
+            goal_selector.add_goal(
+                0,
+                Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
+            );
             goal_selector.add_goal(1, EscapeDangerGoal::new(2.0));
             goal_selector.add_goal(2, BreedGoal::new(1.0));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.25, TEMPT_ITEMS, false)));
@@ -127,6 +137,11 @@ impl Animal for CamelEntity {
 }
 
 impl Mob for CamelEntity {
+    // Camel.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        30.0
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

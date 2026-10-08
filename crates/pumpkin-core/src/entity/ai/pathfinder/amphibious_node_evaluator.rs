@@ -57,7 +57,8 @@ impl NodeEvaluator for AmphibiousNodeEvaluator {
         if mob_data.is_in_water {
             let half_width = f64::from(mob_data.width) / 2.0;
             let min_x = (mob_data.position.x - half_width).floor() as i32;
-            let min_y = (mob_data.position.y + 0.5).floor() as i32;
+            let min_y =
+                (mob_data.position.y + if self.walk.is_frog { 0.0 } else { 0.5 }).floor() as i32;
             let min_z = (mob_data.position.z - half_width).floor() as i32;
             Some(self.walk.get_start_node(Vector3::new(min_x, min_y, min_z)))
         } else {
@@ -138,26 +139,7 @@ impl NodeEvaluator for AmphibiousNodeEvaluator {
     }
 
     fn get_path_type(&mut self, context: &mut PathfindingContext, pos: Vector3<i32>) -> PathType {
-        let block_path_type = context.get_path_type_from_state(pos);
-        if block_path_type == PathType::Water {
-            for dir in [
-                BlockDirection::Down,
-                BlockDirection::Up,
-                BlockDirection::North,
-                BlockDirection::South,
-                BlockDirection::West,
-                BlockDirection::East,
-            ] {
-                let neighbor_pos = pos + dir.to_offset();
-                let path_type = context.get_path_type_from_state(neighbor_pos);
-                if path_type == PathType::Blocked {
-                    return PathType::WaterBorder;
-                }
-            }
-            PathType::Water
-        } else {
-            self.walk.get_path_type(context, pos)
-        }
+        self.walk.get_path_type(context, pos)
     }
 
     fn set_can_pass_doors(&mut self, can_pass: bool) {
@@ -190,5 +172,40 @@ impl NodeEvaluator for AmphibiousNodeEvaluator {
 
     fn can_walk_over_fences(&self) -> bool {
         self.walk.can_walk_over_fences()
+    }
+}
+
+// Keep the subclass dispatch here: WalkNodeEvaluator calls this for every occupied block.
+pub(super) fn path_type(
+    context: &mut PathfindingContext,
+    pos: Vector3<i32>,
+    amphibious: bool,
+    frog: bool,
+) -> PathType {
+    use pumpkin_data::tag::{self, Taggable};
+    if frog
+        && context
+            .world()
+            .get_block(&BlockPos(pos.add_raw(0, -1, 0)))
+            .has_tag(&tag::Block::MINECRAFT_FROG_PREFER_JUMP_TO)
+    {
+        return PathType::Open;
+    }
+    if amphibious && context.get_path_type_from_state(pos) == PathType::Water {
+        for dir in [
+            BlockDirection::Down,
+            BlockDirection::Up,
+            BlockDirection::North,
+            BlockDirection::South,
+            BlockDirection::West,
+            BlockDirection::East,
+        ] {
+            if context.get_path_type_from_state(pos + dir.to_offset()) == PathType::Blocked {
+                return PathType::WaterBorder;
+            }
+        }
+        PathType::Water
+    } else {
+        context.get_land_node_type(pos)
     }
 }

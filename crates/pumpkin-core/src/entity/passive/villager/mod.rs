@@ -37,7 +37,7 @@ use crate::entity::{
     ai::{
         goal::{
             avoid_entity::AvoidEntityGoal, look_around::RandomLookAroundGoal,
-            look_at_entity::LookAtEntityGoal, open_door::OpenDoorGoal, swim::SwimGoal,
+            look_at_entity::LookAtEntityGoal, open_door::OpenDoorGoal,
             trade_with_player::TradeWithPlayerGoal, wander_around::WanderAroundGoal,
             work_at_job_site::WorkAtJobSiteGoal,
         },
@@ -396,6 +396,12 @@ impl VillagerEntity {
     #[allow(clippy::too_many_lines)]
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Vanilla constructor enables navigation floating independently of FloatGoal.
+        mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_float(true);
         let villager_data = VillagerData::new(VillagerType::Plains, VillagerProfession::None, 1);
         let inventory = std::sync::Mutex::new((0..8).map(|_| ItemStack::EMPTY.clone()).collect());
 
@@ -443,7 +449,11 @@ impl VillagerEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // VillagerGoalPackages.getCorePackage: Brain core Swim(0.8F), adapted to the goal selector.
+            goal_selector.add_goal(
+                0,
+                Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
+            );
             goal_selector.add_goal(0, Box::new(OpenDoorGoal::new(true)));
             // Villagers avoid threats
             goal_selector.add_goal(
@@ -1247,11 +1257,7 @@ impl VillagerEntity {
             let mut navigator = Navigator::default();
             let mut claimed = None;
             for (_, position, block, _) in candidates.into_iter().take(5) {
-                if !navigator.can_reach_within(
-                    &self.mob_entity.living_entity,
-                    position.to_centered_f64(),
-                    1.73,
-                ) {
+                if !navigator.can_reach_within(&self.mob_entity, position.to_centered_f64(), 1.73) {
                     continue;
                 }
                 if world

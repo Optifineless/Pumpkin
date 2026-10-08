@@ -1,3 +1,5 @@
+use crossbeam::atomic::AtomicCell;
+use std::sync::atomic::AtomicI32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -9,7 +11,7 @@ use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
         active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
 };
@@ -17,6 +19,8 @@ use crate::entity::{
 pub struct BlazeEntity {
     pub entity: Arc<MobEntity>,
     pub is_charged: AtomicBool,
+    allowed_height_offset: AtomicCell<f32>,
+    next_height_offset_change_tick: AtomicI32,
 }
 
 impl BlazeEntity {
@@ -25,6 +29,8 @@ impl BlazeEntity {
         let blaze = Self {
             entity,
             is_charged: AtomicBool::new(false),
+            allowed_height_offset: AtomicCell::new(0.5),
+            next_height_offset_change_tick: AtomicI32::new(0),
         };
         let mob_arc = Arc::new(blaze);
         let mob_weak: Weak<dyn Mob> = {
@@ -42,8 +48,6 @@ impl BlazeEntity {
                 .target_selector
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
 
             goal_selector.add_goal(
                 4,
@@ -85,6 +89,37 @@ impl BlazeEntity {
 }
 
 impl Mob for BlazeEntity {
+    // Blaze.customServerAiStep: the ordinary MoveControl remains in use.
+    fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
+        if self
+            .next_height_offset_change_tick
+            .fetch_sub(1, Ordering::Relaxed)
+            <= 1
+        {
+            self.next_height_offset_change_tick
+                .store(100, Ordering::Relaxed);
+            self.allowed_height_offset
+                .store((0.5 + 6.891 * (rand::random::<f64>() - rand::random::<f64>())) as f32);
+        }
+        let entity = self.get_entity();
+        if let Some(target) = self.entity.get_target()
+            && target.get_entity().get_eye_y()
+                > entity.get_eye_y() + f64::from(self.allowed_height_offset.load())
+            && self.can_attack(target.as_ref())
+        {
+            let velocity = entity.velocity.load();
+            entity.velocity.store(
+                velocity
+                    + Vector3::new(
+                        0.0,
+                        (f64::from(0.3f32) - velocity.y) * f64::from(0.3f32),
+                        0.0,
+                    ),
+            );
+            entity.velocity_dirty.store(true, Ordering::Relaxed);
+        }
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.entity
     }

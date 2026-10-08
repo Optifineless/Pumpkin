@@ -3,8 +3,9 @@ use super::{Entity, EntityBase, ai::pathfinder::Navigator, living::LivingEntity}
 use crate::entity::ai::brain::Brain;
 use crate::entity::ai::brain::memory::PackedMemories;
 use crate::entity::ai::control::MoveControlTrait;
+use crate::entity::ai::control::body_rotation_control::BodyRotationControl;
 use crate::entity::ai::control::jump_control::JumpControl;
-use crate::entity::ai::control::look_control::LookControl;
+use crate::entity::ai::control::look_control::{LookControl, LookControlTrait};
 use crate::entity::ai::control::move_control::MoveControl;
 use crate::entity::ai::goal::goal_selector::GoalSelector;
 use crate::entity::ai::sensing::Sensing;
@@ -56,9 +57,11 @@ pub mod guardian;
 pub mod hoglin;
 pub mod illusioner;
 pub mod magma_cube;
+pub mod movement;
 pub mod neutral;
 pub mod patrol;
 pub mod phantom;
+mod phantom_movement;
 pub mod piglin;
 pub mod piglin_ai;
 pub mod piglin_brute;
@@ -74,6 +77,7 @@ mod spawn_variants;
 pub mod spider;
 pub mod sun_burn;
 pub mod vex;
+mod vex_movement;
 pub mod vindicator;
 pub(crate) mod walk_target;
 pub mod warden;
@@ -89,7 +93,9 @@ pub struct MobEntity {
     pub target_selector: std::sync::Mutex<GoalSelector>,
     pub navigator: std::sync::Mutex<Navigator>,
     pub target: std::sync::Mutex<Option<Arc<dyn EntityBase>>>,
-    pub look_control: std::sync::Mutex<LookControl>,
+    pub look_control: std::sync::Mutex<Box<dyn LookControlTrait>>,
+    pub body_rotation_control: std::sync::Mutex<BodyRotationControl>,
+    pub movement_speed: AtomicCell<f32>,
     pub sensing: std::sync::Mutex<Sensing>,
     pub move_control: std::sync::Mutex<Box<dyn MoveControlTrait>>,
     pub jump_control: std::sync::Mutex<JumpControl>,
@@ -176,13 +182,19 @@ impl MobEntity {
 
     #[must_use]
     pub fn new(entity: Entity) -> Self {
+        let living_entity = LivingEntity::new(entity);
+        let mut navigator = Navigator::default();
+        navigator.configure_species_maluses(living_entity.entity.entity_type);
+        navigator.set_mob_dimensions(living_entity.entity.width(), living_entity.entity.height());
         Self {
-            living_entity: LivingEntity::new(entity),
+            living_entity,
             goals_selector: std::sync::Mutex::new(GoalSelector::default()),
             target_selector: std::sync::Mutex::new(GoalSelector::default()),
-            navigator: std::sync::Mutex::new(Navigator::default()),
+            navigator: std::sync::Mutex::new(navigator),
             target: std::sync::Mutex::new(None),
-            look_control: std::sync::Mutex::new(LookControl::default()),
+            look_control: std::sync::Mutex::new(Box::new(LookControl::default())),
+            body_rotation_control: std::sync::Mutex::new(BodyRotationControl::new()),
+            movement_speed: AtomicCell::new(0.0),
             sensing: std::sync::Mutex::new(Sensing::default()),
             move_control: std::sync::Mutex::new(Box::new(MoveControl::default())),
             jump_control: std::sync::Mutex::new(JumpControl::default()),
@@ -301,29 +313,23 @@ impl MobEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = goals_selector;
         };
 
-        // 4. Repeat for Navigator
-        let mut navigator = {
-            let mut guard = self
+        // Mob.serverAiStep ticks navigation in place; release it before locking MoveControl.
+        let move_target = if mob.can_tick_navigation() {
+            let mut navigator = self
                 .navigator
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::take(&mut *guard)
+            navigator.tick(self, mob);
+            navigator.next_move_target()
+        } else {
+            None
         };
-
-        navigator.tick(self);
-        if let Some((target, speed)) = navigator.next_move_target() {
+        if let Some((target, speed)) = move_target {
             self.move_control
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .set_wanted_position(target.x, target.y, target.z, speed);
         }
-
-        {
-            *self
-                .navigator
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = navigator;
-        };
 
         mob.custom_server_ai_step(caller);
 
@@ -333,7 +339,9 @@ impl MobEntity {
                 .move_control
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            move_control.tick(mob);
+            if mob.can_tick_move_control() {
+                move_control.tick(mob);
+            }
         };
 
         {
@@ -341,13 +349,12 @@ impl MobEntity {
                 .look_control
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            look_control.tick(mob);
+            if mob.can_tick_look_control() {
+                look_control.tick(mob);
+            }
         };
 
-        self.jump_control
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .tick(&self.living_entity.jumping);
+        mob.tick_jump_control();
     }
 
     pub fn clear_ai_goals(&self, mob: &dyn Mob) {
@@ -803,6 +810,11 @@ pub trait Mob: EntityBase + Send + Sync {
         75.0
     }
 
+    /// Clamps every look request for species that override Entity.setYHeadRot.
+    fn clamp_look_yaw_when_idle(&self) -> bool {
+        false
+    }
+
     fn get_mob_entity(&self) -> &MobEntity;
 
     fn mob_bedrock_identifier(&self) -> Option<&'static str> {
@@ -869,6 +881,9 @@ pub trait Mob: EntityBase + Send + Sync {
 
     fn post_tick(&self) {}
 
+    /// Runs species baseTick work after Entity updates water contact and before travel.
+    fn after_base_tick(&self) {}
+
     fn get_preferred_weapon_type(&self) -> Option<&'static pumpkin_data::tag::Tag> {
         None
     }
@@ -920,8 +935,27 @@ pub trait Mob: EntityBase + Send + Sync {
         true
     }
 
+    /// LivingEntity.canStandOnFluid, used by travel and source-fluid collision support.
+    fn can_stand_on_fluid(&self, _fluid: &pumpkin_data::fluid::Fluid) -> bool {
+        false
+    }
+
+    /// Supplies a local liquid support shape before world-space collision intersection.
+    fn liquid_collision_shape(&self, _pos: &BlockPos) -> Option<BoundingBox> {
+        None
+    }
+
+    /// Handles a species exception before `LivingEntity` processes landing damage.
+    fn check_fall_damage(&self) -> bool {
+        false
+    }
+
     fn get_mob_gravity(&self) -> f64 {
-        self.get_mob_entity().living_entity.get_gravity()
+        if self.get_entity().has_no_gravity() {
+            0.0
+        } else {
+            self.get_mob_entity().living_entity.get_gravity()
+        }
     }
 
     fn get_mob_y_velocity_drag(&self) -> Option<f64> {
@@ -1103,6 +1137,58 @@ pub trait Mob: EntityBase + Send + Sync {
                 difficulty.special_multiplier,
             );
         }
+    }
+
+    /// Bee navigation pauses while pollinating.
+    fn can_tick_navigation(&self) -> bool {
+        true
+    }
+
+    /// LivingEntity.omnidirectionalAirMover selects vertical air drag.
+    fn omnidirectional_air_mover(&self) -> bool {
+        false
+    }
+
+    /// Allows a subtype to suspend its move controller without discarding its destination.
+    fn can_tick_move_control(&self) -> bool {
+        true
+    }
+
+    /// Allows a subtype to suspend its look controller (for example, playing dead).
+    fn can_tick_look_control(&self) -> bool {
+        true
+    }
+
+    /// Vanilla LookControl.resetXRotOnTick.
+    fn reset_look_pitch(&self) -> bool {
+        true
+    }
+
+    /// Returns true when the subtype handled BodyRotationControl.clientTick.
+    fn custom_body_rotation(&self) -> bool {
+        false
+    }
+
+    /// Consumes jump requests after the move and look controllers.
+    fn tick_jump_control(&self) {
+        let mob = self.get_mob_entity();
+        mob.jump_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tick(&mob.living_entity.jumping);
+    }
+
+    /// Multiplier passed to LivingEntity.getJumpPower before block and potion effects.
+    fn jump_power_scale(&self) -> f64 {
+        1.0
+    }
+
+    /// Subtype hook after LivingEntity.jumpFromGround attempts the impulse.
+    fn after_jump(&self) {}
+
+    /// Vanilla onClimbable for mobs whose bodies can climb without a ladder.
+    fn mob_on_climbable(&self) -> bool {
+        false
     }
 
     /// Runs after navigation and before the movement controls, where vanilla ticks a mob's brain.
@@ -1400,27 +1486,15 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         despawn::update_no_action_time(self);
         self.mob_tick(caller);
 
-        // Vanilla Mob.isEffectiveAi: NoAI skips the whole serverAiStep.
-        //
-        // TODO NoAI: move these vanilla `customServerAiStep` parts of `mob_tick`
-        // into `custom_server_ai_step`:
-        // Bat `tick_flying`/`tick_roosting` (not `tick_ambient_sound`)
-        // Bee sting death (`time_since_sting`)
-        // Armadillo scute drop, state switching, `danger_detected_recently_ticks`
-        // (not `in_state_ticks`, that is vanilla `tick`)
-        // ElderGuardian fatigue
-        // Wither `tick_wither` invulnerable countdown, healing, boss bar, head attacks
-        // (not the movement towards the target, that is vanilla `aiStep`)
-        // ZombifiedPiglin `maybe_alert_others`
-        // Axolotl `play_dead_ticks`
-        // Piglin timers, `tick_sensors`, admiring, dancing (conversion already checks NoAI)
-        // Bee and ZombifiedPiglin `update_persistent_anger` (Enderman, Wolf, IronGolem and
-        // PolarBear run it outside the AI step, so the shared call stays for them).
-        if !mob_entity.is_no_ai() {
-            mob_entity.server_ai_step(self, caller);
-        }
-
+        // LivingEntity.aiStep now runs AI after baseTick and input decay, before travel.
         mob_entity.living_entity.tick(caller, server);
+        if !self.custom_body_rotation() {
+            mob_entity
+                .body_rotation_control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .client_tick(self);
+        }
         self.post_tick();
     }
 

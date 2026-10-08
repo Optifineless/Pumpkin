@@ -47,14 +47,7 @@ impl MoveControlTrait for MoveControl {
         let living_entity = &mob_entity.living_entity;
         let entity = &living_entity.entity;
         if self.operation == Operation::Strafe {
-            // TODO: is_walkable check
-            living_entity.movement_input.store(Vector3::new(
-                self.strafe_right as f64,
-                0.0,
-                self.strafe_forwards as f64,
-            ));
-            // Vanilla sets speed here too
-            self.operation = Operation::Wait;
+            self.tick_strafe(mob_entity);
         } else if self.operation == Operation::MoveTo {
             self.operation = Operation::Wait;
             let pos = entity.pos.load();
@@ -73,10 +66,11 @@ impl MoveControlTrait for MoveControl {
             let y_rot_d = (zd.atan2(xd).to_degrees() as f32) - 90.0;
             entity
                 .yaw
-                .store(self.change_angle(entity.yaw.load(), y_rot_d, 90.0));
+                .store(self.rotlerp(entity.yaw.load(), y_rot_d, 90.0));
 
             let movement_speed = living_entity.get_attribute_value(&Attributes::MOVEMENT_SPEED);
             let speed = self.speed_modifier * movement_speed;
+            mob_entity.movement_speed.store(speed as f32);
             living_entity
                 .movement_input
                 .store(Vector3::new(0.0, 0.0, speed));
@@ -90,6 +84,7 @@ impl MoveControlTrait for MoveControl {
         } else if self.operation == Operation::Jumping {
             let movement_speed = living_entity.get_attribute_value(&Attributes::MOVEMENT_SPEED);
             let speed = self.speed_modifier * movement_speed;
+            mob_entity.movement_speed.store(speed as f32);
             living_entity
                 .movement_input
                 .store(Vector3::new(0.0, 0.0, speed));
@@ -100,9 +95,12 @@ impl MoveControlTrait for MoveControl {
             {
                 self.operation = Operation::Wait;
             }
+        } else {
+            let input = living_entity.movement_input.load();
+            living_entity
+                .movement_input
+                .store(Vector3::new(input.x, input.y, 0.0));
         }
-
-        // Navigator owns movement input while this controller waits.
     }
 
     fn set_wanted_position(&mut self, x: f64, y: f64, z: f64, speed_modifier: f64) {
@@ -128,8 +126,44 @@ impl MoveControlTrait for MoveControl {
 }
 
 impl MoveControl {
-    // Vanilla MoveControl.tick's MOVE_TO jump request. Ground navigation also
-    // steers directly in Pumpkin, so it must use the same jump conditions.
+    // MoveControl.tick STRAFE probes a speed-scaled, rotated step before applying raw input.
+    fn tick_strafe(&mut self, mob: &MobEntity) {
+        let living = &mob.living_entity;
+        let speed = self.speed_modifier as f32
+            * living.get_attribute_value(&Attributes::MOVEMENT_SPEED) as f32;
+        let (dx, dz) = strafe_probe(
+            self.strafe_forwards,
+            self.strafe_right,
+            speed,
+            living.entity.yaw.load(),
+        );
+        let pos = living.entity.pos.load();
+        let probe = pumpkin_util::math::position::BlockPos::floored(
+            pos.x + f64::from(dx),
+            pos.y,
+            pos.z + f64::from(dz),
+        );
+        let walkable = mob
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .path_type_at(living, probe)
+            == crate::entity::ai::pathfinder::node::PathType::Walkable;
+        if !walkable {
+            self.strafe_forwards = 1.0;
+            self.strafe_right = 0.0;
+        }
+        mob.set_speed(speed);
+        let input = living.movement_input.load();
+        living.movement_input.store(Vector3::new(
+            f64::from(self.strafe_right),
+            input.y,
+            f64::from(self.strafe_forwards),
+        ));
+        self.operation = Operation::Wait;
+    }
+
+    // Vanilla MoveControl.tick's MOVE_TO jump request after navigation supplies a waypoint.
     pub fn jump_if_needed(mob: &MobEntity, wanted: Vector3<f64>) -> bool {
         let living = &mob.living_entity;
         let entity = &living.entity;
@@ -183,5 +217,39 @@ impl MoveControl {
         self.strafe_forwards = forwards;
         self.strafe_right = right;
         self.speed_modifier = 0.25;
+    }
+}
+
+// MoveControl.tick uses forward/right axes for this probe (not moveRelative's input axes).
+#[expect(
+    clippy::imprecise_flops,
+    reason = "MoveControl.tick rounds each float operation before sqrt"
+)]
+fn strafe_probe(forward: f32, right: f32, speed: f32, yaw: f32) -> (f32, f32) {
+    let scale = speed / (forward * forward + right * right).sqrt().max(1.0);
+    let (sin, cos) = yaw.to_radians().sin_cos();
+    (
+        forward * scale * cos - right * scale * sin,
+        right * scale * cos + forward * scale * sin,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strafe_probe_is_scaled_and_rotated() {
+        let (x, z) = strafe_probe(1.0, 1.0, 0.25, 90.0);
+        assert!((x + 0.176_776_69).abs() < 1e-7);
+        assert!((z - 0.176_776_69).abs() < 1e-7);
+    }
+
+    #[test]
+    fn movement_rotation_normalizes_but_look_rotation_does_not() {
+        let control = MoveControl::default();
+        assert_eq!(control.rotlerp(350.0, 20.0, 90.0), 20.0);
+        assert_eq!(control.rotlerp(10.0, -20.0, 90.0), 340.0);
+        assert_eq!(control.change_angle(350.0, 20.0, 90.0), 380.0);
     }
 }

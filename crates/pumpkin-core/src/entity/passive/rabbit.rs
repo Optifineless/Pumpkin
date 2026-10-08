@@ -1,3 +1,8 @@
+use super::rabbit_goals::{
+    RabbitAvoidEntityGoal, RabbitPanicGoal, RabbitPowderSnowGoal, RaidGardenGoal,
+};
+use super::rabbit_movement::RabbitJumpState;
+use crate::entity::ai::control::rabbit_move_control::RabbitMoveControl;
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicI32, Ordering},
@@ -17,15 +22,21 @@ use crate::entity::{
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal, breed::BreedGoal,
-        escape_danger::EscapeDangerGoal, follow_parent::FollowParentGoal,
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
-        melee_attack::MeleeAttackGoal, swim::SwimGoal, tempt::TemptGoal,
-        wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal, swim::SwimGoal,
+        tempt::TemptGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     passive::animal::Animal,
     player::Player,
 };
+
+// Rabbit's named movement constants.
+pub(super) const STROLL_SPEED_MOD: f64 = 0.6;
+pub(super) const BREED_SPEED_MOD: f64 = 0.8;
+pub(super) const FOLLOW_SPEED_MOD: f64 = 1.0;
+pub(super) const FLEE_SPEED_MOD: f64 = 2.2;
+pub(super) const ATTACK_SPEED_MOD: f64 = 1.4;
+pub(super) const MORE_CARROTS_DELAY: i32 = 40;
 
 const TEMPT_ITEMS: &[&Item] = &[&Item::CARROT, &Item::GOLDEN_CARROT, &Item::DANDELION];
 
@@ -79,6 +90,7 @@ pub struct RabbitEntity {
     pub mob_entity: MobEntity,
     pub ageable_data: AgeableData,
     pub variant: AtomicI32,
+    pub(super) jump_state: RabbitJumpState,
     pub more_carrot_ticks: AtomicI32,
 }
 
@@ -90,9 +102,17 @@ impl RabbitEntity {
             mob_entity,
             ageable_data: AgeableData::default(),
             variant: AtomicI32::new(variant.id()),
+            jump_state: RabbitJumpState::default(),
             more_carrot_ticks: AtomicI32::new(0),
         };
         let mob_arc = Arc::new(rabbit);
+        // Rabbit constructor installs its hopping control; a weak owner avoids a reference cycle.
+        *mob_arc
+            .mob_entity
+            .move_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Box::new(RabbitMoveControl::new(Arc::downgrade(&mob_arc)));
         let mob_weak: Weak<dyn Mob> = {
             let mob_arc: Arc<dyn Mob> = mob_arc.clone();
             Arc::downgrade(&mob_arc)
@@ -105,29 +125,39 @@ impl RabbitEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
-            goal_selector.add_goal(1, EscapeDangerGoal::new(2.2));
-            goal_selector.add_goal(2, BreedGoal::new(0.8));
-            goal_selector.add_goal(3, Box::new(TemptGoal::new(1.0, TEMPT_ITEMS, false)));
+            goal_selector.add_goal(1, Box::new(SwimGoal::default()));
+            goal_selector.add_goal(1, Box::new(RabbitPowderSnowGoal));
+            goal_selector.add_goal(1, Box::new(RabbitPanicGoal::new()));
+            goal_selector.add_goal(2, BreedGoal::new(BREED_SPEED_MOD));
             goal_selector.add_goal(
-                4,
-                Box::new(AvoidEntityGoal::new(&EntityType::PLAYER, 8.0, 2.2, 2.2)),
+                3,
+                Box::new(TemptGoal::new(FOLLOW_SPEED_MOD, TEMPT_ITEMS, false)),
             );
             goal_selector.add_goal(
                 4,
-                Box::new(AvoidEntityGoal::new(&EntityType::WOLF, 10.0, 2.2, 2.2)),
+                Box::new(RabbitAvoidEntityGoal::new(AvoidEntityGoal::new(
+                    &EntityType::PLAYER,
+                    8.0,
+                    FLEE_SPEED_MOD,
+                    FLEE_SPEED_MOD,
+                ))),
             );
             goal_selector.add_goal(
                 4,
-                Box::new(AvoidEntityGoal::new(&EntityType::FOX, 10.0, 2.2, 2.2)),
+                Box::new(RabbitAvoidEntityGoal::new(AvoidEntityGoal::new(
+                    &EntityType::WOLF,
+                    10.0,
+                    FLEE_SPEED_MOD,
+                    FLEE_SPEED_MOD,
+                ))),
             );
-            goal_selector.add_goal(5, Box::new(FollowParentGoal::new(0.8)));
-            goal_selector.add_goal(6, Box::new(WanderAroundGoal::new(0.6)));
+            goal_selector.add_goal(4, Box::new(RabbitAvoidEntityGoal::monsters()));
+            goal_selector.add_goal(5, RaidGardenGoal::new());
+            goal_selector.add_goal(6, Box::new(WanderAroundGoal::new(STROLL_SPEED_MOD)));
             goal_selector.add_goal(
                 11,
                 LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 10.0),
             );
-            goal_selector.add_goal(11, Box::new(RandomLookAroundGoal::default()));
         };
 
         mob_arc
@@ -152,7 +182,7 @@ impl RabbitEntity {
                 .goals_selector
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            goal_selector.add_goal(4, Box::new(MeleeAttackGoal::new(1.4, true)));
+            goal_selector.add_goal(4, Box::new(MeleeAttackGoal::new(ATTACK_SPEED_MOD, true)));
 
             let mut target_selector = self
                 .mob_entity
@@ -161,15 +191,15 @@ impl RabbitEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             target_selector.add_goal(
                 1,
+                Box::new(crate::entity::ai::goal::revenge::RevengeGoal::new(true)),
+            );
+            target_selector.add_goal(
+                2,
                 ActiveTargetGoal::with_default(&self.mob_entity, &EntityType::PLAYER, true),
             );
             target_selector.add_goal(
                 2,
                 ActiveTargetGoal::with_default(&self.mob_entity, &EntityType::WOLF, true),
-            );
-            target_selector.add_goal(
-                2,
-                ActiveTargetGoal::with_default(&self.mob_entity, &EntityType::FOX, true),
             );
         }
     }
@@ -189,6 +219,31 @@ impl Animal for RabbitEntity {
 }
 
 impl Mob for RabbitEntity {
+    fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
+        self.tick_hopping();
+    }
+    fn jump_power_scale(&self) -> f64 {
+        self.rabbit_jump_power_scale()
+    }
+    fn after_jump(&self) {
+        self.rabbit_after_jump();
+    }
+    fn post_tick(&self) {
+        self.tick_jump_animation();
+    }
+    fn tick_jump_control(&self) {
+        // RabbitJumpControl.tick does not clear jumping when there is no new request.
+        let requested = self
+            .mob_entity
+            .jump_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take_request();
+        if requested {
+            self.start_jumping();
+        }
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

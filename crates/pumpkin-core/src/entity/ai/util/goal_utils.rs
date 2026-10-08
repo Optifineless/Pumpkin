@@ -44,7 +44,7 @@ pub fn is_not_stable(mob: &dyn Mob, world: &World, pos: &BlockPos) -> bool {
         .navigator
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .is_stable_destination(world, pos)
+        .is_stable_destination(world, pos, &mob.get_mob_entity().living_entity)
 }
 
 #[must_use]

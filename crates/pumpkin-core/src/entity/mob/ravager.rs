@@ -85,6 +85,11 @@ impl RavagerEntity {
 }
 
 impl Mob for RavagerEntity {
+    // Ravager.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        45.0
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }

@@ -37,8 +37,10 @@ pub struct MobData {
     pub height: f32,
     pub max_step_height: f32,
     pub max_fall_distance: f32,
+    pub fall_distance: f32,
     pub can_swim: bool,
     pub can_walk_on_water: bool,
+    pub can_stand_on_lava: bool,
     pub avoids_fire: bool,
     pub avoids_water: bool,
     pub on_ground: bool,
@@ -51,29 +53,8 @@ pub struct MobData {
 impl MobData {
     #[must_use]
     pub const fn new_zombie(position: Vector3<f64>, on_ground: bool) -> Self {
-        let mut data = Self {
-            position,
-            width: 0.6,
-            height: 1.95,
-            max_step_height: 1.0,
-            max_fall_distance: 3.0,
-            can_swim: false,
-            can_walk_on_water: false,
-            avoids_fire: true,
-            avoids_water: false,
-            on_ground,
-            is_in_water: false,
-            sea_level: 63,
-            min_y: -64,
-            path_type_malus: [None; PATH_TYPE_COUNT],
-        };
-
-        data.set_pathfinding_malus(PathType::DangerFire, 16.0);
-        data.set_pathfinding_malus(PathType::DamageFire, -1.0);
-        data.set_pathfinding_malus(PathType::Water, 8.0);
-        data.set_pathfinding_malus(PathType::Lava, -1.0);
-        data.set_pathfinding_malus(PathType::DangerOther, 8.0);
-
+        let mut data = Self::new(position, 0.6, 1.95, 1.0);
+        data.on_ground = on_ground;
         data
     }
 
@@ -90,8 +71,10 @@ impl MobData {
             height,
             max_step_height,
             max_fall_distance: 3.0,
+            fall_distance: 0.0,
             can_swim: false,
             can_walk_on_water: false,
+            can_stand_on_lava: false,
             avoids_fire: true,
             avoids_water: false,
             on_ground: true,

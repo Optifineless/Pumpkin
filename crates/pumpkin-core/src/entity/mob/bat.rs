@@ -158,9 +158,9 @@ impl BatEntity {
                 });
             let new_target = should_pick.then(|| {
                 BlockPos::new(
-                    pos.x as i32 + rng.random_range(0i32..7) - rng.random_range(0i32..7),
-                    (pos.y + f64::from(rng.random_range(0i32..6)) - 2.0) as i32,
-                    pos.z as i32 + rng.random_range(0i32..7) - rng.random_range(0i32..7),
+                    pos.x.floor() as i32 + rng.random_range(0i32..7) - rng.random_range(0i32..7),
+                    (pos.y + f64::from(rng.random_range(0i32..6)) - 2.0).floor() as i32,
+                    pos.z.floor() as i32 + rng.random_range(0i32..7) - rng.random_range(0i32..7),
                 )
             });
             let try_roost = rng.random_range(0u32..100) == 0;
@@ -209,6 +209,12 @@ impl BatEntity {
 }
 
 impl Mob for BatEntity {
+    fn check_fall_damage(&self) -> bool {
+        // Bat.checkFallDamage is empty: never accumulate fall distance during flight.
+        self.mob_entity.living_entity.fall_distance.store(0.0);
+        true
+    }
+
     fn mob_init_data_tracker(&self) {
         let entity = self.get_entity();
         let flags: u8 = if self.is_roosting() { ROOSTING_FLAG } else { 0 };
@@ -232,12 +238,16 @@ impl Mob for BatEntity {
 
     fn mob_tick(&self, _caller: &dyn EntityBase) {
         let entity = &self.mob_entity.living_entity.entity;
+        self.tick_ambient_sound(&entity.world.load(), &entity.pos.load());
+    }
+
+    // Bat.customServerAiStep.
+    fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
+        let entity = &self.mob_entity.living_entity.entity;
         let block_pos = entity.block_pos.load();
         let above_pos = BlockPos::new(block_pos.0.x, block_pos.0.y + 1, block_pos.0.z);
         let world = entity.world.load();
         let pos = entity.pos.load();
-
-        self.tick_ambient_sound(&world, &pos);
 
         if self.is_roosting() {
             self.tick_roosting(&world, &above_pos, &pos);
@@ -246,22 +256,20 @@ impl Mob for BatEntity {
         }
     }
 
+    // Bat.tick applies resting or descent damping after ordinary living travel.
     fn post_tick(&self) {
+        let entity = &self.mob_entity.living_entity.entity;
         if self.is_roosting() {
-            let entity = &self.mob_entity.living_entity.entity;
             entity.velocity.store(Vector3::new(0.0, 0.0, 0.0));
             let pos = entity.pos.load();
             let snapped_y = (pos.y.floor()) + 1.0 - f64::from(entity.height());
             entity.set_pos(Vector3::new(pos.x, snapped_y, pos.z));
+        } else {
+            let velocity = entity.velocity.load();
+            entity
+                .velocity
+                .store(Vector3::new(velocity.x, velocity.y * 0.6, velocity.z));
         }
-    }
-
-    fn get_mob_gravity(&self) -> f64 {
-        0.0
-    }
-
-    fn get_mob_y_velocity_drag(&self) -> Option<f64> {
-        Some(0.6)
     }
 
     fn on_damage(

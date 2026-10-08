@@ -17,8 +17,8 @@ use crate::entity::{
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         breed::BreedGoal, escape_danger::EscapeDangerGoal, follow_parent::FollowParentGoal,
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        tempt::TemptGoal, wander_around::WanderAroundGoal,
+        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, tempt::TemptGoal,
+        wander_around::WanderAroundGoal,
     },
     item::ItemEntity,
     mob::{Mob, MobEntity},
@@ -124,6 +124,12 @@ pub struct ArmadilloEntity {
 impl ArmadilloEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Vanilla constructor enables navigation floating independently of FloatGoal.
+        mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_float(true);
         let armadillo = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
@@ -145,7 +151,11 @@ impl ArmadilloEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // ArmadilloAi.initCoreActivity: Brain core Swim(0.8F), adapted to the goal selector.
+            goal_selector.add_goal(
+                0,
+                Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
+            );
             goal_selector.add_goal(1, EscapeDangerGoal::new(2.0));
             goal_selector.add_goal(2, BreedGoal::new(1.0));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.25, ARMADILLO_FOOD, false)));
@@ -295,6 +305,16 @@ impl Animal for ArmadilloEntity {
 }
 
 impl Mob for ArmadilloEntity {
+    // Armadillo.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        if self.is_scared() { 0.0 } else { 32.0 }
+    }
+
+    // Armadillo.createBodyControl / clientTick.
+    fn custom_body_rotation(&self) -> bool {
+        self.is_scared()
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

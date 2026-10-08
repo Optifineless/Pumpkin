@@ -32,6 +32,15 @@ impl ZombieNautilusEntity {
     }
 }
 impl Mob for ZombieNautilusEntity {
+    // ZombieNautilus inherits AbstractNautilus.isPushedByFluid and travelInWater.
+    fn mob_is_pushed_by_fluids(&self) -> bool {
+        self.nautilus.mob_is_pushed_by_fluids()
+    }
+
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        self.nautilus.custom_travel(caller)
+    }
+
     fn make_brain(
         &self,
         packed: &crate::entity::ai::brain::memory::PackedMemories,

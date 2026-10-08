@@ -1,3 +1,12 @@
+use super::{
+    animal::Animal,
+    tamable::{TamableAnimal, TamableData},
+};
+use crate::entity::ai::goal::{
+    follow_owner::FollowOwnerGoal, sit_when_ordered_to::SitWhenOrderedToGoal,
+};
+use crate::entity::ai::{control::flying_move_control::FlyingMoveControl, pathfinder::Navigator};
+use pumpkin_nbt::compound::NbtCompound;
 use std::sync::{Arc, Weak};
 
 use pumpkin_data::damage::DamageType;
@@ -10,7 +19,7 @@ use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
         look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        wander_around::WanderAroundGoal,
+        water_avoiding_random_flying::WaterAvoidingRandomFlyingGoal,
     },
     mob::{Mob, MobEntity},
     player::Player,
@@ -25,12 +34,23 @@ const COOKIE_POISON_DURATION: i32 = 900;
 /// Wiki: <https://minecraft.wiki/w/Parrot>
 pub struct ParrotEntity {
     pub mob_entity: MobEntity,
+    pub tamable_data: TamableData,
 }
 
 impl ParrotEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
-        let parrot = Self { mob_entity };
+        // Parrot constructor / createNavigation.
+        let mut navigation = Navigator::flying();
+        navigation.set_can_open_doors(false);
+        navigation.set_can_float(true);
+        navigation.set_can_pass_doors(true);
+        mob_entity.configure_movement(navigation, FlyingMoveControl::new(10, false));
+
+        let parrot = Self {
+            mob_entity,
+            tamable_data: TamableData::default(),
+        };
         let mob_arc = Arc::new(parrot);
         let mob_weak: Weak<dyn Mob> = {
             let mob_arc: Arc<dyn Mob> = mob_arc.clone();
@@ -45,7 +65,9 @@ impl ParrotEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
-            goal_selector.add_goal(1, Box::new(WanderAroundGoal::new(1.0)));
+            goal_selector.add_goal(2, Box::new(SitWhenOrderedToGoal::new()));
+            goal_selector.add_goal(2, FollowOwnerGoal::new(1.0, 5.0, 1.0));
+            goal_selector.add_goal(2, Box::new(WaterAvoidingRandomFlyingGoal::new(1.0)));
             goal_selector.add_goal(
                 2,
                 LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 6.0),
@@ -87,10 +109,45 @@ impl ParrotEntity {
     }
 }
 
+impl Animal for ParrotEntity {
+    fn is_food(&self, _item: &ItemStack) -> bool {
+        false
+    }
+}
+impl TamableAnimal for ParrotEntity {
+    fn get_tamable_data(&self) -> &TamableData {
+        &self.tamable_data
+    }
+}
 impl Mob for ParrotEntity {
     fn get_base_experience_reward(&self) -> u32 {
         // Animal.getBaseExperienceReward, inherited through ShoulderRidingEntity.
         rand::random_range(1..=3)
+    }
+
+    fn as_tamable(&self) -> Option<&dyn TamableAnimal> {
+        Some(self)
+    }
+    fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        self.write_tamable_nbt(nbt);
+    }
+    fn mob_read_nbt(&self, nbt: &NbtCompound) {
+        self.read_tamable_nbt(nbt);
+    }
+
+    // Parrot.aiStep calls calculateFlapping after LivingEntity.aiStep movement.
+    fn post_tick(&self) {
+        let entity = self.get_entity();
+        let mut velocity = entity.velocity.load();
+        velocity.y = flapping_descent(
+            velocity.y,
+            entity.on_ground.load(std::sync::atomic::Ordering::Relaxed),
+        );
+        entity.velocity.store(velocity);
+    }
+
+    fn omnidirectional_air_mover(&self) -> bool {
+        true
     }
 
     fn get_mob_entity(&self) -> &MobEntity {
@@ -98,13 +155,61 @@ impl Mob for ParrotEntity {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        // Vanilla checks the poisonous food tag last, after taming, which isn't
-        // implemented yet. Nothing in `parrot_food` is also in
-        // `parrot_poisonous_food`, so the two branches can't be confused.
+        // Parrot.mobInteract: ownership and sitting are prerequisites for FollowOwnerGoal.
+        if !self.is_tame() && item_stack.item.has_tag(&tag::Item::MINECRAFT_PARROT_FOOD) {
+            item_stack.decrement_unless_creative(player.gamemode.load(), 1);
+            let entity = self.get_entity();
+            let world = entity.world.load();
+            if !entity.is_silent() {
+                world.play_sound_fine(
+                    pumpkin_data::sound::Sound::EntityParrotEat,
+                    pumpkin_data::sound::SoundCategory::Neutral,
+                    &entity.pos.load(),
+                    1.0,
+                    1.0 + (rand::random::<f32>() - rand::random::<f32>()) * 0.2,
+                );
+            }
+            let mut success = rand::random_range(0..10) == 0;
+            if success {
+                let mut event =
+                    crate::plugin::api::events::entity::entity_tame::EntityTameEvent::new(
+                        entity.entity_id,
+                        player.clone(),
+                    );
+                if let Some(server) = world.server.upgrade() {
+                    server.plugin_manager.fire_blocking(&server, &mut event);
+                }
+                success = !event.cancelled;
+                if success {
+                    self.tamable_data.owner.store(Some(player.gameprofile.id));
+                    self.set_tame(true);
+                }
+            }
+            world.send_entity_status(
+                entity,
+                if success {
+                    pumpkin_data::entity::EntityStatus::TamingSucceeded
+                } else {
+                    pumpkin_data::entity::EntityStatus::TamingFailed
+                },
+                None,
+            );
+            return true;
+        }
         if !item_stack
             .get_item()
             .has_tag(&tag::Item::MINECRAFT_PARROT_POISONOUS_FOOD)
         {
+            if self
+                .get_entity()
+                .on_ground
+                .load(std::sync::atomic::Ordering::Relaxed)
+                && self.is_tame()
+                && self.get_owner() == Some(player.gameprofile.id)
+            {
+                self.set_ordered_to_sit(!self.is_ordered_to_sit());
+                return true;
+            }
             return self.mob_entity.mob_interact(player, item_stack);
         }
 
@@ -137,5 +242,22 @@ mod tests {
     #[test]
     fn poison_lasts_45_seconds() {
         assert_eq!(COOKIE_POISON_DURATION, 900);
+    }
+}
+
+// Parrot.calculateFlapping only damps downward airborne motion.
+fn flapping_descent(y: f64, on_ground: bool) -> f64 {
+    if !on_ground && y < 0.0 { y * 0.6 } else { y }
+}
+
+#[cfg(test)]
+mod movement_tests {
+    use super::flapping_descent;
+
+    #[test]
+    fn parrot_damps_only_airborne_descent() {
+        assert_eq!(flapping_descent(-0.5, false), -0.3);
+        assert_eq!(flapping_descent(0.5, false), 0.5);
+        assert_eq!(flapping_descent(-0.5, true), -0.5);
     }
 }

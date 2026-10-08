@@ -14,7 +14,7 @@ use pumpkin_protocol::codec::var_int::VarInt;
 use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
+        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
         wander_around::WanderAroundGoal,
     },
     custom_sound::CustomSound,
@@ -128,7 +128,6 @@ impl CopperGolemEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
             goal_selector.add_goal(1, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
                 2,

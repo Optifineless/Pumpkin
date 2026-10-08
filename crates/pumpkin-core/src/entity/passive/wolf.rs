@@ -178,6 +178,15 @@ impl NeutralMob for WolfEntity {
 }
 
 impl Mob for WolfEntity {
+    // Wolf.getMaxHeadXRot.
+    fn get_max_look_pitch_change(&self) -> f32 {
+        if self.is_in_sitting_pose() {
+            20.0
+        } else {
+            40.0
+        }
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

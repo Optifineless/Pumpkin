@@ -45,13 +45,14 @@ impl MoveControlTrait for FishMoveControl {
                 let yaw = (offset.z.atan2(offset.x) * 180.0 / f64::from(std::f32::consts::PI))
                     as f32
                     - 90.0;
-                let yaw = self.change_angle(entity.yaw.load(), yaw, 90.0);
+                let yaw = self.rotlerp(entity.yaw.load(), yaw, 90.0);
                 entity.yaw.store(yaw);
                 entity.body_yaw.store(yaw);
             }
         } else {
             self.speed = 0.0;
         }
+        mob.get_mob_entity().movement_speed.store(self.speed);
         // Mob.setSpeed also sets forward input; the tracker sends delta movement.
         living
             .movement_input

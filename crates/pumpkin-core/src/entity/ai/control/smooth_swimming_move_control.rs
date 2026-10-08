@@ -81,7 +81,7 @@ impl MoveControlTrait for SmoothSwimmingMoveControl {
 
             let y_rot_d = (zd.atan2(xd).to_degrees() as f32) - 90.0;
             let current_yaw = entity.yaw.load();
-            let new_yaw = self.change_angle(current_yaw, y_rot_d, self.max_turn_y as f32);
+            let new_yaw = self.rotlerp(current_yaw, y_rot_d, self.max_turn_y as f32);
             entity.yaw.store(new_yaw);
             entity.body_yaw.store(new_yaw);
             entity.head_yaw.store(new_yaw);
@@ -90,7 +90,9 @@ impl MoveControlTrait for SmoothSwimmingMoveControl {
             let speed = (self.speed_modifier * movement_speed) as f32;
 
             if entity.touching_water.load(Ordering::Relaxed) {
-                let water_speed = speed * self.in_water_speed_modifier;
+                mob_entity
+                    .movement_speed
+                    .store(speed * self.in_water_speed_modifier);
                 let sqrt = xd.hypot(zd);
                 if yd.abs() > 1.0E-5 || sqrt > 1.0E-5 {
                     let mut x_rot_d = -((yd.atan2(sqrt).to_degrees()) as f32);
@@ -101,23 +103,20 @@ impl MoveControlTrait for SmoothSwimmingMoveControl {
                         .store(self.change_angle(entity.pitch.load(), x_rot_d, 5.0));
                 }
 
-                let pitch_rad = entity.pitch.load().to_radians();
-                let cos = pitch_rad.cos();
-                let sin = pitch_rad.sin();
-                living_entity.movement_input.store(Vector3::new(
-                    0.0,
-                    -(sin * water_speed) as f64,
-                    (cos * water_speed) as f64,
-                ));
+                living_entity
+                    .movement_input
+                    .store(swimming_input(speed, entity.pitch.load()));
             } else {
                 let left_to_turn = wrap_degrees(entity.yaw.load() - y_rot_d).abs();
                 let factor = Self::get_turning_speed_factor(left_to_turn);
                 let land_speed = speed * self.outside_water_speed_modifier * factor;
+                mob_entity.movement_speed.store(land_speed);
                 living_entity
                     .movement_input
                     .store(Vector3::new(0.0, 0.0, land_speed as f64));
             }
         } else {
+            mob_entity.movement_speed.store(0.0);
             living_entity
                 .movement_input
                 .store(Vector3::new(0.0, 0.0, 0.0));
@@ -134,5 +133,28 @@ impl MoveControlTrait for SmoothSwimmingMoveControl {
 
     fn has_wanted(&self) -> bool {
         self.operation == Operation::MoveTo
+    }
+}
+
+// SmoothSwimmingMoveControl.tick uses the unscaled attribute speed for input;
+// inWaterSpeedModifier affects travel acceleration separately through setSpeed.
+fn swimming_input(speed: f32, pitch: f32) -> Vector3<f64> {
+    let (sin, cos) = pitch.to_radians().sin_cos();
+    Vector3::new(0.0, f64::from(-sin * speed), f64::from(cos * speed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn swimming_input_and_turning_math() {
+        let input = swimming_input(1.2, -30.0);
+        assert!((input.y - 0.6).abs() < 1e-6);
+        assert!((input.z - 1.0392305).abs() < 1e-6);
+        assert!(
+            (SmoothSwimmingMoveControl::get_turning_speed_factor(35.0) - 0.5).abs() < f32::EPSILON
+        );
+        let control = SmoothSwimmingMoveControl::new(85, 10, 0.02, 0.1, true);
+        assert!((control.change_angle(179.0, -179.0, 5.0) - 181.0).abs() < f32::EPSILON);
     }
 }

@@ -13,8 +13,8 @@ use crate::entity::{
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         breed::BreedGoal, escape_danger::EscapeDangerGoal, follow_parent::FollowParentGoal,
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        tempt::TemptGoal, wander_around::WanderAroundGoal,
+        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, tempt::TemptGoal,
+        wander_around::WanderAroundGoal,
     },
     item_steerable::{ItemBasedSteering, ItemSteerable},
     mob::{Mob, MobEntity},
@@ -35,6 +35,11 @@ pub struct StriderEntity {
 impl StriderEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Strider.createNavigation uses ground navigation with lava destinations.
+        mob_entity.configure_movement(
+            crate::entity::ai::pathfinder::Navigator::strider(),
+            crate::entity::ai::control::move_control::MoveControl::default(),
+        );
         let strider = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
@@ -55,7 +60,6 @@ impl StriderEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.65));
             goal_selector.add_goal(2, BreedGoal::new(1.0));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.4, TEMPT_ITEMS, false)));
@@ -100,6 +104,31 @@ impl Animal for StriderEntity {
 }
 
 impl Mob for StriderEntity {
+    // Strider.canStandOnFluid only exempts lava from LivingEntity.travelInFluid.
+    fn can_stand_on_fluid(&self, fluid: &pumpkin_data::fluid::Fluid) -> bool {
+        fluid.has_tag(&tag::Fluid::MINECRAFT_LAVA)
+    }
+
+    fn liquid_collision_shape(
+        &self,
+        pos: &pumpkin_util::math::position::BlockPos,
+    ) -> Option<pumpkin_util::math::boundingbox::BoundingBox> {
+        super::strider_movement::liquid_collision_shape(self, pos)
+    }
+
+    // Strider.checkFallDamage suppresses both accumulation and landing callbacks in lava.
+    fn check_fall_damage(&self) -> bool {
+        if !self.get_entity().touching_lava.load(Ordering::Relaxed) {
+            return false;
+        }
+        self.mob_entity.living_entity.fall_distance.store(0.0);
+        true
+    }
+
+    fn post_tick(&self) {
+        self.float_strider();
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

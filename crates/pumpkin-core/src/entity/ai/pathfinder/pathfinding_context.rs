@@ -24,6 +24,16 @@ pub struct PathfindingContext {
 }
 
 impl PathfindingContext {
+    /// Creates a short-lived `MoveControl` block probe without allocating search caches.
+    pub(super) fn without_cache(mob_position: Vector3<i32>, world: Arc<World>) -> Self {
+        Self {
+            path_type_cache: None,
+            mob_position,
+            world,
+            collision_cache: FxHashMap::default(),
+        }
+    }
+
     #[must_use]
     pub fn new(mob_position: Vector3<i32>, world: Arc<World>) -> Self {
         Self {
@@ -55,13 +65,13 @@ impl PathfindingContext {
     }
 
     #[must_use]
-    pub const fn min_y(&self) -> i32 {
-        -64
+    pub fn min_y(&self) -> i32 {
+        self.world.min_y
     }
 
     #[must_use]
-    pub const fn sea_level(&self) -> i32 {
-        63
+    pub fn sea_level(&self) -> i32 {
+        self.world.sea_level
     }
 
     pub fn get_path_type_from_state(&mut self, pos: Vector3<i32>) -> PathType {

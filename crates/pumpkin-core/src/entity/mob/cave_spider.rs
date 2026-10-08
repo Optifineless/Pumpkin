@@ -20,12 +20,21 @@ use crate::entity::{
 
 pub struct CaveSpiderEntity {
     pub mob_entity: MobEntity,
+    climbing: std::sync::atomic::AtomicBool,
 }
 
 impl CaveSpiderEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
-        let cave_spider = Self { mob_entity };
+        // Spider.createNavigation, inherited by CaveSpider.
+        mob_entity.configure_movement(
+            crate::entity::ai::pathfinder::Navigator::wall_climber(),
+            crate::entity::ai::control::move_control::MoveControl::default(),
+        );
+        let cave_spider = Self {
+            mob_entity,
+            climbing: std::sync::atomic::AtomicBool::new(false),
+        };
         let mob_arc = Arc::new(cave_spider);
         let mob_weak: Weak<dyn Mob> = {
             let mob_arc: Arc<dyn Mob> = mob_arc.clone();
@@ -71,6 +80,23 @@ impl CaveSpiderEntity {
 }
 
 impl Mob for CaveSpiderEntity {
+    fn mob_on_climbable(&self) -> bool {
+        self.climbing.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    fn post_tick(&self) {
+        // Spider.tick's tracked climbing flag.
+        self.climbing.store(
+            self.get_entity()
+                .horizontal_collision
+                .load(std::sync::atomic::Ordering::Relaxed),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        self.get_entity().set_synced_data(
+            pumpkin_data::tracked_data::spider::DATA_FLAGS_ID,
+            i8::from(self.mob_on_climbable()),
+        );
+    }
+
     fn finalize_spawn(
         &self,
         _world: &Arc<crate::world::World>,

@@ -6,7 +6,7 @@ use crate::entity::{
     Entity,
     ai::goal::{
         active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        melee_attack::MeleeAttackGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
+        melee_attack::MeleeAttackGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
 };
@@ -61,7 +61,6 @@ impl GiantEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
             goal_selector.add_goal(2, Box::new(MeleeAttackGoal::new(1.0, true)));
             goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(7, Box::new(RandomLookAroundGoal::default()));

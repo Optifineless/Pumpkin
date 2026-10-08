@@ -230,6 +230,21 @@ impl Animal for FoxEntity {
 }
 
 impl Mob for FoxEntity {
+    // FoxMoveControl.tick / Fox.canMove.
+    fn can_tick_move_control(&self) -> bool {
+        !self.is_sleeping() && !self.is_sitting() && !self.is_faceplanted()
+    }
+    // FoxLookControl.tick / resetXRotOnTick.
+    fn can_tick_look_control(&self) -> bool {
+        !self.is_sleeping()
+    }
+    fn reset_look_pitch(&self) -> bool {
+        !self.is_pouncing()
+            && !self.is_crouching()
+            && !self.is_interested()
+            && !self.is_faceplanted()
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

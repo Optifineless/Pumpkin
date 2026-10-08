@@ -18,8 +18,7 @@ use crate::entity::{
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         breed::BreedGoal, follow_parent::FollowParentGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, tempt::TemptGoal,
-        wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, tempt::TemptGoal, wander_around::WanderAroundGoal,
     },
     item::ItemEntity,
     mob::{Mob, MobEntity},
@@ -78,6 +77,12 @@ pub struct SnifferEntity {
 impl SnifferEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Vanilla constructor enables navigation floating independently of FloatGoal.
+        mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_float(true);
         let sniffer = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
@@ -98,7 +103,11 @@ impl SnifferEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // SnifferAi.initCoreActivity: Brain core Swim(0.8F), adapted to the goal selector.
+            goal_selector.add_goal(
+                0,
+                Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
+            );
             goal_selector.add_goal(1, BreedGoal::new(1.0));
             goal_selector.add_goal(2, Box::new(TemptGoal::new(1.2, SNIFFER_FOOD, false)));
             goal_selector.add_goal(3, Box::new(FollowParentGoal::new(1.1)));
@@ -321,6 +330,11 @@ impl Animal for SnifferEntity {
 }
 
 impl Mob for SnifferEntity {
+    // Sniffer.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        50.0
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

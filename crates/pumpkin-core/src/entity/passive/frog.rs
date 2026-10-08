@@ -1,3 +1,6 @@
+use crate::entity::ai::{
+    control::smooth_swimming_move_control::SmoothSwimmingMoveControl, pathfinder::Navigator,
+};
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicI32, Ordering},
@@ -15,8 +18,8 @@ use crate::entity::{
     Entity, EntityBase,
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        tempt::TemptGoal, wander_around::WanderAroundGoal,
+        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, tempt::TemptGoal,
+        wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     passive::animal::Animal,
@@ -40,6 +43,13 @@ pub struct FrogEntity {
 impl FrogEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Frog constructor / createNavigation (26.3).
+        let navigation = Navigator::frog();
+        mob_entity.configure_movement(
+            navigation,
+            SmoothSwimmingMoveControl::new(85, 10, 0.02, 0.1, true),
+        );
+
         let frog = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
@@ -59,7 +69,6 @@ impl FrogEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
             goal_selector.add_goal(1, Box::new(TemptGoal::new(1.0, FROG_FOOD, false)));
             goal_selector.add_goal(2, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
@@ -101,6 +110,35 @@ impl Animal for FrogEntity {
 }
 
 impl Mob for FrogEntity {
+    // Frog.getHeadRotSpeed.
+    fn get_max_look_yaw_change(&self) -> f32 {
+        35.0
+    }
+
+    // Frog.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        5.0
+    }
+
+    fn mob_is_pushed_by_fluids(&self) -> bool {
+        false
+    }
+
+    // Frog.travelInWater.
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        crate::entity::mob::movement::travel_in_water(
+            self,
+            caller,
+            self.mob_entity.movement_speed.load(),
+            false,
+        )
+    }
+
+    // FrogLookControl.resetXRotOnTick.
+    fn reset_look_pitch(&self) -> bool {
+        self.tongue_target_id.load(Ordering::Relaxed) < 0
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

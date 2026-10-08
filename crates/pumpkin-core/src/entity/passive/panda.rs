@@ -254,6 +254,17 @@ impl Animal for PandaEntity {
 }
 
 impl Mob for PandaEntity {
+    // PandaMoveControl.tick / Panda.canPerformAction.
+    fn can_tick_move_control(&self) -> bool {
+        let scared = self.get_main_gene() == PandaGene::Worried
+            && self.get_entity().world.load().is_thundering();
+        !self.is_on_back()
+            && !scared
+            && self.eat_counter.load(Ordering::Relaxed) == 0
+            && !self.is_rolling()
+            && !self.is_sitting()
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

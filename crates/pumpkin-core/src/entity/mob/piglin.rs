@@ -30,7 +30,7 @@ use crate::entity::{
         active_target::ActiveTargetGoal, go_to_wanted_item::GoToWantedItemGoal,
         look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
         melee_attack::MeleeAttackGoal, open_door::OpenDoorGoal,
-        ranged_crossbow_attack::RangedCrossbowAttackGoal, revenge::RevengeGoal, swim::SwimGoal,
+        ranged_crossbow_attack::RangedCrossbowAttackGoal, revenge::RevengeGoal,
         wander_around::WanderAroundGoal,
     },
     mob::{
@@ -128,7 +128,7 @@ impl PiglinEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // PiglinAi.initCoreActivity does not include a float behavior.
             goal_selector.add_goal(1, Box::new(OpenDoorGoal::new(true)));
             goal_selector.add_goal(2, Box::new(GoToWantedItemGoal::new(mob_arc.clone(), 1.0)));
             goal_selector.add_goal(3, Box::new(MeleeAttackGoal::new(1.0, true)));

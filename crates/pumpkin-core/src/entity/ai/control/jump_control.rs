@@ -9,6 +9,14 @@ pub struct JumpControl {
 impl Control for JumpControl {}
 
 impl JumpControl {
+    #[must_use]
+    pub const fn has_request(&self) -> bool {
+        self.jump
+    }
+    pub fn take_request(&mut self) -> bool {
+        std::mem::take(&mut self.jump)
+    }
+
     pub const fn jump(&mut self) {
         self.jump = true;
     }

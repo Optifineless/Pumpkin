@@ -302,6 +302,11 @@ impl Mob for SlimeEntity {
         ))
     }
 
+    // AbstractCubeMob.getMaxHeadXRot.
+    fn get_max_look_pitch_change(&self) -> f32 {
+        0.0
+    }
+
     fn as_custom_sound(&self) -> Option<&dyn crate::entity::custom_sound::CustomSound> {
         Some(self)
     }
@@ -450,6 +455,10 @@ impl MoveControlTrait for SlimeMoveControl {
         entity.head_yaw.store(new_yaw);
         entity.body_yaw.store(new_yaw);
 
+        // Preserve this controller's attribute-based travel until its cube-control port is completed.
+        mob_entity
+            .movement_speed
+            .store(living_entity.get_attribute_value(&Attributes::MOVEMENT_SPEED) as f32);
         let speed_modifier = slime.speed_modifier.load();
         let mut movement_input = Vector3::new(0.0, 0.0, 0.0);
 

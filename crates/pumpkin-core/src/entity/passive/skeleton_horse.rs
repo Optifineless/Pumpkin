@@ -16,7 +16,7 @@ use crate::entity::{
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         escape_danger::EscapeDangerGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     passive::animal::Animal,
@@ -60,7 +60,6 @@ impl SkeletonHorseEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.2));
             goal_selector.add_goal(6, Box::new(WanderAroundGoal::new(0.7)));
             goal_selector.add_goal(

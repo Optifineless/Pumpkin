@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
@@ -24,21 +24,23 @@ pub struct GhastEntity {
     pub mob_entity: MobEntity,
     pub is_charging: AtomicBool,
     pub explosion_power: AtomicU8,
-    pub wanted_fly_target: Mutex<Option<Vector3<f64>>>,
 }
 
 impl GhastEntity {
     pub const DEFAULT_EXPLOSION_POWER: u8 = 1;
     pub const XP_REWARD: u32 = 5;
-    pub const FLYING_SPEED: f64 = 0.06;
 
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        *mob_entity
+            .move_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Box::new(crate::entity::ai::control::ghast_move_control::GhastMoveControl::default());
         let ghast = Self {
             mob_entity,
             is_charging: AtomicBool::new(false),
             explosion_power: AtomicU8::new(Self::DEFAULT_EXPLOSION_POWER),
-            wanted_fly_target: Mutex::new(None),
         };
 
         let mob_arc = Arc::new(ghast);
@@ -130,8 +132,9 @@ impl Mob for GhastEntity {
         0.0 // Ghasts fly, no gravity applied in standard travel
     }
 
-    fn get_mob_y_velocity_drag(&self) -> Option<f64> {
-        Some(0.95)
+    // Ghast.travel delegates to LivingEntity.travelFlying.
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        super::movement::travel_flying(self, caller, 0.02, 0.02, 0.02)
     }
 
     fn mob_init_data_tracker(&self) {
@@ -352,113 +355,48 @@ impl Goal for GhastShootFireballGoal {
     }
 }
 
+// Ghast.RandomFloatAroundGoal supplies destinations; GhastMoveControl owns acceleration.
 pub struct RandomFloatAroundGoal {
     ghast: Weak<GhastEntity>,
-    float_duration: i32,
 }
-
 impl RandomFloatAroundGoal {
     #[must_use]
     pub const fn new(ghast: Weak<GhastEntity>) -> Self {
-        Self {
-            ghast,
-            float_duration: 0,
-        }
+        Self { ghast }
     }
 }
-
 impl Goal for RandomFloatAroundGoal {
-    fn can_start(&mut self, _mob: &dyn Mob) -> bool {
-        let Some(ghast) = self.ghast.upgrade() else {
-            return false;
-        };
-        let wanted = *ghast
-            .wanted_fly_target
+    fn can_start(&mut self, mob: &dyn Mob) -> bool {
+        let control = mob
+            .get_mob_entity()
+            .move_control
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        wanted.is_none_or(|target| {
-            let pos = ghast.mob_entity.living_entity.entity.pos.load();
-            let dist_sq = pos.squared_distance_to_vec(&target);
-            !dist_sq.is_nan() && !(1.0..=3600.0).contains(&dist_sq)
-        })
+        let distance = (control.wanted_position().0 - mob.get_entity().pos.load()).length_squared();
+        !control.has_wanted() || !(1.0..=3600.0).contains(&distance)
     }
-
     fn start(&mut self, _mob: &dyn Mob) {
         let Some(ghast) = self.ghast.upgrade() else {
             return;
         };
-        let pos = ghast.mob_entity.living_entity.entity.pos.load();
-        let new_target = {
-            let mut rng = rand::rng();
-            let target_x = pos.x + (rng.random::<f64>() * 2.0 - 1.0) * 16.0;
-            let target_y = pos.y + (rng.random::<f64>() * 2.0 - 1.0) * 16.0;
-            let target_z = pos.z + (rng.random::<f64>() * 2.0 - 1.0) * 16.0;
-            Vector3::new(target_x, target_y, target_z)
-        };
-        *ghast
-            .wanted_fly_target
+        let pos = ghast.get_entity().pos.load();
+        let mut rng = rand::rng();
+        let target = pos
+            + Vector3::new(
+                (f64::from(rng.random::<f32>() * 2.0 - 1.0)) * 16.0,
+                (f64::from(rng.random::<f32>() * 2.0 - 1.0)) * 16.0,
+                (f64::from(rng.random::<f32>() * 2.0 - 1.0)) * 16.0,
+            );
+        ghast
+            .mob_entity
+            .move_control
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(new_target);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_wanted_position(target.x, target.y, target.z, 1.0);
     }
-
     fn should_continue(&mut self, _mob: &dyn Mob) -> bool {
-        let Some(ghast) = self.ghast.upgrade() else {
-            return false;
-        };
-        let wanted = *ghast
-            .wanted_fly_target
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        wanted.is_some_and(|target| {
-            let pos = ghast.mob_entity.living_entity.entity.pos.load();
-            let dist_sq = pos.squared_distance_to_vec(&target);
-            (1.0..=3600.0).contains(&dist_sq)
-        })
+        false
     }
-
-    fn should_run_every_tick(&self) -> bool {
-        true
-    }
-
-    fn tick(&mut self, _mob: &dyn Mob) {
-        let Some(ghast) = self.ghast.upgrade() else {
-            return;
-        };
-
-        let wanted = *ghast
-            .wanted_fly_target
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(target) = wanted else {
-            return;
-        };
-
-        let entity = &ghast.mob_entity.living_entity.entity;
-        let pos = entity.pos.load();
-        self.float_duration -= 1;
-
-        if self.float_duration <= 0 {
-            self.float_duration = rand::random_range(2..=6);
-            let travel = Vector3::new(target.x - pos.x, target.y - pos.y, target.z - pos.z);
-            let dist = travel.length();
-            if dist > 0.001 {
-                let move_scale = GhastEntity::FLYING_SPEED * 5.0 / 3.0; // 0.1
-                let norm = travel.normalize();
-                let delta = Vector3::new(
-                    norm.x * move_scale,
-                    norm.y * move_scale,
-                    norm.z * move_scale,
-                );
-                let current_vel = entity.velocity.load();
-                entity.velocity.store(Vector3::new(
-                    current_vel.x + delta.x,
-                    current_vel.y + delta.y,
-                    current_vel.z + delta.z,
-                ));
-            }
-        }
-    }
-
     fn controls(&self) -> Controls {
         Controls::MOVE
     }

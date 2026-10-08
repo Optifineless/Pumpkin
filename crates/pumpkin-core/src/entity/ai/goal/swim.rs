@@ -6,17 +6,26 @@ use rand::RngExt;
 
 pub struct SwimGoal {
     goal_control: Controls,
+    gate: Option<super::revenge::MobFilter>,
 }
 
 impl Default for SwimGoal {
     fn default() -> Self {
         Self {
             goal_control: Controls::JUMP,
+            gate: None,
         }
     }
 }
 
 impl SwimGoal {
+    /// Applies a species condition when starting, continuing and requesting jumps.
+    #[must_use]
+    pub const fn gated_by(mut self, gate: super::revenge::MobFilter) -> Self {
+        self.gate = Some(gate);
+        self
+    }
+
     fn is_in_fluid(mob: &dyn Mob) -> bool {
         let living = &mob.get_mob_entity().living_entity;
         let entity = &living.entity;
@@ -28,6 +37,9 @@ impl SwimGoal {
 
 impl Goal for SwimGoal {
     fn can_start(&mut self, mob: &dyn Mob) -> bool {
+        if self.gate.is_some_and(|gate| !gate(mob)) {
+            return false;
+        }
         mob.get_mob_entity()
             .navigator
             .lock()
@@ -37,10 +49,14 @@ impl Goal for SwimGoal {
     }
 
     fn should_continue(&mut self, mob: &dyn Mob) -> bool {
-        Self::is_in_fluid(mob)
+        self.gate.is_none_or(|gate| gate(mob)) && Self::is_in_fluid(mob)
     }
 
     fn tick(&mut self, mob: &dyn Mob) {
+        // CreakingAi's Brain Swim remains conditional on canMove between selector updates.
+        if self.gate.is_some_and(|gate| !gate(mob)) {
+            return;
+        }
         // Vanilla FloatGoal.tick requests a jump for this AI tick only.
         if mob.get_random().random::<f32>() < 0.8 {
             mob.get_mob_entity()

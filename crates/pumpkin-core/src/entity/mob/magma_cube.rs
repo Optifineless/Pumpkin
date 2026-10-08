@@ -107,6 +107,11 @@ impl Mob for MagmaCubeEntity {
         ))
     }
 
+    // AbstractCubeMob.getMaxHeadXRot.
+    fn get_max_look_pitch_change(&self) -> f32 {
+        0.0
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         self.slime.get_mob_entity()
     }

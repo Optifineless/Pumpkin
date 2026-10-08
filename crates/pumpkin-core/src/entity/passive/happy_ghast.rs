@@ -129,6 +129,16 @@ impl Animal for HappyGhastEntity {
 }
 
 impl Mob for HappyGhastEntity {
+    // HappyGhastBodyRotationControl.clientTick, then the ordinary body controller.
+    fn custom_body_rotation(&self) -> bool {
+        let entity = self.get_entity();
+        if entity.has_passengers() {
+            entity.head_yaw.store(entity.yaw.load());
+            entity.body_yaw.store(entity.head_yaw.load());
+        }
+        false
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

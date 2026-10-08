@@ -520,13 +520,13 @@ impl HostMob for PluginHostState {
     ) -> wasmtime::Result<bool> {
         let entity = self.get(&this)?;
         Ok(entity.get_mob().is_some_and(|mob| {
-            let living = &mob.get_mob_entity().living_entity;
+            let mob_entity = mob.get_mob_entity();
             let dest = Vector3::new(pos.0, pos.1, pos.2);
             mob.get_mob_entity()
                 .navigator
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .can_reach_within(living, dest, max_distance)
+                .can_reach_within(mob_entity, dest, max_distance)
         }))
     }
 

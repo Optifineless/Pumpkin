@@ -16,8 +16,10 @@ pub struct FlyNodeEvaluator {
 impl FlyNodeEvaluator {
     #[must_use]
     pub fn new() -> Self {
+        let mut walk = WalkNodeEvaluator::new();
+        walk.is_flying = true;
         Self {
-            walk: WalkNodeEvaluator::new(),
+            walk,
             path_types_cache: FxHashMap::default(),
         }
     }
@@ -95,7 +97,11 @@ impl NodeEvaluator for FlyNodeEvaluator {
         let start_y = if self.walk.base.can_float && mob_data.is_in_water {
             let mut y = mob_y.floor() as i32;
             if let Some(ref ctx) = self.walk.base.context {
-                while ctx.is_water(&BlockPos::new(block_x, y + 1, block_z)) {
+                while pumpkin_data::Block::from_state_id(
+                    ctx.get_block_state(&BlockPos::new(block_x, y, block_z)).id,
+                )
+                .id == pumpkin_data::Block::WATER.id
+                {
                     y += 1;
                 }
             }
@@ -106,11 +112,12 @@ impl NodeEvaluator for FlyNodeEvaluator {
 
         let start_pos = Vector3::new(block_x, start_y, block_z);
         if !self.can_start_at(start_pos) {
-            let is_small_mob = mob_data.width < 1.0 || mob_data.height < 1.0;
+            let is_small_mob =
+                (2.0 * f64::from(mob_data.width) + f64::from(mob_data.height)) / 3.0 < 1.0;
             if is_small_mob {
-                let x_pad = (1.1 - f64::from(mob_data.width)).max(0.0);
-                let y_pad = (1.1 - f64::from(mob_data.height)).max(0.0);
-                let z_pad = (1.1 - f64::from(mob_data.width)).max(0.0);
+                let x_pad = (f64::from(1.1f32) - f64::from(mob_data.width)).max(0.0);
+                let y_pad = (f64::from(1.1f32) - f64::from(mob_data.height)).max(0.0);
+                let z_pad = (f64::from(1.1f32) - f64::from(mob_data.width)).max(0.0);
                 let half_w = f64::from(mob_data.width) / 2.0;
                 let min_x = (mob_x - half_w - x_pad).floor() as i32;
                 let max_x = (mob_x + half_w + x_pad).floor() as i32;
@@ -119,25 +126,14 @@ impl NodeEvaluator for FlyNodeEvaluator {
                 let min_z = (mob_z - half_w - z_pad).floor() as i32;
                 let max_z = (mob_z + half_w + z_pad).floor() as i32;
 
-                let mut candidate_count = 0;
-                for cx in min_x..=max_x {
-                    for cy in min_y..=max_y {
-                        for cz in min_z..=max_z {
-                            let candidate = Vector3::new(cx, cy, cz);
-                            if self.can_start_at(candidate) {
-                                return Some(self.walk.get_start_node(candidate));
-                            }
-                            candidate_count += 1;
-                            if candidate_count >= 10 {
-                                break;
-                            }
-                        }
-                        if candidate_count >= 10 {
-                            break;
-                        }
-                    }
-                    if candidate_count >= 10 {
-                        break;
+                for _ in 0..10 {
+                    let candidate = Vector3::new(
+                        rand::random_range(min_x..=max_x),
+                        rand::random_range(min_y..=max_y),
+                        rand::random_range(min_z..=max_z),
+                    );
+                    if self.can_start_at(candidate) {
+                        return Some(self.walk.get_start_node(candidate));
                     }
                 }
             } else {
@@ -148,10 +144,10 @@ impl NodeEvaluator for FlyNodeEvaluator {
                 let max_z = (mob_z + half_width).floor() as i32;
 
                 for candidate in [
-                    Vector3::new(min_x, start_y, min_z),
-                    Vector3::new(min_x, start_y, max_z),
-                    Vector3::new(max_x, start_y, min_z),
-                    Vector3::new(max_x, start_y, max_z),
+                    Vector3::new(min_x, mob_y.floor() as i32, min_z),
+                    Vector3::new(min_x, mob_y.floor() as i32, max_z),
+                    Vector3::new(max_x, mob_y.floor() as i32, min_z),
+                    Vector3::new(max_x, mob_y.floor() as i32, max_z),
                 ] {
                     if self.can_start_at(candidate) {
                         return Some(self.walk.get_start_node(candidate));
@@ -434,92 +430,12 @@ impl NodeEvaluator for FlyNodeEvaluator {
         pos: Vector3<i32>,
         mob_data: &MobData,
     ) -> PathType {
-        let block_types = self
-            .walk
-            .get_path_type_within_mob_bb(context, pos.x, pos.y, pos.z, mob_data);
-        if block_types.len() == 1 {
-            return block_types[0];
-        }
-
-        if block_types.contains(&PathType::Fence) {
-            return PathType::Fence;
-        }
-
-        if block_types.contains(&PathType::UnpassableRail) {
-            return PathType::UnpassableRail;
-        }
-
-        let mut highest_malus_path_type_within_bb = PathType::Blocked;
-        let mut highest_malus_within_bb =
-            mob_data.get_pathfinding_malus(highest_malus_path_type_within_bb);
-
-        for &path_type in &block_types {
-            let malus = mob_data.get_pathfinding_malus(path_type);
-            if malus < 0.0 {
-                return path_type;
-            }
-
-            if malus >= highest_malus_within_bb {
-                highest_malus_within_bb = malus;
-                highest_malus_path_type_within_bb = path_type;
-            }
-        }
-
-        let current_node_path_type = self.get_path_type(context, pos);
-        let is_large_mob = self.walk.base.entity_width > 1;
-        if is_large_mob {
-            let is_current_node_cheaper =
-                mob_data.get_pathfinding_malus(current_node_path_type) < highest_malus_within_bb;
-            let cap_malus_due_to_cheap_node = is_current_node_cheaper
-                && mob_data.get_pathfinding_malus(PathType::BigMobsCloseToDanger)
-                    < highest_malus_within_bb;
-            if cap_malus_due_to_cheap_node {
-                PathType::BigMobsCloseToDanger
-            } else {
-                highest_malus_path_type_within_bb
-            }
-        } else if current_node_path_type == PathType::Open
-            && highest_malus_path_type_within_bb != PathType::Open
-            && highest_malus_within_bb == 0.0
-        {
-            PathType::Open
-        } else {
-            highest_malus_path_type_within_bb
-        }
+        // FlyNodeEvaluator inherits this scan; Walk dispatches each cell back to flying path_type.
+        self.walk.get_path_type_of_mob(context, pos, mob_data)
     }
 
     fn get_path_type(&mut self, context: &mut PathfindingContext, pos: Vector3<i32>) -> PathType {
-        let mut block_path_type = context.get_path_type_from_state(pos);
-        if block_path_type == PathType::Open && pos.y > context.min_y() {
-            let below_pos = Vector3::new(pos.x, pos.y - 1, pos.z);
-            let below_type = context.get_path_type_from_state(below_pos);
-            if below_type == PathType::DamageFire || below_type == PathType::Lava {
-                block_path_type = PathType::DamageFire;
-            } else if below_type == PathType::DamageOther {
-                block_path_type = PathType::DamageOther;
-            } else if below_type == PathType::Cocoa {
-                block_path_type = PathType::Cocoa;
-            } else if below_type == PathType::Fence {
-                if below_pos != context.mob_position() {
-                    block_path_type = PathType::Fence;
-                }
-            } else {
-                block_path_type = if below_type != PathType::Walkable
-                    && below_type != PathType::Open
-                    && below_type != PathType::Water
-                {
-                    PathType::Walkable
-                } else {
-                    PathType::Open
-                };
-            }
-        }
-
-        if block_path_type == PathType::Walkable || block_path_type == PathType::Open {
-            block_path_type = context.get_node_type_from_neighbors(pos, block_path_type);
-        }
-
-        block_path_type
+        path_type(context, pos)
     }
 
     fn set_can_pass_doors(&mut self, can_pass: bool) {
@@ -559,4 +475,39 @@ impl Default for FlyNodeEvaluator {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// FlyNodeEvaluator.getPathType, shared with inherited occupied-volume and start-node scans.
+pub(super) fn path_type(context: &mut PathfindingContext, pos: Vector3<i32>) -> PathType {
+    let mut block_path_type = context.get_path_type_from_state(pos);
+    if block_path_type == PathType::Open && pos.y > context.min_y() {
+        let below_pos = Vector3::new(pos.x, pos.y - 1, pos.z);
+        let below_type = context.get_path_type_from_state(below_pos);
+        if below_type == PathType::DamageFire || below_type == PathType::Lava {
+            block_path_type = PathType::DamageFire;
+        } else if below_type == PathType::DamageOther {
+            block_path_type = PathType::DamageOther;
+        } else if below_type == PathType::Cocoa {
+            block_path_type = PathType::Cocoa;
+        } else if below_type == PathType::Fence {
+            if below_pos != context.mob_position() {
+                block_path_type = PathType::Fence;
+            }
+        } else {
+            block_path_type = if below_type != PathType::Walkable
+                && below_type != PathType::Open
+                && below_type != PathType::Water
+            {
+                PathType::Walkable
+            } else {
+                PathType::Open
+            };
+        }
+    }
+
+    if block_path_type == PathType::Walkable || block_path_type == PathType::Open {
+        block_path_type = context.get_node_type_from_neighbors(pos, block_path_type);
+    }
+
+    block_path_type
 }

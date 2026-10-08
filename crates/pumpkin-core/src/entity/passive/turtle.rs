@@ -1,3 +1,6 @@
+use crate::entity::ai::{control::turtle_move_control::TurtleMoveControl, pathfinder::Navigator};
+use crossbeam::atomic::AtomicCell;
+use pumpkin_util::math::position::BlockPos;
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicBool, Ordering},
@@ -15,8 +18,8 @@ use crate::entity::{
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         breed::BreedGoal, escape_danger::EscapeDangerGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, tempt::TemptGoal,
-        try_find_water::TryFindWaterGoal, wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, tempt::TemptGoal, try_find_water::TryFindWaterGoal,
+        wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     passive::animal::Animal,
@@ -28,6 +31,12 @@ const TEMPT_ITEMS: &[&Item] = &[&Item::SEAGRASS];
 pub struct TurtleEntity {
     pub mob_entity: MobEntity,
     pub ageable_data: AgeableData,
+    /// Spawn beach, restored from NBT on load.
+    pub home_pos: AtomicCell<BlockPos>,
+    /// Stub for `TurtleGoHomeGoal`, not yet registered; suppresses sinking near home.
+    pub going_home: AtomicBool,
+    /// Stub for `TurtleTravelGoal`, not yet registered; restricts destinations to water.
+    pub travelling: Arc<AtomicBool>,
     pub has_egg: AtomicBool,
     pub laying_egg: AtomicBool,
 }
@@ -35,9 +44,18 @@ pub struct TurtleEntity {
 impl TurtleEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Turtle.createNavigation uses AmphibiousPathNavigation with a water-only travel target.
+        let travelling = Arc::new(AtomicBool::new(false));
+        let navigation = Navigator::turtle(travelling.clone());
+        mob_entity.configure_movement(navigation, TurtleMoveControl::default());
+        // Turtle.finalizeSpawn supplies the home; direct construction also avoids an unset sentinel.
+        let home = mob_entity.living_entity.entity.block_pos.load();
         let turtle = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
+            home_pos: AtomicCell::new(home),
+            going_home: AtomicBool::new(false),
+            travelling,
             has_egg: AtomicBool::new(false),
             laying_egg: AtomicBool::new(false),
         };
@@ -55,7 +73,7 @@ impl TurtleEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             goal_selector.add_goal(0, Box::new(TryFindWaterGoal));
-            goal_selector.add_goal(1, Box::new(SwimGoal::default()));
+
             goal_selector.add_goal(2, EscapeDangerGoal::new(1.2));
             goal_selector.add_goal(3, BreedGoal::new(1.0));
             goal_selector.add_goal(4, Box::new(TemptGoal::new(1.1, TEMPT_ITEMS, false)));
@@ -68,6 +86,17 @@ impl TurtleEntity {
         };
 
         mob_arc
+    }
+
+    /// `TurtleMoveControl` / `travelInWater` home-distance predicate.
+    pub fn close_to_home(&self, distance: f64) -> bool {
+        let home = self.home_pos.load().0;
+        let center = pumpkin_util::math::vector3::Vector3::new(
+            f64::from(home.x) + 0.5,
+            f64::from(home.y) + 0.5,
+            f64::from(home.z) + 0.5,
+        );
+        (self.get_entity().pos.load() - center).length_squared() < distance * distance
     }
 
     #[must_use]
@@ -107,6 +136,28 @@ impl Animal for TurtleEntity {
 }
 
 impl Mob for TurtleEntity {
+    fn finalize_spawn(
+        &self,
+        world: &Arc<crate::world::World>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        group: Option<crate::entity::mob::spawn::SpawnGroupData>,
+    ) -> Option<crate::entity::mob::spawn::SpawnGroupData> {
+        // Turtle.finalizeSpawn sets the home before AgeableMob.finalizeSpawn.
+        self.home_pos.store(self.get_entity().block_pos.load());
+        crate::entity::mob::movement::finalize_spawn_after_species(self, world, view, group)
+    }
+
+    fn mob_is_pushed_by_fluids(&self) -> bool {
+        false
+    }
+
+    // Turtle.travelInWater.
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        let sink = self.mob_entity.get_target().is_none()
+            && (!self.going_home.load(Ordering::Relaxed) || !self.close_to_home(20.0));
+        crate::entity::mob::movement::travel_in_water(self, caller, 0.1, sink)
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }
@@ -117,14 +168,29 @@ impl Mob for TurtleEntity {
 
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
         self.write_ageable_nbt(nbt);
-        nbt.put_bool("HasEgg", self.has_egg());
+        nbt.put_bool("has_egg", self.has_egg());
+        // Turtle.addAdditionalSaveData: BlockPos.CODEC is an int array.
+        let home = self.home_pos.load().0;
+        nbt.put(
+            "home_pos",
+            pumpkin_nbt::tag::NbtTag::IntArray(vec![home.x, home.y, home.z]),
+        );
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
         self.read_ageable_nbt(nbt);
-        if let Some(has_egg) = nbt.get_bool("HasEgg") {
-            self.set_has_egg(has_egg);
-        }
+        // Turtle.readAdditionalSaveData defaults missing homes to the current position.
+        let home = match nbt.get_int_array("home_pos") {
+            Some([x, y, z]) => BlockPos::new(*x, *y, *z),
+            _ => self.get_entity().block_pos.load(),
+        };
+        self.home_pos.store(home);
+        // Turtle.readAdditionalSaveData; accept Pumpkin's old key for existing saves.
+        self.set_has_egg(
+            nbt.get_bool("has_egg")
+                .or_else(|| nbt.get_bool("HasEgg"))
+                .unwrap_or(false),
+        );
     }
 
     fn get_mob_entity(&self) -> &MobEntity {

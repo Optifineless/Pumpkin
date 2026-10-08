@@ -13,6 +13,8 @@ pub struct WalkNodeEvaluator {
     path_types_cache: FxHashMap<Vector3<i32>, PathType>,
     reusable_neighbors: [Option<Node>; 4],
     pub is_amphibious: bool,
+    pub is_frog: bool,
+    pub is_flying: bool,
 }
 
 impl WalkNodeEvaluator {
@@ -23,6 +25,8 @@ impl WalkNodeEvaluator {
             path_types_cache: FxHashMap::default(),
             reusable_neighbors: [None, None, None, None],
             is_amphibious: false,
+            is_frog: false,
+            is_flying: false,
         }
     }
 
@@ -420,6 +424,8 @@ impl WalkNodeEvaluator {
 
 impl NodeEvaluator for WalkNodeEvaluator {
     fn prepare(&mut self, context: PathfindingContext, mob_data: MobData) {
+        // NodeEvaluator.prepare discards nodes from the previous search.
+        self.base.nodes.clear();
         self.base.entity_width = mob_data.get_bb_width();
         self.base.entity_height = mob_data.get_bb_height();
         self.base.entity_depth = mob_data.get_bb_width();
@@ -448,35 +454,59 @@ impl NodeEvaluator for WalkNodeEvaluator {
 
         let mut start_y = block_y;
 
-        if !mob_data.can_walk_on_water {
-            if self.base.can_float && mob_data.is_in_water {
-                let mut check_y = block_y;
-                if let Some(ref ctx) = self.base.context {
-                    while ctx.is_water(&BlockPos::new(block_x, check_y + 1, block_z)) {
-                        check_y += 1;
-                    }
+        let stands_on_fluid = self.base.context.as_ref().is_some_and(|ctx| {
+            let fluid = ctx
+                .world()
+                .get_fluid(&BlockPos::new(block_x, block_y, block_z));
+            mob_data.can_stand_on_lava && fluid.matches_type(&pumpkin_data::fluid::Fluid::LAVA)
+                || mob_data.can_walk_on_water
+                    && ctx.is_water(&BlockPos::new(block_x, block_y, block_z))
+        });
+        if stands_on_fluid {
+            if let Some(ctx) = &self.base.context {
+                while ctx
+                    .world()
+                    .get_fluid(&BlockPos::new(block_x, start_y + 1, block_z))
+                    .matches_type(
+                        ctx.world()
+                            .get_fluid(&BlockPos::new(block_x, block_y, block_z)),
+                    )
+                {
+                    start_y += 1;
                 }
+            }
+        } else if self.base.can_float && mob_data.is_in_water {
+            let mut check_y = block_y;
+            if let Some(ref ctx) = self.base.context {
+                // WalkNodeEvaluator.getStart scans the current floatable fluid, including waterlogging.
+                while pumpkin_data::tag::Taggable::has_tag(
+                    ctx.world()
+                        .get_fluid(&BlockPos::new(block_x, check_y, block_z)),
+                    &pumpkin_data::tag::Fluid::MINECRAFT_ENTITY_FLOATABLE,
+                ) {
+                    check_y += 1;
+                }
+            }
+            start_y = check_y - 1;
+        } else if mob_data.on_ground {
+            start_y = (mob_y + 0.5).floor() as i32;
+        } else {
+            let start_check_y = (mob_y + 1.0).floor() as i32;
+            start_y = start_check_y;
+            let min_y = mob_data.min_y;
+            let mut check_y = start_check_y;
+            while check_y > min_y {
                 start_y = check_y;
-            } else if mob_data.on_ground {
-                start_y = (mob_y + 0.5).floor() as i32;
-            } else {
-                let start_check_y = (mob_y + 1.0).floor() as i32;
-                start_y = start_check_y;
-                let min_y = mob_data.min_y;
-                let mut check_y = start_check_y;
-                while check_y > min_y {
-                    start_y = check_y;
-                    check_y -= 1;
-                    let below = BlockPos::new(block_x, check_y, block_z);
-                    if let Some(ref ctx) = self.base.context
-                        && !ctx.is_air(&below)
-                        && !ctx.is_pathfindable(
-                            &below,
-                            crate::entity::ai::pathfinder::node::PathComputationType::Land,
-                        )
-                    {
-                        break;
-                    }
+                check_y -= 1;
+                let below = BlockPos::new(block_x, check_y, block_z);
+                if let Some(ref ctx) = self.base.context
+                    && !ctx.is_air(&below)
+                    && !ctx.is_pathfindable(
+                        &below,
+                        crate::entity::ai::pathfinder::node::PathComputationType::Land,
+                    )
+                {
+                    break;
                 }
             }
         }
@@ -639,7 +669,12 @@ impl NodeEvaluator for WalkNodeEvaluator {
     }
 
     fn get_path_type(&mut self, context: &mut PathfindingContext, pos: Vector3<i32>) -> PathType {
-        context.get_land_node_type(pos)
+        // Java dispatches getPathType virtually inside getPathTypeWithinMobBB and getStartNode.
+        if self.is_flying {
+            return super::fly_node_evaluator::path_type(context, pos);
+        }
+        // AmphibiousNodeEvaluator / FrogNodeEvaluator.getPathType, including calls from getNeighbors.
+        super::amphibious_node_evaluator::path_type(context, pos, self.is_amphibious, self.is_frog)
     }
 
     fn set_can_pass_doors(&mut self, can_pass: bool) {

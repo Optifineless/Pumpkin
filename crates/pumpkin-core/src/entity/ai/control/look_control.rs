@@ -8,10 +8,10 @@ use std::sync::Arc;
 // Please keep the atomic values out of here!!!
 #[derive(Default)]
 pub struct LookControl {
-    max_yaw_change: f32,
-    max_pitch_change: f32,
-    look_at_timer: i32,
-    position: Vector3<f64>,
+    pub(super) max_yaw_change: f32,
+    pub(super) max_pitch_change: f32,
+    pub(super) look_at_timer: i32,
+    pub(super) position: Vector3<f64>,
 }
 
 impl Control for LookControl {}
@@ -70,7 +70,7 @@ impl LookControl {
 
     pub fn tick(&mut self, mob: &dyn Mob) {
         let entity = mob.get_entity();
-        if Self::should_stay_horizontal() {
+        if mob.reset_look_pitch() {
             entity.set_pitch(0.0);
         }
 
@@ -101,14 +101,13 @@ impl LookControl {
         Self::clamp_head_yaw(mob);
     }
 
-    const fn should_stay_horizontal() -> bool {
-        true
-    }
-
     fn clamp_head_yaw(mob: &dyn Mob) {
         let mob_entity = mob.get_mob_entity();
-        if let Ok(navigator) = mob_entity.navigator.try_lock()
-            && navigator.is_in_progress()
+        if mob.clamp_look_yaw_when_idle()
+            || mob_entity
+                .navigator
+                .try_lock()
+                .is_ok_and(|navigator| navigator.is_in_progress())
         {
             let entity = &mob_entity.living_entity.entity;
             let max_head_rotation = mob.get_max_head_rotation();
@@ -120,7 +119,7 @@ impl LookControl {
         }
     }
 
-    fn get_target_pitch(&self, mob: &MobEntity) -> Option<f32> {
+    pub(super) fn get_target_pitch(&self, mob: &MobEntity) -> Option<f32> {
         let position = self.position;
         let mob_position = mob.living_entity.entity.pos.load();
         let d = position.x - mob_position.x;
@@ -134,7 +133,7 @@ impl LookControl {
         }
     }
 
-    fn get_target_yaw(&self, mob: &MobEntity) -> Option<f32> {
+    pub(super) fn get_target_yaw(&self, mob: &MobEntity) -> Option<f32> {
         let position = self.position;
         let mob_position = mob.living_entity.entity.pos.load();
         let d = position.x - mob_position.x;
@@ -144,5 +143,35 @@ impl LookControl {
         } else {
             Some((e.atan2(d) as f32).to_degrees() - 90.0)
         }
+    }
+}
+
+/// Common look requests, dispatched to the species' vanilla `LookControl` subclass.
+pub trait LookControlTrait: Control {
+    fn base(&mut self) -> &mut LookControl;
+    fn tick(&mut self, mob: &dyn Mob);
+    fn look_at(&mut self, mob: &dyn Mob, x: f64, y: f64, z: f64) {
+        self.base().look_at(mob, x, y, z);
+    }
+    fn look_at_position(&mut self, mob: &dyn Mob, position: Vector3<f64>) {
+        self.base().look_at_position(mob, position);
+    }
+    fn look_at_entity(&mut self, mob: &dyn Mob, entity: &Arc<dyn EntityBase>) {
+        self.base().look_at_entity(mob, entity);
+    }
+    fn look_at_entity_with_range(&mut self, entity: &Arc<dyn EntityBase>, yaw: f32, pitch: f32) {
+        self.base().look_at_entity_with_range(entity, yaw, pitch);
+    }
+    fn look_at_with_range(&mut self, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) {
+        self.base().look_at_with_range(x, y, z, yaw, pitch);
+    }
+}
+
+impl LookControlTrait for LookControl {
+    fn base(&mut self) -> &mut LookControl {
+        self
+    }
+    fn tick(&mut self, mob: &dyn Mob) {
+        Self::tick(self, mob);
     }
 }

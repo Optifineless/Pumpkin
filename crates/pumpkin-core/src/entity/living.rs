@@ -12,6 +12,8 @@ mod effects;
 mod equipment_modifiers;
 mod hurt_server;
 mod impulse;
+#[path = "living_movement.rs"]
+mod movement;
 #[path = "random_teleport.rs"]
 mod random_teleport;
 #[cfg(test)]
@@ -1084,7 +1086,7 @@ impl LivingEntity {
 
         self.movement_input.store(movement_input);
 
-        // TODO: Tick AI
+        self.tick_mob_ai(caller);
 
         if self.jumping.load(SeqCst) && should_swim_in_fluids {
             let in_lava = self.entity.touching_lava.load(SeqCst);
@@ -1106,7 +1108,7 @@ impl LivingEntity {
             } else if (on_ground || in_water && fluid_height <= swim_height)
                 && self.jumping_cooldown.load(SeqCst) == 0
             {
-                self.jump();
+                self.jump(caller);
 
                 self.jumping_cooldown.store(10, SeqCst);
             }
@@ -1127,8 +1129,6 @@ impl LivingEntity {
             .get_mob()
             .is_none_or(|mob| !mob.get_mob_entity().is_no_ai());
 
-        // Strider is the only entity that has canWalkOnFluid = false
-
         if !effective_ai {
             // No travel.
         } else if caller
@@ -1138,7 +1138,7 @@ impl LivingEntity {
             // The mob overrides vanilla LivingEntity.travel.
         } else if (touching_water || self.entity.touching_lava.load(SeqCst))
             && should_swim_in_fluids
-            && self.entity.entity_type != &EntityType::STRIDER
+            && !self.can_stand_on_current_fluid(caller)
         {
             self.travel_in_fluid(caller, touching_water);
         } else {
@@ -1226,35 +1226,10 @@ impl LivingEntity {
     }
 
     fn travel_in_air(&self, caller: &dyn EntityBase) {
-        // applyMovementInput
-
-        let effective_speed = self.get_attribute_value(&Attributes::MOVEMENT_SPEED);
-
-        let (speed, friction) = if self.entity.on_ground.load(Relaxed) {
-            // getVelocityAffectingPos
-
-            let slipperiness = f64::from(
-                self.entity
-                    .get_block_with_y_offset(0.500_001)
-                    .1
-                    .slipperiness,
-            );
-
-            let speed =
-                effective_speed * 0.216_000_02 / (slipperiness * slipperiness * slipperiness);
-
-            (speed, slipperiness * 0.91)
-        } else {
-            let speed = caller
-                .get_player()
-                .map_or(0.02, super::player::Player::get_off_ground_speed);
-
-            (speed, 0.91)
-        };
-
+        let (speed, friction, vertical_friction) = self.air_travel_factors(caller);
         self.entity
             .update_velocity_from_input(self.movement_input.load(), speed);
-
+        self.update_mob_climbable(caller);
         self.apply_climbing_speed();
 
         self.make_move(caller);
@@ -1291,13 +1266,7 @@ impl LivingEntity {
 
         velo.z *= friction;
 
-        velo.y *= caller.get_y_velocity_drag().unwrap_or_else(|| {
-            if caller.is_flutterer() {
-                friction
-            } else {
-                0.98
-            }
-        });
+        velo.y *= vertical_friction;
 
         self.entity.velocity.store(velo);
     }
@@ -1322,7 +1291,7 @@ impl LivingEntity {
         let falling = self.entity.velocity.load().y <= 0.0;
         let old_y = self.entity.pos.load().y;
         let gravity = self.get_effective_gravity(caller);
-        let effective_speed = self.get_attribute_value(&Attributes::MOVEMENT_SPEED);
+        let effective_speed = self.movement_speed(caller);
 
         if water {
             let mut friction = if self.entity.sprinting.load(Relaxed) {
@@ -1440,10 +1409,10 @@ impl LivingEntity {
     fn make_move(&self, caller: &dyn EntityBase) {
         self.entity.move_entity(caller, self.entity.velocity.load());
 
-        self.check_climbing();
+        self.check_climbing(caller);
     }
 
-    fn check_climbing(&self) {
+    fn check_climbing(&self, caller: &dyn EntityBase) {
         // If spectator: return false
 
         // TODO
@@ -1493,7 +1462,7 @@ impl LivingEntity {
         //     }
         // }
 
-        self.climbing.store(false, Relaxed);
+        self.update_mob_climbable(caller);
 
         if self.entity.on_ground.load(SeqCst) {
             self.climbing_pos.store(None);
@@ -1560,29 +1529,6 @@ impl LivingEntity {
         }
     }
 
-    fn jump(&self) {
-        let jump = self.get_jump_velocity(1.0);
-
-        if jump <= 1.0e-5 {
-            return;
-        }
-
-        let mut velo = self.entity.velocity.load();
-
-        velo.y = jump.max(velo.y);
-
-        if self.entity.sprinting.load(Relaxed) {
-            let yaw = f64::from(self.entity.yaw.load()).to_radians();
-
-            velo.x -= yaw.sin() * 0.2;
-            velo.z += yaw.cos() * 0.2;
-        }
-
-        self.entity.velocity.store(velo);
-
-        self.entity.velocity_dirty.store(true, SeqCst);
-    }
-
     fn get_jump_velocity(&self, mut strength: f64) -> f64 {
         strength *= self.get_attribute_value(&Attributes::JUMP_STRENGTH);
         strength *= f64::from(self.entity.get_jump_velocity_multiplier());
@@ -1599,6 +1545,12 @@ impl LivingEntity {
         ground: bool,
         dont_damage: bool,
     ) {
+        if caller
+            .get_mob()
+            .is_some_and(super::mob::Mob::check_fall_damage)
+        {
+            return;
+        }
         if ground {
             let fall_distance = self.fall_distance.load();
             if let Some(player) = caller.get_player() {
@@ -2211,6 +2163,9 @@ impl EntityBase for LivingEntity {
         self.combat_ticks.fetch_add(1, Relaxed);
         self.entity.tick(caller, server);
         self.tick_combat_memory();
+        if let Some(mob) = caller.get_mob() {
+            mob.after_base_tick();
+        }
 
         // Only tick movement if the entity is alive. This prevents a dead "corpse"
         // from continuing to be simulated (accumulating fall_distance/velocity).

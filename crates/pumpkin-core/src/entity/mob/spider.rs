@@ -32,6 +32,11 @@ pub struct SpiderEntity {
 impl SpiderEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Spider.createNavigation, inherited by CaveSpider.
+        mob_entity.configure_movement(
+            crate::entity::ai::pathfinder::Navigator::wall_climber(),
+            crate::entity::ai::control::move_control::MoveControl::default(),
+        );
         let spider = Self {
             mob_entity,
             is_climbing: AtomicBool::new(false),
@@ -161,14 +166,16 @@ impl Mob for SpiderEntity {
         &self.mob_entity
     }
 
-    fn mob_tick(&self, _caller: &dyn EntityBase) {
-        let entity = &self.mob_entity.living_entity.entity;
-        if !entity.is_alive() {
-            return;
-        }
+    fn mob_on_climbable(&self) -> bool {
+        self.is_climbing()
+    }
 
-        let vel = entity.velocity.load();
-        let is_colliding_horizontally = vel.x.abs() < 1e-4 && vel.z.abs() < 1e-4;
-        self.set_climbing(is_colliding_horizontally);
+    // Spider.tick sets climbability after collision-resolved living movement.
+    fn post_tick(&self) {
+        self.set_climbing(
+            self.get_entity()
+                .horizontal_collision
+                .load(Ordering::Relaxed),
+        );
     }
 }

@@ -1,3 +1,4 @@
+use crate::entity::ai::{control::flying_move_control::FlyingMoveControl, pathfinder::Navigator};
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicBool, AtomicI32, Ordering},
@@ -17,7 +18,7 @@ use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
         escape_danger::EscapeDangerGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     player::Player,
@@ -34,6 +35,13 @@ pub struct AllayEntity {
 impl AllayEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Allay constructor / createNavigation.
+        let mut navigation = Navigator::flying();
+        navigation.set_can_open_doors(false);
+        navigation.set_can_float(true);
+        navigation.set_required_path_length(48.0);
+        mob_entity.configure_movement(navigation, FlyingMoveControl::new(20, true));
+
         let allay = Self {
             mob_entity,
             dancing: AtomicBool::new(false),
@@ -54,7 +62,11 @@ impl AllayEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // AllayAi.initCoreActivity: Brain core Swim(0.8F), adapted to the goal selector.
+            goal_selector.add_goal(
+                0,
+                Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
+            );
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.25));
             goal_selector.add_goal(6, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
@@ -94,6 +106,17 @@ impl AllayEntity {
 }
 
 impl Mob for AllayEntity {
+    // Allay.travel delegates to LivingEntity.travelFlying.
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        crate::entity::mob::movement::travel_flying(
+            self,
+            caller,
+            0.02,
+            0.02,
+            self.mob_entity.movement_speed.load(),
+        )
+    }
+
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_bool("CanDuplicate", self.can_duplicate());
         nbt.put_int(

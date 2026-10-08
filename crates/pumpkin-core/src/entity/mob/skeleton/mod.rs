@@ -11,8 +11,7 @@ use crate::entity::{
     ai::goal::{
         active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal,
         look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
-        melee_attack::MeleeAttackGoal, revenge::RevengeGoal, swim::SwimGoal,
-        wander_around::WanderAroundGoal,
+        melee_attack::MeleeAttackGoal, revenge::RevengeGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity, equipment::RegionalDifficulty},
 };
@@ -68,7 +67,7 @@ impl SkeletonEntityBase {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // AbstractSkeleton.registerGoals omits FloatGoal; reassessWeaponGoal selects combat.
             goal_selector.add_goal(4, Box::new(MeleeAttackGoal::new(1.2, false)));
             goal_selector.add_goal(
                 3,

@@ -18,11 +18,12 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
 use crate::block::entities::creaking_heart::CreakingHeartBlockEntity;
+use crate::entity::ai::pathfinder::node::PathType;
 use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
         active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal, swim::SwimGoal,
+        look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal,
         wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
@@ -60,6 +61,12 @@ pub struct CreakingEntity {
 impl CreakingEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Creaking constructor / CreakingPathNavigation.
+        mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_float(true);
         let creaking = Self {
             mob_entity,
             can_move: AtomicBool::new(true),
@@ -119,7 +126,17 @@ impl CreakingEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            // CreakingAi.initCoreActivity: Brain core Swim(0.8F), adapted to the goal selector.
+            goal_selector.add_goal(
+                0,
+                Box::new(
+                    crate::entity::ai::goal::swim::SwimGoal::default().gated_by(|mob| {
+                        mob.cast_any()
+                            .downcast_ref::<Self>()
+                            .is_some_and(Self::can_move)
+                    }),
+                ),
+            );
             goal_selector.add_goal(4, Box::new(MeleeAttackGoal::new(1.0, true)));
             goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
@@ -144,6 +161,17 @@ impl CreakingEntity {
 
     pub fn set_transient(&self, pos: BlockPos) {
         self.set_home_pos(Some(pos));
+        // Creaking.setTransient applies these maluses only to heart-bound creakings.
+        let mut navigation = self
+            .mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        navigation.set_pathfinding_malus(PathType::DamageOther, 8.0);
+        navigation.set_pathfinding_malus(PathType::PowderSnow, 8.0);
+        navigation.set_pathfinding_malus(PathType::Lava, 8.0);
+        navigation.set_pathfinding_malus(PathType::DamageFire, 0.0);
+        navigation.set_pathfinding_malus(PathType::DangerFire, 0.0);
     }
 
     pub fn is_heart_bound(&self) -> bool {
@@ -390,6 +418,30 @@ impl CreakingEntity {
 }
 
 impl Mob for CreakingEntity {
+    fn can_tick_move_control(&self) -> bool {
+        self.can_move()
+    }
+    fn can_tick_look_control(&self) -> bool {
+        self.can_move()
+    }
+    fn can_tick_navigation(&self) -> bool {
+        self.can_move()
+    }
+    fn tick_jump_control(&self) {
+        if self.can_move() {
+            self.mob_entity
+                .jump_control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .tick(&self.mob_entity.living_entity.jumping);
+        }
+    }
+
+    // Creaking.createBodyControl / clientTick.
+    fn custom_body_rotation(&self) -> bool {
+        !self.can_move()
+    }
+
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
         if let Some(pos) = self.get_home_pos() {
             let mut sub = NbtCompound::new();

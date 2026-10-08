@@ -1,3 +1,7 @@
+use crate::entity::ai::control::smooth_swimming_look_control::SmoothSwimmingLookControl;
+use crate::entity::ai::{
+    control::smooth_swimming_move_control::SmoothSwimmingMoveControl, pathfinder::Navigator,
+};
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicBool, AtomicI32, Ordering},
@@ -19,8 +23,7 @@ use crate::entity::{
         active_target::ActiveTargetGoal, breed::BreedGoal, escape_danger::EscapeDangerGoal,
         follow_parent::FollowParentGoal, look_around::RandomLookAroundGoal,
         look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal, revenge::RevengeGoal,
-        swim::SwimGoal, tempt::TemptGoal, try_find_water::TryFindWaterGoal,
-        wander_around::WanderAroundGoal,
+        tempt::TemptGoal, try_find_water::TryFindWaterGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     passive::animal::Animal,
@@ -80,11 +83,20 @@ pub struct AxolotlEntity {
     pub playing_dead: AtomicBool,
     pub from_bucket: AtomicBool,
     pub play_dead_ticks: AtomicI32,
+    pub(super) air_supply: AtomicI32,
 }
 
 impl AxolotlEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Axolotl constructor / createNavigation (26.3).
+        let navigation = Navigator::amphibious(false);
+        mob_entity.configure_movement(
+            navigation,
+            SmoothSwimmingMoveControl::new(85, 10, 0.1, 0.5, false),
+        );
+        mob_entity.configure_look(SmoothSwimmingLookControl::new(20));
+
         let variant = AxolotlVariant::random_variant();
         let axolotl = Self {
             mob_entity,
@@ -93,6 +105,7 @@ impl AxolotlEntity {
             playing_dead: AtomicBool::new(false),
             from_bucket: AtomicBool::new(false),
             play_dead_ticks: AtomicI32::new(0),
+            air_supply: AtomicI32::new(super::axolotl_air::MAX_AIR_SUPPLY),
         };
         let mob_arc = Arc::new(axolotl);
         let mob_weak: Weak<dyn Mob> = {
@@ -108,7 +121,7 @@ impl AxolotlEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             goal_selector.add_goal(0, Box::new(TryFindWaterGoal));
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.5));
             goal_selector.add_goal(2, BreedGoal::new(1.0));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.25, TEMPT_ITEMS, false)));
@@ -240,6 +253,37 @@ impl Mob for AxolotlEntity {
         self.set_from_bucket(value);
     }
 
+    // Axolotl.getMaxHeadXRot.
+    fn get_max_look_pitch_change(&self) -> f32 {
+        1.0
+    }
+
+    fn mob_is_pushed_by_fluids(&self) -> bool {
+        false
+    }
+
+    // Axolotl.travelInWater.
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        crate::entity::mob::movement::travel_in_water(
+            self,
+            caller,
+            self.mob_entity.movement_speed.load(),
+            false,
+        )
+    }
+
+    // AxolotlMoveControl.tick / AxolotlLookControl.tick.
+    fn can_tick_move_control(&self) -> bool {
+        !self.is_playing_dead()
+    }
+    fn can_tick_look_control(&self) -> bool {
+        !self.is_playing_dead()
+    }
+    // Axolotl.getMaxHeadYRot.
+    fn get_max_head_rotation(&self) -> f32 {
+        1.0
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }
@@ -249,11 +293,14 @@ impl Mob for AxolotlEntity {
     }
 
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        nbt.put_short("Air", self.air_supply.load(Ordering::Relaxed) as i16);
         nbt.put_int("Variant", self.get_variant().id());
         nbt.put_bool("FromBucket", self.is_from_bucket());
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
+        self.air_supply
+            .store(super::axolotl_air::read_air_supply(nbt), Ordering::Relaxed);
         if let Some(variant) = nbt.get_int("Variant") {
             self.set_variant(AxolotlVariant::from_id(variant));
         }
@@ -264,6 +311,10 @@ impl Mob for AxolotlEntity {
 
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
+    }
+
+    fn after_base_tick(&self) {
+        self.handle_air_supply();
     }
 
     fn mob_tick(&self, _caller: &dyn EntityBase) {
@@ -281,6 +332,11 @@ impl Mob for AxolotlEntity {
 
     fn mob_init_data_tracker(&self) {
         let entity = self.get_entity();
+        // Entity's initial air metadata uses Axolotl.getMaxAirSupply (or the loaded Air value).
+        entity.set_synced_data(
+            pumpkin_data::tracked_data::entity::DATA_AIR_SUPPLY_ID,
+            VarInt(self.air_supply.load(Ordering::Relaxed)),
+        );
         let is_baby = entity.age.load(Ordering::Relaxed) < 0;
         if is_baby {
             entity.set_synced_data(pumpkin_data::tracked_data::axolotl::DATA_BABY_ID, true);

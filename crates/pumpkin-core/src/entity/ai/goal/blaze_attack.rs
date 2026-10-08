@@ -29,9 +29,11 @@ impl BlazeShootFireballGoal {
         }
     }
 
-    const fn get_follow_distance() -> f64 {
-        // TODO: use FOLLOW_RANGE
-        48.0
+    fn get_follow_distance(blaze: &BlazeEntity) -> f64 {
+        blaze
+            .entity
+            .living_entity
+            .get_attribute_value(&pumpkin_data::attributes::Attributes::FOLLOW_RANGE)
     }
 }
 
@@ -89,6 +91,7 @@ impl Goal for BlazeShootFireballGoal {
         let dx = target_pos.x - blaze_pos.x;
         let dz = target_pos.z - blaze_pos.z;
         let distance_sq = blaze_pos.squared_distance_to_vec(&target_pos);
+        // Blaze.BlazeAttackGoal.getFollowDistance reads the live FOLLOW_RANGE attribute.
 
         if distance_sq < 4.0 {
             if !has_line_of_sight {
@@ -106,7 +109,7 @@ impl Goal for BlazeShootFireballGoal {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .set_wanted_position(target_pos.x, target_pos.y, target_pos.z, 1.0);
-        } else if distance_sq < Self::get_follow_distance().powi(2) && has_line_of_sight {
+        } else if distance_sq < Self::get_follow_distance(&blaze).powi(2) && has_line_of_sight {
             let yd = (target_pos.y + f64::from(target_entity.entity_dimension.load().height) * 0.5)
                 - (blaze_pos.y + f64::from(entity.entity_dimension.load().height) * 0.5);
 
