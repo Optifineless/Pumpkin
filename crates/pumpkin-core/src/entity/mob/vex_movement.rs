@@ -98,8 +98,7 @@ impl Goal for VexChargeAttackGoal {
                 .load()
                 .intersects(&target.get_entity().bounding_box.load())
             {
-                mob.get_mob_entity()
-                    .try_attack(mob.get_entity(), target.as_ref());
+                mob.get_mob_entity().try_attack(mob, target.as_ref());
                 self.stop(mob);
             } else if mob
                 .get_entity()
