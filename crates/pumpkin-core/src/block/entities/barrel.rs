@@ -24,6 +24,7 @@ use super::BlockEntity;
 
 pub struct BarrelBlockEntity {
     pub position: BlockPos,
+    pub lock: super::container_lock::ContainerLock,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
@@ -33,6 +34,15 @@ pub struct BarrelBlockEntity {
 }
 
 impl BlockEntity for BarrelBlockEntity {
+    fn collect_item_components(&self, stack: &mut ItemStack) {
+        self.lock.collect(stack);
+    }
+    fn apply_item_components(&self, stack: &ItemStack) {
+        self.lock.apply(stack);
+    }
+    fn container_lock(&self) -> Option<pumpkin_data::data_component_impl::LockImpl> {
+        self.lock.get()
+    }
     fn resource_location(&self) -> &'static str {
         Self::ID
     }
@@ -47,6 +57,7 @@ impl BlockEntity for BarrelBlockEntity {
     {
         let mut barrel = Self {
             position,
+            lock: super::container_lock::ContainerLock::from_nbt(nbt),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -65,6 +76,7 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.lock.write_nbt(nbt);
         self.write_inventory_nbt(nbt, true);
     }
 
@@ -126,6 +138,7 @@ impl BarrelBlockEntity {
     pub fn new(position: BlockPos) -> Self {
         Self {
             position,
+            lock: super::container_lock::ContainerLock::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),

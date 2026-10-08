@@ -115,6 +115,7 @@ pub(crate) mod combat;
 pub mod equipment_damage;
 pub(crate) mod ignite;
 pub mod predicate;
+pub(crate) mod recipe_properties;
 
 /// The maximum number of scoreboard tags an entity can carry, matching Vanilla.
 pub const MAX_SCOREBOARD_TAGS: usize = 1024;

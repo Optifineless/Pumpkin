@@ -4,7 +4,10 @@ use std::sync::RwLock;
 
 pub fn server(path: &std::path::Path) -> Arc<Server> {
     let session_lock = pumpkin_world::session_lock::acquire(path).unwrap();
-    let basic_config = BasicConfiguration::default();
+    let basic_config = BasicConfiguration {
+        default_level_name: path.to_string_lossy().into_owned(),
+        ..BasicConfiguration::default()
+    };
     let advanced_config = AdvancedConfiguration::default();
     let telemetry_config = TelemetryConfig::default();
     let vanilla_data = VanillaData {
@@ -29,9 +32,13 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         &advanced_config.commands,
     ));
     let block_registry = crate::block::registry::default_registry();
-    let level_info = Arc::new(ArcSwap::from_pointee(LevelData::default(
-        pumpkin_util::world_seed::Seed(0),
-    )));
+    let level_info = Arc::new(ArcSwap::from_pointee(
+        AnvilLevelInfo
+            .read_world_info(path)
+            .unwrap_or_else(|_| LevelData::default(pumpkin_util::world_seed::Seed(0))),
+    ));
+    let map_manager = MapManager::load(path).unwrap();
+    map_manager.reconcile_counter(level_info.load().map_id);
     let listing = std::sync::Mutex::new(CachedStatus::new(
         &basic_config,
         &advanced_config.networking.java.motd,
@@ -59,7 +66,6 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         recipe_manager: Arc::new(recipe::RecipeManager::new()),
         datapack_manager: Arc::new(crate::data::datapack::DatapackManager::new()),
         enchantment_manager: Arc::new(enchantment::EnchantmentManager::new()),
-        map_id: level_info.load().map_id.into(),
         worlds: ArcSwap::from_pointee(vec![]),
         dimensions,
         command_dispatcher,
@@ -70,7 +76,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         listing,
         branding: CachedBranding::new(),
         bossbars: std::sync::Mutex::new(CustomBossbars::new()),
-        map_manager: MapManager::new(),
+        map_manager,
         defaultgamemode,
         player_data_storage,
         tick_gate: tokio::sync::Mutex::new(()),

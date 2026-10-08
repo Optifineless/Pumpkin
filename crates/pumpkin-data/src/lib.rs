@@ -95,6 +95,11 @@ pub use advancement::*;
 #[path = "generated/recipes.rs"]
 pub mod recipes;
 
+#[cfg(all(feature = "recipes", feature = "item"))]
+mod recipe_result;
+#[cfg(all(feature = "recipes", feature = "item"))]
+pub use recipe_result::crafting_displays;
+
 #[cfg(feature = "data_component")]
 #[rustfmt::skip]
 #[path = "generated/data_component.rs"]

@@ -22,6 +22,7 @@ pub mod chest_like_block_entity;
 pub mod chiseled_bookshelf;
 pub mod command_block;
 pub mod comparator;
+pub mod container_lock;
 pub mod daylight_detector;
 pub mod dropper;
 pub mod end_portal;
@@ -72,6 +73,10 @@ pub use pumpkin_inventory::PropertyDelegate;
 
 //TODO: We need a mark_dirty for chests
 pub trait BlockEntity: Any + Send + Sync {
+    /// Returns the saved lock predicate for menu access checks.
+    fn container_lock(&self) -> Option<pumpkin_data::data_component_impl::LockImpl> {
+        None
+    }
     fn write_nbt(&self, nbt: &mut NbtCompound);
     fn from_nbt(nbt: &NbtCompound, position: BlockPos) -> Self
     where

@@ -36,6 +36,7 @@
 pub mod anvil;
 pub mod beacon_screen_handler;
 pub mod brewing;
+mod bundle_click;
 pub mod cartography_table_screen_handler;
 pub mod container_click;
 pub mod crafting;
@@ -54,8 +55,11 @@ pub mod loom_screen_handler;
 pub mod merchant;
 pub mod mount_screen_handler;
 pub mod player;
+mod quick_craft;
 pub mod screen_handler;
+pub mod shulker_box_screen_handler;
 pub mod slot;
+mod smithing_slots;
 pub mod smithing_table_screen_handler;
 pub mod stonecutter_screen_handler;
 pub mod sync_handler;
@@ -64,6 +68,14 @@ pub mod window_property;
 
 #[cfg(test)]
 mod ext_review_tests;
+#[cfg(test)]
+mod quick_craft_tests;
+#[cfg(test)]
+mod result_container_tests;
+#[cfg(test)]
+mod smithing_routing_tests;
+#[cfg(test)]
+mod survival_inventory_tests;
 
 use rustc_hash::FxHashMap;
 

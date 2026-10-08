@@ -1,6 +1,9 @@
+use crate::screen_handler::ScreenProperty;
+use crate::window_property::PropertyDelegate;
 use std::any::Any;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicI32, AtomicU8, Ordering};
 
 use crate::player::player_inventory::PlayerInventory;
 use crate::screen_handler::{InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour};
@@ -8,18 +11,21 @@ use crate::slot::{NormalSlot, Slot};
 
 use crate::inventory::Inventory;
 use crate::inventory::SimpleInventory;
-use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::recipes::{RECIPES_STONECUTTING, StonecutterRecipe};
 use pumpkin_data::screen::WindowType;
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_protocol::java::server::play::SlotActionType;
+use pumpkin_protocol::{
+    codec::var_int::VarInt,
+    java::{client::play::CSetContainerProperty, server::play::SlotActionType},
+};
 
 pub struct StonecutterScreenHandler {
     behaviour: ScreenHandlerBehaviour,
     pub input_inventory: Arc<SimpleInventory>,
     pub output_inventory: Arc<SimpleInventory>,
-    pub selected_recipe: AtomicU8,
+    pub selected_recipe: Arc<StonecutterSelection>,
+    previous_input: Mutex<ItemStack>,
 }
 
 impl StonecutterScreenHandler {
@@ -32,7 +38,8 @@ impl StonecutterScreenHandler {
             behaviour,
             input_inventory: input_inventory.clone(),
             output_inventory: output_inventory.clone(),
-            selected_recipe: AtomicU8::new(u8::MAX),
+            selected_recipe: Arc::new(StonecutterSelection(AtomicI32::new(-1))),
+            previous_input: Mutex::new(ItemStack::EMPTY.clone()),
         };
 
         handler.add_slot(Arc::new(NormalSlot::new(
@@ -42,36 +49,34 @@ impl StonecutterScreenHandler {
         handler.add_slot(Arc::new(StonecutterOutputSlot::new(
             output_inventory as Arc<dyn Inventory>,
             input_inventory as Arc<dyn Inventory>,
+            handler.selected_recipe.clone(),
             0,
         )));
 
         let player_inventory: Arc<dyn Inventory> = player_inventory.clone();
 
         handler.add_player_slots(&player_inventory);
+        handler.add_property(ScreenProperty::new(handler.selected_recipe.clone(), 0));
 
         handler
     }
 
     fn update_output(&self) {
-        let input_lock = self.input_inventory.get_stack(0);
-
-        if input_lock.is_empty() {
-            self.output_inventory.set_stack(0, ItemStack::EMPTY.clone());
-            self.selected_recipe.store(u8::MAX, Ordering::Relaxed);
-            return;
+        // StonecutterMenu.slotsChanged resets selection when the input item type changes.
+        let input = self.input_inventory.get_stack(0);
+        let mut previous = self
+            .previous_input
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if input.item != previous.item {
+            self.selected_recipe.0.store(-1, Ordering::Relaxed);
+            *previous = input;
         }
-
-        let available_recipes = Self::get_available_recipes(&input_lock);
-        let recipe_index = self.selected_recipe.load(Ordering::Relaxed);
-
-        if recipe_index != u8::MAX && (recipe_index as usize) < available_recipes.len() {
-            let recipe = available_recipes[recipe_index as usize];
-            let item = Item::from_registry_key(recipe.result.id).unwrap_or(&Item::AIR);
-            let result = ItemStack::new(recipe.result.count, item);
-            self.output_inventory.set_stack(0, result);
-        } else {
-            self.output_inventory.set_stack(0, ItemStack::EMPTY.clone());
-        }
+        refresh_output(
+            &*self.input_inventory,
+            &*self.output_inventory,
+            &self.selected_recipe,
+        );
     }
 
     fn get_available_recipes(input: &ItemStack) -> Vec<&'static StonecutterRecipe> {
@@ -80,6 +85,18 @@ impl StonecutterScreenHandler {
             .iter()
             .filter(|r| r.ingredient.match_item(item))
             .collect()
+    }
+
+    fn sync_selection(&self, player: &dyn InventoryPlayer, previous: i32) {
+        let selected = self.selected_recipe.0.load(Ordering::Relaxed);
+        if previous != selected {
+            // StonecutterMenu broadcasts its selectedRecipeIndex DataSlot after changes.
+            player.enqueue_property_packet(&CSetContainerProperty::new(
+                VarInt(i32::from(self.sync_id())),
+                0,
+                selected as i16,
+            ));
+        }
     }
 }
 
@@ -107,48 +124,73 @@ impl ScreenHandler for StonecutterScreenHandler {
         action_type: SlotActionType,
         player: &dyn InventoryPlayer,
     ) {
+        let previous = self.selected_recipe.0.load(Ordering::Relaxed);
         self.internal_on_slot_click(slot_index, button, action_type, player);
-        if slot_index == 0 {
-            self.update_output();
+        self.update_output();
+        self.sync_selection(player, previous);
+    }
+
+    fn on_button_click(&mut self, player: &dyn InventoryPlayer, button: i32) -> bool {
+        let previous = self.selected_recipe.0.load(Ordering::Relaxed);
+        self.update_output();
+        // StonecutterMenu.clickMenuButton selects a valid recipe and broadcasts its output.
+        if self.selected_recipe.0.load(Ordering::Relaxed) == button {
+            self.sync_selection(player, previous);
+            return false;
         }
+        if usize::try_from(button).is_ok_and(|i| {
+            i < Self::get_available_recipes(&self.input_inventory.get_stack(0)).len()
+        }) {
+            self.selected_recipe.0.store(button, Ordering::Relaxed);
+            self.update_output();
+            self.send_content_updates();
+        }
+        self.sync_selection(player, previous);
+        true
+    }
+
+    fn on_closed(&mut self, player: &dyn InventoryPlayer) {
+        // StonecutterMenu.removed discards output and returns the unspent input.
+        self.default_on_closed(player);
+        self.output_inventory.set_stack(0, ItemStack::EMPTY.clone());
+        self.drop_inventory(player, self.input_inventory.clone());
     }
 
     fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
-        let mut stack = ItemStack::EMPTY.clone();
-        let slot = self.get_behaviour().slots.get(slot_index as usize).cloned();
-
-        if let Some(slot) = slot {
-            let mut slot_stack = slot.get_cloned_stack();
-            if !slot_stack.is_empty() {
-                stack = slot_stack.clone();
-                if slot_index < 2 {
-                    // From Stonecutter to Player
-                    if !self.insert_item(&mut slot_stack, 2, 38, true) {
-                        return ItemStack::EMPTY.clone();
-                    }
-                    slot.on_quick_move_crafted(slot_stack.clone(), stack.clone());
-                } else {
-                    // From Player to Stonecutter
-                    // Try input slot (0)
-                    if !self.insert_item(&mut slot_stack, 0, 1, false) {
-                        return ItemStack::EMPTY.clone();
-                    }
-                }
-
-                if slot_stack.is_empty() {
-                    slot.set_stack(ItemStack::EMPTY.clone());
-                } else {
-                    slot.set_stack(slot_stack.clone());
-                }
-
-                if slot_index == 1 {
-                    let mut taken_stack = stack.clone();
-                    taken_stack.set_count(stack.item_count - slot_stack.item_count);
-                    slot.on_take_item(player, &taken_stack);
-                }
+        let Some(slot) = self.get_behaviour().slots.get(slot_index as usize).cloned() else {
+            return ItemStack::EMPTY.clone();
+        };
+        let mut stack = slot.get_stack();
+        if stack.is_empty() {
+            return ItemStack::EMPTY.clone();
+        }
+        let original = stack.clone();
+        let previous = self.selected_recipe.0.load(Ordering::Relaxed);
+        let (start, end, reverse) = if slot_index < 2 {
+            (2, 38, slot_index == 1)
+        } else if !Self::get_available_recipes(&stack).is_empty() {
+            (0, 1, false)
+        } else if slot_index < 29 {
+            (29, 38, false)
+        } else {
+            (2, 29, false)
+        };
+        if !self.insert_item(&mut stack, start, end, reverse) {
+            return ItemStack::EMPTY.clone();
+        }
+        slot.set_stack(stack.clone());
+        if slot_index == 1 {
+            slot.on_take_item(
+                player,
+                &original.copy_with_count(original.item_count - stack.item_count),
+            );
+            if !stack.is_empty() {
+                player.drop_item(stack, false);
             }
         }
-        stack
+        self.update_output();
+        self.sync_selection(player, previous);
+        original
     }
 }
 
@@ -157,17 +199,20 @@ pub struct StonecutterOutputSlot {
     pub input_inventory: Arc<dyn Inventory>,
     pub index: usize,
     pub id: AtomicU8,
+    selection: Arc<StonecutterSelection>,
 }
 
 impl StonecutterOutputSlot {
     pub fn new(
         inventory: Arc<dyn Inventory>,
         input_inventory: Arc<dyn Inventory>,
+        selection: Arc<StonecutterSelection>,
         index: usize,
     ) -> Self {
         Self {
             inventory,
             input_inventory,
+            selection,
             index,
             id: AtomicU8::new(0),
         }
@@ -175,6 +220,11 @@ impl StonecutterOutputSlot {
 }
 
 impl Slot for StonecutterOutputSlot {
+    fn take_stack(&self, _amount: u8) -> ItemStack {
+        // StonecutterMenu uses ResultContainer.removeItem: take the whole result.
+        self.inventory.remove_stack(self.index)
+    }
+
     fn get_inventory(&self) -> Arc<dyn Inventory> {
         self.inventory.clone()
     }
@@ -194,6 +244,7 @@ impl Slot for StonecutterOutputSlot {
             stack.item_count as i32,
         );
         self.input_inventory.remove_stack_specific(0, 1);
+        refresh_output(&*self.input_inventory, &*self.inventory, &self.selection);
         self.mark_dirty();
     }
 
@@ -224,4 +275,31 @@ impl Slot for StonecutterOutputSlot {
     fn mark_dirty(&self) {
         self.inventory.mark_dirty();
     }
+}
+
+pub struct StonecutterSelection(AtomicI32);
+impl PropertyDelegate for StonecutterSelection {
+    fn get_property(&self, _index: i32) -> i32 {
+        self.0.load(Ordering::Relaxed)
+    }
+    fn set_property(&self, _index: i32, value: i32) {
+        self.0.store(value, Ordering::Relaxed);
+    }
+    fn get_properties_size(&self) -> i32 {
+        1
+    }
+}
+
+fn refresh_output(input: &dyn Inventory, output: &dyn Inventory, selection: &StonecutterSelection) {
+    let input = input.get_stack(0);
+    let recipes = StonecutterScreenHandler::get_available_recipes(&input);
+    let result = usize::try_from(selection.0.load(Ordering::Relaxed))
+        .ok()
+        .and_then(|i| recipes.get(i))
+        .filter(|_| !input.is_empty())
+        .map_or_else(
+            || ItemStack::EMPTY.clone(),
+            |recipe| recipe.result.assemble(None, 0),
+        );
+    output.set_stack(0, result);
 }

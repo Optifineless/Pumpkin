@@ -115,19 +115,23 @@ pub fn add_translation_file<P: Into<String>>(namespace: P, file_path: P, locale:
 ///
 /// # Returns
 /// The localized translation. Falls back to `en_us` or the key itself if not found.
+#[must_use]
 pub fn get_translation(key: &str, locale: Locale) -> String {
+    let key = key.to_lowercase();
+    get_translation_with_fallback(&key, locale, &key)
+}
+
+/// Retrieves a translation, using the supplied fallback only when the key is absent.
+#[must_use]
+pub fn get_translation_with_fallback(key: &str, locale: Locale, fallback: &str) -> String {
     let translations = TRANSLATIONS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let key = key.to_lowercase();
-    translations[locale as usize].get(&key).map_or_else(
-        || {
-            translations[Locale::EnUs as usize]
-                .get(&key)
-                .map_or(key, Clone::clone)
-        },
-        Clone::clone,
-    )
+    translations[locale as usize]
+        .get(&key)
+        .or_else(|| translations[Locale::EnUs as usize].get(&key))
+        .map_or_else(|| fallback.to_owned(), Clone::clone)
 }
 
 /// What a `%` in a translation string introduces.

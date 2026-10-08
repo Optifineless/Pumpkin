@@ -4,6 +4,10 @@ use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
 use std::sync::Mutex;
 
+#[cfg(test)]
+#[path = "beehive_component_tests.rs"]
+mod tests;
+
 pub struct BeehiveBlockEntity {
     pub position: BlockPos,
     pub bees: Mutex<Option<Vec<NbtTag>>>,
@@ -11,6 +15,33 @@ pub struct BeehiveBlockEntity {
 }
 
 impl BlockEntity for BeehiveBlockEntity {
+    fn collect_item_components(&self, stack: &mut pumpkin_data::item_stack::ItemStack) {
+        use pumpkin_data::data_component_impl::BeesImpl;
+        // BeehiveBlockEntity.collectImplicitComponents retains full Occupant records.
+        let bees = self
+            .bees
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let data = NbtTag::List(bees.clone().unwrap_or_default());
+        if let Some(bees) = BeesImpl::read_data(&data) {
+            stack.set_data_component(bees);
+        }
+    }
+
+    fn apply_item_components(&self, stack: &pumpkin_data::item_stack::ItemStack) {
+        use pumpkin_data::data_component_impl::{BeesImpl, DataComponentImpl};
+        // BeehiveBlockEntity.applyImplicitComponents clears and restores stored occupants.
+        let bees = stack
+            .get_data_component::<BeesImpl>()
+            .unwrap_or(&BeesImpl::EMPTY)
+            .write_data();
+        *self
+            .bees
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            bees.extract_list().map(<[_]>::to_vec);
+    }
+
     fn resource_location(&self) -> &'static str {
         Self::ID
     }

@@ -30,15 +30,17 @@ use std::{
     },
 };
 
-struct Player {
-    inventory: Arc<PlayerInventory>,
-    drops: Mutex<Vec<ItemStack>>,
+pub struct Player {
+    pub(crate) inventory: Arc<PlayerInventory>,
+    pub(crate) drops: Mutex<Vec<ItemStack>>,
     drop_limit: usize,
-    levels: AtomicI32,
+    pub(crate) levels: AtomicI32,
+    pub(crate) map_state: Mutex<Option<(i8, bool)>>,
+    pub(crate) properties: Mutex<Vec<(i16, i16)>>,
 }
 
 impl Player {
-    fn new(drop_limit: usize) -> Self {
+    pub(crate) fn new(drop_limit: usize) -> Self {
         Self {
             inventory: Arc::new(PlayerInventory::new(
                 Arc::new(Mutex::new(EntityEquipment::new())),
@@ -47,6 +49,8 @@ impl Player {
             drops: Mutex::default(),
             drop_limit,
             levels: AtomicI32::new(10),
+            map_state: Mutex::new(Some((0, false))),
+            properties: Mutex::default(),
         }
     }
 
@@ -60,6 +64,10 @@ impl Player {
 }
 
 impl InventoryPlayer for Player {
+    fn map_crafting_state(&self, _stack: &ItemStack) -> Option<(i8, bool)> {
+        *self.map_state.lock().unwrap()
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -107,7 +115,12 @@ impl InventoryPlayer for Player {
     ) {
     }
     fn enqueue_cursor_packet(&self, _packet: &CSetCursorItem) {}
-    fn enqueue_property_packet(&self, _packet: &CSetContainerProperty) {}
+    fn enqueue_property_packet(&self, packet: &CSetContainerProperty) {
+        self.properties
+            .lock()
+            .unwrap()
+            .push((packet.property, packet.value));
+    }
     fn enqueue_slot_set_packet(&self, _packet: &CSetPlayerInventory) {}
     fn enqueue_set_held_item_packet(&self, _packet: &CSetSelectedSlot) {}
     fn enqueue_equipment_change(&self, _slot: &EquipmentSlot, _stack: &ItemStack) {}
@@ -127,7 +140,6 @@ fn diamond_recipe(player: &Player, blocks: u8) -> CraftingTableScreenHandler {
     handler
 }
 
-#[ignore = "external-review reproduction R03; passes once survival task 1 lands"]
 #[test]
 fn ext_review_r03_ctrl_q_crafting_result_terminates_after_one_craft() {
     // AbstractContainerMenu.doClick: stop when safeTake returns empty or output changes.
@@ -141,7 +153,6 @@ fn ext_review_r03_ctrl_q_crafting_result_terminates_after_one_craft() {
     assert!(handler.get_behaviour().slots[0].get_stack().is_empty());
 }
 
-#[ignore = "external-review reproduction R03; passes once survival task 1 lands"]
 #[test]
 fn ext_review_r03_single_q_charges_ingredients_once() {
     // AbstractContainerMenu.doClick calls Slot.safeTake, which already calls ResultSlot.onTake.
@@ -155,18 +166,49 @@ fn ext_review_r03_single_q_charges_ingredients_once() {
             handler.get_behaviour().slots[1].get_stack().item_count,
             drops[0].item_count
         ),
-        (1, 1)
+        (1, 9)
     );
 }
 
-#[ignore = "external-review reproduction R04; passes once survival task 1 lands"]
+#[test]
+fn right_click_crafting_result_takes_whole_craft_and_checks_capacity() {
+    let player = Player::new(0);
+    let mut handler = diamond_recipe(&player, 2);
+    handler.on_slot_click(0, 1, SlotActionType::Pickup, &player);
+    assert_eq!(
+        handler
+            .get_behaviour()
+            .cursor_stack
+            .lock()
+            .unwrap()
+            .item_count,
+        9
+    );
+    assert_eq!(handler.get_behaviour().slots[1].get_stack().item_count, 1);
+    *handler.get_behaviour().cursor_stack.lock().unwrap() = ItemStack::new(60, &Item::DIAMOND);
+    handler.on_slot_click(0, 1, SlotActionType::Pickup, &player);
+    assert_eq!(
+        handler
+            .get_behaviour()
+            .cursor_stack
+            .lock()
+            .unwrap()
+            .item_count,
+        60
+    );
+    assert_eq!(handler.get_behaviour().slots[1].get_stack().item_count, 1);
+}
+
 #[test]
 fn ext_review_r04_cursor_bundle_consumes_crafting_ingredients() {
     // BundleItem.overrideStackedOnOther -> BundleContents.Mutable.tryTransfer -> Slot.safeTake.
     let player = Player::new(1);
     let mut handler = diamond_recipe(&player, 1);
     let mut bundle = ItemStack::new(1, &Item::BUNDLE);
-    bundle.set_data_component(BundleContentsImpl { items: Vec::new() });
+    bundle.set_data_component(BundleContentsImpl {
+        items: Vec::new(),
+        selected_item: -1,
+    });
     *handler.get_behaviour().cursor_stack.lock().unwrap() = bundle;
     handler.on_slot_click(0, 0, SlotActionType::Pickup, &player);
     let cursor = handler.get_behaviour().cursor_stack.lock().unwrap();
@@ -186,14 +228,16 @@ fn ext_review_r04_cursor_bundle_consumes_crafting_ingredients() {
     assert!(handler.get_behaviour().slots[0].get_stack().is_empty());
 }
 
-#[ignore = "external-review reproduction R04; passes once survival task 1 lands"]
 #[test]
 fn ext_review_r04_secondary_bundle_click_cannot_duplicate_result() {
     // BundleItem.overrideStackedOnOther handles SECONDARY only when the other slot is empty.
     let player = Player::new(1);
     let mut handler = diamond_recipe(&player, 1);
     let mut bundle = ItemStack::new(1, &Item::BUNDLE);
-    bundle.set_data_component(BundleContentsImpl { items: Vec::new() });
+    bundle.set_data_component(BundleContentsImpl {
+        items: Vec::new(),
+        selected_item: -1,
+    });
     *handler.get_behaviour().cursor_stack.lock().unwrap() = bundle;
     for _ in 0..8 {
         handler.on_slot_click(0, 1, SlotActionType::Pickup, &player);
@@ -211,7 +255,6 @@ fn ext_review_r04_secondary_bundle_click_cannot_duplicate_result() {
     assert_eq!(handler.get_behaviour().slots[1].get_stack().item_count, 1);
 }
 
-#[ignore = "external-review reproduction R05; passes once survival task 1 lands"]
 #[test]
 fn ext_review_r05_partial_shift_click_persists_crafting_grid_remainder() {
     // CraftingMenu.quickMoveStack mutates the real source stack before Slot.setChanged.

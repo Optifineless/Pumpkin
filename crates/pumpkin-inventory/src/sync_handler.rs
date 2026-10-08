@@ -98,6 +98,15 @@ impl SyncHandler {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
         {
+            if matches!(
+                screen_handler.window_type,
+                None | Some(
+                    pumpkin_data::screen::WindowType::Stonecutter
+                        | pumpkin_data::screen::WindowType::Smithing
+                ),
+            ) {
+                player.sync_recipe_properties();
+            }
             player.enqueue_inventory_packet(
                 &CSetContainerContent::new(
                     VarInt(screen_handler.sync_id.into()),

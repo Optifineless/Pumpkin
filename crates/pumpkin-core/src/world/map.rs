@@ -4,8 +4,27 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use std::sync::{Arc, Mutex};
 
+mod cache;
+mod markers;
+mod storage;
+#[cfg(test)]
+mod storage_tests;
+
+// MapItemSavedData's Java constants.
+pub(crate) const MAX_SCALE: i8 = 4;
+pub(crate) const MAP_SIZE: i32 = 128;
+pub(crate) const HALF_MAP_SIZE: i32 = MAP_SIZE / 2;
+
 pub struct MapManager {
-    pub maps: DashMap<i32, Arc<Mutex<MapData>>>,
+    pub maps: Arc<DashMap<i32, Arc<Mutex<MapData>>>>,
+    save_gate: Arc<tokio::sync::Mutex<()>>,
+    storage_path: Option<std::path::PathBuf>,
+    next_id: std::sync::atomic::AtomicU64,
+    known_ids: dashmap::DashSet<i32>,
+    loading: Arc<dashmap::DashSet<i32>>,
+    tasks: tokio_util::task::TaskTracker,
+    #[cfg(test)]
+    save_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
 }
 
 impl Default for MapManager {
@@ -18,13 +37,26 @@ impl MapManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            maps: DashMap::new(),
+            maps: Arc::new(DashMap::new()),
+            save_gate: Arc::default(),
+            storage_path: None,
+            next_id: std::sync::atomic::AtomicU64::new(0),
+            known_ids: dashmap::DashSet::new(),
+            loading: Arc::default(),
+            tasks: tokio_util::task::TaskTracker::new(),
+            #[cfg(test)]
+            save_barrier: Mutex::default(),
         }
     }
 
     #[must_use]
+    /// Returns a cached map, queuing one worker read on a miss; retry on a later tick.
     pub fn get_map(&self, id: i32) -> Option<Arc<Mutex<MapData>>> {
-        self.maps.get(&id).map(|m| m.clone())
+        if let Some(map) = self.maps.get(&id) {
+            return Some(map.clone());
+        }
+        self.request_load(id);
+        None
     }
 
     #[must_use]
@@ -37,8 +69,9 @@ impl MapManager {
         scale: i8,
     ) -> Arc<Mutex<MapData>> {
         let map = Arc::new(Mutex::new(MapData::new(dimension, x, z, scale)));
-        self.maps.insert(id, map.clone());
-        map
+        self.reserve_map_id(id);
+        // Never replace a cached record, even when a plugin supplies an already-used ID.
+        self.maps.entry(id).or_insert(map).clone()
     }
 }
 
@@ -52,6 +85,11 @@ pub struct MapData {
     pub decorations: Vec<MapDecoration>,
     pub dirty: bool,
     pub fully_updated: bool,
+    pub tracking_position: bool,
+    pub unlimited_tracking: bool,
+    pub banners: Vec<pumpkin_nbt::tag::NbtTag>,
+    pub frames: Vec<pumpkin_nbt::tag::NbtTag>,
+    saved_tag: Option<pumpkin_nbt::compound::NbtCompound>,
 }
 
 impl MapData {
@@ -67,6 +105,11 @@ impl MapData {
             decorations: Vec::new(),
             dirty: true,
             fully_updated: false,
+            tracking_position: true,
+            unlimited_tracking: false,
+            banners: Vec::new(),
+            frames: Vec::new(),
+            saved_tag: None,
         }
     }
 
@@ -81,6 +124,10 @@ impl MapData {
     }
 
     pub fn update(&mut self, player: &Player) {
+        // MapItem.inventoryTick never updates pixels in a locked map.
+        if self.locked {
+            return;
+        }
         let world = player.world();
         let scale = 1 << self.scale;
         let center_x = self.center_x;
@@ -132,10 +179,11 @@ impl MapData {
     }
 }
 
+#[derive(Clone)]
 pub struct MapDecoration {
     pub icon_type: i32,
     pub x: i8,
     pub z: i8,
     pub direction: i8,
-    pub display_name: Option<String>,
+    pub display_name: Option<pumpkin_util::text::TextComponent>,
 }

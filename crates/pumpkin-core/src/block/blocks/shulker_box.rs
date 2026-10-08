@@ -14,15 +14,22 @@ use crate::block::entities::shulker_box::ShulkerBoxBlockEntity;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::translation;
 use pumpkin_inventory::Inventory;
-use pumpkin_inventory::generic_container_screen_handler::create_generic_9x3;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
+use pumpkin_inventory::shulker_box_screen_handler::ShulkerBoxScreenHandler;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::text::TextComponent;
 
-struct ShulkerBoxScreenFactory(Arc<dyn Inventory>);
+struct ShulkerBoxScreenFactory {
+    inventory: Arc<dyn Inventory>,
+    world: std::sync::Weak<crate::world::World>,
+    entity: Arc<dyn crate::block::entities::BlockEntity>,
+}
+
+// Container.DEFAULT_DISTANCE_BUFFER.
+const DEFAULT_DISTANCE_BUFFER: f64 = 4.0;
 
 impl ScreenHandlerFactory for ShulkerBoxScreenFactory {
     fn create_screen_handler(
@@ -31,7 +38,28 @@ impl ScreenHandlerFactory for ShulkerBoxScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let handler = create_generic_9x3(sync_id, player_inventory, self.0.clone(), player);
+        let mut handler =
+            ShulkerBoxScreenHandler::new(sync_id, player_inventory, self.inventory.clone(), player);
+        let world = self.world.clone();
+        let entity = self.entity.clone();
+        handler.validity_check = Some(Box::new(move |player| {
+            let Some(player) = player
+                .as_any()
+                .downcast_ref::<crate::entity::player::Player>()
+            else {
+                return false;
+            };
+            let Some(world) = world.upgrade() else {
+                return false;
+            };
+            // Container.stillValidBlockEntity: identity, level, then interaction range + 4.
+            Arc::ptr_eq(&world, &player.world())
+                && world
+                    .get_block_entity(&entity.get_position())
+                    .is_some_and(|live| Arc::ptr_eq(&live, &entity))
+                && player
+                    .can_interact_with_block_at(&entity.get_position(), DEFAULT_DISTANCE_BUFFER)
+        }));
         let screen_handler_arc = Arc::new(Mutex::new(handler));
 
         Some(screen_handler_arc as SharedScreenHandler)
@@ -95,8 +123,20 @@ impl BlockBehaviour for ShulkerBoxBlock {
         args: GetScreenHandlerFactoryArgs<'_>,
     ) -> Option<Box<dyn ScreenHandlerFactory>> {
         let block_entity = args.world.get_block_entity(args.position)?;
-        let inventory = block_entity.get_inventory()?;
-        Some(Box::new(ShulkerBoxScreenFactory(inventory)))
+        if !crate::block::entities::container_lock::can_open(
+            &*block_entity,
+            args.player,
+            args.world,
+            "container.shulkerBox",
+        ) {
+            return None;
+        }
+        let inventory = block_entity.clone().get_inventory()?;
+        Some(Box::new(ShulkerBoxScreenFactory {
+            inventory,
+            world: Arc::downgrade(args.world),
+            entity: block_entity,
+        }))
     }
 
     fn get_comparator_output(&self, args: GetComparatorOutputArgs<'_>) -> Option<u8> {
@@ -107,3 +147,7 @@ impl BlockBehaviour for ShulkerBoxBlock {
 impl ShulkerBoxBlock {
     pub const OPEN_ANIMATION_EVENT_TYPE: u8 = 1;
 }
+
+#[cfg(test)]
+#[path = "shulker_box_tests.rs"]
+mod tests;

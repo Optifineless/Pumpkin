@@ -27,7 +27,7 @@ pub fn collect_block_entity_components(
         .filter_map(|(id, value)| value.map(|value| (id, value)))
         .collect();
     // Banners have no typed collection hook yet. Decode their native NBT directly.
-    // Bees and pot decorations have placeholder codecs and remain unsupported.
+    // Pot decorations still have a placeholder codec.
     if entity.resource_location() == "minecraft:banner" {
         let mut nbt = NbtCompound::new();
         entity.write_nbt(&mut nbt);

@@ -32,6 +32,7 @@ pub mod knowledge_book;
 pub mod lead;
 pub mod mace;
 pub mod map;
+pub mod map_crafting;
 pub mod minecart;
 pub mod name_tag;
 pub mod on_a_stick;

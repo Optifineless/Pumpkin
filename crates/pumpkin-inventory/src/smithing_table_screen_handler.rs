@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::player::player_inventory::PlayerInventory;
 use crate::screen_handler::{InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour};
-use crate::slot::{NormalSlot, Slot};
+use crate::slot::Slot;
+use crate::smithing_slots::SmithingInputSlot;
 
 use crate::inventory::Inventory;
 use crate::inventory::SimpleInventory;
@@ -37,15 +38,15 @@ impl SmithingTableScreenHandler {
             output_inventory,
         };
 
-        handler.add_slot(Arc::new(NormalSlot::new(
+        handler.add_slot(Arc::new(SmithingInputSlot::new(
             handler.input_inventory.clone(),
             0,
         )));
-        handler.add_slot(Arc::new(NormalSlot::new(
+        handler.add_slot(Arc::new(SmithingInputSlot::new(
             handler.input_inventory.clone(),
             1,
         )));
-        handler.add_slot(Arc::new(NormalSlot::new(
+        handler.add_slot(Arc::new(SmithingInputSlot::new(
             handler.input_inventory.clone(),
             2,
         )));
@@ -178,19 +179,26 @@ impl ScreenHandler for SmithingTableScreenHandler {
                         }
                     }
                     std::cmp::Ordering::Greater => {
-                        // From player inventory into input slots (0..3)
-                        if !self.insert_item(&mut slot_stack, 0, 3, false) {
+                        // SmithingMenu.canMoveIntoInputSlots requires an empty accepting input.
+                        let target = (0..3).find(|i| {
+                            let input = &self.get_behaviour().slots[*i];
+                            !input.has_stack() && input.can_insert(&slot_stack)
+                        });
+                        let (start, end) = target.map_or_else(
+                            || if slot_index < 31 { (31, 40) } else { (4, 31) },
+                            |i| (i as i32, i as i32 + 1),
+                        );
+                        if !self.insert_item(&mut slot_stack, start, end, false) {
                             return ItemStack::EMPTY.clone();
                         }
                     }
                 }
-                self.update_output();
-
                 if slot_stack.is_empty() {
                     slot.set_stack(ItemStack::EMPTY.clone());
                 } else {
                     slot.set_stack(slot_stack);
                 }
+                self.update_output();
             }
         }
         stack

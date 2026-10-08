@@ -10,6 +10,7 @@ use crate::{
 
 pub struct TrappedChestBlockEntity {
     pub position: BlockPos,
+    pub lock: super::container_lock::ContainerLock,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,

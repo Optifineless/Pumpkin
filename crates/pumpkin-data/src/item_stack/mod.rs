@@ -883,11 +883,7 @@ impl ItemStack {
 
 impl From<&RecipeResultStruct> for ItemStack {
     fn from(value: &RecipeResultStruct) -> Self {
-        Self::new(
-            value.count,
-            Item::from_registry_key(value.id.strip_prefix("minecraft:").unwrap_or(value.id))
-                .unwrap_or(&Item::AIR),
-        )
+        value.assemble(None, 0)
     }
 }
 

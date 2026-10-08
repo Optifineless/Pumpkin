@@ -2,6 +2,47 @@ use super::*;
 use pumpkin_data::{item::Item, item_stack::ItemStack};
 use pumpkin_nbt::compound::NbtCompound;
 
+#[test]
+fn occupied_bees_keep_entity_type_payload_and_tick_counts_on_wire()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::ser::NetworkReadExt;
+    let mut bee = NbtCompound::new();
+    bee.put_string("id", "minecraft:bee".to_owned());
+    bee.put_bool("HasNectar", true);
+    let mut occupant = NbtCompound::new();
+    occupant.put_compound("entity_data", bee);
+    occupant.put_int("ticks_in_hive", 12);
+    occupant.put_int("min_ticks_in_hive", 2400);
+    let tag = NbtTag::List(vec![NbtTag::Compound(occupant)]);
+    let bees = BeesImpl::read_data(&tag).ok_or("invalid bees")?;
+    let mut bytes = Vec::new();
+    bees.serialize(&mut bytes)?;
+    // Bees.STREAM_CODEC -> Occupant.STREAM_CODEC -> TypedEntityData.streamCodec.
+    let mut wire = bytes.as_slice();
+    assert_eq!(wire.get_var_int()?.0, 1);
+    assert_eq!(
+        wire.get_var_int()?.0,
+        i32::from(pumpkin_data::entity::EntityType::BEE.id)
+    );
+    let payload = wire
+        .get_nbt_with_version(&pumpkin_util::version::JavaMinecraftVersion::V_26_3)?
+        .ok_or("missing bee data")?;
+    assert_eq!(
+        payload
+            .extract_compound()
+            .and_then(|c| c.get_bool("HasNectar")),
+        Some(true)
+    );
+    assert_eq!(wire.get_var_int()?.0, 12);
+    assert_eq!(wire.get_var_int()?.0, 2400);
+    assert!(wire.is_empty());
+    assert_eq!(
+        BeesImpl::deserialize(&mut bytes.as_slice())?.write_data(),
+        tag
+    );
+    Ok(())
+}
+
 // Handwritten payloads from vanilla 26.3 Filterable/BookContent STREAM_CODEC.
 #[test]
 fn book_stream_fixtures() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,6 +56,8 @@ fn book_stream_fixtures() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(decoded, writable);
 
     let written = WrittenBookContentImpl {
+        generation: 2,
+        resolved: false,
         title: "T".into(),
         author: "A".into(),
         pages: vec![pumpkin_util::text::TextComponent::text("hi")],
@@ -25,11 +68,28 @@ fn book_stream_fixtures() -> Result<(), Box<dyn std::error::Error>> {
     // optional filtered page, resolved.
     assert_eq!(
         bytes,
-        [1, b'T', 0, 1, b'A', 0, 1, 8, 0, 2, b'h', b'i', 0, 1]
+        [1, b'T', 0, 1, b'A', 2, 1, 8, 0, 2, b'h', b'i', 0, 0]
     );
     let mut input = bytes.as_slice();
     assert_eq!(WrittenBookContentImpl::deserialize(&mut input)?, written);
     assert!(input.is_empty());
+    Ok(())
+}
+
+#[test]
+fn dye_color_stream_fixture() -> Result<(), Box<dyn std::error::Error>> {
+    // DyeColor.STREAM_CODEC: idMapper uses Red's id 14 and falls back to White.
+    let mut input = [14u8].as_slice();
+    let dye = DyeImpl::deserialize(&mut input)?;
+    assert_eq!(dye.color, pumpkin_data::dye_color::DyeColor::Red);
+    let mut bytes = Vec::new();
+    dye.serialize(&mut bytes)?;
+    assert_eq!(bytes, [14]);
+    let mut invalid = [99u8].as_slice();
+    assert_eq!(
+        DyeImpl::deserialize(&mut invalid)?.color,
+        pumpkin_data::dye_color::DyeColor::White
+    );
     Ok(())
 }
 
@@ -206,6 +266,8 @@ fn invalid_component_inputs_are_rejected() {
 fn book_string_bounds_count_java_characters() -> Result<(), Box<dyn std::error::Error>> {
     // Utf8String.write permits 32 UTF-16 title characters, even with multibyte UTF-8.
     let mut written = WrittenBookContentImpl {
+        generation: 0,
+        resolved: true,
         title: "é".repeat(32),
         author: "A".into(),
         pages: Vec::new(),

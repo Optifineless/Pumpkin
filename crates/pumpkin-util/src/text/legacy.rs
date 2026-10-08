@@ -265,6 +265,10 @@ impl TextComponent {
 
         // 3. Resolve Content
         match &*self.0.content {
+            TextContent::Translatable { component } => {
+                text.push_str(&super::translatable::get_text(&component.0, locale));
+            }
+            TextContent::Opaque { component } => text.push_str(&super::opaque_text(&component.0)),
             TextContent::Text { text: t } => text.push_str(t),
             TextContent::Translate {
                 translate,

@@ -254,13 +254,20 @@ impl DataComponentImpl for WaxedImpl {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct DyeImpl;
+pub struct DyeImpl {
+    pub color: crate::dye_color::DyeColor,
+}
 impl DyeImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        Some(Self {
+            color: crate::dye_color::DyeColor::by_name(data.extract_string()?)?,
+        })
     }
 }
 impl DataComponentImpl for DyeImpl {
+    fn write_data(&self) -> NbtTag {
+        NbtTag::String(self.color.name().into())
+    }
     default_impl!(Dye);
 }
 
@@ -407,84 +414,6 @@ impl DataComponentImpl for ChargedProjectilesImpl {
         0
     }
     default_impl!(ChargedProjectiles);
-}
-
-#[derive(Clone)]
-pub struct BundleContentsImpl {
-    pub items: Vec<crate::item_stack::ItemStack>,
-}
-impl PartialEq for BundleContentsImpl {
-    fn eq(&self, _other: &Self) -> bool {
-        false
-    }
-}
-impl Eq for BundleContentsImpl {}
-impl std::fmt::Debug for BundleContentsImpl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BundleContentsImpl")
-    }
-}
-impl BundleContentsImpl {
-    pub fn read_data(tag: &NbtTag) -> Option<Self> {
-        let mut items = Vec::new();
-        if let NbtTag::List(l) = tag {
-            for item_tag in l {
-                if let NbtTag::Compound(c) = item_tag
-                    && let Some(stack) = crate::item_stack::ItemStack::read_item_stack(c)
-                {
-                    items.push(stack);
-                }
-            }
-        }
-        Some(Self { items })
-    }
-    pub fn get_weight(&self) -> u32 {
-        self.items
-            .iter()
-            .map(|item| item.item_count as u32 * (64 / item.get_max_stack_size() as u32).max(1))
-            .sum()
-    }
-    pub fn try_insert(&mut self, stack: &mut crate::item_stack::ItemStack) -> bool {
-        if stack.is_empty() || stack.get_data_component::<BundleContentsImpl>().is_some() {
-            return false;
-        }
-        let weight_per_item = (64 / stack.get_max_stack_size() as u32).max(1);
-        let mut inserted_anything = false;
-        while stack.item_count > 0 && self.get_weight() + weight_per_item <= 64 {
-            if let Some(top) = self.items.first_mut()
-                && crate::item_stack::ItemStack::are_items_and_components_equal(top, stack)
-                && top.item_count < top.get_max_stack_size()
-            {
-                top.item_count += 1;
-                stack.item_count -= 1;
-                inserted_anything = true;
-                continue;
-            }
-            self.items.insert(0, stack.copy_with_count(1));
-            stack.item_count -= 1;
-            inserted_anything = true;
-        }
-        inserted_anything
-    }
-    pub fn try_extract(&mut self) -> Option<crate::item_stack::ItemStack> {
-        if self.items.is_empty() {
-            None
-        } else {
-            Some(self.items.remove(0))
-        }
-    }
-}
-impl DataComponentImpl for BundleContentsImpl {
-    fn write_data(&self) -> NbtTag {
-        let mut list = Vec::new();
-        for stack in &self.items {
-            let mut item_compound = NbtCompound::new();
-            stack.write_item_stack(&mut item_compound);
-            list.push(NbtTag::Compound(item_compound));
-        }
-        NbtTag::List(list)
-    }
-    default_impl!(BundleContents);
 }
 
 /// The dimension and block position a lodestone compass points to.

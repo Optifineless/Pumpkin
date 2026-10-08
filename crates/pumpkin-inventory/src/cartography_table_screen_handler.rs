@@ -13,11 +13,12 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::screen::WindowType;
 use pumpkin_data::statistic::StatisticCategory;
+use pumpkin_data::tag::{self, Taggable};
 use pumpkin_protocol::java::server::play::SlotActionType;
 
 #[must_use]
 pub fn is_map_item(stack: &ItemStack) -> bool {
-    stack.get_data_component::<MapIdImpl>().is_some() || stack.item.id == Item::FILLED_MAP.id
+    stack.get_data_component::<MapIdImpl>().is_some()
 }
 
 #[must_use]
@@ -73,51 +74,67 @@ impl CartographyTableScreenHandler {
         handler
     }
 
-    pub fn slots_changed(&mut self) {
+    pub fn slots_changed(&mut self, player: &dyn InventoryPlayer) {
         let map_stack = self.input_inventory.get_stack(0);
         let additional_stack = self.input_inventory.get_stack(1);
         let result_stack = self.output_inventory.get_stack(0);
 
         if result_stack.is_empty() || (!map_stack.is_empty() && !additional_stack.is_empty()) {
             if !map_stack.is_empty() && !additional_stack.is_empty() {
-                self.setup_result_slot();
+                self.setup_result_slot(player);
             }
         } else {
             self.output_inventory.set_stack(0, ItemStack::EMPTY.clone());
         }
     }
 
-    pub fn setup_result_slot(&mut self) {
-        let mut map_stack = self.input_inventory.get_stack(0);
-        let additional_stack = self.input_inventory.get_stack(1);
+    pub fn setup_result_slot(&mut self, player: &dyn InventoryPlayer) {
+        refresh_result(player, &*self.input_inventory, &*self.output_inventory);
+    }
+}
 
-        if !map_stack.is_empty() && !additional_stack.is_empty() && is_map_item(&map_stack) {
-            let result = if additional_stack.item.id == Item::PAPER.id {
-                map_stack.item_count = 1;
-                map_stack.set_data_component(MapPostProcessingImpl::SCALE);
-                map_stack
-            } else if additional_stack.item.id == Item::GLASS_PANE.id {
-                map_stack.item_count = 1;
-                map_stack.set_data_component(MapPostProcessingImpl::LOCK);
-                map_stack
-            } else if additional_stack.item.id == Item::MAP.id {
-                map_stack.item_count = 2;
-                map_stack
-            } else {
-                ItemStack::EMPTY.clone()
-            };
-
-            let current_result = self.output_inventory.get_stack(0);
-            if !current_result.are_items_and_components_equal(&result) {
-                self.output_inventory.set_stack(0, result);
-            }
-        } else {
-            self.output_inventory.set_stack(0, ItemStack::EMPTY.clone());
-        }
+// CartographyTableMenu.setupResultSlot validates saved data before advertising an output.
+fn refresh_result(player: &dyn InventoryPlayer, input: &dyn Inventory, output: &dyn Inventory) {
+    let mut map = input.get_stack(0);
+    let material = input.get_stack(1);
+    let result = if !map.is_empty() && !material.is_empty() && is_map_item(&map) {
+        player.map_crafting_state(&map).map_or_else(
+            || ItemStack::EMPTY.clone(),
+            |(scale, locked)| {
+                if material.item == &Item::PAPER
+                    && map.item.has_tag(&tag::Item::MINECRAFT_EXTENDABLE_MAPS)
+                    && !locked
+                    && scale < 4
+                {
+                    map.item_count = 1;
+                    map.set_data_component(MapPostProcessingImpl::SCALE);
+                    map
+                } else if material.item == &Item::GLASS_PANE && !locked {
+                    map.item_count = 1;
+                    map.set_data_component(MapPostProcessingImpl::LOCK);
+                    map
+                } else if material.item == &Item::MAP {
+                    map.copy_with_count(2)
+                } else {
+                    ItemStack::EMPTY.clone()
+                }
+            },
+        )
+    } else {
+        ItemStack::EMPTY.clone()
+    };
+    let current = output.get_stack(0);
+    if current.item_count != result.item_count || !current.are_items_and_components_equal(&result) {
+        output.set_stack(0, result);
     }
 }
 
 impl ScreenHandler for CartographyTableScreenHandler {
+    fn tick(&mut self, player: &dyn InventoryPlayer) {
+        // CartographyTableMenu.setupResultSlot, retried after asynchronous SavedDataStorage.get.
+        self.slots_changed(player);
+    }
+
     fn get_behaviour(&self) -> &ScreenHandlerBehaviour {
         &self.behaviour
     }
@@ -143,7 +160,7 @@ impl ScreenHandler for CartographyTableScreenHandler {
     ) {
         self.internal_on_slot_click(slot_index, button, action_type, player);
         if (0..=2).contains(&slot_index) {
-            self.slots_changed();
+            self.slots_changed(player);
         }
     }
 
@@ -156,13 +173,14 @@ impl ScreenHandler for CartographyTableScreenHandler {
             if !stack.is_empty() {
                 clicked = stack.clone();
                 if slot_index == 2 {
+                    slot.on_crafted_by(player, &mut stack);
+                    // Java mutates the slot's stack before moveItemStackTo can fail.
+                    slot.set_stack(stack.clone());
+                    clicked = stack.clone();
                     if !self.insert_item(&mut stack, 3, 39, true) {
                         return ItemStack::EMPTY.clone();
                     }
                     slot.on_quick_move_crafted(stack.clone(), clicked.clone());
-                    let mut taken_stack = clicked.clone();
-                    taken_stack.set_count(clicked.item_count - stack.item_count);
-                    slot.on_take_item(player, &taken_stack);
                 } else if slot_index != 1 && slot_index != 0 {
                     if is_map_item(&stack) {
                         if !self.insert_item(&mut stack, 0, 1, false) {
@@ -184,8 +202,6 @@ impl ScreenHandler for CartographyTableScreenHandler {
                 } else if !self.insert_item(&mut stack, 3, 39, false) {
                     return ItemStack::EMPTY.clone();
                 }
-                self.slots_changed();
-
                 if stack.is_empty() {
                     slot.set_stack(ItemStack::EMPTY.clone());
                 } else {
@@ -196,7 +212,13 @@ impl ScreenHandler for CartographyTableScreenHandler {
                     return ItemStack::EMPTY.clone();
                 }
 
-                self.slots_changed();
+                if slot_index == 2 {
+                    slot.on_take_item(
+                        player,
+                        &clicked.copy_with_count(clicked.item_count - stack.item_count),
+                    );
+                }
+                self.slots_changed(player);
             }
         }
 
@@ -344,6 +366,15 @@ impl CartographyResultSlot {
 }
 
 impl Slot for CartographyResultSlot {
+    fn take_stack(&self, _amount: u8) -> ItemStack {
+        // CartographyTableMenu uses ResultContainer.removeItem: take the whole result.
+        self.inventory.remove_stack(self.index)
+    }
+
+    fn on_crafted_by(&self, player: &dyn InventoryPlayer, stack: &mut ItemStack) {
+        player.process_crafted_map(stack);
+    }
+
     fn get_inventory(&self) -> Arc<dyn Inventory> {
         self.inventory.clone()
     }
@@ -368,6 +399,7 @@ impl Slot for CartographyResultSlot {
         );
         self.input_inventory.remove_stack_specific(0, 1);
         self.input_inventory.remove_stack_specific(1, 1);
+        refresh_result(player, &*self.input_inventory, &*self.inventory);
         self.mark_dirty();
     }
 

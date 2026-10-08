@@ -9,6 +9,10 @@ use pumpkin_data::item_stack::ItemStack;
 
 pub struct NameTagItem;
 
+#[cfg(test)]
+#[path = "name_tag_tests.rs"]
+mod tests;
+
 impl ItemMetadata for NameTagItem {
     fn ids() -> Box<[u16]> {
         [Item::NAME_TAG.id].into()

@@ -1,3 +1,4 @@
+use super::special_recipes::{MaterialCount, SpecialRecipeStruct};
 use std::{collections::BTreeMap, fs};
 
 use proc_macro2::TokenStream;
@@ -43,11 +44,11 @@ pub enum RecipeTypes {
     Stonecutting(StonecuttingRecipeStruct),
     /// Special crafting recipe types.
     #[serde(rename = "minecraft:crafting_special_bannerduplicate")]
-    CraftingSpecialBannerDuplicate,
+    CraftingSpecialBannerDuplicate(SpecialRecipeStruct),
     #[serde(rename = "minecraft:crafting_special_bookcloning")]
-    CraftingSpecialBookCloning,
+    CraftingSpecialBookCloning(SpecialRecipeStruct),
     #[serde(rename = "minecraft:crafting_special_firework_rocket")]
-    CraftingSpecialFireworkRocket,
+    CraftingSpecialFireworkRocket(SpecialRecipeStruct),
     #[serde(rename = "minecraft:crafting_special_firework_star")]
     CraftingSpecialFireworkStar,
     #[serde(rename = "minecraft:crafting_special_firework_star_fade")]
@@ -59,7 +60,7 @@ pub enum RecipeTypes {
     #[serde(rename = "minecraft:crafting_special_shielddecoration")]
     CraftingSpecialShieldDecoration,
     #[serde(rename = "minecraft:crafting_dye")]
-    CraftingDye,
+    CraftingDye(SpecialRecipeStruct),
     #[serde(rename = "minecraft:crafting_imbue")]
     CraftingImbue,
     /// Any other special crafting recipe type.
@@ -375,6 +376,10 @@ pub struct CraftingTransmuteRecipeStruct {
     input: RecipeIngredientTypes,
     /// The material item consumed alongside `input`.
     material: RecipeIngredientTypes,
+    #[serde(default)]
+    material_count: MaterialCount,
+    #[serde(default)]
+    add_material_count_to_result: bool,
     /// The base item type of the result (inherits components from `input`).
     result: RecipeResultStruct,
 }
@@ -392,6 +397,8 @@ impl ToTokens for CraftingTransmuteRecipeStruct {
         };
         let input = self.input.to_token_stream();
         let material = self.material.to_token_stream();
+        let (min, max) = self.material_count.bounds();
+        let add_material_count_to_result = self.add_material_count_to_result;
         let result = self.result.to_token_stream();
 
         tokens.extend(quote! {
@@ -400,6 +407,8 @@ impl ToTokens for CraftingTransmuteRecipeStruct {
                 group: #group,
                 input: #input,
                 material: #material,
+                material_count: (#min, #max),
+                add_material_count_to_result: #add_material_count_to_result,
                 result: #result,
             }
         });
@@ -435,18 +444,27 @@ pub struct RecipeResultStruct {
     id: Option<String>,
     /// Number of result items produced (defaults to 1).
     count: Option<u8>,
-    // TODO: components: Option<RecipeResultComponentsStruct>,
+    components: Option<serde_json::Value>,
 }
 
 impl ToTokens for RecipeResultStruct {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let id = self.id.as_deref().unwrap_or("minecraft:air");
+        let id = self.id.as_deref().unwrap_or("");
         let count = self.count.unwrap_or(1).to_token_stream();
+        let components = self
+            .components
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap());
+        let components = match components {
+            Some(v) => quote! { Some(#v) },
+            None => quote! { None },
+        };
 
         tokens.extend(quote! {
             RecipeResultStruct {
                 id: #id,
                 count: #count,
+                components: #components,
             }
         });
     }
@@ -625,16 +643,24 @@ pub fn build() -> TokenStream {
             RecipeTypes::Stonecutting(recipe) => {
                 stonecutting_recipes.push(recipe.to_token_stream());
             }
+            RecipeTypes::CraftingSpecialBannerDuplicate(recipe) => {
+                crafting_recipes.push(recipe.tokens("BannerDuplicate"))
+            }
+            RecipeTypes::CraftingSpecialBookCloning(recipe) => {
+                crafting_recipes.push(recipe.tokens("BookCloning"))
+            }
+            RecipeTypes::CraftingSpecialFireworkRocket(recipe) => {
+                crafting_recipes.push(recipe.tokens("FireworkRocket"))
+            }
+            RecipeTypes::CraftingDye(recipe) => crafting_recipes.push(recipe.tokens("Dye")),
+            RecipeTypes::CraftingSpecialRepairItem => {
+                crafting_recipes.push(quote! { CraftingRecipeTypes::RepairItem })
+            }
             RecipeTypes::CraftingSpecial
-            | RecipeTypes::CraftingSpecialBannerDuplicate
-            | RecipeTypes::CraftingSpecialBookCloning
-            | RecipeTypes::CraftingSpecialFireworkRocket
             | RecipeTypes::CraftingSpecialFireworkStar
             | RecipeTypes::CraftingSpecialFireworkStarFade
             | RecipeTypes::CraftingSpecialMapExtending
-            | RecipeTypes::CraftingSpecialRepairItem
             | RecipeTypes::CraftingSpecialShieldDecoration
-            | RecipeTypes::CraftingDye
             | RecipeTypes::CraftingImbue => {}
         }
     }
@@ -646,6 +672,11 @@ pub fn build() -> TokenStream {
 
         #[derive(Clone, Debug, Serialize)]
         pub enum CraftingRecipeTypes {
+            FireworkRocket { ingredients: &'static [RecipeIngredientTypes], result: RecipeResultStruct },
+            BookCloning { ingredients: &'static [RecipeIngredientTypes], allowed_generations: (u8, u8), result: RecipeResultStruct },
+            BannerDuplicate { ingredients: &'static [RecipeIngredientTypes], result: RecipeResultStruct },
+            Dye { category: RecipeCategoryTypes, group: Option<&'static str>, ingredients: &'static [RecipeIngredientTypes], result: RecipeResultStruct },
+            RepairItem,
             CraftingShaped {
                 category: RecipeCategoryTypes,
                 group: Option<&'static str>,
@@ -665,6 +696,8 @@ pub fn build() -> TokenStream {
                 group: Option<&'static str>,
                 input: RecipeIngredientTypes,
                 material: RecipeIngredientTypes,
+                material_count: (u8, u8),
+                add_material_count_to_result: bool,
                 result: RecipeResultStruct,
             },
             CraftingDecoratedPot {
@@ -746,6 +779,7 @@ pub fn build() -> TokenStream {
         pub struct RecipeResultStruct {
             pub id: &'static str,
             pub count: u8,
+            pub components: Option<&'static str>,
         }
 
         #[derive(Clone, Debug, Serialize)]

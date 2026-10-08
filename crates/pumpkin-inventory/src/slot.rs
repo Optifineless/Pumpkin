@@ -71,6 +71,10 @@ pub trait Slot: Send + Sync {
     /// plugins to intercept or modify click behavior.
     fn on_click(&self, _player: &dyn InventoryPlayer) {}
 
+    /// Applies result item post-processing before ownership passes to a player.
+    // CartographyTableMenu.onTake mutates the result; Rust must update its owned return value.
+    fn on_crafted_by(&self, _player: &dyn InventoryPlayer, _stack: &mut ItemStack) {}
+
     /// Checks if the given stack can be inserted into this slot.
     fn can_insert(&self, _stack: &ItemStack) -> bool {
         true
@@ -170,7 +174,7 @@ pub trait Slot: Send + Sync {
             return None;
         }
         let min = min.min(max);
-        let stack = self.take_stack(min);
+        let mut stack = self.take_stack(min);
 
         if stack.is_empty() {
             None
@@ -179,6 +183,7 @@ pub trait Slot: Send + Sync {
                 self.set_stack_prev(ItemStack::EMPTY.clone(), stack.clone());
             }
 
+            self.on_crafted_by(player, &mut stack);
             Some(stack)
         }
     }

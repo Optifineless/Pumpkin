@@ -6,6 +6,15 @@
 macro_rules! impl_block_entity_for_chest {
     ($struct_name:ty) => {
         impl $crate::block::entities::BlockEntity for $struct_name {
+            fn container_lock(&self) -> Option<pumpkin_data::data_component_impl::LockImpl> {
+                self.lock.get()
+            }
+            fn collect_item_components(&self, stack: &mut ItemStack) {
+                self.lock.collect(stack);
+            }
+            fn apply_item_components(&self, stack: &ItemStack) {
+                self.lock.apply(stack);
+            }
             fn resource_location(&self) -> &'static str {
                 Self::ID
             }
@@ -24,6 +33,7 @@ macro_rules! impl_block_entity_for_chest {
 
                 let mut chest = Self {
                     position,
+                    lock: $crate::block::entities::container_lock::ContainerLock::from_nbt(nbt),
                     items: std::sync::RwLock::new(std::array::from_fn(|_| {
                         ItemStack::EMPTY.clone()
                     })),
@@ -56,6 +66,7 @@ macro_rules! impl_block_entity_for_chest {
             fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
                 use pumpkin_inventory::Inventory;
 
+                self.lock.write_nbt(nbt);
                 let loot_table_key = {
                     let guard = self
                         .loot_table
@@ -313,6 +324,7 @@ macro_rules! impl_chest_helper_methods {
 
                 Self {
                     position,
+                    lock: $crate::block::entities::container_lock::ContainerLock::default(),
                     items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
                     dirty: AtomicBool::new(false),
                     comparator_dirty: AtomicBool::new(false),

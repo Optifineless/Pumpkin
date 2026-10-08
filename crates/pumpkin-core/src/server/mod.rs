@@ -1,5 +1,6 @@
 #[cfg(test)]
 pub(crate) mod combat_test_support;
+mod map_storage;
 #[cfg(test)]
 mod startup_tests;
 use crate::block::registry::BlockRegistry;
@@ -110,8 +111,6 @@ pub struct Server {
     pub recipe_manager: Arc<recipe::RecipeManager>,
     pub datapack_manager: Arc<crate::data::datapack::DatapackManager>,
     pub enchantment_manager: Arc<enchantment::EnchantmentManager>,
-    /// Assigns unique IDs to maps.
-    map_id: AtomicI32,
     /// Mojang's public keys, used for chat session signing
     /// Pulled from Mojang API on startup
     pub mojang_public_keys: ArcSwap<Vec<RsaPublicKey>>,
@@ -198,6 +197,11 @@ impl Server {
         })
         .await
         .map_err(|error| WorldInfoError::IoError(std::io::Error::other(error)))??;
+
+        let map_path = world_path.clone();
+        let map_manager = tokio::task::spawn_blocking(move || MapManager::load(&map_path))
+            .await
+            .map_err(std::io::Error::other)??;
 
         let block_registry = super::block::registry::default_registry();
 
@@ -306,6 +310,7 @@ impl Server {
             management_settings,
         ));
 
+        map_manager.reconcile_counter(level_info.load().map_id);
         let server = Self {
             _session_lock: session_lock,
             admission_reservations: Arc::default(),
@@ -319,7 +324,6 @@ impl Server {
             recipe_manager: Arc::new(recipe::RecipeManager::new()),
             datapack_manager: Arc::new(crate::data::datapack::DatapackManager::new()),
             enchantment_manager: Arc::new(enchantment::EnchantmentManager::new()),
-            map_id: level_info.load().map_id.into(),
             worlds: ArcSwap::from_pointee(vec![]),
             dimensions,
             command_dispatcher,
@@ -330,7 +334,7 @@ impl Server {
             listing,
             branding: CachedBranding::new(),
             bossbars: std::sync::Mutex::new(CustomBossbars::new()),
-            map_manager: MapManager::new(),
+            map_manager,
             defaultgamemode,
             player_data_storage,
             tick_gate: tokio::sync::Mutex::new(()),
@@ -613,6 +617,9 @@ impl Server {
             if let Err(error) = server.save_random_sequences().await {
                 error!("Failed to save random sequences: {error}");
             }
+            if let Err(error) = server.save_maps().await {
+                error!("Failed to save maps: {error}");
+            }
         });
     }
 
@@ -634,6 +641,7 @@ impl Server {
     pub async fn save_all(&self) -> Result<(), String> {
         self.management_hub.broadcast_server_saving();
         self.save_random_sequences().await?;
+        self.save_maps().await?;
 
         if let Err(err) = self.save_world_info() {
             error!("Failed to save world info: {err}");
@@ -843,6 +851,10 @@ impl Server {
         }
         if let Err(error) = self.save_random_sequences().await {
             error!("Failed to save random sequences: {error}");
+        }
+        self.map_manager.drain().await;
+        if let Err(error) = self.save_maps().await {
+            error!("Failed to save maps: {error}");
         }
         let level_data = self.level_info.load();
         // then lets save the world info
@@ -1128,10 +1140,11 @@ impl Server {
 
     /// Generates a new map id.
     pub fn next_map_id(&self) -> i32 {
-        let id = self.map_id.fetch_add(1, Ordering::SeqCst);
+        let id = self.map_manager.next_map_id();
         self.level_info.rcu(|level_info| {
             let mut new_level_info = (**level_info).clone();
-            new_level_info.map_id = self.map_id.load(Ordering::SeqCst);
+            new_level_info.map_id =
+                (self.map_manager.next_counter() as u32).max(level_info.map_id as u32) as i32;
             new_level_info
         });
         id

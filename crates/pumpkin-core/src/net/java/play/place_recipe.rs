@@ -13,7 +13,7 @@ impl JavaClient {
             GenericIngredient, compute_biggest_craftable, take_n_ingredient,
         };
         use crate::server::recipe::DynamicRecipe;
-        use pumpkin_data::recipes::{CraftingRecipeTypes, RECIPES_COOKING, RECIPES_CRAFTING};
+        use pumpkin_data::recipes::{CraftingRecipeTypes, RECIPES_COOKING};
         use pumpkin_data::screen::WindowType;
         use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
 
@@ -33,16 +33,7 @@ impl JavaClient {
         }
 
         // Count crafting display IDs.
-        let crafting_display_count = RECIPES_CRAFTING
-            .iter()
-            .filter(|r| {
-                !matches!(
-                    r,
-                    CraftingRecipeTypes::CraftingSpecial
-                        | CraftingRecipeTypes::CraftingDecoratedPot { .. }
-                )
-            })
-            .count();
+        let crafting_display_count = pumpkin_data::crafting_displays().count();
         let cooking_display_count = RECIPES_COOKING.len();
         let dynamic_recipes = server.recipe_manager.get_dynamic_recipes();
 
@@ -68,20 +59,9 @@ impl JavaClient {
 
         if target_id < crafting_display_count {
             // Crafting recipe
-            let mut counter = 0usize;
-            let recipe = RECIPES_CRAFTING.iter().find(|r| {
-                if matches!(
-                    r,
-                    CraftingRecipeTypes::CraftingSpecial
-                        | CraftingRecipeTypes::CraftingDecoratedPot { .. }
-                ) {
-                    return false;
-                }
-                let found = counter == target_id;
-                counter += 1;
-                found
-            });
-            let Some(recipe) = recipe else { return };
+            let Some((recipe, _)) = pumpkin_data::crafting_displays().nth(target_id) else {
+                return;
+            };
 
             match recipe {
                 CraftingRecipeTypes::CraftingShaped { pattern, key, .. } => {
@@ -104,11 +84,25 @@ impl JavaClient {
                     }
                 }
                 CraftingRecipeTypes::CraftingTransmute {
-                    input, material, ..
+                    input,
+                    material,
+                    material_count,
+                    ..
                 } => {
                     if grid_size >= 2 {
                         ingredient_slots[0] = Some(GenericIngredient::Vanilla(input));
-                        ingredient_slots[1] = Some(GenericIngredient::Vanilla(material));
+                        for slot in ingredient_slots
+                            .iter_mut()
+                            .skip(1)
+                            .take(usize::from(material_count.1))
+                        {
+                            *slot = Some(GenericIngredient::Vanilla(material));
+                        }
+                    }
+                }
+                CraftingRecipeTypes::Dye { ingredients, .. } => {
+                    for (slot, ingredient) in ingredient_slots.iter_mut().zip(*ingredients) {
+                        *slot = Some(GenericIngredient::Vanilla(ingredient));
                     }
                 }
                 _ => return,
