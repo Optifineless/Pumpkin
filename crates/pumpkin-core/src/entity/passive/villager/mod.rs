@@ -1040,6 +1040,14 @@ impl VillagerEntity {
         }
         self.last_worked_at_poi.store(game_time, Ordering::Relaxed);
 
+        self.work_at_poi(game_time, day);
+    }
+
+    fn work_at_poi(&self, game_time: i64, day: i64) {
+        // WorkAtPoi requires JOB_SITE; a pending claim is still POTENTIAL_JOB_SITE.
+        if self.job_site_pending.load(Ordering::Relaxed) {
+            return;
+        }
         let Some(job_site) = self.get_job_site() else {
             return;
         };
