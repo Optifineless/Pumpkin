@@ -25,7 +25,10 @@ impl<'a> ServerPacket<'a> for SEditBook<'a> {
             } else {
                 200
             };
-            let count = count.min(max_pages);
+            // ServerboundEditBookPacket: ByteBufCodecs.list limits the page count.
+            if count > max_pages {
+                return Err(ReadingError::TooLarge("Book page count".into()));
+            }
             let char_limit = if *version >= JavaMinecraftVersion::V_1_21_2 {
                 1024
             } else {
@@ -81,5 +84,20 @@ impl crate::ClientPacket for SEditBook<'_> {
             write.write_bool(false)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_excess_pages_before_decoding_page_data() {
+        // Slot zero followed by count 101, beyond ServerboundEditBookPacket's 100-page list.
+        let mut input: &[u8] = &[0, 101];
+        assert!(matches!(
+            SEditBook::read(&mut input, &JavaMinecraftVersion::V_26_3),
+            Err(ReadingError::TooLarge(_))
+        ));
     }
 }

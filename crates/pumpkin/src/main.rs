@@ -76,6 +76,16 @@ async fn main() {
 
     pumpkin_core::init_logger(&config.advanced);
 
+    let networking = &config.advanced.networking;
+    if networking.java.enabled
+        && networking.bedrock.enabled
+        && networking.bedrock.username_prefix.is_empty()
+    {
+        warn!(
+            "Bedrock username_prefix is empty while Java and Bedrock are enabled; conflicting player names will be refused at login"
+        );
+    }
+
     info!(
         "{}",
         TextComponent::text(format!(

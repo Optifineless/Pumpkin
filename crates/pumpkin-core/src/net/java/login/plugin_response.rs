@@ -8,6 +8,11 @@ impl PendingConnection {
         plugin_response: SLoginPluginResponse,
     ) -> Option<PacketHandlerResult> {
         debug!("Handling plugin");
+        if self.login_state != super::state::LoginState::Proxy {
+            self.kick(TextComponent::text("Unexpected login plugin response"))
+                .await;
+            return Some(PacketHandlerResult::Stop);
+        }
         let proxy_config = &server.advanced_config.networking.proxy;
         if proxy_config.vine.enabled {
             let expected_challenge = self.vine_challenge.take();

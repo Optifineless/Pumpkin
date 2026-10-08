@@ -43,6 +43,7 @@ impl CommandExecutor for TeamMsgCommandExecutor {
         let Some(team) = sender_team else {
             return Err(NO_TEAM_ERROR.create_without_context());
         };
+        drop(scoreboard);
 
         let team_display_name = team.display_name.clone().color_named(team.color);
         let message_component = TextComponent::text(message_text);
@@ -52,6 +53,23 @@ impl CommandExecutor for TeamMsgCommandExecutor {
 
         for player in online_players.iter() {
             if team.players.contains(&player.gameprofile.name) {
+                // TeamMsgCommand.sendMessage preserves the verified argument and binds the team name.
+                if let Some(message) = context.source.signing_context.get(ARG_MESSAGE) {
+                    let chat_type = if player.gameprofile.name == sender_name {
+                        pumpkin_data::world::TEAM_MSG_COMMAND_OUTGOING
+                    } else {
+                        pumpkin_data::world::TEAM_MSG_COMMAND_INCOMING
+                    };
+                    crate::net::java::JavaClient::send_command_chat(
+                        player,
+                        message,
+                        (chat_type + 1).into(),
+                        &sender_display_name,
+                        Some(&team_display_name),
+                    );
+                    recipients += 1;
+                    continue;
+                }
                 let msg = if player.gameprofile.name == sender_name {
                     TextComponent::translate_cross(
                         translation::java::CHAT_TYPE_TEAM_SENT,
@@ -91,12 +109,24 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
     ));
 
     // Register /teammsg <message>
-    dispatcher.register(command("teammsg", DESCRIPTION).requires(PERMISSION).then(
-        argument(ARG_MESSAGE, StringArgumentType::GreedyPhrase).executes(TeamMsgCommandExecutor),
-    ));
+    dispatcher.register(
+        command("teammsg", DESCRIPTION).requires(PERMISSION).then(
+            argument(
+                ARG_MESSAGE,
+                crate::net::java::signed_commands::MessageArgument,
+            )
+            .executes(TeamMsgCommandExecutor),
+        ),
+    );
 
     // Register alias /tm <message>
-    dispatcher.register(command("tm", DESCRIPTION).requires(PERMISSION).then(
-        argument(ARG_MESSAGE, StringArgumentType::GreedyPhrase).executes(TeamMsgCommandExecutor),
-    ));
+    dispatcher.register(
+        command("tm", DESCRIPTION).requires(PERMISSION).then(
+            argument(
+                ARG_MESSAGE,
+                crate::net::java::signed_commands::MessageArgument,
+            )
+            .executes(TeamMsgCommandExecutor),
+        ),
+    );
 }

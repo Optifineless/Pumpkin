@@ -637,6 +637,12 @@ impl PumpkinServer {
                                         error!("Failed to save player data on disconnect: {e}");
                                     }
                                     player.storage_session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+                                    if let Err(e) = server_clone.advancement_manager
+                                        .save_player(&player)
+                                        .await {
+                                            error!("Failed to save player advancement on disconnect: {e}");
+                                        }
+                                    player.client.release_admission();
                                     }
                                 },
                             }
@@ -745,6 +751,7 @@ impl PumpkinServer {
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner)
                             .take();
+                        player.client.release_admission();
                     }
                 }
             }

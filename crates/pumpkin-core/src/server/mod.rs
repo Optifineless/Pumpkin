@@ -71,6 +71,7 @@ use crate::data::advancement_data::AdvancementManager;
 /// Represents a Minecraft server instance.
 pub struct Server {
     _session_lock: pumpkin_world::session_lock::SessionLock,
+    admission_reservations: Arc<crate::net::admission::AdmissionReservations>,
     pub basic_config: BasicConfiguration,
     pub advanced_config: AdvancedConfiguration,
     pub telemetry_config: TelemetryConfig,
@@ -298,6 +299,7 @@ impl Server {
 
         let server = Self {
             _session_lock: session_lock,
+            admission_reservations: Arc::default(),
             basic_config,
             advanced_config,
             telemetry_config,
@@ -690,6 +692,7 @@ impl Server {
         profile: GameProfile,
         config: Option<PlayerConfig>,
     ) -> Option<(Arc<Player>, Arc<World>)> {
+        let reservation = self.admission_reservations.admit(&profile, &client, self)?;
         let gamemode = self
             .defaultgamemode
             .lock()
@@ -794,6 +797,7 @@ impl Server {
                     );
                     self.management_hub.broadcast_player_joined(&player_dto);
 
+                    player.client.retain_admission(reservation);
                     (player, world)
                 })
             }

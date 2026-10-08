@@ -68,7 +68,7 @@ impl PacketRead for NetworkItemDescriptor {
         buf.read_exact(&mut user_data)?;
 
         let (nbt_data, place_on_blocks, destroy_blocks, shield_blocking_tick) =
-            read_user_data(user_data, id.0 == i32::from(BedrockItem::SHIELD.id))?;
+            read_user_data(&user_data, id.0 == i32::from(BedrockItem::SHIELD.id))?;
 
         Ok(Self {
             id,
@@ -230,7 +230,7 @@ impl PacketRead for ItemStackWrapper {
         buf.read_exact(&mut user_data)?;
 
         let (nbt_data, place_on_blocks, destroy_blocks, shield_blocking_tick) =
-            read_user_data(user_data, id == BedrockItem::SHIELD.id)?;
+            read_user_data(&user_data, id == BedrockItem::SHIELD.id)?;
 
         Ok(Self {
             id,
@@ -630,7 +630,7 @@ fn read_user_data_strings<R: Read>(reader: &mut R) -> Result<Vec<String>, Error>
 }
 
 fn read_user_data(
-    user_data: Vec<u8>,
+    user_data: &[u8],
     is_shield: bool,
 ) -> Result<(Nbt, Vec<String>, Vec<String>, i64), Error> {
     if user_data.is_empty() {
@@ -642,7 +642,7 @@ fn read_user_data(
     let nbt_data = if nbt_version == -1 {
         let _version = i8::read(&mut cursor)?;
         let mut nbt_reader = NbtReadHelperBedrock::new(&mut cursor);
-        Nbt::read(&mut nbt_reader)
+        crate::ser::nbt_reader::read_named_nbt(&mut nbt_reader)
             .map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))?
     } else {
         Nbt::default()
@@ -660,4 +660,18 @@ fn read_user_data(
         destroy_blocks,
         shield_blocking_tick,
     ))
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn bedrock_item_nbt_enforces_aggregate_quota_before_list_elements() {
+        // -1/version 1, root compound/empty name, list "a", byte elements, 524289 entries.
+        // Bedrock lengths are zigzag VarInts: 524289 -> 1048578 -> 82 80 40.
+        let bytes = [0xff, 0xff, 1, 10, 0, 9, 1, b'a', 1, 0x82, 0x80, 0x40];
+        let error = read_user_data(&bytes, false).err().unwrap();
+        assert!(error.to_string().contains("NBT quota"));
+    }
 }

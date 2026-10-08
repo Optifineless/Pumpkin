@@ -25,6 +25,29 @@ impl CommandExecutor for MsgExecutor {
         let sender_name = &context.source.display_name;
         let msg_text = TextComponent::text(msg.to_string());
 
+        // MsgCommand.sendMessage binds separate incoming/outgoing chat types to the signed argument.
+        if let Some(message) = context.source.signing_context.get("message") {
+            for target in &targets {
+                if let Some(sender) = context.source.as_player() {
+                    crate::net::java::JavaClient::send_command_chat(
+                        &sender,
+                        message,
+                        (MSG_COMMAND_OUTGOING + 1).into(),
+                        sender_name,
+                        Some(&target.get_display_name()),
+                    );
+                }
+                crate::net::java::JavaClient::send_command_chat(
+                    target,
+                    message,
+                    (MSG_COMMAND_INCOMING + 1).into(),
+                    sender_name,
+                    None,
+                );
+            }
+            return Ok(targets.len() as i32);
+        }
+
         if let Some(player) = context.source.player_or_none() {
             for target in &targets {
                 player.send_message(
@@ -66,7 +89,11 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
         dispatcher.register(
             command(name, DESCRIPTION).requires(PERMISSION).then(
                 argument("targets", EntityArgumentType::Players).then(
-                    argument("message", StringArgumentType::GreedyPhrase).executes(MsgExecutor),
+                    argument(
+                        "message",
+                        crate::net::java::signed_commands::MessageArgument,
+                    )
+                    .executes(MsgExecutor),
                 ),
             ),
         );

@@ -9,12 +9,16 @@ use crate::{
     },
 };
 
-use pumpkin_nbt::{
-    compound::NbtCompound, deserializer::NbtReadHelper, serializer::NbtWriteHelperJava, tag::NbtTag,
-};
+use pumpkin_nbt::{compound::NbtCompound, serializer::NbtWriteHelperJava, tag::NbtTag};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::{text::TextComponent, version::JavaMinecraftVersion};
 use thiserror::Error;
+
+mod collection;
+pub(crate) mod decode_budget;
+mod nbt_budget;
+pub(crate) mod nbt_reader;
+pub use collection::{MAX_INITIAL_COLLECTION_SIZE, collection_capacity};
 
 #[derive(Debug, Error)]
 pub enum ReadingError {
@@ -49,71 +53,6 @@ pub enum WritingError {
 impl serde::ser::Error for WritingError {
     fn custom<T: std::fmt::Display>(msg: T) -> Self {
         Self::Serde(msg.to_string())
-    }
-}
-
-struct NetworkReadDataSource<'a, R: NetworkReadExt + ?Sized>(&'a mut R);
-
-impl<'a, R: NetworkReadExt + ?Sized> pumpkin_nbt::deserializer::NbtDataSource<'a>
-    for NetworkReadDataSource<'a, R>
-{
-    fn read_u8(&mut self) -> Result<u8, pumpkin_nbt::Error> {
-        self.0.get_u8().map_err(|e| {
-            pumpkin_nbt::Error::Incomplete(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                e.to_string(),
-            ))
-        })
-    }
-
-    fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), pumpkin_nbt::Error> {
-        self.0.read_bytes_to_buf(buf).map_err(|e| {
-            pumpkin_nbt::Error::Incomplete(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                e.to_string(),
-            ))
-        })
-    }
-
-    fn seek_relative(&mut self, offset: i64) -> Result<(), pumpkin_nbt::Error> {
-        if offset < 0 {
-            return Err(pumpkin_nbt::Error::Incomplete(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "negative seek not supported",
-            )));
-        }
-        let mut skipped = vec![0u8; offset as usize];
-        self.0.read_bytes_to_buf(&mut skipped).map_err(|e| {
-            pumpkin_nbt::Error::Incomplete(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                e.to_string(),
-            ))
-        })
-    }
-
-    fn read_string(&mut self, len: usize) -> Result<Cow<'a, str>, pumpkin_nbt::Error> {
-        let mut buf = vec![0u8; len];
-        self.0.read_bytes_to_buf(&mut buf).map_err(|e| {
-            pumpkin_nbt::Error::Incomplete(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                e.to_string(),
-            ))
-        })?;
-        let string =
-            cesu8::from_java_cesu8(&buf).map_err(|_| pumpkin_nbt::Error::Cesu8DecodingError)?;
-        Ok(Cow::Owned(string.into_owned()))
-    }
-
-    fn read_byte_array(&mut self, len: usize) -> Result<Cow<'a, [i8]>, pumpkin_nbt::Error> {
-        let mut buf = vec![0u8; len];
-        self.0.read_bytes_to_buf(&mut buf).map_err(|e| {
-            pumpkin_nbt::Error::Incomplete(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                e.to_string(),
-            ))
-        })?;
-        let i8_buf: Vec<i8> = buf.into_iter().map(|b| b as i8).collect();
-        Ok(Cow::Owned(i8_buf))
     }
 }
 
@@ -212,15 +151,9 @@ pub trait NetworkReadExt {
         &mut self,
         parse: impl Fn(&mut Self) -> Result<G, ReadingError>,
     ) -> Result<Vec<G>, ReadingError> {
-        const MAX_LIST_SIZE: usize = 65536;
-
-        let len = self.get_var_int()?.0 as usize;
-        if len > MAX_LIST_SIZE {
-            return Err(ReadingError::TooLarge(format!(
-                "List length {len} exceeds limit"
-            )));
-        }
-        let mut list = Vec::with_capacity(len);
+        let len = usize::try_from(self.get_var_int()?.0)
+            .map_err(|_| ReadingError::Message("Negative list length".into()))?;
+        let mut list = Vec::with_capacity(collection_capacity(len)?);
         for _ in 0..len {
             list.push(parse(self)?);
         }
@@ -232,27 +165,7 @@ pub trait NetworkReadExt {
         version: &JavaMinecraftVersion,
     ) -> Result<Option<NbtTag>, ReadingError> {
         if *version >= JavaMinecraftVersion::V_1_8 {
-            let tag_id = self.get_u8()?;
-            if tag_id == pumpkin_nbt::END_ID {
-                return Ok(None);
-            }
-            let mut helper =
-                pumpkin_nbt::deserializer::NbtReadHelperJava::new(NetworkReadDataSource(self));
-            if *version < JavaMinecraftVersion::V_1_20_2 {
-                let _name = helper
-                    .get_string()
-                    .map_err(|e| ReadingError::Message(e.to_string()))?;
-            }
-            let tag = if tag_id == pumpkin_nbt::COMPOUND_ID {
-                NbtTag::Compound(
-                    NbtCompound::deserialize_content(&mut helper)
-                        .map_err(|e| ReadingError::Message(e.to_string()))?,
-                )
-            } else {
-                NbtTag::deserialize_data(&mut helper, tag_id)
-                    .map_err(|e| ReadingError::Message(e.to_string()))?
-            };
-            Ok(Some(tag))
+            nbt_budget::read_network_nbt(self, *version)
         } else {
             let length = self.get_i16_be()?;
             if length <= 0 {
@@ -260,32 +173,16 @@ pub trait NetworkReadExt {
             }
             let mut compressed = vec![0u8; length as usize];
             self.read_bytes_to_buf(&mut compressed)?;
-            let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
+            let decoder = flate2::read::GzDecoder::new(&compressed[..]);
             let mut decompressed = Vec::new();
             decoder
+                .take((nbt_budget::DEFAULT_NBT_QUOTA + 1) as u64)
                 .read_to_end(&mut decompressed)
                 .map_err(|e| ReadingError::Message(e.to_string()))?;
-            let mut cursor = std::io::Cursor::new(decompressed);
-            let mut helper = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
-            let tag_id = helper
-                .get_u8()
-                .map_err(|e| ReadingError::Message(e.to_string()))?;
-            if tag_id == pumpkin_nbt::END_ID {
-                return Ok(None);
+            if decompressed.len() > nbt_budget::DEFAULT_NBT_QUOTA {
+                return Err(ReadingError::TooLarge("NBT quota".into()));
             }
-            let _name = helper
-                .get_string()
-                .map_err(|e| ReadingError::Message(e.to_string()))?;
-            let tag = if tag_id == pumpkin_nbt::COMPOUND_ID {
-                NbtTag::Compound(
-                    NbtCompound::deserialize_content(&mut helper)
-                        .map_err(|e| ReadingError::Message(e.to_string()))?,
-                )
-            } else {
-                NbtTag::deserialize_data(&mut helper, tag_id)
-                    .map_err(|e| ReadingError::Message(e.to_string()))?
-            };
-            Ok(Some(tag))
+            nbt_budget::read_network_nbt(&mut decompressed.as_slice(), JavaMinecraftVersion::V_1_8)
         }
     }
 
@@ -449,12 +346,8 @@ impl<'a> NetworkReadSliceExt<'a> for &'a [u8] {
             serde_json::from_str(json)
                 .map_err(|e| ReadingError::Message(format!("Invalid component JSON: {e}")))
         } else {
-            let mut cursor = std::io::Cursor::new(*self);
-            let mut nbt_reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
-            let nbt = NbtTag::deserialize(&mut nbt_reader)
-                .map_err(|e| ReadingError::Message(format!("Invalid component NBT: {e}")))?;
-            let bytes_read = cursor.position() as usize;
-            *self = &self[bytes_read..];
+            let nbt = nbt_budget::read_network_nbt(self, *version)?
+                .ok_or_else(|| ReadingError::Message("Missing component NBT".into()))?;
             let json_value = nbt_tag_to_json(&nbt);
             serde_json::from_value(json_value).map_err(|e| {
                 ReadingError::Message(format!("Failed to parse component from NBT: {e}"))
@@ -467,40 +360,7 @@ impl<'a> NetworkReadSliceExt<'a> for &'a [u8] {
         version: &JavaMinecraftVersion,
     ) -> Result<Option<NbtTag>, ReadingError> {
         if *version >= JavaMinecraftVersion::V_1_8 {
-            if self.is_empty() {
-                return Ok(None);
-            }
-            if (*self)[0] == pumpkin_nbt::END_ID {
-                *self = &(*self)[1..];
-                return Ok(None);
-            }
-            let mut cursor = std::io::Cursor::new(*self);
-            let mut helper = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
-            let tag_id = helper
-                .get_u8()
-                .map_err(|e| ReadingError::Message(e.to_string()))?;
-            if tag_id == pumpkin_nbt::END_ID {
-                let pos = cursor.position() as usize;
-                *self = &(*self)[pos..];
-                return Ok(None);
-            }
-            if *version < JavaMinecraftVersion::V_1_20_2 {
-                let _name = helper
-                    .get_string()
-                    .map_err(|e| ReadingError::Message(e.to_string()))?;
-            }
-            let tag = if tag_id == pumpkin_nbt::COMPOUND_ID {
-                NbtTag::Compound(
-                    NbtCompound::deserialize_content(&mut helper)
-                        .map_err(|e| ReadingError::Message(e.to_string()))?,
-                )
-            } else {
-                NbtTag::deserialize_data(&mut helper, tag_id)
-                    .map_err(|e| ReadingError::Message(e.to_string()))?
-            };
-            let pos = cursor.position() as usize;
-            *self = &(*self)[pos..];
-            Ok(Some(tag))
+            nbt_budget::read_network_nbt(self, *version)
         } else {
             let length = self.get_i16_be()?;
             if length <= 0 {
@@ -514,32 +374,16 @@ impl<'a> NetworkReadSliceExt<'a> for &'a [u8] {
             }
             let compressed = &(*self)[..length];
             *self = &(*self)[length..];
-            let mut decoder = flate2::read::GzDecoder::new(compressed);
+            let decoder = flate2::read::GzDecoder::new(compressed);
             let mut decompressed = Vec::new();
             decoder
+                .take((nbt_budget::DEFAULT_NBT_QUOTA + 1) as u64)
                 .read_to_end(&mut decompressed)
                 .map_err(|e| ReadingError::Message(e.to_string()))?;
-            let mut cursor = std::io::Cursor::new(decompressed);
-            let mut helper = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
-            let tag_id = helper
-                .get_u8()
-                .map_err(|e| ReadingError::Message(e.to_string()))?;
-            if tag_id == pumpkin_nbt::END_ID {
-                return Ok(None);
+            if decompressed.len() > nbt_budget::DEFAULT_NBT_QUOTA {
+                return Err(ReadingError::TooLarge("NBT quota".into()));
             }
-            let _name = helper
-                .get_string()
-                .map_err(|e| ReadingError::Message(e.to_string()))?;
-            let tag = if tag_id == pumpkin_nbt::COMPOUND_ID {
-                NbtTag::Compound(
-                    NbtCompound::deserialize_content(&mut helper)
-                        .map_err(|e| ReadingError::Message(e.to_string()))?,
-                )
-            } else {
-                NbtTag::deserialize_data(&mut helper, tag_id)
-                    .map_err(|e| ReadingError::Message(e.to_string()))?
-            };
-            Ok(Some(tag))
+            nbt_budget::read_network_nbt(&mut decompressed.as_slice(), JavaMinecraftVersion::V_1_8)
         }
     }
 }
@@ -887,11 +731,15 @@ pub fn read_nbt_payload(
             }
             let compressed = &bytebuf[..length as usize];
             *bytebuf = &bytebuf[length as usize..];
-            let mut decoder = flate2::read::GzDecoder::new(compressed);
+            let decoder = flate2::read::GzDecoder::new(compressed);
             let mut decompressed = Vec::new();
             decoder
+                .take((nbt_budget::DEFAULT_NBT_QUOTA + 1) as u64)
                 .read_to_end(&mut decompressed)
                 .map_err(|e| ReadingError::Message(e.to_string()))?;
+            if decompressed.len() > nbt_budget::DEFAULT_NBT_QUOTA {
+                return Err(ReadingError::TooLarge("NBT quota".into()));
+            }
             if decompressed.len() >= 3
                 && decompressed[0] == 0x0A
                 && decompressed[1] == 0

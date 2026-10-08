@@ -3,10 +3,7 @@ use pumpkin_data::{packet::CURRENT_MC_VERSION, translation};
 use pumpkin_protocol::{
     ConnectionState, Label, Link, LinkType,
     java::client::{
-        config::{
-            CConfigAddResourcePack, CConfigServerLinks, CFeatureFlags, CFinishConfig, CKnownPacks,
-            CRegistryData, CUpdateTags,
-        },
+        config::{CConfigServerLinks, CFeatureFlags, CKnownPacks, CRegistryData, CUpdateTags},
         login::{CLoginSuccess, CSetCompression},
     },
     java::server::login::{
@@ -16,7 +13,6 @@ use pumpkin_protocol::{
 use pumpkin_util::text::TextComponent;
 use std::sync::Arc;
 use tracing::debug;
-use uuid::Uuid;
 
 use crate::{
     net::{
@@ -36,3 +32,4 @@ pub mod known_packs;
 pub mod login_acknowledged;
 pub mod login_start;
 pub mod plugin_response;
+pub mod state;

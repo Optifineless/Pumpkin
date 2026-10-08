@@ -172,18 +172,19 @@ fn read_component_id(read: &mut impl NetworkReadExt) -> Result<DataComponent, Re
 
 fn decode_custom_name(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
     let mut cursor = Cursor::new(component_data);
-    let mut nbt_reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
-    let tag = NbtTag::deserialize(&mut nbt_reader)
-        .map_err(|err| ReadingError::Message(format!("Failed to decode CustomName NBT: {err}")))?;
+    // ByteBufCodecs.TAG applies NbtAccounter to length-prefixed components too.
+    let tag = cursor
+        .get_nbt_with_version(&JavaMinecraftVersion::V_26_3)?
+        .ok_or_else(|| ReadingError::Message("Missing CustomName NBT".into()))?;
     let name = TextComponent::from_nbt(&tag);
     Ok(CustomNameImpl { name }.to_dyn())
 }
 
 fn decode_item_name(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
     let mut cursor = Cursor::new(component_data);
-    let mut nbt_reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
-    let tag = NbtTag::deserialize(&mut nbt_reader)
-        .map_err(|err| ReadingError::Message(format!("Failed to decode ItemName NBT: {err}")))?;
+    let tag = cursor
+        .get_nbt_with_version(&JavaMinecraftVersion::V_26_3)?
+        .ok_or_else(|| ReadingError::Message("Missing ItemName NBT".into()))?;
     let name = match tag {
         NbtTag::String(name) => name.to_string(),
         NbtTag::Compound(compound) => compound
@@ -201,9 +202,9 @@ fn decode_item_name(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl>,
 
 fn decode_custom_data(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
     let mut cursor = Cursor::new(component_data);
-    let mut nbt_reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
-    let tag = NbtTag::deserialize(&mut nbt_reader)
-        .map_err(|err| ReadingError::Message(format!("Failed to decode CustomData NBT: {err}")))?;
+    let tag = cursor
+        .get_nbt_with_version(&JavaMinecraftVersion::V_26_3)?
+        .ok_or_else(|| ReadingError::Message("Missing CustomData NBT".into()))?;
     let data = match tag {
         NbtTag::Compound(compound) => compound,
         _ => pumpkin_nbt::compound::NbtCompound::new(),
@@ -257,6 +258,7 @@ impl ItemStackSerializer<'_> {
         read: &mut impl NetworkReadExt,
     ) -> Result<ItemStackSerializer<'static>, ReadingError> {
         const MAX_COMPONENTS: i32 = 256;
+        let _scope = crate::ser::decode_budget::DecodeScope::packet();
 
         let item_count = read.get_var_int()?;
         if item_count.0 == 0 {
@@ -285,8 +287,11 @@ impl ItemStackSerializer<'_> {
 
         for _ in 0..num_to_add {
             let id_val = read.get_var_int()?.0;
-            let id = DataComponent::try_from_id(id_val as u8)
-                .ok_or_else(|| ReadingError::Message(format!("Unknown component ID: {id_val}")))?;
+            let id = DataComponent::try_from_id(
+                u8::try_from(id_val)
+                    .map_err(|_| ReadingError::Message("Invalid component ID".into()))?,
+            )
+            .ok_or_else(|| ReadingError::Message(format!("Unknown component ID: {id_val}")))?;
 
             let component_impl = if id == DataComponent::CustomData {
                 CustomDataImpl::deserialize(read)?.to_dyn()
@@ -298,8 +303,11 @@ impl ItemStackSerializer<'_> {
 
         for _ in 0..num_to_remove {
             let id_val = read.get_var_int()?.0;
-            let id = DataComponent::try_from_id(id_val as u8)
-                .ok_or_else(|| ReadingError::Message("Unknown component ID".into()))?;
+            let id = DataComponent::try_from_id(
+                u8::try_from(id_val)
+                    .map_err(|_| ReadingError::Message("Invalid component ID".into()))?,
+            )
+            .ok_or_else(|| ReadingError::Message("Unknown component ID".into()))?;
             patch.push((id, None));
         }
 
@@ -411,6 +419,7 @@ impl ItemStackSerializer<'_> {
         _version: &JavaMinecraftVersion,
     ) -> Result<ItemStackSerializer<'static>, ReadingError> {
         const MAX_COMPONENTS: i32 = 256;
+        let _scope = crate::ser::decode_budget::DecodeScope::packet();
 
         let raw_item_id = read.get_var_int()?;
         let item_count = read.get_var_int()?;
@@ -438,12 +447,15 @@ impl ItemStackSerializer<'_> {
             ));
         }
 
-        let mut patch = Vec::with_capacity(total_components as usize);
+        let mut patch = Vec::with_capacity(crate::ser::collection_capacity(total_components)?);
 
         for _ in 0..num_to_add {
             let id_val = read.get_var_int()?.0;
-            let id = DataComponent::try_from_id(id_val as u8)
-                .ok_or_else(|| ReadingError::Message(format!("Unknown component ID: {id_val}")))?;
+            let id = DataComponent::try_from_id(
+                u8::try_from(id_val)
+                    .map_err(|_| ReadingError::Message("Invalid component ID".into()))?,
+            )
+            .ok_or_else(|| ReadingError::Message(format!("Unknown component ID: {id_val}")))?;
 
             let component_impl = if id == DataComponent::CustomData {
                 CustomDataImpl::deserialize(read)?.to_dyn()
@@ -455,8 +467,11 @@ impl ItemStackSerializer<'_> {
 
         for _ in 0..num_to_remove {
             let id_val = read.get_var_int()?.0;
-            let id = DataComponent::try_from_id(id_val as u8)
-                .ok_or_else(|| ReadingError::Message("Unknown component ID".into()))?;
+            let id = DataComponent::try_from_id(
+                u8::try_from(id_val)
+                    .map_err(|_| ReadingError::Message("Invalid component ID".into()))?,
+            )
+            .ok_or_else(|| ReadingError::Message("Unknown component ID".into()))?;
             patch.push((id, None));
         }
 
@@ -482,6 +497,7 @@ impl ItemStackSerializer<'_> {
         read: &mut impl NetworkReadExt,
     ) -> Result<ItemStackSerializer<'static>, ReadingError> {
         const MAX_COMPONENTS: i32 = 256;
+        let _scope = crate::ser::decode_budget::DecodeScope::packet();
 
         let item_count = read.get_var_int()?;
         if item_count.0 == 0 {
@@ -510,7 +526,7 @@ impl ItemStackSerializer<'_> {
             ));
         }
 
-        let mut patch = Vec::with_capacity(total_components as usize);
+        let mut patch = Vec::with_capacity(crate::ser::collection_capacity(total_components)?);
 
         for _ in 0..num_to_add {
             let (id, component_impl) = read_length_prefixed_component(read)?;
@@ -670,6 +686,7 @@ pub struct ItemComponentHash {
 impl ItemComponentHash {
     pub fn read(read: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         const MAX_COMPONENTS: i32 = 256;
+        let _scope = crate::ser::decode_budget::DecodeScope::packet();
 
         let added_length = read.get_var_int()?;
         if added_length.0 < 0 || added_length.0 > MAX_COMPONENTS {
@@ -851,5 +868,26 @@ impl From<Option<ItemStack>> for ItemStackOptionalTemplateSerializer<'_> {
             || ItemStackOptionalTemplateSerializer(Cow::Borrowed(ItemStack::EMPTY)),
             ItemStackOptionalTemplateSerializer::from,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn length_prefixed_component_nbt_obeys_the_network_quota() {
+        // TAG_Long_Array, count 262,144: its Java heap charge exceeds 2 MiB.
+        // The fixture has no array data; rejection must precede deserialization.
+        for component in [
+            DataComponent::CustomName,
+            DataComponent::ItemName,
+            DataComponent::CustomData,
+        ] {
+            assert!(matches!(
+                decode_component(component, &[12, 0, 4, 0, 0]),
+                Err(ReadingError::TooLarge(_))
+            ));
+        }
     }
 }

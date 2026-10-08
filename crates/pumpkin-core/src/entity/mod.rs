@@ -94,6 +94,7 @@ pub mod marker;
 pub mod mob;
 pub mod passive;
 pub mod player;
+pub(crate) mod player_skin;
 pub mod projectile;
 pub mod projectile_deflection;
 pub(crate) mod spawn_mount;

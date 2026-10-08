@@ -20,6 +20,20 @@ impl CommandExecutor for MeExecutor {
         let sender = &context.source;
         let server = sender.server();
 
+        // EmoteCommands.register resolves MessageArgument from the source's signing context.
+        if let Some(message) = sender.signing_context.get("action") {
+            for recipient in server.get_all_players() {
+                crate::net::java::JavaClient::send_command_chat(
+                    &recipient,
+                    message,
+                    (EMOTE_COMMAND + 1).into(),
+                    &sender.display_name,
+                    None,
+                );
+            }
+            return Ok(1);
+        }
+
         server.broadcast_message(
             &TextComponent::text(msg.to_string()),
             &context.source.display_name,
@@ -38,9 +52,7 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
         PermissionDefault::Op(PermissionLvl::Zero),
     ));
 
-    dispatcher.register(
-        command("me", DESCRIPTION)
-            .requires(PERMISSION)
-            .then(argument("action", StringArgumentType::GreedyPhrase).executes(MeExecutor)),
-    );
+    dispatcher.register(command("me", DESCRIPTION).requires(PERMISSION).then(
+        argument("action", crate::net::java::signed_commands::MessageArgument).executes(MeExecutor),
+    ));
 }

@@ -47,7 +47,13 @@ impl<'a> ServerPacket<'a> for SClickSlot {
         let mode = SlotActionType::read(&mut bytebuf)?;
 
         let length_of_array = bytebuf.get_var_int()?;
-        if length_of_array.0 < 0 || length_of_array.0 > 256 {
+        // ServerboundContainerClickPacket.SLOTS_STREAM_CODEC bounds the changed-slot map.
+        let max_slots = if *version >= JavaMinecraftVersion::V_26_3 {
+            128
+        } else {
+            256
+        };
+        if length_of_array.0 < 0 || length_of_array.0 > max_slots {
             return Err(ReadingError::Message(
                 "Changed slots length out of bounds".into(),
             ));
@@ -163,5 +169,20 @@ impl TryFrom<i32> for SlotActionType {
             6 => Ok(Self::PickupAll),
             _ => Err(InvalidSlotActionType),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_excess_changed_slots_before_reading_stacks() {
+        // Container zero, revision zero, slot zero, left button, pickup, 129 entries.
+        let mut bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0x81, 0x01];
+        assert!(matches!(
+            SClickSlot::read(&mut bytes, &JavaMinecraftVersion::V_26_3),
+            Err(ReadingError::Message(_))
+        ));
     }
 }

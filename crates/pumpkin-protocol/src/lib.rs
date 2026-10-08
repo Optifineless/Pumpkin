@@ -270,6 +270,15 @@ pub trait ClientPacket: MultiVersionJavaPacket {
 
 pub trait ServerPacket<'a>: MultiVersionJavaPacket + Sized {
     fn read(read: &mut &'a [u8], version: &JavaMinecraftVersion) -> Result<Self, ReadingError>;
+
+    /// Decodes one packet with a shared budget for all nested item components.
+    fn read_bounded(
+        read: &mut &'a [u8],
+        version: &JavaMinecraftVersion,
+    ) -> Result<Self, ReadingError> {
+        let _scope = ser::decode_budget::DecodeScope::packet();
+        Self::read(read, version)
+    }
 }
 
 pub trait BClientPacket: Packet {
@@ -297,6 +306,8 @@ pub enum PacketEncodeError {
 
 #[derive(Error, Debug)]
 pub enum PacketDecodeError {
+    #[error("connection read timed out")]
+    ReadTimeout,
     #[error("failed to decode packet ID")]
     DecodeID,
     #[error("packet exceeds maximum length")]

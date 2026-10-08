@@ -40,9 +40,9 @@ impl DataComponentCodec<Self> for DeathProtectionImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let len = seq.get_var_int()?.0 as usize;
         if len > MAX_STATUS_EFFECTS {
-            return Err(ReadingError::Message("Too many death effects".into()));
+            return Err(ReadingError::TooLarge("Death effects".into()));
         }
-        let mut death_effects = Vec::with_capacity(len);
+        let mut death_effects = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for _ in 0..len {
             death_effects.push(deserialize_death_effect(seq)?);
         }
@@ -117,11 +117,9 @@ fn deserialize_death_effect(seq: &mut impl NetworkReadExt) -> Result<DeathEffect
         0 => {
             let len = seq.get_var_int()?.0 as usize;
             if len > MAX_STATUS_EFFECTS {
-                return Err(ReadingError::Message(
-                    "Too many death status effects".into(),
-                ));
+                return Err(ReadingError::TooLarge("Death status effects".into()));
             }
-            let mut effects = Vec::with_capacity(len);
+            let mut effects = Vec::with_capacity(crate::ser::collection_capacity(len)?);
             for _ in 0..len {
                 let id = u16::try_from(seq.get_var_int()?.0)
                     .map_err(|_| ReadingError::Message("Invalid death status effect id".into()))?;
@@ -221,11 +219,9 @@ impl DataComponentCodec<Self> for BlocksAttacksImpl {
         let disable_cooldown_scale = seq.get_f32()?;
         let red_len = seq.get_var_int()?.0 as usize;
         if red_len > MAX_STATUS_EFFECTS {
-            return Err(ReadingError::Message(
-                "Too many blocking damage reductions".into(),
-            ));
+            return Err(ReadingError::TooLarge("Blocking damage reductions".into()));
         }
-        let mut damage_reductions = Vec::with_capacity(red_len);
+        let mut damage_reductions = Vec::with_capacity(crate::ser::collection_capacity(red_len)?);
         for _ in 0..red_len {
             damage_reductions.push(BlockingDamageReduction {
                 horizontal_blocking_angle: seq.get_f32()?,

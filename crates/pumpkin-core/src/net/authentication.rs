@@ -73,6 +73,28 @@ fn format_auth_url(url_template: &str, username: &str, server_hash: &str, ip: &I
         .replace("{ip}", &ip.to_string())
 }
 
+fn authentication_address(
+    template: &str,
+    username: &str,
+    server_hash: &str,
+    ip: &IpAddr,
+    enforce_ip: bool,
+) -> Result<Url, AuthError> {
+    let mut address = Url::parse(&format_auth_url(template, username, server_hash, ip))
+        .map_err(|_| AuthError::FailedResponse)?;
+    if enforce_ip {
+        let pairs: Vec<(String, String)> = address
+            .query_pairs()
+            .filter(|(name, _)| name != "ip")
+            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+            .collect();
+        let mut query = address.query_pairs_mut();
+        query.clear().extend_pairs(pairs);
+        query.append_pair("ip", &ip.to_string());
+    }
+    Ok(address)
+}
+
 /// Sends a GET request to Mojang's (or custom/fallback) authentication servers to verify a client's Minecraft account.
 ///
 /// **Purpose:**
@@ -113,13 +135,17 @@ pub async fn authenticate(
 
     let client = create_client(auth_config);
 
-    let mut unverified_count = 0;
-    let mut last_unknown_status = None;
-
     for url_template in candidate_urls {
-        let address = format_auth_url(url_template, username, server_hash, ip);
+        // MinecraftSessionService.hasJoinedServer applies the IP policy to every provider.
+        let address = authentication_address(
+            url_template,
+            username,
+            server_hash,
+            ip,
+            auth_config.prevent_proxy_connections,
+        )?;
 
-        let response = match client.get(&address).send().await {
+        let response = match client.get(address.as_str()).send().await {
             Ok(resp) => resp,
             Err(err) => {
                 tracing::warn!(
@@ -140,24 +166,19 @@ pub async fn authenticate(
                 Ok(profile) => return Ok(profile),
                 Err(err) => {
                     tracing::warn!("Failed to parse GameProfile response from '{address}': {err}");
+                    return Err(AuthError::FailedResponse);
                 }
             },
             StatusCode::NO_CONTENT => {
-                unverified_count += 1;
+                return Err(AuthError::UnverifiedUsername);
             }
             other => {
-                last_unknown_status = Some(other);
+                return Err(AuthError::UnknownStatusCode(other));
             }
         }
     }
 
-    if unverified_count > 0 {
-        Err(AuthError::UnverifiedUsername)
-    } else if let Some(status) = last_unknown_status {
-        Err(AuthError::UnknownStatusCode(status))
-    } else {
-        Err(AuthError::FailedResponse)
-    }
+    Err(AuthError::FailedResponse)
 }
 
 pub fn validate_textures(property: &Property, config: &TextureConfig) -> Result<(), TextureError> {
@@ -453,6 +474,29 @@ mod tests {
         let profile: ProfileTextures =
             serde_json::from_slice(json.as_bytes()).expect("profile should parse");
         assert!(profile.signature_required);
+    }
+
+    #[test]
+    fn every_authentication_provider_receives_the_enforced_ip() {
+        for template in [
+            "https://primary.test/hasJoined?ip=wrong",
+            "https://fallback.test/hasJoined?username={username}&serverId={server_hash}",
+        ] {
+            let url = super::authentication_address(
+                template,
+                "Steve",
+                "hash",
+                &"192.0.2.5".parse().unwrap(),
+                true,
+            )
+            .unwrap();
+            let ips: Vec<_> = url
+                .query_pairs()
+                .filter(|(name, _)| name == "ip")
+                .map(|(_, value)| value.into_owned())
+                .collect();
+            assert_eq!(ips, ["192.0.2.5"]);
+        }
     }
 
     #[test]

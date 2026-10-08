@@ -1,5 +1,6 @@
 use super::*;
 use crate::entity::EntityBase;
+use crate::net::ClientPlatform;
 use crate::world::World;
 
 pub struct TestPlayer {
@@ -36,11 +37,11 @@ impl TestPlayer {
             network_reader: std::sync::Mutex::new(None),
             brand: ArcSwap::from_pointee(None),
             player: ArcSwap::from_pointee(None),
-            wait_for_keep_alive: AtomicBool::new(false),
-            keep_alive_id: AtomicCell::new(0),
-            last_keep_alive_time: AtomicCell::new(Instant::now()),
-            last_packet_time: AtomicCell::new(Instant::now()),
-            pending_keep_alives: std::sync::Mutex::new(Vec::new()),
+            admission_reservation: std::sync::Mutex::new(None),
+            read_only: AtomicBool::new(false),
+            keep_alive: std::sync::Mutex::new(session::KeepAliveState::new(Instant::now())),
+            inbound_bytes: AtomicUsize::new(0),
+            chat_order: chat_order::ChatOrder::new(),
             packet_sequence: AtomicI32::new(-1),
             packet_limiter: PacketRateLimiter::new(false, 0.0, 0.0),
             suspend_flushing: Arc::new(AtomicBool::new(false)),

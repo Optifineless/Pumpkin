@@ -11,9 +11,8 @@ const MAX_PAGES: usize = 100;
 const PAGE_EDIT_LENGTH: usize = 1024;
 const TITLE_MAX_LENGTH: usize = 32;
 const MAX_GENERATION: i32 = 3;
-// FriendlyByteBuf.MAX_STRING_LENGTH; ByteBufCodecs.MAX_INITIAL_COLLECTION_SIZE.
+// FriendlyByteBuf.MAX_STRING_LENGTH.
 const MAX_STRING_LENGTH: usize = 32767;
-const MAX_INITIAL_COLLECTION_SIZE: usize = 65536;
 
 fn write_utf8_string(
     seq: &mut impl NetworkWriteExt,
@@ -45,9 +44,9 @@ impl DataComponentCodec<Self> for WritableBookContentImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let count = seq.get_var_int()?.0;
         if !(0..=MAX_PAGES as i32).contains(&count) {
-            return Err(ReadingError::Message("Too many writable book pages".into()));
+            return Err(ReadingError::TooLarge("Writable book pages".into()));
         }
-        let mut pages = Vec::with_capacity(count as usize);
+        let mut pages = Vec::with_capacity(crate::ser::collection_capacity(count)?);
         for _ in 0..count {
             let raw = seq.get_str_bounded(PAGE_EDIT_LENGTH)?.to_string();
             if seq.get_bool()? {
@@ -89,10 +88,10 @@ impl DataComponentCodec<Self> for WrittenBookContentImpl {
         }
         let count = seq.get_var_int()?.0;
         if !(0..=crate::MAX_PACKET_DATA_SIZE as i32).contains(&count) {
-            return Err(ReadingError::Message("Too many written book pages".into()));
+            return Err(ReadingError::TooLarge("Written book pages".into()));
         }
         // ByteBufCodecs.list initially allocates at most 65536 elements.
-        let mut pages = Vec::with_capacity((count as usize).min(MAX_INITIAL_COLLECTION_SIZE));
+        let mut pages = Vec::with_capacity(crate::ser::collection_capacity(count)?);
         for _ in 0..count {
             let tag = seq
                 .get_nbt_with_version(&JavaMinecraftVersion::V_26_3)?

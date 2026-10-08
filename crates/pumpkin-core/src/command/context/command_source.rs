@@ -59,6 +59,9 @@ pub struct CommandSource {
     pub silent: bool,
     pub command_result_taker: ResultValueTaker,
     pub entity_anchor: EntityAnchor,
+    // CommandSourceStack.withSigningContext; carried through source changes and redirects.
+    pub(crate) signing_context:
+        Arc<std::collections::HashMap<String, crate::net::chat::PlayerChatMessage>>,
 }
 
 impl CommandSource {
@@ -86,6 +89,7 @@ impl CommandSource {
             silent: false,
             command_result_taker: ResultValueTaker::new(),
             entity_anchor: EntityAnchor::Feet,
+            signing_context: Arc::default(),
         }
     }
 
@@ -113,6 +117,7 @@ impl CommandSource {
             silent: false,
             command_result_taker: ResultValueTaker(Vec::new()),
             entity_anchor: EntityAnchor::Feet,
+            signing_context: Arc::default(),
         }
     }
 
@@ -132,6 +137,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 
@@ -151,6 +157,7 @@ impl CommandSource {
             silent: true,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 
@@ -172,6 +179,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 
@@ -191,6 +199,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 
@@ -210,6 +219,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 
@@ -237,6 +247,7 @@ impl CommandSource {
             silent: true,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 
@@ -256,6 +267,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker,
             entity_anchor: self.entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 
@@ -275,6 +287,7 @@ impl CommandSource {
             silent: true,
             command_result_taker: self.command_result_taker,
             entity_anchor,
+            signing_context: self.signing_context,
         }
     }
 

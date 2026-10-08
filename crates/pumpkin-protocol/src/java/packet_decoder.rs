@@ -1,11 +1,11 @@
 use aes::cipher::KeyIvInit;
 use async_compression::tokio::bufread::ZlibDecoder;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
 
 use crate::{
     Aes128Cfb8Dec, CompressionThreshold, MAX_PACKET_DATA_SIZE, MAX_PACKET_SIZE, PacketDecodeError,
-    RawPacket, ReadingError, StreamDecryptor, VarInt,
+    RawPacket, StreamDecryptor, ser::NetworkReadExt,
 };
 
 // decrypt -> decompress -> raw
@@ -77,6 +77,10 @@ pub struct TCPNetworkDecoder<R: AsyncRead + Unpin> {
     reader: Option<DecryptionReader<R>>,
     compression: Option<CompressionThreshold>,
     payload_scratch: BytesMut,
+    frame_length: Option<usize>,
+    length_value: usize,
+    length_bytes: u32,
+    last_read: tokio::time::Instant,
 }
 
 impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
@@ -85,6 +89,10 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
             reader: Some(DecryptionReader::None(reader)),
             compression: None,
             payload_scratch: BytesMut::new(),
+            frame_length: None,
+            length_value: 0,
+            length_bytes: 0,
+            last_read: tokio::time::Instant::now(),
         }
     }
 
@@ -113,89 +121,99 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
             .reader
             .as_mut()
             .ok_or_else(|| PacketDecodeError::Message("Reader missing".into()))?;
-
-        let packet_len = VarInt::decode_async(reader)
+        // Varint21FrameDecoder.decode retains incomplete frames. State survives timer cancellation.
+        while self.frame_length.is_none() {
+            // Netty ReadTimeoutHandler measures inactivity between bytes, not total frame duration.
+            let byte = tokio::time::timeout_at(
+                self.last_read + std::time::Duration::from_secs(30),
+                reader.read_u8(),
+            )
             .await
-            .map_err(|err| match err {
-                ReadingError::CleanEOF(_) => PacketDecodeError::ConnectionClosed,
-                err => PacketDecodeError::MalformedLength(err.to_string()),
-            })?;
-
-        let packet_len = packet_len.0 as u64;
-
-        if !(0..=MAX_PACKET_SIZE).contains(&packet_len) {
-            Err(PacketDecodeError::OutOfBounds)?;
-        }
-
-        let mut bounded_reader = reader.take(packet_len);
-        let mut expected_packet_data_len = packet_len as usize;
-        let mut expected_uncompressed_packet_data_len = None;
-
-        let mut reader = if let Some(threshold) = self.compression {
-            let decompressed_length = VarInt::decode_async(&mut bounded_reader).await?;
-            let raw_packet_length = packet_len - decompressed_length.written_size() as u64;
-            let decompressed_length = decompressed_length.0 as usize;
-
-            if !(0..=MAX_PACKET_DATA_SIZE).contains(&decompressed_length) {
-                Err(PacketDecodeError::TooLong)?;
-            }
-
-            if decompressed_length > 0 {
-                expected_packet_data_len = decompressed_length;
-                expected_uncompressed_packet_data_len = Some(decompressed_length);
-                DecompressionReader::Decompress(ZlibDecoder::new(BufReader::new(bounded_reader)))
-            } else {
-                // Validate that we are not less than the compression threshold
-                if raw_packet_length > threshold as u64 {
-                    Err(PacketDecodeError::NotCompressed)?;
+            .map_err(|_| PacketDecodeError::ReadTimeout)?
+            .map_err(|err| {
+                if err.kind() == std::io::ErrorKind::UnexpectedEof && self.length_bytes == 0 {
+                    PacketDecodeError::ConnectionClosed
+                } else {
+                    PacketDecodeError::MalformedLength(err.to_string())
                 }
-
-                expected_packet_data_len = raw_packet_length as usize;
-                DecompressionReader::None(bounded_reader)
+            })?;
+            self.last_read = tokio::time::Instant::now();
+            self.length_value |= usize::from(byte & 0x7f) << (7 * self.length_bytes);
+            self.length_bytes += 1;
+            if byte & 0x80 == 0 {
+                if self.length_value == 0 || self.length_value as u64 > MAX_PACKET_SIZE {
+                    return Err(PacketDecodeError::OutOfBounds);
+                }
+                self.frame_length = Some(self.length_value);
+            } else if self.length_bytes == 3 {
+                return Err(PacketDecodeError::MalformedLength(
+                    "Frame length exceeds 21 bits".into(),
+                ));
             }
-        } else {
-            DecompressionReader::None(bounded_reader)
-        };
-
-        let packet_id = VarInt::decode_async(&mut reader)
+        }
+        let length = self.length_value;
+        while self.payload_scratch.len() < length {
+            let remaining = length - self.payload_scratch.len();
+            let mut bounded = (&mut *reader).take(remaining as u64);
+            let read = tokio::time::timeout_at(
+                self.last_read + std::time::Duration::from_secs(30),
+                bounded.read_buf(&mut self.payload_scratch),
+            )
             .await
+            .map_err(|_| PacketDecodeError::ReadTimeout)?
+            .map_err(|err| PacketDecodeError::Message(err.to_string()))?;
+            self.last_read = tokio::time::Instant::now();
+            if read == 0 {
+                return Err(PacketDecodeError::MalformedLength("Truncated frame".into()));
+            }
+        }
+        let packet = Self::decode_frame(&self.payload_scratch, self.compression).await?;
+        self.payload_scratch.clear();
+        self.frame_length = None;
+        self.length_value = 0;
+        self.length_bytes = 0;
+        Ok(packet)
+    }
+
+    async fn decode_frame(
+        mut frame: &[u8],
+        compression: Option<CompressionThreshold>,
+    ) -> Result<RawPacket, PacketDecodeError> {
+        let mut inflated = Vec::new();
+        if let Some(threshold) = compression {
+            let declared = frame.get_var_int()?.0;
+            // CompressionDecoder.decode: zero is raw; only compressed data must meet threshold.
+            if declared != 0 {
+                let length = usize::try_from(declared).map_err(|_| PacketDecodeError::TooLong)?;
+                if length > MAX_PACKET_DATA_SIZE {
+                    return Err(PacketDecodeError::TooLong);
+                }
+                if length < threshold {
+                    return Err(PacketDecodeError::NotCompressed);
+                }
+                ZlibDecoder::new(BufReader::new(frame))
+                    .take((length + 1) as u64)
+                    .read_to_end(&mut inflated)
+                    .await
+                    .map_err(|err| PacketDecodeError::FailedDecompression(err.to_string()))?;
+                if inflated.len() != length {
+                    return Err(PacketDecodeError::FailedDecompression(
+                        "Decompressed length mismatch".into(),
+                    ));
+                }
+                frame = &inflated;
+            }
+        }
+        let packet_id = frame
+            .get_var_int()
             .map_err(|_| PacketDecodeError::DecodeID)?
             .0;
-        let packet_id_len = VarInt(packet_id).written_size();
-
-        let payload_len_hint = expected_packet_data_len.saturating_sub(packet_id_len);
-        self.payload_scratch.clear();
-        self.payload_scratch.reserve(payload_len_hint);
-
-        let mut total_read = 0;
-        while total_read < payload_len_hint {
-            let bytes_read = reader
-                .read_buf(&mut self.payload_scratch)
-                .await
-                .map_err(|err| PacketDecodeError::FailedDecompression(err.to_string()))?;
-            if bytes_read == 0 {
-                break;
-            }
-            total_read += bytes_read;
+        if packet_id < 0 {
+            return Err(PacketDecodeError::DecodeID);
         }
-
-        if let Some(expected_uncompressed_packet_data_len) = expected_uncompressed_packet_data_len {
-            let decoded_packet_data_len = packet_id_len + self.payload_scratch.len();
-            if decoded_packet_data_len != expected_uncompressed_packet_data_len {
-                return Err(PacketDecodeError::FailedDecompression(format!(
-                    "Declared decompressed length {expected_uncompressed_packet_data_len} but decoded {decoded_packet_data_len} bytes"
-                )));
-            }
-        }
-
-        let payload = self
-            .payload_scratch
-            .split_to(self.payload_scratch.len())
-            .freeze();
-
         Ok(RawPacket {
             id: packet_id,
-            payload,
+            payload: Bytes::copy_from_slice(frame),
         })
     }
 }
@@ -205,13 +223,104 @@ mod tests {
 
     use std::io::Write;
 
-    use crate::ser::NetworkWriteExt;
+    use crate::{VarInt, ser::NetworkWriteExt};
 
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn read_timeout_measures_byte_inactivity_across_partial_frames() {
+        use tokio::io::AsyncWriteExt;
+        let (read, mut write) = tokio::io::duplex(16);
+        let mut decoder = TCPNetworkDecoder::new(read);
+        write.write_all(&[2]).await.unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(20), decoder.get_raw_packet())
+                .await
+                .is_err()
+        );
+        write.write_all(&[1]).await.unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(20), decoder.get_raw_packet())
+                .await
+                .is_err()
+        );
+        write.write_all(&[7]).await.unwrap();
+        assert_eq!(
+            decoder.get_raw_packet().await.unwrap().payload.as_ref(),
+            &[7]
+        );
+        assert!(matches!(
+            decoder.get_raw_packet().await,
+            Err(PacketDecodeError::ReadTimeout)
+        ));
+    }
     use aes::Aes128;
     use cfb8::Encryptor as Cfb8Encryptor;
     use flate2::Compression;
     use flate2::write::ZlibEncoder;
+
+    #[tokio::test]
+    async fn compression_threshold_edges() {
+        // Frame: raw marker, packet id, two payload bytes. Raw is valid above threshold.
+        let mut decoder = TCPNetworkDecoder::new(&[4, 0, 1, 2, 3][..]);
+        decoder.set_compression(1);
+        assert!(decoder.get_raw_packet().await.is_ok());
+        // zlib for [1, 2, 3], declaring a three-byte packet body.
+        let fixture = [
+            12, 3, 0x78, 0x9c, 0x63, 0x64, 0x62, 0x06, 0x00, 0x00, 0x0d, 0x00, 0x07,
+        ];
+        let mut at = TCPNetworkDecoder::new(fixture.as_slice());
+        at.set_compression(3);
+        assert!(at.get_raw_packet().await.is_ok());
+        let mut below = TCPNetworkDecoder::new(fixture.as_slice());
+        below.set_compression(4);
+        assert!(matches!(
+            below.get_raw_packet().await,
+            Err(PacketDecodeError::NotCompressed)
+        ));
+        // Declared inflated size 8,388,609 and a negative size, with no zlib payload.
+        for fixture in [
+            &[4, 0x81, 0x80, 0x80, 0x04][..],
+            &[5, 0xff, 0xff, 0xff, 0xff, 0x0f][..],
+        ] {
+            let mut oversized = TCPNetworkDecoder::new(fixture);
+            oversized.set_compression(1);
+            assert!(matches!(
+                oversized.get_raw_packet().await,
+                Err(PacketDecodeError::TooLong)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_partial_frame_resumes() {
+        use tokio::io::AsyncWriteExt;
+        let (mut peer, stream) = tokio::io::duplex(16);
+        let mut decoder = TCPNetworkDecoder::new(stream);
+        peer.write_all(&[0x83]).await.unwrap(); // Incomplete two-byte length.
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(5),
+                decoder.get_raw_packet()
+            )
+            .await
+            .is_err()
+        );
+        peer.write_all(&[0x00, 0x01]).await.unwrap(); // Length three, id one, missing payload.
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(5),
+                decoder.get_raw_packet()
+            )
+            .await
+            .is_err()
+        );
+        peer.write_all(&[0x02, 0x03, 0x01, 0x04]).await.unwrap();
+        let first = decoder.get_raw_packet().await.unwrap();
+        assert_eq!(first.id, 1);
+        assert_eq!(first.payload.as_ref(), &[2, 3]);
+        assert_eq!(decoder.get_raw_packet().await.unwrap().id, 4);
+    }
 
     /// Helper function to compress data using libdeflater's Zlib compressor
     fn compress_zlib(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
@@ -314,7 +423,7 @@ mod tests {
         // Initialize the decoder with compression enabled
         let mut decoder = TCPNetworkDecoder::new(packet.as_slice());
         // Larger than payload
-        decoder.set_compression(1000);
+        decoder.set_compression(1);
 
         // Attempt to decode
         let raw_packet = decoder.get_raw_packet().await.map_err(|e| e.to_string())?;
@@ -365,7 +474,7 @@ mod tests {
 
         // Initialize the decoder with both compression and encryption enabled
         let mut decoder = TCPNetworkDecoder::new(packet.as_slice());
-        decoder.set_compression(1000);
+        decoder.set_compression(1);
         decoder.set_encryption(&key).map_err(|e| e.to_string())?;
 
         // Attempt to decode
@@ -402,7 +511,7 @@ mod tests {
 
         // Initialize the decoder with compression enabled
         let mut decoder = TCPNetworkDecoder::new(&packet_bytes[..]);
-        decoder.set_compression(1000);
+        decoder.set_compression(1);
 
         // Attempt to decode and expect a decompression error
         let result = decoder.get_raw_packet().await;
@@ -446,7 +555,7 @@ mod tests {
 
         // Initialize the decoder with compression enabled
         let mut decoder = TCPNetworkDecoder::new(packet.as_slice());
-        decoder.set_compression(MAX_PACKET_SIZE as usize + 1);
+        decoder.set_compression(MAX_PACKET_SIZE as usize);
 
         // Attempt to decode
         let result = decoder.get_raw_packet().await;

@@ -1041,6 +1041,19 @@ impl PluginManager {
             .any(|p| p.metadata.name == name && p.is_active && p.instance.is_some())
     }
 
+    /// Returns active plugin names if the metadata lock is immediately available.
+    #[must_use]
+    pub(crate) fn try_active_plugin_names(&self) -> Option<Vec<String>> {
+        let plugins = self.plugins.try_read().ok()?;
+        Some(
+            plugins
+                .iter()
+                .filter(|plugin| plugin.is_active && plugin.instance.is_some())
+                .map(|plugin| plugin.metadata.name.clone())
+                .collect(),
+        )
+    }
+
     /// Get list of active plugins
     #[must_use]
     pub fn active_plugins(&self) -> Vec<PluginMetadata> {
@@ -1314,6 +1327,20 @@ impl PluginManager {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn query_metadata_does_not_wait_for_a_plugin_writer() {
+        let manager = std::sync::Arc::new(super::PluginManager::default());
+        let locked = manager.plugins.write().unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        let reader = manager.clone();
+        let worker =
+            std::thread::spawn(move || send.send(reader.try_active_plugin_names()).unwrap());
+        let result = receive.recv_timeout(std::time::Duration::from_secs(1));
+        drop(locked);
+        worker.join().unwrap();
+        assert!(matches!(result, Ok(None)));
+    }
+
     use super::*;
 
     #[tokio::test]

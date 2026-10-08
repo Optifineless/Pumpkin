@@ -7,7 +7,16 @@ impl PendingConnection {
         server: &Server,
     ) -> Option<PacketHandlerResult> {
         debug!("Handling login acknowledgement");
+        // ServerLoginPacketListenerImpl.handleLoginAcknowledgement requires login success.
+        if !self.login_state.acknowledge(self.gameprofile.is_some()) {
+            self.kick(TextComponent::text("Unexpected login acknowledgement"))
+                .await;
+            return Some(PacketHandlerResult::Stop);
+        }
         self.connection_state.store(ConnectionState::Config);
+        self.login_deadline_active
+            .store(false, std::sync::atomic::Ordering::Release);
+        self.keep_alive = super::super::session::KeepAliveState::new(std::time::Instant::now());
         self.send_packet_now(&server.get_branding()).await;
 
         if server.advanced_config.server_links.enabled {
@@ -71,25 +80,7 @@ impl PendingConnection {
             self.send_packet_now(&CConfigServerLinks::new(&links)).await;
         }
 
-        let resource_config = &server.advanced_config.resource_pack.java;
-        if resource_config.enabled {
-            let uuid = Uuid::new_v3(&uuid::Uuid::NAMESPACE_DNS, resource_config.url.as_bytes());
-            let resource_pack = CConfigAddResourcePack::new(
-                &uuid,
-                &resource_config.url,
-                &resource_config.sha1,
-                resource_config.force,
-                if resource_config.prompt_message.is_empty() {
-                    None
-                } else {
-                    Some(TextComponent::text(resource_config.prompt_message.clone()))
-                },
-            );
-
-            self.send_packet_now(&resource_pack).await;
-        } else {
-            self.send_known_packs(server).await;
-        }
+        self.send_known_packs(server).await;
         debug!("login acknowledged");
         None
     }
@@ -100,6 +91,8 @@ impl PendingConnection {
         let version_str = CURRENT_MC_VERSION.to_string();
         let loaded_packs = server.datapack_manager.get_loaded_packs();
         let known_packs = server.get_known_packs(&version_str, &loaded_packs);
-        self.send_packet_now(&CKnownPacks::new(&known_packs)).await;
+        if self.send_packet_now(&CKnownPacks::new(&known_packs)).await {
+            self.config_task = super::super::config::ConfigTask::SynchronizeRegistries;
+        }
     }
 }

@@ -74,14 +74,10 @@ use pumpkin_protocol::java::server::play::{
     SUseItemOn, Status,
 };
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::math::{polynomial_rolling_hash, position::BlockPos, wrap_degrees};
+use pumpkin_util::math::{position::BlockPos, wrap_degrees};
 use pumpkin_util::{GameMode, text::TextComponent};
 use pumpkin_world::generation::structure::structures::jigsaw::JigsawJointType;
 use pumpkin_world::world::BlockFlags;
-
-/// In secure chat mode, Player will be kicked if they send a chat message with a timestamp that is older than this (in ms)
-/// Vanilla: 2 minutes
-const CHAT_MESSAGE_MAX_AGE: i64 = 1000 * 60 * 2;
 
 /// Bedrock move/rotate for another player's tracked entity. Client lerps, no delta packet needed.
 fn bedrock_move_player_packet(
@@ -245,7 +241,10 @@ pub mod bundle_item_selected;
 pub mod change_difficulty;
 pub mod change_game_mode;
 pub mod chat_ack;
+mod chat_admission;
+pub(crate) mod chat_chain;
 pub mod chat_command;
+pub(crate) mod chat_delivery;
 pub mod chat_message;
 pub mod chunk_batch;
 pub mod client_command;

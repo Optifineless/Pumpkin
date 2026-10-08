@@ -2,6 +2,7 @@ use arc_swap::ArcSwap;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::{net::IpAddr, net::SocketAddr};
+use subtle::ConstantTimeEq;
 use thiserror::Error;
 use tracing::warn;
 
@@ -14,6 +15,8 @@ const BUNGEEGUARD_TOKEN_PROPERTY: &str = "bungeeguard-token";
 
 #[derive(Error, Debug)]
 pub enum BungeeCordError {
+    #[error("BungeeCord forwarding requires a configured BungeeGuard secret")]
+    UnauthenticatedProxy,
     #[error("Failed to parse address")]
     FailedParseAddress,
     #[error("Failed to parse UUID")]
@@ -38,7 +41,7 @@ pub enum BungeeCordError {
 /// 2. UUID (if `ip_forward` is enabled on the `BungeeCord` server)
 /// 3. Game profile properties (if `ip_forward` and `online_mode` are enabled on the `BungeeCord` server)
 ///
-/// If a `secret` is configured, the properties must contain a property named
+/// A nonempty `secret` is required. The properties must contain a property named
 /// `bungeeguard-token` holding the secret, as injected by the `BungeeGuard`
 /// plugin. The token property is stripped from the profile, and a missing or
 /// mismatched token rejects the connection. This also blocks players
@@ -52,6 +55,10 @@ pub fn bungeecord_login(
     name: String,
     secret: &str,
 ) -> Result<(IpAddr, GameProfile), BungeeCordError> {
+    // Proxy-supplied profile/address reach PlayerList.canPlayerLogin only after authentication.
+    if secret.is_empty() {
+        return Err(BungeeCordError::UnauthenticatedProxy);
+    }
     let mut parts = server_address.split('\0');
 
     // Skip the first part (the actual server address/host)
@@ -91,7 +98,7 @@ pub fn bungeecord_login(
             .collect();
 
         match token_props.as_slice() {
-            [token] if token.value.as_ref() == secret => {
+            [token] if bool::from(token.value.as_bytes().ct_eq(secret.as_bytes())) => {
                 properties.retain(|property| property.name.as_ref() != BUNGEEGUARD_TOKEN_PROPERTY);
             }
             [] => {
@@ -158,7 +165,7 @@ mod tests {
         let signature = "s".repeat(684);
         let address = format!(
             "mc.example.com\0192.0.2.10\0d8f4a1e0-0f1b-4c3a-9f2e-1a2b3c4d5e6f\0\
-             [{{\"name\":\"textures\",\"value\":\"{textures}\",\"signature\":\"{signature}\"}}]"
+             [{{\"name\":\"textures\",\"value\":\"{textures}\",\"signature\":\"{signature}\"}},{{\"name\":\"bungeeguard-token\",\"value\":\"{SECRET}\"}}]"
         );
 
         let mut buf = Vec::new();
@@ -177,7 +184,7 @@ mod tests {
             &client_address,
             &handshake.server_address,
             "Steve".to_string(),
-            "",
+            SECRET,
         )
         .expect("the forwarded address should produce a game profile");
 
@@ -288,14 +295,11 @@ mod tests {
     }
 
     #[test]
-    fn ignores_token_when_no_secret_is_configured() {
+    fn rejects_unsigned_forwarding_without_a_secret() {
         let address = forwarded_address(&properties_array(&[&token_property(SECRET)]));
 
         let result = bungeecord_login(&client_address(), &address, "Steve".to_string(), "");
 
-        assert!(
-            result.is_ok(),
-            "an unconfigured secret must not reject logins"
-        );
+        assert!(matches!(result, Err(BungeeCordError::UnauthenticatedProxy)));
     }
 }

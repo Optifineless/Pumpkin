@@ -67,13 +67,12 @@ impl BedrockClient {
             ))
         })?; // You'll need to add a string conversion error to LoginError, or handle it cleanly.
 
-        let mut parts = raw_token_str.split('.');
-        let _header = parts.next().ok_or(AuthError::InvalidTokenFormat)?;
-        let payload_b64 = parts.next().ok_or(AuthError::InvalidTokenFormat)?;
-
-        let payload_bytes = pumpkin_auth::jwt::decode_b64_url_nopad(payload_b64)
-            .map_err(|_| LoginError::DecodeExtraError)?;
-        let client_data: ClientData = serde_json::from_slice(&payload_bytes)?;
+        let login_public_key = pumpkin_auth::jwt::extract_cpk_from_token(&auth_payload.token)
+            .map_err(LoginError::ChainValidationFailed)?;
+        let client_data: ClientData = serde_json::from_value(
+            pumpkin_auth::jwt::verify_client_token(raw_token_str, &login_public_key)
+                .map_err(LoginError::ChainValidationFailed)?,
+        )?;
 
         let bedrock_config = &server.advanced_config.networking.bedrock;
         let name = build_username(
@@ -89,8 +88,6 @@ impl BedrockClient {
             profile_actions: None,
         };
 
-        let login_public_key = pumpkin_auth::jwt::extract_cpk_from_token(&auth_payload.token)
-            .map_err(LoginError::ChainValidationFailed)?;
         if self
             .nethernet_public_key()
             .is_some_and(|public_key| public_key != &login_public_key)

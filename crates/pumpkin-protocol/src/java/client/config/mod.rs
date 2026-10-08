@@ -39,3 +39,6 @@ pub use show_dialog::*;
 pub use store_cookie::*;
 pub use transfer::*;
 pub use update_tags::*;
+
+mod keep_alive;
+pub use keep_alive::*;

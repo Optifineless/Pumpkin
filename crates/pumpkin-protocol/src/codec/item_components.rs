@@ -46,9 +46,9 @@ impl DataComponentCodec<Self> for ChargedProjectilesImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let count = seq.get_var_int()?.0;
         if !(0..=MAX_SIZE).contains(&count) {
-            return Err(ReadingError::Message("Too many charged projectiles".into()));
+            return Err(ReadingError::TooLarge("Charged projectiles".into()));
         }
-        let mut projectiles = Vec::with_capacity(count as usize);
+        let mut projectiles = Vec::with_capacity(crate::ser::collection_capacity(count)?);
         for _ in 0..count {
             let stack = ItemStackSerializer::read_template_with_version(
                 seq,

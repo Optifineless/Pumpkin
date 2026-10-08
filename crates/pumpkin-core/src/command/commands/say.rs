@@ -2,7 +2,6 @@ use pumpkin_data::world::SAY_COMMAND;
 use pumpkin_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};
-use crate::command::argument_types::core::string::StringArgumentType;
 use crate::command::context::command_context::CommandContext;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
@@ -20,6 +19,20 @@ struct Executor;
 impl CommandExecutor for Executor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let msg = context.get_argument::<String>(ARG_MESSAGE)?;
+
+        // SayCommand.register resolves MessageArgument from the source's signing context.
+        if let Some(message) = context.source.signing_context.get(ARG_MESSAGE) {
+            for recipient in context.server().get_all_players() {
+                crate::net::java::JavaClient::send_command_chat(
+                    &recipient,
+                    message,
+                    (SAY_COMMAND + 1).into(),
+                    &context.source.display_name,
+                    None,
+                );
+            }
+            return Ok(1);
+        }
 
         context.server().broadcast_message(
             &TextComponent::text(msg.clone()),
@@ -39,8 +52,12 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
         PermissionDefault::Op(PermissionLvl::Two),
     ));
     dispatcher.register(
-        command(NAME, DESCRIPTION)
-            .requires(PERMISSION)
-            .then(argument(ARG_MESSAGE, StringArgumentType::GreedyPhrase).executes(Executor)),
+        command(NAME, DESCRIPTION).requires(PERMISSION).then(
+            argument(
+                ARG_MESSAGE,
+                crate::net::java::signed_commands::MessageArgument,
+            )
+            .executes(Executor),
+        ),
     );
 }

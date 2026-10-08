@@ -25,6 +25,13 @@ impl PendingConnection {
         encryption_response: SEncryptionResponse,
     ) -> Option<PacketHandlerResult> {
         debug!("Handling encryption");
+        // ServerLoginPacketListenerImpl.handleKey accepts only the outstanding challenge.
+        if self.login_state != super::state::LoginState::Key {
+            self.kick(TextComponent::text("Unexpected encryption response"))
+                .await;
+            return Some(PacketHandlerResult::Stop);
+        }
+        self.login_state = super::state::LoginState::Authenticating;
         if let Err(error) = self
             .verify_encryption_token(server, &encryption_response.verify_token)
             .await
@@ -50,16 +57,38 @@ impl PendingConnection {
         }
 
         let profile_name = {
-            let Some(profile) = self.gameprofile.as_ref() else {
+            let Some(name) = self.requested_username.as_ref() else {
                 self.kick(TextComponent::text("No `GameProfile`")).await;
                 return Some(PacketHandlerResult::Stop);
             };
-            profile.name.clone()
+            name.clone()
         };
 
+        if let Some(result) = self
+            .authenticate_login(server, &shared_secret, profile_name)
+            .await
+        {
+            return Some(result);
+        }
+        self.login_state = super::state::LoginState::Verifying;
+
+        let Some(profile) = self.gameprofile.clone() else {
+            return Some(PacketHandlerResult::Stop);
+        };
+
+        self.finish_login(server, &profile).await
+    }
+
+    // ServerLoginPacketListenerImpl.handleKey's authenticator publishes only verified profiles.
+    async fn authenticate_login(
+        &mut self,
+        server: &Arc<Server>,
+        shared_secret: &[u8],
+        profile_name: String,
+    ) -> Option<PacketHandlerResult> {
         if server.advanced_config.networking.java.online_mode {
             match self
-                .authenticate(server, &shared_secret, &profile_name)
+                .authenticate(server, shared_secret, &profile_name)
                 .await
             {
                 Ok(new_profile) => self.gameprofile = Some(new_profile),
@@ -81,41 +110,18 @@ impl PendingConnection {
                     return Some(PacketHandlerResult::Stop);
                 }
             }
+        } else {
+            let Ok(id) = offline_uuid(&profile_name) else {
+                return Some(PacketHandlerResult::Stop);
+            };
+            self.gameprofile = Some(GameProfile {
+                id,
+                name: profile_name,
+                properties: ArcSwap::from_pointee(vec![]),
+                profile_actions: None,
+            });
         }
-
-        let Some(profile) = self.gameprofile.clone() else {
-            return Some(PacketHandlerResult::Stop);
-        };
-
-        if let Some(online_player) = &server.get_player_by_uuid(profile.id) {
-            debug!(
-                "Player (IP '{}', username '{}') tried to log in with the same UUID ('{}') as an online player (username '{}')",
-                &self.address, &profile.name, &profile.id, &online_player.gameprofile.name
-            );
-            self.kick(TextComponent::translate_cross(
-                translation::java::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN,
-                translation::bedrock::DISCONNECTIONSCREEN_LOGGEDINOTHERLOCATION,
-                [],
-            ))
-            .await;
-            return Some(PacketHandlerResult::Stop);
-        }
-
-        if let Some(online_player) = &server.get_player_by_name(&profile.name) {
-            debug!(
-                "A player (IP '{}', attempted username '{}') tried to log in with the same username as an online player (UUID '{}', username '{}')",
-                &self.address, &profile.name, &profile.id, &online_player.gameprofile.name
-            );
-            self.kick(TextComponent::translate_cross(
-                translation::java::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN,
-                translation::bedrock::DISCONNECTIONSCREEN_LOGGEDINOTHERLOCATION,
-                [],
-            ))
-            .await;
-            return Some(PacketHandlerResult::Stop);
-        }
-
-        self.finish_login(server, &profile).await
+        None
     }
 
     pub(super) async fn enable_compression(&mut self, server: &Server) {
@@ -126,11 +132,16 @@ impl PendingConnection {
             .compression
             .info
             .clone();
-        self.send_packet_now(&CSetCompression::new(
-            pumpkin_protocol::codec::var_int::VarInt(compression.threshold as i32),
-        ))
-        .await;
-        self.set_compression(&compression);
+        // ServerLoginPacketListenerImpl.verifyLoginAndFinishConnectionSetup switches
+        // codecs only after the compression packet has been sent.
+        if self
+            .send_packet_now(&CSetCompression::new(
+                pumpkin_protocol::codec::var_int::VarInt(compression.threshold as i32),
+            ))
+            .await
+        {
+            self.set_compression(&compression);
+        }
     }
 
     pub(super) async fn finish_login(
@@ -138,6 +149,16 @@ impl PendingConnection {
         server: &Arc<Server>,
         profile: &GameProfile,
     ) -> Option<PacketHandlerResult> {
+        if !matches!(
+            self.login_state,
+            super::state::LoginState::Verifying | super::state::LoginState::Proxy
+        ) {
+            self.kick(TextComponent::text("Unexpected login completion"))
+                .await;
+            return Some(PacketHandlerResult::Stop);
+        }
+        self.login_state = super::state::LoginState::Verifying;
+        self.gameprofile = Some(profile.clone());
         let mut pre_login_event =
             crate::plugin::api::events::player::async_player_pre_login::AsyncPlayerPreLoginEvent {
                 player_name: profile.name.clone(),
@@ -155,7 +176,10 @@ impl PendingConnection {
             return Some(PacketHandlerResult::Stop);
         }
 
-        let props = profile.properties.load();
+        let props = profile.properties.load_full();
+        if server.advanced_config.networking.java.compression.enabled {
+            self.enable_compression(server).await;
+        }
         let packet = CLoginSuccess::new(
             &profile.id,
             &profile.name,
@@ -163,7 +187,9 @@ impl PendingConnection {
             false,
             uuid::Uuid::new_v4(),
         );
-        self.send_packet_now(&packet).await;
+        if self.send_packet_now(&packet).await {
+            self.login_state = super::state::LoginState::ProtocolSwitching;
+        }
         None
     }
 

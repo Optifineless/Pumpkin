@@ -72,7 +72,8 @@ fn deserialize_idset<T: IDSetContent>(
                     "Too many registry holders in IDSet".into(),
                 ));
             }
-            let mut content_vec = Vec::with_capacity(len as usize);
+            let mut content_vec =
+                Vec::with_capacity(crate::ser::collection_capacity(len as usize)?);
 
             for _ in 0..len {
                 let varint_id = seq.get_var_int()?.0;
@@ -118,7 +119,7 @@ fn deserialize_status_effects(
     if effects_len > MAX_STATUS_EFFECTS {
         return Err(ReadingError::Message("Too many status effects".into()));
     }
-    let mut custom_effects = Vec::with_capacity(effects_len);
+    let mut custom_effects = Vec::with_capacity(crate::ser::collection_capacity(effects_len)?);
     for _ in 0..effects_len {
         let effect_registry_id = seq.get_var_int()?.0;
         let effect_name = StatusEffect::from_id(effect_registry_id as u16)
@@ -299,7 +300,7 @@ impl DataComponentCodec<Self> for EnchantmentsImpl {
         if len > MAX_ENCHANTMENTS {
             return Err(ReadingError::Message("Too many enchantments".into()));
         }
-        let mut enc = Vec::with_capacity(len);
+        let mut enc = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for _ in 0..len {
             let id = seq.get_var_int()?.0 as u8;
             let level = seq.get_var_int()?.0;
@@ -380,7 +381,7 @@ impl DataComponentCodec<Self> for LoreImpl {
             )));
         }
 
-        let mut lines = Vec::with_capacity(count as usize);
+        let mut lines = Vec::with_capacity(crate::ser::collection_capacity(count as usize)?);
         for _ in 0..count {
             let tag =
                 seq.get_nbt_with_version(&pumpkin_util::version::JavaMinecraftVersion::V_26_2)?;
@@ -454,6 +455,7 @@ impl DataComponentCodec<Self> for SuspiciousStewEffectsImpl {
             Vec::with_capacity(usize::try_from(count).map_err(|_| {
                 ReadingError::Message("Invalid suspicious stew effect count".into())
             })?);
+        let _ = crate::ser::collection_capacity(count)?;
         for _ in 0..count {
             let id = u16::try_from(seq.get_var_int()?.0)
                 .map_err(|_| ReadingError::Message("Invalid suspicious stew effect id".into()))?;
@@ -536,7 +538,8 @@ impl DataComponentCodec<Self> for ConsumableImpl {
             return Err(ReadingError::Message("Invalid consume effect count".into()));
         }
 
-        let mut effects_vec = Vec::with_capacity(effects_len as usize);
+        let mut effects_vec =
+            Vec::with_capacity(crate::ser::collection_capacity(effects_len as usize)?);
 
         for _ in 0..effects_len {
             effects_vec.push(deserialize_consume_effect(seq)?);
@@ -727,6 +730,8 @@ fn skip_effect_parameters(seq: &mut impl NetworkReadExt) -> Result<(), ReadingEr
     const MAX_EFFECT_DEPTH: usize = 32;
     let mut depth = 0;
     loop {
+        // MobEffectInstance.Details.STREAM_CODEC also contributes its hidden nodes to packet work.
+        crate::ser::decode_budget::charge_collection_work(1)?;
         // amplifier
         seq.get_var_int()?;
         // duration
@@ -792,7 +797,7 @@ impl DataComponentCodec<Self> for FireworkExplosionImpl {
                 "FireworkExplosionImpl colors_len {colors_len} exceeds maximum of {MAX_COLORS}"
             )));
         }
-        let mut colors = Vec::with_capacity(colors_len);
+        let mut colors = Vec::with_capacity(crate::ser::collection_capacity(colors_len)?);
         for _ in 0..colors_len {
             let color = seq.get_i32()?;
             colors.push(color);
@@ -805,7 +810,7 @@ impl DataComponentCodec<Self> for FireworkExplosionImpl {
                 "FireworkExplosionImpl fade_colors_len {fade_colors_len} exceeds maximum of {MAX_FADE_COLORS}"
             )));
         }
-        let mut fade_colors = Vec::with_capacity(fade_colors_len);
+        let mut fade_colors = Vec::with_capacity(crate::ser::collection_capacity(fade_colors_len)?);
         for _ in 0..fade_colors_len {
             let color = seq.get_i32()?;
             fade_colors.push(color);
@@ -861,7 +866,7 @@ impl DataComponentCodec<Self> for FireworksImpl {
                 "FireworksImpl explosions_len {explosions_len} exceeds maximum of {MAX_EXPLOSIONS}"
             )));
         }
-        let mut explosions = Vec::with_capacity(explosions_len);
+        let mut explosions = Vec::with_capacity(crate::ser::collection_capacity(explosions_len)?);
         for _ in 0..explosions_len {
             // Recursively deserialize each explosion
             let explosion = FireworkExplosionImpl::deserialize(seq)?;
@@ -891,7 +896,7 @@ impl DataComponentCodec<Self> for StoredEnchantmentsImpl {
             return Err(ReadingError::Message("Too many enchantments".into()));
         }
 
-        let mut stored_enchantments = Vec::with_capacity(len);
+        let mut stored_enchantments = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for _ in 0..len {
             let id = seq.get_var_int()?.0 as u8;
             let level = seq.get_var_int()?.0;
@@ -957,6 +962,7 @@ pub fn deserialize(
     id: DataComponent,
     seq: &mut impl NetworkReadExt,
 ) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
+    let _scope = crate::ser::decode_budget::DecodeScope::component()?;
     match id {
         DataComponent::CustomData => Ok(CustomDataImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MaxStackSize => Ok(MaxStackSizeImpl::deserialize(seq)?.to_dyn()),
@@ -1285,54 +1291,12 @@ impl DataComponentCodec<Self> for UseCooldownImpl {
 fn deserialize_item_stack_template(
     seq: &mut impl NetworkReadExt,
 ) -> Result<pumpkin_data::item_stack::ItemStack, ReadingError> {
-    const MAX_COMPONENTS: i32 = 256;
-
-    let item_id = seq.get_var_int()?.0 as u16;
-
-    let count = seq.get_var_int()?.0 as u8;
-
-    let num_to_add = seq.get_var_int()?.0;
-    let num_to_remove = seq.get_var_int()?.0;
-
-    if num_to_add < 0 || num_to_remove < 0 {
-        return Err(ReadingError::Message("Negative component count".into()));
-    }
-
-    let total_components = num_to_add
-        .checked_add(num_to_remove)
-        .ok_or_else(|| ReadingError::Message("Component count overflow".into()))?;
-
-    if total_components > MAX_COMPONENTS {
-        return Err(ReadingError::Message(
-            "Too many components in ItemStackTemplate patch".into(),
-        ));
-    }
-
-    let mut patch = Vec::with_capacity((num_to_add + num_to_remove) as usize);
-
-    for _ in 0..num_to_add {
-        let id_val = seq.get_var_int()?.0;
-        let id = DataComponent::try_from_id(id_val as u8)
-            .ok_or_else(|| ReadingError::Message(format!("Unknown component ID: {id_val}")))?;
-
-        let _byte_len = seq.get_var_int()?;
-
-        let component_impl = deserialize(id, seq)?;
-        patch.push((id, Some(component_impl)));
-    }
-
-    for _ in 0..num_to_remove {
-        let id_val = seq.get_var_int()?.0;
-        let id = DataComponent::try_from_id(id_val as u8)
-            .ok_or_else(|| ReadingError::Message("Unknown component ID".into()))?;
-        patch.push((id, None));
-    }
-
-    Ok(pumpkin_data::item_stack::ItemStack::new_with_component(
-        count,
-        pumpkin_data::item::Item::from_id(item_id).unwrap_or(&pumpkin_data::item::Item::AIR),
-        patch,
-    ))
+    // ItemStackTemplate.STREAM_CODEC uses the plain DataComponentPatch codec, without lengths.
+    crate::codec::item_stack_seralizer::ItemStackSerializer::read_template0(
+        seq,
+        &JavaMinecraftVersion::V_26_3,
+    )
+    .map(crate::codec::item_stack_seralizer::ItemStackSerializer::to_stack)
 }
 
 fn serialize_item_stack_template(
@@ -1381,17 +1345,9 @@ impl DataComponentCodec<Self> for BundleContentsImpl {
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        const MAX_BUNDLE_ITEMS: usize = 64;
-
+        // BundleContents.STREAM_CODEC uses an unbounded ByteBufCodecs.list.
         let len = seq.get_var_int()?.0 as usize;
-
-        if len > MAX_BUNDLE_ITEMS {
-            return Err(ReadingError::Message(
-                "Too many items in BundleContents".into(),
-            ));
-        }
-
-        let mut items = Vec::with_capacity(len);
+        let mut items = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for _ in 0..len {
             items.push(deserialize_item_stack_template(seq)?);
         }
@@ -1503,6 +1459,7 @@ impl DataComponentCodec<Self> for CanPlaceOnImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let count = seq.get_var_int()?.0;
+        let _ = crate::ser::collection_capacity(count)?;
         for _ in 0..count {
             let has_blocks = seq.get_bool()?;
             if has_blocks {
@@ -1510,6 +1467,7 @@ impl DataComponentCodec<Self> for CanPlaceOnImpl {
                 if id_type == 0 {
                     let _ = seq.get_str()?;
                 } else if id_type > 0 {
+                    let _ = crate::ser::collection_capacity(id_type - 1)?;
                     for _ in 0..(id_type - 1) {
                         let _ = seq.get_var_int()?;
                     }
@@ -1518,6 +1476,7 @@ impl DataComponentCodec<Self> for CanPlaceOnImpl {
             let has_props = seq.get_bool()?;
             if has_props {
                 let props_len = seq.get_var_int()?.0;
+                let _ = crate::ser::collection_capacity(props_len)?;
                 for _ in 0..props_len {
                     let _ = seq.get_str()?;
                     let is_exact = seq.get_bool()?;
@@ -1538,6 +1497,7 @@ impl DataComponentCodec<Self> for CanPlaceOnImpl {
                 let _ = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_2)?;
             }
             let exact_len = seq.get_var_int()?.0;
+            let _ = crate::ser::collection_capacity(exact_len)?;
             for _ in 0..exact_len {
                 let comp_id = seq.get_var_int()?.0 as u8;
                 if let Some(comp) = DataComponent::try_from_id(comp_id) {
@@ -1545,6 +1505,7 @@ impl DataComponentCodec<Self> for CanPlaceOnImpl {
                 }
             }
             let partial_len = seq.get_var_int()?.0;
+            let _ = crate::ser::collection_capacity(partial_len)?;
             for _ in 0..partial_len {
                 let _ = seq.get_var_int()?;
             }
@@ -1562,6 +1523,7 @@ impl DataComponentCodec<Self> for CanBreakImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let count = seq.get_var_int()?.0;
+        let _ = crate::ser::collection_capacity(count)?;
         for _ in 0..count {
             let has_blocks = seq.get_bool()?;
             if has_blocks {
@@ -1569,6 +1531,7 @@ impl DataComponentCodec<Self> for CanBreakImpl {
                 if id_type == 0 {
                     let _ = seq.get_str()?;
                 } else if id_type > 0 {
+                    let _ = crate::ser::collection_capacity(id_type - 1)?;
                     for _ in 0..(id_type - 1) {
                         let _ = seq.get_var_int()?;
                     }
@@ -1577,6 +1540,7 @@ impl DataComponentCodec<Self> for CanBreakImpl {
             let has_props = seq.get_bool()?;
             if has_props {
                 let props_len = seq.get_var_int()?.0;
+                let _ = crate::ser::collection_capacity(props_len)?;
                 for _ in 0..props_len {
                     let _ = seq.get_str()?;
                     let is_exact = seq.get_bool()?;
@@ -1597,6 +1561,7 @@ impl DataComponentCodec<Self> for CanBreakImpl {
                 let _ = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_2)?;
             }
             let exact_len = seq.get_var_int()?.0;
+            let _ = crate::ser::collection_capacity(exact_len)?;
             for _ in 0..exact_len {
                 let comp_id = seq.get_var_int()?.0 as u8;
                 if let Some(comp) = DataComponent::try_from_id(comp_id) {
@@ -1604,6 +1569,7 @@ impl DataComponentCodec<Self> for CanBreakImpl {
                 }
             }
             let partial_len = seq.get_var_int()?.0;
+            let _ = crate::ser::collection_capacity(partial_len)?;
             for _ in 0..partial_len {
                 let _ = seq.get_var_int()?;
             }
@@ -1643,6 +1609,7 @@ impl DataComponentCodec<Self> for AttributeModifiersImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let len = seq.get_var_int()?.0 as usize;
+        let _ = crate::ser::collection_capacity(len)?;
         for _ in 0..len {
             let _attr_id = seq.get_var_int()?;
             let _id = seq.get_str()?;
@@ -1683,22 +1650,22 @@ impl DataComponentCodec<Self> for CustomModelDataImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let floats_len = seq.get_var_int()?.0 as usize;
-        let mut floats = Vec::with_capacity(floats_len);
+        let mut floats = Vec::with_capacity(crate::ser::collection_capacity(floats_len)?);
         for _ in 0..floats_len {
             floats.push(seq.get_f32()?);
         }
         let flags_len = seq.get_var_int()?.0 as usize;
-        let mut flags = Vec::with_capacity(flags_len);
+        let mut flags = Vec::with_capacity(crate::ser::collection_capacity(flags_len)?);
         for _ in 0..flags_len {
             flags.push(seq.get_bool()?);
         }
         let strings_len = seq.get_var_int()?.0 as usize;
-        let mut strings = Vec::with_capacity(strings_len);
+        let mut strings = Vec::with_capacity(crate::ser::collection_capacity(strings_len)?);
         for _ in 0..strings_len {
             strings.push(seq.get_str()?.to_string());
         }
         let colors_len = seq.get_var_int()?.0 as usize;
-        let mut colors = Vec::with_capacity(colors_len);
+        let mut colors = Vec::with_capacity(crate::ser::collection_capacity(colors_len)?);
         for _ in 0..colors_len {
             colors.push(seq.get_i32()?);
         }
@@ -1720,6 +1687,7 @@ impl DataComponentCodec<Self> for TooltipDisplayImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let _hide_tooltip = seq.get_bool()?;
         let len = seq.get_var_int()?.0 as usize;
+        let _ = crate::ser::collection_capacity(len)?;
         for _ in 0..len {
             let _comp_id = seq.get_var_int()?;
         }
@@ -1815,7 +1783,7 @@ impl DataComponentCodec<Self> for ToolImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let rules_len = seq.get_var_int()?.0 as usize;
-        let mut rules = Vec::with_capacity(rules_len);
+        let mut rules = Vec::with_capacity(crate::ser::collection_capacity(rules_len)?);
         for _ in 0..rules_len {
             let blocks = deserialize_idset(seq)?;
             let speed = if seq.get_bool()? {
@@ -2283,6 +2251,7 @@ impl DataComponentCodec<Self> for ProvidesBannerPatternsImpl {
         if id_type == 0 {
             let _ = seq.get_str()?;
         } else if id_type > 0 {
+            let _ = crate::ser::collection_capacity(id_type - 1)?;
             for _ in 0..(id_type - 1) {
                 let _ = seq.get_var_int()?;
             }
@@ -2422,6 +2391,7 @@ impl DataComponentCodec<Self> for ProfileImpl {
             }
         }
         let props_len = seq.get_var_int()?.0 as usize;
+        let _ = crate::ser::collection_capacity(props_len)?;
         for _ in 0..props_len {
             let prop_name = seq.get_str()?.to_string();
             let prop_value = seq.get_str()?.to_string();
@@ -2492,7 +2462,7 @@ impl DataComponentCodec<Self> for BannerPatternsImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let len = seq.get_var_int()?.0 as usize;
-        let mut layers = Vec::with_capacity(len);
+        let mut layers = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for _ in 0..len {
             let _pattern = seq.get_var_int()?.0;
             let color_id = seq.get_var_int()?.0 as u8;
@@ -2529,6 +2499,7 @@ impl DataComponentCodec<Self> for PotDecorationsImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let len = seq.get_var_int()?.0 as usize;
+        let _ = crate::ser::collection_capacity(len)?;
         for _ in 0..len {
             let _ = seq.get_var_int()?;
         }
@@ -2547,8 +2518,13 @@ impl DataComponentCodec<Self> for ContainerImpl {
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        // ItemContainerContents.STREAM_CODEC / MAX_SIZE.
+        const MAX_SIZE: usize = 256;
         let len = seq.get_var_int()?.0 as usize;
-        let mut items = Vec::with_capacity(len);
+        if len > MAX_SIZE {
+            return Err(ReadingError::TooLarge("Component list".into()));
+        }
+        let mut items = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for slot in 0..len {
             if seq.get_bool()? {
                 let stack = deserialize_item_stack_template(seq)?;
@@ -2571,7 +2547,7 @@ impl DataComponentCodec<Self> for BlockStateImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let len = seq.get_var_int()?.0 as usize;
-        let mut properties = Vec::with_capacity(len);
+        let mut properties = Vec::with_capacity(crate::ser::collection_capacity(len)?);
         for _ in 0..len {
             let k = seq.get_str()?.to_string();
             let v = seq.get_str()?.to_string();
@@ -2590,6 +2566,7 @@ impl DataComponentCodec<Self> for BeesImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let len = seq.get_var_int()?.0 as usize;
+        let _ = crate::ser::collection_capacity(len)?;
         for _ in 0..len {
             let _entity_type = seq.get_var_int()?;
             let _nbt = seq.get_nbt_with_version(&JavaMinecraftVersion::V_26_2)?;

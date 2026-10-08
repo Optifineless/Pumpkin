@@ -29,6 +29,5 @@ impl PendingConnection {
             }
         }
         self.send_packet_now(&CUpdateTags::new(&tags)).await;
-        self.send_packet_now(&CFinishConfig).await;
     }
 }

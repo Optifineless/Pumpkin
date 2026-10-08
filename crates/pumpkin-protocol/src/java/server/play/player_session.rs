@@ -23,7 +23,8 @@ impl<'a> ServerPacket<'a> for SPlayerSession {
 
         let public_key_length = usize::try_from(read.get_var_int()?.0)
             .map_err(|_| ReadingError::Message("Negative public key length".into()))?;
-        if public_key_length > 2048 {
+        // ByteBufCodecs.PUBLIC_KEY uses MAX_PUBLIC_KEY_LENGTH, including the DER header.
+        if public_key_length > 512 {
             return Err(ReadingError::TooLarge("Public key too long".into()));
         }
         let mut public_key = vec![0u8; public_key_length];

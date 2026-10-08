@@ -26,10 +26,15 @@ pub struct SChatCommandSigned<'a> {
 
 impl<'a> ServerPacket<'a> for SChatCommandSigned<'a> {
     fn read(read: &mut &'a [u8], version: &JavaMinecraftVersion) -> Result<Self, ReadingError> {
+        // ArgumentSignatures.STREAM_CODEC bounds the list to eight entries.
+        const MAX_ARGUMENT_COUNT: usize = 8;
         let command = read.get_str_bounded_borrowed(256)?;
         let timestamp = read.get_i64_be()?;
         let salt = read.get_i64_be()?;
         let arg_count = read.get_var_int()?.0 as usize;
+        if arg_count > MAX_ARGUMENT_COUNT {
+            return Err(ReadingError::TooLarge("Argument signatures".into()));
+        }
         let mut argument_signatures = Vec::with_capacity(arg_count);
         for _ in 0..arg_count {
             let name = read.get_str_bounded_borrowed(16)?;
@@ -76,5 +81,30 @@ impl ClientPacket for SChatCommandSigned<'_> {
             write.write_u8(self.checksum)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn argument_signature_count_is_bounded_before_allocation() {
+        let mut eight = vec![0; 17]; // Empty command, timestamp and salt.
+        eight.push(8);
+        for _ in 0..8 {
+            eight.push(0); // Empty argument name followed by the fixed signature.
+            eight.extend_from_slice(&[0; 256]);
+        }
+        eight.extend_from_slice(&[0; 5]); // Offset, twenty acknowledgement bits, checksum.
+        assert!(
+            SChatCommandSigned::read(&mut eight.as_slice(), &JavaMinecraftVersion::V_26_3).is_ok()
+        );
+        let mut nine = [0; 18];
+        nine[17] = 9;
+        assert!(matches!(
+            SChatCommandSigned::read(&mut nine.as_slice(), &JavaMinecraftVersion::V_26_3),
+            Err(ReadingError::TooLarge(_))
+        ));
     }
 }

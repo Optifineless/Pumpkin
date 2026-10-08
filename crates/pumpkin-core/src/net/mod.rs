@@ -23,12 +23,11 @@ use pumpkin_util::{
     version::{BedrockMinecraftVersion, JavaMinecraftVersion},
 };
 use serde::{Deserialize, Deserializer};
-use sha1::Digest;
-use sha2::Sha256;
 use tokio::task::JoinHandle;
 
 use thiserror::Error;
 use uuid::Uuid;
+pub mod admission;
 pub mod authentication;
 pub mod bedrock;
 pub mod chat;
@@ -41,6 +40,7 @@ pub use packet_limiter::PacketRateLimiter;
 pub mod management;
 mod proxy;
 pub mod query;
+mod query_challenge;
 
 #[derive(Deserialize, Debug)]
 pub struct GameProfile {
@@ -72,7 +72,11 @@ where
 }
 
 pub fn offline_uuid(username: &str) -> Result<Uuid, uuid::Error> {
-    Uuid::from_slice(&Sha256::digest(username)[..16])
+    // UUIDUtil.createOfflinePlayerUUID / Java UUID.nameUUIDFromBytes (no namespace bytes).
+    let mut digest = *md5::compute(format!("OfflinePlayer:{username}").as_bytes());
+    digest[6] = (digest[6] & 0x0f) | 0x30;
+    digest[8] = (digest[8] & 0x3f) | 0x80;
+    Ok(Uuid::from_bytes(digest))
 }
 
 /// Represents a player's configuration settings.
@@ -338,7 +342,7 @@ impl ClientPlatform {
     }
 }
 
-pub async fn can_not_join(
+pub fn can_not_join(
     profile: &GameProfile,
     address: &SocketAddr,
     server: &Server,
@@ -416,6 +420,12 @@ pub async fn can_not_join(
         });
     }
 
+    if server.get_player_by_uuid(profile.id).is_some() {
+        return Some(TextComponent::translate(
+            "multiplayer.disconnect.duplicate_login",
+            [],
+        ));
+    }
     None
 }
 
@@ -434,10 +444,8 @@ pub enum EncryptionError {
 }
 
 fn is_valid_player_name(name: &str) -> bool {
-    if name.len() > 16 {
-        return false;
-    }
-    !name.chars().any(|c| c.is_control() || c == ' ')
+    // StringUtil.isValidPlayerName: printable ASCII 33..126, at most sixteen characters.
+    name.len() <= 16 && name.bytes().all(|c| (33..127).contains(&c))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -596,6 +604,16 @@ pub enum DisconnectReason {
 mod tests {
     use crate::net::is_valid_player_name;
 
+    #[test]
+    fn offline_uuid_matches_independent_java_vectors() {
+        for (name, expected) in [
+            ("Notch", "b50ad385-829d-3141-a216-7e7d7539ba7f"),
+            ("Steve", "5627dd98-e6be-3c21-b8a8-e92344183641"),
+        ] {
+            assert_eq!(super::offline_uuid(name).unwrap().to_string(), expected);
+        }
+    }
+
     /// Test case for a standard, valid English name at max length.
     #[test]
     fn valid_max_length_ascii() {
@@ -626,23 +644,23 @@ mod tests {
         );
     }
 
-    /// Test case for allowed high-codepoint Unicode characters (like Chinese/CJK).
+    /// Vanilla rejects names outside printable ASCII.
     #[test]
-    fn valid_unicode_chinese() {
+    fn rejects_unicode_chinese() {
         let name = "玩家一号"; // 4 characters, 12 bytes
         assert!(
-            is_valid_player_name(name),
-            "Chinese characters should be valid"
+            !is_valid_player_name(name),
+            "Chinese characters are outside vanilla's printable ASCII range"
         );
     }
 
     /// Test case for a mix of valid ASCII and Unicode characters.
     #[test]
-    fn valid_mixed_chars() {
+    fn rejects_mixed_chars() {
         let name = "Player_玩家"; // 9 characters
         assert!(
-            is_valid_player_name(name),
-            "Mixed ASCII and Unicode should be valid"
+            !is_valid_player_name(name),
+            "Mixed ASCII and Unicode is outside vanilla's printable ASCII range"
         );
     }
 

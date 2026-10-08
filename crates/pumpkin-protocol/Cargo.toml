@@ -22,7 +22,7 @@ cesu8.workspace = true
 
 uuid.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["io-util", "sync"] }
+tokio = { workspace = true, features = ["io-util", "sync", "time"] }
 bytes.workspace = true
 
 # encryption
@@ -38,7 +38,7 @@ bitflags.workspace = true
 base64.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 # Validate correctness
 
 [lints]

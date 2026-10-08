@@ -48,6 +48,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
     let dimensions = vec![Dimension::OVERWORLD];
     let server = Server {
         _session_lock: session_lock,
+        admission_reservations: Arc::default(),
         basic_config,
         advanced_config,
         telemetry_config,

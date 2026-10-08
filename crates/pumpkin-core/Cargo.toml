@@ -29,6 +29,7 @@ pumpkin-gametest = { path = "../pumpkin-gametest" }
 dashmap.workspace = true
 crossbeam.workspace = true
 uuid.workspace = true
+md5.workspace = true
 tokio = { workspace = true, features = [
     "macros",
     "net",

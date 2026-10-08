@@ -15,3 +15,6 @@ pub mod var_uint;
 pub mod var_ulong;
 
 pub use u24_type::u24;
+
+#[cfg(test)]
+mod item_decode_tests;

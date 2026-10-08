@@ -1,9 +1,7 @@
 use std::{
-    collections::HashMap,
     ffi::{CString, NulError},
     net::SocketAddr,
     sync::{Arc, atomic::Ordering},
-    time::Duration,
 };
 
 use pumpkin_protocol::query::{
@@ -11,31 +9,27 @@ use pumpkin_protocol::query::{
 };
 use pumpkin_util::text::{TextComponent, color::NamedColor};
 use pumpkin_world::CURRENT_MC_VERSION;
-use rand::RngExt;
-use tokio::{net::UdpSocket, sync::RwLock, time};
+use tokio::net::UdpSocket;
 use tracing::{error, info};
 
 use crate::{SHOULD_STOP, STOP_INTERRUPT, server::Server};
+
+const PLUGIN_METADATA_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub async fn start_query_handler(server: Arc<Server>, query_addr: SocketAddr) {
     let Ok(socket) = UdpSocket::bind(query_addr).await else {
         error!("Unable to bind query UDP socket");
         return;
     };
-    let socket = Arc::new(socket);
 
     // Challenge tokens are bound to the IP address and port
-    let valid_challenge_tokens = Arc::new(RwLock::new(HashMap::new()));
-    let valid_challenge_tokens_clone = valid_challenge_tokens.clone();
-    // All challenge tokens ever created are expired every 30 seconds
-    tokio::spawn(async move {
-        let mut interval = time::interval(Duration::from_secs(30));
-
-        loop {
-            interval.tick().await;
-            valid_challenge_tokens_clone.write().await.clear();
-        }
-    });
+    let challenges = super::query_challenge::QueryChallenges::new();
+    let mut plugins = server
+        .plugin_manager
+        .try_active_plugin_names()
+        .unwrap_or_default()
+        .join(", ");
+    let mut plugins_refreshed = std::time::Instant::now();
 
     if let Ok(local_addr) = socket.local_addr() {
         info!(
@@ -46,12 +40,12 @@ pub async fn start_query_handler(server: Arc<Server>, query_addr: SocketAddr) {
         );
     }
 
-    while !SHOULD_STOP.load(Ordering::Relaxed) {
-        let socket = socket.clone();
-        let valid_challenge_tokens = valid_challenge_tokens.clone();
-        let server = server.clone();
-        let mut buf = vec![0; 1024];
+    // QueryThreadGs4.run processes datagrams inline.
+    // Reused across packets. Handling is done inline so a flood of datagrams
+    // cannot pile up unbounded tasks, each owning a buffer of its own.
+    let mut buf = vec![0; 1024];
 
+    while !SHOULD_STOP.load(Ordering::Relaxed) {
         let recv_result = tokio::select! {
             result = socket.recv_from(&mut buf) => Some(result),
             () = STOP_INTERRUPT.cancelled() => None,
@@ -60,36 +54,35 @@ pub async fn start_query_handler(server: Arc<Server>, query_addr: SocketAddr) {
         let Some(Ok((length, addr))) = recv_result else {
             break;
         };
-
-        buf.truncate(length);
-
-        tokio::spawn(async move {
-            if let Err(err) = handle_packet(
-                buf,
-                valid_challenge_tokens,
-                server,
-                socket,
-                addr,
-                query_addr,
-            )
-            .await
-            {
-                error!("Interior 0 bytes found! Cannot encode query response! {err}");
+        // QueryThreadGs4.buildRuleResponse includes plugin names; metadata refresh never waits.
+        if plugins_refreshed.elapsed() >= PLUGIN_METADATA_REFRESH_INTERVAL {
+            if let Some(names) = server.plugin_manager.try_active_plugin_names() {
+                plugins = names.join(", ");
             }
-        });
+            plugins_refreshed = std::time::Instant::now();
+        }
+
+        let result = tokio::select! {
+            () = STOP_INTERRUPT.cancelled() => break,
+            result = handle_packet(buf[..length].to_vec(), &challenges, &plugins,
+                &server, &socket, addr, query_addr) => result,
+        };
+        if let Err(err) = result {
+            error!("Interior 0 bytes found! Cannot encode query response! {err}");
+        }
     }
 }
 
 // Errors of packets that don't meet the format aren't returned since we won't handle them anyway
 // The only errors that are thrown are because of a null terminator in a CString
 // since those errors need to be corrected by server owner
-#[expect(clippy::too_many_lines)]
 #[inline]
 async fn handle_packet(
     buf: Vec<u8>,
-    clients: Arc<RwLock<HashMap<i32, SocketAddr>>>,
-    server: Arc<Server>,
-    socket: Arc<UdpSocket>,
+    challenges: &super::query_challenge::QueryChallenges,
+    plugins: &str,
+    server: &Server,
+    socket: &UdpSocket,
     addr: SocketAddr,
     bound_addr: SocketAddr,
 ) -> Result<(), NulError> {
@@ -97,7 +90,7 @@ async fn handle_packet(
         match raw_packet.packet_type {
             PacketType::Handshake => {
                 if let Ok(packet) = SHandshake::decode(&mut raw_packet).await {
-                    let challenge_token = rand::rng().random_range(1..=i32::MAX);
+                    let challenge_token = challenges.issue(addr);
                     let response = CHandshake {
                         session_id: packet.session_id,
                         challenge_token,
@@ -106,19 +99,13 @@ async fn handle_packet(
                     // Ignore all errors since we don't want the query handler to crash
                     // Protocol also ignores all errors and just doesn't respond
                     if let Some(encoded) = response.encode() {
-                        let _ = socket.send_to(encoded.as_slice(), addr).await;
+                        let _ = socket.try_send_to(encoded.as_slice(), addr);
                     }
-
-                    clients.write().await.insert(challenge_token, addr);
                 }
             }
             PacketType::Status => {
                 if let Ok(packet) = SStatusRequest::decode(&mut raw_packet).await
-                    && clients
-                        .read()
-                        .await
-                        .get(&packet.challenge_token)
-                        .is_some_and(|token_bound_ip: &SocketAddr| token_bound_ip == &addr)
+                    && challenges.accepts(addr, packet.challenge_token)
                 {
                     if packet.is_full_request {
                         // Get 4 players
@@ -141,14 +128,6 @@ async fn handle_packet(
                                 break; // Stop if we've collected 4 players
                             }
                         }
-
-                        let plugins = server
-                            .plugin_manager
-                            .active_plugins()
-                            .into_iter()
-                            .map(|meta| meta.name)
-                            .reduce(|acc, name| format!("{acc}, {name}"))
-                            .unwrap_or_default();
 
                         let response = CFullStatus {
                             session_id: packet.session_id,
@@ -173,7 +152,7 @@ async fn handle_packet(
                         };
 
                         if let Some(encoded) = response.encode() {
-                            let _ = socket.send_to(encoded.as_slice(), addr).await;
+                            let _ = socket.try_send_to(encoded.as_slice(), addr);
                         }
                     } else {
                         let response = CBasicStatus {
@@ -196,7 +175,7 @@ async fn handle_packet(
                         };
 
                         if let Some(encoded) = response.encode() {
-                            let _ = socket.send_to(encoded.as_slice(), addr).await;
+                            let _ = socket.try_send_to(encoded.as_slice(), addr);
                         }
                     }
                 }

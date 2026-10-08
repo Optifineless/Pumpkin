@@ -56,6 +56,51 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 
 ## Known regressions under investigation
 
+Offline Java identities now follow `UUIDUtil.createOfflinePlayerUUID`: MD5 of UTF-8
+`OfflinePlayer:<case-sensitive name>`, with UUID version 3 and RFC variant bits. This
+matches vanilla/Paper offline worlds. Earlier Pumpkin identities used the first
+16 SHA-256 bytes of the bare name, without changing the version or variant bits.
+Existing fork offline worlds therefore need an administrator migration before use.
+Stop the server and back up the world, player data, advancements, statistics,
+`usercache.json`, whitelist, bans and operator files. For each exact saved name,
+map the old UUID to the new UUID using:
+
+```python
+import hashlib, uuid
+name = "Steve"  # exact capitalization from usercache.json
+old = uuid.UUID(bytes=hashlib.sha256(name.encode("utf-8")).digest()[:16])
+new = uuid.UUID(bytes=hashlib.md5(("OfflinePlayer:" + name).encode("utf-8")).digest(), version=3)
+print(old, new)
+```
+
+Rename UUID-keyed player-data, advancement and statistic files, update the UUID
+fields in the cache/admission/operator files, and update UUID references in saved
+NBT (including player UUID and ownership of tamed animals) with an NBT editor.
+Do not overwrite a destination file; resolve existing identities from the backup
+first. Verify inventory, location, advancements, pets and permissions on a copy
+of the world before starting the public server. Never apply this map to online
+Java accounts. In-game migration verification: **Not yet**.
+
+Bedrock authenticated XUID identities retain Pumpkin's `pocket-auth-1-xuid:`
+namespace. Offline and self-signed Bedrock identities now use the separate
+`OfflineBedrockPlayer:<display name>` MD5/version-3 namespace. Login claims no
+longer use `leguuid` for either authentication mode. Previously linked authenticated
+Bedrock profiles need an ownership-verified migration to their XUID-derived UUID.
+Migrate old weak Bedrock
+identities only after verifying the player's ownership, using the same backup
+and UUID-reference procedure. Cross-edition linking requires a separately verified
+linking mechanism and is not provided by login claims. BungeeCord forwarding now
+requires a configured BungeeGuard secret on the proxy and backend.
+Native plugins must be rebuilt against plugin API version 4 because the session
+and command-source layouts changed. The Wasm API is unchanged.
+
+Before upgrading an existing offline-mode world, run the UUID migration documented
+above and verify the migrated copy, including inventories and permissions.
+
+Bedrock online mode over RakNet is not yet cryptographically bound to the client's
+`cpk`: the `ServerToClientHandshake` key exchange is missing. Do not grant operator
+to Bedrock accounts on a public server until that exchange is implemented.
+
 | Report | Status |
 |:--|:--|
 | Chest and hopper contents vanished after `stop` and restart (2026-10-07, first start after switching from the pre-harvest build) | Not reproduced in three headless investigations (same build, player-style unload, old-build world opened by new build); container NBT format verified unchanged across the harvest; the owner's later tests (hand-filled chest, autosave, restart with a build switch) kept their items. Kept open; report any recurrence with the build and steps. |

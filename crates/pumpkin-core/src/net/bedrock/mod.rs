@@ -94,7 +94,12 @@ impl OutgoingPacket {
     }
 }
 
+mod inbound;
+
 pub struct BedrockClient {
+    pub(super) admission_reservation:
+        std::sync::Mutex<Option<crate::net::admission::AdmissionReservation>>,
+    inbound_budget: inbound::InboundBudget,
     session: Arc<NetherNetSession>,
     /// The client's IP address.
     pub address: SocketAddr,
@@ -144,9 +149,11 @@ impl BedrockClient {
         packet_limiter: PacketRateLimiter,
     ) -> Self {
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
-        let (incoming_send, incoming_recv) = tokio::sync::mpsc::channel(4096);
+        let (incoming_send, incoming_recv) = tokio::sync::mpsc::channel(256);
         let rt_handle = tokio::runtime::Handle::current();
         Self {
+            admission_reservation: std::sync::Mutex::new(None),
+            inbound_budget: inbound::InboundBudget::default(),
             session,
             player: ArcSwap::new(Arc::new(None)),
             address,
@@ -178,7 +185,10 @@ impl BedrockClient {
         let recv = guard.as_mut()?;
         tokio::select! {
             () = self.await_close_interrupt() => None,
-            packet = recv.recv() => packet,
+            packet = recv.recv() => {
+                if let Some(packet) = &packet { self.inbound_budget.release(packet.payload.len()); }
+                packet
+            },
         }
     }
 
@@ -646,10 +656,24 @@ impl BedrockClient {
     }
 
     async fn handle_game_packet(&self, packet: RawPacket) -> Result<(), Error> {
-        if let Err(err) = self.incoming_game_packet_send.send(packet).await {
-            debug!("Failed to send game packet to session task: {err}");
+        let length = packet.payload.len();
+        if !self.inbound_budget.reserve(length) {
+            self.kick(
+                DisconnectReason::BadPacket,
+                "Too many pending packets".into(),
+            )
+            .await;
+            return Err(Error::other("Inbound queue full"));
+        }
+        if self.incoming_game_packet_send.send(packet).await.is_err() {
+            self.inbound_budget.release(length);
         }
         Ok(())
+    }
+
+    /// Releases one tick-queue reservation before dispatch or plugin cancellation.
+    pub(crate) fn release_inbound_packet(&self, length: usize) {
+        self.inbound_budget.release(length);
     }
 
     pub async fn handle_login_sequence(
@@ -702,6 +726,14 @@ impl BedrockClient {
 
     pub async fn progress_player_packets(self: &Arc<Self>, player: &Arc<Player>) {
         while let Some(packet) = self.get_packet().await {
+            if !self.inbound_budget.reserve(packet.payload.len()) {
+                self.kick(
+                    DisconnectReason::BadPacket,
+                    "Too many pending packets".into(),
+                )
+                .await;
+                return;
+            }
             player.inbound_packets.push(packet);
         }
     }

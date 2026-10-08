@@ -9,37 +9,42 @@ impl JavaClient {
         player: &Arc<Player>,
         chat_message: SChatMessage<'_>,
     ) {
-        player.update_last_action_time();
-
-        if let Some(command) = chat_message.message.strip_prefix('/') {
-            let command_packet = SChatCommand { command };
-            self.handle_chat_command(player, server, &command_packet)
-                .await;
+        if self.is_closed() {
             return;
         }
-
         let gameprofile = &player.gameprofile;
 
-        if let Err(err) = self.validate_chat_message(server, player, &chat_message) {
-            log_at_level!(
-                err.severity(),
-                "{} (uuid {}) {}",
-                gameprofile.name,
-                gameprofile.id,
-                err
-            );
-            if err.is_kick()
-                && let Some(reason) = err.client_kick_reason()
-            {
-                self.kick(TextComponent::text(reason)).await;
+        let Ok(seen) = Self::apply_last_seen(
+            player,
+            chat_message.message_count.0,
+            chat_message.acknowledged,
+            chat_message.checksum,
+        ) else {
+            self.kick(TextComponent::translate(
+                "multiplayer.disconnect.chat_validation_failed",
+                [],
+            ))
+            .await;
+            return;
+        };
+        if !self
+            .try_handle_chat(player, chat_message.message, false)
+            .await
+        {
+            return;
+        }
+        let signed = if server.basic_config.allow_chat_reports {
+            let result = self.get_signed_message(player, &chat_message, seen);
+            match result {
+                Ok(message) => Some(message),
+                Err(reason) => {
+                    player.send_system_message(&TextComponent::translate(reason, []));
+                    return;
+                }
             }
-            return;
-        }
-
-        if player.check_chat_spam(server, crate::entity::player::SpamType::Chat) {
-            return;
-        }
-
+        } else {
+            None
+        };
         send_cancellable! {{
             server;
             PlayerChatEvent::new(
@@ -50,6 +55,7 @@ impl JavaClient {
             );
 
             'after: {
+                if self.is_closed() { return; }
                 info!("<chat> {}: {}", gameprofile.name, event.message);
 
                 let config = &server.advanced_config;
@@ -67,8 +73,8 @@ impl JavaClient {
 
                 let entity = &player.get_entity();
                 let world = entity.world.load_full();
-                if server.basic_config.allow_chat_reports {
-                    world.broadcast_secure_player_chat(player, &chat_message, &decorated_message);
+                if let Some(signed) = signed {
+                    Self::broadcast_verified_chat(player, &signed.with_unsigned_content(decorated_message));
                 } else {
                     let outgoing = crate::net::chat::PlayerChatMessage::system(message).with_unsigned_content(decorated_message);
                     world.broadcast_chat_message(
@@ -82,109 +88,31 @@ impl JavaClient {
                 }
             }
         }}
+        self.check_session_spam(player, server, crate::entity::player::SpamType::Chat);
     }
 
-    /// Runs all vanilla checks for a valid chat message
-    pub fn validate_chat_message(
+    // ServerGamePacketListenerImpl.getSignedMessage uses the per-session decoder.
+    fn get_signed_message(
         &self,
-        server: &Server,
-        player: &Arc<Player>,
-        chat_message: &SChatMessage<'_>,
-    ) -> Result<(), ChatError> {
-        // Check for oversized messages
-        // If we're able to find the 257th UTF-16 character, the message is too big.
-        if chat_message.message.encode_utf16().nth(256).is_some() {
-            return Err(ChatError::OversizedMessage);
-        }
-        // Check for illegal characters
-        if chat_message
-            .message
-            .chars()
-            .any(|c| c == '§' || c < ' ' || c == '\x7F')
-        {
-            return Err(ChatError::IllegalCharacters);
-        }
-        // These checks are only run in secure chat mode
-        if server.basic_config.allow_chat_reports {
-            // Check for unsigned chat
-            if let Some(signature) = &chat_message.signature {
-                if signature.len() != 256 {
-                    return Err(ChatError::UnsignedChat); // Signature is the wrong length
-                }
-            } else {
-                return Err(ChatError::UnsignedChat); // There is no signature
-            }
-
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64;
-
-            // Verify message timestamp
-            if chat_message.timestamp > now || chat_message.timestamp < (now - CHAT_MESSAGE_MAX_AGE)
-            {
-                return Err(ChatError::OutOfOrderChat);
-            }
-
-            // Verify session expiry
-            if player
-                .chat_session
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .expires_at
-                < now
-            {
-                return Err(ChatError::ExpiredPublicKey);
-            }
-
-            let offset = chat_message.message_count.0;
-            if offset < 0 {
-                return Err(ChatError::ChatValidationFailed);
-            }
-
-            {
-                let mut cache = player
-                    .signature_cache
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !chat_message.acknowledged.is_empty() {
-                    if cache
-                        .last_seen_validator
-                        .apply_update(offset as usize, chat_message.acknowledged)
-                        .is_err()
-                    {
-                        return Err(ChatError::ChatValidationFailed);
-                    }
-                } else if cache
-                    .last_seen_validator
-                    .apply_offset(offset as usize)
-                    .is_err()
-                {
-                    return Err(ChatError::ChatValidationFailed);
-                }
-
-                if cache.last_seen_validator.tracked_messages_count() > 4096 {
-                    return Err(ChatError::TooManyPendingChats);
-                }
-            }
-
-            // Validate previous signature checksum (new in 1.21.5)
-            // The client can bypass this check by sending 0
-            if chat_message.checksum != 0 {
-                let checksum = polynomial_rolling_hash(
-                    player
-                        .signature_cache
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .last_seen
-                        .as_ref(),
-                );
-                if checksum != chat_message.checksum {
-                    return Err(ChatError::ChatValidationFailed);
-                }
-            }
-        }
-        Ok(())
+        player: &Player,
+        message: &SChatMessage<'_>,
+        seen: Vec<Box<[u8]>>,
+    ) -> Result<crate::net::chat::PlayerChatMessage, &'static str> {
+        let session = player
+            .chat_session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let body = crate::net::chat::SignedMessageBody::new(
+            message.message.into(),
+            message.timestamp,
+            message.salt,
+            seen,
+        );
+        self.chat_order
+            .chain
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unpack(player.gameprofile.id, &session, body, message.signature)
     }
 
     pub async fn handle_chat_session_update(
@@ -194,7 +122,7 @@ impl JavaClient {
         session: SPlayerSession,
     ) {
         // Keep the chat session default if we don't want reports
-        if !server.basic_config.allow_chat_reports {
+        if self.is_closed() || !server.basic_config.allow_chat_reports {
             return;
         }
 
@@ -214,16 +142,49 @@ impl JavaClient {
             return;
         }
 
-        // Update the chat session fields
-        *player
-            .chat_session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = ChatSession::new(
+        if self.is_closed() {
+            return;
+        }
+        let new_session = ChatSession::new(
             session.session_id,
             session.expires_at,
             session.public_key.clone(),
             session.key_signature.clone(),
         );
+        let mut previous = player
+            .chat_session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if previous.public_key == new_session.public_key
+            && previous.expires_at == new_session.expires_at
+        {
+            return;
+        }
+        if new_session.expires_at < previous.expires_at {
+            drop(previous);
+            self.try_kick(&TextComponent::translate(
+                "multiplayer.disconnect.expired_public_key",
+                [],
+            ));
+            return;
+        }
+        if self
+            .chat_order
+            .chain
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .reset(&new_session)
+            .is_err()
+        {
+            drop(previous);
+            self.try_kick(&TextComponent::translate(
+                "multiplayer.disconnect.invalid_public_key_signature",
+                [],
+            ));
+            return;
+        }
+        *previous = new_session;
+        drop(previous);
 
         server.broadcast_packet_all(&CPlayerInfoUpdate::new(
             PlayerInfoFlags::INITIALIZE_CHAT.bits(),

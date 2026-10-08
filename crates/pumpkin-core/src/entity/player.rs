@@ -544,100 +544,12 @@ pub struct Player {
     pub inbound_packets: SegQueue<RawPacket>,
 }
 
-use base64::prelude::*;
 use pumpkin_protocol::Property;
-use serde::Deserialize;
-
-// Bit masks for the Java skin pixels that Bedrock requires to be opaque.
-// Adapted from Geyser's SkinProvider under the MIT License.
-const SKIN_OPAQUE_MASK: &str = "AP//AAAAAAAA//8AAAAAAAD//wAAAAAAAP//AAAAAAAA//8AAAAAAAD//wAAAAAAAP//AAAAAAAA//8AAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8AAAAA/////wAAAADwD/D/D/8AAPAP8P8P/wAA8A/w/w//AADwD/D/D/8AAP///////w8A////////DwD///////8PAP///////w8A////////DwD///////8PAP///////w8A////////DwD///////8PAP///////w8A////////DwD///////8PAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwD/APAAAAAPAP8A8AAAAA8A/wDwAAAADwD/APAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8AAAAA/////wAAAAD/////AAA=";
-const LEGACY_SKIN_OPAQUE_MASK: &str = "AP//AAAAAAAA//8AAAAAAAD//wAAAAAAAP//AAAAAAAA//8AAAAAAAD//wAAAAAAAP//AAAAAAAA//8AAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8AAAAA/////wAAAADwD/D/D/APAPAP8P8P8A8A8A/w/w/wDwDwD/D/D/APAP////////8A/////////wD/////////AP////////8A/////////wD/////////AP////////8A/////////wD/////////AP////////8A/////////wD/////////AA==";
-
-#[derive(Deserialize)]
-struct TexturesProperty {
-    textures: Textures,
-}
-
-#[derive(Deserialize)]
-struct Textures {
-    #[serde(rename = "SKIN")]
-    skin: Option<SkinTexture>,
-}
-
-#[derive(Deserialize)]
-struct SkinTexture {
-    url: String,
-    #[serde(default)]
-    metadata: Option<SkinMetadata>,
-}
-
-#[derive(Deserialize)]
-struct SkinMetadata {
-    #[serde(default)]
-    model: Option<String>,
-}
 
 impl Player {
     #[must_use]
     pub fn fetch_skin(properties: &[Property]) -> Option<pumpkin_protocol::bedrock::client::Skin> {
-        let textures_prop = properties.iter().find(|p| &*p.name == "textures")?;
-        let decoded = BASE64_STANDARD
-            .decode(textures_prop.value.as_bytes())
-            .ok()?;
-        let textures: TexturesProperty = serde_json::from_slice(&decoded).ok()?;
-        let skin_texture = textures.textures.skin?;
-        let url = skin_texture.url;
-        let is_slim = skin_texture
-            .metadata
-            .as_ref()
-            .and_then(|m| m.model.as_deref())
-            .is_some_and(|model| model == "slim");
-
-        let bytes = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            tokio::task::block_in_place(|| {
-                handle.block_on(async {
-                    let client = pumpkin_auth::client();
-                    client.get(&url).send().await.ok()?.bytes().await.ok()
-                })
-            })?
-        } else {
-            tokio::runtime::Runtime::new().ok()?.block_on(async {
-                let client = pumpkin_auth::client();
-                client.get(&url).send().await.ok()?.bytes().await.ok()
-            })?
-        };
-        let img = image::load_from_memory(&bytes).ok()?;
-
-        let width = img.width();
-        let height = img.height();
-
-        if width != 64 || (height != 32 && height != 64) {
-            return None;
-        }
-
-        let mut rgba = img.into_rgba8().into_raw();
-
-        let opaque_mask = BASE64_STANDARD
-            .decode(if height == 32 {
-                LEGACY_SKIN_OPAQUE_MASK
-            } else {
-                SKIN_OPAQUE_MASK
-            })
-            .ok()?;
-        for pixel_index in 0..(width * height) as usize {
-            if opaque_mask[pixel_index >> 3] & (1 << (pixel_index & 7)) != 0 {
-                rgba[pixel_index * 4 + 3] = u8::MAX;
-            }
-        }
-
-        let mut skin = pumpkin_protocol::bedrock::client::Skin::steve();
-        skin.set_slim(is_slim);
-        skin.image_width = width;
-        skin.image_height = height;
-        skin.skin_data = rgba;
-        skin.skin_id.clone_from(&url);
-        skin.full_id = url;
-        Some(skin)
+        super::player_skin::fetch_skin_blocking(properties)
     }
 
     #[expect(clippy::too_many_lines, clippy::items_after_statements)]
@@ -709,9 +621,8 @@ impl Player {
         let mut abilities = Abilities::default();
         abilities.set_for_gamemode(gamemode);
 
-        let properties = gameprofile.properties.load();
-        let mut bedrock_skin = Self::fetch_skin(&properties)
-            .unwrap_or_else(pumpkin_protocol::bedrock::client::Skin::steve);
+        // PlayerList.placeNewPlayer never downloads a skin on the join path.
+        let mut bedrock_skin = pumpkin_protocol::bedrock::client::Skin::steve();
 
         // Standard_Custom is a shared placeholder. Give fallback skins a stable,
         // per-player identity so Bedrock never sees duplicate skin IDs.
@@ -2323,6 +2234,7 @@ impl Player {
                     }
                 }
                 ClientPlatform::Bedrock(client) => {
+                    client.release_inbound_packet(packet.payload.len());
                     let mut event = crate::plugin::server::packet::PacketReceivedEvent::new(
                         player_arc.clone(),
                         packet.id,
@@ -6961,6 +6873,7 @@ impl TryFrom<i32> for ChatMode {
 }
 
 /// Player's current chat session
+#[derive(Clone)]
 pub struct ChatSession {
     pub session_id: uuid::Uuid,
     pub expires_at: i64,
