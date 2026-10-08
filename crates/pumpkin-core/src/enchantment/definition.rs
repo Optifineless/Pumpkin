@@ -45,7 +45,8 @@ pub(super) fn vanilla_enchantment_definitions() -> &'static FxHashMap<&'static s
     })
 }
 
-pub(super) fn enchantment_definition<'a>(
+/// Reads an enchantment definition from the world registry, falling back to bundled game data.
+pub fn enchantment_definition<'a>(
     world: Option<&World>,
     enchantment: &Enchantment,
 ) -> Option<Cow<'a, NbtCompound>> {
@@ -100,7 +101,8 @@ pub(super) fn attribute_modifiers_from_definition(
 }
 
 // Enchantment.matchingSlot evaluates the same definition as its effect payloads.
-pub(super) fn definition_matches_slot(definition: &NbtCompound, slot: &EquipmentSlot) -> bool {
+/// Tests an equipment slot against the enchantment definition's slot groups.
+pub fn definition_matches_slot(definition: &NbtCompound, slot: &EquipmentSlot) -> bool {
     definition.get_list("slots").is_some_and(|slots| {
         slots.iter().any(|group| match group.extract_string() {
             Some("any") => true,

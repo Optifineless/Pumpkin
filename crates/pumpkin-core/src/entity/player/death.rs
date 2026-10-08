@@ -5,18 +5,23 @@ use super::{
 use pumpkin_inventory::Clearable;
 
 impl Player {
-    pub(crate) fn drop_equipment_on_death(&self) {
+    pub(crate) fn drop_equipment_on_death(&self, lifecycle: u64) {
         // Player.dropEquipment / Inventory.dropAll; the vanishing sweep excludes menus.
-        if self.gamemode.load() == GameMode::Spectator {
+        if self.gamemode.load() == GameMode::Spectator
+            || !self.living_entity.death_lifecycle_current(lifecycle)
+        {
             return;
         }
         let drops = take_inventory_for_death(
             &self.inventory,
             self.world().level_info.load().game_rules.keep_inventory,
         );
+        let world = self.world();
+        let pos = self.position().to_block_pos();
+        // Inventory.dropAll / Player.dropEquipment: finish delivering stacks already taken.
+        // A spawn callback may replace this life, but must not delete the remaining old items.
         for stack in drops {
-            self.world()
-                .drop_stack(&self.position().to_block_pos(), stack);
+            world.drop_stack(&pos, stack);
         }
     }
 
@@ -71,9 +76,18 @@ impl Player {
     }
 
     pub fn handle_killed(&self, death_msg: &TextComponent) {
+        let _owner = self.living_entity.own_damage();
+        self.handle_killed_for_life(death_msg, self.living_entity.damage_lifecycle());
+    }
+
+    pub(crate) fn handle_killed_for_life(&self, death_msg: &TextComponent, lifecycle: u64) {
+        // ServerPlayer.die: revalidate before changing the respawn state after callbacks.
         self.trigger_advancement(
             crate::entity::player::advancement::trigger::AdvancementTrigger::PlayerKilled,
         );
+        if !self.living_entity.death_lifecycle_current(lifecycle) {
+            return;
+        }
         crate::entity::mob::neutral::tell_neutral_mobs_player_died(self, &self.world());
         // Reset air supply & drowning ticks on death
         self.breath_manager.reset(self);

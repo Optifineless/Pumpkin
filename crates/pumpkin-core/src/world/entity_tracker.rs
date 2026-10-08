@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool, AtomicU32,
@@ -40,6 +41,13 @@ use crate::net::ClientPlatform;
 use crate::net::java::JavaClient;
 use crate::world::World;
 use crate::world::chunker::get_view_distance;
+
+#[cfg(test)]
+mod ownership_tests;
+
+thread_local! {
+    static UPDATE_SNAPSHOT: RefCell<Vec<Arc<TrackedEntity>>> = const { RefCell::new(Vec::new()) };
+}
 
 /// Vanilla `VecDeltaCodec.encode`: Java `Math.round` on the 1/4096
 fn encode_pos(value: f64) -> i64 {
@@ -138,6 +146,10 @@ impl TrackedEntity {
 
     /// Vanilla `ServerEntity.sendChanges`. Non-player entities only.
     pub fn send_changes(&self, world: &World) {
+        let _owner = self
+            .entity
+            .get_living_entity()
+            .map(crate::entity::living::LivingEntity::own_damage);
         let entity = self.entity.get_entity();
         self.send_bedrock_move(entity, world);
         let tick = self.tick_count.fetch_add(1, Relaxed);
@@ -191,6 +203,7 @@ impl TrackedEntity {
             self.send_to_tracking_players(&CHeadRot::new(VarInt(self.entity_id), head_yaw), world);
             entity.last_sent_head_yaw.store(head_yaw, Relaxed);
         }
+        entity.flush_hurt_motion_owned();
     }
 
     fn pick_move(
@@ -822,14 +835,23 @@ impl EntityTracker {
             .is_some_and(|t| !t.seen_by.is_empty())
     }
 
+    // ServerEntity.sendChanges calls entity code serially. Never retain a shard guard
+    // across entity ownership or callbacks: death loot can insert into the same shard.
+    fn snapshot(&self) -> Vec<Arc<TrackedEntity>> {
+        self.entity_map
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
+    }
+
     pub fn for_each_entity_tracked_by<F: FnMut(&Arc<dyn EntityBase>)>(
         &self,
         player: &Player,
         mut f: F,
     ) {
-        for entry in &self.entity_map {
-            if entry.value().seen_by.contains(&player.gameprofile.id) {
-                f(&entry.value().entity);
+        for tracked in self.snapshot() {
+            if tracked.seen_by.contains(&player.gameprofile.id) {
+                f(&tracked.entity);
             }
         }
     }
@@ -860,9 +882,9 @@ impl EntityTracker {
     /// Must only be called after the player's own `CLogin` packet has been sent.
     pub fn pair_new_player_with_tracked_entities(&self, player_arc: &Arc<Player>, world: &World) {
         let entity_id = player_arc.get_entity().entity_id;
-        for entry in &self.entity_map {
-            if *entry.key() != entity_id {
-                entry.value().update_player(player_arc, world);
+        for tracked in self.snapshot() {
+            if tracked.entity_id != entity_id {
+                tracked.update_player(player_arc, world);
             }
         }
     }
@@ -878,10 +900,10 @@ impl EntityTracker {
     /// Vanilla `PlayerList.respawn` recreates the player -> forget and re-pair it as a viewer.
     pub fn repair_respawned_player(&self, player: &Arc<Player>, world: &World) {
         let entity_id = player.get_entity().entity_id;
-        for entry in &self.entity_map {
-            if *entry.key() != entity_id {
-                entry.value().forget_player(player);
-                entry.value().update_player(player, world);
+        for tracked in self.snapshot() {
+            if tracked.entity_id != entity_id {
+                tracked.forget_player(player);
+                tracked.update_player(player, world);
             }
         }
     }
@@ -895,11 +917,11 @@ impl EntityTracker {
     ) {
         let chunks: FxHashSet<_> = chunks.iter().copied().collect();
         let entity_id = player.get_entity().entity_id;
-        for entry in &self.entity_map {
-            if *entry.key() != entity_id
-                && chunks.contains(&entry.value().entity.get_entity().chunk_pos.load())
+        for tracked in self.snapshot() {
+            if tracked.entity_id != entity_id
+                && chunks.contains(&tracked.entity.get_entity().chunk_pos.load())
             {
-                entry.value().update_player(player, world);
+                tracked.update_player(player, world);
             }
         }
     }
@@ -908,8 +930,8 @@ impl EntityTracker {
         world.stop_tracking_dragon_parts(entity);
         let entity_id = entity.get_entity().entity_id;
         if let Some(player) = entity.get_player() {
-            for entry in &self.entity_map {
-                entry.value().remove_player(player);
+            for tracked in self.snapshot() {
+                tracked.remove_player(player);
             }
         }
 
@@ -928,18 +950,18 @@ impl EntityTracker {
         if let Some(tracked) = self.entity_map.get(&player.get_entity().entity_id) {
             tracked.last_section_pos.store(new_pos);
         }
-        for entry in &self.entity_map {
-            if *entry.key() == player.get_entity().entity_id {
+        for tracked in self.snapshot() {
+            if tracked.entity_id == player.get_entity().entity_id {
                 let players = world.players.load();
-                entry.value().update_players(players.as_ref(), world);
+                tracked.update_players(players.as_ref(), world);
             } else {
-                entry.value().update_player(player, world);
+                tracked.update_player(player, world);
             }
         }
     }
 
     pub fn update_entity_position(&self, entity: &dyn EntityBase, world: &World) {
-        if let Some(tracked) = self.entity_map.get(&entity.get_entity().entity_id) {
+        if let Some(tracked) = self.get_tracked_entity(entity.get_entity().entity_id) {
             let pos = entity.get_entity().pos.load();
             let new_pos = Vector3::new(
                 get_section_cord(pos.x.floor() as i32),
@@ -956,8 +978,10 @@ impl EntityTracker {
         let players = world.players.load();
         let mut moved_players = Vec::new();
 
-        for entry in &self.entity_map {
-            let tracked = entry.value();
+        // ServerEntity.sendChanges may call plugins; retain neither shard guards nor TLS borrows.
+        let mut snapshot = UPDATE_SNAPSHOT.with(|buffer| std::mem::take(&mut *buffer.borrow_mut()));
+        snapshot.extend(self.entity_map.iter().map(|entry| entry.value().clone()));
+        for tracked in &snapshot {
             let pos = tracked.entity.get_entity().pos.load();
             let new_pos = Vector3::new(
                 get_section_cord(pos.x.floor() as i32),
@@ -977,18 +1001,19 @@ impl EntityTracker {
         }
 
         if !moved_players.is_empty() {
-            for entry in &self.entity_map {
-                entry.value().update_players(&moved_players, world);
+            for tracked in &snapshot {
+                tracked.update_players(&moved_players, world);
             }
         }
 
-        for entry in &self.entity_map {
-            let tracked = entry.value();
+        for tracked in &snapshot {
             if tracked.entity.get_player().is_none() {
                 tracked.send_changes(world);
             } else if tracked.entity.get_entity().synched_data.is_dirty() {
                 tracked.entity.get_entity().send_dirty_entity_data();
             }
         }
+        snapshot.clear();
+        UPDATE_SNAPSHOT.with(|buffer| *buffer.borrow_mut() = snapshot);
     }
 }

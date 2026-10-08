@@ -111,7 +111,7 @@ impl CreakingEntity {
                 step.dirty.store(true, Ordering::Relaxed);
             }
         }
-        creaking.mob_entity.living_entity.health.store(MAX_HEALTH);
+        creaking.mob_entity.living_entity.set_health(MAX_HEALTH);
 
         let mob_arc = Arc::new(creaking);
         let mob_weak: Weak<dyn Mob> = {
@@ -525,7 +525,7 @@ impl Mob for CreakingEntity {
             });
 
             if !has_protection {
-                self.mob_entity.living_entity.health.store(0.0);
+                self.mob_entity.living_entity.set_health(0.0);
             }
         }
 

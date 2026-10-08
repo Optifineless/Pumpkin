@@ -77,9 +77,9 @@ impl super::Phase for DyingPhase {
             let dist_sq = pos.distance_squared(target_pos);
             if (100.0..=22500.0).contains(&dist_sq) {
                 dragon.steer_toward(pos, target_pos, 3.0, 0.1);
-                dragon.mob_entity.living_entity.health.store(1.0);
+                dragon.mob_entity.living_entity.set_health(1.0);
             } else {
-                dragon.mob_entity.living_entity.health.store(0.0);
+                dragon.mob_entity.living_entity.set_health(0.0);
             }
         }
 

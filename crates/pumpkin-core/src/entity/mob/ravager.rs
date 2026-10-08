@@ -24,6 +24,7 @@ use crate::entity::{
 pub struct RavagerEntity {
     pub mob_entity: MobEntity,
     pub raider_data: RaiderData,
+    pub(crate) blocking: crate::entity::living::blocking_response::RavagerBlockState,
 }
 
 impl RavagerEntity {
@@ -33,6 +34,7 @@ impl RavagerEntity {
         let ravager = Self {
             mob_entity,
             raider_data: RaiderData::default(),
+            blocking: crate::entity::living::blocking_response::RavagerBlockState::default(),
         };
         let mob_arc = Arc::new(ravager);
         let mob_weak: Weak<dyn Mob> = {
@@ -102,11 +104,48 @@ impl Mob for RavagerEntity {
         Some(self)
     }
 
+    fn mob_tick(&self, _caller: &dyn crate::entity::EntityBase) {
+        self.tick_block_response();
+    }
+
+    fn has_line_of_sight(&self, target: &Entity) -> bool {
+        // Ravager.hasLineOfSight suppresses attacks while stunned or roaring.
+        use std::sync::atomic::Ordering::Relaxed;
+        self.blocking.stunned.load(Relaxed) <= 0
+            && self.blocking.roar.load(Relaxed) <= 0
+            && self
+                .mob_entity
+                .sensing
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .has_line_of_sight(&self.mob_entity.living_entity.entity, target)
+    }
+
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        nbt.put_int(
+            "StunTick",
+            self.blocking
+                .stunned
+                .load(std::sync::atomic::Ordering::Relaxed),
+        );
+        nbt.put_int(
+            "RoarTick",
+            self.blocking
+                .roar
+                .load(std::sync::atomic::Ordering::Relaxed),
+        );
         self.write_raider_nbt(nbt);
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
+        self.blocking.stunned.store(
+            nbt.get_int("StunTick").unwrap_or(0),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        self.blocking.roar.store(
+            nbt.get_int("RoarTick").unwrap_or(0),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.read_raider_nbt(nbt);
     }
 }

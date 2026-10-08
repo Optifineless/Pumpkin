@@ -1,6 +1,6 @@
 use super::LivingEntity;
 use crate::entity::EntityBase;
-use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item};
+use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item_if};
 use crate::entity::player::statistics::StatisticCategory;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::{BlocksAttacksImpl, EquipmentSlot};
@@ -46,7 +46,7 @@ impl LivingEntity {
 
     /// Resolves blocking before mitigation and returns the amount to subtract from incoming damage.
     /// Applies durability, item-use statistics and melee disable cooldowns; it does not change health,
-    /// damage cooldowns, knockback or damage feedback. `source` is the direct attacker/projectile.
+    /// damage cooldowns or full-hit feedback. Attacker block responses may apply knockback. `source` is the direct attacker/projectile.
     /// All equipment/use mutations run without hand locks.
     pub fn apply_item_blocking(
         &self,
@@ -57,6 +57,7 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
     ) -> f32 {
         // LivingEntity.applyItemBlocking.
+        let life = self.own_damage();
         if damage <= 0.0 {
             return 0.0;
         }
@@ -90,19 +91,24 @@ impl LivingEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.hurt_blocking_item(caller, hand, &item, blocking, blocked);
+        if !life.is_current_life() {
+            return blocked;
+        }
         if blocked > 0.0
             && !damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_PROJECTILE)
             && let Some(attacker) = source
             && attacker.get_living_entity().is_some()
-            && caller.get_player().is_some()
-            && self.get_item_blocking_with().is_some()
         {
-            self.disable_blocking(
-                caller,
-                &item,
-                blocking,
-                attacker.get_seconds_to_disable_blocking(),
-            );
+            // LivingEntity.blockUsingItem precedes Player's disable hook, even on full blocks.
+            self.block_using_item(caller, attacker, blocked >= damage);
+            if caller.get_player().is_some() && self.get_item_blocking_with().is_some() {
+                self.disable_blocking(
+                    caller,
+                    &item,
+                    blocking,
+                    attacker.get_seconds_to_disable_blocking(),
+                );
+            }
         }
         blocked
     }
@@ -119,6 +125,7 @@ impl LivingEntity {
         let Some(player) = caller.get_player() else {
             return;
         };
+        let life = self.own_damage();
         let equipped = hand.map(|hand| {
             EquippedItem::capture(
                 caller,
@@ -129,12 +136,15 @@ impl LivingEntity {
             )
         });
         player.increment_stat(StatisticCategory::Used, i32::from(item.item.id), 1);
+        if !life.is_current_life() {
+            return;
+        }
         let durability = blocking.item_damage.apply(blocked);
         if durability > 0
             && let Some(hand) = hand
             && let Some(equipped) = equipped
             && equipped.stack.uid == item.uid
-            && damage_equipped_item(caller, &equipped, durability)
+            && damage_equipped_item_if(caller, &equipped, Some(&life), |_| Some(durability))
         {
             self.update_used_item(hand, &player.inventory.get_stack_in_hand(hand));
         }

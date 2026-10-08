@@ -8,11 +8,16 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 impl Explosion {
-    pub(super) fn damage_entities(&self, world: &Arc<World>) -> FxHashMap<i32, Vector3<f64>> {
+    pub(super) fn damage_entities(&self, world: &Arc<World>) -> super::ExplosionResult {
         let mut player_knockback = FxHashMap::default();
+        let mut player_lifecycles = FxHashMap::default();
         // Explosion is too small
         if self.power < 1.0e-5 {
-            return player_knockback;
+            return super::ExplosionResult {
+                block_count: 0,
+                player_knockback,
+                player_lifecycles,
+            };
         }
 
         let radius = f64::from(self.power * 2.0);
@@ -56,6 +61,10 @@ impl Explosion {
                 continue;
             }
 
+            // ServerExplosion.hurtEntities: only admitted damage and push need a serial segment.
+            let life = entity_base
+                .get_living_entity()
+                .map(crate::entity::living::LivingEntity::own_damage);
             let should_damage = calc.should_damage_entity(self, entity_base.as_ref());
             let knockback_multiplier = calc.get_knockback_multiplier(entity_base.as_ref()) as f64;
 
@@ -70,6 +79,12 @@ impl Explosion {
                     calc.get_entity_damage_amount(self, entity_base.as_ref(), exposure as f32);
                 self.hurt_from_explosion(entity_base.as_ref(), damage);
             }
+            if !life
+                .as_ref()
+                .is_none_or(crate::entity::living::damage_transaction::DamageToken::is_current_life)
+            {
+                continue;
+            }
 
             if let Some(knockback) = self.knockback_entity(
                 entity_base.as_ref(),
@@ -78,9 +93,16 @@ impl Explosion {
                 knockback_multiplier,
             ) {
                 player_knockback.insert(entity.entity_id, knockback);
+                if let Some(living) = entity_base.get_living_entity() {
+                    player_lifecycles.insert(entity.entity_id, living.damage_lifecycle());
+                }
             }
         }
-        player_knockback
+        super::ExplosionResult {
+            block_count: 0,
+            player_knockback,
+            player_lifecycles,
+        }
     }
 
     fn knockback_entity(
@@ -182,3 +204,6 @@ impl Explosion {
                 .is_some_and(crate::entity::decoration::armor_stand::ArmorStandEntity::is_invisible)
     }
 }
+
+#[cfg(test)]
+mod review3_tests;

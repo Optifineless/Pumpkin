@@ -1,21 +1,57 @@
+//! Vanilla 26.3 damage order (local decompiled source line numbers):
+//! ServerPlayer.hurtServer 995-1006 and Player.hurtServer 672-701 gate `PvP`, abilities and
+//! difficulty. LivingEntity.hurtServer 1178-1216 gates invulnerability/death/fire resistance,
+//! wakes sleepers, blocks, amplifies freezing, wears/scales helmets and normalizes damage.
+//! Lines 1219-1233 admit a full hit or only the excess; actuallyHurt (1960-1977, Player
+//! 737-759) wears armor, mitigates magic, consumes absorption, records combat before health,
+//! and emits `ENTITY_DAMAGE`. Lines 1236-1252 resolve credit, dispatch blocked/damage feedback,
+//! mark impact and apply default knockback/tilt. Lines 1255-1267 protect with a totem before
+//! death or hurt sounds; 1269-1289 remember successful sources and trigger damage criteria.
+//! walkAnimation.setSpeed(1.5) is client handleDamageEvent (2050-2063), via the damage packet.
+//! Java explosion motion stays client-applied through Pumpkin's explosion packet; it must not
+//! be overwritten by a pending server velocity packet.
+//! Ownership spans serial segments; plugin dispatch releases it and resumed stages read live state.
+
 use super::LivingEntity;
-use crate::entity::EntityBase;
-use crate::entity::combat::knockback_after_resistance;
-use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
-use pumpkin_data::attributes::Attributes;
-use pumpkin_data::damage::DamageType;
-use pumpkin_data::effect::StatusEffect;
-use pumpkin_data::entity::EntityType;
-use pumpkin_data::sound::SoundCategory;
-use pumpkin_data::tag::{self, Taggable};
-use pumpkin_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
-use pumpkin_protocol::codec::{var_int::VarInt, var_ulong::VarULong};
-use pumpkin_protocol::java::client::play::CHurtAnimation;
+use crate::entity::{EntityBase, equipment_damage::EquippedItem};
+use pumpkin_data::{
+    damage::DamageType,
+    data_component_impl::EquipmentSlot,
+    effect::StatusEffect,
+    tag::{self, Taggable},
+};
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use std::sync::atomic::Ordering::Relaxed;
 
+#[derive(Clone, Copy)]
+pub(super) struct HurtContext<'a> {
+    pub lifecycle: u64,
+    pub damage_type: DamageType,
+    pub position: Option<Vector3<f64>>,
+    pub source: Option<&'a dyn EntityBase>,
+    pub cause: Option<&'a dyn EntityBase>,
+}
+
+#[cfg(test)]
+mod boundary_tests;
+#[cfg(test)]
+mod callback_tests;
+#[cfg(test)]
+mod instant_tests;
+#[cfg(test)]
+mod ownership_immunity_tests;
+#[cfg(test)]
+mod ownership_tests;
+#[cfg(test)]
+mod review3_tests;
+#[cfg(test)]
+mod review_tests;
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod writer_tests;
+
 impl LivingEntity {
-    // LivingEntity.hurtServer: blocking, cooldown, actuallyHurt, credit, then death protection.
     pub(super) fn hurt_server(
         &self,
         caller: &dyn EntityBase,
@@ -25,25 +61,37 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
+        let _owner = self.damage_owner.enter();
+        let _pending = self.damage_owner.pending_hurt();
+        // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
+        let context = HurtContext {
+            lifecycle: self.damage_owner.lifecycle(),
+            damage_type,
+            position,
+            source,
+            cause,
+        };
+        let amount = if let Some(player) = caller.get_player() {
+            let Some(amount) = player.admit_incoming_damage(amount, damage_type, cause, source)
+            else {
+                return false;
+            };
+            amount
+        } else {
+            amount
+        };
+        // LivingEntity.hurtServer:1179 rolls before the death/fire-resistance gates.
         if self.entity.is_invulnerable_to(&damage_type, cause)
-            || self.health.load() <= 0.0
-            || self.dead.load(Relaxed)
-            || amount < 0.0
+            || self.is_immune_to_enchantment_damage(caller, damage_type, source, cause)
+            || !self.valid_hurt_context(caller, context)
         {
             return false;
         }
-        let Some(mut amount) =
-            self.damage_after_plugin_events(amount, damage_type, position, source, cause)
-        else {
+        let Some(amount) = self.damage_after_plugin_events(caller, amount, context) else {
             return false;
         };
-        let world = self.entity.world.load();
-        if damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FIRE)
-            && ((self.entity.entity_type == &EntityType::PLAYER
-                && !world.level_info.load().game_rules.fire_damage)
-                || (self.has_effect(&StatusEffect::FIRE_RESISTANCE)
-                    && !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_EFFECTS)))
-        {
+        // An unlocked callback or a competing attacker may have killed or changed the victim.
+        if !self.valid_hurt_context(caller, context) {
             return false;
         }
         if let Some(player) = caller.get_player()
@@ -51,87 +99,153 @@ impl LivingEntity {
         {
             player.wake_up();
         }
-
-        // LivingEntity.hurtServer resets inactivity before blocking and cooldown rejection.
-        self.no_action_time.store(0, Relaxed);
-
-        let blocking_item = self.get_item_blocking_with();
-        let blocked = self.apply_item_blocking(caller, &damage_type, amount, position, source);
-        amount -= blocked;
-        if damage_type == DamageType::FREEZE
-            && self
-                .entity
-                .entity_type
-                .has_tag(&tag::EntityType::MINECRAFT_FREEZE_HURTS_EXTRA_TYPES)
-        {
-            amount *= 5.0;
+        // LivingEntity.hurtServer:1191-1211 resumes each serial stage on the admitted life.
+        if !self.valid_hurt_context(caller, context) {
+            return false;
         }
-        let Some((damage_amount, took_full_damage)) =
-            self.damage_after_cooldown(amount, &damage_type)
+        self.no_action_time.store(0, Relaxed); // LivingEntity.hurtServer:1196.
+        let original_damage = if amount < 0.0 { 0.0 } else { amount };
+        let blocking_item = self.get_item_blocking_with();
+        let blocked =
+            self.apply_item_blocking(caller, &damage_type, original_damage, position, source);
+        if !self.valid_hurt_context(caller, context) {
+            return false;
+        }
+        let amount = self.damage_before_cooldown(caller, original_damage - blocked, damage_type);
+        if !self.valid_hurt_context(caller, context) {
+            return false;
+        }
+        let Some((damage_amount, full_hit)) = self.damage_after_cooldown(amount, &damage_type)
         else {
             return false;
         };
-        let Some(server) = world.server.upgrade() else {
+        if !self.try_absorb_wolf_armor_damage(&damage_type, damage_amount)
+            && !self.actually_hurt(caller, amount, full_hit, context)
+        {
             return false;
-        };
-        self.actually_hurt(caller, damage_amount, damage_type, source, cause);
-        // Fully blocked admitted hits still resolve credit exactly once.
-        self.record_hurt_by(damage_type, source, cause);
-        let success = blocked <= 0.0 || amount > 0.0;
-        if took_full_damage {
-            if let Some(item) = blocking_item.as_ref().filter(|_| blocked > 0.0) {
-                self.on_item_blocked(caller, item);
-            } else {
-                self.hurt_feedback(
-                    damage_type,
-                    position,
-                    source,
-                    cause,
-                    server.advanced_config.pvp.hurt_animation,
-                );
-            }
-            if success
-                && self.health.load() > 0.0
-                && let Some(source) = source
-            {
-                let source_pos = source.get_entity().pos.load();
-                let target_pos = self.entity.pos.load();
-                let resistance = self.get_attribute_value(&Attributes::KNOCKBACK_RESISTANCE);
-                self.entity.apply_knockback(
-                    knockback_after_resistance(0.4, resistance),
-                    source_pos.x - target_pos.x,
-                    source_pos.z - target_pos.z,
-                );
-            }
         }
-        self.finish_hurt(caller, damage_type, source, cause, took_full_damage);
+        if self.damage_owner.lifecycle() != context.lifecycle {
+            return false;
+        }
+        if !full_hit {
+            // LivingEntity.hurtServer:1224-1225 assigns lastHurt after actuallyHurt.
+            self.last_damage_taken
+                .store(amount.max(self.last_damage_taken.load()));
+        }
+        if full_hit {
+            self.hurt_time.store(10, Relaxed); // LivingEntity.hurtServer: hurtDuration = 10.
+        }
+        self.record_hurt_by(damage_type, source, cause);
+        if full_hit {
+            self.full_hit_feedback(caller, context, blocked, amount, blocking_item.as_ref());
+        }
+        self.finish_hurt(caller, damage_type, source, cause, full_hit);
+        if self.damage_owner.lifecycle() != context.lifecycle {
+            return false;
+        }
+        let success = blocked <= 0.0 || amount > 0.0;
         if success {
             *self
                 .last_damage_type
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(damage_type);
-            self.last_damage_stamp.store(world.get_world_age(), Relaxed);
+            self.last_damage_stamp
+                .store(self.entity.world.load().get_world_age(), Relaxed);
+            self.notify_effects_of_damage(damage_type, amount);
         }
-        if blocked > 0.0
-            && let Some(player) = caller.get_player()
+        Self::damage_criteria_and_block_stat(caller, context, original_damage, amount, blocked);
+        if let Some(player) = caller.get_player() {
+            player.send_health();
+        }
+        success && self.damage_owner.lifecycle() == context.lifecycle
+    }
+
+    pub(super) fn valid_hurt_context(
+        &self,
+        caller: &dyn EntityBase,
+        context: HurtContext<'_>,
+    ) -> bool {
+        self.damage_owner.lifecycle() == context.lifecycle
+            && self.damage_owner.admits_health(self.health.load())
+            && !self.rejects_damage(context.damage_type, context.cause)
+            && caller.get_player().is_none_or(|player| {
+                player
+                    .prepare_incoming_damage(
+                        1.0,
+                        context.damage_type,
+                        context.cause,
+                        context.source,
+                    )
+                    .is_some()
+            })
+    }
+
+    // LivingEntity.hurtServer:1274-1276 / MobEffectInstance.onMobHurt, including absorbed hits.
+    fn notify_effects_of_damage(&self, damage_type: DamageType, damage: f32) {
+        let effects: Vec<_> = self
+            .active_effects
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect();
+        for effect in effects {
+            if let Some(behavior) = crate::entity::effect::get_mob_effect(effect.effect_type) {
+                behavior.on_mob_hurt(self, effect.amplifier, &damage_type, damage);
+            }
+        }
+    }
+
+    pub(super) fn rejects_damage(
+        &self,
+        damage_type: DamageType,
+        cause: Option<&dyn EntityBase>,
+    ) -> bool {
+        self.entity.is_invulnerable_to(&damage_type, cause)
+            || self.health.load() <= 0.0
+            || self.dead.load(Relaxed)
+            || (damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FIRE)
+                && self.has_effect(&StatusEffect::FIRE_RESISTANCE))
+    }
+
+    fn damage_before_cooldown(
+        &self,
+        caller: &dyn EntityBase,
+        mut damage: f32,
+        damage_type: DamageType,
+    ) -> f32 {
+        if damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FREEZING)
+            && self
+                .entity
+                .entity_type
+                .has_tag(&tag::EntityType::MINECRAFT_FREEZE_HURTS_EXTRA_TYPES)
         {
-            player.increment_stat(
-                StatisticCategory::Custom,
-                CustomStatistic::DamageBlockedByShield as i32,
-                (blocked * 10.0).round() as i32,
-            );
+            damage *= 5.0;
         }
-        success
+        if damage_type.has_tag(&tag::DamageType::MINECRAFT_DAMAGES_HELMET)
+            && !EquippedItem::capture(caller, &EquipmentSlot::HEAD)
+                .stack
+                .is_empty()
+        {
+            self.hurt_helmet(caller, &damage_type, damage);
+            damage *= 0.75; // LivingEntity.hurtServer:1210.
+        }
+        if damage.is_finite() { damage } else { f32::MAX }
     }
 
     fn damage_after_plugin_events(
         &self,
+        caller: &dyn EntityBase,
         mut amount: f32,
-        damage_type: DamageType,
-        position: Option<Vector3<f64>>,
-        source: Option<&dyn EntityBase>,
-        cause: Option<&dyn EntityBase>,
+        context: HurtContext<'_>,
     ) -> Option<f32> {
+        let HurtContext {
+            damage_type,
+            position,
+            source,
+            cause,
+            ..
+        } = context;
         let mut damage_event =
             crate::plugin::api::events::entity::entity_damage::EntityDamageEvent::new(
                 self.entity.entity_id,
@@ -143,7 +257,7 @@ impl LivingEntity {
                 .plugin_manager
                 .fire_blocking(&server, &mut damage_event);
         }
-        if damage_event.cancelled {
+        if damage_event.cancelled || !self.valid_hurt_context(caller, context) {
             return None;
         }
         amount = damage_event.damage;
@@ -162,7 +276,7 @@ impl LivingEntity {
                     .plugin_manager
                     .fire_blocking(&server, &mut by_entity_event);
             }
-            if by_entity_event.cancelled {
+            if by_entity_event.cancelled || !self.valid_hurt_context(caller, context) {
                 return None;
             }
             amount = by_entity_event.damage;
@@ -196,87 +310,12 @@ impl LivingEntity {
                     .plugin_manager
                     .fire_blocking(&server, &mut by_block_event);
             }
-            if by_block_event.cancelled {
+            if by_block_event.cancelled || !self.valid_hurt_context(caller, context) {
                 return None;
             }
             amount = by_block_event.damage;
         }
 
         Some(amount)
-    }
-
-    // LivingEntity.hurtServer sends damage feedback only on the full cooldown path.
-    fn hurt_feedback(
-        &self,
-        damage_type: DamageType,
-        position: Option<Vector3<f64>>,
-        source: Option<&dyn EntityBase>,
-        cause: Option<&dyn EntityBase>,
-        hurt_animation: bool,
-    ) {
-        let world = self.entity.world.load();
-        if hurt_animation {
-            let entity_id = self.entity.entity_id;
-            let hurt_yaw = source.map_or(0.0, |source| {
-                let src = source.get_entity().pos.load();
-                let tgt = self.entity.pos.load();
-                (src.z - tgt.z).atan2(src.x - tgt.x).to_degrees() as f32 - self.entity.yaw.load()
-            });
-            let hurt_event = SActorEvent {
-                target_runtime_id: VarULong(entity_id as u64),
-                event_id: ActorEventID::Hurt,
-                data: VarInt(0),
-                fire_at_position: None,
-            };
-            let hurt_animation = CHurtAnimation::new(entity_id.into(), hurt_yaw);
-            world.send_to_tracking_players_and_self_editioned(
-                &self.entity,
-                &hurt_animation,
-                &hurt_event,
-            );
-        }
-        world.broadcast_damage_event(
-            &self.entity,
-            i32::from(damage_type.id),
-            cause.map(|e| e.get_entity().entity_id),
-            source.map(|e| e.get_entity().entity_id),
-            position,
-        );
-    }
-
-    // LivingEntity.hurtServer checks checkTotemDeathProtection before die and all death events.
-    fn finish_hurt(
-        &self,
-        caller: &dyn EntityBase,
-        damage_type: DamageType,
-        source: Option<&dyn EntityBase>,
-        cause: Option<&dyn EntityBase>,
-        took_full_damage: bool,
-    ) {
-        let world = self.entity.world.load();
-        if self.health.load() <= 0.0 {
-            if self.try_use_death_protector(caller, &damage_type) {
-                return;
-            }
-            let mut death_event =
-                crate::plugin::api::events::entity::entity_death::EntityDeathEvent::new(
-                    self.entity.entity_id,
-                    0,
-                );
-            if let Some(server) = world.server.upgrade() {
-                server
-                    .plugin_manager
-                    .fire_blocking(&server, &mut death_event);
-            }
-            self.on_death(damage_type, source, cause);
-        } else if took_full_damage {
-            world.play_sound_fine(
-                self.hurt_sound(caller),
-                SoundCategory::Players,
-                &self.entity.pos.load(),
-                1.0,
-                self.get_pitch(),
-            );
-        }
     }
 }

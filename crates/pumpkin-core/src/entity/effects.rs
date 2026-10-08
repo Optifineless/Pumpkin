@@ -5,8 +5,8 @@ use crate::entity::{
 };
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{
-    attributes::Attributes, damage::DamageType, data_component_impl::Operation,
-    effect::StatusEffect, entity::EntityType, potion::Effect,
+    attributes::Attributes, data_component_impl::Operation, effect::StatusEffect,
+    entity::EntityType, potion::Effect,
 };
 use pumpkin_nbt::compound::NbtCompound;
 use std::sync::atomic::Ordering::Relaxed;
@@ -126,6 +126,7 @@ fn absorption_on_effect_started(current: f32, amplifier: u8, maximum: f32) -> f3
 
 impl LivingEntity {
     pub(super) fn add_effect_impl(&self, effect: Effect) {
+        let _owner = self.own_damage();
         // LivingEntity.addEffect / canBeAffected checks immunities before updating.
         // WitherBoss.addEffect and EnderDragon.addEffect reject the whole operation.
         if self.entity.entity_type == &EntityType::WITHER
@@ -150,25 +151,8 @@ impl LivingEntity {
             return;
         }
 
-        // Apply instant effects immediately before storing
-        if effect.effect_type == &StatusEffect::INSTANT_HEALTH {
-            // HealOrHarmMobEffect.applyEffectTick uses Java's masked int shift.
-            let heal_amount = 4i32.wrapping_shl(u32::from(effect.amplifier)).max(0) as f32;
-            if heal_amount > 0.0 {
-                self.heal(heal_amount);
-            }
-            // Preserve Pumpkin's existing immediate instant-effect dispatch.
-            return;
-        } else if effect.effect_type == &StatusEffect::INSTANT_DAMAGE {
-            let damage_amount = 6i32.wrapping_shl(u32::from(effect.amplifier)) as f32;
-            let dyn_self = self
-                .entity
-                .world
-                .load()
-                .get_entity_by_id(self.entity.entity_id);
-            if let Some(dyn_self) = dyn_self {
-                let _ = dyn_self.damage(&*dyn_self, damage_amount, DamageType::MAGIC);
-            }
+        // Preserve Pumpkin's immediate instant-effect dispatch without storing a duration.
+        if self.apply_heal_or_harm(effect.effect_type, effect.amplifier, None) {
             return;
         }
 
@@ -214,6 +198,7 @@ impl LivingEntity {
     }
 
     fn on_effect_updated(&self, effect: &Effect) {
+        let _owner = self.own_damage();
         // LivingEntity.onEffectAdded / onEffectUpdated reapplies modifiers only on a change.
 
         // Effects that modify attributes (ex. speed) should also update the
@@ -305,6 +290,7 @@ impl LivingEntity {
     }
 
     pub(super) fn tick_effects_impl(&self) {
+        let _owner = self.own_damage();
         // MobEffectInstance.tickServer executes the periodic callback before duration/promotion.
         let snapshots: Vec<_> = {
             let effects = self

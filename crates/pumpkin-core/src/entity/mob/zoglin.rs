@@ -63,7 +63,7 @@ impl ZoglinEntity {
                 damage.dirty.store(true, Ordering::Relaxed);
             }
         }
-        mob_entity.living_entity.health.store(40.0);
+        mob_entity.living_entity.set_health(40.0);
 
         let zoglin = Self {
             mob_entity,

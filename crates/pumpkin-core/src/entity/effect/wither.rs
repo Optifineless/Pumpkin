@@ -13,6 +13,7 @@ impl MobEffect for WitherMobEffect {
     }
 
     fn apply_effect_tick(&self, living: &LivingEntity, _amplifier: u8) -> bool {
+        let _owner = living.own_damage();
         let dyn_self = living
             .entity
             .world

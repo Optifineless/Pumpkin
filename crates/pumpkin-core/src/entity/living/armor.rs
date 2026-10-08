@@ -33,7 +33,12 @@ impl LivingEntity {
         }
     }
 
-    fn hurt_armor(&self, caller: &dyn EntityBase, damage_type: &DamageType, damage: f32) {
+    pub(super) fn hurt_armor(
+        &self,
+        caller: &dyn EntityBase,
+        damage_type: &DamageType,
+        damage: f32,
+    ) {
         // Player.hurtArmor, Horse.hurtArmor and Wolf.hurtArmor; the base hook is empty.
         let slots = if caller.get_player().is_some() {
             &[
@@ -136,15 +141,23 @@ impl LivingEntity {
     ) {
         // LivingEntity.doHurtEquipment delegates to ItemStack.hurtAndBreak for eligible slots.
         use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item_if};
+        let life = self.own_damage();
         let owner: &dyn EntityBase = if let Some(player) = caller.get_player() {
             player
         } else {
             self
         };
         for slot in slots {
-            damage_equipped_item_if(owner, &EquippedItem::capture(owner, slot), |stack| {
-                equipment_damage_amount(stack, damage_type, damage)
-            });
+            // Player.hurtArmor processes slots serially; callbacks cannot wear a replacement life.
+            if !life.is_current_life() {
+                return;
+            }
+            damage_equipped_item_if(
+                owner,
+                &EquippedItem::capture(owner, slot),
+                Some(&life),
+                |stack| equipment_damage_amount(stack, damage_type, damage),
+            );
         }
     }
 
@@ -191,6 +204,18 @@ impl LivingEntity {
             return damage;
         }
         self.hurt_armor(caller, damage_type, damage);
+        self.reduce_armor_damage(damage, damage_type, weapon)
+    }
+
+    pub(super) fn reduce_armor_damage(
+        &self,
+        damage: f32,
+        damage_type: &DamageType,
+        weapon: Option<&ItemStack>,
+    ) -> f32 {
+        if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_ARMOR) {
+            return damage;
+        }
         CombatRules::get_damage_after_absorb(
             damage,
             self.get_armor_attribute_value(&Attributes::ARMOR).floor() as f32,
@@ -249,9 +274,19 @@ impl LivingEntity {
     /// Calculates damage after magic/resistance/enchantment reduction, mirroring vanilla `LivingEntity.getDamageAfterMagicAbsorb`.
     pub fn get_damage_after_magic_absorb(
         &self,
-        mut damage: f32,
+        damage: f32,
         damage_type: &DamageType,
         caller: &dyn EntityBase,
+        cause: Option<&dyn EntityBase>,
+    ) -> f32 {
+        self.reduce_magic_damage(damage, damage_type, Some(caller), cause)
+    }
+
+    pub(super) fn reduce_magic_damage(
+        &self,
+        mut damage: f32,
+        damage_type: &DamageType,
+        caller: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> f32 {
         if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_EFFECTS) {
@@ -262,20 +297,22 @@ impl LivingEntity {
         if !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_RESISTANCE)
             && let Some(effect) = self.get_effect(&StatusEffect::RESISTANCE)
         {
-            let absorb_value = (effect.amplifier + 1) * 5;
+            let absorb_value = (i32::from(effect.amplifier) + 1) * 5;
             let absorb = 25 - absorb_value;
             let v = damage * absorb as f32;
             let old_damage = damage;
             damage = (v / 25.0).max(0.0);
             let damage_resisted = old_damage - damage;
-            if damage_resisted > 0.0 {
-                if let Some(victim_player) = caller.get_player() {
+            if damage_resisted > 0.0 && damage_resisted < f32::MAX / 10.0 {
+                if let Some(victim_player) = caller.and_then(EntityBase::get_player) {
                     victim_player.increment_stat(
                         StatisticCategory::Custom,
                         CustomStatistic::DamageResisted as i32,
                         (damage_resisted * 10.0).round() as i32,
                     );
-                } else if let Some(attacker_player) = cause.and_then(|c| c.get_player()) {
+                } else if caller.is_some()
+                    && let Some(attacker_player) = cause.and_then(|c| c.get_player())
+                {
                     attacker_player.increment_stat(
                         StatisticCategory::Custom,
                         CustomStatistic::DamageDealtResisted as i32,

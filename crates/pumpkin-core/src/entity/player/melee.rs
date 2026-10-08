@@ -8,6 +8,7 @@ use crate::entity::combat::{
     player_attack_sound,
 };
 use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item};
+use crate::entity::living::damage_transaction::DamageToken;
 use pumpkin_data::data_component_impl::{EnchantmentsImpl, WeaponImpl};
 
 impl Player {
@@ -18,7 +19,6 @@ impl Player {
         };
         let victim_entity = victim.get_entity();
         let attacker_entity = &self.living_entity.entity;
-        let config = &server.advanced_config.pvp;
 
         let attacking_item = EquippedItem::capture(self, &EquipmentSlot::MAIN_HAND);
         let item_stack = &attacking_item.stack;
@@ -39,10 +39,7 @@ impl Player {
         let is_mace_smash = item_stack.item.id == pumpkin_data::item::Item::MACE.id
             && can_smash_attack(&self.living_entity);
         let item_bonus = if is_mace_smash {
-            let fall_distance = f64::from(self.living_entity.fall_distance.load());
-            let per_block =
-                crate::enchantment::EnchantmentHelper::modify_fall_based_damage(item_stack, 0.0);
-            per_block.mul_add(fall_distance, mace_smash_damage_bonus(fall_distance)) as f32
+            self.mace_attack_bonus(item_stack)
         } else {
             0.0
         };
@@ -65,6 +62,9 @@ impl Player {
             player_attack_sound(&attacker_entity.pos.load(), &world, attack_type);
         }
 
+        let attack = victim
+            .get_living_entity()
+            .map(crate::entity::living::LivingEntity::begin_melee);
         if victim
             .get_player()
             .is_some_and(|player| !self.can_attack_player(player))
@@ -77,20 +77,18 @@ impl Player {
                 Some(self),
             )
         {
-            world.play_sound(
-                Sound::EntityPlayerAttackNodamage,
-                SoundCategory::Players,
-                &self.living_entity.entity.pos.load(),
-            );
+            self.reject_melee_attack(victim.as_ref(), attack.as_ref());
             return;
         }
 
-        if is_mace_smash && damage >= 100.0 {
-            self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::DealtOverkillDamage);
-        }
-
-        if config.knockback {
-            self.cause_extra_knockback(victim.as_ref(), item_stack, attack_type);
+        let old_movement = attack.as_ref().zip(victim.get_living_entity()).map_or_else(
+            || victim_entity.velocity.load(),
+            |(attack, living)| attack.finish_motion(living),
+        );
+        let damp = server.advanced_config.pvp.knockback
+            && self.cause_extra_knockback(victim.as_ref(), item_stack, attack_type);
+        if !self.send_hurt_motion_owned(victim.as_ref(), old_movement, damp, attack.as_ref()) {
+            return;
         }
 
         if attack_type == AttackType::Sweeping {
@@ -102,6 +100,10 @@ impl Player {
                 charge,
             );
         }
+        // Player.attack:978-986: sweeping precedes the primary target's item interaction.
+        if !attack.as_ref().is_none_or(DamageToken::is_current_life) {
+            return;
+        }
         self.attack_visual_effects(
             victim_entity,
             attack_type,
@@ -110,12 +112,51 @@ impl Player {
 
         self.living_entity.set_last_hurt_mob(victim.as_ref());
 
-        self.item_attack_interaction(victim.as_ref(), &attacking_item, damage_type, is_mace_smash);
+        self.finish_melee_attack(
+            victim.as_ref(),
+            &attacking_item,
+            damage_type,
+            is_mace_smash,
+            attack.as_ref(),
+        );
+    }
+
+    // Player.attack's rejected-hit branch; pre-cooldown block responses survive rejection.
+    fn reject_melee_attack(&self, victim: &dyn EntityBase, attack: Option<&DamageToken>) {
+        if let Some((attack, living)) = attack.zip(victim.get_living_entity()) {
+            attack.finish_motion(living);
+        }
+        self.world().play_sound(
+            Sound::EntityPlayerAttackNodamage,
+            SoundCategory::Players,
+            &self.living_entity.entity.pos.load(),
+        );
+    }
+
+    // Player.attack:984-989 completes item interaction before damage accounting and exhaustion.
+    fn finish_melee_attack(
+        &self,
+        victim: &dyn EntityBase,
+        weapon: &EquippedItem,
+        damage_type: DamageType,
+        is_mace_smash: bool,
+        attack: Option<&DamageToken>,
+    ) {
+        self.item_attack_interaction(victim, weapon, damage_type, is_mace_smash, attack);
+        self.damage_stats_and_hearts(victim, attack.map_or(0.0, DamageToken::health_damage));
 
         // Vanilla `Player#attack` ends the successful-hit branch with
         // `causeFoodExhaustion(0.1F)`. Only landed hits exhaust; the miss/no-damage
         // case returned early above.
         self.add_exhaustion(0.1);
+    }
+
+    // MaceItem.getAttackDamageBonus adds the enchantment's per-block bonus.
+    fn mace_attack_bonus(&self, item_stack: &ItemStack) -> f32 {
+        let fall_distance = f64::from(self.living_entity.fall_distance.load());
+        let per_block =
+            crate::enchantment::EnchantmentHelper::modify_fall_based_damage(item_stack, 0.0);
+        per_block.mul_add(fall_distance, mace_smash_damage_bonus(fall_distance)) as f32
     }
 
     // Player.attackVisualEffects keeps successful-hit feedback after sweeping.
@@ -167,13 +208,13 @@ impl Player {
         }
     }
 
-    // Player.causeExtraKnockback. Java victim motion delivery belongs to hurt orchestration.
+    // Player.causeExtraKnockback; attack sends and restores the completed victim impulse.
     fn cause_extra_knockback(
         &self,
         victim: &dyn EntityBase,
         weapon: &ItemStack,
         attack_type: AttackType,
-    ) {
+    ) -> bool {
         let base_knockback = self
             .living_entity
             .get_attribute_value(&Attributes::ATTACK_KNOCKBACK) as f32;
@@ -186,24 +227,20 @@ impl Player {
             0.0
         };
         if strength <= 0.0 {
-            return;
+            return false;
         }
         let attacker = self.get_entity();
         if victim.get_living_entity().is_some() {
             combat::handle_knockback(attacker, victim, strength * 2.0);
         } else {
             let yaw = attacker.yaw.load().to_radians();
-            victim.get_entity().add_velocity(Vector3::new(
+            victim.get_entity().push_impulse(Vector3::new(
                 -f64::from(yaw.sin()) * strength,
                 0.1,
                 f64::from(yaw.cos()) * strength,
             ));
-            let velocity = attacker.velocity.load();
-            attacker
-                .velocity
-                .store(Vector3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));
         }
-        self.living_entity.set_sprinting(false);
+        true
     }
 
     /// Checks melee player-versus-player permission for both the primary target and sweep victims.
@@ -288,7 +325,8 @@ impl Player {
                 sweeping_ratio,
                 charge,
             );
-            if nearby
+            let attack = living.begin_melee();
+            let damaged = nearby
                 .get_player()
                 .is_none_or(|player| self.can_attack_player(player))
                 && nearby.damage_with_context(
@@ -298,8 +336,9 @@ impl Player {
                     None,
                     Some(self),
                     Some(self),
-                )
-            {
+                );
+            attack.finish_motion(living);
+            if damaged {
                 let resistance = living.get_attribute_value(&Attributes::KNOCKBACK_RESISTANCE);
                 entity.apply_knockback(
                     combat::knockback_after_resistance(f64::from(0.4f32), resistance),
@@ -334,6 +373,7 @@ impl Player {
         weapon: &EquippedItem,
         damage_type: DamageType,
         is_mace_smash: bool,
+        attack: Option<&DamageToken>,
     ) {
         let stack = &weapon.stack;
         let living_target = victim.get_living_entity().is_some();
@@ -344,9 +384,10 @@ impl Player {
                     // MaceItem.hurtEnemy. Wind Burst runs after the smash braking packet.
                     let world = self.world();
                     let attacker = self.get_entity();
-                    let velocity = attacker.velocity.load();
-                    self.living_entity.protect_mace_landing();
-                    self.set_velocity(Vector3::new(velocity.x, f64::from(0.01f32), velocity.z));
+                    self.brake_mace_motion();
+                    if !attack.is_none_or(DamageToken::is_current_life) {
+                        return;
+                    }
                     let grounded = victim.get_entity().on_ground.load(Ordering::Relaxed);
                     let sound = if !grounded {
                         Sound::ItemMaceSmashAir
@@ -371,6 +412,9 @@ impl Player {
                 }
             },
             || {
+                if !attack.is_none_or(DamageToken::is_current_life) {
+                    return;
+                }
                 crate::enchantment::EnchantmentHelper::on_post_attack(
                     victim,
                     crate::enchantment::post_attack::AttackEffectContext::melee(self, damage_type),
@@ -378,6 +422,9 @@ impl Player {
                 );
             },
             || {
+                if !attack.is_none_or(DamageToken::is_current_life) {
+                    return;
+                }
                 if item_hurt_enemy {
                     // MaceItem.postHurtEnemy, followed by ItemStack.postHurtEnemy durability.
                     if is_mace_smash {

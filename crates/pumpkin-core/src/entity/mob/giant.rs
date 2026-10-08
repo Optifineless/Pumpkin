@@ -49,7 +49,7 @@ impl GiantEntity {
                     .store(true, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        mob_entity.living_entity.health.store(100.0);
+        mob_entity.living_entity.set_health(100.0);
 
         let giant = Self { mob_entity };
         let mob_arc = Arc::new(giant);

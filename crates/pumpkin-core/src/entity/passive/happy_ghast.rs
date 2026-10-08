@@ -186,6 +186,7 @@ impl Mob for HappyGhastEntity {
         let entity = self.get_entity();
         if entity.is_alive() {
             let living = &self.mob_entity.living_entity;
+            let _owner = living.own_damage();
             let current_health = living.health.load();
             let max_health = living.get_max_health();
             if current_health < max_health {
@@ -193,7 +194,7 @@ impl Mob for HappyGhastEntity {
                 let ticks = world.get_world_age();
                 let heal_interval = 600;
                 if ticks % heal_interval == 0 {
-                    living.set_health(current_health + 1.0);
+                    living.heal(1.0);
                 }
             }
         }

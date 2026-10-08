@@ -4051,16 +4051,19 @@ impl World {
 
         let result = explosion.explode(self);
         for player in self.players.load().iter() {
+            // ServerExplosion.hurtEntities: retain the hit life through packet delivery.
+            let _motion_owner = result
+                .player_lifecycles
+                .contains_key(&player.entity_id())
+                .then(|| player.living_entity.own_damage());
+            let knockback = result.player_knockback_for(player);
             if player.position().squared_distance_to_vec(&position) > 4096.0 {
-                if let Some(knockback) = result.player_knockback.get(&player.entity_id()) {
-                    player.get_entity().add_velocity(*knockback);
+                if let Some(knockback) = knockback {
+                    player.get_entity().add_velocity(knockback);
                 }
                 continue;
             }
-            player.try_send_client_packet(&explosion.packet(
-                result.block_count,
-                result.player_knockback.get(&player.entity_id()).copied(),
-            ));
+            player.try_send_client_packet(&explosion.packet(result.block_count, knockback));
         }
     }
 

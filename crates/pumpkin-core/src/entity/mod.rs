@@ -1,3 +1,4 @@
+mod damage_motion;
 pub mod death_loot;
 #[cfg(test)]
 pub(crate) mod death_test_world;
@@ -999,6 +1000,8 @@ pub struct Entity {
     pub movement_multiplier: AtomicCell<Vector3<f64>>,
     /// Vanilla `needsSync`: tracker resyncs position and velocity of entities
     pub velocity_dirty: AtomicBool,
+    /// Vanilla syncVelocity, separate from the tracker's needsSync flag.
+    pub hurt_marked: AtomicBool,
     /// Set when an Entity is to be removed but could still be referenced
     pub removed: AtomicBool,
     /// The last sent yaw value (encoded as u8) for change detection
@@ -1132,6 +1135,7 @@ impl Entity {
             synched_data: synched_entity_data::SynchedEntityData::new(),
             movement_multiplier: AtomicCell::new(Vector3::default()),
             velocity_dirty: AtomicBool::new(true),
+            hurt_marked: AtomicBool::new(false),
             removed: AtomicBool::new(false),
             last_sent_yaw: AtomicU8::new(0),
             last_sent_pitch: AtomicU8::new(0),
@@ -1317,6 +1321,7 @@ impl Entity {
 
     /// Vanilla `hurtMarked` path: immediate, to watchers and self.
     pub fn send_velocity(&self) {
+        self.acknowledge_motion_delivery();
         let velocity = self.velocity.load();
         self.last_sent_velocity.store(velocity);
         self.world

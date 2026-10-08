@@ -179,10 +179,11 @@ impl Mob for IronGolemEntity {
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
         if item_stack.item.id == Item::IRON_INGOT.id {
             let living = &self.mob_entity.living_entity;
+            let _owner = living.own_damage();
             let current_health = living.health.load();
             let max_health = living.get_max_health();
             if current_health < max_health {
-                living.set_health((current_health + 25.0).min(max_health));
+                living.heal(25.0);
                 let entity = self.get_entity();
                 let world = entity.world.load();
                 let pos = entity.pos.load();

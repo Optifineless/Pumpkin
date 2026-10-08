@@ -12,7 +12,6 @@ use pumpkin_data::{
     data_component_impl::{EnchantmentsImpl, EquipmentSlot},
     entity::{EntityPose, EntityStatus, EntityType},
     item_stack::ItemStack,
-    sound::SoundCategory,
 };
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use pumpkin_util::{GameMode, math::vector3::Vector3};
@@ -117,6 +116,8 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) {
+        let _owner = self.own_damage();
+        let lifecycle = self.damage_lifecycle();
         let world = self.entity.world.load();
         let Some(dyn_self) = world.get_entity_by_id(self.entity.entity_id) else {
             return;
@@ -132,54 +133,70 @@ impl LivingEntity {
             let kill_credit = self.get_kill_credit();
             let killer = kill_credit.as_deref();
 
-            self.update_death_stats(&*dyn_self, killer);
+            if !self.update_death_stats(&*dyn_self, killer, lifecycle) {
+                return;
+            }
 
-            // Plays the death sound
-            world.play_sound_fine(
-                self.death_sound(&*dyn_self),
-                SoundCategory::Players,
-                &self.entity.pos.load(),
-                1.0,
-                self.get_pitch(),
-            );
+            // LivingEntity.hurtServer plays the death sound only for a fresh cooldown hit.
             world.send_entity_status(&self.entity, EntityStatus::Death, Some(ActorEventID::Death));
-            let Some(death_message) =
-                self.prepare_death_message(&*dyn_self, damage_type, source, cause)
-            else {
+            let death_message = self.prepare_death_message(&*dyn_self, damage_type, source, cause);
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
+            let Some(death_message) = death_message else {
                 return;
             };
-            self.drop_all_death_loot(&*dyn_self, damage_type, source, cause);
-            self.entity.pose.store(EntityPose::Dying);
-
-            // Broadcast death message if it's a player and the gamerule is enabled
-            self.broadcast_death_message(&*dyn_self, death_message);
-            if dyn_self.get_player().is_some() {
-                // ServerPlayer.die rechecks status after constructing and sending the death message.
-                self.combat_tracker
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .recheck_status(self.combat_ticks.load(Relaxed), false);
+            self.drop_all_death_loot(&*dyn_self, damage_type, source, cause, lifecycle);
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
             }
+            self.finish_death(&*dyn_self, damage_type, death_message, lifecycle);
+        }
+    }
 
-            // Trigger on_mob_death for active status effects
-            let active_effects_vec: Vec<_> = {
-                let effects = self
-                    .active_effects
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                effects
-                    .values()
-                    .map(|e| (e.effect_type, e.amplifier))
-                    .collect()
-            };
-            for (effect_type, amplifier) in active_effects_vec {
-                if let Some(mob_effect) = crate::entity::effect::get_mob_effect(effect_type) {
-                    mob_effect.on_mob_death(self, amplifier, &damage_type);
+    fn finish_death(
+        &self,
+        caller: &dyn EntityBase,
+        damage_type: DamageType,
+        death_message: pumpkin_util::text::TextComponent,
+        lifecycle: u64,
+    ) {
+        self.entity.pose.store(EntityPose::Dying);
+
+        // Broadcast death message if it's a player and the gamerule is enabled
+        self.broadcast_death_message(caller, death_message, lifecycle);
+        if !self.death_lifecycle_current(lifecycle) {
+            return;
+        }
+        if caller.get_player().is_some() {
+            // ServerPlayer.die rechecks status after constructing and sending the death message.
+            self.combat_tracker
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .recheck_status(self.combat_ticks.load(Relaxed), false);
+        }
+
+        // Trigger on_mob_death for active status effects
+        let active_effects_vec: Vec<_> = {
+            let effects = self
+                .active_effects
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            effects
+                .values()
+                .map(|e| (e.effect_type, e.amplifier))
+                .collect()
+        };
+        for (effect_type, amplifier) in active_effects_vec {
+            if let Some(mob_effect) = crate::entity::effect::get_mob_effect(effect_type) {
+                mob_effect.on_mob_death(self, amplifier, &damage_type);
+                if !self.death_lifecycle_current(lifecycle) {
+                    return;
                 }
             }
-
-            self.reset_effects_and_attributes();
         }
+
+        self.reset_effects_and_attributes();
     }
 
     // LivingEntity.dropAllDeathLoot: mob equipment belongs to dropCustomDeathLoot;
@@ -190,6 +207,7 @@ impl LivingEntity {
         damage_type: DamageType,
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
+        lifecycle: u64,
     ) {
         let world = self.entity.world.load();
         if caller
@@ -244,16 +262,47 @@ impl LivingEntity {
                     .map(|player| player as &dyn EntityBase),
                 &params,
             );
-            self.drop_loot(&params);
+            self.drop_loot_for_life(&params, lifecycle);
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
             if let Some(mob) = caller.get_mob() {
-                self.drop_equipment(player_killed, source, killer);
+                self.drop_equipment(player_killed, source, killer, lifecycle);
+                if !self.death_lifecycle_current(lifecycle) {
+                    return;
+                }
                 mob.drop_custom_death_loot();
+                if !self.death_lifecycle_current(lifecycle) {
+                    return;
+                }
             }
         }
         if let Some(player) = caller.get_player() {
-            player.drop_equipment_on_death();
+            player.drop_equipment_on_death(lifecycle);
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
         }
         self.drop_experience(caller, killer, player_killed);
+    }
+
+    fn drop_loot_for_life(&self, params: &LootContextParameters, lifecycle: u64) {
+        // LivingEntity.dropFromLootTable: finish delivering loot already generated for this life.
+        if !self.death_lifecycle_current(lifecycle) {
+            return;
+        }
+        let key = format!(
+            "minecraft:entities/{}",
+            self.entity.entity_type.resource_name
+        );
+        let world = self.entity.world.load();
+        if let Some(loot_table) = world.get_loot_table(&key) {
+            // LivingEntity.getLootTableSeed returns zero, selecting the table's named sequence.
+            let pos = self.entity.block_pos.load();
+            for stack in crate::world::loot::generate_loot_from_handle(&loot_table, 0, params) {
+                world.drop_stack(&pos, stack);
+            }
+        }
     }
 
     fn drop_equipment(
@@ -261,6 +310,7 @@ impl LivingEntity {
         player_killed: bool,
         source: Option<&dyn EntityBase>,
         killer: Option<&dyn EntityBase>,
+        lifecycle: u64,
     ) {
         // Mob.dropCustomDeathLoot / EnchantmentHelper.processEquipmentDropChance
         let world = self.entity.world.load();
@@ -329,6 +379,9 @@ impl LivingEntity {
                 item.set_damage(max_damage - outer);
             }
             world.drop_stack(&self.entity.block_pos.load(), item);
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
         }
     }
 
@@ -441,10 +494,14 @@ impl LivingEntity {
         &self,
         caller: &dyn EntityBase,
         message: pumpkin_util::text::TextComponent,
+        lifecycle: u64,
     ) {
         let world = self.entity.world.load();
         if let Some(player) = caller.get_player() {
-            player.handle_killed(&message);
+            player.handle_killed_for_life(&message, lifecycle);
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
             if world.level_info.load().game_rules.show_death_messages
                 && let Some(server) = world.server.upgrade()
             {

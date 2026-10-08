@@ -1,8 +1,8 @@
+use crate::entity::living::damage_transaction::DamageToken;
 use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::entity::combat;
 use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item};
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase};
@@ -28,6 +28,9 @@ use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::{GameMode, Hand};
 
 pub struct SpearItem;
+
+#[path = "spear/stab_knockback.rs"]
+mod stab_knockback;
 
 impl ItemMetadata for SpearItem {
     fn ids() -> Box<[u16]> {
@@ -171,6 +174,9 @@ impl SpearItem {
             ..EquippedItem::capture(player, &slot)
         };
         let target_entity = target.get_entity();
+        let attack = target
+            .get_living_entity()
+            .map(crate::entity::living::LivingEntity::begin_melee);
         let mut base_damage = base_damage;
         let mut magic_boost = Self::enchantment_damage(stack, target_entity) as f32;
         if !Self::is_using_hand(player, hand) {
@@ -194,15 +200,25 @@ impl SpearItem {
                 Some(player),
             );
 
-        let config = &server.advanced_config.pvp;
-        if effects.knockback && config.knockback && target.get_living_entity().is_some() {
-            let attacker = player.get_entity();
-            combat::handle_knockback(attacker, target.as_ref(), 0.8);
-            let knockback_level = Self::knockback_level(stack);
-            if knockback_level > 0 {
-                combat::handle_knockback(attacker, target.as_ref(), f64::from(knockback_level));
-            }
-            target_entity.send_velocity();
+        let old_movement = attack.as_ref().zip(target.get_living_entity()).map_or_else(
+            || target_entity.velocity.load(),
+            |(attack, living)| attack.finish_motion(living),
+        );
+        if !attack.as_ref().is_none_or(DamageToken::is_current_life) {
+            return false;
+        }
+        if effects.knockback
+            && server.advanced_config.pvp.knockback
+            && target.get_living_entity().is_some()
+            && !Self::stab_knockback(
+                player,
+                target.as_ref(),
+                stack,
+                old_movement,
+                attack.as_ref(),
+            )
+        {
+            return false;
         }
 
         let mut dismounted = false;
@@ -232,6 +248,11 @@ impl SpearItem {
                 weapon.item_damage_per_attack as i32,
             );
         }
+        // Player.stabAttack invokes damageStatsAndHearts after item interaction (1247).
+        player.damage_stats_and_hearts(
+            target.as_ref(),
+            attack.as_ref().map_or(0.0, DamageToken::health_damage),
+        );
         player.add_exhaustion(0.1);
         true
     }
@@ -679,46 +700,4 @@ fn clip_point(
         return true;
     }
     false
-}
-
-#[cfg(test)]
-mod death_memory_tests {
-    use super::*;
-    use crate::entity::death_test_world::DeathTestWorld;
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn death_outgoing_spear_attack_memory_uses_living_ticks() {
-        let fixture = DeathTestWorld::new().await;
-        let player = fixture.player("Spearman");
-        player.living_entity.tick(&*player, &fixture.server);
-        let target = fixture.mob(&EntityType::COW);
-        let stack = ItemStack::new(1, &Item::IRON_SPEAR);
-        assert!(SpearItem::stab_attack(
-            &player,
-            &fixture.server,
-            Hand::Right,
-            &stack,
-            &target,
-            1.0,
-            StabEffects {
-                damage: true,
-                knockback: false,
-                dismount: false
-            }
-        ));
-        assert_eq!(
-            player
-                .living_entity
-                .last_attack_time
-                .load(Ordering::Relaxed),
-            1
-        );
-        assert_eq!(
-            player
-                .living_entity
-                .last_attacking_id
-                .load(Ordering::Relaxed),
-            target.get_entity().entity_id
-        );
-    }
 }

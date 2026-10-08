@@ -77,6 +77,7 @@ impl DeathTestWorld {
             &world,
             GameMode::Survival,
         ));
+        player.set_client_loaded(true);
         world.players.rcu(|players| {
             let mut players = (**players).clone();
             players.push(player.clone());

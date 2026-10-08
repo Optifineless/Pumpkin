@@ -3881,16 +3881,7 @@ impl Player {
         source: Option<&dyn crate::entity::EntityBase>,
         cause: Option<&dyn crate::entity::EntityBase>,
     ) -> bool {
-        if self
-            .abilities
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .invulnerable
-            && damage_type != pumpkin_data::damage::DamageType::GENERIC_KILL
-            && damage_type != pumpkin_data::damage::DamageType::OUT_OF_WORLD
-        {
-            return false;
-        }
+        // ServerPlayer.hurtServer / Player.hurtServer gates run in the owned living pipeline.
         self.living_entity
             .damage_with_context(caller, amount, damage_type, position, source, cause)
     }

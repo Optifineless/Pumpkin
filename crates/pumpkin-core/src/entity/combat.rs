@@ -272,6 +272,7 @@ pub fn knockback_after_resistance(strength: f64, resistance: f64) -> f64 {
     strength * (1.0 - resistance)
 }
 
+/// Applies extra knockback while the caller owns the victim; damp the attacker after delivery.
 pub fn handle_knockback(attacker: &Entity, victim: &dyn EntityBase, strength: f64) {
     let resistance = victim.get_living_entity().map_or(0.0, |living| {
         living.get_attribute_value(&Attributes::KNOCKBACK_RESISTANCE)
@@ -280,15 +281,13 @@ pub fn handle_knockback(attacker: &Entity, victim: &dyn EntityBase, strength: f6
 
     if strength > 0.0 {
         let yaw = attacker.yaw.load();
-        victim.get_entity().knockback(
+        // LivingEntity.knockback sets needsSync even for an excess hit's extra knockback.
+        victim.get_entity().apply_knockback(
             strength,
             f64::from((yaw.to_radians()).sin()),
             f64::from(-(yaw.to_radians()).cos()),
         );
     }
-
-    let velocity = attacker.velocity.load();
-    attacker.velocity.store(velocity.multiply(0.6, 1.0, 0.6));
 }
 
 pub fn spawn_sweep_particle(attacker_entity: &Entity, world: &World, pos: &Vector3<f64>) {

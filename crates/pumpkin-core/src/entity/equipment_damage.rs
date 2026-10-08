@@ -1,3 +1,4 @@
+use super::living::damage_transaction::DamageToken;
 use crate::entity::{
     EntityBase, equipment_break_status,
     player::{Player, statistics},
@@ -113,13 +114,15 @@ fn inventory_index(player: &Player, slot: &EquipmentSlot) -> Option<usize> {
 /// Applies wear to the originating stack, revalidating its identity after unlocked callbacks.
 /// Returns false for cancelled wear, ineligible equipment or a replaced stack.
 pub fn damage_equipped_item(owner: &dyn EntityBase, item: &EquippedItem, amount: i32) -> bool {
-    damage_equipped_item_if(owner, item, |_| Some(amount))
+    damage_equipped_item_if(owner, item, None, |_| Some(amount))
 }
 
 /// Selects wear on the current originating stack under its guard, before and after callbacks.
+/// Hurt-pipeline callers pass their owner's token to reject wear after a life replacement.
 pub(crate) fn damage_equipped_item_if(
     owner: &dyn EntityBase,
     item: &EquippedItem,
+    life: Option<&DamageToken>,
     select_amount: impl Fn(&ItemStack) -> Option<i32>,
 ) -> bool {
     if item.stack.is_empty() {
@@ -134,7 +137,7 @@ pub(crate) fn damage_equipped_item_if(
     };
     if let Some(player) = owner.get_player() {
         return item.inventory_index.is_some_and(|index| {
-            player.damage_inventory_item_if(&item.slot, index, select_original)
+            player.damage_inventory_item_if(&item.slot, index, life, select_original)
         });
     }
     let Some(living) = owner.get_living_entity() else {
@@ -184,15 +187,18 @@ impl Player {
         let Some(slot_index) = inventory_index(self, slot) else {
             return false;
         };
-        self.damage_inventory_item_if(slot, slot_index, select_amount)
+        self.damage_inventory_item_if(slot, slot_index, None, select_amount)
     }
 
     fn damage_inventory_item_if(
         &self,
         slot: &EquipmentSlot,
         slot_index: usize,
+        life: Option<&DamageToken>,
         select_amount: impl Fn(&ItemStack) -> Option<i32>,
     ) -> bool {
+        // Player.hurtArmor/hurtHelmet and BlocksAttacks.hurtBlockingItem supply combat ownership.
+        // ItemStack.hurtAndBreak also serves ordinary tools, which need no combat segment.
         if matches!(
             self.gamemode.load(),
             GameMode::Creative | GameMode::Spectator
@@ -213,7 +219,7 @@ impl Player {
                         amount,
                     );
                     server.plugin_manager.fire_blocking(&server, &mut event);
-                    if event.cancelled {
+                    if event.cancelled || !life.is_none_or(DamageToken::is_current_life) {
                         return None;
                     }
                     return Some(event.damage);
@@ -274,6 +280,26 @@ mod tests {
         inventory.set_slot(38, ItemStack::new(1, &Item::IRON_CHESTPLATE));
         inventory.set_slot(0, ItemStack::new(1, &Item::IRON_PICKAXE));
         inventory
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn verification4_tool_wear_does_not_acquire_combat_ownership() {
+        use crate::{
+            net::java::combat_test_support::TestPlayer,
+            server::combat_test_support::{server, world},
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let server = server(dir.path());
+        let world = world(&server, dir.path());
+        let player = TestPlayer::new(&world).player;
+        world.players.store(Arc::new(vec![player.clone()]));
+        player
+            .inventory
+            .set_slot(0, ItemStack::new(1, &Item::IRON_PICKAXE));
+        let before = player.living_entity.damage_entry_count();
+        assert!(player.damage_item_in_slot(&EquipmentSlot::MAIN_HAND, 1));
+        assert_eq!(player.inventory.get_slot(0).get_damage(), 1);
+        assert_eq!(player.living_entity.damage_entry_count(), before);
     }
 
     #[test]

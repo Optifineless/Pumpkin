@@ -4,8 +4,10 @@ use pumpkin_data::tag::Taggable;
 use pumpkin_nbt::{NbtCompound, tag::NbtTag};
 use pumpkin_util::random::{RandomImpl, xoroshiro128::Xoroshiro};
 
+/// Evaluates enchantment requirements against the victim and distinct damage-source entities.
+/// Returns `None` for predicates the evaluator does not support.
 // Enchantment.damageContext selects the victim, owner, direct source and level.
-pub(super) fn matches_requirements(
+pub fn matches_requirements(
     requirements: &NbtCompound,
     level: i32,
     victim: &dyn EntityBase,

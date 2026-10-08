@@ -38,6 +38,7 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 // v8 adds the orb snapshot and replaces the player's locked XP pickup delay with an atomic.
 // v8 changes projectile EntityBase hooks and ExplodeArgs after the harvest API v7.
 // v8 also preserves full use-remainder templates and exposes generated block-use advancement criteria.
+// v8 adds combat ownership and hurt-motion fields to the v7 harvest layouts.
 pub const PLUGIN_API_VERSION: u32 = 8;
 
 const PLUGIN_DIR: &str = "./plugins";
@@ -1285,6 +1286,8 @@ impl PluginManager {
             return;
         }
 
+        // Native and Wasm callbacks may mutate combat state on a different thread.
+        let _released = crate::entity::living::damage_transaction::suspend_damage();
         if tokio::runtime::Handle::try_current().is_ok() {
             tokio::task::block_in_place(|| {
                 server

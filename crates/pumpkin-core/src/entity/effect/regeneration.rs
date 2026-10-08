@@ -11,6 +11,7 @@ impl MobEffect for RegenerationMobEffect {
     }
 
     fn apply_effect_tick(&self, living: &LivingEntity, _amplifier: u8) -> bool {
+        let _owner = living.own_damage();
         let current_health = living.health.load();
         let max_health = living.get_max_health();
         if current_health < max_health && current_health > 0.0 {

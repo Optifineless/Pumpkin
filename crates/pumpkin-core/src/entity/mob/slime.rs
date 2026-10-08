@@ -129,7 +129,7 @@ impl SlimeEntity {
                 .entity
                 .living_entity
                 .get_attribute_value(&Attributes::MAX_HEALTH) as f32;
-            self.entity.living_entity.health.store(max_health);
+            self.entity.living_entity.set_health(max_health);
         }
 
         // Refresh dimensions

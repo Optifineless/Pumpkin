@@ -16,9 +16,16 @@ use pumpkin_data::{
 use pumpkin_util::math::vector3::Vector3;
 use std::{sync::Arc, sync::atomic::Ordering};
 
+#[cfg(test)]
+mod review3_tests;
+
 impl ArrowEntity {
     // AbstractArrow.onHitEntity: count piercing hits before damage; reverse rejected hits instead of discarding.
     pub(super) fn hit_entity(&self, target: &Arc<dyn EntityBase>, hit_pos: Vector3<f64>) {
+        // AbstractArrow.onHitEntity keeps damage, punch and post-hurt effects on one life.
+        let life = target
+            .get_living_entity()
+            .map(crate::entity::living::LivingEntity::own_damage);
         let entity = &self.entity;
         let pierce = self.pierce_level.load(Ordering::Relaxed);
         if pierce > 0 {
@@ -72,8 +79,17 @@ impl ArrowEntity {
             self,
             owner.as_deref().or(Some(self)),
         );
+        #[cfg(test)]
+        crate::entity::living::damage_transaction::test_hooks::reach(
+            crate::entity::living::damage_transaction::test_hooks::Point::ProjectileFollowup,
+        );
+        let current_life = life
+            .as_ref()
+            .is_none_or(crate::entity::living::damage_transaction::DamageToken::is_current_life);
         if succeeded {
-            self.successful_hit(target.as_ref(), owner.as_deref(), velocity);
+            if current_life {
+                self.successful_hit(target.as_ref(), owner.as_deref(), velocity);
+            }
             entity.world.load().broadcast_to_chunk(
                 entity.chunk_pos.load(),
                 &pumpkin_protocol::java::client::play::CSoundEffect::new(
@@ -89,35 +105,43 @@ impl ArrowEntity {
                 entity.remove();
             }
         } else if !enderman {
-            target
-                .get_entity()
-                .fire_ticks
-                .store(old_fire, Ordering::Relaxed);
-            let owner_uuid = self.projectile.owner_uuid();
-            deflection::deflect(
-                self,
-                ProjectileDeflectionType::Simple,
-                Some(target.as_ref()),
-                owner.as_deref(),
-                false,
-                Vector3::new(0.2, 0.2, 0.2),
-            );
-            self.projectile.set_owner_uuid(owner_uuid);
-            self.has_hit.store(false, Ordering::Relaxed);
-            if entity.velocity.load().length_squared() < 1.0e-7 {
-                if self.pickup.load() == ArrowPickup::Allowed {
-                    let stack = self
-                        .item_stack
-                        .read()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .clone();
-                    entity
-                        .world
-                        .load()
-                        .drop_stack(&entity.block_pos.load(), stack);
-                }
-                entity.remove();
+            if current_life {
+                target
+                    .get_entity()
+                    .fire_ticks
+                    .store(old_fire, Ordering::Relaxed);
             }
+            self.deflect_rejected_hit(target.as_ref(), owner.as_deref());
+        }
+    }
+
+    // AbstractArrow.onHitEntity: rejected hits still reverse and may drop a slow arrow.
+    fn deflect_rejected_hit(&self, target: &dyn EntityBase, owner: Option<&dyn EntityBase>) {
+        let entity = &self.entity;
+        let owner_uuid = self.projectile.owner_uuid();
+        deflection::deflect(
+            self,
+            ProjectileDeflectionType::Simple,
+            Some(target),
+            owner,
+            false,
+            Vector3::new(0.2, 0.2, 0.2),
+        );
+        self.projectile.set_owner_uuid(owner_uuid);
+        self.has_hit.store(false, Ordering::Relaxed);
+        if entity.velocity.load().length_squared() < 1.0e-7 {
+            if self.pickup.load() == ArrowPickup::Allowed {
+                let stack = self
+                    .item_stack
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                entity
+                    .world
+                    .load()
+                    .drop_stack(&entity.block_pos.load(), stack);
+            }
+            entity.remove();
         }
     }
 
@@ -130,6 +154,7 @@ impl ArrowEntity {
         let Some(living) = target.get_living_entity() else {
             return;
         };
+        let life = living.own_damage();
         // AbstractArrow.doKnockback, after accepted damage and with effective resistance.
         let punch = self.get_weapon_item().map_or(0.0, |weapon| {
             EnchantmentHelper::modify_projectile_value(
@@ -162,6 +187,9 @@ impl ArrowEntity {
             owner,
             self.get_weapon_item(),
         );
+        if !life.is_current_life() {
+            return;
+        }
         let item = self
             .item_stack
             .read()
@@ -183,6 +211,9 @@ impl ArrowEntity {
                 show_icon,
                 blend: false,
             });
+            if !life.is_current_life() {
+                return;
+            }
         }
         if self.entity.entity_type == &EntityType::SPECTRAL_ARROW {
             living.add_effect(Self::spectral_glowing_effect());

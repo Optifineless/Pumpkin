@@ -26,6 +26,8 @@ impl LivingEntity {
         damage_type: &DamageType,
     ) -> bool {
         // LivingEntity.checkTotemDeathProtection.
+        let _owner = self.own_damage();
+        let lifecycle = self.damage_owner.lifecycle();
         if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_INVULNERABILITY) {
             return false;
         }
@@ -49,6 +51,12 @@ impl LivingEntity {
                 );
             if let Some(server) = self.entity.world.load().server.upgrade() {
                 server.plugin_manager.fire_blocking(&server, &mut event);
+            }
+            if self.damage_owner.lifecycle() != lifecycle
+                || self.health.load() > 0.0
+                || self.dead.load(std::sync::atomic::Ordering::Relaxed)
+            {
+                return self.health.load() > 0.0;
             }
             if event.cancelled {
                 return false;
@@ -106,7 +114,12 @@ impl LivingEntity {
             let live = self.get_stack_in_hand(caller, hand);
             self.update_used_item(hand, &live);
             self.send_equipment_changes(&[(slot, live)]);
-            self.set_health(1.0);
+            if self.damage_owner.lifecycle() != lifecycle {
+                return false;
+            }
+            if self.health.load() <= 0.0 {
+                self.set_health(1.0);
+            }
             self.apply_death_effects(caller, &protection);
             self.entity.world.load().send_entity_status(
                 &self.entity,

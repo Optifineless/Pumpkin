@@ -205,6 +205,8 @@ async fn resurrection_revalidates_the_original_slot_and_stack_after_plugins() {
         let world = world(&server, dir.path());
         let fixture = TestPlayer::new(&world);
         let player = fixture.player.clone();
+        player.set_health(0.0); // Exercise the helper's lethal-hit contract.
+
         player
             .inventory
             .set_slot(0, ItemStack::new(2, &Item::TOTEM_OF_UNDYING));

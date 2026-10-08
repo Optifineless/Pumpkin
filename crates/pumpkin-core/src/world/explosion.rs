@@ -67,6 +67,21 @@ pub struct Explosion {
 pub struct ExplosionResult {
     pub block_count: u32,
     pub player_knockback: FxHashMap<i32, Vector3<f64>>,
+    /// Admitted player lives used to discard stale impulses before delivery.
+    pub player_lifecycles: FxHashMap<i32, u64>,
+}
+
+impl ExplosionResult {
+    /// Returns a pending impulse only for the admitted player life, under its combat ownership.
+    pub(crate) fn player_knockback_for(
+        &self,
+        player: &crate::entity::player::Player,
+    ) -> Option<Vector3<f64>> {
+        (self.player_lifecycles.get(&player.entity_id()).copied()
+            == Some(player.living_entity.damage_lifecycle()))
+        .then(|| self.player_knockback.get(&player.entity_id()).copied())
+        .flatten()
+    }
 }
 
 impl Explosion {
@@ -132,14 +147,12 @@ impl Explosion {
             self.pos,
         );
         let positions = self.calculate_exploded_positions(world);
-        let player_knockback = self.damage_entities(world);
+        let mut result = self.damage_entities(world);
         self.interact_with_blocks(world, &positions);
         self.create_fire(world, &positions);
         let block_count = positions.len() as u32;
-        ExplosionResult {
-            block_count,
-            player_knockback,
-        }
+        result.block_count = block_count;
+        result
     }
 }
 

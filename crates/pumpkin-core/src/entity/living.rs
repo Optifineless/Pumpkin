@@ -1,12 +1,19 @@
 mod armor;
 #[path = "blocking.rs"]
 pub(super) mod blocking;
+pub(crate) mod blocking_response;
 #[cfg(test)]
 #[path = "combat_lifecycle_tests.rs"]
 mod combat_lifecycle_tests;
 mod damage;
+mod damage_criteria;
+mod damage_feedback;
+mod damage_immunity;
+mod damage_player;
+pub(crate) mod damage_transaction;
 #[path = "death_protection.rs"]
 mod death_protection;
+mod death_statistics;
 #[cfg(test)]
 mod effect_load_tests;
 #[path = "effects.rs"]
@@ -16,6 +23,7 @@ mod equipment_modifiers;
 mod ext_review_tests;
 #[cfg(test)]
 mod hand_use_tests;
+mod heal_or_harm;
 mod hurt_server;
 mod impulse;
 mod item_use;
@@ -61,7 +69,6 @@ use crate::entity::attributes::ModifierOperation;
 use crate::entity::combat::CombatTracker;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
 use crate::server::Server;
-use crate::world::loot::LootContextParameters;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::Block;
 use pumpkin_data::attributes::Attributes;
@@ -100,6 +107,8 @@ pub struct LivingEntity {
     pub hurt_cooldown: AtomicI32,
     /// LivingEntity.noActionTime, incremented by Mob.serverAiStep and never saved.
     pub no_action_time: AtomicI32,
+    damage_owner: damage_transaction::DamageOwner,
+    pub hurt_time: AtomicU8,
     /// Stores the amount of damage the entity last received.
     pub last_damage_taken: AtomicCell<f32>,
     /// The current health level of the entity.
@@ -305,6 +314,8 @@ impl LivingEntity {
             entity,
             hurt_cooldown: AtomicI32::new(0),
             no_action_time: AtomicI32::new(0),
+            damage_owner: damage_transaction::DamageOwner::default(),
+            hurt_time: AtomicU8::new(0),
             last_damage_taken: AtomicCell::new(0.0),
             absorption: AtomicCell::new(0.0),
             fall_distance: AtomicCell::new(0.0),
@@ -602,13 +613,15 @@ impl LivingEntity {
                 return;
             }
         }
-        self.set_health(self.health.load() + additional_health);
+        self.heal_in_transaction(event.amount);
     }
 
     pub fn set_health(&self, health: f32) {
+        let _owner = self.damage_owner.enter();
         // Clamp to [0, max_health]
         let max_health = self.get_max_health();
         let clamped = health.max(0.0).min(max_health);
+        self.damage_owner.changed(self.health.load() - clamped);
         self.health.store(clamped);
         // tell everyone entities health changed
         self.entity
@@ -622,6 +635,7 @@ impl LivingEntity {
 
     /// Sets the maximum health for this entity
     pub fn set_max_health(&self, max_health: f32) {
+        let _owner = self.damage_owner.enter();
         // Update base attribute
         self.set_attribute_base(&Attributes::MAX_HEALTH, max_health as f64);
 
@@ -645,10 +659,12 @@ impl LivingEntity {
 
     /// Sets the current absorption amount for this entity (yellow hearts)
     pub fn set_absorption(&self, new_abs: f32) {
+        let _owner = self.damage_owner.enter();
         // Must be at least 0
         let new_abs = new_abs.max(0.0);
 
         // Set local state
+        self.damage_owner.changed(0.0);
         self.absorption.store(new_abs);
 
         // Broadcast attribute update for max_absorption so clients receive
@@ -752,6 +768,7 @@ impl LivingEntity {
     }
 
     pub fn reset_effects_and_attributes(&self) {
+        let _owner = self.damage_owner.enter();
         // Clear active effects and reset modified attributes
         let effects_to_remove: Vec<_> = {
             let lock = self
@@ -845,6 +862,7 @@ impl LivingEntity {
     }
 
     pub fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
+        let _owner = self.damage_owner.enter();
         // LivingEntity.removeEffect only invokes removal hooks when an effect existed.
         {
             let mut active = self
@@ -1718,97 +1736,6 @@ impl LivingEntity {
         }
     }
 
-    pub(super) fn update_death_stats(
-        &self,
-        dyn_self: &dyn EntityBase,
-        cause: Option<&dyn EntityBase>,
-    ) {
-        if let Some(victim_player) = dyn_self.get_player() {
-            victim_player.increment_custom_stat(CustomStatistic::Deaths, 1);
-            victim_player.set_stat(
-                StatisticCategory::Custom,
-                CustomStatistic::TimeSinceDeath as i32,
-                0,
-            );
-            victim_player.set_stat(
-                StatisticCategory::Custom,
-                CustomStatistic::TimeSinceRest as i32,
-                0,
-            );
-            if let Some(killer_entity) = cause.map(EntityBase::get_entity) {
-                victim_player.increment_stat(
-                    StatisticCategory::KilledBy,
-                    killer_entity.entity_type.id as i32,
-                    1,
-                );
-            }
-        }
-
-        if let Some(killer_player) = cause.and_then(|c| c.get_player()) {
-            killer_player.increment_stat(
-                StatisticCategory::Killed,
-                self.entity.entity_type.id as i32,
-                1,
-            );
-            if dyn_self.get_player().is_some() {
-                killer_player.increment_stat(
-                    StatisticCategory::Custom,
-                    CustomStatistic::PlayerKills as i32,
-                    1,
-                );
-            } else {
-                killer_player.increment_stat(
-                    StatisticCategory::Custom,
-                    CustomStatistic::MobKills as i32,
-                    1,
-                );
-
-                let resource_name = self.entity.entity_type.resource_name;
-                let criterion_key = format!("minecraft:{resource_name}");
-                killer_player.trigger_advancement(
-                    crate::entity::player::advancement::trigger::AdvancementTrigger::PlayerKilledEntity {
-                        entity_type_resource: criterion_key,
-                    },
-                );
-
-                if resource_name == "skeleton" {
-                    let distance_sq = killer_player
-                        .position()
-                        .squared_distance_to_vec(&self.entity.pos.load());
-                    if distance_sq >= 2500.0 {
-                        killer_player.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::SniperDuel);
-                    }
-                }
-
-                if resource_name == "phantom" {
-                    killer_player.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::TwoBirdsOneArrow);
-                }
-
-                let held_item = killer_player.inventory().held_item();
-                let is_crossbow = held_item.item.registry_key == "crossbow";
-                if is_crossbow {
-                    killer_player.trigger_advancement(
-                        crate::entity::player::advancement::trigger::AdvancementTrigger::Arbalistic,
-                    );
-                }
-            }
-        }
-    }
-
-    pub(super) fn drop_loot(&self, params: &LootContextParameters) {
-        let resource_name = self.get_entity().entity_type.resource_name;
-        let key = format!("minecraft:entities/{resource_name}");
-        let world = self.entity.world.load();
-        if let Some(loot_table) = world.get_loot_table(&key) {
-            // LivingEntity.getLootTableSeed returns zero: use the table's named sequence.
-            let seed = 0;
-            let pos = self.entity.block_pos.load();
-            for stack in crate::world::loot::generate_loot_from_handle(&loot_table, seed, params) {
-                world.drop_stack(&pos, stack);
-            }
-        }
-    }
-
     fn tick_effects(&self) {
         self.tick_effects_impl();
     }
@@ -1889,6 +1816,10 @@ impl LivingEntity {
     }
 
     pub fn reset_state(&self) {
+        let _owner = self.damage_owner.enter();
+        self.damage_owner.reset();
+        self.hurt_time.store(0, Relaxed);
+        self.entity.hurt_marked.store(false, Relaxed);
         self.impulse.reset();
         self.entity.reset_state();
         self.reset_combat_memory();
@@ -1897,7 +1828,7 @@ impl LivingEntity {
         let max_health = self.get_max_health();
         self.set_health(max_health);
         // Clear any absorption
-        self.absorption.store(0.0);
+        self.set_absorption(0.0);
         // Send health metadata
         self.entity
             .set_synced_data(tracked_data::living_entity::DATA_HEALTH_ID, max_health);
@@ -1986,7 +1917,7 @@ impl LivingEntity {
         crate::entity::attributes::write_attributes_nbt(nbt, &attributes);
         drop(attributes);
         nbt.put("FallDistance", NbtTag::Float(fall_distance));
-        nbt.put_short("HurtTime", self.hurt_cooldown.load(Relaxed).max(0) as i16);
+        nbt.put_short("HurtTime", i16::from(self.hurt_time.load(Relaxed)));
         nbt.put_short("DeathTime", i16::from(self.death_time.load(Relaxed)));
         nbt.put_bool("FallFlying", self.entity.is_fall_flying());
         {
@@ -2030,6 +1961,8 @@ impl LivingEntity {
     }
 
     pub fn read_living_nbt_non_mut(&self, nbt: &NbtCompound) {
+        let _owner = self.damage_owner.enter();
+        self.damage_owner.reset();
         self.impulse.read_nbt(nbt);
         self.read_hurt_by_nbt(nbt);
         // Restore saved attributes (base values and permanent modifiers) first so
@@ -2045,7 +1978,7 @@ impl LivingEntity {
         // Vanilla LivingEntity.readAdditionalSaveData defaults to the mob's own max health,
         // not a flat 20; a hoglin (40 max) or iron golem (100 max) with no saved Health would
         // otherwise be silently reset to 20 here.
-        self.health.store(
+        self.set_health(
             nbt.get_float("Health")
                 .unwrap_or_else(|| self.get_max_health()),
         );
@@ -2076,7 +2009,7 @@ impl LivingEntity {
         let raw_abs = nbt.get_float("AbsorptionAmount").unwrap_or(0.0);
         let max_abs = self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32;
         let clamped_abs = raw_abs.max(0.0).min(max_abs);
-        self.absorption.store(clamped_abs);
+        self.set_absorption(clamped_abs);
 
         // Load fall distance, but if this entity is currently marked dead ensure we don't restore
         // a lethal fall distance that would immediately re-kill on spawn.
@@ -2090,7 +2023,8 @@ impl LivingEntity {
             self.fall_distance.store(fd);
         }
         if let Some(hurt_time) = nbt.get_short("HurtTime") {
-            self.hurt_cooldown.store(i32::from(hurt_time), Relaxed);
+            self.hurt_time
+                .store(hurt_time.clamp(0, i16::from(u8::MAX)) as u8, Relaxed);
         }
         if let Some(death_time) = nbt.get_short("DeathTime") {
             self.death_time.store(death_time as u8, Relaxed);
@@ -2172,6 +2106,10 @@ impl EntityBase for LivingEntity {
     /// death-animation completion.
     #[allow(clippy::too_many_lines)]
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        let _owner = self.damage_owner.enter();
+        if self.damage_owner.has_pending_hurt() {
+            return;
+        }
         self.impulse.tick();
         self.combat_ticks.fetch_add(1, Relaxed);
         self.entity.tick(caller, server);
@@ -2207,8 +2145,8 @@ impl EntityBase for LivingEntity {
         }
 
         // Non-player motion (including needsSync) belongs to ServerEntity.sendChanges.
-        if is_player && self.entity.velocity_dirty.swap(false, Ordering::SeqCst) {
-            self.entity.send_velocity();
+        if is_player {
+            self.entity.flush_player_motion_owned();
         }
 
         // Fetch supporting blocks for players or other entities
@@ -2255,10 +2193,8 @@ impl EntityBase for LivingEntity {
 
         self.updating_using_item(caller, server);
 
-        if self.hurt_cooldown.load(Relaxed) > 0 {
-            self.hurt_cooldown.fetch_sub(1, Relaxed);
-        }
-        if self.health.load() <= 0.0 {
+        let _damage_owner = self.tick_damage_timers();
+        if self.health.load() <= 0.0 && !self.damage_owner.has_pending_hurt() {
             let time = self
                 .death_time
                 .fetch_update(Relaxed, Relaxed, |time| Some(time.saturating_add(1)))
