@@ -12,6 +12,39 @@ use pumpkin_nbt::{NbtCompound, nbt_ops::NbtOps, tag::NbtTag};
 use pumpkin_util::{GameMode, math::position::BlockPos};
 
 impl Player {
+    /// Authorizes a dig before block attack callbacks, including cancellable damage events.
+    pub(crate) fn may_attack_block(
+        self: &std::sync::Arc<Self>,
+        world: &World,
+        position: &BlockPos,
+    ) -> bool {
+        // ServerPlayerGameMode.handleBlockBreakAction checks protection before BlockState.attack.
+        if !world.is_in_build_limit(*position)
+            || world.is_in_spawn_protection(self, position)
+            || !world
+                .worldborder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(f64::from(position.0.x), f64::from(position.0.z))
+            || self.block_action_restricted(world, position)
+        {
+            return false;
+        }
+        if let Some(server) = world.server.upgrade() {
+            let mut event = crate::plugin::api::events::block::block_damage::BlockDamageEvent::new(
+                self.clone(),
+                world.get_block(position),
+                *position,
+                false,
+            );
+            server.plugin_manager.fire_blocking(&server, &mut event);
+            if event.cancelled {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Checks spectator and adventure restrictions before a block attack.
     pub(crate) fn block_action_restricted(&self, world: &World, position: &BlockPos) -> bool {
         // Player.blockActionRestricted -> AdventureModePredicate.test -> BlockPredicate.matches(BlockInWorld).

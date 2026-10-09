@@ -32,6 +32,12 @@ impl BedrockClient {
                 let world = entity.world.load_full();
                 let (block, state) = world.get_block_and_state(&location);
 
+                if !player.may_attack_block(&world, &location) {
+                    let runtime_id = pumpkin_data::BlockState::to_be_network_id(state.id);
+                    self.try_enqueue_client_packet(&CUpdateBlock::new(location, runtime_id));
+                    return;
+                }
+
                 if player.mining.load(Ordering::Relaxed)
                     && *player
                         .mining_pos
@@ -244,3 +250,7 @@ impl BedrockClient {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "player_action_tests.rs"]
+mod tests;
