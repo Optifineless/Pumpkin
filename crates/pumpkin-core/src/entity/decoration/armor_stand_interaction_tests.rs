@@ -217,3 +217,131 @@ async fn interact_at_honors_plugin_adjusted_position_and_skips_item_use_stats() 
     );
     fixture.server.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn java_equipment_transfer_never_records_a_durability_break() {
+    use pumpkin_data::statistic::StatisticCategory;
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let mut player = TestPlayer::new(&world);
+    let stand = Arc::new(stand(&world));
+    world.add_entity_silent(stand.clone());
+    let helmet = ItemStack::new(1, &Item::DIAMOND_HELMET);
+    player
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Left, helmet.clone());
+    player.take_packets();
+    player.client().handle_interact(
+        &player.player,
+        &SInteract {
+            entity_id: VarInt(stand.get_entity().entity_id),
+            r#type: VarInt(0),
+            target_position: None,
+            hand: Some(VarInt(1)),
+            sneaking: false,
+        },
+        &fixture.server,
+    );
+    assert!(stand.item_in_slot(&EquipmentSlot::HEAD).are_equal(&helmet));
+    assert!(
+        player
+            .player
+            .inventory()
+            .get_stack_in_hand(Hand::Left)
+            .is_empty()
+    );
+    assert_eq!(
+        player.player.stats.lock().unwrap().get(
+            StatisticCategory::Broken,
+            i32::from(Item::DIAMOND_HELMET.id)
+        ),
+        0
+    );
+    let status = player
+        .client()
+        .serialize_packet(&pumpkin_protocol::java::client::play::CEntityStatus::new(
+            player.player.entity_id(),
+            crate::entity::equipment_break_status(&EquipmentSlot::OFF_HAND) as i8,
+        ))
+        .unwrap();
+    assert!(!player.take_packets().contains(&status));
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bedrock_equipment_transfer_never_records_a_durability_break() {
+    use crate::net::bedrock::combat_test_support::TestBedrockPlayer;
+    use pumpkin_data::statistic::StatisticCategory;
+    use pumpkin_protocol::{
+        bedrock::{
+            network_item::NetworkItemDescriptor,
+            server::inventory_transaction::{
+                SInventoryTransaction, TransactionData, UseItemOnEntityTransactionData,
+            },
+        },
+        codec::{var_uint::VarUInt, var_ulong::VarULong},
+    };
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let mut player = TestBedrockPlayer::new(&world).await;
+    player
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(8.5, 64.0, 8.5));
+    // A Java observer captures the status broadcast that Bedrock's old bookkeeping also sent.
+    let mut observer = TestPlayer::new(&world);
+    world.players.store(Arc::new(vec![
+        player.player.clone(),
+        observer.player.clone(),
+    ]));
+    world
+        .entity_tracker
+        .add_entity(&(player.player.clone() as Arc<dyn EntityBase>), &world);
+    let stand = Arc::new(stand(&world));
+    world.add_entity_silent(stand.clone());
+    let helmet = ItemStack::new(1, &Item::DIAMOND_HELMET);
+    player
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Right, helmet.clone());
+    observer.take_packets();
+    player.take_packets();
+    player.client().handle_inventory_action(
+        &player.player,
+        SInventoryTransaction {
+            legacy_request_id: VarInt(0),
+            legacy_set_item_slots: Vec::new(),
+            has_value: false,
+            actions: Vec::new(),
+            transaction_type: VarUInt(3),
+            transaction_data: TransactionData::UseItemOnEntity(UseItemOnEntityTransactionData {
+                target_entity_runtime_id: VarULong(stand.get_entity().entity_id as u64),
+                action_type: VarInt(0),
+                hot_bar_slot: VarInt(0),
+                item_in_hand: NetworkItemDescriptor::default(),
+                player_position: Vector3::new(0.0, 64.0, 0.0),
+                click_position: Vector3::new(0.0, 0.0, 0.0),
+            }),
+        },
+    );
+    assert!(stand.item_in_slot(&EquipmentSlot::HEAD).are_equal(&helmet));
+    assert!(player.player.inventory().held_item().is_empty());
+    assert_eq!(
+        player.player.stats.lock().unwrap().get(
+            StatisticCategory::Broken,
+            i32::from(Item::DIAMOND_HELMET.id)
+        ),
+        0
+    );
+    let status = observer
+        .client()
+        .serialize_packet(&pumpkin_protocol::java::client::play::CEntityStatus::new(
+            player.player.entity_id(),
+            crate::entity::equipment_break_status(&EquipmentSlot::MAIN_HAND) as i8,
+        ))
+        .unwrap();
+    assert!(!observer.take_packets().contains(&status));
+    player.close().await;
+    fixture.server.shutdown().await;
+}

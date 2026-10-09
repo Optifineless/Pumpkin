@@ -7,12 +7,20 @@ use pumpkin_data::{
 use pumpkin_inventory::{Inventory, player::player_inventory::PlayerInventory};
 use pumpkin_util::Hand;
 
-pub(super) fn hand_slot(player: &Player, hand: Hand) -> usize {
+/// Returns the inventory slot to retain while an interaction mutates a hand clone.
+pub fn hand_slot(player: &Player, hand: Hand) -> usize {
     if hand == Hand::Right {
         player.inventory().get_selected_slot() as usize
     } else {
         PlayerInventory::OFF_HAND_SLOT
     }
+}
+
+/// Distinguishes item use from equipment transfer when a hand becomes empty.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HandMutation {
+    ItemUse,
+    EquipmentTransfer,
 }
 
 /// Persists a mutated hand clone unless an interaction already replaced the real hand.
@@ -23,6 +31,25 @@ pub(super) fn write_back_used_item(
     source_slot: usize,
     before: &ItemStack,
     after: &ItemStack,
+) {
+    write_back_hand_item(
+        player,
+        hand,
+        source_slot,
+        before,
+        after,
+        HandMutation::ItemUse,
+    );
+}
+
+/// Writes a hand mutation, counting depletion as breakage only for item use.
+pub fn write_back_hand_item(
+    player: &Player,
+    hand: Hand,
+    source_slot: usize,
+    before: &ItemStack,
+    after: &ItemStack,
+    mutation: HandMutation,
 ) {
     let current = player.inventory().get_stack(source_slot);
     if after.are_equal(before) || current.uid != before.uid || !current.are_equal(before) {
@@ -36,7 +63,12 @@ pub(super) fn write_back_used_item(
         after.clone()
     };
     // LivingEntity.onEquippedItemBroken broadcasts while the client still has the old item.
-    if !before.is_empty() && before.is_damageable() && after.is_empty() {
+    // ArmorStand.swapItem transfers equipment without ItemStack.hurtAndBreak.
+    if mutation == HandMutation::ItemUse
+        && !before.is_empty()
+        && before.is_damageable()
+        && after.is_empty()
+    {
         player.increment_stat(StatisticCategory::Broken, i32::from(before.item.id), 1);
         let slot = if hand == Hand::Right {
             EquipmentSlot::MAIN_HAND

@@ -124,7 +124,9 @@ impl JavaClient {
                                     .item_registry
                                     .use_on_entity(&mut stack, player, event.target);
                             }
-                            super::hand_use_result::write_back_used_item(player, hand, source_slot, &before, &stack);
+                            super::hand_use_result::write_back_hand_item(player, hand, source_slot, &before, &stack,
+                                if stand_swap { super::hand_use_result::HandMutation::EquipmentTransfer }
+                                else { super::hand_use_result::HandMutation::ItemUse });
                             if !stand_swap && !stack.are_equal(&before) {
                                 player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
                             }
