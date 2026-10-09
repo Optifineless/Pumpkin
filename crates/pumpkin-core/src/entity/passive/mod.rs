@@ -23,6 +23,7 @@ pub mod horse;
 pub mod iron_golem;
 pub mod llama;
 pub mod mooshroom;
+mod mooshroom_conversion;
 pub mod mule;
 pub mod nautilus;
 pub mod ocelot;
