@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, AtomicI64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU8, Ordering};
 
 use crate::entity::{
     Entity, EntityBase, living::LivingEntity, mob::equipment::get_equipment_slot_for_item,
@@ -95,6 +95,7 @@ pub struct ArmorStandEntity {
     disabled_slots: AtomicI32,
 
     rotation: AtomicCell<PackedRotation>,
+    equipment_closed: AtomicBool,
 }
 
 impl ArmorStandEntity {
@@ -108,6 +109,7 @@ impl ArmorStandEntity {
             last_hit_time: AtomicI64::new(0),
             disabled_slots: AtomicI32::new(0),
             rotation: AtomicCell::new(packed_rotation),
+            equipment_closed: AtomicBool::new(false),
         }
     }
 
@@ -191,7 +193,7 @@ impl ArmorStandEntity {
         self.rotation.store(packed.to_owned());
     }
 
-    fn drop_equipment(&self) {
+    fn drop_equipment(&self) -> bool {
         let entity = self.get_entity();
         let stacks = {
             let mut equipment = self
@@ -199,6 +201,9 @@ impl ArmorStandEntity {
                 .entity_equipment
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.equipment_closed.swap(true, Ordering::Relaxed) {
+                return false;
+            }
             take_non_empty_equipment(&mut equipment)
         };
         let world = entity.world.load();
@@ -211,6 +216,17 @@ impl ArmorStandEntity {
             }
             world.drop_stack(&drop_pos, stack);
         }
+        true
+    }
+
+    fn discard_equipment(&self) {
+        let mut equipment = self
+            .living_entity
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.equipment_closed.store(true, Ordering::Relaxed);
+        equipment.equipment.clear();
     }
 
     fn break_and_drop_items(&self) {
@@ -222,7 +238,9 @@ impl ArmorStandEntity {
                 pumpkin_data::data_component_impl::CustomNameImpl { name: name.clone() },
             );
         }
-        self.drop_equipment();
+        if !self.drop_equipment() {
+            return;
+        }
         entity
             .world
             .load()
@@ -268,6 +286,7 @@ impl ArmorStandEntity {
             .get(slot)
     }
 
+    #[cfg(test)]
     fn set_item_slot(&self, slot: &EquipmentSlot, stack: &ItemStack) {
         let previous = self
             .living_entity
@@ -275,6 +294,10 @@ impl ArmorStandEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .put(slot, stack.clone());
+        self.on_equipment_changed(slot, &previous, stack);
+    }
+
+    fn on_equipment_changed(&self, slot: &EquipmentSlot, previous: &ItemStack, stack: &ItemStack) {
         self.living_entity
             .send_equipment_changes(&[(slot.clone(), stack.clone())]);
 
@@ -324,18 +347,34 @@ impl ArmorStandEntity {
         slot: &EquipmentSlot,
         item_stack: &mut ItemStack,
     ) -> bool {
-        let stand_stack = self.item_in_slot(slot);
-        let Some(new_stand_stack) = swap_item_stacks(
-            &stand_stack,
-            item_stack,
-            player.is_creative(),
-            self.is_slot_insertion_disabled(slot),
-            self.is_slot_removal_disabled(slot),
-        ) else {
-            return false;
+        // ArmorStand.swapItem is one server-thread exchange, including slot validation.
+        let (stand_stack, new_stand_stack) = {
+            let mut equipment = self
+                .living_entity
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.equipment_closed.load(Ordering::Relaxed)
+                || self.get_entity().is_removed()
+                || !self.can_use_slot(slot)
+            {
+                return false;
+            }
+            let stand_stack = equipment.get(slot);
+            let Some(new_stand_stack) = swap_item_stacks(
+                &stand_stack,
+                item_stack,
+                player.is_creative(),
+                self.is_slot_insertion_disabled(slot),
+                self.is_slot_removal_disabled(slot),
+            ) else {
+                return false;
+            };
+            equipment.put(slot, new_stand_stack.clone());
+            (stand_stack, new_stand_stack)
         };
-
-        self.set_item_slot(slot, &new_stand_stack);
+        // Packets and plugin callbacks run after releasing the equipment guard.
+        self.on_equipment_changed(slot, &stand_stack, &new_stand_stack);
         true
     }
 
@@ -532,6 +571,7 @@ impl EntityBase for ArmorStandEntity {
     }
 
     fn kill(&self, _caller: &dyn EntityBase) {
+        self.discard_equipment();
         self.get_entity().remove();
         // TODO: emit GameEvent::ENTITY_DIE
     }
@@ -563,6 +603,7 @@ impl EntityBase for ArmorStandEntity {
         }
 
         if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_INVULNERABILITY) {
+            self.discard_equipment();
             entity.remove();
             return false;
         }
@@ -601,6 +642,7 @@ impl EntityBase for ArmorStandEntity {
             {
                 return false;
             } else if player.is_creative() {
+                self.discard_equipment();
                 Self::spawn_break_particles(entity);
                 entity.remove();
                 return true;
@@ -783,3 +825,7 @@ mod tests {
 #[cfg(test)]
 #[path = "armor_stand_interaction_tests.rs"]
 mod interaction_tests;
+
+#[cfg(test)]
+#[path = "armor_stand_transaction_tests.rs"]
+mod transaction_tests;
