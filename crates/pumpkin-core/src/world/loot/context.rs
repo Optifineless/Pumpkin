@@ -99,6 +99,33 @@ pub fn build_entity_death_loot_context(
     }
 }
 
+/// Builds the live pre-shear entity context without death-credit parameters.
+#[must_use]
+pub fn build_shearing_loot_context(
+    entity: &dyn EntityBase,
+    tool: &ItemStack,
+) -> LootContextParameters {
+    // LivingEntity.dropFromShearingLootTable supplies THIS_ENTITY, TOOL and ORIGIN.
+    let raw = entity.get_entity();
+    let world = raw.world.load_full();
+    LootContextParameters {
+        registry: world
+            .server
+            .upgrade()
+            .map(|server| server.datapack_manager.clone()),
+        this_entity: Some(raw.entity_type),
+        this_entity_state: snapshot_entity(entity, &mut HashSet::new(), 0),
+        position: Some(raw.pos.load()),
+        tool: Some(tool.clone()),
+        world_time: world.level_info.load().day_time as u64,
+        is_raining: Some(world.is_raining()),
+        is_thundering: Some(world.is_thundering()),
+        is_on_fire: Some(raw.is_on_fire()),
+        world: Some(world),
+        ..Default::default()
+    }
+}
+
 pub(super) fn snapshot_entity(
     entity: &dyn EntityBase,
     seen: &mut HashSet<i32>,

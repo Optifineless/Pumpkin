@@ -210,6 +210,8 @@ impl MooshroomEntity {
 impl Shearable for MooshroomEntity {
     /// Vanilla `MushroomCow.shear`: converts this mooshroom into a cow and drops its mushrooms.
     fn shear(&self, sound_category: SoundCategory, tool: &ItemStack) -> bool {
+        // Capture before the atomic claim changes the predicate-visible shear state.
+        let params = crate::world::loot::build_shearing_loot_context(self, tool);
         if self.converting.swap(true, Ordering::Relaxed) {
             return false;
         }
@@ -243,12 +245,8 @@ impl Shearable for MooshroomEntity {
             Particle::Explosion,
         );
 
-        let loot_key = match self.get_variant() {
-            MooshroomVariant::Red => "minecraft:shearing/mooshroom/red",
-            MooshroomVariant::Brown => "minecraft:shearing/mooshroom/brown",
-        };
         let drop_pos = Vector3::new(pos.x, pos.y + height, pos.z);
-        for drop in shearing_loot(mooshroom_entity, loot_key, tool) {
+        for drop in shearing_loot(mooshroom_entity, "minecraft:shearing/mooshroom", &params) {
             for _ in 0..drop.item_count {
                 let item_entity = Arc::new(ItemEntity::new(
                     Entity::new(world.clone(), drop_pos, &EntityType::ITEM),
