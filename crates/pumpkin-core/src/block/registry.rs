@@ -1325,6 +1325,26 @@ impl BlockRegistry {
         state_id: BlockStateId,
         flags: BlockFlags,
     ) {
+        self.prepare_with_limit(
+            world,
+            position,
+            block,
+            state_id,
+            flags,
+            crate::world::neighbor_updater::UPDATE_LIMIT,
+        );
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) fn prepare_with_limit(
+        &self,
+        world: &Arc<World>,
+        position: &BlockPos,
+        block: &Block,
+        state_id: BlockStateId,
+        flags: BlockFlags,
+        update_limit: u32,
+    ) {
         let pumpkin_block = self.get_pumpkin_block(block.id);
         if let Some(pumpkin_block) = pumpkin_block {
             pumpkin_block.prepare(PrepareArgs {
@@ -1333,6 +1353,7 @@ impl BlockRegistry {
                 state_id,
                 position,
                 flags,
+                update_limit,
             });
         }
     }
@@ -1364,10 +1385,30 @@ impl BlockRegistry {
     }
 
     pub fn update_neighbors(&self, world: &Arc<World>, position: &BlockPos, flags: BlockFlags) {
+        self.update_neighbors_with_limit(
+            world,
+            position,
+            flags,
+            crate::world::neighbor_updater::UPDATE_LIMIT,
+        );
+    }
+
+    pub(crate) fn update_neighbors_with_limit(
+        &self,
+        world: &Arc<World>,
+        position: &BlockPos,
+        flags: BlockFlags,
+        update_limit: u32,
+    ) {
         for direction in BlockDirection::abstract_block_update_order() {
             let pos = position.offset(direction.to_offset());
 
-            world.replace_with_state_for_neighbor_update(&pos, direction.opposite(), flags);
+            world.replace_with_state_for_neighbor_update_with_limit(
+                &pos,
+                direction.opposite(),
+                flags,
+                update_limit,
+            );
         }
     }
 

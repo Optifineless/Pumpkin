@@ -117,20 +117,24 @@ impl BlockBehaviour for RedstoneWireBlock {
                 if args.world.get_block(&dir_block_pos) != &Block::REDSTONE_WIRE {
                     let down_pos = dir_block_pos.down();
                     if args.world.get_block(&down_pos) == &Block::REDSTONE_WIRE {
-                        args.world.replace_with_state_for_neighbor_update(
-                            &down_pos,
-                            direction.opposite().to_block_direction(),
-                            args.flags,
-                        );
+                        args.world
+                            .replace_with_state_for_neighbor_update_with_limit(
+                                &down_pos,
+                                direction.opposite().to_block_direction(),
+                                args.flags,
+                                args.update_limit,
+                            );
                     }
 
                     let up_pos = dir_block_pos.up();
                     if args.world.get_block(&up_pos) == &Block::REDSTONE_WIRE {
-                        args.world.replace_with_state_for_neighbor_update(
-                            &up_pos,
-                            direction.opposite().to_block_direction(),
-                            args.flags,
-                        );
+                        args.world
+                            .replace_with_state_for_neighbor_update_with_limit(
+                                &up_pos,
+                                direction.opposite().to_block_direction(),
+                                args.flags,
+                                args.update_limit,
+                            );
                     }
                 }
             }

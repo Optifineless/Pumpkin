@@ -35,7 +35,7 @@ pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
 pub mod map;
-mod neighbor_updater;
+pub(crate) mod neighbor_updater;
 mod particle_senders;
 pub mod portal;
 pub mod raid;
@@ -343,6 +343,7 @@ pub struct World {
     pub weather: std::sync::Mutex<Weather>,
     /// Block Behaviour
     pub block_registry: Arc<BlockRegistry>,
+    neighbor_updates: std::sync::Mutex<neighbor_updater::UpdateStack>,
     pub server: Weak<Server>,
     synced_block_event_queue: std::sync::Mutex<VecDeque<BlockEvent>>,
     /// Vanilla's `ServerLevel.handlingTick`: set while scheduled ticks, chunk ticks and block
@@ -497,6 +498,7 @@ impl World {
             dimension,
             weather: std::sync::Mutex::new(Weather::new()),
             block_registry,
+            neighbor_updates: std::sync::Mutex::default(),
             sea_level: generation_settings.sea_level,
             min_y: i32::from(generation_settings.shape.min_y),
             synced_block_event_queue: std::sync::Mutex::new(VecDeque::new()),
@@ -5161,7 +5163,13 @@ impl World {
         let replaced_block_state_id = self
             .write_block_state_if(position, block_state_id, |_| true)
             .unwrap_or(Block::AIR.default_state.id);
-        self.on_block_state_set(position, replaced_block_state_id, block_state_id, flags)
+        self.on_block_state_set(
+            position,
+            replaced_block_state_id,
+            block_state_id,
+            flags,
+            neighbor_updater::UPDATE_LIMIT,
+        )
     }
 
     /// `set_block_state`, but only when `condition` accepts the current state. The check and
@@ -5179,7 +5187,13 @@ impl World {
         }
         let replaced_block_state_id =
             self.write_block_state_if(position, block_state_id, condition)?;
-        Some(self.on_block_state_set(position, replaced_block_state_id, block_state_id, flags))
+        Some(self.on_block_state_set(
+            position,
+            replaced_block_state_id,
+            block_state_id,
+            flags,
+            neighbor_updater::UPDATE_LIMIT,
+        ))
     }
 
     /// Writes the state into the loaded chunk
@@ -5217,6 +5231,7 @@ impl World {
         replaced_block_state_id: BlockStateId,
         block_state_id: BlockStateId,
         flags: BlockFlags,
+        update_limit: u32,
     ) -> BlockStateId {
         if !flags.contains(BlockFlags::FORCE_STATE) && replaced_block_state_id == block_state_id {
             return block_state_id;
@@ -5282,28 +5297,36 @@ impl World {
                 }
             }
 
-            if !flags.intersects(BlockFlags::MOVED | BlockFlags::UPDATE_KNOWN_SHAPE) {
+            if !flags.intersects(BlockFlags::MOVED | BlockFlags::UPDATE_KNOWN_SHAPE)
+                && update_limit > 0
+            {
                 let mut neighbour_update_flags = flags;
                 neighbour_update_flags.remove(BlockFlags::NOTIFY_NEIGHBORS);
                 neighbour_update_flags.remove(BlockFlags::SKIP_REDSTONE_WIRE_STATE_REPLACEMENT);
                 // Suppressing drops for the changed block must not suppress drops
                 // from dependent blocks that lose their support (e.g. in Creative).
                 neighbour_update_flags.remove(BlockFlags::SKIP_DROPS);
-                self.block_registry.prepare(
+                self.block_registry.prepare_with_limit(
                     self,
                     position,
                     old_block,
                     replaced_block_state_id,
                     neighbour_update_flags,
+                    update_limit - 1,
                 );
-                self.block_registry
-                    .update_neighbors(self, position, neighbour_update_flags);
-                self.block_registry.prepare(
+                self.block_registry.update_neighbors_with_limit(
+                    self,
+                    position,
+                    neighbour_update_flags,
+                    update_limit - 1,
+                );
+                self.block_registry.prepare_with_limit(
                     self,
                     position,
                     new_block,
                     block_state_id,
                     neighbour_update_flags,
+                    update_limit - 1,
                 );
             }
 
@@ -5339,11 +5362,12 @@ impl World {
         replaced_block_state_id
     }
 
-    pub fn break_block(
+    fn break_block_with_limit(
         self: &Arc<Self>,
         position: &BlockPos,
         cause: Option<&Arc<Player>>,
         flags: BlockFlags,
+        update_limit: u32,
     ) -> Option<BlockStateId> {
         if let Some(player) = cause
             && self.is_in_spawn_protection(player, position)
@@ -5412,8 +5436,12 @@ impl World {
             Block::AIR.default_state.id
         };
 
-        let broken_state_id =
-            self.set_block_state(position, new_state_id, flags - BlockFlags::SKIP_DROPS);
+        let broken_state_id = self.set_block_state_with_limit(
+            position,
+            new_state_id,
+            flags - BlockFlags::SKIP_DROPS,
+            update_limit,
+        );
         let broken_block = Block::from_state_id(broken_state_id);
         if !broken_block.is_air()
             && broken_state_id != new_state_id
@@ -6167,42 +6195,13 @@ impl World {
         direction: BlockDirection,
         flags: BlockFlags,
     ) {
-        neighbor_updater::update_shape(self, block_pos, direction, flags);
-    }
-
-    fn execute_shape_update(
-        self: &Arc<Self>,
-        block_pos: &BlockPos,
-        direction: BlockDirection,
-        neighbor_pos: &BlockPos,
-        neighbor_state_id: BlockStateId,
-        flags: BlockFlags,
-    ) {
-        let (block, block_state_id) = self.get_block_and_state_id(block_pos);
-
-        if flags.contains(BlockFlags::SKIP_REDSTONE_WIRE_STATE_REPLACEMENT)
-            && *block == Block::REDSTONE_WIRE
-        {
-            return;
-        }
-
-        let new_state_id = self.block_registry.get_state_for_neighbor_update(
+        neighbor_updater::update_shape(
             self,
-            block,
-            block_state_id,
             block_pos,
             direction,
-            neighbor_pos,
-            neighbor_state_id,
+            flags,
+            neighbor_updater::UPDATE_LIMIT,
         );
-
-        if new_state_id != block_state_id {
-            if is_air(new_state_id) {
-                self.break_block(block_pos, None, flags | BlockFlags::NOTIFY_ALL);
-            } else {
-                self.set_block_state(block_pos, new_state_id, flags);
-            }
-        }
     }
 
     /// Returns whether monsters can be spawned in the world
