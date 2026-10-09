@@ -102,7 +102,7 @@ fn to_wasm_sign_text(text: &InternalText) -> SignText {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
-            .map(str::into_string)
+            .map(pumpkin_util::text::TextComponent::get_text)
             .to_vec(),
         color: to_wasm_dye_color(text.get_color()),
         has_glowing_text: text.has_glowing_text.load(Ordering::Relaxed),
@@ -110,24 +110,22 @@ fn to_wasm_sign_text(text: &InternalText) -> SignText {
 }
 
 fn from_wasm_sign_text(text: SignText) -> InternalText {
-    let mut messages = [String::new(), String::new(), String::new(), String::new()];
-    for (i, msg) in text.messages.into_iter().take(4).enumerate() {
-        messages[i] = msg;
+    let mut messages = std::array::from_fn(|_| Box::<str>::from(""));
+    for (line, message) in messages.iter_mut().zip(text.messages) {
+        *line = message.into_boxed_str();
     }
-    InternalText::from(pumpkin_nbt::tag::NbtTag::Compound({
-        let mut nbt = pumpkin_nbt::compound::NbtCompound::new();
-        nbt.put_bool("has_glowing_text", text.has_glowing_text);
-        nbt.put_string("color", from_wasm_dye_color(text.color).name().to_string());
-        nbt.put_list(
-            "messages",
-            messages
-                .iter()
-                .map(|s| pumpkin_nbt::tag::NbtTag::String(s.clone().into()))
-                .collect(),
-        );
-        nbt
-    }))
+    // Like SignBlockEntity.updateMessages, plugin strings are literal components.
+    InternalText::new(
+        messages,
+        None,
+        from_wasm_dye_color(text.color),
+        text.has_glowing_text,
+    )
 }
+
+#[cfg(test)]
+#[path = "sign_text_tests.rs"]
+mod sign_text_tests;
 
 impl HostBlockEntity for PluginHostState {
     fn resource_location(&mut self, res: Resource<BlockEntity>) -> wasmtime::Result<String> {

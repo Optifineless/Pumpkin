@@ -810,7 +810,14 @@ impl BlockRegistry {
             && placed_block.default_state.block_entity_type != u16::MAX
             && let Some(block_entity) = world.get_block_entity(&final_block_pos)
         {
-            block_entity.apply_item_components(&player.inventory().get_stack_in_hand(hand));
+            let stack = player.inventory().get_stack_in_hand(hand);
+            block_entity.apply_item_components(&stack);
+            crate::block::entities::sign::apply_trusted_item_data(
+                &block_entity,
+                &stack,
+                player,
+                &world,
+            );
         }
 
         self.player_placed(

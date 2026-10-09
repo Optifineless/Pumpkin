@@ -11,6 +11,9 @@ use crate::placed_feature::{
     value_to_block_state_codec, value_to_height_provider, value_to_int_provider,
 };
 
+#[path = "block_state_provider_reference.rs"]
+mod provider_reference;
+
 fn load_configured_features() -> BTreeMap<String, Value> {
     let dir = Path::new("../../assets/datapack/data/minecraft/worldgen/feature");
     let mut map = BTreeMap::new();
@@ -1075,6 +1078,9 @@ pub fn value_to_configured_feature(v: &Value) -> TokenStream {
 /// # Returns
 /// A `TokenStream` for the appropriate `BlockStateProvider` variant; defaults to `BlockStateProvider::Simple` with air if the type is unrecognised.
 fn value_to_block_state_provider(v: &Value) -> TokenStream {
+    if let Some(provider) = provider_reference::resolve(v) {
+        return value_to_block_state_provider(&provider);
+    }
     if v.get("type").is_none() && (v.get("id").is_some() || v.get("Name").is_some()) {
         let state = value_to_block_state(v);
         return quote! { BlockStateProvider::Simple(SimpleStateProvider { state: #state }) };

@@ -358,12 +358,12 @@ async fn hand_use_sign_requires_session_and_expires_distant_editor() {
     fixture
         .client()
         .handle_sign_update(&fixture.player, &update);
-    assert_eq!(&*sign.front_text.messages.lock().unwrap()[0], "");
+    assert_eq!(sign.front_text.get_message(0, false).as_ref(), "");
     *sign.currently_editing_player.lock().unwrap() = Some(fixture.player.gameprofile.id);
     fixture
         .client()
         .handle_sign_update(&fixture.player, &update);
-    assert_eq!(&*sign.front_text.messages.lock().unwrap()[0], "changed");
+    assert_eq!(sign.front_text.get_message(0, false).as_ref(), "changed");
     assert!(sign.currently_editing_player.lock().unwrap().is_none());
     *sign.currently_editing_player.lock().unwrap() = Some(fixture.player.gameprofile.id);
     fixture
