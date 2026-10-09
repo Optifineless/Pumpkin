@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use super::{Controls, Goal};
 
 use crate::entity::EntityBase;
+use crate::entity::living::LivingEntity;
 use crate::entity::mob::Mob;
 use crate::entity::mob::creeper::CreeperEntity;
 
@@ -33,7 +34,10 @@ impl Goal for CreeperIgniteGoal {
         let Some(target) = mob.get_mob_entity().get_target() else {
             return false;
         };
-        target.get_entity().is_alive()
+        // SwellGoal.canUse rejects dead or dying living targets.
+        target
+            .get_living_entity()
+            .is_some_and(|living| !is_dead_or_dying(living))
             && mob
                 .get_entity()
                 .pos
@@ -56,7 +60,12 @@ impl Goal for CreeperIgniteGoal {
     }
 
     fn tick(&mut self, mob: &dyn Mob) {
-        let Some(target) = self.target.as_ref().filter(|t| t.get_entity().is_alive()) else {
+        // SwellGoal.tick defuses as soon as its remembered target dies.
+        let Some(target) = self.target.as_ref().filter(|target| {
+            target
+                .get_living_entity()
+                .is_some_and(|living| !is_dead_or_dying(living))
+        }) else {
             self.creeper.set_fuse_speed(-1);
             return;
         };
@@ -81,4 +90,9 @@ impl Goal for CreeperIgniteGoal {
     fn controls(&self) -> Controls {
         self.goal_control
     }
+}
+
+fn is_dead_or_dying(living: &LivingEntity) -> bool {
+    // LivingEntity.isDeadOrDying, also covering exploding creepers with positive health.
+    living.health.load() <= 0.0 || living.dead.load(Ordering::Relaxed)
 }

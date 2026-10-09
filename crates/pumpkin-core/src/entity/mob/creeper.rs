@@ -27,6 +27,9 @@ use crate::entity::{
 const DEFAULT_FUSE_TIME: i32 = 30;
 const DEFAULT_EXPLOSION_RADIUS: i32 = 3;
 
+#[cfg(test)]
+mod tests;
+
 pub struct CreeperEntity {
     pub mob_entity: MobEntity,
     pub fuse_speed: AtomicI32,
@@ -180,7 +183,8 @@ impl Mob for CreeperEntity {
 
     fn mob_tick(&self, _caller: &dyn EntityBase) {
         let entity = &self.mob_entity.living_entity.entity;
-        if !entity.is_alive() {
+        // Creeper.tick uses LivingEntity.isAlive, including health during the death animation.
+        if !self.mob_entity.living_entity.is_alive() {
             return;
         }
 

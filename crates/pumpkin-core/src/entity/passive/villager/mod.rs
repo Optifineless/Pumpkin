@@ -49,6 +49,7 @@ use crate::world::World;
 use crate::world::villager_poi::profession_for_block;
 
 pub mod data;
+mod golem_spawning;
 mod reward_trade_xp;
 pub use data::{
     BREEDING_FOOD_THRESHOLD, GossipType, VillagerData, VillagerProfession, VillagerType,
@@ -332,6 +333,8 @@ fn explorer_map_target(
 
 pub struct VillagerEntity {
     pub mob_entity: MobEntity,
+    golem_scan_ticks: AtomicI32,
+    golem_spawn_lock: std::sync::Mutex<()>,
     pub villager_data: std::sync::Mutex<VillagerData>,
     pub food_level: AtomicI32,
     pub xp: AtomicI32,
@@ -407,6 +410,8 @@ impl VillagerEntity {
 
         let villager = Self {
             mob_entity,
+            golem_scan_ticks: AtomicI32::new(golem_spawning::initial_scan_delay()),
+            golem_spawn_lock: std::sync::Mutex::new(()),
             villager_data: std::sync::Mutex::new(villager_data),
             food_level: AtomicI32::new(0),
             xp: AtomicI32::new(0),
@@ -433,6 +438,12 @@ impl VillagerEntity {
             self_weak: std::sync::Mutex::new(None),
         };
         let mob_arc = Arc::new(villager);
+        *mob_arc
+            .mob_entity
+            .brain
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            golem_spawning::make_brain(&crate::entity::ai::brain::memory::PackedMemories::empty());
         *mob_arc
             .self_weak
             .lock()
@@ -1774,6 +1785,7 @@ impl VillagerEntity {
                                 BedBlock::set_occupied(true, &world, block, &home_pos, state.id);
 
                                 self.get_entity().set_pose(EntityPose::Sleeping);
+                                self.record_last_slept(game_time);
                                 self.get_entity().set_synced_data(
                                     pumpkin_data::tracked_data::villager::SLEEPING_POS_ID,
                                     Some(home_pos),
@@ -1806,81 +1818,21 @@ impl VillagerEntity {
                 None::<BlockPos>,
             );
         }
-
-        // 2. Iron Golem spawning logic (only for adults)
-        let profession = self
-            .villager_data
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .profession_enum();
-        if profession != VillagerProfession::Nitwit && age >= 0 {
-            // Checked every 20 ticks, golem spawn check every ~100 ticks
-            if age % 100 == 0 && self.get_home().is_some() {
-                // Check if panicked or talked recently to spawn an Iron Golem
-                let has_bed = self.get_home().is_some();
-                let has_worked =
-                    game_time - self.last_worked_at_poi.load(Ordering::Relaxed) < 24000;
-                if has_bed && has_worked {
-                    // Check nearby villagers
-                    let my_pos = self.get_entity().pos.load();
-                    let bb = BoundingBox::new(
-                        my_pos.sub_raw(16.0, 8.0, 16.0),
-                        my_pos.add_raw(16.0, 8.0, 16.0),
-                    );
-                    let nearby_villagers = world
-                        .get_entities_at_box(&bb)
-                        .iter()
-                        .filter(|e| {
-                            e.get_entity().entity_type
-                                == &pumpkin_data::entity::EntityType::VILLAGER
-                        })
-                        .count();
-
-                    if nearby_villagers >= 3 {
-                        // Check if an iron golem is already nearby
-                        let nearby_golems = world
-                            .get_entities_at_box(&bb)
-                            .iter()
-                            .filter(|e| {
-                                e.get_entity().entity_type
-                                    == &pumpkin_data::entity::EntityType::IRON_GOLEM
-                            })
-                            .count();
-
-                        if nearby_golems == 0 {
-                            // Attempt to spawn an Iron Golem
-                            let spawn_pos = my_pos.add_raw(0.0, 0.5, 0.0);
-                            let golem_entity = Entity::new(
-                                world.clone(),
-                                spawn_pos,
-                                &pumpkin_data::entity::EntityType::IRON_GOLEM,
-                            );
-                            let golem = crate::entity::passive::iron_golem::IronGolemEntity::new(
-                                golem_entity,
-                            );
-                            let golem = golem as Arc<dyn EntityBase>;
-                            // Villager.spawnGolemIfNeeded uses SpawnUtil with MOB_SUMMONED.
-                            crate::entity::mob::spawn::finalize_spawn_with_reason(
-                                &golem,
-                                &world,
-                                crate::entity::mob::spawn::SpawnReason::MobSummoned,
-                                None,
-                            );
-                            world.spawn_entity_non_save(golem);
-                            world.send_entity_status(
-                                self.get_entity(),
-                                pumpkin_data::entity::EntityStatus::VillagerHappy,
-                                Some(ActorEventID::VillagerHappy),
-                            );
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
 impl Mob for VillagerEntity {
+    fn make_brain(
+        &self,
+        packed: &crate::entity::ai::brain::memory::PackedMemories,
+    ) -> crate::entity::ai::brain::Brain {
+        golem_spawning::make_brain(packed)
+    }
+
+    fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
+        self.golem_ai_step();
+    }
+
     #[expect(clippy::too_many_lines)]
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
         {
