@@ -73,3 +73,28 @@ fn queue_regression_sources_release_at_their_last_function()
     assert_eq!(batch.remaining_calls(), 0);
     Ok(())
 }
+
+#[test]
+fn review3_top_level_return_discards_pending_return_callbacks() -> Result<(), FunctionRunError> {
+    let mut queue = FunctionQueue::new(100, 100, MAX_QUEUE_DEPTH);
+    queue.enqueue(batch(1, 1))?;
+    assert!(matches!(queue.next(), Some(Work::Discarded)));
+    queue.delivering_returns = true;
+    ACTIVE_QUEUE.with(|active| *active.borrow_mut() = Some(queue));
+    let _guard = QueueGuard;
+    return_from_function(0, ReturnValue::Success(7));
+    ACTIVE_QUEUE.with(|active| {
+        assert_eq!(active.borrow().as_ref().unwrap().pending_returns.len(), 1);
+    });
+    return_from_function(TOP_FRAME_ID, ReturnValue::Success(9));
+    ACTIVE_QUEUE.with(|active| {
+        let mut active = active.borrow_mut();
+        let queue = active.as_mut().unwrap();
+        assert!(queue.pending_returns.is_empty());
+        assert!(queue.frames.is_empty());
+        assert!(queue.entries.is_empty());
+        assert!(queue.pending.is_empty());
+        assert!(queue.next().is_none());
+    });
+    Ok(())
+}

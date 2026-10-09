@@ -9,17 +9,11 @@ use crate::command::argument_types::coordinates::block_pos::BlockPosArgumentType
 use crate::command::argument_types::coordinates::rotation::RotationArgumentType;
 use crate::command::argument_types::entity::EntityArgumentType;
 use crate::command::context::command_context::CommandContext;
-use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 
 const DESCRIPTION: &str = "Sets the spawn point for a player.";
 const PERMISSION: &str = "minecraft:command.spawnpoint";
-
-const ERROR_NOT_PLAYER: CommandErrorType<0> = CommandErrorType::new(
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-);
 
 enum SpawnpointMode {
     SelfDefault,
@@ -32,13 +26,10 @@ struct SpawnpointExecutor(SpawnpointMode);
 
 impl CommandExecutor for SpawnpointExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        // SetSpawnCommand.register resolves implicit targets through getPlayerOrException().
         let targets = match self.0 {
             SpawnpointMode::SelfDefault => {
-                let player = context
-                    .source
-                    .output
-                    .as_player()
-                    .ok_or_else(|| ERROR_NOT_PLAYER.create_without_context())?;
+                let player = context.source.player_arc_or_err()?;
                 vec![player]
             }
             _ => EntityArgumentType::get_players(context, "targets")?,

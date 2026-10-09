@@ -124,6 +124,7 @@ struct FunctionQueue {
     max_queue_depth: usize,
     queue_overflow: bool,
     fork_limit: usize,
+    top_returned: bool,
 }
 
 thread_local! {
@@ -159,10 +160,33 @@ pub fn consume_command_cost() -> bool {
     })
 }
 
-/// Identifies the current function frame for a deferred return callback.
+/// Identifies the current function frame, if a function is executing.
 #[must_use]
 pub fn current_function_frame() -> Option<usize> {
     ACTIVE_QUEUE.with(|queue| queue.borrow().as_ref()?.frames.last().map(|frame| frame.id))
+}
+
+/// Identifies the current execution frame, including the top-level command frame.
+#[must_use]
+pub fn current_execution_frame() -> Option<usize> {
+    // ExecutionContext.createTopFrame installs a frame even outside /function.
+    ACTIVE_QUEUE.with(|queue| {
+        let queue = queue.borrow();
+        let queue = queue.as_ref()?;
+        Some(queue.frames.last().map_or(TOP_FRAME_ID, |frame| frame.id))
+    })
+}
+
+const TOP_FRAME_ID: usize = usize::MAX;
+
+/// Reports whether the current top-level command frame discarded its remaining sources.
+pub fn execution_stopped() -> bool {
+    ACTIVE_QUEUE.with(|queue| {
+        queue
+            .borrow()
+            .as_ref()
+            .is_some_and(|queue| queue.top_returned)
+    })
 }
 
 /// Discards a function's tail and forwards its explicit return once, as `ReturnCommand` does.
@@ -172,6 +196,16 @@ pub fn return_from_function(id: usize, value: ReturnValue) {
         let Some(queue) = active.as_mut() else {
             return false;
         };
+        if id == TOP_FRAME_ID {
+            // ExecutionContext.createTopFrame's discard clears all outstanding work.
+            queue.top_returned = true;
+            queue.frames.clear();
+            queue.entries.clear();
+            queue.pending.clear();
+            queue.pending_returns.clear();
+            queue.queued_calls = 0;
+            return false;
+        }
         let Some(frame) = queue.frame_mut(id) else {
             return false;
         };
@@ -540,3 +574,7 @@ mod continuation_tests;
 #[cfg(test)]
 #[path = "function_queue_tests.rs"]
 mod queue_tests;
+
+#[cfg(test)]
+#[path = "function_return_tests.rs"]
+mod return_tests;

@@ -375,6 +375,11 @@ mod tests {
         let destination = fixture
             .server
             .get_world_from_dimension(&Dimension::THE_NETHER);
+        // This test checks death drops, so its forced respawn must not wait for terrain generation.
+        crate::server::combat_test_support::publish_empty_chunk(
+            &destination,
+            pumpkin_util::math::vector2::Vector2::new(0, 0),
+        );
         player.set_respawn_point(
             Dimension::THE_NETHER,
             BlockPos(Vector3::new(8, 200, 8)),

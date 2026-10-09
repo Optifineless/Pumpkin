@@ -9,7 +9,7 @@ use pumpkin_command::errors::error_types::CommandErrorType;
 pub use pumpkin_command::source::{
     ResultValueTaker, ReturnValue, ReturnValueCallable, ReturnValueCallback,
 };
-use pumpkin_data::translation;
+use pumpkin_data::{chat_type::ChatType, translation};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
@@ -145,16 +145,24 @@ impl CommandSource {
     /// everything else from the `source` provided.
     #[must_use]
     pub fn with_world(self, world: Arc<World>) -> Self {
+        // CommandSourceStack.withLevel scales only the context's horizontal position.
+        let scale = self.world.as_ref().map_or(1.0, |old| {
+            old.dimension.coordinate_scale / world.dimension.coordinate_scale
+        });
         Self {
             output: self.output,
             world: Some(world),
             entity: self.entity,
-            position: self.position,
+            position: Vector3::new(
+                self.position.x * scale,
+                self.position.y,
+                self.position.z * scale,
+            ),
             rotation: self.rotation,
             name: self.name,
             display_name: self.display_name,
             server: self.server,
-            silent: true,
+            silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
             signing_context: self.signing_context,
@@ -284,7 +292,7 @@ impl CommandSource {
             name: self.name,
             display_name: self.display_name,
             server: self.server,
-            silent: true,
+            silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor,
             signing_context: self.signing_context,
@@ -356,6 +364,20 @@ impl CommandSource {
         self.entity.as_ref().and_then(|entity| entity.get_player())
     }
 
+    /// Returns the executing player with shared ownership, independently of the output sender.
+    #[must_use]
+    pub(crate) fn player_arc_or_none(&self) -> Option<Arc<Player>> {
+        // CommandSourceStack.getPlayer, retaining an Arc for existing player command APIs.
+        let entity: Arc<dyn std::any::Any + Send + Sync> = self.entity.clone()?;
+        entity.downcast::<Player>().ok()
+    }
+
+    /// Requires an executing player, independently of the output sender and its permissions.
+    pub(crate) fn player_arc_or_err(&self) -> Result<Arc<Player>, CommandSyntaxError> {
+        self.player_arc_or_none()
+            .ok_or(REQUIRES_PLAYER.create_without_context())
+    }
+
     /// Gets the player as an `Arc<Player>` from the underlying output sender.
     #[must_use]
     pub fn as_player(&self) -> Option<Arc<Player>> {
@@ -375,6 +397,47 @@ impl CommandSource {
     #[must_use]
     pub fn executed_by_player(&self) -> bool {
         self.player_or_none().is_some()
+    }
+
+    /// Delivers outgoing command chat to the executing player, or the output source.
+    pub(crate) fn send_chat_message(
+        &self,
+        message: &crate::net::chat::OutgoingChatMessage,
+        chat_type: ChatType,
+        target_name: Option<&TextComponent>,
+    ) {
+        // CommandSourceStack.sendChatMessage preserves signed identity and honors silence.
+        if self.silent {
+            return;
+        }
+        if let Some(player) = self.player_arc_or_none() {
+            message.send_to_player(
+                &player,
+                false,
+                (chat_type as i32 + 1).into(),
+                &self.display_name,
+                target_name,
+            );
+        } else {
+            // ChatTypeDecoration.decorate resolves parameters for the bound type, not just /msg.
+            let target = target_name.cloned().unwrap_or_else(TextComponent::empty);
+            let parameters = match chat_type {
+                ChatType::MsgCommandOutgoing => vec![target, message.content()],
+                ChatType::TeamMsgCommandIncoming | ChatType::TeamMsgCommandOutgoing => {
+                    vec![target, self.display_name.clone(), message.content()]
+                }
+                _ => vec![self.display_name.clone(), message.content()],
+            };
+            let key = chat_type.translation_key();
+            let mut decorated = TextComponent::translate_cross(key, key, parameters);
+            if matches!(
+                chat_type,
+                ChatType::MsgCommandIncoming | ChatType::MsgCommandOutgoing
+            ) {
+                decorated = decorated.color(Color::Named(NamedColor::Gray)).italic();
+            }
+            self.output.send_message(decorated);
+        }
     }
 
     /// Sends a message to this source.
@@ -500,6 +563,10 @@ impl pumpkin_command::source::CommandSource for CommandSource {
             .any(|callback| callback.returned_function_frame().is_some())
     }
 
+    fn execution_stopped(&self) -> bool {
+        crate::data::datapack::execution_stopped()
+    }
+
     fn max_command_forks(&self) -> usize {
         crate::data::datapack::max_command_forks(self)
     }
@@ -554,9 +621,9 @@ impl pumpkin_command::source::CommandSource for CommandSource {
     }
 
     fn anchor_position(&self, anchor: EntityAnchor) -> Vector3<f64> {
-        let pos = self.position;
-        self.entity
-            .as_ref()
-            .map_or_else(|| pos, |e| anchor.position_at_entity(e.get_entity()))
+        // EntityAnchorArgument.Anchor.apply(CommandSourceStack) transforms the context position.
+        self.entity.as_ref().map_or(self.position, |entity| {
+            anchor.transform_position(self.position, entity.get_entity())
+        })
     }
 }

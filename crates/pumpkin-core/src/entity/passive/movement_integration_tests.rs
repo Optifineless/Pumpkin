@@ -279,6 +279,8 @@ async fn aquatic_rain_reaches_head_above_sheltered_feet() {
         .section
         .set_relative_biome(1, 31, 1, pumpkin_data::biome::Biome::PLAINS.id);
     world.set_raining(true);
+    // Level.isRaining uses the visual threshold, not the newly set weather flag.
+    world.weather.lock().unwrap().rain_level = 1.0;
     let head = BlockPos::new(4, 61, 4);
     world.set_sky_light_level(&head, 15);
     let axolotl = AxolotlEntity::new(Entity::new(

@@ -105,6 +105,11 @@ pub trait CommandSource: Clone + Send + Sync + 'static {
         false
     }
 
+    /// Whether an explicit return discarded the remaining sources of this execution.
+    fn execution_stopped(&self) -> bool {
+        false
+    }
+
     /// Checks if this command source has the specified permission.
     fn has_permission(&self, _permission: &str) -> bool {
         true
@@ -227,6 +232,10 @@ impl<S: CommandSource> CommandSource for Arc<S> {
 
     fn is_returning(&self) -> bool {
         (**self).is_returning()
+    }
+
+    fn execution_stopped(&self) -> bool {
+        (**self).execution_stopped()
     }
 
     fn check_block_loaded(&self, pos: &BlockPos) -> Result<(), CommandSyntaxError> {

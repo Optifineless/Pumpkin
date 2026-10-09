@@ -131,7 +131,7 @@ impl<'a> EnvironmentAttributes<'a> {
                         .weather
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    weather.raining
+                    weather.is_raining(self.world)
                 };
                 raining
                     || !self.world.dimension.has_skylight

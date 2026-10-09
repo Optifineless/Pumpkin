@@ -62,6 +62,8 @@ mod pumpkin;
 mod raid;
 mod random;
 mod recipe;
+#[cfg(test)]
+mod regression_tests;
 mod reload;
 mod r#return;
 mod ride;
@@ -96,7 +98,7 @@ mod title;
 mod tps;
 mod transfer;
 mod trigger;
-mod waypoint;
+pub(crate) mod waypoint;
 mod weather;
 mod whitelist;
 pub(crate) use whitelist::kick_non_whitelisted_players;

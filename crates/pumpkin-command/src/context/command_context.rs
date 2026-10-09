@@ -393,6 +393,10 @@ impl<'a, S: CommandSource> ContextChain<'a, S> {
                 result_consumer,
                 forked_mode,
             )?);
+            // ExecutionContext.createTopFrame clears queued sources when ReturnCommand returns.
+            if execution_source.execution_stopped() {
+                break;
+            }
         }
 
         Ok(result)

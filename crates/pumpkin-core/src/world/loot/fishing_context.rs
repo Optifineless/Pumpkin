@@ -22,7 +22,7 @@ pub fn build_fishing_loot_context(
         .weather
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (raining, thundering) = (weather.raining, weather.thundering);
+    let (raining, thundering) = (weather.is_raining(&world), weather.is_thundering(&world));
     drop(weather);
     LootContextParameters {
         registry: world

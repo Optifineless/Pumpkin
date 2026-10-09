@@ -13,7 +13,6 @@ use pumpkin_util::text::TextComponent;
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::core::integer::IntegerArgumentType;
 use crate::command::context::command_context::CommandContext;
-use crate::command::errors::error_types::DISPATCHER_PARSE_EXCEPTION;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::entity::EntityBase;
@@ -31,11 +30,8 @@ struct StartExecutor {
 
 impl CommandExecutor for StartExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context.source.as_player().ok_or_else(|| {
-            DISPATCHER_PARSE_EXCEPTION.create_without_context(TextComponent::text(
-                "Only players can execute this command",
-            ))
-        })?;
+        // RaidCommand.start uses the executing player's raid.
+        let player = context.source.player_or_err()?;
         let entity = player.get_entity();
         let pos = entity.block_pos.load();
         let world = entity.world.load();
@@ -88,11 +84,8 @@ struct StopExecutor;
 
 impl CommandExecutor for StopExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context.source.as_player().ok_or_else(|| {
-            DISPATCHER_PARSE_EXCEPTION.create_without_context(TextComponent::text(
-                "Only players can execute this command",
-            ))
-        })?;
+        // RaidCommand.stop uses the executing player's raid.
+        let player = context.source.player_or_err()?;
         let entity = player.get_entity();
         let pos = entity.block_pos.load();
         let world = entity.world.load();
@@ -140,11 +133,8 @@ struct CheckExecutor;
 
 impl CommandExecutor for CheckExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context.source.as_player().ok_or_else(|| {
-            DISPATCHER_PARSE_EXCEPTION.create_without_context(TextComponent::text(
-                "Only players can execute this command",
-            ))
-        })?;
+        // RaidCommand.check uses the executing player's raid.
+        let player = context.source.player_or_err()?;
         let entity = player.get_entity();
         let pos = entity.block_pos.load();
         let world = entity.world.load();
@@ -191,14 +181,9 @@ struct SoundExecutor;
 
 impl CommandExecutor for SoundExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context.source.as_player().ok_or_else(|| {
-            DISPATCHER_PARSE_EXCEPTION.create_without_context(TextComponent::text(
-                "Only players can execute this command",
-            ))
-        })?;
-        let entity = player.get_entity();
-        let pos = entity.pos.load();
-        let world = entity.world.load();
+        // RaidCommand.playSound uses the command position and level, without requiring a player.
+        let pos = context.source.position;
+        let world = context.source.world();
 
         let sound_pos = pos.add_raw(5.0, 0.0, 0.0);
         world.play_sound(
@@ -214,22 +199,17 @@ struct SpawnLeaderExecutor;
 
 impl CommandExecutor for SpawnLeaderExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context.source.as_player().ok_or_else(|| {
-            DISPATCHER_PARSE_EXCEPTION.create_without_context(TextComponent::text(
-                "Only players can execute this command",
-            ))
-        })?;
-        let entity = player.get_entity();
-        let pos = entity.pos.load();
-        let world = entity.world.load();
+        // RaidCommand.spawnLeader uses the command position and level, without requiring a player.
+        let pos = context.source.position;
+        let world = context.source.world();
 
         let raider_uuid = Uuid::new_v4();
-        let raider_entity = from_type(&EntityType::PILLAGER, pos, &world, raider_uuid);
+        let raider_entity = from_type(&EntityType::PILLAGER, pos, world, raider_uuid);
 
-        // RaidCommand.spawnCaptain initializes its new pillager before the captain banner.
+        // RaidCommand.spawnLeader also finalizes the new pillager.
         crate::entity::mob::spawn::finalize_spawn_with_reason(
             &raider_entity,
-            &world,
+            world,
             crate::entity::mob::spawn::SpawnReason::Command,
             None,
         );
@@ -260,11 +240,8 @@ struct SetOmenExecutor;
 
 impl CommandExecutor for SetOmenExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context.source.as_player().ok_or_else(|| {
-            DISPATCHER_PARSE_EXCEPTION.create_without_context(TextComponent::text(
-                "Only players can execute this command",
-            ))
-        })?;
+        // RaidCommand.setRaidOmenLevel uses the executing player's raid.
+        let player = context.source.player_or_err()?;
         let entity = player.get_entity();
         let pos = entity.block_pos.load();
         let world = entity.world.load();
@@ -312,11 +289,8 @@ struct GlowExecutor;
 
 impl CommandExecutor for GlowExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context.source.as_player().ok_or_else(|| {
-            DISPATCHER_PARSE_EXCEPTION.create_without_context(TextComponent::text(
-                "Only players can execute this command",
-            ))
-        })?;
+        // RaidCommand.glow uses the executing player's raid.
+        let player = context.source.player_or_err()?;
         let entity = player.get_entity();
         let pos = entity.block_pos.load();
         let world = entity.world.load();

@@ -31,11 +31,6 @@ const ERROR_MULTIPLE: CommandErrorType<1> = CommandErrorType::new(
     translation::java::CLEAR_FAILED_MULTIPLE,
 );
 
-const ERROR_NOT_PLAYER: CommandErrorType<0> = CommandErrorType::new(
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-);
-
 const MAX_NO_UPPER_LIMIT: i32 = -1;
 const MAX_NO_CLEAR_BUT_SIMULATE: i32 = 0;
 
@@ -195,13 +190,10 @@ struct ClearExecutor {
 
 impl CommandExecutor for ClearExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        // ClearInventoryCommands.register resolves implicit targets through getPlayerOrException().
         match self.step {
             ClearStep::CallerOnly => {
-                let player = context
-                    .source
-                    .output
-                    .as_player()
-                    .ok_or_else(|| ERROR_NOT_PLAYER.create_without_context())?;
+                let player = context.source.player_arc_or_err()?;
                 clear_inventory(
                     &context.source,
                     std::slice::from_ref(&player),

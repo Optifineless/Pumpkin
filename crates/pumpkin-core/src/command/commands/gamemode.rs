@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use pumpkin_data::translation;
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
@@ -9,7 +7,6 @@ use crate::command::argument_builder::{ArgumentBuilder, argument, command};
 use crate::command::argument_types::entity::EntityArgumentType;
 use crate::command::argument_types::gamemode::GameModeArgumentType;
 use crate::command::context::command_context::CommandContext;
-use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::entity::EntityBase;
@@ -17,25 +14,17 @@ use crate::entity::EntityBase;
 const DESCRIPTION: &str = "Change a player's gamemode.";
 const PERMISSION: &str = "minecraft:command.gamemode";
 
-const ERROR_NOT_PLAYER: CommandErrorType<0> = CommandErrorType::new(
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-);
-
 struct GamemodeExecutor {
     is_self: bool,
 }
 
 impl CommandExecutor for GamemodeExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        // GameModeCommand.register resolves implicit targets through getPlayerOrException().
         let gamemode = GameModeArgumentType::get(context, "gamemode")?;
 
         let targets = if self.is_self {
-            let player = context
-                .source
-                .output
-                .as_player()
-                .ok_or_else(|| ERROR_NOT_PLAYER.create_without_context())?;
+            let player = context.source.player_arc_or_err()?;
             vec![player]
         } else {
             EntityArgumentType::get_players(context, "target")?
@@ -60,15 +49,18 @@ impl CommandExecutor for GamemodeExecutor {
                     TextComponent::translate_cross(gamemode_string.clone(), gamemode_string, []);
                 let is_self = context
                     .source
-                    .output
-                    .as_player()
-                    .is_some_and(|p| Arc::ptr_eq(&p, target));
+                    .player_or_none()
+                    .is_some_and(|p| std::ptr::eq(p, target.as_ref()));
                 if is_self {
-                    target.send_system_message(&TextComponent::translate_cross(
-                        translation::java::COMMANDS_GAMEMODE_SUCCESS_SELF,
-                        translation::bedrock::COMMANDS_GAMEMODE_SUCCESS_SELF,
-                        [gamemode_comp],
-                    ));
+                    // GameModeCommand.logGamemodeChange sends feedback through the output source.
+                    context.source.send_feedback(
+                        TextComponent::translate_cross(
+                            translation::java::COMMANDS_GAMEMODE_SUCCESS_SELF,
+                            translation::bedrock::COMMANDS_GAMEMODE_SUCCESS_SELF,
+                            [gamemode_comp],
+                        ),
+                        true,
+                    );
                 } else {
                     if server.level_info.load().game_rules.send_command_feedback {
                         target.send_system_message(&TextComponent::translate_cross(

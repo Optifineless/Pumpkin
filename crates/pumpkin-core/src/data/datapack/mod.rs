@@ -98,9 +98,11 @@ fn share_function_bodies(
 
 mod function_frame;
 mod function_runner;
+pub(crate) use function_runner::execution_stopped;
 pub use function_runner::{
-    FunctionRunError, consume_command_cost, current_function_frame, discard_function_tail,
-    execute_command_in_context, is_nested_function_call, max_command_forks, return_from_function,
+    FunctionRunError, consume_command_cost, current_execution_frame, current_function_frame,
+    discard_function_tail, execute_command_in_context, is_nested_function_call, max_command_forks,
+    return_from_function,
 };
 
 impl Default for DatapackManager {

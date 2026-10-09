@@ -353,7 +353,11 @@ impl CommandSender {
                 player.world(),
                 Some(player.clone()),
                 player.position(),
-                player.rotation().into(),
+                // ServerPlayer.createCommandSourceStack uses Entity.getRotationVector (pitch, yaw).
+                Vector2::new(
+                    player.living_entity.entity.pitch.load(),
+                    player.living_entity.entity.yaw.load(),
+                ),
                 player.get_display_name().get_text(),
                 player.get_display_name(),
                 server.clone(),

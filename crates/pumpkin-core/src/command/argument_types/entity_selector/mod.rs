@@ -108,7 +108,10 @@ impl EntitySelector {
                 .and_then(|s| s.get_player_by_name(name));
             Ok(player.map_or_else(Vec::new, |p| vec![p as Arc<dyn EntityBase>]))
         } else if let Some(uuid) = self.entity_uuid.as_ref() {
-            // Try to get an entity by UUID.
+            // EntitySelector.findEntities resolves players as well as non-player entities.
+            if let Some(player) = source.server().get_player_by_uuid(*uuid) {
+                return Ok(vec![player as Arc<dyn EntityBase>]);
+            }
             for world in source.server().worlds.load().iter() {
                 if let Some(entity) = world.get_entity_by_uuid(*uuid) {
                     return Ok(vec![entity]);

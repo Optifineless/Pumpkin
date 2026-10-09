@@ -32,11 +32,8 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         &advanced_config.commands,
     ));
     let block_registry = crate::block::registry::default_registry();
-    let level_info = Arc::new(ArcSwap::from_pointee(
-        AnvilLevelInfo
-            .read_world_info(path)
-            .unwrap_or_else(|_| LevelData::default(pumpkin_util::world_seed::Seed(0))),
-    ));
+    let level_data = level_data(path);
+    let level_info = Arc::new(ArcSwap::from_pointee(level_data));
     let map_manager = MapManager::load(path).unwrap();
     map_manager.reconcile_counter(level_info.load().map_id);
     let listing = std::sync::Mutex::new(CachedStatus::new(
@@ -67,6 +64,9 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         datapack_manager: Arc::new(crate::data::datapack::DatapackManager::new()),
         enchantment_manager: Arc::new(enchantment::EnchantmentManager::new()),
         worlds: ArcSwap::from_pointee(vec![]),
+        weather_data: Arc::new(std::sync::Mutex::new(
+            pumpkin_world::world_info::data_files::WeatherData::from_level_data(&level_info.load()),
+        )),
         dimensions,
         command_dispatcher,
         block_registry,
@@ -119,4 +119,39 @@ pub fn world(server: &Arc<Server>, path: &std::path::Path) -> Arc<World> {
         server.block_registry.clone(),
         Arc::downgrade(server),
     ))
+}
+
+fn level_data(path: &std::path::Path) -> LevelData {
+    if path.join("level.dat").exists() {
+        AnvilLevelInfo.read_world_info(path).unwrap()
+    } else {
+        LevelData::default(pumpkin_util::world_seed::Seed(0))
+    }
+}
+
+/// Publishes a passable chunk in the world's actual dimension without background generation.
+pub fn publish_empty_chunk(world: &World, position: pumpkin_util::math::vector2::Vector2<i32>) {
+    use pumpkin_world::{
+        chunk_system::chunk_state::Chunk,
+        generation::{
+            generator::{WorldGenerator, flat::FlatGenerator},
+            proto_chunk::ProtoChunk,
+        },
+    };
+    let generator = WorldGenerator::Flat(Box::new(FlatGenerator::new(
+        world.level.seed,
+        world.dimension.clone(),
+        Vec::new(),
+        pumpkin_data::biome::Biome::PLAINS.registry_id.to_owned(),
+    )));
+    let mut chunk = Chunk::Proto(Box::new(ProtoChunk::new(
+        position.x, position.y, &generator,
+    )));
+    chunk.upgrade_to_level_chunk(
+        &world.dimension,
+        &pumpkin_config::lighting::LightingEngineConfig::default(),
+    );
+    if let Chunk::Level(chunk) = chunk {
+        world.level.loaded_chunks.insert(position, chunk);
+    }
 }

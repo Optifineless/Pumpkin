@@ -1,7 +1,5 @@
 use pumpkin_data::translation;
-use pumpkin_protocol::java::client::play::{CWaypoint, WaypointIcon};
 use pumpkin_util::PermissionLvl;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
 
@@ -13,6 +11,10 @@ use crate::command::argument_types::team_color::TeamColorArgumentType;
 use crate::command::context::command_context::CommandContext;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
+
+#[path = "waypoint_icon.rs"]
+mod icon;
+use crate::entity::living::waypoint_icon::DEFAULT;
 
 const DESCRIPTION: &str = "List or modify waypoints.";
 const PERMISSION: &str = "minecraft:command.waypoint";
@@ -47,14 +49,6 @@ struct ColorExecutor(ColorAction);
 impl CommandExecutor for ColorExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let waypoint_entity = EntityArgumentType::get_entity(context, "waypoint")?;
-        let entity = waypoint_entity.get_entity();
-        let pos = entity.pos.load();
-        let block_pos = BlockPos::new(
-            pos.x.floor() as i32,
-            pos.y.floor() as i32,
-            pos.z.floor() as i32,
-        );
-        let uuid = entity.entity_uuid;
 
         let color_val = match self.0 {
             ColorAction::Named => {
@@ -66,20 +60,15 @@ impl CommandExecutor for ColorExecutor {
                 let rgb = HexColorArgumentType::get(context, "color")?;
                 i32::from_be_bytes([0, rgb.red, rgb.green, rgb.blue])
             }
-            ColorAction::Reset => 0xFFFFFF,
+            ColorAction::Reset => 0,
         };
 
-        if let Some(player) = context.source.as_player() {
-            let packet = CWaypoint::update_position(
-                uuid,
-                Some(WaypointIcon {
-                    style: None,
-                    color: color_val,
-                }),
-                block_pos,
-            );
-            player.try_send_client_packet(&packet);
-        }
+        icon::mutate_icon(&context.source, &waypoint_entity, |icon| {
+            icon.color = match self.0 {
+                ColorAction::Reset => None,
+                _ => Some(color_val),
+            };
+        })?;
 
         match self.0 {
             ColorAction::Named => {
@@ -130,14 +119,6 @@ struct StyleExecutor(StyleAction);
 impl CommandExecutor for StyleExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let waypoint_entity = EntityArgumentType::get_entity(context, "waypoint")?;
-        let entity = waypoint_entity.get_entity();
-        let pos = entity.pos.load();
-        let block_pos = BlockPos::new(
-            pos.x.floor() as i32,
-            pos.y.floor() as i32,
-            pos.z.floor() as i32,
-        );
-        let uuid = entity.entity_uuid;
 
         let style_owned = match self.0 {
             StyleAction::Set => {
@@ -147,17 +128,10 @@ impl CommandExecutor for StyleExecutor {
             StyleAction::Reset => None,
         };
 
-        if let Some(player) = context.source.as_player() {
-            let packet = CWaypoint::update_position(
-                uuid,
-                Some(WaypointIcon {
-                    style: style_owned.as_deref(),
-                    color: 0xFFFFFF,
-                }),
-                block_pos,
-            );
-            player.try_send_client_packet(&packet);
-        }
+        icon::mutate_icon(&context.source, &waypoint_entity, |icon| {
+            // WaypointStyleAssets.DEFAULT is represented by an absent override.
+            icon.style = style_owned.filter(|style| style != DEFAULT);
+        })?;
 
         context.source.send_feedback(
             pumpkin_macros::translate_cross!(
