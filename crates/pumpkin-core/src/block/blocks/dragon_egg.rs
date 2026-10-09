@@ -23,6 +23,13 @@ impl DragonEggBlock {
     const VERTICAL_TELEPORT_RADIUS: i32 = 8;
     const MAX_TELEPORT_ATTEMPTS: usize = 1000;
 
+    const fn pack_difference_in_position(dx: i32, dy: i32, dz: i32) -> i32 {
+        // BlockUtil.packDifferenceInPosition, using DragonEggBlock's radii.
+        ((dx + Self::HORIZONTAL_TELEPORT_RADIUS) & 0xff) << 16
+            | ((dy + Self::VERTICAL_TELEPORT_RADIUS) & 0xff) << 8
+            | ((dz + Self::HORIZONTAL_TELEPORT_RADIUS) & 0xff)
+    }
+
     fn teleport(world: &Arc<World>, pos: &BlockPos) {
         let mut random = rng();
         let state = world.get_block_state_id(pos);
@@ -45,9 +52,7 @@ impl DragonEggBlock {
                 continue;
             }
             // BlockUtil.packDifferenceInPosition encodes signed offsets biased by the radii.
-            let packed = ((dx + horizontal) & 0xff) << 16
-                | ((dy + vertical) & 0xff) << 8
-                | ((dz + horizontal) & 0xff);
+            let packed = Self::pack_difference_in_position(dx, dy, dz);
             world.sync_world_event(
                 pumpkin_data::world::WorldEvent::ParticlesDragonEggTeleport,
                 *pos,

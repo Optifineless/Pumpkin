@@ -38,8 +38,44 @@ impl EventHandler<PlayerGamemodeChangeEvent> for SpectatorChange {
 }
 
 fn saved_spawn(fixture: &DeathTestWorld, block: &Block) -> TestPlayer {
-    let world = fixture.world();
-    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    // ServerPlayer.findRespawnAndUseSpawnBlock requires RespawnAnchorBlock.canSetSpawn.
+    let dimension = if block == &Block::RESPAWN_ANCHOR {
+        Dimension::THE_NETHER
+    } else {
+        Dimension::OVERWORLD
+    };
+    let world = fixture.server.get_world_from_dimension(&dimension);
+    if block == &Block::RESPAWN_ANCHOR {
+        assert!(world.dimension.respawn_anchor_works);
+        let generator = pumpkin_world::generation::generator::WorldGenerator::Flat(Box::new(
+            pumpkin_world::generation::generator::flat::FlatGenerator::new(
+                pumpkin_util::world_seed::Seed(0),
+                dimension.clone(),
+                Vec::new(),
+                Biome::NETHER_WASTES.registry_id.to_owned(),
+            ),
+        ));
+        let mut chunk = pumpkin_world::generation::proto_chunk::ProtoChunk::new(0, 0, &generator);
+        for x in 0..16 {
+            for z in 0..16 {
+                chunk.set_block_state(x, 63, z, Block::STONE.default_state);
+            }
+        }
+        let mut chunk = pumpkin_world::chunk_system::chunk_state::Chunk::Proto(Box::new(chunk));
+        chunk.upgrade_to_level_chunk(
+            &dimension,
+            &pumpkin_config::lighting::LightingEngineConfig::default(),
+        );
+        let pumpkin_world::chunk_system::chunk_state::Chunk::Level(chunk) = chunk else {
+            panic!("Nether fixture must be loaded");
+        };
+        world
+            .level
+            .loaded_chunks
+            .insert(pumpkin_util::math::vector2::Vector2::new(0, 0), chunk);
+    } else {
+        publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    }
     fixture.server.level_info.rcu(|info| {
         let mut info = (**info).clone();
         info.spawn_x = 3;
@@ -53,7 +89,7 @@ fn saved_spawn(fixture: &DeathTestWorld, block: &Block) -> TestPlayer {
     let player = &client.player;
     player.living_entity.health.store(0.0);
     *player.respawn_point.lock().unwrap() = Some(RespawnPoint {
-        dimension: Dimension::OVERWORLD,
+        dimension,
         position: pos,
         yaw: 90.0,
         force: false,
@@ -67,7 +103,7 @@ async fn hardcore_respawn_uses_saved_bed_or_anchor_then_spectates() {
     for block in [&Block::WHITE_BED, &Block::RESPAWN_ANCHOR, &Block::AIR] {
         let mut client = saved_spawn(&fixture, block);
         let player = client.player.clone();
-        let world = fixture.world();
+        let world = player.world();
         let pos = BlockPos::new(8, 64, 8);
         if block == &Block::RESPAWN_ANCHOR {
             let mut props = RespawnAnchorLikeProperties::from_state_id(block.default_state.id);
