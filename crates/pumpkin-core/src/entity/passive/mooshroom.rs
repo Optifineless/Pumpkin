@@ -140,8 +140,6 @@ impl MooshroomEntity {
 impl Shearable for MooshroomEntity {
     /// Vanilla `MushroomCow.shear`: converts this mooshroom into a cow and drops its mushrooms.
     fn shear(&self, sound_category: SoundCategory, tool: &ItemStack) -> bool {
-        // Capture before the atomic claim changes the predicate-visible shear state.
-        let params = crate::world::loot::build_shearing_loot_context(self, tool);
         if self.converting.swap(true, Ordering::Relaxed) {
             return false;
         }
@@ -165,6 +163,9 @@ impl Shearable for MooshroomEntity {
             return false;
         }
 
+        // Mob.convertTo runs ConversionType.SINGLE before MushroomCow.shear's loot callback.
+        self.finish_conversion(&cow);
+        let params = crate::world::loot::build_shearing_loot_context(self, tool);
         world.play_sound(Sound::EntityMooshroomShear, sound_category, &pos);
         let height = f64::from(mooshroom_entity.height());
         world.spawn_particle(
@@ -185,8 +186,6 @@ impl Shearable for MooshroomEntity {
                 world.spawn_entity(item_entity);
             }
         }
-
-        self.finish_conversion(&cow);
 
         mooshroom_entity.remove();
         true

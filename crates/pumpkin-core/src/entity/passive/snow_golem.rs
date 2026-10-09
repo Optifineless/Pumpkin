@@ -122,8 +122,6 @@ impl SnowGolemEntity {
 
 impl Shearable for SnowGolemEntity {
     fn shear(&self, sound_category: SoundCategory, tool: &ItemStack) -> bool {
-        // Capture before the atomic claim changes the predicate-visible shear state.
-        let params = crate::world::loot::build_shearing_loot_context(self, tool);
         if !self.has_pumpkin.swap(false, Ordering::Relaxed) {
             return false;
         }
@@ -133,6 +131,8 @@ impl Shearable for SnowGolemEntity {
         let pos = entity.pos.load();
         world.play_sound(Sound::EntitySnowGolemShear, sound_category, &pos);
         self.set_has_pumpkin(false);
+        // SnowGolem.shear clears its pumpkin before dropFromShearingLootTable.
+        let params = crate::world::loot::build_shearing_loot_context(self, tool);
 
         let eye_height = f64::from(entity.entity_dimension.load().eye_height);
         let drop_pos = Vector3::new(pos.x, pos.y + eye_height, pos.z);

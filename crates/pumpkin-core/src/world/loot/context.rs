@@ -99,7 +99,7 @@ pub fn build_entity_death_loot_context(
     }
 }
 
-/// Builds the live pre-shear entity context without death-credit parameters.
+/// Builds the live entity context at the species-specific shearing loot step without death-credit parameters.
 #[must_use]
 pub fn build_shearing_loot_context(
     entity: &dyn EntityBase,
