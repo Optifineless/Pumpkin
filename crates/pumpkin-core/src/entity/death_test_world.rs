@@ -24,6 +24,11 @@ pub struct DeathTestWorld {
 )]
 impl DeathTestWorld {
     pub(crate) async fn new() -> Self {
+        Self::with_neighbor_limit(pumpkin_config::world::default_max_chained_neighbor_updates())
+            .await
+    }
+
+    pub(crate) async fn with_neighbor_limit(limit: i32) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let basic = BasicConfiguration {
             default_level_name: directory.path().to_string_lossy().into_owned(),
@@ -32,6 +37,7 @@ impl DeathTestWorld {
         };
         let mut advanced = AdvancedConfiguration::default();
         advanced.networking.bedrock.online_mode = false;
+        advanced.world.max_chained_neighbor_updates = limit;
         let data = VanillaData {
             banned_ip_list: RwLock::default(),
             banned_player_list: RwLock::default(),

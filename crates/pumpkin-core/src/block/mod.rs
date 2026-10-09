@@ -400,6 +400,7 @@ pub struct PrepareArgs<'a> {
     pub state_id: BlockStateId,
     pub position: &'a BlockPos,
     pub flags: BlockFlags,
+    pub update_limit: u32,
 }
 
 pub struct GetStateForNeighborUpdateArgs<'a> {

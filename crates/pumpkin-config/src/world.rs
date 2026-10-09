@@ -15,7 +15,15 @@ pub struct LevelConfig {
     /// Number of ticks between autosave checks. If 0, autosave is disabled.
     #[serde(default = "default_autosave_ticks")]
     pub autosave_ticks: u64,
+    /// Maximum entries in one neighbor cascade; negative is unlimited and zero suppresses it.
+    #[serde(default = "default_max_chained_neighbor_updates")]
+    pub max_chained_neighbor_updates: i32,
     // TODO: More options
+}
+
+/// Returns DedicatedServerProperties' max-chained-neighbor-updates default.
+pub const fn default_max_chained_neighbor_updates() -> i32 {
+    1_000_000 // DedicatedServerProperties.java defines the vanilla default.
 }
 
 const fn default_autosave_ticks() -> u64 {
@@ -28,6 +36,7 @@ impl Default for LevelConfig {
             chunk: ChunkConfig::default(),
             lighting: LightingEngineConfig::default(),
             autosave_ticks: default_autosave_ticks(),
+            max_chained_neighbor_updates: default_max_chained_neighbor_updates(),
         }
     }
 }
