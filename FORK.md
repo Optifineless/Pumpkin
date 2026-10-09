@@ -16,7 +16,7 @@ Upstream is merged in regularly. When upstream fixes something this fork also fi
 
 ## Upstream pull requests included early
 
-These are open upstream PRs merged here before upstream merges them. Each is dropped from the fork once upstream merges its own version.
+These are open upstream PRs merged here before upstream merges them. Each is dropped from the fork once upstream merges its own version. Fork candidates are listed by source branch and commit.
 
 | Upstream PR | What it fixes |
 |:--|:--|
@@ -41,6 +41,44 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | [#3638](https://github.com/Pumpkin-MC/Pumpkin/pull/3638) by CocofireHD | Hardcore difficulty override, including startup before worlds are initialized. |
 | [#3394](https://github.com/Pumpkin-MC/Pumpkin/pull/3394) by JulesB40 | Defer datapack load functions until ticking resumes; keep the pending flag with the function library. |
 | [#3807](https://github.com/Pumpkin-MC/Pumpkin/pull/3807) by 4d1cksupmya55-source | Apply command NBT to live block entities, close stale inventory screens and notify comparators. |
+| WhiteProject1/fix/rayon-panic-handler, `15a5fa8fc` | Detached worker panics reach the existing shutdown hook instead of aborting the process. In-game verification: Not yet. |
+| [#3950](https://github.com/Pumpkin-MC/Pumpkin/pull/3950) by qhashofficial, `416a1bd88` | Wasm plugins can reenter blocking host calls after the call is handed to another thread. In-game verification: Not yet. |
+| [#3932](https://github.com/Pumpkin-MC/Pumpkin/pull/3932) by saranxzi, `041d2ce47` | Exposed farmland hydrates in rain; roofed or snowy farmland stays dry. In-game verification: Not yet. |
+| [#3931](https://github.com/Pumpkin-MC/Pumpkin/pull/3931) by saranxzi, `5596ea875` | Farmland uses its survival tag; paths retain the fence gate exception, and delayed conversion rechecks support. In-game verification: Not yet. |
+| The-Hypnos/feat/brain-phase4, `973d8a8e9` | Sleeping mobs remain still when the shared push entry point runs. In-game verification: Not yet. |
+| [#3765](https://github.com/Pumpkin-MC/Pumpkin/pull/3765) by Alb11747, `a35b075c6` | Villager trades finish without recursively locking the trading screen; payment and offer use are retained. In-game verification: Not yet. |
+| Alb11747/feat/fobbitmc-preservation, `f11a3f31a` | Villagers restock only at their assigned workstation, without consuming a pending-job cooldown. In-game verification: Not yet. |
+| [#3656](https://github.com/Pumpkin-MC/Pumpkin/pull/3656) by creeperkatze, `8ad42f95f` | Container open/close events follow the first viewer opening and the last viewer closing. In-game verification: Not yet. |
+| [#3660](https://github.com/Pumpkin-MC/Pumpkin/pull/3660) by creeperkatze, `6ded5c330` | Jukebox record changes emit one block-change event for players and automation; playback ending keeps the record. In-game verification: Not yet. |
+| [#3843](https://github.com/Pumpkin-MC/Pumpkin/pull/3843) by oystrpj, `cb97bb831` | Button presses exclude the actual presser from the predicted sound; wind charges and releases broadcast normally. In-game verification: Not yet. |
+| Mirkrog/chest-fixes, `5bcc98c67` | Hoppers access both valid double-chest halves and preserve failed-transfer rollback. In-game verification: Not yet. |
+| [#3645](https://github.com/Pumpkin-MC/Pumpkin/pull/3645) by AdmerPRO, `4568d117f` | Dispensers launch experience bottles as projectiles. In-game verification: Not yet. |
+| AdmerPRO/fixexpdrop, `f815e681d` | Experience bottles award collectible XP on impact through the existing orb implementation. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `eb08d84d5` | Sheep, snow golems and mooshrooms use shared shearing with reloadable loot and leash-snipping priority. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `fe82fb390` | Bogged skeletons can be sheared for their mushroom loot. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `07d9188e7` | Plugins can cancel mooshroom conversion without losing the mob or producing loot and sounds. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `a88878fea` | Shearing honors cancelled or adjusted item-damage events before changing the actual hand. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `192d93be2` | Atomic shear claims prevent duplicate loot and cancelled conversions release their claim. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `1b1ec0afc` | Mooshroom conversion preserves the vehicle and first passenger, including boarding state. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `b810aee7a` | Mooshroom conversion transfers its scoreboard team to the cow. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `3b594fb87` | Dispensers skip ordinary shearing of mobs during their death animation after checking leashes. In-game verification: Not yet. |
+| [#3829](https://github.com/Pumpkin-MC/Pumpkin/pull/3829) by tom-devv, `585eb0dd5` | Dyeing and shearing preserve the sheep color and shear state atomically. In-game verification: Not yet. |
+| [#3506](https://github.com/Pumpkin-MC/Pumpkin/pull/3506) by Thijs226, `56200c279` | Hardcore death respawns at a valid saved bed or anchor before switching to spectator mode. In-game verification: Not yet. |
+| [#3506](https://github.com/Pumpkin-MC/Pumpkin/pull/3506) by Thijs226, `ae755dfd5` | Hardcore respawn uses the normal cancellable game-mode change and one in-flight respawn claim. In-game verification: Not yet. |
+| [#3506](https://github.com/Pumpkin-MC/Pumpkin/pull/3506) by Thijs226, `512c0133a` | Duplicate respawn requests leave the original in-flight claim held. In-game verification: Not yet. |
+| [#3684](https://github.com/Pumpkin-MC/Pumpkin/pull/3684) by Thijs226, `22afc2a29` | Armor stands accept item interactions using the actual inventory hand. In-game verification: Not yet. |
+| [#3684](https://github.com/Pumpkin-MC/Pumpkin/pull/3684) by Thijs226, `f63565443` | Armor stand clicks honor plugin-adjusted target and hit position. In-game verification: Not yet. |
+| [#3684](https://github.com/Pumpkin-MC/Pumpkin/pull/3684) by Thijs226, `bc3ed49aa` | Armor stands drop equipment on break except vanishing equipment, and preserve the stand item name. In-game verification: Not yet. |
+| [#3684](https://github.com/Pumpkin-MC/Pumpkin/pull/3684) by Thijs226, `67cb93a2f` | Armor stand swaps do not increment item-use statistics; durability break bookkeeping remains active. In-game verification: Not yet. |
+| [#3684](https://github.com/Pumpkin-MC/Pumpkin/pull/3684) by Thijs226, `8274cc939` | Armor stand disabled slots, scaled click regions and equipment events follow vanilla. In-game verification: Not yet. |
+| [#3684](https://github.com/Pumpkin-MC/Pumpkin/pull/3684) by Thijs226, `687d7b161` | Bedrock armor stand swaps retain known transaction semantics and separate item-use statistics. In-game verification: Not yet. |
+| [#3705](https://github.com/Pumpkin-MC/Pumpkin/pull/3705) by Q2297045667, `2082caa93` | 26.3 spectator clicks decode optional entity IDs; legacy Wasm UUID records remain unchanged. In-game verification: Not yet. |
+| [#3744](https://github.com/Pumpkin-MC/Pumpkin/pull/3744) by Q2297045667, `e262814c4` | Spectator cameras validate loaded state, current-world entities and dragon parts, border, range and pickability. In-game verification: Not yet. |
+| [#3884](https://github.com/Pumpkin-MC/Pumpkin/pull/3884) by tom-devv, `ebf8b8ed8` | Survival attacks teleport dragon eggs and play note blocks after restrictions and plugin cancellation. In-game verification: Not yet. |
+| [#3951](https://github.com/Pumpkin-MC/Pumpkin/pull/3951) by AdmerPRO, `2003d0def` | Wall banners select valid support and drop their standing banner item with patterns when support is removed. In-game verification: Not yet. |
+| Phoenixxo/fix/block-update-stack-overflow, `df2fe1710` | Neighbor cascades run iteratively with per-world state and resumable vanilla direction order. In-game verification: Not yet. |
+| Phoenixxo/fix/block-update-stack-overflow, `f8099507e` | Creative support removal still drops dependent blocks rather than carrying the original no-drop flag. In-game verification: Not yet. |
+| Phoenixxo/fix/block-update-stack-overflow, `7994c6f66` | Queued shape updates capture neighbor state, retain depth limits and clean up after callback panics. In-game verification: Not yet. |
 
 ## Upstream issues addressed here
 
@@ -72,6 +110,8 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | [#3760](https://github.com/Pumpkin-MC/Pumpkin/issues/3760) Tick sprint prints wrong start message | upstream PR #3763 | Not yet |
 | [#3874](https://github.com/Pumpkin-MC/Pumpkin/issues/3874) Fill cannot create snow golems | synchronous BlockInput placement through existing block callbacks | Not yet |
 | [#3276](https://github.com/Pumpkin-MC/Pumpkin/issues/3276) Reload runs load functions while frozen | upstream PR #3394 approach | Not yet |
+| [#3503](https://github.com/Pumpkin-MC/Pumpkin/issues/3503) Hardcore death cannot enter spectator mode | adapted upstream #3506, normal saved respawn followed by cancellable spectator transition | Not yet |
+| [#3614](https://github.com/Pumpkin-MC/Pumpkin/issues/3614) Armor stand item interactions | adapted upstream #3684 with actual-hand writes, adjusted clicks, disabled slots and equipment-drop fixes | Not yet |
 
 ## Known regressions under investigation
 
@@ -180,6 +220,8 @@ Rebuild native plugins against this checkout. The Wasm WIT is unchanged througho
 - API 8 (same version): rabbit review adds a default no-op `Mob::play_attack_sound` hook and changes `AvoidEntityGoal` to retain its admitted escape path. Rebuild native plugins; Wasm WIT is unchanged.
 
 Rabbit hopping review (vanilla 26.3 `Rabbit`): the fork already has hop delays, speed-dependent jump power, jump sounds and event 1 after the impulse. The follow-up restores the constructor's initial zero-speed request, water-avoiding strolls, food-tag-based temptation, and Killer Bunny armor, damage and default name. Cancelling `EntityChangeBlockEvent` when eating carrots now preserves both the crop and the rabbit's appetite. The deep review corrects path-node jump heights, Killer Bunny target ordering and successful-hit sounds, and shared avoidance, home-restricted block searches and solid-render destination admission. This addresses the rabbit portion of [mob AI tracking #3468](https://github.com/Pumpkin-MC/Pumpkin/issues/3468). In-game verification is **Not yet**; native API changes are listed above and Wasm WIT is unchanged.
+
+- API 8 (same version): harvest round 3 adds hand-aware methods and shearing access to `EntityBase` vtables, shearable mob and thrown-item state, a block attack hook, block-entity world binding, a per-world neighbor queue, and `PrepareArgs.update_limit`. `Shearable::shear` reports success, `Mob::transform` reports event acceptance, shearing loot accepts a live context, and `ExperienceBottleEntity::set_item_stack` borrows the source stack. Rebuild native plugins against this checkout. Both Wasm WIT versions retain their spectator UUID records and variant layouts; 26.3 spectator actions use the existing Unknown variant and raw payload. Typed access needs a future versioned API.
 
 The XP orb review fixes breeding/trading single-orb rewards, furnace collection and fractional XP, summon defaults, follow selection and collection after a dimension change. In-game verification remains **Not yet**. Merging is selective: only equal values in the same one-of-40 entity ID group combine; a small mob kill pile normally retains many visible orbs.
 
