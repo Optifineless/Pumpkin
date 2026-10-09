@@ -578,7 +578,9 @@ fn process_packets(
             continue;
         }
         if path.extension().is_some_and(|ext| ext == "rs")
-            && path.file_name().is_some_and(|name| name != "mod.rs" && name != "spectator_action.rs")
+            && path
+                .file_name()
+                .is_some_and(|name| name != "mod.rs" && name != "spectator_action.rs")
         {
             parse_packet_file(
                 &path,
@@ -761,6 +763,12 @@ fn emit_struct_output(
                 "        {}::{}(data) => {{\n",
                 variant_prefix, wit_case
             ));
+            if struct_name == "SSpectateEntity" {
+                // The legacy UUID WIT variant cannot represent 26.3 spectator actions.
+                output.push_str(
+                    "            if version >= JavaMinecraftVersion::V_26_3 { return None; }\n",
+                );
+            }
             output.push_str(prep_code);
             output.push_str(&format!(
                 "            let p = {}::{} {{\n",
@@ -783,8 +791,14 @@ fn emit_struct_output(
             }
             if rust_path_prefix.contains("java") {
                 output.push_str(&format!(
-                    "        id if id == {}::{}::to_id(version) => {{\n",
-                    rust_path_prefix, struct_name
+                    "        id if id == {}::{}::to_id(version){} => {{\n",
+                    rust_path_prefix,
+                    struct_name,
+                    if struct_name == "SSpectateEntity" {
+                        " && version < JavaMinecraftVersion::V_26_3"
+                    } else {
+                        ""
+                    }
                 ));
                 output.push_str("            use pumpkin_protocol::ServerPacket;\n");
                 output.push_str(&format!(

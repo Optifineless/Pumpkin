@@ -154,7 +154,13 @@ impl FireballEntity {
 
 impl EntityBase for FireballEntity {
     fn can_hit(&self) -> bool {
+        // Projectile.isPickable selects redirectable types, excluding small fireballs.
+        use pumpkin_data::tag::Taggable;
         !self.get_entity().is_removed()
+            && self
+                .get_entity()
+                .entity_type
+                .has_tag(&pumpkin_data::tag::EntityType::MINECRAFT_REDIRECTABLE_PROJECTILE)
     }
 
     fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
