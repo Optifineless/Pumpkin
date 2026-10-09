@@ -44,6 +44,8 @@ impl BoggedSkeletonEntity {
 
 impl Shearable for BoggedSkeletonEntity {
     fn shear(&self, sound_category: SoundCategory, tool: &ItemStack) -> bool {
+        // Capture before the atomic claim changes the predicate-visible shear state.
+        let params = crate::world::loot::build_shearing_loot_context(self, tool);
         if self.sheared.swap(true, Ordering::Relaxed) {
             return false;
         }
@@ -54,7 +56,7 @@ impl Shearable for BoggedSkeletonEntity {
         world.play_sound(Sound::EntityBoggedShear, sound_category, &pos);
 
         let drop_pos = Vector3::new(pos.x, pos.y + f64::from(entity.height()), pos.z);
-        for drop in shearing_loot(entity, "minecraft:shearing/bogged", tool) {
+        for drop in shearing_loot(entity, "minecraft:shearing/bogged", &params) {
             world.spawn_entity(Arc::new(ItemEntity::new(
                 Entity::new(world.clone(), drop_pos, &EntityType::ITEM),
                 drop,

@@ -122,6 +122,8 @@ impl SnowGolemEntity {
 
 impl Shearable for SnowGolemEntity {
     fn shear(&self, sound_category: SoundCategory, tool: &ItemStack) -> bool {
+        // Capture before the atomic claim changes the predicate-visible shear state.
+        let params = crate::world::loot::build_shearing_loot_context(self, tool);
         if !self.has_pumpkin.swap(false, Ordering::Relaxed) {
             return false;
         }
@@ -134,7 +136,7 @@ impl Shearable for SnowGolemEntity {
 
         let eye_height = f64::from(entity.entity_dimension.load().eye_height);
         let drop_pos = Vector3::new(pos.x, pos.y + eye_height, pos.z);
-        for drop in shearing_loot(entity, "minecraft:shearing/snow_golem", tool) {
+        for drop in shearing_loot(entity, "minecraft:shearing/snow_golem", &params) {
             world.spawn_entity(Arc::new(ItemEntity::new(
                 Entity::new(world.clone(), drop_pos, &EntityType::ITEM),
                 drop,

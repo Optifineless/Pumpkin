@@ -40,7 +40,7 @@ pub use container::{
 };
 pub use context::{
     EntityLootState, LootContextParameters, build_command_kill_loot_context,
-    build_container_loot_context, build_entity_death_loot_context,
+    build_container_loot_context, build_entity_death_loot_context, build_shearing_loot_context,
 };
 use functions::{LootStack, apply_functions, new_stack};
 use number_provider::{number_float, number_int};

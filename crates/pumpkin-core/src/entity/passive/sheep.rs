@@ -3,7 +3,6 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
-use pumpkin_data::dye_color::DyeColor;
 use pumpkin_data::{entity::EntityType, item::Item};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::Hand;
@@ -121,6 +120,8 @@ impl SheepEntity {
 
 impl Shearable for SheepEntity {
     fn shear(&self, sound_category: SoundCategory, tool: &ItemStack) -> bool {
+        // Capture before the atomic claim changes the predicate-visible shear state.
+        let params = crate::world::loot::build_shearing_loot_context(self, tool);
         if self
             .color_and_sheared
             .fetch_or(SHEARED_BIT, Ordering::Relaxed)
@@ -135,11 +136,9 @@ impl Shearable for SheepEntity {
         let pos = entity.pos.load();
         world.play_sound(Sound::EntitySheepShear, sound_category, &pos);
 
-        let color = DyeColor::by_id(self.get_color()).unwrap_or(DyeColor::White);
-        let loot_key = format!("minecraft:shearing/sheep/{}", color.name()); // is there a better way to do this
         let drop_pos = Vector3::new(pos.x, pos.y + 1.0, pos.z);
         let mut rng = rand::rng();
-        for drop in shearing_loot(entity, &loot_key, tool) {
+        for drop in shearing_loot(entity, "minecraft:shearing/sheep", &params) {
             for _ in 0..drop.item_count {
                 let item_entity = ItemEntity::new(
                     Entity::new(world.clone(), drop_pos, &EntityType::ITEM),
@@ -149,7 +148,7 @@ impl Shearable for SheepEntity {
                 item_base.velocity.store(
                     item_base.velocity.load()
                         + Vector3::new(
-                            // magic numbers from vanilla
+                            // Sheep.shear scatters each dropped wool item.
                             f64::from((rng.random::<f32>() - rng.random::<f32>()) * 0.1),
                             f64::from(rng.random::<f32>() * 0.05),
                             f64::from((rng.random::<f32>() - rng.random::<f32>()) * 0.1),

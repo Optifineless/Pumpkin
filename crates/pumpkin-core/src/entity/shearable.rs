@@ -64,17 +64,19 @@ pub fn shear_by_player(
     true
 }
 
-/// Vanilla `Entity.dropFromShearingLootTable`
+// LivingEntity.dropFromShearingLootTable evaluates the root through reloadable registries.
 #[must_use]
-pub fn shearing_loot(entity: &Entity, loot_key: &str, tool: &ItemStack) -> Vec<ItemStack> {
+pub fn shearing_loot(
+    entity: &Entity,
+    loot_key: &str,
+    params: &LootContextParameters,
+) -> Vec<ItemStack> {
     let Some(loot_table) = entity.world.load().get_loot_table(loot_key) else {
         return Vec::new();
     };
-    let params = LootContextParameters {
-        this_entity: Some(entity.entity_type),
-        position: Some(entity.pos.load()),
-        tool: Some(tool.clone()),
-        ..Default::default()
-    };
-    loot_table.generate_loot_with_context(rand::random(), &params)
+    loot_table.generate_loot_with_context(0, params)
 }
+
+#[cfg(test)]
+#[path = "shearing_loot_tests.rs"]
+mod loot_tests;
