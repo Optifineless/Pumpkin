@@ -76,11 +76,17 @@ impl CreeperEntity {
             goal_selector.add_goal(2, Box::new(CreeperIgniteGoal::new(mob_arc.clone())));
             goal_selector.add_goal(
                 3,
-                Box::new(AvoidEntityGoal::new(&EntityType::OCELOT, 6.0, 1.0, 1.2)),
+                Box::new(AvoidEntityGoal::new(
+                    &EntityType::OCELOT,
+                    6.0,
+                    1.0,
+                    1.2,
+                    None,
+                )),
             );
             goal_selector.add_goal(
                 3,
-                Box::new(AvoidEntityGoal::new(&EntityType::CAT, 6.0, 1.0, 1.2)),
+                Box::new(AvoidEntityGoal::new(&EntityType::CAT, 6.0, 1.0, 1.2, None)),
             );
             goal_selector.add_goal(4, Box::new(MeleeAttackGoal::new(1.0, false)));
             goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(0.8)));

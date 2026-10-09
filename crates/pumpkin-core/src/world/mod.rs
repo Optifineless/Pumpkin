@@ -30,6 +30,7 @@ pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
 mod entity_persistence;
+mod entity_queries;
 pub mod explosion;
 pub mod generation_cache;
 pub mod loot;

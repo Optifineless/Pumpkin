@@ -3,7 +3,6 @@ use std::sync::Arc;
 use super::{Controls, Goal};
 use crate::entity::ai::util::default_random_pos;
 use crate::entity::ai::{pathfinder::path::Path, target_predicate::TargetPredicate};
-use crate::entity::predicate::EntityPredicate;
 use crate::entity::{EntityBase, mob::Mob};
 use pumpkin_data::entity::EntityType;
 
@@ -13,6 +12,9 @@ const VERTICAL_RANGE: i32 = 7;
 // AvoidEntityGoal.canUse inflates the mob's bounding box by three blocks vertically.
 const THREAT_VERTICAL_RANGE: f64 = 3.0;
 
+/// Filters candidate threats for the avoiding mob before nearest selection.
+pub type AvoidPredicate = dyn Fn(&dyn Mob, &dyn EntityBase) -> bool + Send + Sync;
+
 pub struct AvoidEntityGoal {
     goal_control: Controls,
     flee_type: &'static EntityType,
@@ -21,6 +23,7 @@ pub struct AvoidEntityGoal {
     fast_speed: f64,
     target: Option<Arc<dyn EntityBase>>,
     path: Option<Path>,
+    avoid_predicate: Option<Box<AvoidPredicate>>,
 }
 
 impl AvoidEntityGoal {
@@ -30,6 +33,7 @@ impl AvoidEntityGoal {
         flee_distance: f64,
         slow_speed: f64,
         fast_speed: f64,
+        avoid_predicate: Option<Box<AvoidPredicate>>,
     ) -> Self {
         Self {
             goal_control: Controls::MOVE,
@@ -39,6 +43,7 @@ impl AvoidEntityGoal {
             fast_speed,
             target: None,
             path: None,
+            avoid_predicate,
         }
     }
 
@@ -59,28 +64,53 @@ impl AvoidEntityGoal {
                 .load()
                 .expand(distance, THREAT_VERTICAL_RANGE, distance);
         let targeting = TargetPredicate::create_attackable().set_base_max_distance(distance);
-        world
-            .get_all_at_box(&search_box)
-            .into_iter()
-            .filter(|target| {
-                selector(target.as_ref())
-                    && EntityPredicate::ExceptCreativeOrSpectator.test(target.get_entity())
-                    && targeting.test(&world, Some(mob), target.as_ref())
-            })
-            .min_by(|a, b| {
-                a.get_entity()
-                    .pos
-                    .load()
-                    .squared_distance_to_vec(&pos)
-                    .total_cmp(&b.get_entity().pos.load().squared_distance_to_vec(&pos))
-            })
+        let mut nearest = None;
+        let mut nearest_distance = f64::INFINITY;
+        world.for_each_in_box(&search_box, |target| {
+            if selector(target.as_ref())
+                // EntitySelector.NO_CREATIVE_OR_SPECTATOR needs the owning Player, not its base Entity.
+                && !target.get_player().is_some_and(|player| player.is_creative() || player.is_spectator())
+                && targeting.test(&world, Some(mob), target.as_ref())
+            {
+                let distance = target.get_entity().pos.load().squared_distance_to_vec(&pos);
+                if distance < nearest_distance {
+                    nearest_distance = distance;
+                    nearest = Some(target.clone());
+                }
+            }
+        });
+        nearest
+    }
+
+    /// Returns the threat admitted together with the escape path.
+    pub(super) fn threat(&self) -> Option<&dyn EntityBase> {
+        self.target.as_deref()
+    }
+
+    fn matches_avoided_class(&self, entity_type: &EntityType) -> bool {
+        // AvoidEntityGoal.canUse queries a Java class, including its subclasses.
+        entity_type == self.flee_type
+            || self.flee_type == &EntityType::LLAMA && entity_type == &EntityType::TRADER_LLAMA
+            || self.flee_type == &EntityType::ZOMBIE
+                && [
+                    &EntityType::HUSK,
+                    &EntityType::DROWNED,
+                    &EntityType::ZOMBIE_VILLAGER,
+                    &EntityType::ZOMBIFIED_PIGLIN,
+                ]
+                .contains(&entity_type)
     }
 }
 
 impl Goal for AvoidEntityGoal {
     fn can_start(&mut self, mob: &dyn Mob) -> bool {
         let Some(target) = Self::find_threat(mob, self.flee_distance, |target| {
-            target.get_entity().entity_type == self.flee_type
+            let entity_type = target.get_entity().entity_type;
+            self.matches_avoided_class(entity_type)
+                && self
+                    .avoid_predicate
+                    .as_ref()
+                    .is_none_or(|predicate| predicate(mob, target))
         }) else {
             return false;
         };
@@ -217,7 +247,7 @@ mod tests {
                 chunk.set_block_absolute_y(9, y, z, Block::STONE.default_state.id);
             }
         }
-        let mut goal = AvoidEntityGoal::new(&EntityType::PLAYER, 8.0, 2.2, 2.2);
+        let mut goal = AvoidEntityGoal::new(&EntityType::PLAYER, 8.0, 2.2, 2.2, None);
         assert!(AvoidEntityGoal::find_threat(rabbit.as_ref(), 8.0, |_| true).is_none());
         assert!(
             !goal.can_start(rabbit.as_ref()),
@@ -267,3 +297,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "avoid_entity_class_tests.rs"]
+mod class_tests;

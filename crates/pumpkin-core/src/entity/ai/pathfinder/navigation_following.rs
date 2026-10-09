@@ -147,6 +147,11 @@ impl PathNavigation {
     }
 
     // Java moveTo installs its path before tick; Pumpkin queues coordinate requests.
+    pub(super) const fn clear_pending_goal(&mut self) {
+        self.current_goal = None;
+        self.pending_reach_range = 0;
+    }
+
     pub(super) fn process_pending_goal(&mut self, mob: &MobEntity) {
         let entity = &mob.living_entity;
         if let Some(goal) = self.current_goal.take() {

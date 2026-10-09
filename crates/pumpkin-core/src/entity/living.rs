@@ -33,6 +33,7 @@ mod movement;
 mod random_teleport;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod visibility;
 
 #[cfg(test)]
 use pumpkin_data::item::Item;

@@ -469,7 +469,13 @@ impl VillagerEntity {
             // Villagers avoid threats
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::ZOMBIE, 8.0, 0.5, 0.5)),
+                Box::new(AvoidEntityGoal::new(
+                    &EntityType::ZOMBIE,
+                    8.0,
+                    0.5,
+                    0.5,
+                    None,
+                )),
             );
             goal_selector.add_goal(
                 1,
@@ -478,19 +484,32 @@ impl VillagerEntity {
                     8.0,
                     0.5,
                     0.5,
+                    None,
                 )),
             );
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::HUSK, 8.0, 0.5, 0.5)),
+                Box::new(AvoidEntityGoal::new(&EntityType::HUSK, 8.0, 0.5, 0.5, None)),
             );
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::DROWNED, 8.0, 0.5, 0.5)),
+                Box::new(AvoidEntityGoal::new(
+                    &EntityType::DROWNED,
+                    8.0,
+                    0.5,
+                    0.5,
+                    None,
+                )),
             );
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::PILLAGER, 12.0, 0.5, 0.5)),
+                Box::new(AvoidEntityGoal::new(
+                    &EntityType::PILLAGER,
+                    12.0,
+                    0.5,
+                    0.5,
+                    None,
+                )),
             );
             goal_selector.add_goal(
                 1,
@@ -499,19 +518,32 @@ impl VillagerEntity {
                     12.0,
                     0.5,
                     0.5,
+                    None,
                 )),
             );
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::EVOKER, 12.0, 0.5, 0.5)),
+                Box::new(AvoidEntityGoal::new(
+                    &EntityType::EVOKER,
+                    12.0,
+                    0.5,
+                    0.5,
+                    None,
+                )),
             );
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::RAVAGER, 12.0, 0.5, 0.5)),
+                Box::new(AvoidEntityGoal::new(
+                    &EntityType::RAVAGER,
+                    12.0,
+                    0.5,
+                    0.5,
+                    None,
+                )),
             );
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::VEX, 12.0, 0.5, 0.5)),
+                Box::new(AvoidEntityGoal::new(&EntityType::VEX, 12.0, 0.5, 0.5, None)),
             );
 
             goal_selector.add_goal(2, Box::new(TradeWithPlayerGoal::new()));

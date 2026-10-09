@@ -5,7 +5,7 @@ use pumpkin_util::text::TextComponent;
 use std::borrow::Cow;
 
 #[path = "instrument_hash.rs"]
-mod hash;
+pub(super) mod hash;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum InstrumentImpl {
@@ -63,7 +63,7 @@ impl InstrumentImpl {
 }
 
 // NbtOps.getNumberValue lets Instrument.DIRECT_CODEC accept any numeric NBT type.
-fn number(tag: &NbtTag) -> Option<f32> {
+pub(super) fn number(tag: &NbtTag) -> Option<f32> {
     Some(match tag {
         NbtTag::Byte(value) => f32::from(*value),
         NbtTag::Short(value) => f32::from(*value),

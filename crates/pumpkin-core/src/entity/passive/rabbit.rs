@@ -154,6 +154,7 @@ impl RabbitEntity {
                     8.0,
                     FLEE_SPEED_MOD,
                     FLEE_SPEED_MOD,
+                    None,
                 ))),
             );
             goal_selector.add_goal(
@@ -163,6 +164,7 @@ impl RabbitEntity {
                     10.0,
                     FLEE_SPEED_MOD,
                     FLEE_SPEED_MOD,
+                    None,
                 ))),
             );
             goal_selector.add_goal(4, Box::new(RabbitAvoidEntityGoal::monsters()));
