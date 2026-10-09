@@ -59,7 +59,7 @@ mod config;
 pub mod handshake;
 mod idle;
 pub mod login;
-mod outgoing;
+pub(crate) mod outgoing;
 pub mod pending;
 pub mod play;
 pub mod recipe_helper;

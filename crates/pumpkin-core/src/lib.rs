@@ -7,6 +7,11 @@
 #[macro_use]
 extern crate pumpkin_macros;
 
+#[cfg(test)]
+mod playtest_regressions;
+#[cfg(test)]
+mod playtest_review;
+
 use crate::crash::CrashReport;
 use crate::data::VanillaData;
 use crate::logging::{

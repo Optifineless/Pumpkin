@@ -29,8 +29,10 @@ mod block_entity_context;
 pub mod brightness;
 pub mod chunker;
 pub(crate) mod collision_shapes;
+mod containers;
 mod dragon_parts;
 mod entity_persistence;
+mod entity_removal;
 pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
@@ -45,7 +47,7 @@ pub mod stopwatches;
 pub mod time;
 pub mod villager_poi;
 
-use crate::block::RandomTickArgs;
+use crate::block::{RandomTickArgs, blocks::doors::DoorBlock};
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
@@ -796,7 +798,10 @@ impl World {
         for entity in entities {
             let base_entity = entity.get_entity();
             // Entity.save saves passengers only inside their root's record.
-            if base_entity.is_removed() || base_entity.get_vehicle().is_some() {
+            if (base_entity.is_removed()
+                && base_entity.removal_reason.load() != Some(RemovalReason::UnloadedToChunk))
+                || base_entity.get_vehicle().is_some()
+            {
                 continue;
             }
             let nbt = entity_persistence::save_riding_tree(entity);
@@ -4997,17 +5002,20 @@ impl World {
         removed_player
     }
 
-    pub fn remove_entity(&self, entity: &dyn EntityBase) {
+    /// Removes an entity only if this call owns its first removal transition.
+    pub fn remove_entity(&self, entity: &dyn EntityBase) -> bool {
         let base_entity = entity.get_entity();
+        // Entity.setRemoved retains the first reason, including a non-destructive unload.
         if base_entity
             .removal_reason
-            .swap(Some(RemovalReason::Discarded))
-            .is_some()
+            .compare_exchange(None, Some(RemovalReason::Discarded))
+            .is_err()
         {
-            return;
+            return false;
         }
         self.clear_fishing_hook_owner(base_entity);
         base_entity.removed.store(true, Ordering::Release);
+        base_entity.dispatch_removal_hook(entity, RemovalReason::Discarded);
 
         self.spawn_state.load().remove_entity(self, entity);
         self.entity_tracker.remove_entity(entity, self);
@@ -5016,6 +5024,7 @@ impl World {
             new_entities.retain(|e| e.get_entity().entity_uuid != base_entity.entity_uuid);
             new_entities
         });
+        true
     }
 
     pub async fn remove_entities_in_chunks(
@@ -5026,27 +5035,14 @@ impl World {
         if chunks_set.is_empty() {
             return;
         }
-        let mut entities_to_remove = Vec::new();
-
-        self.entities.rcu(|current_entities| {
-            entities_to_remove.clear();
-            let mut new_entities = (**current_entities).clone();
-            new_entities.retain(|entity| {
-                let pos = entity_persistence::root_chunk(entity);
-                if chunks_set.contains(&pos) {
-                    entities_to_remove.push(entity.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            new_entities
-        });
+        let entities_to_remove = self.claim_chunk_unloads(&chunks_set);
 
         self.save_entities_by_chunk(&entities_to_remove, chunks_set.iter().copied())
             .await;
 
         for entity in &entities_to_remove {
+            entity.get_entity().removed.store(true, Ordering::Release);
+            entity.on_removed(RemovalReason::UnloadedToChunk);
             self.entity_tracker.remove_entity(entity.as_ref(), self);
             self.spawn_state.load().remove_entity(self, entity.as_ref());
         }
@@ -5207,7 +5203,11 @@ impl World {
         let is_new_block = old_block != new_block;
         let block_moved = flags.contains(BlockFlags::MOVED);
 
-        if is_new_block && block_entity_name(old_block).is_some() {
+        let keep_block_entity =
+            crate::block::blocks::copper_chest::should_changed_state_keep_block_entity(
+                old_block, new_block,
+            );
+        if is_new_block && block_entity_name(old_block).is_some() && !keep_block_entity {
             if let Some(entity) = self.get_block_entity(position)
                 && !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK)
             {
@@ -5227,14 +5227,17 @@ impl World {
         }
 
         if !flags.contains(BlockFlags::SKIP_BLOCK_ADDED_CALLBACK) && is_new_block {
-            self.block_registry.on_placed(
-                self,
-                new_block,
-                block_state_id,
-                position,
-                replaced_block_state_id,
-                block_moved,
-            );
+            // LevelChunk.setBlockState reuses copper-chest entities rather than creating them again.
+            if !keep_block_entity {
+                self.block_registry.on_placed(
+                    self,
+                    new_block,
+                    block_state_id,
+                    position,
+                    replaced_block_state_id,
+                    block_moved,
+                );
+            }
             let new_fluid = self.get_fluid(position);
             self.block_registry.on_placed_fluid(
                 self,
@@ -5401,6 +5404,7 @@ impl World {
             Block::AIR.default_state.id
         };
 
+        DoorBlock::player_will_destroy(self, position, broken_block_state.id, flags, cause);
         let broken_state_id = self.set_block_state_with_limit(
             position,
             new_state_id,
@@ -5866,8 +5870,9 @@ impl World {
             );
 
             let entity = Entity::new(self.clone(), Vector3::new(x, y, z), &EntityType::ITEM);
-            let entity = Arc::new(ItemEntity::new_with_velocity(entity, item, velocity, 10));
-            self.spawn_entity(entity);
+            // Containers.dropItemStack uses the ItemEntity constructor's zero delay.
+            let entity = ItemEntity::new_with_velocity(entity, item, velocity, 0);
+            self.spawn_item_with_event(entity);
         }
     }
     /* End ItemScatterer.java */

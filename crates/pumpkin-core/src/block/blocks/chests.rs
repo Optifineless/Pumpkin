@@ -400,6 +400,13 @@ impl
 impl crate::block::blocks::weathering_copper::WeatheringCopper for CopperChestBlock {}
 
 impl BlockBehaviour for CopperChestBlock {
+    fn get_state_for_neighbor_update(
+        &self,
+        args: crate::block::GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        super::copper_chest::update_shape(&args)
+    }
+
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         on_place_chest_impl(&args)
     }

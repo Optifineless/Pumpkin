@@ -16,7 +16,8 @@ use pumpkin_util::text::TextComponent;
 
 use crate::entity::{Entity, player::Player};
 
-pub(super) struct MinecartInventory {
+/// Shared chest-vehicle inventory with deferred loot and a single destruction claim.
+pub struct MinecartInventory {
     items: RwLock<Vec<ItemStack>>,
     size: usize,
     loot_table: Mutex<Option<(String, i64)>>,
@@ -24,7 +25,7 @@ pub(super) struct MinecartInventory {
 }
 
 impl MinecartInventory {
-    pub(super) fn new(size: usize) -> Self {
+    pub(crate) fn new(size: usize) -> Self {
         Self {
             items: RwLock::new(vec![ItemStack::EMPTY.clone(); size]),
             size,
@@ -33,11 +34,11 @@ impl MinecartInventory {
         }
     }
 
-    pub(super) fn claim_drops(&self) -> bool {
+    pub(crate) fn claim_drops(&self) -> bool {
         !self.drops_claimed.swap(true, Ordering::AcqRel)
     }
 
-    pub(super) fn read_nbt(&self, nbt: &NbtCompound) {
+    pub(crate) fn read_nbt(&self, nbt: &NbtCompound) {
         let loot_table = nbt.get_string("LootTable").map(|loot_table| {
             (
                 loot_table.to_owned(),
@@ -55,18 +56,25 @@ impl MinecartInventory {
         }
     }
 
-    pub(super) fn write_nbt(&self, nbt: &mut NbtCompound) {
+    pub(crate) fn write_nbt(&self, nbt: &mut NbtCompound) {
+        // ContainerEntity.addChestVehicleSaveData always saves deferred loot or Items.
+        // Guards stay inside inventory methods and are released before serialization.
         let loot_table = self
             .loot_table
-            .try_lock()
-            .ok()
-            .and_then(|guard| guard.clone());
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         if let Some((loot_table, seed)) = loot_table {
             nbt.put_string("LootTable", loot_table);
             if seed != 0 {
                 nbt.put_long("LootTableSeed", seed);
             }
-        } else if let Ok(items) = self.items.try_read() {
+        } else {
+            let items = self
+                .items
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
             let mut list: Vec<pumpkin_nbt::tag::NbtTag> = Vec::new();
             for (slot, stack) in items.iter().enumerate() {
                 if !stack.is_empty() {
@@ -87,7 +95,7 @@ impl MinecartInventory {
             .is_some()
     }
 
-    pub(super) fn unpack_loot(
+    pub(crate) fn unpack_loot(
         self: &Arc<Self>,
         params: &crate::world::loot::LootContextParameters,
     ) {
@@ -179,6 +187,8 @@ struct MinecartScreenFactory {
     inventory: Arc<MinecartInventory>,
     title: TextComponent,
     hopper: bool,
+    vehicle: std::sync::Weak<dyn crate::entity::EntityBase>,
+    player: std::sync::Weak<Player>,
 }
 
 impl ScreenHandlerFactory for MinecartScreenFactory {
@@ -189,11 +199,32 @@ impl ScreenHandlerFactory for MinecartScreenFactory {
         player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
         let inventory: Arc<dyn Inventory> = self.inventory.clone();
-        let handler = if self.hopper {
+        let mut handler = if self.hopper {
             create_hopper(sync_id, player_inventory, inventory, player)
         } else {
             create_generic_9x3(sync_id, player_inventory, inventory, player)
         };
+        let vehicle = self.vehicle.clone();
+        let player = self.player.clone();
+        handler.validity_check = Some(Box::new(move || {
+            // AbstractChestBoat.stillValid -> ContainerEntity.isChestVehicleStillValid.
+            vehicle
+                .upgrade()
+                .zip(player.upgrade())
+                .is_some_and(|(vehicle, player)| {
+                    let entity = vehicle.get_entity();
+                    let range = player.living_entity.get_attribute_value(
+                        &pumpkin_data::attributes::Attributes::ENTITY_INTERACTION_RANGE,
+                    ) + 4.0;
+                    !entity.is_removed()
+                        && Arc::ptr_eq(&entity.world.load_full(), &player.world())
+                        && entity
+                            .bounding_box
+                            .load()
+                            .squared_magnitude(player.eye_position())
+                            < range * range
+                })
+        }));
         Some(Arc::new(Mutex::new(handler)) as SharedScreenHandler)
     }
 
@@ -202,7 +233,8 @@ impl ScreenHandlerFactory for MinecartScreenFactory {
     }
 }
 
-pub(super) fn open(
+/// Opens a vehicle inventory after materializing its deferred loot for this player.
+pub fn open(
     entity: &Entity,
     custom_name: Option<TextComponent>,
     player: &Arc<Player>,
@@ -222,12 +254,17 @@ pub(super) fn open(
         inventory.unpack_loot(&params);
     }
 
+    let Some(vehicle) = entity.world.load().get_entity_by_id(entity.entity_id) else {
+        return false;
+    };
     player
         .open_handled_screen(
             &MinecartScreenFactory {
                 inventory: inventory.clone(),
                 title: custom_name.unwrap_or(title),
                 hopper,
+                vehicle: Arc::downgrade(&vehicle),
+                player: Arc::downgrade(player),
             },
             None,
         )
@@ -285,6 +322,79 @@ mod tests {
     use pumpkin_data::item_stack::ItemStack;
     use pumpkin_inventory::Inventory;
     use pumpkin_nbt::compound::NbtCompound;
+
+    fn save_while_locked<T>(
+        inventory: &MinecartInventory,
+        guard: T,
+    ) -> Result<NbtCompound, Box<dyn std::error::Error>> {
+        use std::sync::mpsc::{self, RecvTimeoutError};
+        use std::time::Duration;
+
+        std::thread::scope(|scope| {
+            let (started_tx, started_rx) = mpsc::channel();
+            let (saved_tx, saved_rx) = mpsc::channel();
+            scope.spawn(move || {
+                assert!(started_tx.send(()).is_ok());
+                let mut nbt = NbtCompound::new();
+                inventory.write_nbt(&mut nbt);
+                assert!(saved_tx.send(nbt).is_ok());
+            });
+            let started = started_rx.recv_timeout(Duration::from_secs(5));
+            let early_save = saved_rx.recv_timeout(Duration::from_millis(100));
+            // Release before asserting, so a failure cannot strand the scoped saver.
+            drop(guard);
+            started?;
+            assert!(
+                matches!(early_save, Err(RecvTimeoutError::Timeout)),
+                "saving must wait for the held inventory lock"
+            );
+            Ok(saved_rx.recv_timeout(Duration::from_secs(5))?)
+        })
+    }
+
+    #[test]
+    fn regression_save_waits_for_contended_inventory_lock() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let inventory = MinecartInventory::new(27);
+        inventory.set_stack(8, ItemStack::new(3, &Item::POWERED_RAIL));
+        let guard = inventory
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let nbt = save_while_locked(&inventory, guard)?;
+
+        assert!(nbt.get_list("Items").is_some());
+        let restored = MinecartInventory::new(27);
+        restored.read_nbt(&nbt);
+        assert_eq!(restored.get_stack(8).item, &Item::POWERED_RAIL);
+        assert_eq!(restored.get_stack(8).item_count, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn regression_save_waits_for_contended_loot_table_lock()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let inventory = MinecartInventory::new(27);
+        let mut source = NbtCompound::new();
+        source.put_string(
+            "LootTable",
+            "minecraft:chests/abandoned_mineshaft".to_owned(),
+        );
+        source.put_long("LootTableSeed", 1234);
+        inventory.read_nbt(&source);
+        let guard = inventory
+            .loot_table
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let nbt = save_while_locked(&inventory, guard)?;
+
+        assert_eq!(nbt.get_string("LootTable"), source.get_string("LootTable"));
+        assert_eq!(nbt.get_long("LootTableSeed"), Some(1234));
+        assert!(nbt.get_list("Items").is_none());
+        Ok(())
+    }
 
     #[test]
     fn deferred_mineshaft_loot_is_preserved_until_unpacked() {

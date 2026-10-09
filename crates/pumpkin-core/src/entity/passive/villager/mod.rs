@@ -26,7 +26,7 @@ use pumpkin_protocol::bedrock::{
     server::actor_event::ActorEventID,
 };
 use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{CMerchantOffers, Metadata};
+use pumpkin_protocol::java::client::play::{CMerchantOffers, MerchantOffer, Metadata};
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -870,15 +870,18 @@ impl VillagerEntity {
                 < range * range
     }
 
-    fn complete_trade(&self, offer_index: usize, world: &Arc<World>, player_uuid: Uuid) {
+    fn complete_trade(
+        &self,
+        offer_index: usize,
+        world: &Arc<World>,
+        player_uuid: Uuid,
+    ) -> Option<Vec<MerchantOffer>> {
         let (xp_gain, reward_exp) = {
             let mut offers = self
                 .offers
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let Some(offer) = offers.get_mut(offer_index) else {
-                return;
-            };
+            let offer = offers.get_mut(offer_index)?;
             offer.uses += 1;
             (offer.xp, offer.reward_exp)
         };
@@ -906,8 +909,24 @@ impl VillagerEntity {
                     .or_default();
                 *value = (*value + 2).min(GossipType::Trading.max_value());
             };
+            // Villager.onReputationEventFrom(TRADE) refreshes prices after adding gossip.
+            if self
+                .trading_player
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some_and(|(uuid, _)| uuid == player_uuid)
+            {
+                self.update_special_prices(&player);
+            }
             self.send_updated_trade_offers(&player);
         }
+        // Villager.rewardTradeXp -> increaseMerchantCareer mutates the merchant's live offers.
+        Some(
+            self.offers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone(),
+        )
     }
 
     fn send_updated_trade_offers(&self, player: &Arc<Player>) {
@@ -931,9 +950,9 @@ impl VillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        // The trade callback runs with the screen handler locked. The handler
-        // already increments its offer's uses and refreshes the result slot after
-        // the callback, so only send the updated offers to the client here.
+        // AbstractVillager.notifyTrade runs inside MerchantResultSlot.onTake.
+        // The callback returns the live snapshot to the already-borrowed menu.
+        // Harvest a35b075c6: sending offers here must not lock that same menu again.
         self.send_trade_offers(player, sync_id, &offers, villager_data);
     }
 
@@ -1555,9 +1574,9 @@ impl ScreenHandlerFactory for VillagerEntity {
         }));
 
         handler.on_trade = Some(Box::new(move |offer_index| {
-            if let Some(villager) = self_weak.upgrade() {
-                villager.complete_trade(offer_index, &world, player_uuid);
-            }
+            self_weak
+                .upgrade()
+                .and_then(|villager| villager.complete_trade(offer_index, &world, player_uuid))
         }));
 
         Some(Arc::new(std::sync::Mutex::new(handler)) as SharedScreenHandler)

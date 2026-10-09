@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    fs,
-    path::Path,
-};
+use std::{collections::HashSet, fs, path::Path};
 
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::TokenStream;
@@ -229,11 +225,29 @@ fn state_provider_to_tokens(provider: &StateProviderJson) -> TokenStream {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn extracted_block_registry_keeps_log_stripping_rules() {
+        // The real 26.3 axe datapack has an oak_log -> stripped_oak_log rule.
+        // Reading blocks.json's wrapper keys used to filter every rule out.
+        let generated = super::build().to_string();
+        assert!(generated.contains("BlockId :: OAK_LOG"));
+        assert!(generated.contains("CopyProperties (BlockId :: STRIPPED_OAK_LOG)"));
+    }
+}
+
 pub fn build() -> TokenStream {
-    let blocks_file: BTreeMap<String, serde_json::Value> =
+    let blocks_file: crate::block::BlockAssets =
         serde_json::from_str(&fs::read_to_string("../../assets/blocks.json").unwrap())
             .expect("Failed to parse blocks.json");
-    let valid_blocks: HashSet<String> = blocks_file.into_keys().collect();
+    // BlockTransformer.transformBlock resolves providers against the block registry.
+    // blocks.json wraps that registry in `blocks`; its top-level keys are not block names.
+    let valid_blocks: HashSet<String> = blocks_file
+        .blocks
+        .into_iter()
+        .map(|block| block.name)
+        .collect();
 
     let dir = Path::new("../../assets/datapack/data/minecraft/block_transformer");
     let mut files: Vec<(String, Vec<TransformerEntryJson>)> = Vec::new();

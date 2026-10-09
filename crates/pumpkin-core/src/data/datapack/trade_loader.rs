@@ -344,7 +344,8 @@ impl TradeRegistry {
                 count: gives_count,
             },
             max_uses: def.max_uses.unwrap_or(16.0) as i32,
-            xp: def.xp.unwrap_or(2.0) as i32,
+            // VillagerTrade.CODEC defaults omitted xp to exactly(1).
+            xp: def.xp.unwrap_or(1.0) as i32,
             price_multiplier: def.reputation_discount.unwrap_or(0.05),
             modifier,
             allowed_types,
@@ -598,6 +599,26 @@ fn load_trade_tags_recursive<S: std::hash::BuildHasher>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fletcher_arrow_trade_resolves_vanilla_datapack_defaults() {
+        let json = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/datapack/data/minecraft/villager_trade/fletcher/1/emerald_arrow.json"
+        ));
+        let mut registry = TradeRegistry::new();
+        let key = "minecraft:fletcher/1/emerald_arrow";
+        registry
+            .trades
+            .insert(key.into(), serde_json::from_str(json).unwrap());
+        let trade = registry.resolve_trade_definition(key).unwrap();
+        assert_eq!(trade.wants.item.id, Item::EMERALD.id);
+        assert_eq!(trade.wants.count, 1);
+        assert_eq!(trade.gives.item.id, Item::ARROW.id);
+        assert_eq!(trade.gives.count, 16);
+        assert_eq!(trade.max_uses, 12);
+        assert_eq!(trade.xp, 1);
+    }
 
     #[test]
     fn parse_trade_json() {

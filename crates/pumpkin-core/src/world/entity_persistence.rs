@@ -31,7 +31,11 @@ pub(super) fn save_riding_tree(entity: &Arc<dyn EntityBase>) -> NbtCompound {
     let saved: Vec<_> = passengers
         .iter()
         .filter(|passenger| {
-            !passenger.get_entity().is_removed() && passenger.get_player().is_none()
+            let base = passenger.get_entity();
+            (!base.is_removed()
+                || base.removal_reason.load()
+                    == Some(crate::entity::RemovalReason::UnloadedToChunk))
+                && passenger.get_player().is_none()
         })
         .map(|passenger| NbtTag::Compound(save_riding_tree(passenger)))
         .collect();
