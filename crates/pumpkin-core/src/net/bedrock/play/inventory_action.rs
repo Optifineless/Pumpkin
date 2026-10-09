@@ -476,8 +476,15 @@ impl BedrockClient {
                         let mut stack = player.inventory().held_item();
                         let item_id = stack.item.id;
                         let before = stack.clone();
-                        let interacted = event.target.interact(player, &mut stack);
-                        let stand_swap = interacted && event.target.cast_any().is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
+                        let interacted =
+                            event
+                                .target
+                                .interact_with_hand(player, &mut stack, Hand::Right);
+                        let stand_swap = interacted
+                            && event
+                                .target
+                                .cast_any()
+                                .is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
                         if !interacted {
                             server
                                 .item_registry

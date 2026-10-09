@@ -1554,7 +1554,27 @@ impl<T: Mob + Send + 'static> EntityBase for T {
     }
 
     fn interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        self.mob_interact(player, item_stack)
+        self.interact_with_hand(player, item_stack, pumpkin_util::Hand::Right)
+    }
+
+    fn interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: pumpkin_util::Hand,
+    ) -> bool {
+        crate::entity::shearable::interact_with_hand(self, player, item_stack, hand)
+            .unwrap_or_else(|| self.mob_interact(player, item_stack))
+    }
+
+    fn interact_at_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        _position: Vector3<f64>,
+        hand: pumpkin_util::Hand,
+    ) -> bool {
+        self.interact_with_hand(player, item_stack, hand)
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {

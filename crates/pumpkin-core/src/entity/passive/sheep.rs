@@ -245,3 +245,7 @@ impl Mob for SheepEntity {
         self.animal_interact(player, item_stack, Sound::EntitySheepAmbient)
     }
 }
+
+#[cfg(test)]
+#[path = "sheep_race_tests.rs"]
+mod race_tests;
