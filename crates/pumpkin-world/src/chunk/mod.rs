@@ -886,7 +886,8 @@ impl ChunkData {
             ChunkHeightmapType::MotionBlocking,
             ChunkHeightmapType::MotionBlockingNoLeaves,
         ] {
-            heightmap.update(hm_type, x, z, y, block_state, min_y, |y_at| {
+            // Heightmap.update takes local X, absolute Y, then local Z.
+            heightmap.update(hm_type, x, y, z, block_state, min_y, |y_at| {
                 let id = self
                     .section
                     .get_block_absolute_y(relative_x, y_at, relative_z)
@@ -1041,6 +1042,51 @@ pub enum ChunkSerializingError {
 #[cfg(test)]
 mod tests {
     use super::{ChunkData, ChunkHeightmapType};
+    #[test]
+    fn incremental_heightmap_uses_absolute_y_and_preserves_the_column() {
+        let chunk = ChunkData::empty(0, 0);
+        chunk.set_block_absolute_y(10, 64, 2, Block::STONE.default_state.id);
+        chunk.set_block_absolute_y(10, 66, 2, Block::STONE.default_state.id);
+        {
+            let maps = chunk
+                .heightmap
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            assert_eq!(
+                maps.get(
+                    ChunkHeightmapType::MotionBlocking,
+                    10,
+                    2,
+                    chunk.section.min_y
+                ),
+                66
+            );
+            assert_eq!(
+                maps.get(
+                    ChunkHeightmapType::MotionBlocking,
+                    10,
+                    3,
+                    chunk.section.min_y
+                ),
+                chunk.section.min_y - 1
+            );
+        }
+        chunk.set_block_absolute_y(10, 66, 2, Block::AIR.default_state.id);
+        let maps = chunk
+            .heightmap
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(
+            maps.get(
+                ChunkHeightmapType::MotionBlocking,
+                10,
+                2,
+                chunk.section.min_y
+            ),
+            64
+        );
+    }
+
     #[test]
     fn heightmap_layout_and_priming_follow_dimension_height() {
         let mut chunk = ChunkData::empty(0, 0);
