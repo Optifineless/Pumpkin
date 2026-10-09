@@ -1654,7 +1654,9 @@ pub fn deserialize_java_serverbound_packet(
                 },
             ))
         }
-        id if id == pumpkin_protocol::java::server::play::SSpectateEntity::to_id(version) => {
+        id if id == pumpkin_protocol::java::server::play::SSpectateEntity::to_id(version)
+            && version < JavaMinecraftVersion::V_26_3 =>
+        {
             use pumpkin_protocol::ServerPacket;
             let p = <pumpkin_protocol::java::server::play::SSpectateEntity as pumpkin_protocol::ServerPacket>::read(&mut payload, &version).ok()?;
             Some(ServerboundPacket::SSpectateEntity(

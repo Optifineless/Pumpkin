@@ -93,7 +93,9 @@ fn collect_defined_types(dirs: &[(String, &str)]) -> HashSet<String> {
         for entry in paths.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "rs")
-                && path.file_name().is_some_and(|name| name != "mod.rs" && name != "spectator_action.rs")
+                && path
+                    .file_name()
+                    .is_some_and(|name| name != "mod.rs" && name != "spectator_action.rs")
             {
                 if let Ok(content) = fs::read_to_string(&path)
                     && let Ok(file) = syn::parse_file(&content)
@@ -162,7 +164,9 @@ fn process_packets(
             continue;
         }
         if path.extension().is_some_and(|ext| ext == "rs")
-            && path.file_name().is_some_and(|name| name != "mod.rs" && name != "spectator_action.rs")
+            && path
+                .file_name()
+                .is_some_and(|name| name != "mod.rs" && name != "spectator_action.rs")
         {
             parse_packet_file(
                 &path,

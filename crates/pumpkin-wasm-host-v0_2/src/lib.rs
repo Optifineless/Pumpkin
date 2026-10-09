@@ -424,3 +424,6 @@ pub async fn init_plugin(
 
     Ok((plugin, store, metadata))
 }
+
+#[cfg(test)]
+mod spectator_packet_tests;
