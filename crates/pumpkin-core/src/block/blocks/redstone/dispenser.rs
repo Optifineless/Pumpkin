@@ -1284,3 +1284,7 @@ impl DispenserBlock {
         ctx.world.spawn_entity(item_entity);
     }
 }
+
+#[cfg(test)]
+#[path = "dispenser_bottle_tests.rs"]
+mod bottle_tests;

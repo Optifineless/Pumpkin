@@ -1,14 +1,14 @@
 use std::any::Any;
 
-use std::sync::Arc;
-use rand::RngExt;
-use crate::entity::{Entity, EntityBase};
-use crate::entity::projectile::experience_bottle::ExperienceBottleEntity;
-use pumpkin_data::entity::EntityType;
 use crate::entity::player::Player;
+use crate::entity::projectile::experience_bottle::ExperienceBottleEntity;
+use crate::entity::{Entity, EntityBase};
 use crate::item::{ItemBehaviour, ItemMetadata};
+use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::sound::{Sound, SoundCategory};
+use rand::RngExt;
+use std::sync::Arc;
 
 pub struct ExperienceBottleItem;
 
@@ -48,6 +48,10 @@ impl ItemBehaviour for ExperienceBottleItem {
         let bottle = ExperienceBottleEntity::new_shot(entity, player.get_entity());
         bottle.set_item_stack(held.copy_with_count(1));
         bottle.thrown.set_velocity_from(pitch, yaw, -20.0, 0.7, 1.0);
+        crate::item::items::projectile_weapon::ProjectileWeaponItem::add_shooter_movement(
+            bottle.get_entity(),
+            player.get_entity(),
+        );
         world.spawn_entity(Arc::new(bottle));
 
         held.decrement_unless_creative(player.gamemode.load(), 1);
