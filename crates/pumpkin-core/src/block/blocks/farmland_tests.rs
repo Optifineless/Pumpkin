@@ -57,10 +57,6 @@ async fn rain_hydrates_exposed_farmland_but_not_roofed_or_snowy() {
                 biome.id,
             );
         }
-        // Prime the fixture after construction, as a loaded chunk would be primed.
-        if let Some(chunk) = world.level.loaded_chunks.get(&Vector2::new(0, 0)) {
-            *chunk.heightmap.lock().unwrap() = chunk.calculate_heightmap();
-        }
         world.set_sky_light_level(&above, 15);
         assert_eq!(
             world.is_raining_at(&above),
