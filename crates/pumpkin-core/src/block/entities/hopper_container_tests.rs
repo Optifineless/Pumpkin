@@ -133,3 +133,128 @@ async fn failed_double_chest_transfer_preserves_source() {
     assert!(fixture.world.entities.load().is_empty());
     fixture.finish().await;
 }
+
+#[tokio::test]
+async fn opposite_half_hoppers_concurrently_drain_without_duplication() {
+    let fixture = Fixture::new();
+    let right = BlockPos::new(8, 65, 8);
+    let (first, second) = chest_pair(&fixture.world, right);
+    let hoppers = [
+        HopperBlockEntity::new(first.position.down(), FacingHopper::Down),
+        HopperBlockEntity::new(second.position.down(), FacingHopper::Down),
+    ];
+    let barrier = std::sync::Barrier::new(2);
+    let conserved = std::sync::atomic::AtomicBool::new(true);
+    first.set_stack(0, ItemStack::new(64, &pumpkin_data::item::Item::DIAMOND));
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..2)
+            .map(|index| {
+                let hoppers = &hoppers;
+                let barrier = &barrier;
+                let conserved = &conserved;
+                let world = &fixture.world;
+                let first = &first;
+                let second = &second;
+                scope.spawn(move || {
+                    for _ in 0..256 {
+                        barrier.wait();
+                        for _ in 0..32 {
+                            hoppers[index].suck_in_items(world);
+                        }
+                        barrier.wait();
+                        if index == 0 {
+                            let total: u32 = [
+                                &**first as &dyn Inventory,
+                                &**second,
+                                &hoppers[0],
+                                &hoppers[1],
+                            ]
+                            .into_iter()
+                            .map(|inventory| {
+                                (0..inventory.size())
+                                    .map(|slot| u32::from(inventory.get_stack(slot).item_count))
+                                    .sum::<u32>()
+                            })
+                            .sum();
+                            if total != 64 {
+                                conserved.store(false, Ordering::Relaxed);
+                            }
+                            first.clear();
+                            second.clear();
+                            hoppers[0].clear();
+                            hoppers[1].clear();
+                            first.set_stack(
+                                0,
+                                ItemStack::new(64, &pumpkin_data::item::Item::DIAMOND),
+                            );
+                        }
+                        barrier.wait();
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+    });
+    assert!(
+        conserved.load(Ordering::Relaxed),
+        "both halves must conserve their shared items"
+    );
+    fixture.finish().await;
+}
+
+#[tokio::test]
+async fn double_chest_concurrent_insertions_conserve_items() {
+    let first = Arc::new(ChestBlockEntity::new(BlockPos::new(8, 64, 8)));
+    let second = Arc::new(ChestBlockEntity::new(BlockPos::new(7, 64, 8)));
+    let combined = pumpkin_inventory::double::DoubleInventory::new(first, second);
+    let barrier = std::sync::Barrier::new(2);
+    let conserved = std::sync::atomic::AtomicBool::new(true);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..2)
+            .map(|index| {
+                let combined = &combined;
+                let barrier = &barrier;
+                let conserved = &conserved;
+                scope.spawn(move || {
+                    let source = HopperBlockEntity::new(BlockPos::new(0, 0, 0), FacingHopper::Down);
+                    for _ in 0..1024 {
+                        barrier.wait();
+                        let leftover = HopperBlockEntity::add_item(
+                            Some(&source),
+                            combined.as_ref(),
+                            ItemStack::new(1, &pumpkin_data::item::Item::DIAMOND),
+                        );
+                        assert!(leftover.is_empty());
+                        barrier.wait();
+                        if index == 0 {
+                            if combined.get_stack(0).item_count != 2 {
+                                conserved.store(false, Ordering::Relaxed);
+                            }
+                            combined.clear();
+                        }
+                        barrier.wait();
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+    });
+    assert!(conserved.load(Ordering::Relaxed));
+}
+
+#[test]
+fn chest_rollback_preserves_a_concurrent_replacement() {
+    let chest = ChestBlockEntity::new(BlockPos::new(8, 64, 8));
+    chest.set_stack(0, ItemStack::new(2, &pumpkin_data::item::Item::DIAMOND));
+    let extraction = HopperBlockEntity::take_from(&chest, 0).unwrap();
+    chest.set_stack(0, ItemStack::new(64, &pumpkin_data::item::Item::STONE));
+    let leftover = HopperBlockEntity::restore_to(&chest, 0, extraction).unwrap();
+    assert_eq!(leftover.item_count, 1);
+    assert_eq!(leftover.item, &pumpkin_data::item::Item::DIAMOND);
+    assert_eq!(chest.get_stack(0).item_count, 64);
+    assert_eq!(chest.get_stack(0).item, &pumpkin_data::item::Item::STONE);
+}

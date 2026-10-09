@@ -1,4 +1,4 @@
-use super::hopper_container::get_container_at;
+use super::hopper_container::{get_container_at, with_inventory_slot};
 use crate::block::entities::BlockEntity;
 use crate::entity::item::ItemEntity;
 use crate::world::World;
@@ -233,31 +233,18 @@ impl HopperBlockEntity {
         if let Some(container) = get_container_at(world, pos_up) {
             // TODO check WorldlyContainer
             for i in 0..container.size() {
-                let mut item = container.get_stack(i);
+                let item = container.get_stack(i);
                 if !item.is_empty() && container.can_transfer_to(self, i, &item) {
-                    // The hopper above can be picking up a whole dropped stack into this slot
-                    // right now, and writing back the remainder read above would erase it, so
-                    // take the item out and put it back on failure like `eject_items` does.
-                    if let Some(source) = container.as_any().downcast_ref::<Self>() {
-                        let Some(extraction) = source.take_one(i) else {
-                            continue;
-                        };
-                        if Self::add_one_item(source, self, &extraction.one_item) {
-                            return true;
-                        }
-                        if let Some(leftover) = source.put_back(i, extraction) {
-                            let pos = source.position.to_centered_f64();
-                            world.scatter_stack(pos.x, pos.y, pos.z, leftover);
-                        }
+                    // HopperBlockEntity.tryTakeInItemFromSlot removes before offering.
+                    let Some(extraction) = Self::take_from(container.as_ref(), i) else {
                         continue;
-                    }
-                    //TODO WorldlyContainer
-                    let _backup = item.clone();
-                    let one_item = item.split(1);
-                    if Self::add_one_item(container.as_ref(), self, &one_item) {
-                        container.set_stack(i, item);
-                        // HopperBlockEntity.tryTakeInItemFromSlot never drains the furnace's recipe XP.
+                    };
+                    if Self::add_one_item(container.as_ref(), self, &extraction.one_item) {
                         return true;
+                    }
+                    if let Some(leftover) = Self::restore_to(container.as_ref(), i, extraction) {
+                        let pos = pos_up.to_centered_f64();
+                        world.scatter_stack(pos.x, pos.y, pos.z, leftover);
                     }
                 }
             }
@@ -305,22 +292,26 @@ impl HopperBlockEntity {
     /// Splits one item off `slot`. One lock for read and write, so the snapshot is the state the
     /// removal really happened on and not an older one. `None` when the slot is empty by then.
     fn take_one(&self, slot: usize) -> Option<Extraction> {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if items[slot].is_empty() {
-            return None;
+        Self::take_from(self, slot)
+    }
+
+    fn take_from(container: &dyn Inventory, slot: usize) -> Option<Extraction> {
+        let extraction = with_inventory_slot(container, slot, |stack| {
+            if stack.is_empty() {
+                return None;
+            }
+            let snapshot = stack.clone();
+            let one_item = stack.split(1);
+            Some(Extraction {
+                one_item,
+                snapshot,
+                remainder: stack.clone(),
+            })
+        });
+        if extraction.is_some() {
+            container.mark_dirty();
         }
-        let snapshot = items[slot].clone();
-        let one_item = items[slot].split(1);
-        let remainder = items[slot].clone();
-        self.mark_dirty();
-        Some(Extraction {
-            one_item,
-            snapshot,
-            remainder,
-        })
+        extraction
     }
 
     /// Undoes [`Self::take_one`] after a failed offer, handing the item back when the slot has no
@@ -329,27 +320,33 @@ impl HopperBlockEntity {
     /// The snapshot only fits a slot nobody wrote to, so it is restored on a match and dropped on
     /// a mismatch, writing it anyway would undo the other write, in either direction.
     fn put_back(&self, slot: usize, extraction: Extraction) -> Option<ItemStack> {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.mark_dirty();
-        let current = &mut items[slot];
-        if current.are_equal(&extraction.remainder) {
-            *current = extraction.snapshot;
-            return None;
-        }
-        if current.is_empty() {
-            *current = extraction.one_item;
-            return None;
-        }
-        if current.are_items_and_components_equal(&extraction.one_item)
-            && current.item_count < current.get_max_stack_size()
-        {
-            current.item_count += 1;
-            return None;
-        }
-        Some(extraction.one_item)
+        Self::restore_to(self, slot, extraction)
+    }
+
+    fn restore_to(
+        container: &dyn Inventory,
+        slot: usize,
+        extraction: Extraction,
+    ) -> Option<ItemStack> {
+        let leftover = with_inventory_slot(container, slot, |current| {
+            if current.are_equal(&extraction.remainder) {
+                *current = extraction.snapshot;
+                return None;
+            }
+            if current.is_empty() {
+                *current = extraction.one_item;
+                return None;
+            }
+            if current.are_items_and_components_equal(&extraction.one_item)
+                && current.item_count < current.get_max_stack_size()
+            {
+                current.item_count += 1;
+                return None;
+            }
+            Some(extraction.one_item)
+        });
+        container.mark_dirty();
+        leftover
     }
 
     /// `facing` comes from the live block state: `self.facing` is never updated for hoppers
@@ -501,22 +498,9 @@ impl HopperBlockEntity {
         let to_empty = to.is_empty();
         // Vanilla `Container.getMaxStackSize(ItemStack)`, which `setItem` limits the slot to.
         let max_count = to.get_max_count_per_stack().min(stack.get_max_stack_size());
-        let success = if let Some(hopper) = to.as_any().downcast_ref::<Self>() {
-            // One lock for read and write: a hopper inserting into the same slot at the same
-            // time would otherwise overwrite this insert with its stale result, or the reverse.
-            let mut items = hopper
-                .items
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            Self::merge_into_slot(&mut items[slot], &mut stack, max_count)
-        } else {
-            let mut dst = to.get_stack(slot);
-            let success = Self::merge_into_slot(&mut dst, &mut stack, max_count);
-            if success {
-                to.set_stack(slot, dst);
-            }
-            success
-        };
+        let success = with_inventory_slot(to, slot, |dst| {
+            Self::merge_into_slot(dst, &mut stack, max_count)
+        });
         if success {
             if to_empty
                 && let Some(hopper) = to.as_any().downcast_ref::<Self>()
