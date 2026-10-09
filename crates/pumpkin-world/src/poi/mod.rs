@@ -479,6 +479,16 @@ impl PoiStorage {
         });
     }
 
+    /// Reads the persisted ticket count for this position and POI type.
+    pub fn free_tickets(&mut self, pos: &BlockPos, poi_type: &str) -> Option<i32> {
+        let (rx, rz) = Self::region_coords(pos);
+        self.get_or_load_region(rx, rz)
+            .entries
+            .get(&(pos.0.x, pos.0.y, pos.0.z))
+            .filter(|entry| entry.poi_type == poi_type)
+            .map(|entry| entry.free_tickets)
+    }
+
     pub fn add_portal(&mut self, pos: BlockPos) {
         self.add(pos, POI_TYPE_NETHER_PORTAL);
     }

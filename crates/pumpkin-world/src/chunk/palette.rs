@@ -163,6 +163,15 @@ pub enum PalettedContainer<V: Hash + Eq + Copy + Default, const DIM: usize> {
 }
 
 impl<V: Hash + Eq + Copy + Default, const DIM: usize> PalettedContainer<V, DIM> {
+    /// Tests the distinct states without visiting every cell, like PalettedContainer.maybeHas.
+    #[must_use]
+    pub fn maybe_has(&self, mut predicate: impl FnMut(V) -> bool) -> bool {
+        match self {
+            Self::Homogeneous(value) => predicate(*value),
+            Self::Heterogeneous(data) => data.palette.iter().copied().any(predicate),
+        }
+    }
+
     pub const SIZE: usize = DIM;
     pub const VOLUME: usize = DIM * DIM * DIM;
 

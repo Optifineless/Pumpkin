@@ -41,6 +41,12 @@ impl ZombieEntityBase {
 
     pub fn with_can_break_doors(entity: Entity, can_break_doors: bool) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        // Zombie.setCanBreakDoors also enables closed-door path nodes for the breaking goal.
+        mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_open_doors(can_break_doors);
         let zombie = Self {
             mob_entity,
             can_break_doors: AtomicBool::new(can_break_doors),
@@ -111,6 +117,16 @@ impl ZombieEntityBase {
     }
 
     pub fn set_can_break_doors(&self, can_break_doors: bool, mob: &dyn Mob) {
+        let can_break_doors = {
+            let mut navigation = self
+                .mob_entity
+                .navigator
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let enabled = can_break_doors && navigation.can_navigate_ground();
+            navigation.set_can_open_doors(enabled);
+            enabled
+        };
         if self
             .can_break_doors
             .swap(can_break_doors, Ordering::Relaxed)

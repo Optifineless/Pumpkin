@@ -1255,6 +1255,28 @@ impl BlockRegistry {
         }
     }
 
+    /// Dispatches the vanilla pre-removal player hook after plugin break admission.
+    pub fn player_will_destroy(
+        &self,
+        world: &Arc<World>,
+        cause: Option<&Arc<Player>>,
+        position: &BlockPos,
+        state: &BlockState,
+    ) {
+        let block = Block::from_state_id(state.id);
+        if let Some(player) = cause
+            && let Some(behaviour) = self.get_pumpkin_block(block.id)
+        {
+            behaviour.player_will_destroy(crate::block::PlayerWillDestroyArgs {
+                block,
+                player,
+                position,
+                world,
+                state,
+            });
+        }
+    }
+
     pub fn broken(
         &self,
         world: &Arc<World>,

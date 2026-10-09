@@ -15,6 +15,7 @@ pub mod chorus_flower;
 pub mod chorus_plant;
 pub mod cocoa;
 pub mod crop;
+mod double_plant;
 pub mod dry_vegetation;
 pub mod eyeblossom;
 pub mod flower;
@@ -69,3 +70,6 @@ trait PlantBlockBase {
         self.can_plant_on_top(block_accessor, &block_pos.down())
     }
 }
+
+#[cfg(test)]
+mod bonemeal_review_tests;

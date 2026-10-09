@@ -162,36 +162,15 @@ pub fn build() -> TokenStream {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let bed_rule_obj = attrs.and_then(|a| a.get("minecraft:gameplay/bed_rule"));
-        let (can_sleep_token, can_set_spawn_token, explodes) = if let Some(b) = bed_rule_obj {
-            let can_sleep = b
-                .get("can_sleep")
-                .and_then(|v| v.as_str())
-                .unwrap_or("when_dark");
-            let can_set_spawn = b
-                .get("can_set_spawn")
-                .and_then(|v| v.as_str())
-                .unwrap_or("always");
-            let explodes = b.get("explodes").and_then(|v| v.as_bool()).unwrap_or(false);
-
-            let sleep_ident = match can_sleep {
-                "always" => quote!(BedRuleOption::Always),
-                "never" => quote!(BedRuleOption::Never),
-                _ => quote!(BedRuleOption::WhenDark),
-            };
-            let spawn_ident = match can_set_spawn {
-                "when_dark" => quote!(BedRuleOption::WhenDark),
-                "never" => quote!(BedRuleOption::Never),
-                _ => quote!(BedRuleOption::Always),
-            };
-            (sleep_ident, spawn_ident, explodes)
-        } else {
-            (
-                quote!(BedRuleOption::WhenDark),
-                quote!(BedRuleOption::Always),
-                false,
-            )
-        };
+        // StrawBedBlock.getBedEnvironmentAttribute selects its independent rule.
+        let bed_rule = bed_rule_tokens(
+            attrs.and_then(|a| a.get("minecraft:gameplay/bed_rule")),
+            false,
+        );
+        let straw_bed_rule = bed_rule_tokens(
+            attrs.and_then(|a| a.get("minecraft:gameplay/straw_bed_rule")),
+            true,
+        );
 
         let fixed_time = if let Some(t) = dim.fixed_time {
             quote! { Some(#t) }
@@ -319,11 +298,8 @@ pub fn build() -> TokenStream {
                 snow_golem_melts: #snow_golem_melts,
                 can_start_raid: #can_start_raid,
                 nether_portal_spawns_piglin: #nether_portal_spawns_piglin,
-                bed_rule: BedRule {
-                    can_sleep: #can_sleep_token,
-                    can_set_spawn: #can_set_spawn_token,
-                    explodes: #explodes,
-                },
+                bed_rule: #bed_rule,
+                straw_bed_rule: #straw_bed_rule,
                 timelines: #timelines_literal,
             };
         });
@@ -352,6 +328,9 @@ pub fn build() -> TokenStream {
             pub can_sleep: BedRuleOption,
             pub can_set_spawn: BedRuleOption,
             pub explodes: bool,
+            pub destroy_on_use: bool,
+            pub destroy_on_leave: bool,
+            pub error_message: Option<&'static str>,
         }
 
         impl BedRule {
@@ -410,6 +389,7 @@ pub fn build() -> TokenStream {
             pub can_start_raid: bool,
             pub nether_portal_spawns_piglin: bool,
             pub bed_rule: BedRule,
+            pub straw_bed_rule: BedRule,
             pub timelines: Option<&'static str>,
         }
 
@@ -442,4 +422,39 @@ pub fn build() -> TokenStream {
        }
         impl Eq for Dimension {}
     )
+}
+
+fn bed_rule_tokens(value: Option<&serde_json::Value>, straw: bool) -> TokenStream {
+    // EnvironmentAttributes / BedRule defaults: CAN_SLEEP_WHEN_DARK and DESTROY_ON_LEAVE.
+    let option = |key, default| match value
+        .and_then(|v| v.get(key))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(default)
+    {
+        "always" => quote!(BedRuleOption::Always),
+        "never" => quote!(BedRuleOption::Never),
+        _ => quote!(BedRuleOption::WhenDark),
+    };
+    let can_sleep = option("can_sleep", "when_dark");
+    let can_set_spawn = option("can_set_spawn", if straw { "never" } else { "always" });
+    let destroy_on_use = value
+        .and_then(|v| v.get("destroy_on_use"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let destroy_on_leave = value
+        .and_then(|v| v.get("destroy_on_leave"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(value.is_none() && straw);
+    let error_message = if let Some(message) = value.and_then(|v| v.get("error_message")) {
+        let json = message.to_string();
+        quote! { Some(#json) }
+    } else if value.is_none() {
+        // BedRule.CAN_SLEEP_WHEN_DARK and DESTROY_ON_LEAVE default components.
+        quote! { Some("{\"translate\":\"block.minecraft.bed.no_sleep\"}") }
+    } else {
+        quote! { None }
+    };
+    let explodes = !straw && destroy_on_use;
+    quote! { BedRule { can_sleep: #can_sleep, can_set_spawn: #can_set_spawn, explodes: #explodes,
+    destroy_on_use: #destroy_on_use, destroy_on_leave: #destroy_on_leave, error_message: #error_message } }
 }

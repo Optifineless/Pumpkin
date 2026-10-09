@@ -4,6 +4,7 @@ mod experience_orb;
 mod known_movement;
 mod mace;
 mod melee;
+mod sleep;
 use known_movement::KnownMovement;
 pub mod statistics;
 
@@ -296,7 +297,6 @@ use pumpkin_world::biome;
 use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 
 use crate::block;
-use crate::block::blocks::straw_bed::StrawBedBlock;
 use crate::command::context::command_source::CommandSource;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::{CommandSender, client_suggestions};
@@ -1711,10 +1711,13 @@ impl Player {
     pub fn sleep(&self, bed_head_pos: BlockPos) {
         // TODO: Stop riding
 
+        let Some(position) =
+            crate::block::blocks::abstract_bed::sleep_position(&self.world(), bed_head_pos)
+        else {
+            return;
+        };
         self.get_entity().set_pose(EntityPose::Sleeping);
-        self.living_entity
-            .entity
-            .set_pos(bed_head_pos.to_f64().add_raw(0.5, 0.6875, 0.5));
+        self.living_entity.entity.set_pos(position);
         self.get_entity().set_synced_data(
             pumpkin_data::tracked_data::player::SLEEPING_POS_ID,
             Some(bed_head_pos),
@@ -1760,7 +1763,8 @@ impl Player {
         self.living_entity.get_block_speed_factor()
     }
 
-    fn is_sleeping(&self) -> bool {
+    /// Returns whether the player has an active sleep timer.
+    pub(crate) fn is_sleeping(&self) -> bool {
         // TODO: Track sleeping position state explicitly (vanilla checks sleepingPosition.isPresent()).
         self.sleeping_since.load().is_some()
     }
@@ -1854,53 +1858,7 @@ impl Player {
     }
 
     pub fn wake_up(&self) {
-        let world = self.world();
-        let Some(bed_pos) = self.sleeping_bed_pos.load() else {
-            self.living_entity.entity.set_pose(EntityPose::Standing);
-            self.sleeping_since.store(None);
-            return;
-        };
-
-        if let Some(server) = world.server.upgrade()
-            && let Some(player_arc) = world.get_player_by_uuid(self.gameprofile.id)
-        {
-            let mut event =
-                crate::plugin::api::events::player::player_bed::PlayerBedLeaveEvent::new(
-                    player_arc, bed_pos,
-                );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-
-        let (bed, bed_state) = world.get_block_and_state_id(&bed_pos);
-        if bed == &Block::STRAW_BED {
-            StrawBedBlock::destroy_after_use(&world, bed_pos);
-        } else if bed.has_tag(&tag::Block::MINECRAFT_BEDS) {
-            crate::block::blocks::bed::BedBlock::set_occupied(
-                false, &world, bed, &bed_pos, bed_state,
-            );
-        }
-
-        self.living_entity.entity.set_pose(EntityPose::Standing);
-        self.living_entity.entity.set_pos(self.position());
-        self.living_entity.entity.set_synced_data(
-            pumpkin_data::tracked_data::player::SLEEPING_POS_ID,
-            None::<BlockPos>,
-        );
-
-        self.set_stat(
-            statistics::StatisticCategory::Custom,
-            statistics::CustomStatistic::TimeSinceRest as i32,
-            0,
-        );
-
-        let chunk_pos = self.living_entity.entity.chunk_pos.load();
-        world.broadcast_to_chunk(
-            chunk_pos,
-            &CEntityAnimation::new(self.entity_id().into(), Animation::LeaveBed),
-        );
-
-        self.sleeping_since.store(None);
-        self.sleeping_bed_pos.store(None);
+        self.stop_sleeping();
     }
 
     pub fn show_title(&self, text: &TextComponent, mode: &TitleMode) {
@@ -2436,6 +2394,7 @@ impl Player {
             .entity
             .age
             .fetch_add(1, Ordering::Relaxed);
+        self.tick_sleep_lifecycle();
         if let Some(sleeping_since) = self.sleeping_since.load()
             && sleeping_since < 101
         {

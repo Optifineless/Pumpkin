@@ -13,10 +13,18 @@ struct JobSite {
 #[derive(Default)]
 pub struct VillagerPoiStorage {
     job_sites: HashMap<BlockPos, JobSite>,
+    pub(super) homes: HashMap<
+        pumpkin_util::math::vector2::Vector2<i32>,
+        HashMap<BlockPos, super::home_poi::HomeSite>,
+    >,
+    pub(super) indexed_home_chunks:
+        HashMap<pumpkin_util::math::vector2::Vector2<i32>, Weak<pumpkin_world::chunk::ChunkData>>,
 }
 
 impl VillagerPoiStorage {
-    fn live_owner(owner: &Weak<dyn EntityBase>) -> Option<std::sync::Arc<dyn EntityBase>> {
+    pub(super) fn live_owner(
+        owner: &Weak<dyn EntityBase>,
+    ) -> Option<std::sync::Arc<dyn EntityBase>> {
         owner.upgrade().filter(|entity| {
             entity
                 .get_living_entity()

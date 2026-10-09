@@ -50,7 +50,13 @@ impl DoorInteractGoal {
             let world = mob.get_entity().world.load_full();
             let (block, _) = world.get_block_and_state_id(&self.door_pos);
             if block.has_tag(&tag::Block::MINECRAFT_DOORS) {
-                DoorBlock::set_open(&world, &self.door_pos, open);
+                // DoorInteractGoal.setOpen attributes DoorBlock.setOpen's event to the mob.
+                DoorBlock::set_open_with_source(
+                    &world,
+                    &self.door_pos,
+                    open,
+                    Some(mob.get_entity()),
+                );
             }
         }
     }

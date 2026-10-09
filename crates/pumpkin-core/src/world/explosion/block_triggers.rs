@@ -49,7 +49,6 @@ impl Explosion {
             if block != &Block::IRON_DOOR && !props.powered && props.half == DoubleBlockHalf::Lower
             {
                 DoorBlock::set_open(world, pos, !props.open);
-                emit_open(world, pos, !props.open);
             }
         } else if block.has_tag(&tag::Block::MINECRAFT_TRAPDOORS) {
             let mut props = OakTrapdoorLikeProperties::from_state_id(state.id);
@@ -107,3 +106,6 @@ fn emit_open(world: &World, pos: &BlockPos, open: bool) {
         pos.to_centered_f64(),
     );
 }
+
+#[cfg(test)]
+mod tests;

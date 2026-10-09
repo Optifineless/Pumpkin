@@ -3,10 +3,8 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
 use std::sync::{Arc, Weak};
 use uuid::Uuid;
 
-use crate::block::blocks::bed::BedBlock;
 use pumpkin_data::Enchantment;
 use pumpkin_data::attributes::Attributes;
-use pumpkin_data::block_properties::{BedPart, WhiteBedLikeProperties as BedProperties};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityPose, EntityType};
 use pumpkin_data::item::{Item, JavaToBedrockItemMapping};
@@ -27,7 +25,7 @@ use pumpkin_protocol::bedrock::{
 };
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::{CMerchantOffers, Metadata};
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
+use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::version::JavaMinecraftVersion;
 
@@ -36,8 +34,8 @@ use crate::entity::{
     Entity, EntityBase,
     ai::{
         goal::{
-            avoid_entity::AvoidEntityGoal, look_around::RandomLookAroundGoal,
-            look_at_entity::LookAtEntityGoal, open_door::OpenDoorGoal,
+            avoid_entity::AvoidEntityGoal, interact_with_door::InteractWithDoorGoal,
+            look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
             trade_with_player::TradeWithPlayerGoal, wander_around::WanderAroundGoal,
             work_at_job_site::WorkAtJobSiteGoal,
         },
@@ -48,9 +46,18 @@ use crate::entity::{
 use crate::world::World;
 use crate::world::villager_poi::profession_for_block;
 
+mod acquire_home;
+#[cfg(test)]
+mod behavior_tests;
 pub mod data;
+#[cfg(test)]
+mod followup2_tests;
 mod golem_spawning;
+mod rest;
+#[cfg(test)]
+mod rest_review_tests;
 mod reward_trade_xp;
+mod validate_home;
 pub use data::{
     BREEDING_FOOD_THRESHOLD, GossipType, VillagerData, VillagerProfession, VillagerType,
     get_food_points,
@@ -334,6 +341,8 @@ fn explorer_map_target(
 pub struct VillagerEntity {
     pub mob_entity: MobEntity,
     golem_scan_ticks: AtomicI32,
+    sensed_panic: AtomicBool,
+    last_home_validation: AtomicI64,
     golem_spawn_lock: std::sync::Mutex<()>,
     pub villager_data: std::sync::Mutex<VillagerData>,
     pub food_level: AtomicI32,
@@ -357,7 +366,9 @@ pub struct VillagerEntity {
     pub is_trading: AtomicBool,
     pub job_site: std::sync::Mutex<Option<BlockPos>>,
     pub job_site_pending: AtomicBool,
+    /// The current sleeping head; saved HOME ownership is held in Brain memory.
     pub home_pos: std::sync::Mutex<Option<BlockPos>>,
+    home_acquisition: std::sync::Mutex<acquire_home::AcquireHome>,
     pub self_weak: std::sync::Mutex<Option<Weak<Self>>>,
 }
 
@@ -405,12 +416,22 @@ impl VillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .set_can_float(true);
+        // Villager's constructor sets the live navigator's required path length to 48.
+        mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_required_path_length(48.0);
         let villager_data = VillagerData::new(VillagerType::Plains, VillagerProfession::None, 1);
         let inventory = std::sync::Mutex::new((0..8).map(|_| ItemStack::EMPTY.clone()).collect());
 
         let villager = Self {
             mob_entity,
             golem_scan_ticks: AtomicI32::new(golem_spawning::initial_scan_delay()),
+            sensed_panic: AtomicBool::new(false),
+            last_home_validation: AtomicI64::new(-i64::from(
+                crate::entity::ai::brain::sensing::DEFAULT_SCAN_RATE,
+            )),
             golem_spawn_lock: std::sync::Mutex::new(()),
             villager_data: std::sync::Mutex::new(villager_data),
             food_level: AtomicI32::new(0),
@@ -435,9 +456,13 @@ impl VillagerEntity {
             job_site: std::sync::Mutex::new(None),
             job_site_pending: AtomicBool::new(false),
             home_pos: std::sync::Mutex::new(None),
+            home_acquisition: std::sync::Mutex::default(),
             self_weak: std::sync::Mutex::new(None),
         };
         let mob_arc = Arc::new(villager);
+        // Villager constructor / GroundPathNavigation enables opening and passing doors.
+        mob_arc.set_can_open_doors(true);
+        mob_arc.set_can_pass_doors(true);
         *mob_arc
             .mob_entity
             .brain
@@ -465,7 +490,8 @@ impl VillagerEntity {
                 0,
                 Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
             );
-            goal_selector.add_goal(0, Box::new(OpenDoorGoal::new(true)));
+            goal_selector.add_goal(0, Box::<InteractWithDoorGoal>::default());
+            goal_selector.add_goal(2, Box::<rest::SleepAtHomeGoal>::default());
             // Villagers avoid threats
             goal_selector.add_goal(
                 1,
@@ -1573,7 +1599,6 @@ impl ScreenHandlerFactory for VillagerEntity {
 }
 
 impl VillagerEntity {
-    #[expect(clippy::too_many_lines)]
     pub fn villager_mob_tick(&self) {
         let world = self.get_entity().world.load();
 
@@ -1654,166 +1679,27 @@ impl VillagerEntity {
         self.decay_gossips(game_time);
         self.work_at_job_site(game_time, day_time, day);
 
+        self.update_home();
+        self.rest_tick(game_time);
         let age = self.get_entity().age.load(Ordering::Relaxed);
         if age % 20 != 0 {
             return;
         }
         self.update_job_site(&world);
-
-        // 1. Bed / Sleeping logic (for all villagers: babies, nitwits, adults)
-        let is_sleeping = self.get_entity().pose.load() == EntityPose::Sleeping;
-
-        // Check if current bed is still valid
-        if let Some(current_home) = self.get_home_pos() {
-            let (block, state) = world.get_block_and_state(&current_home);
-            let valid = if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) {
-                let bed_props = BedProperties::from_state_id(state.id);
-                bed_props.part == BedPart::Head
-            } else {
-                false
-            };
-
-            if !valid {
-                *self
-                    .home_pos
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-                if is_sleeping {
-                    // Wake up if bed was broken
-                    self.get_entity().set_pose(EntityPose::Standing);
-                    self.get_entity().set_synced_data(
-                        pumpkin_data::tracked_data::villager::SLEEPING_POS_ID,
-                        None::<BlockPos>,
-                    );
-                }
-            }
-        }
-
-        // If no bed, search for one
-        if self.get_home_pos().is_none() {
-            let pos = self.get_entity().block_pos.load();
-            let start = BlockPos::new(pos.0.x - 16, pos.0.y - 4, pos.0.z - 16);
-            let end = BlockPos::new(pos.0.x + 16, pos.0.y + 4, pos.0.z + 16);
-
-            let aabb = BoundingBox::new(
-                Vector3::new(
-                    pos.0.x as f64 - 32.0,
-                    pos.0.y as f64 - 16.0,
-                    pos.0.z as f64 - 32.0,
-                ),
-                Vector3::new(
-                    pos.0.x as f64 + 32.0,
-                    pos.0.y as f64 + 16.0,
-                    pos.0.z as f64 + 32.0,
-                ),
-            );
-            let nearby_entities = world.get_all_at_box(&aabb);
-
-            let mut claimed_homes = Vec::new();
-            for entity in nearby_entities {
-                if entity.get_entity().entity_id != self.get_entity().entity_id
-                    && entity.get_entity().entity_type
-                        == &pumpkin_data::entity::EntityType::VILLAGER
-                    && let Some(home) = entity.get_home_pos()
-                {
-                    claimed_homes.push(home);
-                }
-            }
-
-            let mut best_home = None;
-            let mut best_dist = f64::MAX;
-
-            for p in BlockPos::iterate(start, end) {
-                let (block, state) = world.get_block_and_state(&p);
-                if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) {
-                    let bed_props = BedProperties::from_state_id(state.id);
-                    let bed_head_pos = if bed_props.part == BedPart::Head {
-                        p
-                    } else {
-                        p.offset(bed_props.facing.to_offset())
-                    };
-
-                    if claimed_homes.contains(&bed_head_pos) {
-                        continue;
-                    }
-
-                    let dist = bed_head_pos
-                        .to_f64()
-                        .squared_distance_to_vec(&self.get_entity().pos.load());
-                    if dist < best_dist {
-                        best_dist = dist;
-                        best_home = Some(bed_head_pos);
-                    }
-                }
-            }
-
-            if let Some(home) = best_home {
-                *self
-                    .home_pos
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(home);
-            }
-        }
-
-        // Handle Sleeping/Waking up based on time
-        let is_sleeping = self.get_entity().pose.load() == EntityPose::Sleeping;
-        if let Some(home_pos) = self.get_home_pos() {
-            let time = world.get_time_of_day();
-            let is_night = (12000..=23000).contains(&time);
-
-            if is_night {
-                if !is_sleeping {
-                    // Check distance to bed. If close enough, go to sleep
-                    let dist = home_pos
-                        .to_f64()
-                        .squared_distance_to_vec(&self.get_entity().pos.load());
-                    if dist <= 4.0 {
-                        // Within 2 blocks (squared distance 4.0)
-                        let (block, state) = world.get_block_and_state(&home_pos);
-                        if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) {
-                            let bed_props = BedProperties::from_state_id(state.id);
-                            if !bed_props.occupied {
-                                // Make bed occupied
-                                BedBlock::set_occupied(true, &world, block, &home_pos, state.id);
-
-                                self.get_entity().set_pose(EntityPose::Sleeping);
-                                self.record_last_slept(game_time);
-                                self.get_entity().set_synced_data(
-                                    pumpkin_data::tracked_data::villager::SLEEPING_POS_ID,
-                                    Some(home_pos),
-                                );
-                            }
-                        }
-                    }
-                }
-            } else if is_sleeping {
-                // It is day, wake up!
-                let (block, state) = world.get_block_and_state(&home_pos);
-                if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) {
-                    let bed_props = BedProperties::from_state_id(state.id);
-                    if bed_props.occupied {
-                        BedBlock::set_occupied(false, &world, block, &home_pos, state.id);
-                    }
-                }
-
-                self.get_entity().set_pose(EntityPose::Standing);
-                self.get_entity().set_synced_data(
-                    pumpkin_data::tracked_data::villager::SLEEPING_POS_ID,
-                    None::<BlockPos>,
-                );
-            }
-        } else if is_sleeping {
-            // Wake up during the day
-            self.get_entity().set_pose(EntityPose::Standing);
-            self.get_entity().set_synced_data(
-                pumpkin_data::tracked_data::villager::SLEEPING_POS_ID,
-                None::<BlockPos>,
-            );
-        }
     }
 }
 
 impl Mob for VillagerEntity {
+    fn can_tick_navigation(&self) -> bool {
+        self.get_entity().pose.load() != EntityPose::Sleeping
+    }
+    fn can_tick_move_control(&self) -> bool {
+        self.can_tick_navigation()
+    }
+    fn can_tick_look_control(&self) -> bool {
+        self.can_tick_navigation()
+    }
+
     fn make_brain(
         &self,
         packed: &crate::entity::ai::brain::memory::PackedMemories,
@@ -1827,6 +1713,7 @@ impl Mob for VillagerEntity {
 
     #[expect(clippy::too_many_lines)]
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        self.write_rest_nbt(nbt);
         {
             let data = self
                 .villager_data
@@ -2010,22 +1897,7 @@ impl Mob for VillagerEntity {
             self.job_site_pending.store(false, Ordering::Relaxed);
         }
 
-        if let (Some(x), Some(y), Some(z)) = (
-            nbt.get_int("HomeX").or_else(|| nbt.get_int("BedX")),
-            nbt.get_int("HomeY").or_else(|| nbt.get_int("BedY")),
-            nbt.get_int("HomeZ").or_else(|| nbt.get_int("BedZ")),
-        ) {
-            *self
-                .home_pos
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(BlockPos::new(x, y, z));
-        } else {
-            *self
-                .home_pos
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        }
-
+        self.read_rest_nbt(nbt);
         if let Some(offers_compound) = nbt.get_compound("Offers")
             && let Some(recipes) = offers_compound.get_list("Recipes")
         {
@@ -2214,10 +2086,9 @@ impl Mob for VillagerEntity {
     }
 
     fn get_home(&self) -> Option<BlockPos> {
-        *self
-            .home_pos
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.home_memory()
+            .filter(|home| home.dimension.id == self.get_entity().world.load().dimension.id)
+            .map(|home| home.pos)
     }
 
     fn mob_init_data_tracker(&self) {
@@ -2240,6 +2111,10 @@ impl Mob for VillagerEntity {
         _source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) {
+        // LivingEntity.hurtServer stops sleeping before applying the damage.
+        if let Some(home) = self.get_home_pos() {
+            self.wake_up_if_sleeping_at(home);
+        }
         // Villager reputation attributes projectile hits to DamageSource.getEntity.
         let Some(cause) = cause.filter(|cause| {
             cause.get_entity().entity_type == &pumpkin_data::entity::EntityType::PLAYER

@@ -171,6 +171,16 @@ impl DoorBlock {
     }
 
     pub fn set_open(world: &Arc<World>, block_pos: &BlockPos, open: bool) {
+        Self::set_open_with_source(world, block_pos, open, None);
+    }
+
+    /// Toggles the door once and attributes its game event to the supplied actor.
+    pub fn set_open_with_source(
+        world: &Arc<World>,
+        block_pos: &BlockPos,
+        open: bool,
+        source: Option<&crate::entity::Entity>,
+    ) {
         let (block, block_state) = world.get_block_and_state_id(block_pos);
         if !block.has_tag(&tag::Block::MINECRAFT_DOORS) {
             return;
@@ -206,6 +216,13 @@ impl DoorBlock {
                 BlockFlags::NOTIFY_LISTENERS,
             );
         }
+        // DoorBlock.setOpen emits one game event after the successful transition.
+        let event = if open {
+            pumpkin_data::game_event::GameEvent::BlockOpen
+        } else {
+            pumpkin_data::game_event::GameEvent::BlockClose
+        };
+        world.emit_game_event_with_source(event.name(), block_pos.to_centered_f64(), source);
     }
 }
 

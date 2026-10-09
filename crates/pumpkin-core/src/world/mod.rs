@@ -33,6 +33,7 @@ mod dragon_parts;
 mod entity_persistence;
 pub mod explosion;
 pub mod generation_cache;
+pub(crate) mod home_poi;
 pub mod loot;
 pub mod map;
 pub(crate) mod neighbor_updater;
@@ -589,6 +590,7 @@ impl World {
             match change {
                 pumpkin_world::level::LoadedChunkChange::Loaded(pos) => {
                     published_chunks.push(pos);
+                    self.register_chunk_home_pois(pos);
                     self.register_loaded_chunk_ticks(pos);
                     if active_chunks.contains(&pos)
                         && self.level.is_chunk_loaded(&pos)
@@ -599,6 +601,7 @@ impl World {
                 }
                 pumpkin_world::level::LoadedChunkChange::Unloaded(pos) => {
                     if !self.level.is_chunk_loaded(&pos) {
+                        self.unregister_chunk_home_pois(pos);
                         tracker.loaded_active_chunks.remove(&pos);
                     }
                 }
@@ -4375,6 +4378,7 @@ impl World {
         let sleeping_player_count = players
             .iter()
             .filter(|player| {
+                player.tick_sleep_lifecycle();
                 player
                     .sleeping_since
                     .load()
@@ -5298,6 +5302,7 @@ impl World {
                 );
             }
 
+            self.update_home_poi(*position, replaced_block_state_id, block_state_id);
             self.villager_poi
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -5383,6 +5388,9 @@ impl World {
             flags.insert(BlockFlags::SKIP_DROPS);
         }
 
+        self.block_registry
+            .player_will_destroy(self, cause, position, broken_block_state);
+
         if !flags.contains(BlockFlags::SKIP_DROPS) {
             let tool = cause.as_ref().and_then(|p| {
                 let item = p.inventory().held_item();
@@ -5398,11 +5406,10 @@ impl World {
             crate::block::drop_loot(self, broken_block, position, true, &params);
         }
 
-        let new_state_id = if broken_block.is_waterlogged(broken_block_state.id) {
-            Block::WATER.default_state.id
-        } else {
-            Block::AIR.default_state.id
-        };
+        // Level.destroyBlock restores FluidState.createLegacyBlock, including submerged plants.
+        let new_state_id = Self::fluid_state_from_block_state(broken_block_state.id)
+            .1
+            .block_state_id;
 
         let broken_state_id = self.set_block_state_with_limit(
             position,
@@ -5973,7 +5980,8 @@ impl World {
         }
     }
 
-    fn fluid_state_from_block_state(id: BlockStateId) -> (&'static Fluid, FluidState) {
+    /// Resolves the fluid family and actual amount of a block state, including waterlogged blocks.
+    pub(crate) fn fluid_state_from_block_state(id: BlockStateId) -> (&'static Fluid, FluidState) {
         let fluid = Self::get_fluid_from_state_id(id);
         let source = if fluid.matches_type(&Fluid::WATER) {
             &Fluid::WATER
@@ -6969,13 +6977,7 @@ impl World {
     }
 
     pub fn emit_game_event(&self, event_key: impl Into<String>, position: Vector3<f64>) {
-        let mut event = crate::plugin::api::events::world::generic_game::GenericGameEvent::new(
-            event_key.into(),
-            position,
-        );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
+        self.emit_game_event_with_source(event_key, position, None);
     }
 
     pub async fn unload(self: &Arc<Self>) {
