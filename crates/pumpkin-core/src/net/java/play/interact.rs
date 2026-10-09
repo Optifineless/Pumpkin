@@ -84,7 +84,7 @@ impl JavaClient {
                             {
                                 let mut at_event = crate::plugin::api::events::player::player_interact_at_entity::PlayerInteractAtEntityEvent::new(
                                     player.clone(),
-                                    entity_id.0,
+                                    event.target.get_entity().entity_id,
                                     pos.x,
                                     pos.y,
                                     pos.z,
@@ -94,6 +94,10 @@ impl JavaClient {
                                 if at_event.cancelled {
                                     return;
                                 }
+                                // Honor both interaction events' target and hit-position changes.
+                                let Some(adjusted_target) = world.get_entity_or_part(at_event.entity_id) else { return; };
+                                event.target = adjusted_target;
+                                event.target_position = Some(Vector3::new(at_event.clicked_x, at_event.clicked_y, at_event.clicked_z));
                             }
                             let Ok(hand) = Hand::from_packet_id(interact.hand.map_or(0, |hand| hand.0)) else {
                                 self.try_kick(&TextComponent::text("InvalidHand"));
