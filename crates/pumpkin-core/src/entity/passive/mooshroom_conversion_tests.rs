@@ -151,3 +151,33 @@ async fn mooshroom_conversion_preserves_common_state_and_mounts() {
     );
     fixture.server.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mooshroom_conversion_preserves_combat_hurt_animation() {
+    let fixture = DeathTestWorld::new().await;
+    let mob = fixture.mob(&EntityType::MOOSHROOM);
+    mob.get_living_entity()
+        .unwrap()
+        .hurt_time
+        .store(7, Ordering::Relaxed);
+    assert!(
+        mob.get_mob()
+            .unwrap()
+            .as_shearable()
+            .unwrap()
+            .shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS))
+    );
+    let entities = fixture.world().entities.load_full();
+    let cow = entities
+        .iter()
+        .find(|entity| entity.get_entity().entity_type == &EntityType::COW)
+        .unwrap();
+    assert_eq!(
+        cow.get_living_entity()
+            .unwrap()
+            .hurt_time
+            .load(Ordering::Relaxed),
+        7
+    );
+    fixture.server.shutdown().await;
+}

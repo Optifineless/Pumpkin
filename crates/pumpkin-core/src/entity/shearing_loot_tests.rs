@@ -26,7 +26,7 @@ fn drops(world: &crate::world::World, item: &Item) -> u32 {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shearing_uses_root_datapack_and_pre_shear_context() {
+async fn shearing_uses_root_datapack_and_species_context() {
     let fixture = DeathTestWorld::new().await;
     let world = fixture.world();
     publish(&world, proto(&Biome::PLAINS, &Block::STONE));
@@ -108,5 +108,46 @@ async fn ordinary_sheep_root_keeps_color_drops() {
     assert!((1..=3).contains(&drops(&world, &Item::PURPLE_WOOL)));
     assert_eq!(drops(&world, &Item::WHITE_WOOL), 0);
     assert!(!sheep.shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS)));
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mooshroom_root_loot_observes_transferred_vehicle_and_first_passenger() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    let mooshroom = fixture.mob(&EntityType::MOOSHROOM);
+    let vehicle = fixture.mob(&EntityType::COW);
+    let first = fixture.mob(&EntityType::SHEEP);
+    let second = fixture.mob(&EntityType::PIG);
+    vehicle
+        .get_entity()
+        .add_passenger(vehicle.clone(), mooshroom.clone());
+    mooshroom
+        .get_entity()
+        .add_passenger(mooshroom.clone(), first);
+    mooshroom
+        .get_entity()
+        .add_passenger(mooshroom.clone(), second);
+    let table = parse_loot_table(&json!({"type":"minecraft:shearing", "pools":[{"rolls":1,
+        "entries":[{"type":"minecraft:item","name":"minecraft:diamond", "condition":{
+            "type":"minecraft:all_of", "terms":[
+                {"type":"minecraft:inverted", "term":{"type":"minecraft:entity_properties", "entity":"this", "predicate":{"minecraft:vehicle":{}}}},
+                {"type":"minecraft:inverted", "term":{"type":"minecraft:entity_properties", "entity":"this", "predicate":{"minecraft:passenger":{"type":"minecraft:sheep"}}}},
+                {"type":"minecraft:entity_properties", "entity":"this", "predicate":{"minecraft:passenger":{"type":"minecraft:pig"}}}
+            ]}}]}]}).to_string()).unwrap();
+    fixture
+        .server
+        .datapack_manager
+        .insert_loot_table("minecraft:shearing/mooshroom".into(), Arc::new(table));
+    assert!(
+        mooshroom
+            .get_mob()
+            .unwrap()
+            .as_shearable()
+            .unwrap()
+            .shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS))
+    );
+    assert_eq!(drops(&world, &Item::DIAMOND), 1);
     fixture.server.shutdown().await;
 }

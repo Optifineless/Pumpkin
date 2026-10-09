@@ -56,6 +56,14 @@ impl MooshroomEntity {
                 .load(Ordering::Relaxed),
             Ordering::Relaxed,
         );
+        // ConversionType.SINGLE also preserves the hurt animation introduced by the combat lane.
+        cow.mob_entity.living_entity.hurt_time.store(
+            self.mob_entity
+                .living_entity
+                .hurt_time
+                .load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         if entity.is_fall_flying() {
             cow_entity.set_fall_flying(true);
         }
