@@ -230,8 +230,7 @@ impl HopperBlockEntity {
             return false;
         }
 
-        if let Some(container) = get_container_at(world, pos_up)
-        {
+        if let Some(container) = get_container_at(world, pos_up) {
             // TODO check WorldlyContainer
             for i in 0..container.size() {
                 let mut item = container.get_stack(i);
@@ -359,8 +358,7 @@ impl HopperBlockEntity {
         // TODO getEntityContainer
 
         let target_pos = self.position.offset(to_offset(&facing));
-        if let Some(container) = get_container_at(world, &target_pos)
-        {
+        if let Some(container) = get_container_at(world, &target_pos) {
             // TODO check WorldlyContainer
             let mut is_full = true;
             for i in 0..container.size() {
@@ -888,3 +886,7 @@ mod tests {
         assert_eq!(stand.get_stack(0).item, &Item::POTION);
     }
 }
+
+#[cfg(test)]
+#[path = "hopper_container_tests.rs"]
+mod container_tests;
