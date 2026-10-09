@@ -202,7 +202,8 @@ impl ArmorStandEntity {
             take_non_empty_equipment(&mut equipment)
         };
         let world = entity.world.load();
-        let drop_pos = entity.block_pos.load().above();
+        // ArmorStand.brokenByAnything drops equipment above the stand block.
+        let drop_pos = entity.block_pos.load().up();
 
         for stack in stacks {
             world.drop_stack(&drop_pos, stack);
