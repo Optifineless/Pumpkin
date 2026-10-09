@@ -55,3 +55,47 @@ pub(super) fn get_container_at(world: &World, pos: &BlockPos) -> Option<Arc<dyn 
         DoubleInventory::new(other, inventory)
     })
 }
+
+// HopperBlockEntity.tryTakeInItemFromSlot/tryMoveInItem operate on the actual container.
+// The closure only mutates the stack; callers must send packets and fire events afterwards.
+pub(super) fn with_inventory_slot<T>(
+    inventory: &dyn Inventory,
+    slot: usize,
+    update: impl FnOnce(&mut pumpkin_data::item_stack::ItemStack) -> T,
+) -> T {
+    if let Some(double) = inventory.as_any().downcast_ref::<DoubleInventory>() {
+        let (half, slot) = double.inventory_for_slot(slot);
+        return with_inventory_slot(half, slot, update);
+    }
+    if let Some(chest) = inventory.as_any().downcast_ref::<ChestBlockEntity>() {
+        let mut items = chest
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        return update(&mut items[slot]);
+    }
+    if let Some(chest) = inventory.as_any().downcast_ref::<TrappedChestBlockEntity>() {
+        let mut items = chest
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        return update(&mut items[slot]);
+    }
+    if let Some(hopper) = inventory
+        .as_any()
+        .downcast_ref::<super::hopper::HopperBlockEntity>()
+    {
+        let mut items = hopper
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        return update(&mut items[slot]);
+    }
+    let mut stack = inventory.get_stack(slot);
+    let before = stack.clone();
+    let result = update(&mut stack);
+    if !stack.are_equal(&before) {
+        inventory.set_stack(slot, stack);
+    }
+    result
+}

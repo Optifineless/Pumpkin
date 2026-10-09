@@ -37,6 +37,15 @@ impl DoubleInventory {
     pub fn new(first: Arc<dyn Inventory>, second: Arc<dyn Inventory>) -> Arc<Self> {
         Arc::new(Self { first, second })
     }
+    /// Resolves a combined slot to its actual inventory and local slot.
+    #[must_use]
+    pub fn inventory_for_slot(&self, slot: usize) -> (&dyn Inventory, usize) {
+        if slot >= self.first.size() {
+            (self.second.as_ref(), slot - self.first.size())
+        } else {
+            (self.first.as_ref(), slot)
+        }
+    }
 }
 
 impl Inventory for DoubleInventory {
