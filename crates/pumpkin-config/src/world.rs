@@ -21,9 +21,10 @@ pub struct LevelConfig {
     // TODO: More options
 }
 
-/// Returns DedicatedServerProperties' max-chained-neighbor-updates default.
+/// Returns the `DedicatedServerProperties` neighbor cascade default.
+#[must_use]
 pub const fn default_max_chained_neighbor_updates() -> i32 {
-    1_000_000 // DedicatedServerProperties.java defines the vanilla default.
+    1_000_000 // DedicatedServerProperties.java:100 defines the vanilla default.
 }
 
 const fn default_autosave_ticks() -> u64 {

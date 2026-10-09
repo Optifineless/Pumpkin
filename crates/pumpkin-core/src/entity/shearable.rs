@@ -19,7 +19,7 @@ pub trait Shearable: Mob {
     /// two of them can pass [`Self::ready_for_shearing`] at once.
     /// IMPORTANT: Implementations must claim their shear state
     /// with a single atomic swap so only one of them goes on to drop loot.
-    /// See [`SnowGolemEntity::shear`]
+    /// See [`SnowGolemEntity::shear`](crate::entity::passive::snow_golem::SnowGolemEntity::shear).
     fn shear(&self, sound_category: SoundCategory, tool: &ItemStack) -> bool;
 
     fn ready_for_shearing(&self) -> bool;

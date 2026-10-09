@@ -46,7 +46,7 @@ impl ItemBehaviour for ExperienceBottleItem {
         let mut held = player.inventory().get_stack_in_hand(hand);
         let entity = Entity::new(world.clone(), pos, &EntityType::EXPERIENCE_BOTTLE);
         let bottle = ExperienceBottleEntity::new_shot(entity, player.get_entity());
-        bottle.set_item_stack(held.copy_with_count(1));
+        bottle.set_item_stack(&held);
         bottle.thrown.set_velocity_from(pitch, yaw, -20.0, 0.7, 1.0);
         crate::item::items::projectile_weapon::ProjectileWeaponItem::add_shooter_movement(
             bottle.get_entity(),

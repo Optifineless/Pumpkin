@@ -117,7 +117,7 @@ async fn experience_bottle_item_survives_nbt_reload() {
     item.set_data_component(pumpkin_data::data_component_impl::CustomNameImpl {
         name: pumpkin_util::text::TextComponent::text("Stored bottle"),
     });
-    original.set_item_stack(item.copy_with_count(1));
+    original.set_item_stack(&item);
     let mut nbt = NbtCompound::new();
     original.write_custom_nbt(&mut nbt);
     let restored = create();

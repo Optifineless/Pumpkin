@@ -1047,30 +1047,29 @@ mod tests {
         let chunk = ChunkData::empty(0, 0);
         chunk.set_block_absolute_y(10, 64, 2, Block::STONE.default_state.id);
         chunk.set_block_absolute_y(10, 66, 2, Block::STONE.default_state.id);
-        {
-            let maps = chunk
-                .heightmap
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            assert_eq!(
-                maps.get(
-                    ChunkHeightmapType::MotionBlocking,
-                    10,
-                    2,
-                    chunk.section.min_y
-                ),
-                66
-            );
-            assert_eq!(
-                maps.get(
-                    ChunkHeightmapType::MotionBlocking,
-                    10,
-                    3,
-                    chunk.section.min_y
-                ),
-                chunk.section.min_y - 1
-            );
-        }
+        let maps = chunk
+            .heightmap
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(
+            maps.get(
+                ChunkHeightmapType::MotionBlocking,
+                10,
+                2,
+                chunk.section.min_y
+            ),
+            66
+        );
+        assert_eq!(
+            maps.get(
+                ChunkHeightmapType::MotionBlocking,
+                10,
+                3,
+                chunk.section.min_y
+            ),
+            chunk.section.min_y - 1
+        );
+        drop(maps);
         chunk.set_block_absolute_y(10, 66, 2, Block::AIR.default_state.id);
         let maps = chunk
             .heightmap

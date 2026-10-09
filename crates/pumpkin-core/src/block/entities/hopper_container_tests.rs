@@ -120,8 +120,8 @@ async fn malformed_chest_partner_is_not_combined() {
 async fn failed_double_chest_transfer_preserves_source() {
     let fixture = Fixture::new();
     let hopper = HopperBlockEntity::new(BlockPos::new(8, 64, 7), FacingHopper::South);
-    let (first, second) = chest_pair(&fixture.world, BlockPos::new(8, 64, 8));
-    for chest in [first, second] {
+    let chests: [_; 2] = chest_pair(&fixture.world, BlockPos::new(8, 64, 8)).into();
+    for chest in chests {
         for slot in 0..chest.size() {
             chest.set_stack(slot, ItemStack::new(64, &pumpkin_data::item::Item::STONE));
         }

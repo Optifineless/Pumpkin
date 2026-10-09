@@ -5314,7 +5314,7 @@ impl World {
                     neighbour_update_flags,
                     update_limit - 1,
                 );
-                self.block_registry.update_neighbors_with_limit(
+                BlockRegistry::update_neighbors_with_limit(
                     self,
                     position,
                     neighbour_update_flags,

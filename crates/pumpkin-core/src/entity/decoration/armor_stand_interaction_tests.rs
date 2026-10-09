@@ -34,9 +34,9 @@ async fn disabled_clicked_slot_falls_back_to_mainhand() {
     let stand = stand(&world);
     stand.set_item_slot(
         &EquipmentSlot::HEAD,
-        ItemStack::new(1, &Item::DIAMOND_HELMET),
+        &ItemStack::new(1, &Item::DIAMOND_HELMET),
     );
-    stand.set_item_slot(&EquipmentSlot::MAIN_HAND, ItemStack::new(1, &Item::STICK));
+    stand.set_item_slot(&EquipmentSlot::MAIN_HAND, &ItemStack::new(1, &Item::STICK));
     stand.set_slot_disabled(&EquipmentSlot::HEAD, true);
     let mut hand = ItemStack::EMPTY.clone();
     assert!(stand.interact_at(&player.player, &mut hand, Vector3::new(0.0, 1.8, 0.0)));
@@ -53,11 +53,11 @@ async fn scaled_armor_stand_click_selects_correct_slot() {
     let stand = stand(&fixture.world);
     stand.set_item_slot(
         &EquipmentSlot::FEET,
-        ItemStack::new(1, &Item::DIAMOND_BOOTS),
+        &ItemStack::new(1, &Item::DIAMOND_BOOTS),
     );
     stand.set_item_slot(
         &EquipmentSlot::CHEST,
-        ItemStack::new(1, &Item::DIAMOND_CHESTPLATE),
+        &ItemStack::new(1, &Item::DIAMOND_CHESTPLATE),
     );
     stand
         .living_entity
@@ -73,10 +73,10 @@ async fn prevent_equipment_drop_survives_break() {
     let stand = stand(&world);
     let mut helmet = ItemStack::new(1, &Item::DIAMOND_HELMET);
     helmet.add_enchantment(&pumpkin_data::Enchantment::VANISHING_CURSE, 1);
-    stand.set_item_slot(&EquipmentSlot::HEAD, helmet);
+    stand.set_item_slot(&EquipmentSlot::HEAD, &helmet);
     stand.set_item_slot(
         &EquipmentSlot::FEET,
-        ItemStack::new(1, &Item::DIAMOND_BOOTS),
+        &ItemStack::new(1, &Item::DIAMOND_BOOTS),
     );
     stand
         .get_entity()
@@ -136,13 +136,13 @@ async fn armor_stand_equipment_emits_one_event_per_change() {
         .register::<GenericGameEvent, _>(events.clone(), EventPriority::Normal, true);
     stand.set_item_slot(
         &EquipmentSlot::HEAD,
-        ItemStack::new(1, &Item::DIAMOND_HELMET),
+        &ItemStack::new(1, &Item::DIAMOND_HELMET),
     );
     assert!(events.0.lock().unwrap().is_empty());
     stand.living_entity.combat_ticks.store(1, Ordering::Relaxed);
-    stand.set_item_slot(&EquipmentSlot::HEAD, ItemStack::new(1, &Item::IRON_HELMET));
-    stand.set_item_slot(&EquipmentSlot::HEAD, ItemStack::new(1, &Item::IRON_HELMET));
-    stand.set_item_slot(&EquipmentSlot::HEAD, ItemStack::EMPTY.clone());
+    stand.set_item_slot(&EquipmentSlot::HEAD, &ItemStack::new(1, &Item::IRON_HELMET));
+    stand.set_item_slot(&EquipmentSlot::HEAD, &ItemStack::new(1, &Item::IRON_HELMET));
+    stand.set_item_slot(&EquipmentSlot::HEAD, &ItemStack::EMPTY.clone());
     assert_eq!(*events.0.lock().unwrap(), ["equip", "unequip"]);
     fixture.server.shutdown().await;
 }
@@ -171,7 +171,7 @@ async fn interact_at_honors_plugin_adjusted_position_and_skips_item_use_stats() 
     let target = Arc::new(stand(&world));
     target.set_item_slot(
         &EquipmentSlot::HEAD,
-        ItemStack::new(1, &Item::DIAMOND_HELMET),
+        &ItemStack::new(1, &Item::DIAMOND_HELMET),
     );
     world.add_entity_silent(original.clone());
     world.add_entity_silent(target.clone());

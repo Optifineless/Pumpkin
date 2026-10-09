@@ -29,12 +29,12 @@ impl BlockBehaviour for BannerBlock {
             .get_entity_facing_order()
             .map(|d| d.to_block_direction());
         // BlockPlaceContext.getNearestLookingDirections prioritizes the clicked support side.
-        if args.position != &args.use_item_on.position {
-            if let Some(index) = directions.iter().position(|d| *d == args.direction) {
-                directions[..=index].rotate_right(1);
-            }
+        if args.position != &args.use_item_on.position
+            && let Some(index) = directions.iter().position(|d| *d == args.direction)
+        {
+            directions[..=index].rotate_right(1);
         }
-        let Some(direction) = select_support(&directions, |direction| {
+        let Some(direction) = select_support(directions, |direction| {
             has_support(args.world, args.position, direction)
         }) else {
             return BlockStateId::AIR;
@@ -89,7 +89,7 @@ impl BlockBehaviour for BannerBlock {
 }
 
 fn select_support(
-    directions: &[BlockDirection; 6],
+    directions: [BlockDirection; 6],
     has_support: impl Fn(BlockDirection) -> bool,
 ) -> Option<BlockDirection> {
     // WallBannerBlock computes its first valid horizontal state before the item
@@ -99,9 +99,9 @@ fn select_support(
         .copied()
         .find(|d| d.is_horizontal() && has_support(*d));
     for direction in directions {
-        if *direction == BlockDirection::Down {
-            if has_support(*direction) {
-                return Some(*direction);
+        if direction == BlockDirection::Down {
+            if has_support(direction) {
+                return Some(direction);
             }
         } else if direction.is_horizontal() && wall.is_some() {
             return wall;
@@ -150,11 +150,11 @@ mod tests {
     fn floor_or_wall_follows_placement_order() {
         let supports = |d| matches!(d, Down | North);
         assert_eq!(
-            select_support(&[Down, North, South, East, West, Up], supports),
+            select_support([Down, North, South, East, West, Up], supports),
             Some(Down)
         );
         assert_eq!(
-            select_support(&[North, Down, South, East, West, Up], supports),
+            select_support([North, Down, South, East, West, Up], supports),
             Some(North)
         );
     }
@@ -164,7 +164,7 @@ mod tests {
         // The first horizontal direction has no support, but Vanilla still uses
         // the wall state found later rather than the intervening floor candidate.
         assert_eq!(
-            select_support(&[North, Down, South, East, West, Up], |d| matches!(
+            select_support([North, Down, South, East, West, Up], |d| matches!(
                 d,
                 Down | South
             )),
@@ -175,9 +175,9 @@ mod tests {
     #[test]
     fn ceiling_is_ignored_and_missing_support_rejects_placement() {
         let directions = [Up, North, Down, South, East, West];
-        assert_eq!(select_support(&directions, |d| d == Up), None);
-        assert_eq!(select_support(&directions, |_| false), None);
-        assert_eq!(select_support(&directions, |d| d == Down), Some(Down));
+        assert_eq!(select_support(directions, |d| d == Up), None);
+        assert_eq!(select_support(directions, |_| false), None);
+        assert_eq!(select_support(directions, |d| d == Down), Some(Down));
     }
 
     #[test]

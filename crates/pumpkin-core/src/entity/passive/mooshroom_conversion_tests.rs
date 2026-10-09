@@ -1,4 +1,6 @@
 use super::*;
+use pumpkin_protocol::{packet::MultiVersionJavaPacket, ser::NetworkReadExt};
+
 use crate::{
     entity::{death_test_world::DeathTestWorld, shearable::Shearable},
     plugin::{
@@ -44,7 +46,6 @@ async fn cancelled_mooshroom_conversion_has_no_effects() {
     let mut tool = ItemStack::new(1, &Item::SHEARS);
     observer.take_packets();
     assert!(!mob.interact(&player, &mut tool));
-    use pumpkin_protocol::{packet::MultiVersionJavaPacket, ser::NetworkReadExt};
     let sound_id = pumpkin_protocol::java::client::play::CSoundEffect::to_id(
         pumpkin_data::packet::CURRENT_MC_VERSION,
     );

@@ -35,6 +35,13 @@ fn attack(player: &TestPlayer, position: BlockPos, server: &Arc<Server>) {
     );
 }
 
+fn set_test_border(world: &World) {
+    let mut border = world.worldborder.lock().unwrap();
+    border.center_x = 8.0;
+    border.center_z = 8.0;
+    border.new_diameter = 8.0;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dragon_egg_attack_moves_without_drop_and_within_bounds() {
     let fixture = DeathTestWorld::new().await;
@@ -47,12 +54,7 @@ async fn dragon_egg_attack_moves_without_drop_and_within_bounds() {
         .player
         .get_entity()
         .set_pos(Vector3::new(8.5, 64.0, 8.5));
-    {
-        let mut border = world.worldborder.lock().unwrap();
-        border.center_x = 8.0;
-        border.center_z = 8.0;
-        border.new_diameter = 8.0;
-    }
+    set_test_border(&world);
     world.set_block_state(
         &position,
         Block::DRAGON_EGG.default_state.id,

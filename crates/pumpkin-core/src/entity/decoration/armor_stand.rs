@@ -268,7 +268,7 @@ impl ArmorStandEntity {
             .get(slot)
     }
 
-    fn set_item_slot(&self, slot: &EquipmentSlot, stack: ItemStack) {
+    fn set_item_slot(&self, slot: &EquipmentSlot, stack: &ItemStack) {
         let previous = self
             .living_entity
             .entity_equipment
@@ -283,7 +283,7 @@ impl ArmorStandEntity {
         let position = entity.pos.load();
 
         // LivingEntity.onEquipItem emits one event selected by the new stack's component.
-        if previous.are_items_and_components_equal(&stack)
+        if previous.are_items_and_components_equal(stack)
             || self.living_entity.combat_ticks.load(Ordering::Relaxed) == 0
         {
             return;
@@ -335,7 +335,7 @@ impl ArmorStandEntity {
             return false;
         };
 
-        self.set_item_slot(slot, new_stand_stack);
+        self.set_item_slot(slot, &new_stand_stack);
         true
     }
 

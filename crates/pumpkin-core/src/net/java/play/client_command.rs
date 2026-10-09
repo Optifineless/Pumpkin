@@ -26,11 +26,10 @@ fn try_claim_respawn(player_id: uuid::Uuid) -> Option<RespawnClaim> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(player_id);
-    if inserted {
-        Some(RespawnClaim(player_id))
-    } else {
-        None
+    if !inserted {
+        return None;
     }
+    Some(RespawnClaim(player_id))
 }
 
 impl JavaClient {
