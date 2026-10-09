@@ -11,14 +11,12 @@ use crate::entity::item::ItemEntity;
 use crate::world::World;
 use pumpkin_data::data_component_impl::JukeboxPlayableImpl;
 use pumpkin_data::entity::EntityType;
-use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::jukebox_song::JukeboxSong;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockStateId, block_properties::JukeboxLikeProperties};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_world::world::BlockFlags;
 use rand::{RngExt, rng};
 
 use tracing::error;
@@ -29,15 +27,6 @@ pub struct JukeboxBlock;
 impl JukeboxBlock {
     fn has_record_state(_block: &Block, state_id: BlockStateId) -> bool {
         JukeboxLikeProperties::from_state_id(state_id).has_record
-    }
-
-    fn set_record_state(has_record: bool, block: &Block, position: &BlockPos, world: &Arc<World>) {
-        let new_state = JukeboxLikeProperties { has_record };
-        world.set_block_state(
-            position,
-            new_state.to_state_id(block),
-            BlockFlags::NOTIFY_LISTENERS,
-        );
     }
 
     /// Drops the record from the jukebox - matches vanilla's `JukeboxBlockEntity.dropRecord()`
@@ -65,8 +54,7 @@ impl JukeboxBlock {
     }
 
     /// Stops the music and updates block state
-    fn stop_playing(block: &Block, position: &BlockPos, world: &Arc<World>) {
-        Self::set_record_state(false, block, position, world);
+    fn stop_playing(_block: &Block, position: &BlockPos, world: &Arc<World>) {
         world.sync_world_event(WorldEvent::SoundStopJukeboxSong, *position, 0);
     }
 
@@ -94,10 +82,6 @@ impl BlockBehaviour for JukeboxBlock {
             Self::drop_record(args.position, args.world);
             // Stop the music and update block state
             Self::stop_playing(args.block, args.position, args.world);
-            args.world.emit_game_event(
-                GameEvent::BlockChange.name(),
-                args.position.to_centered_f64(),
-            );
             return BlockActionResult::Success;
         }
 
@@ -148,9 +132,6 @@ impl BlockBehaviour for JukeboxBlock {
             jukebox_entity.start_playing(jukebox_song.length_in_ticks());
         }
 
-        // Update block state to has_record = true
-        Self::set_record_state(true, args.block, args.position, world);
-
         // Start playing the music (client-side audio)
         Self::start_playing(args.position, world, jukebox_song.get_id());
 
@@ -158,11 +139,6 @@ impl BlockBehaviour for JukeboxBlock {
             pumpkin_data::statistic::StatisticCategory::Custom,
             pumpkin_data::statistic::CustomStatistic::PlayRecord as i32,
             1,
-        );
-
-        world.emit_game_event(
-            GameEvent::BlockChange.name(),
-            args.position.to_centered_f64(),
         );
 
         BlockActionResult::Success

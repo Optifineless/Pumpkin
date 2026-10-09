@@ -555,3 +555,6 @@ mod test {
         }
     }
 }
+
+#[cfg(test)]
+mod container_event_tests;

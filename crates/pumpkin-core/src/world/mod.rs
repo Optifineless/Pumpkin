@@ -25,6 +25,7 @@ use std::{
 use tracing::{debug, error, info, trace, warn};
 
 mod active_chunks;
+mod block_entity_context;
 pub mod brightness;
 pub mod chunker;
 pub(crate) mod collision_shapes;
@@ -34,8 +35,8 @@ pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
 pub mod map;
-mod particle_senders;
 mod neighbor_updater;
+mod particle_senders;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -48,10 +49,7 @@ use crate::block::RandomTickArgs;
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
-    block::{
-        registry::BlockRegistry,
-        OnScheduledTickArgs,
-    },
+    block::{OnScheduledTickArgs, registry::BlockRegistry},
     command::client_suggestions,
     entity::{Entity, EntityBase, RemovalReason, player::Player},
     error::PumpkinError,
@@ -6222,6 +6220,7 @@ impl World {
             .get(&chunk_pos)
             .and_then(|m| m.get(block_pos).cloned())
         {
+            self.bind_block_entity_context(entity.as_ref());
             return Some(entity);
         }
 
@@ -6244,6 +6243,7 @@ impl World {
                 .insert(*block_pos, custom_data.clone());
         }
         let entity = block_entity_from_nbt(&nbt)?;
+        self.bind_block_entity_context(entity.as_ref());
         self.block_entities
             .entry(chunk_pos)
             .or_default()
@@ -6310,6 +6310,7 @@ impl World {
     }
 
     pub fn add_block_entity(&self, block_entity: Arc<dyn BlockEntity>) {
+        self.bind_block_entity_context(block_entity.as_ref());
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
         let block_entity_nbt = block_entity.chunk_data_nbt();
