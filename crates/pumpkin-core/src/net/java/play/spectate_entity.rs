@@ -42,7 +42,7 @@ impl JavaClient {
                 .squared_magnitude(player.eye_position())
                 >= max_range * max_range
                 || entity.is_removed()
-                || !target.can_hit()
+                || !target.is_pickable()
             {
                 return;
             }

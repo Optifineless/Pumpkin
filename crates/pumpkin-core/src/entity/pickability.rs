@@ -19,7 +19,12 @@ pub(super) fn can_be_hit_by_projectile(other: &(impl EntityBase + ?Sized)) -> bo
 // already used by Projectile.canHitEntity. Living pickability does not test health.
 pub(super) fn is_pickable(other: &(impl EntityBase + ?Sized)) -> bool {
     let entity = other.get_entity();
-    if other.is_spectator() || entity.entity_type == &EntityType::ENDER_DRAGON {
+    // EnderDragon.isPickable rejects the root; EnderDragonPart.isPickable accepts its parts.
+    if other.is_spectator()
+        || other
+            .cast_any()
+            .is::<super::boss::ender_dragon::EnderDragonEntity>()
+    {
         return false;
     }
     if let Some(stand) = other.cast_any().downcast_ref::<ArmorStandEntity>()
