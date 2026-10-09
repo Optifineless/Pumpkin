@@ -57,7 +57,7 @@ impl MetaDataType {
     pub const QUATERNION_F: MetaDataType = Self::QUATERNION;
     pub const ROTATION: MetaDataType = Self::ROTATIONS;
     pub const PARTICLE_LIST: MetaDataType = Self::PARTICLES;
-    pub const COPPER_GOLEM_STATE: MetaDataType = Self::WEATHERING_COPPER_STATE;
+    pub const COPPER_GOLEM_STATE: MetaDataType = MetaDataType { id: 37i32 };
     pub const PROFILE: MetaDataType = Self::RESOLVABLE_PROFILE;
     pub const ARM: MetaDataType = Self::HUMANOID_ARM;
     #[must_use]
