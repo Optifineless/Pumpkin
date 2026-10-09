@@ -9,6 +9,10 @@ use pumpkin_data::{packet::clientbound::config::REGISTRY_DATA, registry::Registr
 use pumpkin_macros::java_packet;
 use pumpkin_util::{resource_location::ResourceLocation, version::JavaMinecraftVersion};
 
+#[cfg(test)]
+#[path = "biome_registry_test.rs"]
+mod biome_registry_test;
+
 /// Added in 1.20.2
 #[java_packet(REGISTRY_DATA)]
 pub struct CRegistryData<'a> {

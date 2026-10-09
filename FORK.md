@@ -132,6 +132,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Change | Checked in-game |
 |:--|:--|
 | Hoppers keep their facing after a restart | Yes, 2026-10-07 |
+| Village ground uses biomes at the actual structure position, even across chunk borders; terrain shaping includes nearby chunks within vanilla's expanded bounds. Regression fixtures compare 24,064 surface columns (height and top two blocks) and 144,384 biome cells. Coverage stops before paths, buildings and decoration and does not check underground ancient-city shaping. The biome registry separately matches 67 captured vanilla network entries; this does not establish a colouring fix. | Not yet |
 | Redstone torches burn out when toggled too fast | Yes, 2026-10-07 |
 | Sticky pistons pull back in every direction | Yes, 2026-10-07 |
 | Pistons tell the client which block is moving, so the animation shows it | Yes, 2026-10-07 |

@@ -19,6 +19,8 @@ pub mod spawn_entities;
 pub mod spawn_structures;
 pub mod structure;
 mod surface;
+#[cfg(test)]
+mod village_surface_test;
 
 use generator::VanillaGenerator;
 use pumpkin_data::dimension::Dimension;

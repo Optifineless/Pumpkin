@@ -132,7 +132,12 @@ pub(crate) fn build() -> TokenStream {
                             }
                         }
 
-                        let nbt_tag = json_to_nbt_tag(entry_data);
+                        let mut nbt_tag = json_to_nbt_tag(entry_data);
+                        if reg_name == "worldgen/biome"
+                            && let pumpkin_nbt::tag::NbtTag::Compound(biome) = &mut nbt_tag
+                        {
+                            crate::biome_network::encode(biome);
+                        }
                         let bytes = match nbt_tag {
                             pumpkin_nbt::tag::NbtTag::Compound(compound) => {
                                 pumpkin_nbt::Nbt::from(compound).write_unnamed()

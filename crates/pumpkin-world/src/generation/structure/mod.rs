@@ -149,13 +149,14 @@ pub fn generate_structure_position(
     }
 }
 
+/// Generates a structure using the biome source at its absolute starting position.
 #[must_use]
 pub fn try_generate_structure(
     key: &StructureKeys,
     structure: &Structure,
     seed: i64,
     chunk: &ProtoChunk,
-    sea_level: i32,
+    generator: &crate::generation::generator::VanillaGenerator,
     height_sampler: Option<&mut dyn crate::generation::structure::structures::HeightSampler>,
 ) -> Option<StructurePosition> {
     let random = create_chunk_random(seed, chunk.x, chunk.z);
@@ -164,45 +165,22 @@ pub fn try_generate_structure(
         chunk_x: chunk.x,
         chunk_z: chunk.z,
         random,
-        sea_level,
+        sea_level: generator.settings.sea_level,
         min_y: (chunk.generation_bottom_y() as i32).max(chunk.bottom_y() as i32),
         height: chunk.generation_height().min(chunk.height()),
         height_sampler,
         structure_key: Some(*key),
     };
-    let structure_pos = generate_structure_position(key, structure, context);
-
-    if let Some(pos) = structure_pos {
-        // Get the biome at the structure's starting position.
-        // Clamp biome Y to the chunk's valid range — structure start_pos.y may exceed
-        // the chunk's logical height (e.g. nether fossils use full height 256 but
-        // ProtoChunk only covers logical_height 128).
-        let biome_y = biome_coords::from_block(pos.start_pos.0.y);
-        let biome_height = (chunk.height() >> 2) as i32;
-        let biome_bottom = biome_coords::from_block(chunk.bottom_y() as i32);
-        let clamped_biome_y = biome_y.clamp(biome_bottom, biome_bottom + biome_height - 1);
-
-        let current_biome = chunk.get_biome_id(
-            biome_coords::from_block(pos.start_pos.0.x),
-            clamped_biome_y,
-            biome_coords::from_block(pos.start_pos.0.z),
-        ) as u16;
-
-        let biomes = get_tag_ids(
-            RegistryKey::WorldgenBiome,
-            structure
-                .biomes
-                .strip_prefix('#')
-                .unwrap_or(structure.biomes),
-        )?;
-
-        // Check if the biome is allowed for this structure
-        if biomes.contains(&current_biome) {
-            return Some(pos);
-        }
-    }
-
-    None
+    // Structure.GenerationContext.isValidBiome samples the source even when a rotated
+    // jigsaw center lies outside the start chunk; its palette would wrap X/Z there.
+    let mut sampler = MultiNoiseSampler::generate(&generator.base_router.multi_noise);
+    lazily_generate_structure(
+        key,
+        structure,
+        context,
+        &generator.biome_supplier,
+        &mut sampler,
+    )
 }
 
 #[must_use]
@@ -213,6 +191,7 @@ pub fn lazily_generate_structure(
     biome_supplier: &dyn BiomeSupplier,
     multi_noise_sampler: &mut MultiNoiseSampler,
 ) -> Option<StructurePosition> {
+    // OceanMonumentStructure.findGenerationPoint checks surrounding biomes once.
     if *key == StructureKeys::Monument {
         let center_x = crate::generation::positions::chunk_pos::get_center_x(context.chunk_x);
         let center_z = crate::generation::positions::chunk_pos::get_center_z(context.chunk_z);

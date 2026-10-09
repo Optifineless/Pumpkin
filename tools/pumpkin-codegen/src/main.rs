@@ -31,6 +31,7 @@ mod banner_pattern;
 mod bedrock_biome;
 mod bedrock_creative;
 mod biome;
+mod biome_network;
 mod bitsets;
 mod block;
 mod block_transformer;

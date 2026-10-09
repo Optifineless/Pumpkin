@@ -11,6 +11,15 @@ struct AttributeDef {
     spatially_interpolated: bool,
 }
 
+/// Returns the existing attribute metadata only for attributes sent to clients.
+pub(crate) fn network_attribute_type(name: &str) -> Option<&'static str> {
+    let name = name.strip_prefix("minecraft:").unwrap_or(name);
+    STATIC_ATTRIBUTES
+        .iter()
+        .find(|attribute| attribute.name == name && attribute.syncable)
+        .map(|attribute| attribute.attr_type)
+}
+
 const STATIC_ATTRIBUTES: &[AttributeDef] = &[
     AttributeDef {
         id: 0,

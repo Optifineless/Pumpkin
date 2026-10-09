@@ -1335,7 +1335,6 @@ impl ProtoChunk {
     pub fn set_structure_starts(&mut self, generator: &super::generator::VanillaGenerator) {
         debug_assert_eq!(self.stage, StagedChunkEnum::Biomes);
         let random_config = &generator.random_config;
-        let settings = generator.settings;
         let global_cache = &generator.global_structure_cache;
         let calculator = &generator.structure_calculator;
 
@@ -1360,7 +1359,6 @@ impl ProtoChunk {
                 if let Some(entry) = set.structures.first() {
                     self.try_set_structure_start(
                         global_cache,
-                        settings.sea_level,
                         entry,
                         generator,
                         &mut height_sampler,
@@ -1372,7 +1370,6 @@ impl ProtoChunk {
             for entry in Self::weighted_structure_order(set.structures, seed, self.x, self.z) {
                 if self.try_set_structure_start(
                     global_cache,
-                    settings.sea_level,
                     &entry,
                     generator,
                     &mut height_sampler,
@@ -1388,28 +1385,10 @@ impl ProtoChunk {
     fn try_set_structure_start(
         &mut self,
         global_cache: &GlobalStructureCache,
-        sea_level: i32,
         entry: &WeightedEntry,
         generator: &super::generator::VanillaGenerator,
         height_sampler: &mut dyn crate::generation::structure::structures::HeightSampler,
     ) -> bool {
-        if entry.structure == StructureKeys::Monument {
-            let mut sampler = MultiNoiseSampler::generate(&generator.base_router.multi_noise);
-            let center_x = chunk_pos::get_center_x(self.x);
-            let center_z = chunk_pos::get_center_z(self.z);
-            let start_y = height_sampler.estimate_ocean_floor_height(center_x, center_z);
-            if !crate::generation::structure::structures::ocean_monument::has_valid_biomes(
-                &generator.biome_supplier,
-                &mut sampler,
-                self.x,
-                self.z,
-                sea_level,
-                start_y,
-            ) {
-                return false;
-            }
-        }
-
         let chunk_x = self.x;
         let chunk_z = self.z;
         let position =
@@ -1420,7 +1399,7 @@ impl ProtoChunk {
                     structure,
                     generator.random_config.seed as i64,
                     self,
-                    sea_level,
+                    generator,
                     Some(height_sampler),
                 )
             });
@@ -1568,20 +1547,18 @@ impl ProtoChunk {
                         );
 
                         if let Some(start_data) = start_data {
+                            // ChunkGenerator.createReferences uses StructureStart's adjusted bounds.
+                            let bounds = super::spawn_structures::adjusted_bounds(
+                                structure,
+                                start_data.get_bounding_box(),
+                            );
                             if !structure.spawn_overrides.is_empty()
-                                && super::spawn_structures::adjusted_bounds(
-                                    structure,
-                                    start_data.get_bounding_box(),
-                                )
-                                .intersects_raw_xz(start_x, start_z, end_x, end_z)
+                                && bounds.intersects_raw_xz(start_x, start_z, end_x, end_z)
                             {
                                 spawn_references
                                     .push((entry.structure, start_data.collector.clone()));
                             }
-                            if start_data
-                                .get_adjusted_bounding_box(&entry.structure)
-                                .intersects_raw_xz(start_x, start_z, end_x, end_z)
-                            {
+                            if bounds.intersects_raw_xz(start_x, start_z, end_x, end_z) {
                                 references.push((entry.structure, start_data.collector.clone()));
                             }
                             break;
