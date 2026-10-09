@@ -1032,6 +1032,11 @@ impl VillagerEntity {
     fn work_at_job_site(&self, game_time: i64, day_time: i64, day: i64) {
         use rand::RngExt;
 
+        // WorkAtPoi's JOB_SITE memory requirement precedes checkExtraStartConditions.
+        if self.job_site_pending.load(Ordering::Relaxed) || self.get_job_site().is_none() {
+            return;
+        }
+
         if !(2_000..9_000).contains(&day_time)
             || game_time - self.last_worked_at_poi.load(Ordering::Relaxed) < 300
             || !rand::rng().random_bool(0.5)
@@ -2329,8 +2334,6 @@ mod tests {
 
     use super::*;
 
-
-
     #[test]
     fn villager_data_metadata_uses_the_villager_tracker_slot() {
         let data = VillagerData::new(VillagerType::Plains, VillagerProfession::Librarian, 1);
@@ -2498,3 +2501,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod trade_tests;
