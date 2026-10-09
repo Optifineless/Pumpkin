@@ -10,7 +10,7 @@ mod test {
     use pumpkin_data::dimension::Dimension;
     use pumpkin_util::world_seed::Seed;
 
-    fn surface_biomes(
+    pub(super) fn surface_biomes(
         world_gen: &WorldGenerator,
         center_x: i32,
         center_z: i32,
@@ -506,7 +506,7 @@ mod test {
         );
     }
 
-    struct TestBlockRegistry;
+    pub(super) struct TestBlockRegistry;
     impl crate::world::WorldPortalExt for TestBlockRegistry {
         fn can_place_at(
             &self,
@@ -546,9 +546,9 @@ mod test {
         }
     }
 
-    struct TestGridCache {
-        center_pos: (i32, i32),
-        chunks: std::collections::HashMap<(i32, i32), ProtoChunk>,
+    pub(super) struct TestGridCache {
+        pub(super) center_pos: (i32, i32),
+        pub(super) chunks: std::collections::HashMap<(i32, i32), ProtoChunk>,
     }
 
     impl crate::generation::height_limit::HeightLimitView for TestGridCache {
@@ -1517,3 +1517,7 @@ mod test {
         verify_area_structures(&area);
     }
 }
+
+#[cfg(test)]
+#[path = "tree_soil_test.rs"]
+mod tree_soil_test;

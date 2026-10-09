@@ -2,8 +2,6 @@ use std::sync::{Arc, Mutex};
 
 use crate::block::entities::hanging_sign::HangingSignBlockEntity;
 use crate::block::entities::sign::{SignBlockEntity, SignEntityRef, Text};
-use crate::command::CommandSender;
-use crate::command::context::command_source::CommandSource;
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::BlockId;
@@ -15,10 +13,8 @@ use pumpkin_data::tag::Taggable;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::click::ClickEvent;
 use pumpkin_world::tick::TickPriority;
 use uuid::Uuid;
 
@@ -40,6 +36,10 @@ use crate::item::items::honeycomb::HoneyCombItem;
 use crate::item::items::ink_sac::InkSacItem;
 use crate::world::World;
 use pumpkin_protocol::java::client::play::COpenSignEditor;
+
+#[path = "sign_click_actions.rs"]
+mod sign_click_actions;
+use sign_click_actions::execute_click_commands_if_present;
 
 #[pumpkin_block_from_tag("minecraft:all_signs")]
 pub struct SignBlock;
@@ -351,12 +351,17 @@ impl BlockBehaviour for SignBlock {
         if let Some(block_entity) = args.world.get_block_entity(args.position)
             && let Some(sign) = SignEntityRef::from_block_entity(&*block_entity)
         {
-            open_text_edit(
-                args.player,
-                sign.currently_editing_player(),
-                args.position,
-                true,
-            );
+            // SignBlock.setPlacedBy requires an unwaxed sign with editable front contents.
+            if !sign.is_waxed()
+                && has_editable_text(sign.front_text(), args.player.is_text_filtering_enabled())
+            {
+                open_text_edit(
+                    args.player,
+                    sign.currently_editing_player(),
+                    args.position,
+                    true,
+                );
+            }
             return;
         }
         args.player
@@ -501,8 +506,13 @@ impl BlockBehaviour for SignBlock {
             is_facing_front_text(args.world, args.position, args.block, args.player);
         let text = sign_entity.get_text(is_front_text);
 
-        let executed_click_command =
-            execute_click_commands_if_present(args.world, args.player, args.position, text);
+        let executed_click_command = execute_click_commands_if_present(
+            args.world,
+            args.player,
+            args.position,
+            text,
+            sign_entity.allow_op_features(),
+        );
 
         if sign_entity.is_waxed() {
             let is_hanging = args.block.name.contains("hanging");
@@ -525,7 +535,7 @@ impl BlockBehaviour for SignBlock {
             args.world,
             args.position,
         ) && args.player.may_build()
-            && has_editable_text(text)
+            && has_editable_text(text, args.player.is_text_filtering_enabled())
         {
             open_text_edit(
                 args.player,
@@ -599,7 +609,13 @@ impl BlockBehaviour for SignBlock {
             };
 
             if result == BlockActionResult::Success {
-                execute_click_commands_if_present(args.world, args.player, args.position, text);
+                execute_click_commands_if_present(
+                    args.world,
+                    args.player,
+                    args.position,
+                    text,
+                    sign_entity.allow_op_features(),
+                );
                 if pumpkin_item.as_any().is::<GlowingInkSacItem>() {
                     args.player.trigger_advancement(
                         crate::entity::player::advancement::trigger::AdvancementTrigger::GlowedSign,
@@ -650,76 +666,15 @@ fn other_player_is_editing_sign(
 }
 
 /// Checks whether all messages on the given sign text face are plain text or empty.
-fn has_editable_text(text: &Text) -> bool {
-    let messages = text
-        .messages
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    messages.iter().all(|msg| is_plain_or_empty_text(msg))
-}
-
-fn is_plain_or_empty_text(text: &str) -> bool {
-    if text.is_empty() {
-        return true;
-    }
-    if !text.starts_with('{') {
-        return true;
-    }
-    match serde_json::from_str::<TextComponent>(text) {
-        Ok(component) => {
-            component.0.style.click_event.is_none()
-                && component.0.style.hover_event.is_none()
-                && component.0.extra.is_empty()
-                && matches!(
-                    *component.0.content,
-                    pumpkin_util::text::TextContent::Text { .. }
-                )
-        }
-        Err(_) => true,
-    }
-}
-
-/// Executes any `run_command` click events defined in the sign's text messages.
-fn execute_click_commands_if_present(
-    world: &Arc<World>,
-    player: &Arc<Player>,
-    position: &BlockPos,
-    text: &Text,
-) -> bool {
-    let Some(server) = world.server.upgrade() else {
-        return false;
-    };
-
-    let messages = text
-        .messages
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-    let mut has_run_command = false;
-    for msg in messages.iter() {
-        if msg.is_empty() || !msg.starts_with('{') {
-            continue;
-        }
-        if let Ok(component) = serde_json::from_str::<TextComponent>(msg)
-            && let Some(ClickEvent::RunCommand { command }) = &component.0.style.click_event
-        {
-            let source = CommandSource::new(
-                CommandSender::Dummy,
-                world.clone(),
-                Some(player.clone()),
-                position.to_centered_f64(),
-                Vector2::new(0.0, 0.0),
-                player.gameprofile.name.clone(),
-                player.get_display_name(),
-                server.clone(),
-            );
-            let command_str = command.strip_prefix('/').unwrap_or(command);
-            let dispatcher = server.command_dispatcher.load();
-            dispatcher.handle_command(&source, command_str);
-            has_run_command = true;
-        }
-    }
-    has_run_command
+fn has_editable_text(text: &Text, should_filter: bool) -> bool {
+    let messages = text.get_messages(should_filter);
+    // SignText.hasEditableText checks contents, retaining styles when lines are edited.
+    messages.iter().all(|component| {
+        matches!(
+            *component.0.content,
+            pumpkin_util::text::TextContent::Text { .. }
+        )
+    })
 }
 
 /// Returns the direction of the block supporting the wall sign.
@@ -834,3 +789,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "sign_security_tests.rs"]
+mod security_tests;

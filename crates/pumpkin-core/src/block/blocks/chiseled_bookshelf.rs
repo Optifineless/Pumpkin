@@ -128,11 +128,7 @@ impl ChiseledBookshelfBlock {
     ) {
         // TODO: Increment used stats for chiseled bookshelf on the player
 
-        let sound = if item.get_item() == &Item::ENCHANTED_BOOK {
-            Sound::BlockChiseledBookshelfPickupEnchanted
-        } else {
-            Sound::BlockChiseledBookshelfPickup
-        };
+        let sound = Self::insert_sound(item.get_item());
 
         entity.set_book(
             slot as usize,
@@ -153,11 +149,7 @@ impl ChiseledBookshelfBlock {
     ) {
         let mut stack = entity.remove_book(slot as usize, 1);
 
-        let sound = if stack.get_item() == &Item::ENCHANTED_BOOK {
-            Sound::BlockChiseledBookshelfPickupEnchanted
-        } else {
-            Sound::BlockChiseledBookshelfPickup
-        };
+        let sound = Self::pickup_sound(stack.get_item());
 
         if !player.get_inventory().insert_stack_anywhere(&mut stack) {
             // Drop the item on the ground if the player cannot hold it because of a full inventory
@@ -166,6 +158,23 @@ impl ChiseledBookshelfBlock {
         entity.update_state(properties, world, slot as usize);
 
         world.play_sound(sound, SoundCategory::Blocks, &position.to_centered_f64());
+    }
+
+    // ChiseledBookShelfBlock.addBook and removeBook use distinct sound families.
+    fn insert_sound(item: &Item) -> Sound {
+        if item == &Item::ENCHANTED_BOOK {
+            Sound::BlockChiseledBookshelfInsertEnchanted
+        } else {
+            Sound::BlockChiseledBookshelfInsert
+        }
+    }
+
+    fn pickup_sound(item: &Item) -> Sound {
+        if item == &Item::ENCHANTED_BOOK {
+            Sound::BlockChiseledBookshelfPickupEnchanted
+        } else {
+            Sound::BlockChiseledBookshelfPickup
+        }
     }
 
     fn get_slot_for_hit(hit: &BlockHitResult<'_>, facing: HorizontalFacing) -> Option<i8> {
@@ -218,5 +227,30 @@ impl ChiseledBookshelfBlock {
             5 => properties.slot_5_occupied,
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_and_remove_books_select_four_distinct_sounds() {
+        assert_eq!(
+            ChiseledBookshelfBlock::insert_sound(&Item::BOOK),
+            Sound::BlockChiseledBookshelfInsert
+        );
+        assert_eq!(
+            ChiseledBookshelfBlock::insert_sound(&Item::ENCHANTED_BOOK),
+            Sound::BlockChiseledBookshelfInsertEnchanted
+        );
+        assert_eq!(
+            ChiseledBookshelfBlock::pickup_sound(&Item::BOOK),
+            Sound::BlockChiseledBookshelfPickup
+        );
+        assert_eq!(
+            ChiseledBookshelfBlock::pickup_sound(&Item::ENCHANTED_BOOK),
+            Sound::BlockChiseledBookshelfPickupEnchanted
+        );
     }
 }
