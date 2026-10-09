@@ -33,6 +33,7 @@ mod movement;
 mod random_teleport;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub(crate) mod waypoint_icon;
 
 #[cfg(test)]
 use pumpkin_data::item::Item;
@@ -103,6 +104,7 @@ use std::sync::RwLock;
 pub struct LivingEntity {
     /// The underlying entity object, providing basic entity information and functionality.
     pub entity: Entity,
+    pub(crate) waypoint_icon: waypoint_icon::WaypointIcon,
     /// Tracks the remaining time until the entity can regenerate health.
     pub hurt_cooldown: AtomicI32,
     /// LivingEntity.noActionTime, incremented by Mob.serverAiStep and never saved.
@@ -298,6 +300,7 @@ impl LivingEntity {
         };
         let mut max_health: f32 = 20.0; // Overridden by attribute base below
         Self {
+            waypoint_icon: waypoint_icon::WaypointIcon::default(),
             // Populate local attribute instances from the default registry and get initial vars
             attributes: {
                 let mut m = FxHashMap::default();
@@ -1899,6 +1902,7 @@ impl LivingEntity {
 
 impl LivingEntity {
     pub fn write_living_nbt(&self, nbt: &mut NbtCompound) {
+        self.waypoint_icon.write_nbt(nbt);
         self.impulse.write_nbt(nbt);
         self.write_hurt_by_nbt(nbt);
         nbt.put("Health", NbtTag::Float(self.health.load()));
@@ -1961,6 +1965,7 @@ impl LivingEntity {
     }
 
     pub fn read_living_nbt_non_mut(&self, nbt: &NbtCompound) {
+        self.waypoint_icon.read_nbt(nbt);
         let _owner = self.damage_owner.enter();
         self.damage_owner.reset();
         self.impulse.read_nbt(nbt);

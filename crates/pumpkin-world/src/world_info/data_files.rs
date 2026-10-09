@@ -17,7 +17,7 @@ pub struct DataFileRoot<T> {
     pub data: T,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Debug)]
 pub struct WeatherData {
     #[serde(rename = "rain_time", default)]
     pub rain_time: i32,
@@ -33,16 +33,27 @@ pub struct WeatherData {
     pub data_version: i32,
 }
 
-impl Default for WeatherData {
-    fn default() -> Self {
+impl WeatherData {
+    /// Copies the persisted weather fields and data version from level metadata.
+    #[must_use]
+    pub const fn from_level_data(info: &crate::world_info::LevelData) -> Self {
         Self {
-            rain_time: 0,
-            raining: false,
-            thundering: false,
-            thunder_time: 0,
-            clear_weather_time: -1,
-            data_version: 0,
+            clear_weather_time: info.clear_weather_time,
+            rain_time: info.rain_time,
+            raining: info.raining,
+            thunder_time: info.thunder_time,
+            thundering: info.thundering,
+            data_version: info.data_version,
         }
+    }
+
+    /// Copies all five weather fields into level metadata, preserving its data version.
+    pub const fn apply_to_level_data(&self, info: &mut crate::world_info::LevelData) {
+        info.clear_weather_time = self.clear_weather_time;
+        info.rain_time = self.rain_time;
+        info.raining = self.raining;
+        info.thunder_time = self.thunder_time;
+        info.thundering = self.thundering;
     }
 }
 

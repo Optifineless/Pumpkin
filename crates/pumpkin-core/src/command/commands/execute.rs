@@ -23,7 +23,7 @@ use crate::command::argument_types::coordinates::swizzle::SwizzleArgumentType;
 use crate::command::argument_types::coordinates::vec3::Vec3ArgumentType;
 use crate::command::argument_types::core::string::StringArgumentType;
 use crate::command::argument_types::entity::EntityArgumentType;
-use crate::command::argument_types::entity_anchor::{EntityAnchorArgumentType, EntityAnchorExt};
+use crate::command::argument_types::entity_anchor::EntityAnchorArgumentType;
 use crate::command::argument_types::identifier::IdentifierArgumentType;
 use crate::command::argument_types::nbt_path::{NbtPath, NbtPathArgumentType};
 use crate::command::argument_types::objective::ObjectiveArgumentType;
@@ -97,7 +97,8 @@ fn execute_at_modifier(context: &CommandContext) -> crate::command::node::Redire
         let entity = target.get_entity();
         let mut source = context.source.as_ref().clone();
         source.position = entity.pos.load();
-        source.rotation = Vector2::new(entity.yaw.load(), entity.pitch.load());
+        // ExecuteCommand copies Entity.getRotationVector, which returns pitch then yaw.
+        source.rotation = Vector2::new(entity.pitch.load(), entity.yaw.load());
         source.world = Some(entity.world.load().clone());
         sources.push(Arc::new(source));
     }
@@ -121,8 +122,11 @@ fn execute_in_modifier(context: &CommandContext) -> crate::command::node::Redire
     target_world.map_or_else(
         || Err(ERROR_INVALID_DIMENSION.create_without_context(TextComponent::text(dimension_name))),
         |target_world| {
-            let mut source = context.source.as_ref().clone();
-            source.world = Some(target_world.clone());
+            let source = context
+                .source
+                .as_ref()
+                .clone()
+                .with_world(target_world.clone());
             Ok(vec![Arc::new(source)])
         },
     )
@@ -134,6 +138,8 @@ fn execute_positioned_modifier(
     let pos = Vec3ArgumentType::get_vector3(context, "pos")?;
     let mut source = context.source.as_ref().clone();
     source.position = pos;
+    // ExecuteCommand.register: numeric positioned resets the anchor to feet.
+    source.entity_anchor = crate::command::argument_types::entity_anchor::EntityAnchor::Feet;
     Ok(vec![Arc::new(source)])
 }
 
@@ -183,7 +189,8 @@ fn execute_rotated_as_modifier(
     for target in targets {
         let entity = target.get_entity();
         let mut source = context.source.as_ref().clone();
-        source.rotation = Vector2::new(entity.yaw.load(), entity.pitch.load());
+        // ExecuteCommand copies Entity.getRotationVector, which returns pitch then yaw.
+        source.rotation = Vector2::new(entity.pitch.load(), entity.yaw.load());
         sources.push(Arc::new(source));
     }
     Ok(sources)
@@ -235,17 +242,8 @@ fn execute_facing_modifier(
     context: &CommandContext,
 ) -> crate::command::node::RedirectModifierResult {
     let pos = Vec3ArgumentType::get_vector3(context, "pos")?;
-    let mut source = context.source.as_ref().clone();
-
-    let dx = pos.x - source.position.x;
-    let dy = pos.y - source.position.y;
-    let dz = pos.z - source.position.z;
-
-    let xz_dist = dx.hypot(dz);
-    let yaw = (dz.atan2(dx).to_degrees() as f32) - 90.0;
-    let pitch = -(dy.atan2(xz_dist).to_degrees() as f32);
-
-    source.rotation = Vector2::new(yaw, pitch);
+    // ExecuteCommand facing delegates to CommandSourceStack.facing (pitch, yaw).
+    let source = context.source.as_ref().clone().with_looking_at_pos(pos);
     Ok(vec![Arc::new(source)])
 }
 
@@ -254,24 +252,18 @@ fn execute_facing_entity_modifier(
 ) -> crate::command::node::RedirectModifierResult {
     let targets = EntityArgumentType::get_optional_entities(context, "targets")?;
     let anchor = EntityAnchorArgumentType::get(context, "anchor")?;
-    let mut sources = Vec::new();
-
-    for target in targets {
-        let target_pos = anchor.position_at_entity(target.get_entity());
-        let mut source = context.source.as_ref().clone();
-
-        let dx = target_pos.x - source.position.x;
-        let dy = target_pos.y - source.position.y;
-        let dz = target_pos.z - source.position.z;
-
-        let xz_dist = dx.hypot(dz);
-        let yaw = (dz.atan2(dx).to_degrees() as f32) - 90.0;
-        let pitch = -(dy.atan2(xz_dist).to_degrees() as f32);
-
-        source.rotation = Vector2::new(yaw, pitch);
-        sources.push(Arc::new(source));
-    }
-    Ok(sources)
+    Ok(targets
+        .iter()
+        .map(|target| {
+            Arc::new(
+                context
+                    .source
+                    .as_ref()
+                    .clone()
+                    .with_looking_at_entity(target, anchor),
+            )
+        })
+        .collect())
 }
 
 fn execute_if_block_modifier(

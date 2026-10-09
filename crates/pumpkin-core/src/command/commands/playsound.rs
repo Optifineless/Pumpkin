@@ -171,10 +171,10 @@ impl CommandExecutor for PlaySoundExecutor {
     #[allow(clippy::too_many_lines)]
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let sound = IdentifierArgumentType::get(context, "sound")?;
+        // PlaySoundCommand.register uses getPlayer() for its optional implicit recipient.
         let caller_players = context
             .source
-            .output
-            .as_player()
+            .player_arc_or_none()
             .map_or_else(Vec::new, |p| vec![p]);
 
         match self.step {

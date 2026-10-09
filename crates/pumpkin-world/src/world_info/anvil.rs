@@ -286,6 +286,10 @@ fn level_data_from_nbt(data: &NbtCompound, seed: i64) -> LevelData {
         level_data.clear_weather_time = clear_weather_time;
     }
 
+    level_data.rain_time = data.get_int("rainTime").unwrap_or(0);
+    level_data.raining = data.get_bool("raining").unwrap_or(false);
+    level_data.thunder_time = data.get_int("thunderTime").unwrap_or(0);
+    level_data.thundering = data.get_bool("thundering").unwrap_or(false);
     level_data
 }
 
@@ -413,7 +417,7 @@ impl WorldInfoReader for AnvilLevelInfo {
             .exists()
         {
             let weather = read_weather(level_folder);
-            level_data.clear_weather_time = weather.clear_weather_time;
+            weather.apply_to_level_data(&mut level_data);
         }
 
         Ok(level_data)
@@ -487,9 +491,8 @@ impl WorldInfoWriter for AnvilLevelInfo {
         }
 
         // weather.dat
-        let mut weather = read_weather(level_folder);
-        weather.clear_weather_time = info.clear_weather_time;
-        weather.data_version = data_version;
+        // WeatherData.CODEC persists all five live fields, not the previous file contents.
+        let weather = super::data_files::WeatherData::from_level_data(&level_data);
         if let Err(e) = write_weather(level_folder, &weather) {
             error!("Failed to write weather.dat: {e}");
         }
@@ -896,6 +899,10 @@ mod test {
             border_warning_blocks: 5.0,
             border_warning_time: 15.0,
             clear_weather_time: 0,
+            rain_time: 0,
+            raining: false,
+            thunder_time: 0,
+            thundering: false,
             data_packs: DataPacks {
                 disabled: vec![
                     "minecart_improvements".to_string(),
@@ -1055,6 +1062,50 @@ mod test {
         } else {
             panic!("Expected Compound generator settings");
         }
+    }
+
+    #[test]
+    fn weather_data_round_trip_replaces_stale_flags_and_all_five_live_fields() {
+        let directory = TempDir::new().unwrap();
+        let mut info = LEVEL_DAT.data.clone();
+        info.clear_weather_time = 40;
+        info.rain_time = 123;
+        info.thunder_time = 456;
+        info.raining = true;
+        info.thundering = false;
+        AnvilLevelInfo
+            .write_world_info(&info, directory.path())
+            .unwrap();
+        let loaded = AnvilLevelInfo.read_world_info(directory.path()).unwrap();
+        assert_eq!(
+            (
+                loaded.clear_weather_time,
+                loaded.rain_time,
+                loaded.thunder_time,
+                loaded.raining,
+                loaded.thundering
+            ),
+            (40, 123, 456, true, false)
+        );
+        info.clear_weather_time = 81;
+        info.rain_time = 789;
+        info.thunder_time = 321;
+        info.raining = false;
+        info.thundering = true;
+        AnvilLevelInfo
+            .write_world_info(&info, directory.path())
+            .unwrap();
+        let loaded = AnvilLevelInfo.read_world_info(directory.path()).unwrap();
+        assert_eq!(
+            (
+                loaded.clear_weather_time,
+                loaded.rain_time,
+                loaded.thunder_time,
+                loaded.raining,
+                loaded.thundering
+            ),
+            (81, 789, 321, false, true)
+        );
     }
 
     #[test]

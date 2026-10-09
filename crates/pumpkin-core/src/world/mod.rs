@@ -196,6 +196,7 @@ pub(crate) mod spawn_test_support;
 mod spawn_tests;
 pub mod spawn_view;
 pub mod weather;
+mod weather_environment;
 
 pub use environment::EnvironmentAttributes;
 pub use pumpkin_data::environment_attribute::{Activity, MoonPhase};
@@ -450,6 +451,7 @@ impl World {
         block_registry: Arc<BlockRegistry>,
         server: Weak<Server>,
     ) -> Self {
+        let weather = Weather::from_world_data(&level_info.load(), &dimension, &server);
         // TODO
         let generation_settings = NoiseSettings::from_dimension(&dimension);
 
@@ -496,7 +498,7 @@ impl World {
             )),
             level_time: std::sync::Mutex::new(LevelTime::new()),
             dimension,
-            weather: std::sync::Mutex::new(Weather::new()),
+            weather: std::sync::Mutex::new(weather),
             block_registry,
             neighbor_updates: std::sync::Mutex::default(),
             sea_level: generation_settings.sea_level,
@@ -2114,7 +2116,8 @@ impl World {
     }
 
     pub fn tick_environment(self: &Arc<Self>) {
-        let (is_night, time_of_day) = {
+        self.tick_weather_and_sleep();
+        {
             let mut level_time = self
                 .level_time
                 .lock()
@@ -2159,44 +2162,6 @@ impl World {
                     self.level.should_save.store(true, Relaxed);
                     self.level.level_channel.notify();
                 }
-            }
-            (level_time.is_night(), level_time.time_of_day)
-        };
-
-        let (should_reset_weather, weather_cycle_enabled) = {
-            let mut weather = self
-                .weather
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            weather.tick_weather(self);
-            (
-                weather.raining || weather.thundering,
-                weather.weather_cycle_enabled,
-            )
-        };
-
-        if self.should_skip_night() && is_night {
-            let level_time = {
-                let mut guard = self
-                    .level_time
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let time = time_of_day + 24000;
-                guard.set_time(time - time % 24000);
-                guard.clone()
-            };
-            level_time.send_time(self);
-
-            for player in self.players.load().iter() {
-                player.wake_up();
-            }
-
-            if weather_cycle_enabled && should_reset_weather {
-                let mut weather = self
-                    .weather
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                weather.reset_weather_cycle(self);
             }
         }
     }
@@ -2744,7 +2709,7 @@ impl World {
         self.weather
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .raining
+            .is_raining(self)
     }
 
     pub fn is_raining_at(&self, pos: &BlockPos) -> bool {
@@ -2777,8 +2742,8 @@ impl World {
             .weather
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if weather.raining != raining {
-            let thunder = weather.thundering;
+        if weather.data().raining != raining {
+            let thunder = weather.data().thundering;
             weather.set_weather_parameters(self, 0, 0, raining, thunder);
         }
     }
@@ -2787,7 +2752,7 @@ impl World {
         self.weather
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .thundering
+            .is_thundering(self)
     }
 
     pub fn set_thundering(&self, thundering: bool) {
@@ -2806,8 +2771,8 @@ impl World {
             .weather
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if weather.thundering != thundering {
-            let raining = weather.raining;
+        if weather.data().thundering != thundering {
+            let raining = weather.data().raining;
             weather.set_weather_parameters(self, 0, 0, raining, thundering);
         }
     }
@@ -3842,7 +3807,7 @@ impl World {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             (
-                weather.raining,
+                weather.is_raining(self),
                 weather.rain_level.clamp(0.0, 1.0),
                 weather.thunder_level.clamp(0.0, 1.0),
             )

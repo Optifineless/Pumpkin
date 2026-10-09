@@ -17,11 +17,6 @@ use crate::entity::EntityBase;
 const DESCRIPTION: &str = "Allows a player in spectator mode to spectate a given target entity.";
 const PERMISSION: &str = "minecraft:command.spectate";
 
-const ERROR_NOT_PLAYER: CommandErrorType<0> = CommandErrorType::new(
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-    translation::java::PERMISSIONS_REQUIRES_PLAYER,
-);
-
 const ERROR_NOT_SPECTATOR: CommandErrorType<1> = CommandErrorType::new(
     translation::java::COMMANDS_SPECTATE_NOT_SPECTATOR,
     translation::java::COMMANDS_SPECTATE_NOT_SPECTATOR,
@@ -41,11 +36,8 @@ struct StopSpectateExecutor;
 
 impl CommandExecutor for StopSpectateExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let player = context
-            .source
-            .output
-            .as_player()
-            .ok_or_else(|| ERROR_NOT_PLAYER.create_without_context())?;
+        // SpectateCommand.register resolves implicit targets through getPlayerOrException().
+        let player = context.source.player_arc_or_err()?;
 
         if player.gamemode.load() != GameMode::Spectator {
             let display_name = player.get_display_name();
@@ -79,11 +71,7 @@ impl CommandExecutor for SpectateTargetExecutor {
         let target_world = target_entity.world.load_full();
 
         let player = if self.is_self {
-            context
-                .source
-                .output
-                .as_player()
-                .ok_or_else(|| ERROR_NOT_PLAYER.create_without_context())?
+            context.source.player_arc_or_err()?
         } else {
             EntityArgumentType::get_player(context, "player")?
         };

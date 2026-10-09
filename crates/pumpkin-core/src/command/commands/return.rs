@@ -7,7 +7,7 @@ use crate::command::context::command_context::CommandContext;
 use crate::command::context::command_source::{ResultValueTaker, ReturnValue, ReturnValueCallable};
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult, RedirectModifier, Redirection};
-use crate::data::datapack::{current_function_frame, discard_function_tail, return_from_function};
+use crate::data::datapack::{current_execution_frame, discard_function_tail, return_from_function};
 use std::sync::Arc;
 
 const DESCRIPTION: &str = "Controls execution flow in functions and sets return values.";
@@ -27,7 +27,7 @@ impl CommandExecutor for ReturnValueExecutor {
             .source
             .command_result_taker
             .call(ReturnValue::Success(value));
-        if let Some(id) = current_function_frame() {
+        if let Some(id) = current_execution_frame() {
             return_from_function(id, ReturnValue::Success(value));
         }
         Ok(value)
@@ -46,7 +46,7 @@ impl CommandExecutor for ReturnFailExecutor {
             .source
             .command_result_taker
             .call(ReturnValue::Failure);
-        if let Some(id) = current_function_frame() {
+        if let Some(id) = current_execution_frame() {
             return_from_function(id, ReturnValue::Failure);
         }
         Ok(0)
@@ -80,9 +80,9 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
             .then(literal("run").redirect_with_modifier(
                 Redirection::Root,
                 RedirectModifier::CustomUncharged(Arc::new(|context| {
-                    // ReturnCommand.ReturnFromCommandCustomModifier discards before continuation.
+                    // ReturnFromCommandCustomModifier marks return mode on function AND top-level frames.
                     let mut source = (*context.source).clone();
-                    if let Some(id) = current_function_frame() {
+                    if let Some(id) = current_execution_frame() {
                         discard_function_tail(id);
                         source =
                             source.merge_command_result_taker(&ResultValueTaker(vec![Arc::new(

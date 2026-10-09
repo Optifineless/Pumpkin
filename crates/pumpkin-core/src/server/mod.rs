@@ -104,6 +104,8 @@ pub struct Server {
     pub item_registry: Arc<ItemRegistry>,
     /// Manages multiple worlds within the server.
     pub worlds: ArcSwap<Vec<Arc<World>>>,
+    /// MinecraftServer.getWeatherData: authoritative weather shared by every dimension.
+    pub weather_data: Arc<std::sync::Mutex<pumpkin_world::world_info::data_files::WeatherData>>,
     /// All the dimensions that exist on the server.
     pub dimensions: Vec<Dimension>,
     /// Assigns unique IDs to containers.
@@ -325,6 +327,11 @@ impl Server {
             datapack_manager: Arc::new(crate::data::datapack::DatapackManager::new()),
             enchantment_manager: Arc::new(enchantment::EnchantmentManager::new()),
             worlds: ArcSwap::from_pointee(vec![]),
+            weather_data: Arc::new(std::sync::Mutex::new(
+                pumpkin_world::world_info::data_files::WeatherData::from_level_data(
+                    &level_info.load(),
+                ),
+            )),
             dimensions,
             command_dispatcher,
             block_registry: block_registry.clone(),
@@ -563,7 +570,11 @@ impl Server {
     }
 
     pub fn save_world_info(&self) -> Result<(), WorldInfoError> {
-        let level_data = self.level_info.load();
+        let mut level_data = (**self.level_info.load()).clone();
+        self.weather_data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .apply_to_level_data(&mut level_data);
         self.world_info_writer
             .write_world_info(&level_data, &self.basic_config.get_world_path())
     }
@@ -856,13 +867,8 @@ impl Server {
         if let Err(error) = self.save_maps().await {
             error!("Failed to save maps: {error}");
         }
-        let level_data = self.level_info.load();
-        // then lets save the world info
-
-        if let Err(err) = self
-            .world_info_writer
-            .write_world_info(&level_data, &self.basic_config.get_world_path())
-        {
+        // MinecraftServer.stopServer saves live data through saveAllChunks, as autosaving does.
+        if let Err(err) = self.save_world_info() {
             error!("Failed to save level.dat: {err}");
         }
         info!("Completed worlds");

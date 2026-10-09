@@ -94,6 +94,7 @@ struct TransferExecutor {
 
 impl CommandExecutor for TransferExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        // TransferCommand.register resolves implicit targets through getPlayerOrException().
         let hostname = StringArgumentType::get(context, "hostname")?;
 
         let port = match self.step {
@@ -105,11 +106,7 @@ impl CommandExecutor for TransferExecutor {
 
         let players = match self.step {
             TransferStep::HostOnly | TransferStep::HostAndPort => {
-                let player = context
-                    .source
-                    .output
-                    .as_player()
-                    .ok_or_else(|| ERROR_NOT_PLAYER.create_without_context())?;
+                let player = context.source.player_arc_or_err()?;
                 vec![player]
             }
             TransferStep::Full => EntityArgumentType::get_players(context, "players")?,

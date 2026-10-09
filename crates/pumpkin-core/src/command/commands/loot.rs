@@ -144,21 +144,17 @@ fn get_hand_item(
     context: &CommandContext,
     is_mainhand: bool,
 ) -> Result<Option<ItemStack>, CommandSyntaxError> {
-    context.source.as_player().map_or_else(
-        || {
-            let display_name = TextComponent::text("Server");
-            Err(ERROR_NO_HELD_ITEMS.create_without_context(display_name))
-        },
-        |player| {
-            let stack = if is_mainhand {
-                let slot = player.inventory().get_selected_slot() as usize;
-                player.inventory().get_stack(slot)
-            } else {
-                player.inventory().get_stack(40)
-            };
-            Ok(Some(stack))
-        },
-    )
+    // LootCommand.getSourceHandItem reads the executing living entity, including non-players.
+    let entity = context.source.entity_or_err()?;
+    let living = entity
+        .get_living_entity()
+        .ok_or_else(|| ERROR_NO_HELD_ITEMS.create_without_context(entity.get_display_name()))?;
+    let stack = if is_mainhand {
+        living.held_item(entity.as_ref())
+    } else {
+        living.off_hand_item(entity.as_ref())
+    };
+    Ok(Some(stack))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -403,7 +399,8 @@ impl CommandExecutor for LootExecutor {
                 let params = LootContextParameters {
                     world: Some(context.world().clone()),
                     registry: Some(context.server().datapack_manager.clone()),
-                    position: context.source.as_player().map(|p| p.position()),
+                    // LootContextSources.ContextDecorator.createParams uses the execution position.
+                    position: Some(context.source.position),
                     ..Default::default()
                 };
                 let seed = 0;
@@ -769,6 +766,76 @@ mod ext_review_tests {
     use super::*;
     use pumpkin_data::item::Item;
     use pumpkin_inventory::SimpleInventory;
+
+    #[tokio::test]
+    async fn loot_hand_item_uses_executing_entity_for_player_and_console_outputs()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::command::CommandSender;
+        use crate::net::java::combat_test_support::TestPlayer;
+        use pumpkin_inventory::player::player_inventory::PlayerInventory;
+        let directory = tempfile::tempdir()?;
+        let server = crate::server::combat_test_support::server(directory.path());
+        let world = crate::server::combat_test_support::world(&server, directory.path());
+        let alice = TestPlayer::new(&world);
+        let bob = TestPlayer::new(&world);
+        alice
+            .player
+            .inventory
+            .set_held_item(ItemStack::new(1, &Item::DIAMOND));
+        bob.player
+            .inventory
+            .set_held_item(ItemStack::new(1, &Item::GOLD_INGOT));
+        bob.player.inventory.set_stack(
+            PlayerInventory::OFF_HAND_SLOT,
+            ItemStack::new(1, &Item::IRON_INGOT),
+        );
+        let dispatcher = server.command_dispatcher.load();
+        for output in [CommandSender::Player(alice.player), CommandSender::Console] {
+            let source = bob.player.get_command_source(&server).with_output(output);
+            let context = dispatcher
+                .parse_input("loot", &source)
+                .context
+                .build("loot");
+            assert_eq!(
+                get_hand_item(&context, true).unwrap().unwrap().item,
+                &Item::GOLD_INGOT
+            );
+            assert_eq!(
+                get_hand_item(&context, false).unwrap().unwrap().item,
+                &Item::IRON_INGOT
+            );
+        }
+        let zombie = crate::entity::r#type::from_type(
+            &pumpkin_data::entity::EntityType::ZOMBIE,
+            Vector3::default(),
+            &world,
+            uuid::Uuid::new_v4(),
+        );
+        zombie
+            .get_living_entity()
+            .unwrap()
+            .entity_equipment
+            .lock()
+            .unwrap()
+            .put(
+                &EquipmentSlot::MAIN_HAND,
+                ItemStack::new(1, &Item::DIAMOND_SWORD),
+            );
+        let source = bob
+            .player
+            .get_command_source(&server)
+            .with_output(CommandSender::Console)
+            .with_entity(zombie);
+        let context = dispatcher
+            .parse_input("loot", &source)
+            .context
+            .build("loot");
+        assert_eq!(
+            get_hand_item(&context, true).unwrap().unwrap().item,
+            &Item::DIAMOND_SWORD
+        );
+        Ok(())
+    }
 
     #[ignore = "external-review reproduction R15; passes once loot task lands"]
     #[test]

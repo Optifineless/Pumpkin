@@ -36,6 +36,12 @@ async fn rain_hydrates_exposed_farmland_but_not_roofed_or_snowy() {
     let world = fixture.world();
     add_chunk(&world);
     world.set_raining(true);
+    // Level.isRaining / ServerLevel.advanceWeatherCycle wait for visible rain (> 0.2).
+    assert!(!world.is_raining());
+    for _ in 0..21 {
+        world.tick_environment();
+    }
+    assert!(world.is_raining());
     let cases = [
         (BlockPos::new(2, 64, 2), &Biome::PLAINS, false, 7),
         (BlockPos::new(10, 64, 2), &Biome::PLAINS, true, 0),

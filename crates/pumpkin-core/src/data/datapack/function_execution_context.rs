@@ -14,6 +14,7 @@ impl FunctionQueue {
             max_queue_depth,
             queue_overflow: false,
             fork_limit,
+            top_returned: false,
         }
     }
 
@@ -51,7 +52,7 @@ impl FunctionQueue {
 
     // ExecutionContext.runCommandQueue and CallFunction: function calls and commands cost quota.
     pub(super) fn next(&mut self) -> Option<Work> {
-        if self.queue_overflow || self.remaining == 0 {
+        if self.queue_overflow || self.top_returned || self.remaining == 0 {
             return None;
         }
         self.entries.extend(self.pending.drain(..).rev());

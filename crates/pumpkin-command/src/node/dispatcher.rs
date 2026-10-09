@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 pub const ARG_SEPARATOR: &str = " ";
 pub const ARG_SEPARATOR_CHAR: char = ' ';
+const CONTEXT_AMOUNT: usize = 10;
 
 pub const USAGE_OPTIONAL_OPEN: &str = "[";
 pub const USAGE_OPTIONAL_CLOSE: &str = "]";
@@ -247,6 +248,37 @@ impl<S: CommandSource> CommandDispatcher<S> {
         )
     }
 
+    fn is_node_available(&self, node: NodeId) -> bool {
+        let NodeIdClassification::Command(id) = self.tree.classify_id(node) else {
+            return true;
+        };
+        let name = &self.tree[id].meta.literal_lowercase;
+        !self.is_disabled(name) && !self.is_disabled(&self.primary_command_name(name))
+    }
+
+    fn validate_command_availability(
+        &self,
+        context: &CommandContextBuilder<'_, S>,
+        reader: &StringReader<'_>,
+    ) -> Result<(), CommandSyntaxError> {
+        let mut current = Some(context);
+        // Commands.finishParsing validates the whole chain before any modifier runs.
+        while let Some(context) = current {
+            if !self.is_node_available(context.root) {
+                return Err(Self::unknown_command_error(reader));
+            }
+            for parsed in &context.nodes {
+                if !self.is_node_available(parsed.node) {
+                    let mut reader = reader.clone();
+                    reader.set_cursor(parsed.range.start);
+                    return Err(Self::unknown_command_error(&reader));
+                }
+            }
+            current = context.child.as_deref();
+        }
+        Ok(())
+    }
+
     /// Registers a command which can then be dispatched.
     /// Returns the local ID of the node attached to the tree.
     ///
@@ -390,6 +422,7 @@ impl<S: CommandSource> CommandDispatcher<S> {
     }
 
     fn execute_in_context(&self, parsed: ParsingResult<'_, S>) -> Result<i32, CommandSyntaxError> {
+        self.validate_command_availability(&parsed.context, &parsed.reader)?;
         if parsed.reader.peek().is_some() {
             return if let Some(err) = parsed.errors.values().next() {
                 Err(err.clone())
@@ -449,7 +482,7 @@ impl<S: CommandSource> CommandDispatcher<S> {
         let cursor = original_reader.cursor();
 
         for child in self.tree.get_relevant_nodes(original_reader, node) {
-            if !self.tree.can_use(child, &source) {
+            if !self.is_node_available(child) || !self.tree.can_use(child, &source) {
                 continue;
             }
             let mut context = context_so_far.clone();
@@ -483,6 +516,12 @@ impl<S: CommandSource> CommandDispatcher<S> {
                         reader.set_cursor(cursor);
                         continue;
                     };
+                    if !self.is_node_available(redirect) {
+                        // Reject this fork-only disabled redirect at the child's parse start.
+                        reader.set_cursor(cursor);
+                        errors.insert(child, Self::unknown_command_error(&reader));
+                        continue;
+                    }
                     let child_context =
                         CommandContextBuilder::new(self, source, redirect, reader.cursor());
                     let parsed = self.parse_nodes(redirect, &mut reader, &child_context);
@@ -588,7 +627,19 @@ impl<S: CommandSource> CommandDispatcher<S> {
         source.send_message(error.message.color(Color::Named(NamedColor::Red)));
 
         if let Some(context) = error.context {
-            let i = context.input.len().min(context.cursor);
+            let i = context
+                .input
+                .floor_char_boundary(context.input.len().min(context.cursor));
+            // Commands.finishParsing budgets ten UTF-16 units, on safe UTF-8 boundaries.
+            let mut start = i;
+            let mut units = 0;
+            for (index, character) in context.input[..i].char_indices().rev() {
+                units += character.len_utf16();
+                if units > CONTEXT_AMOUNT {
+                    break;
+                }
+                start = index;
+            }
 
             let mut error_text = TextComponent::empty()
                 .color(Color::Named(NamedColor::Gray))
@@ -596,11 +647,9 @@ impl<S: CommandSource> CommandDispatcher<S> {
                     command: format!("/{command}").into(),
                 });
 
-            if i > 10 {
+            if start > 0 {
                 error_text = error_text.add_text("...");
             }
-
-            let start = context.input.floor_char_boundary(i.saturating_sub(10));
 
             let command_snippet = &context.input[start..i];
             error_text = error_text.add_text(command_snippet.to_owned());
@@ -648,6 +697,8 @@ impl<S: CommandSource> CommandDispatcher<S> {
         parsing_result: ParsingResult<'_, S>,
         cursor: usize,
     ) -> Suggestions {
+        let full_input = parsing_result.reader.string();
+        let cursor = full_input.floor_char_boundary(cursor.min(full_input.len()));
         let context = parsing_result.context;
         let (parent, start) = {
             let node_before_cursor = context.find_suggestion_context(cursor);
@@ -657,16 +708,16 @@ impl<S: CommandSource> CommandDispatcher<S> {
             )
         };
 
-        let full_input = parsing_result.reader.string();
-
-        let truncated_input =
-            &full_input[..full_input.floor_char_boundary(cursor.min(full_input.len()))];
+        let truncated_input = &full_input[..cursor];
 
         let children = self.tree.get_children(parent);
         let context = context.build(truncated_input);
         let mut suggestions = Vec::with_capacity(children.len());
 
         for child in children {
+            if !self.is_node_available(child) || !self.is_node_available(parent) {
+                continue;
+            }
             let builder = SuggestionsBuilder::new(truncated_input, start);
 
             match self.tree.classify_id(child) {
@@ -987,6 +1038,10 @@ impl<S: CommandSource> CommandDispatcher<S> {
 }
 
 #[cfg(test)]
+#[path = "dispatcher_regression_tests.rs"]
+mod regression_tests;
+
+#[cfg(test)]
 mod test {
     use pumpkin_util::text::TextComponent;
 
@@ -1102,9 +1157,6 @@ mod test {
 
     #[test]
     fn disabled_command_cannot_be_executed_directly() {
-        // Guards the `/execute run <command>` bypass: a disabled command must be
-        // rejected even when reached through `execute_input` rather than
-        // `handle_command`.
         let mut dispatcher = CommandDispatcher::new();
         let executor: fn(&CommandContext) -> CommandExecutorResult = |_| Ok(1);
         dispatcher

@@ -1,7 +1,6 @@
-use pumpkin_data::world::{MSG_COMMAND_INCOMING, MSG_COMMAND_OUTGOING};
+use pumpkin_data::{chat_type::ChatType, world::MSG_COMMAND_INCOMING};
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};
 use crate::command::argument_types::core::string::StringArgumentType;
@@ -23,55 +22,27 @@ impl CommandExecutor for MsgExecutor {
         let msg = StringArgumentType::get(context, "message")?;
 
         let sender_name = &context.source.display_name;
-        let msg_text = TextComponent::text(msg.to_string());
-
-        // MsgCommand.sendMessage binds separate incoming/outgoing chat types to the signed argument.
-        if let Some(message) = context.source.signing_context.get("message") {
-            for target in &targets {
-                if let Some(sender) = context.source.as_player() {
-                    crate::net::java::JavaClient::send_command_chat(
-                        &sender,
-                        message,
-                        (MSG_COMMAND_OUTGOING + 1).into(),
-                        sender_name,
-                        Some(&target.get_display_name()),
-                    );
-                }
-                crate::net::java::JavaClient::send_command_chat(
-                    target,
-                    message,
-                    (MSG_COMMAND_INCOMING + 1).into(),
-                    sender_name,
-                    None,
-                );
-            }
-            return Ok(targets.len() as i32);
-        }
-
-        if let Some(player) = context.source.player_or_none() {
-            for target in &targets {
-                player.send_message(
-                    &msg_text,
-                    MSG_COMMAND_OUTGOING,
-                    &player.get_display_name(),
-                    Some(&target.get_display_name()),
-                );
-                target.send_message(
-                    &msg_text,
-                    MSG_COMMAND_INCOMING,
-                    &player.get_display_name(),
-                    Some(&target.get_display_name()),
-                );
-            }
-        } else {
-            for target in &targets {
-                target.send_message(
-                    &msg_text,
-                    MSG_COMMAND_INCOMING,
-                    sender_name,
-                    Some(&target.get_display_name()),
-                );
-            }
+        // MsgCommand.sendMessage uses identical source routing for signed and unsigned messages.
+        let unsigned = crate::net::chat::PlayerChatMessage::system(msg.to_owned());
+        let message = context
+            .source
+            .signing_context
+            .get("message")
+            .unwrap_or(&unsigned);
+        let tracked = crate::net::chat::OutgoingChatMessage::create(message.clone());
+        for target in &targets {
+            context.source.send_chat_message(
+                &tracked,
+                ChatType::MsgCommandOutgoing,
+                Some(&target.get_display_name()),
+            );
+            tracked.send_to_player(
+                target,
+                false,
+                (MSG_COMMAND_INCOMING + 1).into(),
+                sender_name,
+                None,
+            );
         }
 
         Ok(targets.len() as i32)
