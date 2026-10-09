@@ -51,7 +51,7 @@ impl BlockBehaviour for DirtPathBlock {
     }
 }
 
-/// Vanilla `DirtPathBlock.canSurvive`: determines if dirt path can remain without reverting to dirt.
+// PathBlock.canSurvive permits fence gates above paths.
 fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
     let (block, state) = world.get_block_and_state(&block_pos.up());
     !state.is_solid() || block.has_tag(&tag::Block::MINECRAFT_FENCE_GATES)

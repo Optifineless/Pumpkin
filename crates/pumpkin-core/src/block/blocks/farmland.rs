@@ -21,14 +21,20 @@ type FarmlandProperties = FarmlandLikeProperties;
 #[pumpkin_block("minecraft:farmland")]
 pub struct FarmlandBlock;
 
+// FarmlandBlock.MAX_MOISTURE.
+const MAX_MOISTURE: u8 = 7;
+
 impl BlockBehaviour for FarmlandBlock {
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        // TODO: push up entities
-        args.world.set_block_state(
-            args.position,
-            Block::DIRT.default_state.id,
-            BlockFlags::NOTIFY_ALL,
-        );
+        // FarmlandBlock.tick rechecks survival after the delayed update.
+        if !can_place_at(args.world.as_ref(), args.position) {
+            // TODO: push up entities
+            args.world.set_block_state(
+                args.position,
+                Block::DIRT.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            );
+        }
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
@@ -54,67 +60,24 @@ impl BlockBehaviour for FarmlandBlock {
     }
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
-        if args.world.is_raining_at(&args.position.up())
-            || is_water_nearby(args.world, args.position)
+        // FarmlandBlock.randomTick: rain/water only change moisture below the maximum.
+        let props = FarmlandProperties::from_state_id(args.world.get_block_state_id(args.position));
+        if is_water_nearby(args.world, args.position)
+            || args.world.is_raining_at(&args.position.up())
         {
-            let mut props = FarmlandProperties::default(args.block);
-            let mut new_moisture = 7;
-            if let Some(server) = args.world.server.upgrade() {
-                let mut event =
-                    crate::plugin::api::events::block::moisture_change::MoistureChangeEvent::new(
-                        *args.position,
-                        args.world.clone(),
-                        new_moisture,
-                    );
-                server.plugin_manager.fire_blocking(&server, &mut event);
-                if event.cancelled {
-                    return;
-                }
-                new_moisture = event.new_moisture;
+            if props.moisture < MAX_MOISTURE {
+                change_moisture(&args, props, i32::from(MAX_MOISTURE));
             }
-            props.moisture = new_moisture.clamp(0, 7) as u8;
+        } else if props.moisture > 0 {
+            let moisture = i32::from(props.moisture) - 1;
+            change_moisture(&args, props, moisture);
+        } else if !should_maintain_farmland(args.world.as_ref(), args.position) {
+            // TODO: push up entities
             args.world.set_block_state(
                 args.position,
-                props.to_state_id(args.block),
+                Block::DIRT.default_state.id,
                 BlockFlags::NOTIFY_NEIGHBORS,
             );
-        } else {
-            let state_id = args.world.get_block_state_id(args.position);
-            let mut props = FarmlandProperties::from_state_id(state_id);
-            if props.moisture == 0 {
-                if !args
-                    .world
-                    .get_block(&args.position.up())
-                    .has_tag(&tag::Block::MINECRAFT_MAINTAINS_FARMLAND)
-                {
-                    //TODO push entities up
-                    args.world.set_block_state(
-                        args.position,
-                        Block::DIRT.default_state.id,
-                        BlockFlags::NOTIFY_NEIGHBORS,
-                    );
-                }
-            } else {
-                let mut new_moisture = (props.moisture as i32 - 1).clamp(0, 7);
-                if let Some(server) = args.world.server.upgrade() {
-                    let mut event = crate::plugin::api::events::block::moisture_change::MoistureChangeEvent::new(
-                        *args.position,
-                        args.world.clone(),
-                        new_moisture,
-                    );
-                    server.plugin_manager.fire_blocking(&server, &mut event);
-                    if event.cancelled {
-                        return;
-                    }
-                    new_moisture = event.new_moisture;
-                }
-                props.moisture = new_moisture.clamp(0, 7) as u8;
-                args.world.set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_NEIGHBORS,
-                );
-            }
         }
     }
 
@@ -123,12 +86,38 @@ impl BlockBehaviour for FarmlandBlock {
     }
 }
 
-/// Vanilla `FarmBlock.canSurvive`: determines if farmland can remain without reverting to dirt.
+// FarmlandBlock.canSurvive / shouldMaintainFarmland.
 fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
-    let (block, state) = world.get_block_and_state(&block_pos.up());
-    !state.is_solid()
-        || block.has_tag(&tag::Block::MINECRAFT_FENCE_GATES)
-        || block == &Block::MOVING_PISTON
+    !world.get_block_state(&block_pos.up()).is_solid() || should_maintain_farmland(world, block_pos)
+}
+
+fn should_maintain_farmland(world: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
+    world
+        .get_block(&block_pos.up())
+        .has_tag(&tag::Block::MINECRAFT_MAINTAINS_FARMLAND)
+}
+
+fn change_moisture(args: &RandomTickArgs<'_>, mut props: FarmlandProperties, mut moisture: i32) {
+    if let Some(server) = args.world.server.upgrade() {
+        let mut event =
+            crate::plugin::api::events::block::moisture_change::MoistureChangeEvent::new(
+                *args.position,
+                args.world.clone(),
+                moisture,
+            );
+        server.plugin_manager.fire_blocking(&server, &mut event);
+        if event.cancelled {
+            return;
+        }
+        moisture = event.new_moisture;
+    }
+    props.moisture = moisture.clamp(0, i32::from(MAX_MOISTURE)) as u8;
+    // FarmlandBlock.randomTick uses UPDATE_CLIENTS for moisture changes.
+    args.world.set_block_state(
+        args.position,
+        props.to_state_id(args.block),
+        BlockFlags::NOTIFY_LISTENERS,
+    );
 }
 
 fn is_water_nearby(world: &Arc<World>, block_pos: &BlockPos) -> bool {
@@ -149,3 +138,7 @@ fn is_water_nearby(world: &Arc<World>, block_pos: &BlockPos) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+#[path = "farmland_tests.rs"]
+mod tests;
