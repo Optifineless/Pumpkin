@@ -1,0 +1,38 @@
+# CodeRabbit configuration for the Murgicraft fork of Pumpkin.
+# Pull requests target the `murgicraft` branch (the fork's default branch is upstream's `master`).
+language: en-US
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - murgicraft
+  path_filters:
+    - "!assets/tests/**"
+    - "!crates/pumpkin-data/src/generated/**"
+    - "!**/*.lock"
+  path_instructions:
+    - path: "crates/**/*.rs"
+      instructions: |
+        This fork ports Minecraft Java 26.3 behaviour from the decompiled vanilla server. Review for exact
+        vanilla parity: flag every place where ordering, constants, randomness, or edge cases differ from the
+        vanilla method named in the commit message or comments, and say which vanilla method and line you
+        compared against. Flag any `.await` while a synchronous lock guard is held, any lock held across block
+        updates or plugin callbacks, lock-order inversions, and unbounded allocation from untrusted packet data.
+        New files should stay under 600 lines; the large upstream files (`entity/mod.rs`, `living.rs`,
+        `world/mod.rs`, `player.rs`, `level.rs`) should only receive call-site changes. Every fix must come with a
+        regression test that fails without it; question tests that mirror the implementation instead of encoding
+        vanilla values. Performance claims need a measured baseline.
+    - path: "FORK.md"
+      instructions: |
+        Each merged change must be recorded here with the vanilla method it mirrors and an in-game verification
+        status. Keep exactly one "## Native plugin API 8" heading; plugin-visible layout changes get one bullet
+        under it.
+chat:
+  auto_reply: true
