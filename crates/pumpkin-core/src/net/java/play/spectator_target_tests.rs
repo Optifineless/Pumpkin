@@ -97,3 +97,73 @@ async fn spectator_target_requires_border_range_and_pickability_and_sends_one_ca
     );
     fixture.server.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spectator_root_dragon_rejected_but_part_pickable() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let viewer = TestPlayer::new(&world);
+    viewer.player.set_gamemode(GameMode::Spectator);
+    viewer
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(0.0, 64.0, 0.0));
+    let dragon = fixture.mob(&EntityType::ENDER_DRAGON);
+    dragon.get_entity().set_pos(Vector3::new(2.0, 64.0, 0.0));
+    viewer.client().handle_spectate_entity(
+        &viewer.player,
+        &SSpectatorAction {
+            target: VarInt(dragon.get_entity().entity_id + 1),
+        },
+    );
+    assert!(viewer.player.camera_target_id.load().is_none());
+    assert!(!dragon.is_pickable());
+    let dragon = dragon
+        .cast_any()
+        .downcast_ref::<crate::entity::boss::ender_dragon::EnderDragonEntity>()
+        .unwrap();
+    assert!(dragon.parts[0].is_pickable());
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ordinary_interact_cannot_bypass_spectator_target_validation() {
+    use pumpkin_protocol::java::server::play::SInteract;
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let viewer = TestPlayer::new(&world);
+    viewer.player.set_gamemode(GameMode::Spectator);
+    viewer
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(0.0, 64.0, 0.0));
+    let far = fixture.mob(&EntityType::COW);
+    far.get_entity().set_pos(Vector3::new(100.0, 64.0, 0.0));
+    let dragon = fixture.mob(&EntityType::ENDER_DRAGON);
+    dragon.get_entity().set_pos(Vector3::new(2.0, 64.0, 0.0));
+    let fireball = fixture.mob(&EntityType::SMALL_FIREBALL);
+    fireball.get_entity().set_pos(Vector3::new(2.0, 64.0, 0.0));
+    for target in [&far, &dragon, &fireball] {
+        viewer.player.set_client_loaded(true);
+        viewer.client().handle_interact(
+            &viewer.player,
+            &SInteract {
+                entity_id: VarInt(target.get_entity().entity_id),
+                r#type: VarInt(1),
+                target_position: None,
+                hand: None,
+                sneaking: false,
+            },
+            &fixture.server,
+        );
+        assert!(viewer.player.camera_target_id.load().is_none());
+        viewer.client().handle_spectate_entity(
+            &viewer.player,
+            &SSpectatorAction {
+                target: VarInt(target.get_entity().entity_id + 1),
+            },
+        );
+        assert!(viewer.player.camera_target_id.load().is_none());
+    }
+    fixture.server.shutdown().await;
+}

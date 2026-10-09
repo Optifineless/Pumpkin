@@ -32,8 +32,7 @@ impl JavaClient {
 
         if let Some(target) = target {
             if player.gamemode.load() == GameMode::Spectator {
-                player.camera_target_id.store(Some(entity_id.0));
-                player.try_send_client_packet(&CSetCamera::new(entity_id));
+                // ServerGamePacketListenerImpl.handleInteract does not set spectator cameras.
                 return;
             }
             send_cancellable_blocking! {{
