@@ -55,3 +55,90 @@ async fn wall_banner_support_removal_preserves_patterned_drop() {
     );
     fixture.server.shutdown().await;
 }
+
+#[pumpkin_macros::pumpkin_block("minecraft:stone")]
+struct RestoreSupport {
+    restored: [std::sync::atomic::AtomicBool; 2],
+}
+impl crate::block::BlockBehaviour for RestoreSupport {
+    fn on_neighbor_update(&self, args: crate::block::OnNeighborUpdateArgs<'_>) {
+        let supports = [BlockPos::new(8, 63, 8), BlockPos::new(8, 64, 7)];
+        let Some(index) = supports
+            .iter()
+            .position(|position| position == args.position)
+        else {
+            return;
+        };
+        if self.restored[index].swap(true, std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        // Queue a removal shape, then restore support while the outer cascade is still running.
+        args.world
+            .set_block_state(args.position, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
+        args.world.set_block_state(
+            args.position,
+            Block::STONE.default_state.id,
+            BlockFlags::FORCE_STATE | BlockFlags::UPDATE_KNOWN_SHAPE,
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn queued_support_remove_restore_keeps_supported_banners() {
+    let fixture = DeathTestWorld::with_neighbor_limit(100).await;
+    let original = fixture.world();
+    let mut registry = crate::block::registry::default_registry();
+    Arc::get_mut(&mut registry)
+        .unwrap()
+        .register(RestoreSupport {
+            restored: std::array::from_fn(|_| std::sync::atomic::AtomicBool::new(false)),
+        });
+    let world = Arc::new(crate::world::World::load(
+        original.level.clone(),
+        original.level_info.clone(),
+        original.dimension.clone(),
+        registry,
+        Arc::downgrade(&fixture.server),
+    ));
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    for wall in [false, true] {
+        let position = BlockPos::new(8, 64, 8);
+        let support = if wall {
+            BlockPos::new(8, 64, 7)
+        } else {
+            position.down()
+        };
+        let state = if wall {
+            let mut props = WhiteWallBannerProperties::default(&Block::WHITE_WALL_BANNER);
+            props.facing = pumpkin_data::block_properties::HorizontalFacing::South;
+            props.to_state_id(&Block::WHITE_WALL_BANNER)
+        } else {
+            Block::WHITE_BANNER.default_state.id
+        };
+        world.set_block_state(
+            &support,
+            Block::STONE.default_state.id,
+            BlockFlags::FORCE_STATE | BlockFlags::UPDATE_KNOWN_SHAPE,
+        );
+        world.set_block_state(
+            &position,
+            state,
+            BlockFlags::FORCE_STATE | BlockFlags::UPDATE_KNOWN_SHAPE,
+        );
+        world.update_neighbor(&support, &Block::STONE);
+        assert_eq!(world.get_block_state_id(&position), state);
+        assert!(
+            world
+                .entities
+                .load()
+                .iter()
+                .all(|entity| entity.get_item_entity().is_none())
+        );
+        world.set_block_state(
+            &position,
+            BlockStateId::AIR,
+            BlockFlags::FORCE_STATE | BlockFlags::UPDATE_KNOWN_SHAPE,
+        );
+    }
+    fixture.server.shutdown().await;
+}
