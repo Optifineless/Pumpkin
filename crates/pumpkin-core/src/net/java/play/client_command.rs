@@ -51,33 +51,7 @@ impl JavaClient {
                 let player_c = player.clone();
                 let is_hardcore = server.basic_config.hardcore;
                 server.spawn_task(async move {
-                    // Hardcore's "Spectate World" ignores the player's bed/anchor and uses the
-                    // overworld spawn. Preserve the saved respawn point so spectating does not
-                    // mutate persistent player data just to choose this one respawn location.
-                    let saved_respawn_point = if is_hardcore {
-                        player_c
-                            .respawn_point
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .take()
-                    } else {
-                        None
-                    };
-
-                    player_c
-                        .world()
-                        .clone()
-                        .respawn_player(&player_c, false)
-                        .await;
-
-                    if is_hardcore {
-                        *player_c
-                            .respawn_point
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                            saved_respawn_point;
-                        player_c.set_gamemode(GameMode::Spectator);
-                    }
+                    respawn_after_death(&player_c, is_hardcore).await;
 
                     {
                         let screen_handler = player_c
@@ -212,5 +186,16 @@ mod tests {
 
         assert_eq!(winners.load(Ordering::Relaxed), 1);
     }
-
 }
+
+// ServerGamePacketListenerImpl.handleClientCommand uses normal saved-spawn validation first.
+async fn respawn_after_death(player: &Arc<Player>, hardcore: bool) {
+    player.world().respawn_player(player, false).await;
+    if hardcore {
+        player.set_gamemode(GameMode::Spectator);
+    }
+}
+
+#[cfg(test)]
+#[path = "hardcore_respawn_tests.rs"]
+mod respawn_tests;

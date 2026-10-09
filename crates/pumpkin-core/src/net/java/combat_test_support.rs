@@ -78,6 +78,27 @@ impl TestPlayer {
         }
     }
 
+    /// Completes packet write barriers while exercising an async player operation.
+    pub async fn with_outgoing_writer<F: std::future::Future>(
+        &mut self,
+        operation: F,
+    ) -> F::Output {
+        tokio::pin!(operation);
+        loop {
+            tokio::select! {
+                result = &mut operation => return result,
+                Some(packet) = self.packets.recv() => {
+                    if let OutgoingPacket::Data { data, completion } = packet {
+                        decrement_pending_bytes(&self.client().pending_bytes, data.len());
+                        if let Some(outgoing::Completion::Framed(done) | outgoing::Completion::Flushed(done)) = completion {
+                            let _ = done.send(());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn take_packets(&mut self) -> Vec<bytes::Bytes> {
         let mut packets = Vec::new();
         while let Ok(packet) = self.packets.try_recv() {
