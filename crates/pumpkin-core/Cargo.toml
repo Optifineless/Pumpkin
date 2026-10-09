@@ -17,6 +17,7 @@ rayon.workspace = true
 pumpkin-util.workspace = true
 pumpkin-auth.workspace = true
 pumpkin-nbt.workspace = true
+pumpkin-codecs.workspace = true
 pumpkin-config.workspace = true
 pumpkin-command.workspace = true
 pumpkin-inventory.workspace = true

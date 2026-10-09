@@ -79,6 +79,7 @@ pub mod ageable;
 pub mod ai;
 pub mod area_effect_cloud;
 pub mod attributes;
+mod block_action;
 pub mod boss;
 pub mod breath;
 pub mod custom_sound;

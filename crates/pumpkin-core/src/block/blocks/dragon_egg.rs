@@ -18,30 +18,52 @@ impl DragonEggBlock {
     // DragonEggBlock.getDelayAfterPlace
     const DELAY_AFTER_PLACE: u8 = 5;
 
+    // DragonEggBlock.teleport hardcodes these radii and 1,000 candidate attempts.
+    const HORIZONTAL_TELEPORT_RADIUS: i32 = 16;
+    const VERTICAL_TELEPORT_RADIUS: i32 = 8;
+    const MAX_TELEPORT_ATTEMPTS: usize = 1000;
+
     fn teleport(world: &Arc<World>, pos: &BlockPos) {
-        for _ in 0..1000 {
-            let x = pos.0.x + rng().random_range(-16..16);
-            let y = pos.0.y + rng().random_range(-8..8);
-            let z = pos.0.z + rng().random_range(-16..16);
-            let test_pos = BlockPos::new(x, y, z);
-
-            let state = world.get_block_state(&test_pos);
-            let below_state = world.get_block_state(&test_pos.down());
-
-            if state.is_air() && !below_state.is_air() {
-                let current_state = world.get_block_state(pos);
-                world.set_block_state(
-                    &test_pos,
-                    current_state.id,
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
-                );
-                world.set_block_state(
-                    pos,
-                    pumpkin_data::Block::AIR.default_state.id,
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
-                );
-                return;
+        let mut random = rng();
+        let state = world.get_block_state_id(pos);
+        for _ in 0..Self::MAX_TELEPORT_ATTEMPTS {
+            let horizontal = Self::HORIZONTAL_TELEPORT_RADIUS;
+            let vertical = Self::VERTICAL_TELEPORT_RADIUS;
+            let dx = random.random_range(0..horizontal) - random.random_range(0..horizontal);
+            let dy = random.random_range(0..vertical) - random.random_range(0..vertical);
+            let dz = random.random_range(0..horizontal) - random.random_range(0..horizontal);
+            let target = BlockPos::new(pos.0.x + dx, pos.0.y + dy, pos.0.z + dz);
+            if !world.is_in_height_limit(target.0.y)
+                || !world
+                    .worldborder
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .contains(f64::from(target.0.x), f64::from(target.0.z))
+                || !world.get_block_state(&target).is_air()
+                || world.get_block_state(&target.down()).is_air()
+            {
+                continue;
             }
+            // BlockUtil.packDifferenceInPosition encodes signed offsets biased by the radii.
+            let packed = ((dx + horizontal) & 0xff) << 16
+                | ((dy + vertical) & 0xff) << 8
+                | ((dz + horizontal) & 0xff);
+            world.sync_world_event(
+                pumpkin_data::world::WorldEvent::ParticlesDragonEggTeleport,
+                *pos,
+                packed,
+            );
+            world.set_block_state(
+                &target,
+                state,
+                pumpkin_world::world::BlockFlags::NOTIFY_LISTENERS,
+            );
+            world.set_block_state(
+                pos,
+                pumpkin_data::Block::AIR.default_state.id,
+                pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+            );
+            return;
         }
     }
 }
@@ -75,3 +97,7 @@ impl BlockBehaviour for DragonEggBlock {
         false
     }
 }
+
+#[cfg(test)]
+#[path = "block_attack_tests.rs"]
+mod tests;

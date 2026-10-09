@@ -7,7 +7,7 @@ use serde_json::Value;
 mod block;
 mod entity;
 mod item;
-pub(super) use block::match_block;
+pub(crate) use block::match_block;
 pub(super) use entity::{attacker_enchantment_level, enchantment_level, entity_predicate};
 pub(super) use item::{item_predicate, read_loot_component};
 
