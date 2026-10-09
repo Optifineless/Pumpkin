@@ -14,6 +14,8 @@ use crate::server::Server;
 
 const GRAVITY: f64 = 0.07;
 const SPLASH_COLOR: i32 = -13_083_194;
+// ThrownExperienceBottle.onHit hardcodes two nextInt(5) XP rolls.
+const EXPERIENCE_RANDOM_BOUND: u32 = 5;
 
 pub struct ExperienceBottleEntity {
     pub thrown: ThrownItemEntity,
@@ -34,17 +36,22 @@ impl ExperienceBottleEntity {
     }
 
     pub fn new_shot(entity: Entity, shooter: &Entity) -> Self {
-        Self {
+        let bottle = Self {
             thrown: ThrownItemEntity::new(entity, shooter, GRAVITY),
             item_stack: RwLock::new(ItemStack::new(1, &Item::EXPERIENCE_BOTTLE)),
-        }
+        };
+        // ThrowableItemProjectile's shooter constructor uses setPos, synchronizing its bounds.
+        let mut origin = shooter.pos.load();
+        origin.y += shooter.get_eye_height() - f64::from(0.1f32);
+        bottle.get_entity().set_pos(origin);
+        bottle
     }
 
     pub fn set_item_stack(&self, stack: ItemStack) {
         *self
             .item_stack
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = stack;
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = stack.copy_with_count(1);
     }
 }
 
@@ -59,6 +66,24 @@ impl EntityBase for ExperienceBottleEntity {
 
     fn projectile_state(&self) -> Option<&super::ownership::ProjectileState> {
         Some(&self.thrown.projectile)
+    }
+
+    // ThrowableItemProjectile.addAdditionalSaveData / readAdditionalSaveData.
+    fn write_custom_nbt(&self, nbt: &mut pumpkin_nbt::NbtCompound) {
+        let mut item = pumpkin_nbt::NbtCompound::new();
+        self.item_stack
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .write_item_stack(&mut item);
+        nbt.put("Item", item);
+    }
+
+    fn read_custom_nbt(&self, nbt: &pumpkin_nbt::NbtCompound) {
+        let stack = nbt
+            .get_compound("Item")
+            .and_then(ItemStack::read_item_stack)
+            .unwrap_or_else(|| ItemStack::new(1, &Item::EXPERIENCE_BOTTLE));
+        self.set_item_stack(stack);
     }
 
     fn init_data_tracker(&self) {
@@ -91,7 +116,9 @@ impl EntityBase for ExperienceBottleEntity {
             world.sync_world_event(WorldEvent::SoundSpellPotionSplash, position, 0);
         }
         let mut random = rand::rng();
-        let amount = 3 + random.random_range(0..5) + random.random_range(0..5);
+        let amount = 3
+            + random.random_range(0..EXPERIENCE_RANDOM_BOUND)
+            + random.random_range(0..EXPERIENCE_RANDOM_BOUND);
         let direction = match &hit {
             ProjectileHit::Block { face, .. } => {
                 let offset = face.to_offset();
@@ -110,3 +137,7 @@ impl EntityBase for ExperienceBottleEntity {
         self
     }
 }
+
+#[cfg(test)]
+#[path = "experience_bottle_tests.rs"]
+mod tests;
