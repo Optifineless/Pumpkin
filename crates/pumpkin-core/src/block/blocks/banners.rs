@@ -1,9 +1,7 @@
 use crate::block::{BlockBehaviour, GetStateForNeighborUpdateArgs, OnPlaceArgs, PlacedArgs};
 use crate::entity::EntityBase;
 use pumpkin_data::block_properties::{WhiteBannerLikeProperties, WhiteWallBannerProperties};
-use pumpkin_data::{
-    Block, BlockDirection, BlockState, BlockStateId, FacingExt, HorizontalFacingExt,
-};
+use pumpkin_data::{Block, BlockDirection, BlockStateId, FacingExt, HorizontalFacingExt};
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockAccessor;
@@ -79,12 +77,14 @@ impl BlockBehaviour for BannerBlock {
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        state_after_neighbor_update(
-            args.block,
-            args.state_id,
-            args.direction,
-            args.neighbor_state_id,
-        )
+        // BannerBlock/WallBannerBlock.updateShape reads current support in canSurvive.
+        if args.direction == support_direction(args.block, args.state_id)
+            && !has_support(args.world, args.position, args.direction)
+        {
+            BlockStateId::AIR
+        } else {
+            args.state_id
+        }
     }
 }
 
@@ -118,21 +118,6 @@ fn support_direction(block: &Block, state_id: BlockStateId) -> BlockDirection {
             .opposite()
     } else {
         BlockDirection::Down
-    }
-}
-
-fn state_after_neighbor_update(
-    block: &Block,
-    state_id: BlockStateId,
-    direction: BlockDirection,
-    neighbor_state_id: BlockStateId,
-) -> BlockStateId {
-    if direction == support_direction(block, state_id)
-        && !BlockState::from_id(neighbor_state_id).is_solid()
-    {
-        BlockStateId::AIR
-    } else {
-        state_id
     }
 }
 
@@ -178,42 +163,6 @@ mod tests {
         assert_eq!(select_support(directions, |d| d == Up), None);
         assert_eq!(select_support(directions, |_| false), None);
         assert_eq!(select_support(directions, |d| d == Down), Some(Down));
-    }
-
-    #[test]
-    fn losing_support_removes_banner_immediately_but_other_updates_do_not() {
-        let standing = &Block::WHITE_BANNER;
-        let state_id = standing.default_state.id;
-        assert_eq!(
-            state_after_neighbor_update(standing, state_id, Down, BlockStateId::AIR),
-            BlockStateId::AIR
-        );
-        assert_eq!(
-            state_after_neighbor_update(standing, state_id, North, BlockStateId::AIR),
-            state_id
-        );
-        assert_eq!(
-            state_after_neighbor_update(standing, state_id, Down, Block::STONE.default_state.id),
-            state_id
-        );
-        let wall = &Block::WHITE_WALL_BANNER;
-        for support in [North, South, East, West] {
-            let mut props = WhiteWallBannerProperties::default(wall);
-            props.facing = support.opposite().to_cardinal_direction();
-            let state_id = props.to_state_id(wall);
-            assert_eq!(
-                state_after_neighbor_update(wall, state_id, support, BlockStateId::AIR),
-                BlockStateId::AIR
-            );
-            assert_eq!(
-                state_after_neighbor_update(wall, state_id, Down, BlockStateId::AIR),
-                state_id
-            );
-            assert_eq!(
-                state_after_neighbor_update(wall, state_id, support, Block::STONE.default_state.id),
-                state_id
-            );
-        }
     }
 }
 
