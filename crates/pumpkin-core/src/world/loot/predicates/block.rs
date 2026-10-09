@@ -1,11 +1,7 @@
 use super::registry_matches;
 use crate::world::loot::LootContextParameters;
 use serde_json::Value;
-pub(crate) fn match_block(
-    blocks: &Value,
-    properties: &Value,
-    params: &LootContextParameters,
-) -> bool {
+pub fn match_block(blocks: &Value, properties: &Value, params: &LootContextParameters) -> bool {
     // MatchBlock.test and StatePropertiesPredicate.matches.
     let Some(state) = params.block_state else {
         return false;

@@ -47,7 +47,9 @@ impl ExperienceBottleEntity {
         bottle
     }
 
-    pub fn set_item_stack(&self, stack: ItemStack) {
+    /// Stores a fresh one-item copy of the supplied stack.
+    pub fn set_item_stack(&self, stack: &ItemStack) {
+        // ThrowableItemProjectile.setItem copies the source stack.
         *self
             .item_stack
             .write()
@@ -83,7 +85,7 @@ impl EntityBase for ExperienceBottleEntity {
             .get_compound("Item")
             .and_then(ItemStack::read_item_stack)
             .unwrap_or_else(|| ItemStack::new(1, &Item::EXPERIENCE_BOTTLE));
-        self.set_item_stack(stack);
+        self.set_item_stack(&stack);
     }
 
     fn init_data_tracker(&self) {

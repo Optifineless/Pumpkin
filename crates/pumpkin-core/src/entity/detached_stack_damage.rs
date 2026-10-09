@@ -1,7 +1,7 @@
 use super::player::Player;
 
 impl Player {
-    /// Fires [`PlayerItemDamageEvent`], and [`PlayerItemBreakEvent`] when `broken`, for an item that took damage.
+    /// Reports damage and optional breakage for an already damaged item.
     pub fn fire_item_damage_events(
         &self,
         item: &pumpkin_data::item::Item,

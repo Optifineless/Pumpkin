@@ -1,4 +1,8 @@
 use super::*;
+use crate::block::{
+    BlockBehaviour, BlockHitResult, NormalUseArgs, UseWithItemArgs, blocks::jukebox::JukeboxBlock,
+};
+
 use crate::{
     entity::death_test_world::DeathTestWorld,
     plugin::{
@@ -103,10 +107,6 @@ async fn jukebox_player_actions_emit_one_block_change() {
     let (fixture, jukebox, changes) = create_jukebox().await;
     let world = fixture.world();
     let position = jukebox.get_position();
-    use crate::block::{
-        BlockBehaviour, BlockHitResult, NormalUseArgs, UseWithItemArgs,
-        blocks::jukebox::JukeboxBlock,
-    };
     let player = fixture.player("JukeboxEvents");
     let mut disc = ItemStack::new(2, &Item::MUSIC_DISC_13);
     let cursor = pumpkin_util::math::vector3::Vector3::new(0.5, 1.0, 0.5);

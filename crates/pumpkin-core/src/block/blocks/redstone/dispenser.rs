@@ -961,7 +961,7 @@ impl DispenserBlock {
         for entity in ctx.world.get_entities_at_box(&target_box) {
             if entity
                 .get_player()
-                .is_some_and(|player| player.is_spectator())
+                .is_some_and(crate::entity::player::Player::is_spectator)
             {
                 continue;
             }
@@ -1109,7 +1109,7 @@ impl DispenserBlock {
             &EntityType::EXPERIENCE_BOTTLE,
         );
         let bottle = ExperienceBottleEntity::new(entity);
-        bottle.set_item_stack(projectile);
+        bottle.set_item_stack(&projectile);
         Self::launch_thrown(
             ctx,
             &bottle.thrown,

@@ -42,7 +42,7 @@ async fn prepare_trade() -> (DeathTestWorld, Arc<VillagerEntity>, Arc<Player>, S
     player.set_client_loaded(true);
     player.get_entity().set_pos(Vector3::new(1.5, 80.0, 0.5));
     let villager = VillagerEntity::new(Entity::new(
-        world.clone(),
+        world,
         Vector3::new(0.5, 80.0, 0.5),
         &EntityType::VILLAGER,
     ));
@@ -50,7 +50,7 @@ async fn prepare_trade() -> (DeathTestWorld, Arc<VillagerEntity>, Arc<Player>, S
     let inventory = player.inventory();
     inventory.set_stack(0, ItemStack::new(64, &Item::EMERALD));
     let screen = villager
-        .create_screen_handler(1, &inventory, player.as_ref())
+        .create_screen_handler(1, inventory, player.as_ref())
         .unwrap();
     *player.current_screen_handler.lock().unwrap() = screen.clone();
     screen

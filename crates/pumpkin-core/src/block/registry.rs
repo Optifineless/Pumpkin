@@ -1335,7 +1335,6 @@ impl BlockRegistry {
         );
     }
 
-    #[expect(clippy::too_many_arguments)]
     pub(crate) fn prepare_with_limit(
         &self,
         world: &Arc<World>,
@@ -1385,7 +1384,7 @@ impl BlockRegistry {
     }
 
     pub fn update_neighbors(&self, world: &Arc<World>, position: &BlockPos, flags: BlockFlags) {
-        self.update_neighbors_with_limit(
+        Self::update_neighbors_with_limit(
             world,
             position,
             flags,
@@ -1394,7 +1393,6 @@ impl BlockRegistry {
     }
 
     pub(crate) fn update_neighbors_with_limit(
-        &self,
         world: &Arc<World>,
         position: &BlockPos,
         flags: BlockFlags,

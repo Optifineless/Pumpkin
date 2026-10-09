@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use tracing::error;
 
 // LevelAccessor.setBlock and Block.updateOrDestroy default shape depth.
-pub(crate) const UPDATE_LIMIT: u32 = 512;
+pub const UPDATE_LIMIT: u32 = 512;
 
 #[derive(Clone, Copy)]
 enum SingleUpdate {
@@ -48,7 +48,7 @@ impl UpdateKind {
     }
 }
 
-/// A world's resumable CollectingNeighborUpdater cascade; locks are released before callbacks.
+/// A world's resumable `CollectingNeighborUpdater` cascade; locks are released before callbacks.
 #[derive(Default)]
 pub(super) struct UpdateStack {
     remaining: Vec<UpdateKind>,
@@ -178,16 +178,16 @@ fn submit(world: &Arc<World>, kind: UpdateKind) {
         pumpkin_config::world::default_max_chained_neighbor_updates,
         |s| s.advanced_config.world.max_chained_neighbor_updates,
     );
-    {
+    let start_cascade = {
         let mut stack = world
             .neighbor_updates
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         stack.stage(kind, limit);
-        if stack.running {
-            return;
-        }
-        stack.running = true;
+        !std::mem::replace(&mut stack.running, true)
+    };
+    if !start_cascade {
+        return;
     }
     let mut guard = CascadeGuard {
         stack: &world.neighbor_updates,
@@ -288,10 +288,6 @@ impl World {
         update_shape(self, position, direction, flags, update_limit);
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Mirrors NeighborUpdater.executeShapeUpdate including its depth limit"
-    )]
     fn execute_shape_update(
         self: &Arc<Self>,
         block_pos: &BlockPos,

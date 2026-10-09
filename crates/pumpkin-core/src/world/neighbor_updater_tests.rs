@@ -155,10 +155,6 @@ async fn shape_update_uses_enqueued_neighbor_state() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[expect(
-    clippy::panic,
-    reason = "Exercises cleanup after a real block callback panics"
-)]
 async fn cascade_panic_cleanup_allows_next_update() {
     let fixture = DeathTestWorld::new().await;
     publish(&fixture.world(), proto(&Biome::PLAINS, &Block::STONE));
@@ -169,9 +165,7 @@ async fn cascade_panic_cleanup_allows_next_update() {
     let world = probe_world(
         &fixture,
         Arc::new(move |_| {
-            if flag.swap(false, Ordering::Relaxed) {
-                panic!("block callback panic");
-            }
+            assert!(!flag.swap(false, Ordering::Relaxed), "block callback panic");
             count.fetch_add(1, Ordering::Relaxed);
         }),
         Arc::new(unchanged),

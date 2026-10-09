@@ -1,4 +1,4 @@
-pub(crate) fn worker_pool_builder() -> rayon::ThreadPoolBuilder {
+pub fn worker_pool_builder() -> rayon::ThreadPoolBuilder {
     rayon::ThreadPoolBuilder::new()
         .thread_name(|i| format!("Rayon-Worker-{i}"))
         // Rayon Registry::catch_unwind aborts unhandled detached-task panics.
