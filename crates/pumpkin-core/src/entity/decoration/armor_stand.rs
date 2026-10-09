@@ -206,16 +206,22 @@ impl ArmorStandEntity {
         let drop_pos = entity.block_pos.load().up();
 
         for stack in stacks {
+            if crate::entity::death_loot::prevents_equipment_drop(&stack) {
+                continue;
+            }
             world.drop_stack(&drop_pos, stack);
         }
     }
 
     fn break_and_drop_items(&self) {
         let entity = self.get_entity();
-        //let name = entity.custom_name.unwrap_or(entity.get_name());
-
-        //TODO: i am stupid! let armor_stand_item = ItemStack::new_with_component(1, &Item::ARMOR_STAND, vec![(DataComponent::CustomName, self.get_custom_name())]);
-        let armor_stand_item = ItemStack::new(1, &Item::ARMOR_STAND);
+        // ArmorStand.brokenByPlayer preserves CUSTOM_NAME on the stand item.
+        let mut armor_stand_item = ItemStack::new(1, &Item::ARMOR_STAND);
+        if let Some(name) = &**entity.custom_name.load() {
+            armor_stand_item.set_data_component(
+                pumpkin_data::data_component_impl::CustomNameImpl { name: name.clone() },
+            );
+        }
         self.drop_equipment();
         entity
             .world
@@ -276,23 +282,36 @@ impl ArmorStandEntity {
         let world = entity.world.load();
         let position = entity.pos.load();
 
-        if !previous.is_empty() {
-            world.emit_game_event(GameEvent::Unequip.name(), position);
+        // LivingEntity.onEquipItem emits one event selected by the new stack's component.
+        if previous.are_items_and_components_equal(&stack)
+            || self.living_entity.combat_ticks.load(Ordering::Relaxed) == 0
+        {
+            return;
         }
-        if !stack.is_empty() {
-            if let Some(equippable) = stack.get_data_component::<EquippableImpl>() {
-                world.play_sound_event(
-                    &equippable.equip_sound,
-                    SoundCategory::Neutral,
-                    &position,
-                );
+        let equippable = stack.get_data_component::<EquippableImpl>();
+        if !entity.is_silent()
+            && let Some(component) = &equippable
+            && component.slot == slot
+        {
+            world.play_sound_event(&component.equip_sound, SoundCategory::Neutral, &position);
+        }
+        world.emit_game_event(
+            if equippable.is_some() {
+                GameEvent::Equip
+            } else {
+                GameEvent::Unequip
             }
-            world.emit_game_event(GameEvent::Equip.name(), position);
-        }
+            .name(),
+            position,
+        );
     }
 
     fn get_clicked_slot(&self, position: Vector3<f64>) -> EquipmentSlot {
-        let scale = if self.is_small() { 0.5 } else { 1.0 };
+        // ArmorStand.getClickedSlot divides by attribute scale and age scale.
+        let scale = self
+            .living_entity
+            .get_attribute_value(&pumpkin_data::attributes::Attributes::SCALE)
+            * if self.is_small() { 0.5 } else { 1.0 };
         clicked_slot(position.y / scale, self.is_small(), |slot| {
             !self.item_in_slot(slot).is_empty()
         })
@@ -760,3 +779,7 @@ mod tests {
         assert!(equipment.equipment.is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "armor_stand_interaction_tests.rs"]
+mod interaction_tests;
