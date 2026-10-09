@@ -257,7 +257,7 @@ pub mod cookie_response;
 pub mod debug_sample_subscription;
 pub mod debug_subscription_request;
 pub mod edit_book;
-mod hand_use_result;
+pub(crate) mod hand_use_result;
 pub mod interact;
 pub mod jigsaw_generate;
 pub mod keep_alive;

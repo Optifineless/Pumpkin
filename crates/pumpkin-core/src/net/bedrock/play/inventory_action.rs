@@ -473,6 +473,8 @@ impl BedrockClient {
 
                 match event.action {
                     ActionType::Interact | ActionType::InteractAt => {
+                        let source_slot =
+                            crate::net::java::play::hand_use_result::hand_slot(player, Hand::Right);
                         let mut stack = player.inventory().held_item();
                         let item_id = stack.item.id;
                         let before = stack.clone();
@@ -498,22 +500,19 @@ impl BedrockClient {
                                     1,
                                 );
                             }
-                            if before.is_damageable() && stack.is_empty() {
-                                player.increment_stat(
-                                    pumpkin_data::statistic::StatisticCategory::Broken,
-                                    item_id as i32,
-                                    1,
-                                );
-                                player.world().send_entity_status(
-                                    player.get_entity(),
-                                    crate::entity::equipment_break_status(
-                                        &EquipmentSlot::MAIN_HAND,
-                                    ),
-                                    None,
-                                );
-                            }
                         }
-                        player.inventory().set_held_item(stack);
+                        crate::net::java::play::hand_use_result::write_back_hand_item(
+                            player,
+                            Hand::Right,
+                            source_slot,
+                            &before,
+                            &stack,
+                            if stand_swap {
+                                crate::net::java::play::hand_use_result::HandMutation::EquipmentTransfer
+                            } else {
+                                crate::net::java::play::hand_use_result::HandMutation::ItemUse
+                            },
+                        );
                     }
                     ActionType::Attack => player.attack(&event.target),
                 }
