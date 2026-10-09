@@ -51,6 +51,7 @@ async fn verification3_explosion_damage_reset_discards_followup_impulse() {
     assert!(!result.player_knockback.contains_key(&victim.entity_id()));
     assert_eq!(victim.get_entity().velocity.load(), Vector3::default());
     assert_eq!(victim.living_entity.health.load(), 20.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -82,6 +83,7 @@ async fn verification3_explosion_reset_before_packet_discards_queued_impulse() {
         victim.living_entity.reset_state();
         assert!(result.player_knockback_for(&victim).is_none());
     });
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -113,4 +115,5 @@ async fn verification4_far_explosion_does_not_acquire_player() {
     world.run_explosion(&explosion);
     let packet_entries = victim.living_entity.damage_entry_count() - before;
     assert_eq!((damage_entries, packet_entries), (0, 0));
+    crate::server::fixture_lifecycle::finish().await;
 }

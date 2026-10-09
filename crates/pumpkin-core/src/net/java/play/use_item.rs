@@ -180,5 +180,6 @@ mod tests {
             10
         );
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

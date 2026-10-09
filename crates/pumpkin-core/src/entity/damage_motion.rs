@@ -11,7 +11,29 @@ use std::sync::atomic::Ordering::Relaxed;
 #[cfg(test)]
 mod review3_tests;
 
+/// Adds tracker motion while owning each living recipient separately.
+// Entity.push runs serially in vanilla; cross-entity ownership suspends the previous owner.
+pub(super) fn push_collision_impulse<T: EntityBase + ?Sized>(target: &T, impulse: Vector3<f64>) {
+    if let Some(living) = target.get_living_entity() {
+        living.push_hurt(impulse);
+    } else {
+        target.get_entity().push_impulse(impulse);
+    }
+}
+
 impl LivingEntity {
+    /// Flushes completed player motion and metadata in the final tracking phase.
+    pub(crate) fn flush_tracked_player_motion(&self) {
+        let _owner = self.own_damage();
+        if !self.is_respawning() {
+            // ServerEntity.sendChanges:211-214, after all entity ticks and projectile follow-ups.
+            self.entity.flush_player_motion_owned();
+            if self.entity.synched_data.is_dirty() {
+                self.entity.send_dirty_entity_data();
+            }
+        }
+    }
+
     /// Applies vanilla living knockback, including the effective resistance attribute.
     pub fn knockback(&self, strength: f64, x: f64, z: f64) {
         // LivingEntity.knockback (1647-1664); Entity.apply_knockback supplies direction and motion math.
@@ -49,12 +71,18 @@ impl Entity {
         super::living::damage_transaction::test_hooks::reach(
             super::living::damage_transaction::test_hooks::Point::PlayerMotionFlush,
         );
-        let needs_sync = self
-            .velocity_dirty
-            .load(std::sync::atomic::Ordering::SeqCst);
-        let hurt_marked = self.hurt_marked.load(Relaxed);
-        if needs_sync || hurt_marked {
+        // ServerEntity.sendChanges sends needsSync to observers, syncVelocity to observers and self.
+        // Entity.push is horizontal, but replaying the entire stored motion to self repeats old hurt Y.
+        if self.hurt_marked.load(Relaxed) {
             self.send_velocity();
+        } else if self
+            .velocity_dirty
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            let world = self.world.load();
+            if let Some(tracked) = world.entity_tracker.get_tracked_entity(self.entity_id) {
+                tracked.send_motion(self, &world);
+            }
         }
     }
 

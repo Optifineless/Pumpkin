@@ -12,6 +12,9 @@ use crate::{
     net::ClientPlatform,
 };
 
+#[cfg(test)]
+pub(crate) mod tests;
+
 pub fn get_view_distance(player: &Player) -> NonZero<u8> {
     let fallback = NonZero::new(2).unwrap_or(NonZero::<u8>::MIN);
     let Some(server) = player.world().server.upgrade() else {
@@ -41,21 +44,30 @@ pub fn is_within_chebyshev_distance(
 
 #[allow(clippy::too_many_lines)]
 pub fn update_position(player: &Arc<Player>) {
-    let entity = &player.get_entity();
-    let new_chunk_center = entity.chunk_pos.load();
-    let old_cylindrical = player.watched_section.load();
+    if !can_update_position(player) {
+        return;
+    }
 
     // Vanilla `ChunkMap.move` -> re-pair on every move, not only on a view change.
     let world = player.world();
+    #[cfg(test)]
+    tests::before_tracker_update(player.entity_id());
     world.entity_tracker.update_player_position(player, &world);
 
-    // This does break when a new player spawns
-    // if old_cylindrical.center == new_chunk_center {
-    //     return;
-    // }
+    // ChunkMap.applyChunkTrackingView only commits to the player's current level.
+    let owner = player.living_entity.own_damage();
+    if !can_update_position(player) || player.world().uuid != world.uuid {
+        return;
+    }
+    let new_chunk_center = player.get_entity().chunk_pos.load();
 
     let view_distance = get_view_distance(player);
     let new_cylindrical = Cylindrical::new(new_chunk_center, view_distance);
+    let Some(server) = world.server.upgrade() else {
+        return;
+    };
+    // ChunkMap.applyChunkTrackingView; movement and EMPTY teardown share ownership and swap.
+    let old_cylindrical = player.watched_section.swap(new_cylindrical);
 
     if old_cylindrical == new_cylindrical {
         return;
@@ -87,6 +99,8 @@ pub fn update_position(player: &Arc<Player>) {
         .held_chunk_tickets
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    #[cfg(test)]
+    tests::between_ticket_locks(player.entity_id());
 
     let is_spectator = player.is_spectator();
     let spectators_generate_chunks = world
@@ -145,7 +159,6 @@ pub fn update_position(player: &Arc<Player>) {
             sender.enqueue_chunk(*pos);
         }
     }
-    player.watched_section.store(new_cylindrical);
 
     // Make sure the watched section and the chunk watcher updates are async atomic. We want to
     // ensure what we unload when the player disconnects is correct.
@@ -155,26 +168,41 @@ pub fn update_position(player: &Arc<Player>) {
         let loading_chunks_clone = loading_chunks.clone();
         let unloading_chunks_clone = unloading_chunks;
 
-        if let Some(server) = world.server.upgrade() {
-            server.spawn_task(async move {
-                level
-                    .mark_chunks_as_newly_watched(&loading_chunks_clone)
-                    .await;
-                let chunks_to_clean = level
-                    .mark_chunks_as_not_watched(&unloading_chunks_clone)
-                    .await;
+        let (previous, done) = player.queue_chunk_watch_update();
+        #[cfg(test)]
+        let player_id = player.entity_id();
+        server.spawn_task(async move {
+            #[cfg(test)]
+            crate::entity::player::pause_pending_watch_update(player_id).await;
+            if let Some(previous) = previous {
+                let _ = previous.await;
+            }
+            level
+                .mark_chunks_as_newly_watched(&loading_chunks_clone)
+                .await;
+            let chunks_to_clean = level
+                .mark_chunks_as_not_watched(&unloading_chunks_clone)
+                .await;
 
-                if !chunks_to_clean.is_empty() {
-                    world_clone
-                        .remove_entities_in_chunks(&chunks_to_clean)
-                        .await;
-                    world_clone.level.clean_entity_chunks(&chunks_to_clean);
-                }
-            });
-        }
+            if !chunks_to_clean.is_empty() {
+                world_clone
+                    .remove_entities_in_chunks(&chunks_to_clean)
+                    .await;
+                world_clone.level.clean_entity_chunks(&chunks_to_clean);
+            }
+            let _ = done.send(());
+        });
     }
 
+    drop(owner);
     if !loading_chunks.is_empty() {
         world.spawn_world_entity_chunks(player.clone(), loading_chunks);
     }
+}
+
+fn can_update_position(player: &Player) -> bool {
+    !player.chunk_tracking_stopped()
+        && !player.living_entity.is_respawning()
+        && !player.get_entity().is_removed()
+        && !player.client.closed()
 }

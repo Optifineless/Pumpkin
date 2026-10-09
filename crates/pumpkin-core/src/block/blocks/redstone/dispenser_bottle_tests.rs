@@ -28,4 +28,5 @@ async fn experience_bottle_offhand_and_dispenser_launch() {
     assert_eq!(bottle.get_entity().pos.load(), Vector3::new(9.2, 64.5, 8.5));
     assert!(bottle.projectile_state().unwrap().owner_uuid().is_none());
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

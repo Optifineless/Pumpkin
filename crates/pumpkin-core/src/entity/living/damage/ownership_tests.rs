@@ -118,11 +118,13 @@ fn reset_in_damage_callback(by_entity: bool) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ownership_review_reset_at_damage_event_aborts_old_melee() {
     reset_in_damage_callback(false);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ownership_review_reset_at_by_entity_event_aborts_old_melee() {
     reset_in_damage_callback(true);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -174,6 +176,7 @@ async fn ownership_review_deaths_callback_preserves_new_inventory_effects_and_po
     assert_eq!(victim.get_custom_stat(CustomStatistic::TimeSinceDeath), 777);
     assert!(victim.has_client_loaded());
     assert!(world.entities.load().is_empty());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -219,6 +222,7 @@ async fn ownership_review_callback_damages_another_entity_and_reenters_victim() 
     );
     assert_eq!(victim.living_entity.health.load(), 6.0);
     assert_eq!(other.living_entity.health.load(), 16.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -292,6 +296,7 @@ async fn ownership_review_opposing_melee_damps_only_restored_attacker_motion() {
             .count();
         assert_eq!(motion_packets, 1, "completed melee motion was replayed");
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -322,4 +327,5 @@ async fn ownership_review_reset_during_attacker_damping_aborts_old_weapon_effect
     assert_eq!(victim.living_entity.health.load(), 20.0);
     assert_eq!(victim.get_entity().fire_ticks.load(Relaxed), 0);
     assert_eq!(attacker.inventory.get_slot(0).get_damage(), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }

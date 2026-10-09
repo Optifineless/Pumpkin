@@ -38,6 +38,7 @@ async fn orchestration_review_golem_repair_reads_health_after_taking_ownership()
     drop(owner);
     thread.join().unwrap();
     assert_eq!(living.health.load(), 65.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -58,6 +59,7 @@ async fn orchestration_review_live_nbt_write_waits_for_combat_ownership() {
     drop(owner);
     thread.join().unwrap();
     assert_eq!(victim.living_entity.health.load(), 7.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -137,6 +139,7 @@ async fn orchestration_review_damage_command_by_sets_both_source_entities() {
             .is_err()
     );
     assert_eq!(victim.living_entity.health.load(), 11.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -164,6 +167,7 @@ async fn orchestration_review_poison_rechecks_its_gate_after_damage_callbacks() 
     );
     assert!(PoisonMobEffect.apply_effect_tick(&victim.living_entity, 0));
     assert_eq!(victim.living_entity.health.load(), 1.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -203,4 +207,5 @@ async fn orchestration_review_arrow_owner_fallback_uses_only_the_causing_entity(
         None
     ));
     assert_eq!(victim.living_entity.health.load(), 16.0);
+    crate::server::fixture_lifecycle::finish().await;
 }

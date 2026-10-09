@@ -54,7 +54,8 @@ impl JavaClient {
         server: &Arc<Server>,
         packet: &SPlayerPosition,
     ) {
-        if !player.has_client_loaded() {
+        let life = player.living_entity.own_damage();
+        if player.living_entity.is_respawning() || !player.has_client_loaded() {
             return;
         }
         if player.get_entity().has_vehicle() {
@@ -99,6 +100,9 @@ impl JavaClient {
             };
 
             'after: {
+                if !life.is_current_life() || player.living_entity.is_respawning() {
+                    return;
+                }
                 let pos = event.to;
                 let entity = &player.get_entity();
                 let last_pos = entity.pos.load();
@@ -186,7 +190,8 @@ impl JavaClient {
         server: &Arc<Server>,
         packet: &SPlayerPositionRotation,
     ) {
-        if !player.has_client_loaded() {
+        let life = player.living_entity.own_damage();
+        if player.living_entity.is_respawning() || !player.has_client_loaded() {
             return;
         }
         if player.get_entity().has_vehicle() {
@@ -238,6 +243,9 @@ impl JavaClient {
             );
 
             'after: {
+                if !life.is_current_life() || player.living_entity.is_respawning() {
+                    return;
+                }
                 let pos = event.to;
                 let entity = &player.get_entity();
                 let last_pos = entity.pos.load();

@@ -257,7 +257,8 @@ impl TrackedEntity {
         }
     }
 
-    fn send_motion(&self, entity: &Entity, world: &World) {
+    /// Sends changed motion to observers only; the caller must own the living entity's motion.
+    pub(crate) fn send_motion(&self, entity: &Entity, world: &World) {
         let velocity = entity.velocity.load();
         let diff = (velocity - entity.last_sent_velocity.load()).length_squared();
         if diff > 1.0e-7 || (diff > 0.0 && velocity.length_squared() == 0.0) {
@@ -1009,8 +1010,8 @@ impl EntityTracker {
         for tracked in &snapshot {
             if tracked.entity.get_player().is_none() {
                 tracked.send_changes(world);
-            } else if tracked.entity.get_entity().synched_data.is_dirty() {
-                tracked.entity.get_entity().send_dirty_entity_data();
+            } else if let Some(player) = tracked.entity.get_player() {
+                player.living_entity.flush_tracked_player_motion();
             }
         }
         snapshot.clear();

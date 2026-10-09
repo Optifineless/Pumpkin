@@ -10,6 +10,7 @@ pub struct TestPlayer {
 
 impl TestPlayer {
     pub fn new(world: &Arc<World>) -> Self {
+        crate::server::fixture_lifecycle::track_world(world);
         let gameprofile = GameProfile {
             id: uuid::Uuid::new_v4(),
             name: "combat-test".into(),
@@ -53,6 +54,7 @@ impl TestPlayer {
             world,
             pumpkin_util::GameMode::Survival,
         ));
+        crate::server::fixture_lifecycle::track_player(&player);
         player.set_client_loaded(true);
         player
             .watched_section
@@ -106,6 +108,31 @@ impl TestPlayer {
                 packets.push(data);
             }
         }
+        packets
+    }
+
+    /// Captures real serialized packets and acknowledges the writer barriers while a task runs.
+    pub async fn collect_packets_during(
+        &mut self,
+        task: impl std::future::Future<Output = ()>,
+    ) -> Vec<bytes::Bytes> {
+        let mut packets = Vec::new();
+        tokio::pin!(task);
+        loop {
+            tokio::select! {
+                () = &mut task => break,
+                packet = self.packets.recv() => {
+                    if let Some(OutgoingPacket::Data { data, completion }) = packet {
+                        packets.push(data);
+                        if let Some(super::outgoing::Completion::Framed(done)
+                            | super::outgoing::Completion::Flushed(done)) = completion {
+                            let _ = done.send(());
+                        }
+                    }
+                }
+            }
+        }
+        packets.extend(self.take_packets());
         packets
     }
 }

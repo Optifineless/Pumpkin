@@ -91,6 +91,7 @@ async fn shearing_uses_root_datapack_and_species_context() {
         assert_ne!(before, after, "named sequence for {name}");
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -109,6 +110,7 @@ async fn ordinary_sheep_root_keeps_color_drops() {
     assert_eq!(drops(&world, &Item::WHITE_WOOL), 0);
     assert!(!sheep.shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS)));
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -150,4 +152,5 @@ async fn mooshroom_root_loot_observes_transferred_vehicle_and_first_passenger() 
     );
     assert_eq!(drops(&world, &Item::DIAMOND), 1);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

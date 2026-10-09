@@ -81,7 +81,9 @@ pub struct DamageToken {
 }
 
 /// Releases combat ownership while external code runs; dropping this reacquires it.
+///
 /// Must surround the blocking bridge itself, before polling or dispatching guest work.
+/// Drop the guard before any outer token.
 #[must_use]
 pub struct SuspendedDamage(Vec<Rc<Scope>>);
 
@@ -133,6 +135,10 @@ impl OwnerState {
     }
 }
 
+/// Releases this thread's combat ownership until the returned guard is dropped.
+///
+/// Blocking plugin bridges must retain the guard across guest execution and revalidate life after it.
+/// Drop the guard before any outer token.
 pub fn suspend_damage() -> SuspendedDamage {
     let scopes = SCOPES.with(|current| std::mem::take(&mut *current.borrow_mut()));
     if let Some(scope) = scopes.first() {
@@ -143,6 +149,8 @@ pub fn suspend_damage() -> SuspendedDamage {
 
 impl Drop for SuspendedDamage {
     fn drop(&mut self) {
+        // A prematurely dropped token no longer owns a continuation to restore.
+        self.0.retain(|scope| Rc::strong_count(scope) > 1);
         if let Some(scope) = self.0.first() {
             scope.owner.acquire();
             SCOPES.with(|current| {
@@ -154,6 +162,15 @@ impl Drop for SuspendedDamage {
 }
 
 impl DamageOwner {
+    pub(super) fn is_owned_by_current_thread(&self) -> bool {
+        SCOPES.with(|current| {
+            current
+                .borrow()
+                .last()
+                .is_some_and(|scope| Arc::ptr_eq(&scope.owner, &self.0))
+        })
+    }
+
     pub(super) fn enter(&self) -> DamageToken {
         self.enter_scope(false)
     }
@@ -371,6 +388,15 @@ impl DamageToken {
 
 impl Drop for DamageToken {
     fn drop(&mut self) {
+        // LivingEntity.hurtServer is main-thread serial; a suspended token owns no segment.
+        if !SCOPES.with(|current| {
+            current
+                .borrow()
+                .iter()
+                .any(|scope| Rc::ptr_eq(scope, &self.scope))
+        }) {
+            return;
+        }
         if self.nested {
             debug_assert_eq!(self.scope.depth.get(), self.depth);
             self.scope.depth.set(self.scope.depth.get() - 1);
@@ -457,6 +483,9 @@ impl super::LivingEntity {
 
     pub(crate) fn push_hurt(&self, impulse: Vector3<f64>) {
         let _owner = self.own_damage();
+        if self.is_respawning() {
+            return;
+        }
         if !self
             .damage_owner
             .defer_motion(PendingMotion::Impulse(impulse))

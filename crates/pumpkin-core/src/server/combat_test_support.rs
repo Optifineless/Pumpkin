@@ -49,8 +49,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
     let advancement_manager = Arc::new(AdvancementManager::new(path.join("advancements"), false));
     let white_list = AtomicBool::new(false);
     let tick_rate_manager = Arc::new(ServerTickRateManager::new(basic_config.tps));
-    let dimensions = vec![Dimension::OVERWORLD];
-    let server = Server {
+    Arc::new(Server {
         _session_lock: session_lock,
         admission_reservations: Arc::default(),
         basic_config,
@@ -67,7 +66,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         weather_data: Arc::new(std::sync::Mutex::new(
             pumpkin_world::world_info::data_files::WeatherData::from_level_data(&level_info.load()),
         )),
-        dimensions,
+        dimensions: vec![Dimension::OVERWORLD],
         command_dispatcher,
         block_registry,
         item_registry: crate::item::items::default_registry(),
@@ -101,13 +100,12 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         world_info_writer: Arc::new(AnvilLevelInfo),
         level_info,
         management_hub,
-    };
-    Arc::new(server)
+    })
 }
 
 pub fn world(server: &Arc<Server>, path: &std::path::Path) -> Arc<World> {
     use pumpkin_config::world::LevelConfig;
-    Arc::new(World::load(
+    let world = Arc::new(World::load(
         pumpkin_world::level::Level::from_root_folder(
             &LevelConfig::default(),
             path.to_path_buf(),
@@ -118,7 +116,9 @@ pub fn world(server: &Arc<Server>, path: &std::path::Path) -> Arc<World> {
         Dimension::OVERWORLD,
         server.block_registry.clone(),
         Arc::downgrade(server),
-    ))
+    ));
+    super::fixture_lifecycle::track_world(&world);
+    world
 }
 
 fn level_data(path: &std::path::Path) -> LevelData {

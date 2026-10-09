@@ -410,6 +410,7 @@ mod tests {
         let mut goal = RaidGardenGoal::new();
         assert!(goal.can_start(rabbit.as_ref()));
         assert_eq!(goal.inner.target_pos, eligible);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     impl EventHandler<EntityChangeBlockEvent> for CropHandler {
@@ -463,6 +464,7 @@ mod tests {
         );
         assert_eq!(rabbit.more_carrot_ticks.load(Relaxed), 40);
         assert!(!goal.is_target_pos(world, soil));
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 }

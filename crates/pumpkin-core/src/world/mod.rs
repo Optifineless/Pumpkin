@@ -37,6 +37,7 @@ pub mod loot;
 pub mod map;
 pub(crate) mod neighbor_updater;
 mod particle_senders;
+mod player_list;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -1788,7 +1789,11 @@ impl World {
         let player_count = players.len();
         let players_cache: Vec<_> = players
             .par_iter()
-            .map(|player| {
+            .filter_map(|player| {
+                let _owner = player.living_entity.own_damage();
+                if player.living_entity.is_respawning() {
+                    return None;
+                }
                 let entity = player.get_entity();
                 let pos = entity.pos.load();
                 let bb = entity.bounding_box.load().expand(1.0, 0.5, 1.0);
@@ -1796,16 +1801,26 @@ impl World {
                     get_section_cord(pos.x.floor() as i32),
                     get_section_cord(pos.z.floor() as i32),
                 );
-                (player, pos, bb, chunk_pos)
+                Some((
+                    player,
+                    pos,
+                    bb,
+                    chunk_pos,
+                    player.living_entity.damage_lifecycle(),
+                ))
             })
             .collect();
 
         let t_players = std::time::Instant::now();
         let player_handle = handle.clone();
-        players.par_iter().for_each(|player| {
-            let _guard = player_handle.enter();
-            player.tick(server);
-        });
+        players_cache
+            .par_iter()
+            .for_each(|(player, _, _, _, lifecycle)| {
+                let _guard = player_handle.enter();
+                player
+                    .living_entity
+                    .for_published_life(*lifecycle, || player.tick(server));
+            });
         let player_elapsed = t_players.elapsed();
 
         let entities_to_tick = self.entities.load();
@@ -1856,7 +1871,7 @@ impl World {
                     let entity_pos = entity_inner.pos.load();
                     let entity_bb = entity_inner.bounding_box.load();
 
-                    for (player, player_pos, player_bb, player_chunk) in &players_cache {
+                    for (player, player_pos, player_bb, player_chunk, lifecycle) in &players_cache {
                         if (player_chunk.x - entity_chunk.x).abs() <= 1
                             && (player_chunk.y - entity_chunk.y).abs() <= 1
                             && (player_pos.x - entity_pos.x).abs() < 5.0
@@ -1864,13 +1879,22 @@ impl World {
                             && (player_pos.z - entity_pos.z).abs() < 5.0
                             && player_bb.intersects(&entity_bb)
                         {
-                            entity.on_player_collision(player);
+                            player.living_entity.for_published_life(*lifecycle, || {
+                                entity.on_player_collision(player);
+                            });
                             break;
                         }
                     }
                 }
             });
-        crate::entity::experience_orb::collect_nearby_orbs(&players, &experience_orbs);
+        for (player, _, _, _, lifecycle) in &players_cache {
+            player.living_entity.for_published_life(*lifecycle, || {
+                crate::entity::experience_orb::collect_nearby_orbs(
+                    std::slice::from_ref(player),
+                    &experience_orbs,
+                );
+            });
+        }
         self.ticking_experience_orbs.store(None);
         let entity_elapsed = t_entities.elapsed();
 
@@ -3940,7 +3964,8 @@ impl World {
         chunker::update_position(player);
         // Update commands
 
-        player.set_health(20.0);
+        // PlayerList.sendLevelInfo preserves the health restored before the respawn callback.
+        player.send_health();
     }
 
     pub fn explode(
@@ -4101,16 +4126,11 @@ impl World {
             )
         };
 
-        // Get respawn position and dimension
-        let (position, yaw, pitch, respawn_dimension) = if let Some(respawn) =
+        // ServerPlayer.findRespawnPositionAndUseSpawnBlock retains the actual destination level.
+        let (position, yaw, pitch, respawn_world) = if let Some(respawn) =
             player.calculate_respawn_point().await
         {
-            (
-                respawn.position,
-                respawn.yaw,
-                respawn.pitch,
-                respawn.dimension,
-            )
+            (respawn.position, respawn.yaw, respawn.pitch, respawn.world)
         } else {
             // No valid respawn point - send notification if player had one set
             if player
@@ -4159,7 +4179,7 @@ impl World {
                 ),
                 spawn_yaw,
                 spawn_pitch,
-                default_world.dimension.clone(),
+                default_world.clone(),
             )
         };
 
@@ -4171,28 +4191,23 @@ impl World {
             s.plugin_manager.fire(s, &mut spawn_loc_event).await;
         }
         let position = spawn_loc_event.spawn_pos;
+        if player.client.closed() || player.get_entity().is_removed() {
+            return;
+        }
+
+        let Some(source_world) = player
+            .living_entity
+            .begin_respawn_after_transfer(player)
+            .await
+        else {
+            return;
+        };
 
         // PlayerList.respawn removes the old player's menus before transferring worlds.
         player.remove_respawn_menus(alive);
 
-        // Candidate destination world for a cross-dimension respawn.
-        let candidate_world = if respawn_dimension == self.dimension {
-            None
-        } else {
-            server.as_ref().map_or_else(
-                || {
-                    warn!("Could not get server for cross-dimension respawn");
-                    None
-                },
-                |s| {
-                    let worlds = s.worlds.load();
-                    worlds
-                        .iter()
-                        .find(|w| w.dimension == respawn_dimension)
-                        .cloned()
-                },
-            )
-        };
+        // PlayerList.respawn uses TeleportTransition.newLevel, even for equal dimension types.
+        let candidate_world = (respawn_world.uuid != source_world.uuid).then_some(respawn_world);
 
         // Fire PlayerChangeWorldEvent (cancellable) before the transfer; it runs before
         // the non-cancellable PlayerRespawnEvent, which observes the resolved world.
@@ -4200,7 +4215,7 @@ impl World {
             if let Some(ref s) = server {
                 let mut event = PlayerChangeWorldEvent {
                     player: player.clone(),
-                    previous_world: self.clone(),
+                    previous_world: source_world.clone(),
                     new_world: new_world.clone(),
                     position,
                     yaw,
@@ -4208,6 +4223,9 @@ impl World {
                     cancelled: false,
                 };
                 s.plugin_manager.fire(s, &mut event).await;
+                if !player.living_entity.respawn_can_continue(player) {
+                    return;
+                }
 
                 if event.cancelled {
                     (None, position, yaw, pitch)
@@ -4218,23 +4236,23 @@ impl World {
                     let pitch = event.pitch;
 
                     // Skip the transfer if redirected back to the current world.
-                    if destination.uuid != self.uuid {
+                    if destination.uuid != source_world.uuid {
                         debug!(
                             "Cross-dimension respawn: {} -> {}",
-                            self.dimension.minecraft_name, destination.dimension.minecraft_name
+                            source_world.dimension.minecraft_name,
+                            destination.dimension.minecraft_name
                         );
 
                         // Detach from the old world before publishing into the new one, so no
                         // observer sees the player in a world whose chunk manager doesn't match.
-                        self.remove_player(player, false).await;
-                        player.unload_watched_chunks(self).await;
-                        player.change_world_chunks(&self.level, &destination);
+                        source_world.remove_player(player, false).await;
+                        player.unload_watched_chunks(&source_world).await;
+                        let _owner = player.living_entity.own_damage();
+                        if !player.living_entity.respawn_can_continue(player) {
+                            return;
+                        }
+                        player.change_world_chunks(&source_world.level, &destination);
                         player.living_entity.entity.set_world(destination.clone());
-                        destination.players.rcu(|current_list| {
-                            let mut new_list = (**current_list).clone();
-                            new_list.push(player.clone());
-                            new_list
-                        });
                     }
 
                     (Some(destination), position, yaw, pitch)
@@ -4244,31 +4262,33 @@ impl World {
                 (None, position, yaw, pitch)
             }
         } else {
-            if respawn_dimension != self.dimension {
-                warn!(
-                    "Target world {:?} not found, using world spawn in {:?}",
-                    respawn_dimension, self.dimension
-                );
-            }
             (None, position, yaw, pitch)
         };
 
         // Cancelled or unresolved cross-dimension respawns fall back to the current
         // world's spawn below; otherwise the resolved values from the event apply.
         let (target_world, position, yaw, pitch) = resolved_world.as_ref().map_or_else(
-            || (self.clone(), position, yaw, pitch),
+            || (source_world.clone(), position, yaw, pitch),
             |new_world| (new_world.clone(), position, yaw, pitch),
         );
 
+        // PlayerList.respawn calls ServerPlayer.restoreFrom before publishing the new life.
+        player.restore_inventory_after_respawn(alive);
+        player.living_entity.reset_state();
+        // ServerPlayer.restoreFrom starts a dead player's new FoodData before publication.
+        if !alive {
+            player.hunger_manager.restart();
+        }
+
         // Notify plugins that the player has respawned (non-cancellable).
-        if let Some(server) = self.server.upgrade() {
+        if let Some(server) = source_world.server.upgrade() {
             server
                 .plugin_manager
                 .fire(
                     &server,
                     &mut PlayerRespawnEvent::new(
                         player.clone(),
-                        self.clone(),
+                        source_world.clone(),
                         target_world.clone(),
                         position,
                         yaw,
@@ -4277,6 +4297,10 @@ impl World {
                     ),
                 )
                 .await;
+        }
+
+        if !player.living_entity.respawn_can_continue(player) {
+            return;
         }
 
         // Send respawn packet with target dimension (using send_packet_now to ensure proper order)
@@ -4328,36 +4352,19 @@ impl World {
             )
             .await;
 
-        player.restore_inventory_after_respawn(alive);
-        player.living_entity.reset_state();
-
         player.send_permission_lvl_update();
 
-        player.hunger_manager.restart();
-
-        // Set entity position BEFORE loading chunks, so chunks load at the right location
-        // This mirrors the initial spawn flow where update_position is called before teleport
-        player.get_entity().set_pos(position);
-        player.get_entity().set_rotation(yaw, pitch);
-        player.get_entity().last_pos.store(position);
-
-        // TODO: difficulty, exp bar, status effect
-
-        // Registered after positioning; a same-dimension respawn keeps its client entities.
-        if target_world.uuid == self.uuid {
-            // Clients never remove a dead entity themselves, so viewers would keep the corpse.
-            target_world
-                .entity_tracker
-                .respawn_entity(&(player.clone() as Arc<dyn EntityBase>), &target_world);
-        } else {
-            target_world.add_arriving_player(player);
-            target_world
-                .entity_tracker
-                .repair_respawned_player(player, &target_world);
+        if !player
+            .living_entity
+            .complete_respawn(player, &target_world, &source_world, position, yaw, pitch)
+            .await
+        {
+            return;
         }
 
         // Load chunks and send world info FIRST (before teleport packet)
         target_world.send_world_info(player);
+        player.sync_respawn_inventory();
         target_world.send_center_chunk(player).await;
 
         // Send teleport packet after at least the center chunk was delivered
@@ -4933,67 +4940,25 @@ impl World {
         player: &Arc<Player>,
         fire_event: bool,
     ) -> Option<Arc<Player>> {
-        let mut removed_player: Option<Arc<Player>> = None;
+        let (current_world, removed_player) = self.detach_player(player, fire_event);
+        let world = current_world.as_deref().unwrap_or(self);
+        if fire_event && let Some(ref player) = removed_player {
+            let msg_comp = TextComponent::translate_cross(
+                translation::java::MULTIPLAYER_PLAYER_LEFT,
+                translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
+                [TextComponent::text(player.gameprofile.name.clone())],
+            )
+            .color_named(NamedColor::Yellow);
+            let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
 
-        self.players.rcu(|current_list| {
-            let mut new_list = (**current_list).clone();
-            // Find the player before we filter them out
-            let pos = new_list
-                .iter()
-                .position(|p| p.gameprofile.id == player.gameprofile.id);
-            if let Some(pos) = pos {
-                removed_player = Some(new_list.remove(pos));
-            }
-            new_list
-        });
-        if let Some(ref player) = removed_player {
-            self.entity_tracker
-                .remove_entity(player.as_ref() as &dyn EntityBase, self);
-            let uuid = player.gameprofile.id;
-            let entity_id = player.entity_id();
+            if let Some(server) = world.server.upgrade() {
+                server.plugin_manager.fire(&server, &mut event).await;
 
-            let bedrock_remove_player = CPlayerList {
-                action: CPlayerList::ACTION_REMOVE,
-                entries: vec![PlayerListEntry {
-                    uuid,
-                    entity_unique_id: VarLong(entity_id as i64),
-                    username: player.gameprofile.name.clone(),
-                    xuid: String::new(),
-                    platform_chat_id: String::new(),
-                    build_platform: BuildPlatform::Unknown,
-                    skin: Skin::steve(),
-                    is_teacher: false,
-                    is_host: false,
-                    is_sub_client: false,
-                    player_color: [0, 0, 0, 0],
-                }],
-            };
-
-            self.broadcast_editioned(&CRemovePlayerInfo::new(&[uuid]), &bedrock_remove_player);
-
-            self.broadcast_editioned(
-                &CRemoveEntities::new(&[entity_id.into()]),
-                &CRemoveActor::new(VarLong(entity_id as i64)),
-            );
-
-            if fire_event {
-                let msg_comp = TextComponent::translate_cross(
-                    translation::java::MULTIPLAYER_PLAYER_LEFT,
-                    translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
-                    [TextComponent::text(player.gameprofile.name.clone())],
-                )
-                .color_named(NamedColor::Yellow);
-                let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
-
-                if let Some(server) = self.server.upgrade() {
-                    server.plugin_manager.fire(&server, &mut event).await;
-
-                    if !event.cancelled {
-                        for player in self.players.load().iter() {
-                            player.send_system_message(&event.leave_message);
-                        }
-                        info!("{}", event.leave_message.to_pretty_console());
+                if !event.cancelled {
+                    for player in world.players.load().iter() {
+                        player.send_system_message(&event.leave_message);
                     }
+                    info!("{}", event.leave_message.to_pretty_console());
                 }
             }
         }

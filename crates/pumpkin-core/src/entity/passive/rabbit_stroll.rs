@@ -211,5 +211,6 @@ mod tests {
             }
         }
         assert!(land_count > 0);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

@@ -8,6 +8,15 @@ impl BedrockClient {
         server: &Arc<Server>,
         packet: SCommandRequest<'_>,
     ) {
+        // PlayerList.respawn replaces the life admitted by the command packet.
+        let life = {
+            let _owner = player.living_entity.own_damage();
+            let life = crate::entity::living::PlayerTickLife::capture(player.as_ref());
+            if !life.is_current() {
+                return;
+            }
+            life
+        };
         player.update_last_action_time();
         if player.check_chat_spam(server, crate::entity::player::SpamType::Command) {
             return;
@@ -23,6 +32,10 @@ impl BedrockClient {
             };
 
             'after: {
+                {
+                    let _owner = player.living_entity.own_damage();
+                    if !life.is_current() { return; }
+                }
                 let command = event.command;
                 let dispatcher = server.command_dispatcher.load();
                 dispatcher.handle_command(

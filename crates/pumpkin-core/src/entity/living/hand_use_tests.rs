@@ -106,6 +106,7 @@ async fn hand_use_jukebox_consumes_survival_disc_and_preserves_creative_disc() {
         );
     }
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -138,6 +139,7 @@ async fn hand_use_composter_waiting_level_preserves_input() {
     use_block(&fixture, &server, pos, Hand::Right);
     assert_eq!(fixture.player.inventory().held_item().item_count, 9);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -195,6 +197,7 @@ async fn hand_use_banner_washes_one_pattern_from_one_banner() {
         0
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -226,6 +229,7 @@ async fn hand_use_snow_placement_consumes_and_keeps_eight_layers() {
     use_block(&fixture, &server, pos, Hand::Right);
     assert_eq!(world.get_block(&pos), &Block::SNOW);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -280,6 +284,7 @@ async fn hand_use_milk_and_stew_finish_in_the_active_hand() {
     assert!(player.living_entity.has_effect(&StatusEffect::NIGHT_VISION));
     assert_eq!(inventory.off_hand_item().item, &Item::BOWL);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -301,6 +306,7 @@ async fn hand_use_changed_item_never_finishes_saved_food() {
         assert!(player.living_entity.active_hand.lock().unwrap().is_none());
     }
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -336,6 +342,7 @@ async fn hand_use_offhand_book_signing_preserves_components() {
         &Item::DIAMOND_SWORD
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -373,6 +380,7 @@ async fn hand_use_sign_requires_session_and_expires_distant_editor() {
     sign.tick(&world);
     assert!(sign.currently_editing_player.lock().unwrap().is_none());
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -397,6 +405,7 @@ async fn hand_use_flower_pot_returns_the_consumed_plant() {
     assert_eq!(world.get_block(&pos), &Block::FLOWER_POT);
     assert_eq!(inventory.held_item().item, &Item::DANDELION);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -447,6 +456,7 @@ async fn hand_use_stacked_remainders_drop_when_full_and_skip_creative() {
         .sum();
     assert_eq!(count, 1);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -471,6 +481,7 @@ async fn hand_use_seed_advancement_matches_generated_crop_predicates() {
             .has_advancement(pumpkin_data::Advancement::HUSBANDRY_PLANT_ANY_SNIFFER_SEED)
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -512,6 +523,7 @@ async fn hand_use_cauldron_accepts_only_water_potions() {
         1
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 mod honey_harvest;

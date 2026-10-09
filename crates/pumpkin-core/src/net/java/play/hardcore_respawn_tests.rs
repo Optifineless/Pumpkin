@@ -128,6 +128,7 @@ async fn hardcore_respawn_uses_saved_bed_or_anchor_then_spectates() {
         }
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -158,4 +159,5 @@ async fn hardcore_respawn_preserves_gamemode_event_contract() {
         );
         fixture.server.shutdown().await;
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

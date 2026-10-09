@@ -680,7 +680,9 @@ impl EntityBase for ItemEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
-        if self.pickup_delay.load(Ordering::Relaxed) > 0
+        let _owner = player.living_entity.own_damage();
+        if player.living_entity.is_respawning()
+            || self.pickup_delay.load(Ordering::Relaxed) > 0
             || player.living_entity.health.load() <= 0.0
             || player.is_spectator()
         {
@@ -891,6 +893,7 @@ mod tests {
         item.item_age
             .store(5999, std::sync::atomic::Ordering::Relaxed);
         assert!(!item.process_age_and_merge());
+        crate::server::fixture_lifecycle::finish().await;
     }
     use super::{Entity, EntityBase, ItemEntity};
     use pumpkin_data::data_component_impl::{CustomDataImpl, CustomNameImpl};

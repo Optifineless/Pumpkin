@@ -44,6 +44,7 @@ async fn hopper_pulls_from_connected_chest_half() {
     assert!(first.is_empty());
     assert_eq!(second.get_stack(0).item_count, 1);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -60,6 +61,7 @@ async fn hopper_pushes_past_full_first_chest_half() {
     assert_eq!(second.get_stack(0).item_count, 1);
     assert_eq!(first.get_stack(0).item_count, 64);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -114,6 +116,7 @@ async fn malformed_chest_partner_is_not_combined() {
         first.size()
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -132,6 +135,7 @@ async fn failed_double_chest_transfer_preserves_source() {
     assert!(hopper.get_stack(0).are_equal(&source));
     assert!(fixture.world.entities.load().is_empty());
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -202,6 +206,7 @@ async fn opposite_half_hoppers_concurrently_drain_without_duplication() {
         "both halves must conserve their shared items"
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -244,6 +249,7 @@ async fn double_chest_concurrent_insertions_conserve_items() {
         }
     });
     assert!(conserved.load(Ordering::Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[test]

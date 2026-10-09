@@ -236,5 +236,6 @@ mod tests {
                 .has_advancement(Advancement::HUSBANDRY_PLANT_ANY_SNIFFER_SEED)
         );
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

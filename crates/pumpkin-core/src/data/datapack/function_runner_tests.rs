@@ -299,35 +299,38 @@ async fn explicit_returns_discard_tails_and_store_function_results()
             &source,
         )
         .map_err(|error| format!("{error:?}"))?;
-    let scoreboard = world
-        .scoreboard
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert_eq!(
-        scoreboard
-            .get_score("value", "repro")
-            .map(|score| score.value.0),
-        Some(7)
-    );
-    assert_eq!(
-        scoreboard
-            .get_score("returned", "repro")
-            .map(|score| score.value.0),
-        Some(7)
-    );
-    assert_eq!(
-        scoreboard
-            .get_score("tail", "repro")
-            .map(|score| score.value.0),
-        Some(9)
-    );
-    assert_eq!(
-        scoreboard
-            .get_score("tagged", "repro")
-            .map(|score| score.value.0),
-        Some(7)
-    );
-    assert!(scoreboard.get_score("wrong", "repro").is_none());
+    {
+        let scoreboard = world
+            .scoreboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(
+            scoreboard
+                .get_score("value", "repro")
+                .map(|score| score.value.0),
+            Some(7)
+        );
+        assert_eq!(
+            scoreboard
+                .get_score("returned", "repro")
+                .map(|score| score.value.0),
+            Some(7)
+        );
+        assert_eq!(
+            scoreboard
+                .get_score("tail", "repro")
+                .map(|score| score.value.0),
+            Some(9)
+        );
+        assert_eq!(
+            scoreboard
+                .get_score("tagged", "repro")
+                .map(|score| score.value.0),
+            Some(7)
+        );
+        assert!(scoreboard.get_score("wrong", "repro").is_none());
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -390,17 +393,20 @@ async fn returned_tags_stop_at_the_first_explicit_return() -> Result<(), Box<dyn
             &source,
         )
         .map_err(|error| format!("{error:?}"))?;
-    let scoreboard = world
-        .scoreboard
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert_eq!(
-        scoreboard
-            .get_score("value", "repro")
-            .map(|score| score.value.0),
-        Some(7)
-    );
-    assert!(scoreboard.get_score("wrong", "repro").is_none());
+    {
+        let scoreboard = world
+            .scoreboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(
+            scoreboard
+                .get_score("value", "repro")
+                .map(|score| score.value.0),
+            Some(7)
+        );
+        assert!(scoreboard.get_score("wrong", "repro").is_none());
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -461,6 +467,7 @@ async fn returned_empty_branches_and_functions_report_failure()
             .get_score("wrong", "repro")
             .is_none()
     );
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -516,15 +523,18 @@ async fn frozen_load_waits_and_tick_functions_have_independent_quotas()
     server.tick_rate_manager.tick();
     manager.tick_functions(&server, &source);
     manager.tick_functions(&server, &source);
-    let scoreboard = world
-        .scoreboard
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert_eq!(
-        scoreboard
-            .get_score("value", "repro")
-            .map(|score| score.value.0),
-        Some(5)
-    );
+    {
+        let scoreboard = world
+            .scoreboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(
+            scoreboard
+                .get_score("value", "repro")
+                .map(|score| score.value.0),
+            Some(5)
+        );
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }

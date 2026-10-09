@@ -88,6 +88,7 @@ async fn primed_tnt_reload_and_explosion_retain_the_igniter_and_direct_source() 
         chained_owner.get_entity().entity_uuid,
         owner.entity.entity_uuid
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -150,6 +151,7 @@ async fn crystal_attacker_gets_damage_credit_without_owning_chained_tnt() {
             .iter()
             .all(|entity| entity.get_entity().entity_type != &EntityType::EXPERIENCE_ORB)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -213,4 +215,5 @@ async fn verification_explosion_redirects_fireball_and_wind_charge_to_custom_cau
             igniter.entity.entity_uuid
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

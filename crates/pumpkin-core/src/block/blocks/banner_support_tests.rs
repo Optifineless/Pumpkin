@@ -54,6 +54,7 @@ async fn wall_banner_support_removal_preserves_patterned_drop() {
         "minecraft:stripe_bottom".to_owned()
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[pumpkin_macros::pumpkin_block("minecraft:stone")]
@@ -100,6 +101,7 @@ async fn queued_support_remove_restore_keeps_supported_banners() {
         registry,
         Arc::downgrade(&fixture.server),
     ));
+    crate::server::fixture_lifecycle::track_world(&world);
     publish(&world, proto(&Biome::PLAINS, &Block::STONE));
     for wall in [false, true] {
         let position = BlockPos::new(8, 64, 8);
@@ -141,4 +143,5 @@ async fn queued_support_remove_restore_keeps_supported_banners() {
         );
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

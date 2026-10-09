@@ -38,6 +38,7 @@ async fn owner_grace_includes_zero_health_unremoved_living_passengers() {
     arrow.projectile.tick(&arrow.entity);
     assert!(arrow.projectile.left_owner.load(Ordering::Relaxed));
     owner.entity.remove_passenger(passenger.entity.entity_id);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -94,6 +95,7 @@ async fn owner_uuid_survives_reload_and_owner_grace_depends_on_collision_not_age
             .projectile
             .can_hit(&restored.entity, &restored_owner)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -177,6 +179,7 @@ async fn deflection_changes_velocity_owner_and_hurting_acceleration() {
         true,
         Vector3::new(1.0, 1.0, 1.0)
     ));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[test]
@@ -230,6 +233,7 @@ async fn breeze_deflection_consumes_the_collision_without_discarding_the_project
         snowball.get_entity().velocity.load(),
         Vector3::new(0.0, 0.0, -1.0)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -286,6 +290,7 @@ async fn water_potions_douse_candles_campfires_and_burning_living_targets() {
         !CampfireLikeProperties::from_state_id(world.get_block_state(&BlockPos::new(9, 66, 8)).id)
             .lit
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -302,4 +307,5 @@ async fn arrows_reverse_at_the_world_border_with_one_tenth_speed() {
     assert!(arrow.entity.pos.load().x < 5.0);
     assert!(!arrow.entity.is_removed());
     assert!(!arrow.in_ground.load(Ordering::Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }

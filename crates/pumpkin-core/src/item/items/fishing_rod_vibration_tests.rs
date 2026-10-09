@@ -89,4 +89,5 @@ async fn fishing_use_vibrations_require_enabled_component_and_follow_durability(
             assert!(events.is_empty());
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -106,6 +106,7 @@ async fn award_merges_equal_values_only_in_the_selected_group_and_box() {
     let wrapped = ExperienceOrbEntity::new(entity, 7);
     // Java's wrapped difference is 40, so these IDs belong to the same group.
     assert!(wrapped.can_merge(i32::MAX - 39, 7));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -132,6 +133,7 @@ async fn tick_21_scans_merge_counts_and_keep_the_younger_age() {
     assert_eq!(first.state.lock().unwrap().count, 4);
     assert_eq!(first.state.lock().unwrap().age, 26);
     assert!(second.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -160,6 +162,7 @@ async fn reciprocal_parallel_merge_scans_do_not_lose_counts() {
             .count,
         23
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -215,6 +218,7 @@ async fn following_adds_vanilla_acceleration_and_keeps_dead_targets_until_repick
         .get_entity()
         .set_pos(Vector3::new(-4.0, 100.0, 0.0));
     assert!(!orb.follow_nearby_player());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -264,6 +268,7 @@ async fn pickup_consumes_one_count_every_two_player_ticks_and_sends_animation() 
     assert!(orb.entity.is_removed());
     assert_eq!(player.player.experience_level.load(Ordering::Relaxed), 1);
     assert_eq!(player.player.experience_points.load(Ordering::Relaxed), 7);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -307,6 +312,7 @@ async fn expanded_player_collection_skips_spectators_and_dead_players() {
     );
     assert_eq!(dead.player.experience_points.load(Ordering::Relaxed), 0);
     assert!(orb.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -341,35 +347,38 @@ async fn saved_high_value_orbs_restore_health_age_count_and_client_metadata() {
         .downcast_ref::<ExperienceOrbEntity>()
         .unwrap();
     assert_eq!(restored.get_value(), 2477);
-    let state = restored.state.lock().unwrap();
-    assert_eq!((state.health, state.age, state.count), (3, 3210, 12));
-    drop(state);
-    let bytes = restored
-        .entity
-        .synched_data
-        .get_non_default_values_for_version(&pumpkin_data::packet::CURRENT_MC_VERSION)
-        .unwrap();
-    // DATA_VALUE is tracked index 8 and serializer INT (VarInt), followed by 2477.
-    assert!(bytes.windows(4).any(|bytes| bytes == [8, 1, 0xad, 0x13]));
-    let mut invalid = NbtCompound::new();
-    invalid.put_int("Count", -3);
-    restored.read_custom_nbt(&invalid);
-    assert_eq!(restored.state.lock().unwrap().count, 1);
-    assert_eq!(restored.get_value(), 0);
-    // TagValueInput accepts numeric tags, including integer Value from summon commands.
-    let mut numeric = NbtCompound::new();
-    numeric.put_int("Health", 3);
-    numeric.put_float("Age", 3210.9);
-    numeric.put_int("Value", 2477);
-    numeric.put_short("Count", 12);
-    restored.read_custom_nbt(&numeric);
-    assert_eq!(restored.get_value(), 2477);
-    let state = restored.state.lock().unwrap();
-    assert_eq!((state.health, state.age, state.count), (3, 3210, 12));
-    drop(state);
-    numeric.put_long("Count", 4_294_967_308);
-    restored.read_custom_nbt(&numeric);
-    assert_eq!(restored.state.lock().unwrap().count, 12);
+    {
+        let state = restored.state.lock().unwrap();
+        assert_eq!((state.health, state.age, state.count), (3, 3210, 12));
+        drop(state);
+        let bytes = restored
+            .entity
+            .synched_data
+            .get_non_default_values_for_version(&pumpkin_data::packet::CURRENT_MC_VERSION)
+            .unwrap();
+        // DATA_VALUE is tracked index 8 and serializer INT (VarInt), followed by 2477.
+        assert!(bytes.windows(4).any(|bytes| bytes == [8, 1, 0xad, 0x13]));
+        let mut invalid = NbtCompound::new();
+        invalid.put_int("Count", -3);
+        restored.read_custom_nbt(&invalid);
+        assert_eq!(restored.state.lock().unwrap().count, 1);
+        assert_eq!(restored.get_value(), 0);
+        // TagValueInput accepts numeric tags, including integer Value from summon commands.
+        let mut numeric = NbtCompound::new();
+        numeric.put_int("Health", 3);
+        numeric.put_float("Age", 3210.9);
+        numeric.put_int("Value", 2477);
+        numeric.put_short("Count", 12);
+        restored.read_custom_nbt(&numeric);
+        assert_eq!(restored.get_value(), 2477);
+        let state = restored.state.lock().unwrap();
+        assert_eq!((state.health, state.age, state.count), (3, 3210, 12));
+        drop(state);
+        numeric.put_long("Count", 4_294_967_308);
+        restored.read_custom_nbt(&numeric);
+        assert_eq!(restored.state.lock().unwrap().count, 12);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -390,6 +399,7 @@ async fn one_xp_repairs_two_equipped_items_missing_one_durability() {
     assert_eq!(player.player.apply_mending_from_xp(1), 1);
     assert_eq!(player.player.inventory.get_slot(0).get_damage(), 0);
     assert_eq!(player.player.inventory.get_slot(40).get_damage(), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -446,6 +456,7 @@ async fn cancelled_pickup_and_mending_preserve_the_orb_and_damaged_equipment() {
     player.player.inventory.set_slot(0, sword);
     assert_eq!(player.player.apply_mending_from_xp(1), 1);
     assert_eq!(player.player.inventory.get_slot(0).get_damage(), 1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -467,6 +478,7 @@ async fn directed_awards_launch_outward_from_the_supplied_position() {
     assert!((orb.entity.pos.load().x - 0.25).abs() < 1.0e-12);
     assert!(orb.entity.velocity.load().x >= 0.0);
     assert!(orb.entity.velocity.load().length_squared() > 0.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -486,6 +498,7 @@ async fn health_and_lifetime_discard_at_vanilla_boundaries() {
     old.state.lock().unwrap().age = 5999;
     old.tick_age();
     assert!(old.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[test]

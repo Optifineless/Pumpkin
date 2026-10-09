@@ -6,6 +6,7 @@ pub enum Point {
     Damping,
     ProjectileFollowup,
     PlayerMotionFlush,
+    CommandDispatch,
 }
 
 type Hook = Box<dyn Fn(Point)>;

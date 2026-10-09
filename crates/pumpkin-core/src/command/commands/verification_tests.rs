@@ -41,12 +41,15 @@ async fn direct_player_local_coordinates_equal_execute_at_self() -> TestResult {
             .execute_input(input, &source)
             .map_err(|error| format!("{error:?}"))?;
     }
-    let positions = positions.lock().unwrap();
-    assert_eq!(positions.len(), 2);
-    assert_eq!(positions[0], positions[1]);
-    assert!((positions[0].x - 9.25).abs() < 0.00001);
-    assert!((positions[0].y - 19.5).abs() < 0.00001);
-    assert!((positions[0].z - 30.4330127).abs() < 0.00001);
+    {
+        let positions = positions.lock().unwrap();
+        assert_eq!(positions.len(), 2);
+        assert_eq!(positions[0], positions[1]);
+        assert!((positions[0].x - 9.25).abs() < 0.00001);
+        assert!((positions[0].y - 19.5).abs() < 0.00001);
+        assert!((positions[0].z - 30.4330127).abs() < 0.00001);
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -73,6 +76,7 @@ async fn top_level_bare_return_discards_remaining_player_sources() -> TestResult
         .map_err(|error| format!("{error:?}"))?;
     assert_eq!(result, 1);
     assert_eq!(*returns.lock().unwrap(), [ReturnValue::Success(1)]);
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -113,5 +117,6 @@ async fn chat_output_fallback_uses_bound_chat_type() -> TestResult {
             .unwrap()
             .ends_with("You whisper to Recipient: hello")
     );
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }

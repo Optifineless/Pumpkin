@@ -106,6 +106,7 @@ async fn dragon_egg_attack_moves_without_drop_and_within_bounds() {
             .all(|entity| entity.get_item_entity().is_none())
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct AttackControl {
@@ -185,6 +186,7 @@ async fn note_block_attack_only_once_after_restrictions() {
     assert_eq!(control.notes.load(Ordering::Relaxed), 1);
     assert!(world.get_block_state(&position).is_air());
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[test]

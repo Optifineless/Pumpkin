@@ -221,5 +221,6 @@ mod tests {
             living.check_consumable_teleport_target(&world, edge),
             Some(edge)
         );
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

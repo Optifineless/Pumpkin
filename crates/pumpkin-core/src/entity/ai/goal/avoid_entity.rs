@@ -265,5 +265,6 @@ mod tests {
             rabbit.mob_entity.navigator.lock().unwrap().get_path(),
             Some(&path)
         );
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

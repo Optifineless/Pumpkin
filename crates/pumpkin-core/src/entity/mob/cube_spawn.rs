@@ -106,6 +106,7 @@ mod tests {
             }
         }
         fixture.finish().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]
@@ -169,5 +170,6 @@ mod tests {
             assert_eq!(living.health.load(), living.get_max_health());
         }
         fixture.finish().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

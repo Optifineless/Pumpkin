@@ -55,6 +55,7 @@ async fn leashed_mooshroom_first_click_only_snips_lead() {
         1
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -73,6 +74,7 @@ async fn shearing_a_holder_cuts_all_nearby_outgoing_leashes() {
     assert!(!holder.get_entity().shear_off_all_leash_connections(None));
     assert_eq!(leads(&world), 2);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -91,4 +93,5 @@ async fn simultaneous_leash_snips_drop_one_lead() {
     });
     assert_eq!(leads(&fixture.world()), 1);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

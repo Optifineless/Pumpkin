@@ -38,6 +38,7 @@ async fn orchestration_review_instant_effect_ticks_invert_healing_and_harming_on
         });
         assert_eq!(zombie.health.load(), expected, "{}", effect.minecraft_name);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -75,4 +76,5 @@ async fn orchestration_review_instant_potion_routes_invert_and_round_on_zombies(
             );
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

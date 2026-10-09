@@ -96,6 +96,7 @@ async fn spectator_target_requires_border_range_and_pickability_and_sends_one_ca
         Some(part.get_entity().entity_id)
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -124,6 +125,7 @@ async fn spectator_root_dragon_rejected_but_part_pickable() {
         .unwrap();
     assert!(dragon.parts[0].is_pickable());
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -166,4 +168,5 @@ async fn ordinary_interact_cannot_bypass_spectator_target_validation() {
         assert!(viewer.player.camera_target_id.load().is_none());
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -834,6 +834,7 @@ mod ext_review_tests {
             get_hand_item(&context, true).unwrap().unwrap().item,
             &Item::DIAMOND_SWORD
         );
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 

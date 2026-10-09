@@ -108,4 +108,5 @@ async fn container_events_follow_zero_viewer_boundaries() {
         assert_eq!(events.lock().unwrap().len(), 2);
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

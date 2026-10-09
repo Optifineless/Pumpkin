@@ -375,6 +375,7 @@ mod tests {
         assert_eq!(living.get_attribute_value(&Attributes::ATTACK_DAMAGE), 3.0);
         // Rabbit.setVariant removes the evil damage modifier but leaves the armor base.
         assert_eq!(living.get_attribute_value(&Attributes::ARMOR), 8.0);
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 }

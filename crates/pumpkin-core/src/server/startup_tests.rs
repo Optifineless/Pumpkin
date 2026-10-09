@@ -34,10 +34,12 @@ async fn disabled_bedrock_skips_authentication_initialization() {
     )
     .await
     .unwrap();
+    super::fixture_lifecycle::track_server(&server);
     server.tasks.close();
     tokio::time::timeout(Duration::from_secs(30), server.tasks.wait())
         .await
         .unwrap();
 
     assert!(server.bedrock_oidc_keys.get().is_none());
+    super::fixture_lifecycle::finish().await;
 }

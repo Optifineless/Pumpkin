@@ -121,6 +121,7 @@ async fn orchestration_review_guest_heal_and_set_health_during_armor_wear() {
         );
         assert!((victim.living_entity.health.load() - 6.72).abs() < 0.00001);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -164,6 +165,7 @@ async fn orchestration_review_two_callbacks_can_mutate_each_others_victims() {
     for victim in [&a, &b] {
         assert!((victim.living_entity.health.load() - 6.72).abs() < 0.00001);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -251,6 +253,7 @@ async fn orchestration_review_melee_statistics_use_each_committed_attack() {
         )
     };
     assert_eq!((damage(&a), damage(&b)), (60, 40));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -298,6 +301,7 @@ async fn orchestration_review_tick_cannot_deliver_an_unfinished_melee_impulse() 
     );
     assert_eq!(victim.get_entity().velocity.load(), Vector3::default());
     assert!(!victim.get_entity().hurt_marked.load(Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -323,6 +327,7 @@ async fn orchestration_review_excess_history_is_visible_only_after_actually_hurt
     assert!(victim.damage(victim.as_ref(), 10.0, DamageType::PLAYER_ATTACK));
     assert!(seen.load(SeqCst));
     assert_eq!(victim.living_entity.last_damage_taken.load(), 10.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -342,6 +347,7 @@ async fn orchestration_review_damage_callback_revalidates_player_gates() {
     assert!(!victim.damage(victim.as_ref(), 6.0, DamageType::PLAYER_ATTACK));
     assert_eq!(victim.living_entity.health.load(), 20.0);
     assert_eq!(victim.living_entity.hurt_cooldown.load(Relaxed), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -361,6 +367,7 @@ async fn orchestration_review_reset_during_armor_invalidates_the_old_hit() {
     assert!(!victim.damage(victim.as_ref(), 6.0, DamageType::PLAYER_ATTACK));
     assert_eq!(victim.living_entity.health.load(), 20.0);
     assert_eq!(victim.living_entity.last_damage_taken.load(), 0.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -396,6 +403,7 @@ async fn orchestration_review_high_resistance_and_statistic_upper_bound() {
     victim.living_entity.hurt_cooldown.store(0, Relaxed);
     assert!(victim.damage(victim.as_ref(), f32::MAX, DamageType::PLAYER_ATTACK));
     assert_eq!(stats(), 180);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -417,6 +425,7 @@ async fn orchestration_review_living_block_hook_precedes_cooldown() {
     victim.get_entity().velocity.store(Vector3::default());
     assert!(!hit(&victim, 4.0, DamageType::PLAYER_ATTACK, &attacker));
     assert_eq!(victim.get_entity().velocity.load().z, 0.5);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -448,4 +457,5 @@ async fn orchestration_review_hoglin_and_ravager_respond_to_full_blocks() {
     );
     ravager.blocked_by_item(victim.as_ref(), true);
     assert_eq!(ravager.blocking.stunned.load(Relaxed), 40);
+    crate::server::fixture_lifecycle::finish().await;
 }

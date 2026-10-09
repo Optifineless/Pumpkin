@@ -116,6 +116,7 @@ async fn fishing_collision_preserves_owner_grace_and_hooks_other_players_then_de
     bobber.process_tick(&bobber);
     assert_eq!(bobber.hooked_entity_id.load(Relaxed), -1);
     assert_eq!(bobber.state.load(), HookState::Flying);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -140,6 +141,7 @@ async fn fishing_stranded_bobbing_hook_at_life_limit_clears_only_its_own_referen
     fixture.player.fishing_bobber.store(12345, Relaxed);
     bobber.clear_owner();
     assert_eq!(fixture.player.fishing_bobber.load(Relaxed), 12345);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -181,6 +183,7 @@ async fn fishing_timers_start_in_water_apply_lure_and_approach_before_a_bite() {
     assert_eq!(bobber.bite_countdown.load(Relaxed), 0);
     assert_eq!(bobber.wait_countdown.load(Relaxed), 0);
     assert_eq!(bobber.hook_countdown.load(Relaxed), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -213,6 +216,7 @@ async fn fishing_hook_stops_on_rod_swap_death_spectator_and_beyond_32_blocks() {
     owner.gamemode.store(pumpkin_util::GameMode::Survival);
     owner.living_entity.health.store(0.0);
     assert!(bobber.should_stop_fishing(owner));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -242,6 +246,7 @@ async fn fishing_context_retains_the_rod_hook_open_water_and_combined_luck() {
         &params.registry.unwrap(),
         &server.datapack_manager
     ));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -267,6 +272,7 @@ async fn fishing_treasure_predicate_requires_open_water_and_keeps_nested_loot_ta
     bobber.open_water.store(false, Relaxed);
     let params = bobber.fishing_loot_context(&fixture.player, &rod);
     assert!(table.generate_loot_with_context(1, &params).is_empty());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -312,6 +318,7 @@ async fn fishing_open_water_requires_uniform_source_layers_and_clear_air_above()
     bobber.out_of_water_time.store(10, Relaxed);
     bobber.bob_tick(&world, &BlockPos::new(8, 64, 8), 1.0, Vector3::default());
     assert!(!bobber.is_open_water_fishing());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -355,4 +362,5 @@ async fn fishing_retrieval_costs_and_pull_distinguish_items_mobs_ground_and_empt
         assert_eq!(fixture.player.fishing_bobber.load(Relaxed), -1);
         assert!(bobber.entity.is_removed());
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

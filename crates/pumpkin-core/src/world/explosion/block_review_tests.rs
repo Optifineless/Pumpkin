@@ -21,6 +21,7 @@ async fn exploded_wall_torch_uses_standing_torch_loot() {
     );
     assert_eq!(torch.len(), 1);
     assert_eq!(torch[0].item, &Item::TORCH);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -56,6 +57,7 @@ async fn exploded_banner_keeps_patterns_and_custom_name() {
             .get_text(),
         "Blast banner"
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -93,4 +95,5 @@ async fn explosion_rays_stop_at_unloaded_chunk_boundary() {
         explosion.pos,
         Vector3::new(18.5, 64.5, 8.5)
     ));
+    crate::server::fixture_lifecycle::finish().await;
 }

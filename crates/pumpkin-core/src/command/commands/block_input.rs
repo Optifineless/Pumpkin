@@ -174,6 +174,7 @@ mod tests {
             source.world().get_block(&BlockPos::new(8, 64, 8)),
             &Block::STONE
         );
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -194,6 +195,7 @@ mod tests {
                 &Block::STONE
             );
         }
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -224,6 +226,7 @@ mod tests {
                 &Block::AIR
             );
         }
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -258,6 +261,7 @@ mod tests {
                 }
             }
         }
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -277,6 +281,7 @@ mod tests {
             source.world().get_block_state_id(&BlockPos::new(8, 64, 8)),
             Block::OAK_LOG.default_state.id
         );
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -310,6 +315,7 @@ mod tests {
             Ok(1)
         );
         assert!(world.get_block_entity(&BlockPos::new(9, 64, 8)).is_some());
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -364,6 +370,7 @@ mod tests {
             dispatcher.execute_input("setblock 10 64 8 oak_log{test:1}", &source),
             Ok(1)
         );
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -412,6 +419,7 @@ mod tests {
         for y in [64, 65, 66] {
             assert_eq!(world.get_block(&BlockPos::new(8, y, 8)), &Block::AIR);
         }
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 
@@ -451,6 +459,7 @@ mod tests {
             dispatcher.execute_input("data get block 8 64 8 Items[0].count", &source),
             Ok(7)
         );
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 }
