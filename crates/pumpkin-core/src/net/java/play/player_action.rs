@@ -29,36 +29,10 @@ impl JavaClient {
                     let world = entity.world.load_full();
                     let (block, state) = world.get_block_and_state(&position);
 
-                    // ServerPlayerGameMode.handleBlockBreakAction validates before Block.attack.
-                    if !world.is_in_build_limit(position)
-                        || world.is_in_spawn_protection(player, &position)
-                        || !world
-                            .worldborder
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .contains(f64::from(position.0.x), f64::from(position.0.z))
-                        || player.block_action_restricted(&world, &position)
-                    {
+                    if !player.may_attack_block(&world, &position) {
                         self.sync_block_state_to_client(&world, position);
                         self.update_sequence(player_action.sequence.0);
                         return;
-                    }
-
-                    if let Some(server_arc) = world.server.upgrade() {
-                        let mut event =
-                            crate::plugin::api::events::block::block_damage::BlockDamageEvent::new(
-                                player.clone(),
-                                block,
-                                position,
-                                false,
-                            );
-                        server_arc
-                            .plugin_manager
-                            .fire_blocking(&server_arc, &mut event);
-                        if event.cancelled {
-                            self.update_sequence(player_action.sequence.0);
-                            return;
-                        }
                     }
 
                     let inventory = player.inventory();

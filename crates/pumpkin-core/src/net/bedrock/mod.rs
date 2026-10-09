@@ -941,3 +941,6 @@ impl BedrockClient {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod combat_test_support;

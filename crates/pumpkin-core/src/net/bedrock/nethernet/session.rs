@@ -52,7 +52,7 @@ where
 
 /// A WebRTC connection carrying complete Bedrock batch packets.
 pub struct NetherNetSession {
-    peer: Arc<dyn PeerConnection>,
+    peer: Option<Arc<dyn PeerConnection>>,
     reliable: RwLock<Option<Arc<dyn DataChannel>>>,
     unreliable: RwLock<Option<Arc<dyn DataChannel>>>,
     fragments: Mutex<FragmentBuffer>,
@@ -70,6 +70,22 @@ pub struct NetherNetSession {
 impl NetherNetSession {
     pub(super) fn new(
         peer: Arc<dyn PeerConnection>,
+        client_public_key: Option<PublicKey>,
+        address: SocketAddr,
+        incoming: mpsc::Sender<IncomingSession>,
+    ) -> Self {
+        Self::with_peer(Some(peer), client_public_key, address, incoming)
+    }
+
+    /// Creates a packet-handler fixture without opening network sockets.
+    #[cfg(test)]
+    pub(in crate::net::bedrock) fn offline(address: SocketAddr) -> Self {
+        let (incoming, _) = mpsc::channel(1);
+        Self::with_peer(None, None, address, incoming)
+    }
+
+    fn with_peer(
+        peer: Option<Arc<dyn PeerConnection>>,
         client_public_key: Option<PublicKey>,
         address: SocketAddr,
         incoming: mpsc::Sender<IncomingSession>,
@@ -327,7 +343,9 @@ impl NetherNetSession {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
-        let _ = self.peer.close().await;
+        if let Some(peer) = &self.peer {
+            let _ = peer.close().await;
+        }
     }
 }
 
