@@ -50,7 +50,7 @@ use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
     block::{
         registry::BlockRegistry,
-        {OnNeighborUpdateArgs, OnScheduledTickArgs},
+        OnScheduledTickArgs,
     },
     command::client_suggestions,
     entity::{Entity, EntityBase, RemovalReason, player::Player},
