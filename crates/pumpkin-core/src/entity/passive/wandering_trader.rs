@@ -624,6 +624,7 @@ impl ScreenHandlerFactory for WanderingTraderEntity {
             if let Some(trader) = trade_weak.upgrade() {
                 trader.complete_trade(offer_index, &world, player_uuid);
             }
+            None
         }));
 
         Some(Arc::new(std::sync::Mutex::new(handler)) as SharedScreenHandler)

@@ -104,6 +104,7 @@ pub(crate) mod player_skin;
 mod player_teleport;
 pub mod projectile;
 pub mod projectile_deflection;
+mod server_player_game_mode;
 pub(crate) mod spawn_mount;
 
 mod leash_shearing;
@@ -591,6 +592,18 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         _hand: pumpkin_util::Hand,
     ) -> bool {
         self.interact_at(player, stack, position)
+    }
+
+    /// Attempts an equipment exchange that commits the real source slot before returning.
+    /// `None` uses the regular hand hooks; `Some(true)` is an equipment transfer, not item use.
+    fn interact_from_hand_slot(
+        &self,
+        _player: &Arc<Player>,
+        _stack: &mut ItemStack,
+        _position: Option<Vector3<f64>>,
+        _source_slot: usize,
+    ) -> Option<bool> {
+        None
     }
 
     fn set_on_fire_for(&self, seconds: f32) {

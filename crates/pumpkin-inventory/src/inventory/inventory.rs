@@ -20,6 +20,11 @@ pub trait Inventory: Send + Sync + Clearable {
 
     fn set_stack(&self, slot: usize, stack: ItemStack);
 
+    /// Mutates a slot once under its storage lock, preserving concurrent inserts and removals.
+    /// The callback must not reenter inventories, send packets, or dispatch plugin events.
+    /// Invalid slots are ignored; unchanged stacks must not mark the inventory dirty.
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack));
+
     fn on_open(&self) {}
     fn on_close(&self) {}
 

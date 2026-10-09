@@ -276,11 +276,13 @@ impl WasmPluginEventHandler {
         event: Box<dyn PendingWasmEvent>,
     ) -> wasmtime::Result<Box<dyn Any + Send>> {
         let handler_id = self.handler_id;
+        let neighbor_context =
+            pumpkin_core::world::neighbor_context::NeighborUpdateContext::capture();
         let function = self.plugin.instance::<crate::Plugin>().func_handle_event();
         self.plugin
             .store
             .call_guest(move |mut guest| {
-                Box::pin(async move {
+                Box::pin(neighbor_context.scope(async move {
                     let (wasm_event, server_res) = guest.with(|mut store| {
                         let wasm_event = event.to_wasm(store.data_mut());
                         match store.data_mut().add(server) {
@@ -297,7 +299,7 @@ impl WasmPluginEventHandler {
                         .call(function, (handler_id, server_res, wasm_event))
                         .await?;
                     Ok(guest.with(|mut store| event.from_wasm(returned_event, store.data_mut())))
-                })
+                }))
             })
             .await
     }

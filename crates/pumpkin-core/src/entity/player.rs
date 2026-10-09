@@ -12,7 +12,9 @@ use std::collections::{HashMap, VecDeque};
 use std::f64::consts::TAU;
 use std::num::NonZero;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering,
+};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -458,6 +460,8 @@ pub struct Player {
     pub synced_mining_efficiency_level: AtomicI32,
     /// Indicates if the player is currently mining a block.
     pub mining: AtomicBool,
+    pub(crate) mining_lifecycle: AtomicU64,
+    pub(super) delayed_destroy: Mutex<Option<super::server_player_game_mode::DelayedDestroy>>,
     pub start_mining_time: AtomicI32,
     pub tick_counter: AtomicI32,
     pub mining_pos: Mutex<BlockPos>,
@@ -636,6 +640,7 @@ impl Player {
             ClientPlatform::Bedrock(_) => true,
         };
         let initially_loaded = !supports_player_loaded;
+        let mining_lifecycle = living_entity.damage_lifecycle();
 
         Self {
             living_entity,
@@ -667,6 +672,8 @@ impl Player {
             experience_pick_up_delay: AtomicU32::new(0),
             teleport_id_count: AtomicI32::new(0),
             mining: AtomicBool::new(false),
+            mining_lifecycle: AtomicU64::new(mining_lifecycle),
+            delayed_destroy: Mutex::new(None),
             mining_pos: Mutex::new(BlockPos::ZERO),
             abilities: std::sync::Mutex::new(abilities),
             stats: std::sync::Mutex::new(statistics::Statistics::default()),
@@ -2442,55 +2449,7 @@ impl Player {
             self.sleeping_since.store(Some(sleeping_since + 1));
         }
 
-        if self.mining.load(Ordering::Relaxed)
-            && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id)
-        {
-            let world_clone = p.world();
-            let server_clone = world_clone.server.upgrade();
-            let pos = *p
-                .mining_pos
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let world = p.world();
-            let state = world.get_block_state(&pos);
-            // Is the block broken?
-            if state.is_air() {
-                p.stop_mining();
-            } else {
-                let finished = p.continue_mining(
-                    pos,
-                    &world,
-                    state,
-                    p.start_mining_time.load(Ordering::Relaxed),
-                );
-                if finished && matches!(p.client.as_ref(), ClientPlatform::Bedrock(_)) {
-                    p.stop_mining();
-
-                    let block = Block::from_state_id(state.id);
-                    let can_harvest = p.can_harvest(state, block);
-                    let flags = if can_harvest {
-                        pumpkin_world::world::BlockFlags::NOTIFY_ALL
-                    } else {
-                        pumpkin_world::world::BlockFlags::SKIP_DROPS
-                            | pumpkin_world::world::BlockFlags::NOTIFY_ALL
-                    };
-                    if world.break_block(&pos, Some(&p), flags).is_some() {
-                        if let Some(server) = server_clone {
-                            server
-                                .block_registry
-                                .broken(&world, block, &p, &pos, &server, state);
-                        }
-                        p.apply_tool_damage_for_block_break(state);
-                        if can_harvest {
-                            p.add_exhaustion(MINE_BLOCK_EXHAUSTION);
-                        }
-                        let item_id = p.inventory().held_item().item.id;
-                        p.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-                        p.increment_stat(StatisticCategory::Mined, block.id.as_u16() as i32, 1);
-                    }
-                }
-            }
-        }
+        self.tick_block_breaking();
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
 
         self.living_entity.tick(self, server);
@@ -2563,7 +2522,7 @@ impl Player {
         }
     }
 
-    fn continue_mining(
+    pub(crate) fn continue_mining(
         &self,
         location: BlockPos,
         world: &World,

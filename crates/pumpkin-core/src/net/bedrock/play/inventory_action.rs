@@ -475,18 +475,21 @@ impl BedrockClient {
                     ActionType::Interact | ActionType::InteractAt => {
                         let source_slot =
                             crate::net::java::play::hand_use_result::hand_slot(player, Hand::Right);
-                        let mut stack = player.inventory().held_item();
+                        let mut stack = player.inventory().get_stack(source_slot);
                         let item_id = stack.item.id;
                         let before = stack.clone();
-                        let interacted =
+                        let exchange = event.target.interact_from_hand_slot(
+                            player,
+                            &mut stack,
+                            None,
+                            source_slot,
+                        );
+                        let interacted = exchange.unwrap_or_else(|| {
                             event
                                 .target
-                                .interact_with_hand(player, &mut stack, Hand::Right);
-                        let stand_swap = interacted
-                            && event
-                                .target
-                                .cast_any()
-                                .is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
+                                .interact_with_hand(player, &mut stack, Hand::Right)
+                        });
+                        let stand_swap = exchange == Some(true);
                         if !interacted {
                             server
                                 .item_registry

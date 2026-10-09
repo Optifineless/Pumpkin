@@ -490,6 +490,24 @@ impl Clearable for PlayerInventory {
 }
 
 impl Inventory for PlayerInventory {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot < Self::MAIN_SIZE {
+            let mut inventory = self
+                .main_inventory
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            update(&mut inventory[slot]);
+        } else if let Some(slot) = self.equipment_slots.get(&slot) {
+            let mut equipment = self
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut stack = equipment.get(slot);
+            update(&mut stack);
+            equipment.put(slot, stack);
+        }
+    }
+
     fn size(&self) -> usize {
         Self::MAIN_SIZE + self.equipment_slots.len()
     }

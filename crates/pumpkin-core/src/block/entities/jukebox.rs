@@ -25,7 +25,13 @@ pub struct JukeboxBlockEntity {
     song_length_ticks: AtomicU64,
     dirty: AtomicBool,
     comparator_dirty: AtomicBool,
+    record_revision: AtomicU64,
+    #[cfg(test)]
+    notification_pause: Mutex<Option<NotificationPause>>,
 }
+
+#[cfg(test)]
+type NotificationPause = Arc<dyn Fn() + Send + Sync>;
 
 const RECORD_ITEM_NBT_KEY: &str = "RecordItem";
 const TICKS_SINCE_SONG_STARTED_NBT_KEY: &str = "ticks_since_song_started";
@@ -59,6 +65,9 @@ impl BlockEntity for JukeboxBlockEntity {
             song_length_ticks: AtomicU64::new(0), // Will be set when playing starts
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
+            record_revision: AtomicU64::new(0),
+            #[cfg(test)]
+            notification_pause: Mutex::new(None),
         }
     }
 
@@ -141,25 +150,34 @@ impl JukeboxBlockEntity {
     }
 
     // JukeboxBlockEntity.setTheItem / notifyItemChangedInJukebox.
-    fn replace_record(&self, stack: ItemStack) -> ItemStack {
-        let (previous, changed, has_record) = {
+    fn replace_record(&self, mut stack: ItemStack) -> ItemStack {
+        self.update_record(&mut |record| std::mem::swap(record, &mut stack))
+    }
+
+    fn update_record(&self, update: &mut dyn FnMut(&mut ItemStack)) -> ItemStack {
+        let (previous, changed, has_record, revision) = {
             let mut record = self
                 .record_stack
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let changed = !record.are_equal(&stack);
-            let has_record = !stack.is_empty();
-            let previous = std::mem::replace(&mut *record, stack);
-            (previous, changed, has_record)
+            let previous = record.clone();
+            update(&mut record);
+            let changed = !previous.are_equal(&record);
+            let revision = if changed {
+                self.record_revision.fetch_add(1, Ordering::Relaxed) + 1
+            } else {
+                self.record_revision.load(Ordering::Relaxed)
+            };
+            (previous, changed, !record.is_empty(), revision)
         };
-        self.mark_dirty();
         if changed {
-            self.notify_item_changed_in_jukebox(has_record);
+            self.mark_dirty();
+            self.notify_item_changed_in_jukebox(has_record, revision);
         }
         previous
     }
 
-    fn notify_item_changed_in_jukebox(&self, has_record: bool) {
+    fn notify_item_changed_in_jukebox(&self, has_record: bool, revision: u64) {
         let world = self
             .world
             .lock()
@@ -168,18 +186,46 @@ impl JukeboxBlockEntity {
         let Some(world) = world else {
             return;
         };
-        if world.get_block(&self.position) != &Block::JUKEBOX {
+        let expected = world.get_block_state_id(&self.position);
+        if Block::from_state_id(expected) != &Block::JUKEBOX {
             return;
         }
-        world.set_block_state(
+        #[cfg(test)]
+        {
+            let pause = self.notification_pause.lock().unwrap().clone();
+            if let Some(pause) = pause {
+                pause();
+            }
+        }
+        // JukeboxBlockEntity.notifyItemChangedInJukebox only updates a still-placed entity.
+        // Check the live state and record generation
+        // inside the conditional chunk write so removal and newer records take precedence.
+        let applied = world.set_block_state_if(
             &self.position,
             JukeboxLikeProperties { has_record }.to_state_id(&Block::JUKEBOX),
             BlockFlags::NOTIFY_LISTENERS,
+            |state| {
+                state == expected
+                    && self.record_revision.load(Ordering::Relaxed) == revision
+                    && world
+                        .block_entities
+                        .get(&self.position.chunk_position())
+                        .is_some_and(|entities| {
+                            entities.get(&self.position).is_some_and(|entity| {
+                                entity
+                                    .as_any()
+                                    .downcast_ref::<Self>()
+                                    .is_some_and(|placed| std::ptr::eq(placed, self))
+                            })
+                        })
+            },
         );
-        world.emit_game_event(
-            GameEvent::BlockChange.name(),
-            self.position.to_centered_f64(),
-        );
+        if applied.is_some() && self.record_revision.load(Ordering::Relaxed) == revision {
+            world.emit_game_event(
+                GameEvent::BlockChange.name(),
+                self.position.to_centered_f64(),
+            );
+        }
     }
 
     pub const ID: &'static str = "minecraft:jukebox";
@@ -194,6 +240,9 @@ impl JukeboxBlockEntity {
             song_length_ticks: AtomicU64::new(0),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
+            record_revision: AtomicU64::new(0),
+            #[cfg(test)]
+            notification_pause: Mutex::new(None),
         }
     }
 
@@ -249,6 +298,12 @@ impl JukeboxBlockEntity {
 
 /// Implements single-slot inventory for jukebox (matches vanilla's `SingleStackInventory`)
 impl Inventory for JukeboxBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot == 0 {
+            self.update_record(update);
+        }
+    }
+
     fn size(&self) -> usize {
         1
     }

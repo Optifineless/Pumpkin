@@ -51,17 +51,25 @@ pub fn write_back_hand_item(
     after: &ItemStack,
     mutation: HandMutation,
 ) {
-    let current = player.inventory().get_stack(source_slot);
-    if after.are_equal(before) || current.uid != before.uid || !current.are_equal(before) {
+    if after.are_equal(before) {
         return;
     }
-    // Keep the originating slot even if an interaction changes the selected hotbar slot.
-    // ItemStack.getItem exposes AIR once a stack is depleted.
     let stored = if after.is_empty() {
         ItemStack::EMPTY.clone()
     } else {
         after.clone()
     };
+    let mut committed = false;
+    // Player.setItemInHand runs on vanilla's server thread; validate and write under one lock.
+    player.inventory().update_slot(source_slot, &mut |current| {
+        if current.uid == before.uid && current.are_equal(before) {
+            *current = stored.clone();
+            committed = true;
+        }
+    });
+    if !committed {
+        return;
+    }
     // LivingEntity.onEquippedItemBroken broadcasts while the client still has the old item.
     // ArmorStand.swapItem transfers equipment without ItemStack.hurtAndBreak.
     if mutation == HandMutation::ItemUse
@@ -79,7 +87,6 @@ pub fn write_back_hand_item(
             .world()
             .send_entity_status(player.get_entity(), equipment_break_status(&slot), None);
     }
-    player.inventory().set_stack(source_slot, stored.clone());
     player.sync_hand_slot(source_slot, stored);
 }
 

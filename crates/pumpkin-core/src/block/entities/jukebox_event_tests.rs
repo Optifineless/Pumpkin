@@ -137,3 +137,58 @@ async fn jukebox_player_actions_emit_one_block_change() {
     assert_record(&world, &position, &changes, false, 2);
     fixture.server.shutdown().await;
 }
+
+async fn paused_notification(removes_block: bool) {
+    use std::sync::Barrier;
+    let (fixture, jukebox, changes) = create_jukebox().await;
+    let world = fixture.world();
+    let position = jukebox.get_position();
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let first = Arc::new(AtomicBool::new(true));
+    *jukebox.notification_pause.lock().unwrap() = Some(Arc::new({
+        let entered = entered.clone();
+        let release = release.clone();
+        move || {
+            if first.swap(false, Ordering::Relaxed) {
+                entered.wait();
+                release.wait();
+            }
+        }
+    }));
+    std::thread::scope(|scope| {
+        let setter = scope.spawn(|| jukebox.set_record(ItemStack::new(1, &Item::MUSIC_DISC_13)));
+        entered.wait();
+        if removes_block {
+            assert!(
+                world
+                    .break_block(&position, None, BlockFlags::NOTIFY_ALL)
+                    .is_some()
+            );
+        } else {
+            jukebox.clear_record();
+        }
+        release.wait();
+        setter.join().unwrap();
+    });
+    if removes_block {
+        assert!(
+            world.get_block_state(&position).is_air(),
+            "stale record update resurrected jukebox"
+        );
+        assert!(world.get_block_entity(&position).is_none());
+    } else {
+        assert!(jukebox.get_record().is_empty());
+        assert_record(&world, &position, &changes, false, 1);
+    }
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn jukebox_notification_cannot_resurrect_concurrently_broken_block() {
+    paused_notification(true).await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn jukebox_stale_notification_cannot_overwrite_newer_record() {
+    paused_notification(false).await;
+}

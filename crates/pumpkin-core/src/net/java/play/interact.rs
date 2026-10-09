@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pumpkin_inventory::Inventory;
 
 impl JavaClient {
     #[expect(clippy::too_many_lines)]
@@ -103,11 +104,15 @@ impl JavaClient {
                                 return;
                             };
                             let source_slot = super::hand_use_result::hand_slot(player, hand);
-                            let mut stack = player.inventory().get_stack_in_hand(hand);
+                            let mut stack = player.inventory().get_stack(source_slot);
 
                             let item_id = stack.item.id;
                             let before = stack.clone();
-                            let interacted = if event.action == ActionType::InteractAt {
+                            let position = if event.action == ActionType::InteractAt { event.target_position } else { None };
+                            let exchange = event.target.interact_from_hand_slot(player, &mut stack, position, source_slot);
+                            let interacted = if let Some(handled) = exchange {
+                                handled
+                            } else if event.action == ActionType::InteractAt {
                                 match event.target_position {
                                     Some(position) => {
                                         event.target.interact_at_with_hand(player, &mut stack, position, hand)
@@ -117,7 +122,7 @@ impl JavaClient {
                             } else {
                                 event.target.interact_with_hand(player, &mut stack, hand)
                             };
-                            let stand_swap = interacted && event.target.cast_any().is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
+                            let stand_swap = exchange == Some(true);
                             if !interacted {
                                 server
                                     .item_registry

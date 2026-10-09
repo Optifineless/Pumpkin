@@ -17,8 +17,12 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
     tag::{self, Taggable},
 };
+use pumpkin_inventory::Inventory;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::math::{euler_angle::EulerAngle, vector3::Vector3};
+use pumpkin_util::{
+    Hand,
+    math::{euler_angle::EulerAngle, vector3::Vector3},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PackedRotation {
@@ -346,9 +350,15 @@ impl ArmorStandEntity {
         player: &Arc<Player>,
         slot: &EquipmentSlot,
         item_stack: &mut ItemStack,
+        source_slot: usize,
     ) -> bool {
-        // ArmorStand.swapItem is one server-thread exchange, including slot validation.
-        let (stand_stack, new_stand_stack) = {
+        // ArmorStand.swapItem / Player.setItemInHand exchange both real slots before callbacks.
+        let before = item_stack.clone();
+        let mut exchange = None;
+        player.inventory().update_slot(source_slot, &mut |current| {
+            if current.uid != before.uid || !current.are_equal(&before) {
+                return;
+            }
             let mut equipment = self
                 .living_entity
                 .entity_equipment
@@ -358,23 +368,35 @@ impl ArmorStandEntity {
                 || self.get_entity().is_removed()
                 || !self.can_use_slot(slot)
             {
-                return false;
+                return;
             }
             let stand_stack = equipment.get(slot);
+            let mut after = before.clone();
             let Some(new_stand_stack) = swap_item_stacks(
                 &stand_stack,
-                item_stack,
+                &mut after,
                 player.is_creative(),
                 self.is_slot_insertion_disabled(slot),
                 self.is_slot_removal_disabled(slot),
             ) else {
-                return false;
+                return;
             };
             equipment.put(slot, new_stand_stack.clone());
-            (stand_stack, new_stand_stack)
+            *current = if after.is_empty() {
+                ItemStack::EMPTY.clone()
+            } else {
+                after.clone()
+            };
+            *item_stack = after;
+            exchange = Some((stand_stack, new_stand_stack, current.clone()));
+        });
+        let Some((previous, equipped, held)) = exchange else {
+            return false;
         };
-        // Packets and plugin callbacks run after releasing the equipment guard.
-        self.on_equipment_changed(slot, &stand_stack, &new_stand_stack);
+        if !before.are_equal(&held) {
+            player.sync_hand_slot(source_slot, held);
+        }
+        self.on_equipment_changed(slot, &previous, &equipped);
         true
     }
 
@@ -383,6 +405,24 @@ impl ArmorStandEntity {
         player: &Arc<Player>,
         item_stack: &mut ItemStack,
         position: Option<Vector3<f64>>,
+        hand: Hand,
+    ) -> bool {
+        self.interact_from_hand_slot(
+            player,
+            item_stack,
+            position,
+            crate::net::java::play::hand_use_result::hand_slot(player, hand),
+        )
+    }
+
+    /// Exchanges a hand snapshot with equipment only if its captured source slot still matches.
+    /// The caller retains that slot even when another packet changes the selected hotbar slot.
+    pub(crate) fn interact_from_hand_slot(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        position: Option<Vector3<f64>>,
+        source_slot: usize,
     ) -> bool {
         if self.is_marker() || item_stack.item.id == Item::NAME_TAG.id {
             return false;
@@ -404,7 +444,7 @@ impl ArmorStandEntity {
             return false;
         }
 
-        self.swap_item(player, &slot, item_stack)
+        self.swap_item(player, &slot, item_stack, source_slot)
     }
 
     const fn slot_bit(slot: &EquipmentSlot, offset: i32) -> i32 {
@@ -682,7 +722,7 @@ impl EntityBase for ArmorStandEntity {
     }
 
     fn interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        self.interact_at_position(player, item_stack, None)
+        self.interact_at_position(player, item_stack, None, Hand::Right)
     }
 
     fn interact_at(
@@ -691,7 +731,38 @@ impl EntityBase for ArmorStandEntity {
         item_stack: &mut ItemStack,
         position: Vector3<f64>,
     ) -> bool {
-        self.interact_at_position(player, item_stack, Some(position))
+        self.interact_at_position(player, item_stack, Some(position), Hand::Right)
+    }
+
+    fn interact_with_hand(&self, player: &Arc<Player>, stack: &mut ItemStack, hand: Hand) -> bool {
+        self.interact_at_position(player, stack, None, hand)
+    }
+
+    fn interact_at_with_hand(
+        &self,
+        player: &Arc<Player>,
+        stack: &mut ItemStack,
+        position: Vector3<f64>,
+        hand: Hand,
+    ) -> bool {
+        self.interact_at_position(player, stack, Some(position), hand)
+    }
+
+    fn interact_from_hand_slot(
+        &self,
+        player: &Arc<Player>,
+        stack: &mut ItemStack,
+        position: Option<Vector3<f64>>,
+        source_slot: usize,
+    ) -> Option<bool> {
+        // ArmorStand.swapItem commits Player.setItemInHand in the same exchange.
+        Some(Self::interact_from_hand_slot(
+            self,
+            player,
+            stack,
+            position,
+            source_slot,
+        ))
     }
 
     fn cast_any(&self) -> &dyn std::any::Any {
