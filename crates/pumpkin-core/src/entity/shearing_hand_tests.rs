@@ -178,3 +178,62 @@ fn check_last_shear_break(
         1
     );
 }
+
+async fn independent_damage_contract(cancelled: bool, amount: i32, breaking: bool) {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let mut player = TestPlayer::new(&world);
+    let control = Arc::new(DamageControl {
+        cancelled: AtomicBool::new(cancelled),
+        amount: AtomicI32::new(amount),
+        calls: AtomicUsize::new(0),
+        breaks: AtomicUsize::new(0),
+        hands: Mutex::default(),
+    });
+    fixture
+        .server
+        .plugin_manager
+        .register::<PlayerItemDamageEvent, _>(control.clone(), EventPriority::Normal, true);
+    fixture
+        .server
+        .plugin_manager
+        .register::<PlayerItemBreakEvent, _>(control.clone(), EventPriority::Normal, true);
+    let mut tool = ItemStack::new(1, &Item::SHEARS);
+    if breaking {
+        tool.set_damage(tool.get_max_damage().unwrap() - 1);
+    }
+    player
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Left, tool);
+    player.take_packets();
+    if breaking {
+        check_last_shear_break(&fixture, &mut player, &control);
+    } else {
+        let sheep = fixture.mob(&pumpkin_data::entity::EntityType::SHEEP);
+        click(&player, sheep.as_ref(), &fixture.server);
+        assert_eq!(
+            player
+                .player
+                .inventory()
+                .get_stack_in_hand(Hand::Left)
+                .get_damage(),
+            if cancelled { 0 } else { amount }
+        );
+        assert_eq!(control.breaks.load(Relaxed), 0);
+    }
+    assert_eq!(control.calls.load(Relaxed), 1);
+    fixture.server.shutdown().await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_shear_durability_keeps_tool_undamaged() {
+    independent_damage_contract(true, 5, false).await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn adjusted_shear_durability_uses_event_amount() {
+    independent_damage_contract(false, 5, false).await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn final_shear_sends_exactly_one_break_event_stat_and_status() {
+    independent_damage_contract(false, 1, true).await;
+}

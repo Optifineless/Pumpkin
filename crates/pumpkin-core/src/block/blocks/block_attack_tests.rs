@@ -78,20 +78,26 @@ async fn dragon_egg_attack_moves_without_drop_and_within_bounds() {
     );
     let delta = target.0 - position.0;
     assert!(delta.x.abs() <= 15 && delta.y.abs() <= 7 && delta.z.abs() <= 15);
-    let packed =
-        ((delta.x + 16) & 0xff) << 16 | ((delta.y + 8) & 0xff) << 8 | ((delta.z + 16) & 0xff);
+    // Read the event's literal wire fields independently of BlockUtil's encoder.
+    let packets = player.take_packets();
     let effect = player
         .client()
-        .serialize_packet(&CWorldEvent::new(2015, position, packed, false))
+        .serialize_packet(&CWorldEvent::new(2015, position, 0, false))
         .unwrap();
-    assert_eq!(
-        player
-            .take_packets()
-            .iter()
-            .filter(|packet| **packet == effect)
-            .count(),
-        1
-    );
+    let prefix_len = effect.len() - 5;
+    let events: Vec<_> = packets
+        .iter()
+        .filter(|packet| {
+            packet.len() == effect.len() && packet[..prefix_len] == effect[..prefix_len]
+        })
+        .collect();
+    assert_eq!(events.len(), 1);
+    let data = &events[0][prefix_len..];
+    assert_eq!(data[0], 0);
+    assert_eq!(i32::from(data[1]) - 16, delta.x);
+    assert_eq!(i32::from(data[2]) - 8, delta.y);
+    assert_eq!(i32::from(data[3]) - 16, delta.z);
+    assert_eq!(data[4], 0);
     assert!(
         world
             .entities
@@ -179,4 +185,31 @@ async fn note_block_attack_only_once_after_restrictions() {
     assert_eq!(control.notes.load(Ordering::Relaxed), 1);
     assert!(world.get_block_state(&position).is_air());
     fixture.server.shutdown().await;
+}
+
+#[test]
+fn dragon_egg_event_uses_literal_vanilla_difference_fixtures() {
+    // Big-endian BlockUtil data fields: zero prefix, biased X, biased Y, biased Z.
+    for (offset, bytes) in [
+        ((0, 0, 0), [0x00, 0x10, 0x08, 0x10]),
+        ((15, -7, -15), [0x00, 0x1f, 0x01, 0x01]),
+        ((-15, 7, 15), [0x00, 0x01, 0x0f, 0x1f]),
+    ] {
+        let packed = DragonEggBlock::pack_difference_in_position(offset.0, offset.1, offset.2);
+        assert_eq!(packed.to_be_bytes(), bytes);
+        let mut actual = Vec::new();
+        pumpkin_protocol::ClientPacket::write_packet_data(
+            &CWorldEvent::new(2015, BlockPos::new(8, 64, 8), packed, false),
+            &mut actual,
+            &pumpkin_data::packet::CURRENT_MC_VERSION,
+        )
+        .unwrap();
+        // ClientboundLevelEventPacket: event 2015, packed BlockPos (8,64,8), data, false.
+        let mut expected = vec![
+            0x00, 0x00, 0x07, 0xdf, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x80, 0x40,
+        ];
+        expected.extend(bytes);
+        expected.push(0x00);
+        assert_eq!(actual, expected);
+    }
 }

@@ -78,10 +78,17 @@ async fn neighbor_multi_update_counts_once_and_resumes_depth_first() {
         stone(&world, center.offset(direction.to_offset()));
     }
     world.update_neighbors_at(&center, &Block::STONE, None);
-    let mut expected: Vec<_> = BlockDirection::update_order()
-        .iter()
-        .map(|d| center.offset(d.to_offset()))
-        .collect();
+    let mut expected: Vec<_> = [
+        BlockDirection::West,
+        BlockDirection::East,
+        BlockDirection::Down,
+        BlockDirection::Up,
+        BlockDirection::North,
+        BlockDirection::South,
+    ]
+    .iter()
+    .map(|d| center.offset(d.to_offset()))
+    .collect();
     expected.insert(1, child);
     assert_eq!(*seen.lock().unwrap(), expected);
     fixture.server.shutdown().await;
