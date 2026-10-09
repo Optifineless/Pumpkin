@@ -28,13 +28,11 @@ impl BlockBehaviour for BannerBlock {
             .get_entity()
             .get_entity_facing_order()
             .map(|d| d.to_block_direction());
-        // Vanilla prioritizes the clicked face only when placing beside the clicked block.
+        // BlockPlaceContext.getNearestLookingDirections prioritizes the clicked support side.
         if args.position != &args.use_item_on.position {
-            let index = directions
-                .iter()
-                .position(|d| *d == args.direction)
-                .unwrap();
-            directions[..=index].rotate_right(1);
+            if let Some(index) = directions.iter().position(|d| *d == args.direction) {
+                directions[..=index].rotate_right(1);
+            }
         }
         let Some(direction) = select_support(&directions, |direction| {
             has_support(args.world, args.position, direction)
@@ -42,13 +40,17 @@ impl BlockBehaviour for BannerBlock {
             return BlockStateId::AIR;
         };
         if direction.is_horizontal() {
-            let color = args
+            let Some(color) = args
                 .block
                 .name
                 .strip_suffix("_wall_banner")
                 .or_else(|| args.block.name.strip_suffix("_banner"))
-                .unwrap();
-            let wall_block = Block::from_name(&format!("{color}_wall_banner")).unwrap();
+            else {
+                return BlockStateId::AIR;
+            };
+            let Some(wall_block) = Block::from_name(&format!("{color}_wall_banner")) else {
+                return BlockStateId::AIR;
+            };
             let mut props = WhiteWallBannerProperties::default(wall_block);
             props.facing = direction.opposite().to_cardinal_direction();
             return props.to_state_id(wall_block);
@@ -65,7 +67,6 @@ impl BlockBehaviour for BannerBlock {
                 || BlockDirection::horizontal().iter().any(|d| {
                     has_support(args.block_accessor, args.position, d.to_block_direction())
                 });
-
         }
         has_support(
             args.block_accessor,
@@ -145,8 +146,6 @@ mod tests {
     use super::*;
     use BlockDirection::{Down, East, North, South, Up, West};
 
-
-
     #[test]
     fn floor_or_wall_follows_placement_order() {
         let supports = |d| matches!(d, Down | North);
@@ -216,6 +215,8 @@ mod tests {
             );
         }
     }
-
-
 }
+
+#[cfg(test)]
+#[path = "banner_support_tests.rs"]
+mod support_tests;
