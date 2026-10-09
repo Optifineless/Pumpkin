@@ -28,7 +28,8 @@ reviews:
         New files should stay under 600 lines; the large upstream files (`entity/mod.rs`, `living.rs`,
         `world/mod.rs`, `player.rs`, `level.rs`) should only receive call-site changes. Every fix must come with a
         regression test that fails without it; question tests that mirror the implementation instead of encoding
-        vanilla values. Performance claims need a measured baseline.
+        vanilla values. Performance claims need a measured baseline. If the pull request changes gameplay code
+        but does not touch FORK.md, flag that the fork's change record is missing.
     - path: "FORK.md"
       instructions: |
         Each merged change must be recorded here with the vanilla method it mirrors and an in-game verification
