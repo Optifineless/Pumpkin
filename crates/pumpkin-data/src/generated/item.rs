@@ -19915,6 +19915,15 @@ impl Item {
         id: 1388,
         registry_key: "creeper_head",
         components: &[
+            (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::CREEPER,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
@@ -59543,6 +59552,16 @@ impl Item {
         id: 1390,
         registry_key: "piglin_head",
         components: &[
+            (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::PIGLIN,
+                        &crate::entity_type::EntityType::PIGLIN_BRUTE,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
@@ -72658,6 +72677,15 @@ impl Item {
         id: 1384,
         registry_key: "skeleton_skull",
         components: &[
+            (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::SKELETON,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
@@ -91656,6 +91684,15 @@ impl Item {
         id: 1387,
         registry_key: "zombie_head",
         components: &[
+            (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::ZOMBIE,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,

@@ -16,6 +16,10 @@ use std::{
 };
 use syn::{Ident, LitBool, LitByteStr, LitFloat, LitInt, LitStr};
 
+#[cfg(test)]
+#[path = "item_mob_visibility_tests.rs"]
+mod mob_visibility_tests;
+
 /// Deserialized item entry from `items.json`.
 #[derive(Deserialize)]
 pub struct Item {
@@ -58,6 +62,8 @@ pub struct ItemComponents {
     /// Equippable component, present if this item can be worn in an armor slot.
     #[serde(rename = "minecraft:equippable")]
     pub equippable: Option<EquippableComponent>,
+    #[serde(rename = "minecraft:mob_visibility")]
+    pub mob_visibility: Option<MobVisibilityComponent>,
     /// Consumable component, present if this item has a custom use animation or duration.
     #[serde(rename = "minecraft:consumable")]
     pub consumable: Option<Consumable>,
@@ -207,6 +213,9 @@ pub struct UseRemainderComponent {
 impl ToTokens for ItemComponents {
     /// Emits a sequence of `(DataComponent, &impl DataComponentImpl)` tuple expressions for code generation.
     fn to_tokens(&self, tokens: &mut TokenStream) {
+        if let Some(visibility) = &self.mob_visibility {
+            visibility.to_tokens(tokens);
+        }
         let max_stack_size = LitInt::new(&self.max_stack_size.to_string(), Span::call_site());
         tokens.extend(quote! {
             (MaxStackSize, &MaxStackSizeImpl {
@@ -1516,6 +1525,28 @@ fn registry_set_tokens(types: &StringOrList, entry: impl Fn(&str) -> TokenStream
             let entries = names.iter().map(|name| entry(name));
             quote! { IDSet::IDs(Cow::Borrowed(&[#(#entries),*])) }
         }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct MobVisibilityComponent {
+    targeting_entity_types: StringOrList,
+    visibility: f32,
+}
+
+impl ToTokens for MobVisibilityComponent {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let types = registry_set_tokens(&self.targeting_entity_types, |name| {
+            let name = format_ident!(
+                "{}",
+                name.trim_start_matches("minecraft:").to_shouty_snake_case()
+            );
+            quote! { &crate::entity_type::EntityType::#name }
+        });
+        let visibility = self.visibility;
+        tokens.extend(quote! {
+            (MobVisibility, &MobVisibilityImpl { targeting_entity_types: #types, visibility: #visibility }),
+        });
     }
 }
 

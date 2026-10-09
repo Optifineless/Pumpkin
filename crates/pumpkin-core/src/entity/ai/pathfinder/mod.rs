@@ -27,6 +27,8 @@ pub mod fly_node_evaluator;
 mod mob_malus;
 mod navigation_following;
 pub(crate) mod navigation_geometry;
+#[cfg(test)]
+mod navigation_replacement_tests;
 mod navigation_snapshot;
 pub mod node;
 pub mod node_evaluator;
@@ -454,7 +456,7 @@ pub trait PathNavigationTrait: Send + Sync {
         pos: &BlockPos,
         _entity: &dyn EntityBase,
     ) -> bool {
-        world.get_block_state(&pos.down()).is_solid()
+        world.get_block_state(&pos.down()).is_solid_render()
     }
 }
 
@@ -1038,6 +1040,8 @@ impl PathNavigationTrait for GroundPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        // PathNavigation.moveTo(Path, double) supersedes queued coordinate requests.
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {
@@ -1286,6 +1290,8 @@ impl PathNavigationTrait for FlyingPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        // PathNavigation.moveTo(Path, double) supersedes queued coordinate requests.
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {
@@ -1503,6 +1509,8 @@ impl PathNavigationTrait for WaterBoundPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        // PathNavigation.moveTo(Path, double) supersedes queued coordinate requests.
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {
@@ -1970,6 +1978,8 @@ impl PathNavigationTrait for AmphibiousPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        // PathNavigation.moveTo(Path, double) supersedes queued coordinate requests.
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {

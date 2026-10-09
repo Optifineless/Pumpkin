@@ -19,12 +19,13 @@ use crate::entity::{
     ageable::AgeableMob,
     ai::behavior::neutral::apply_targets,
     ai::goal::{
-        active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal, beg::BegGoal,
-        breed::BreedGoal, escape_danger::EscapeDangerGoal, follow_owner::FollowOwnerGoal,
+        active_target::ActiveTargetGoal, beg::BegGoal, breed::BreedGoal,
+        escape_danger::EscapeDangerGoal, follow_owner::FollowOwnerGoal,
         follow_parent::FollowParentGoal, look_around::RandomLookAroundGoal,
         look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal,
         owner_hurt_by_target::OwnerHurtByTargetGoal, owner_hurt_target::OwnerHurtTargetGoal,
-        revenge::RevengeGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
+        revenge::RevengeGoal, species_avoid_entity::WolfAvoidEntityGoal, swim::SwimGoal,
+        wander_around::WanderAroundGoal,
     },
     mob::{
         Mob, MobEntity,
@@ -78,10 +79,7 @@ impl WolfEntity {
             // 1: EscapeDangerGoal (TamableAnimalPanicGoal)
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.5));
             // 3: Avoid Llama
-            goal_selector.add_goal(
-                3,
-                Box::new(AvoidEntityGoal::new(&EntityType::LLAMA, 24.0, 1.5, 1.5)),
-            );
+            goal_selector.add_goal(3, WolfAvoidEntityGoal::new(&mob_arc));
             // 5: MeleeAttackGoal
             goal_selector.add_goal(5, Box::new(MeleeAttackGoal::new(1.0, true)));
             // 6: FollowOwnerGoal

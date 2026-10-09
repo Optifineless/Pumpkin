@@ -144,6 +144,7 @@ impl Goal for RabbitAvoidEntityGoal {
                     4.0,
                     FLEE_SPEED_MOD,
                     FLEE_SPEED_MOD,
+                    None,
                 )
             });
         }

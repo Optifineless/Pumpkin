@@ -39,7 +39,13 @@ pub fn init(mob_entity: &MobEntity) {
     goals.add_goal(0, EscapeDangerGoal::new(1.25));
     goals.add_goal(
         2,
-        Box::new(AvoidEntityGoal::new(&EntityType::PLAYER, 8.0, 1.6, 1.4)),
+        Box::new(AvoidEntityGoal::new(
+            &EntityType::PLAYER,
+            8.0,
+            1.6,
+            1.4,
+            None,
+        )),
     );
     goals.add_goal(4, Box::new(WanderAroundGoal::swimming(1.0, 40)));
 }

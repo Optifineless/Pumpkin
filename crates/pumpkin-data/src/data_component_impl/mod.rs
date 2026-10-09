@@ -543,7 +543,9 @@ pub mod book;
 pub mod combat;
 pub mod entity_variant;
 pub mod instrument;
+mod mob_visibility;
 pub use instrument::InstrumentImpl;
+pub use mob_visibility::MobVisibilityImpl;
 pub mod food;
 pub mod utility;
 
@@ -584,6 +586,7 @@ pub fn read_data(id: DataComponent, data: &NbtTag) -> Option<Box<dyn DataCompone
         DataComponent::ItemModel => Some(ItemModelImpl::read_data(data)?.to_dyn()),
         DataComponent::Consumable => Some(ConsumableImpl::read_data(data)?.to_dyn()),
         DataComponent::Equippable => Some(EquippableImpl::read_data(data)?.to_dyn()),
+        DataComponent::MobVisibility => Some(MobVisibilityImpl::read_data(data)?.to_dyn()),
         DataComponent::AttackRange => Some(AttackRangeImpl::read_data(data)?.to_dyn()),
         DataComponent::KineticWeapon => Some(KineticWeaponImpl::read_data(data)?.to_dyn()),
         DataComponent::PiercingWeapon => Some(PiercingWeaponImpl::read_data(data)?.to_dyn()),

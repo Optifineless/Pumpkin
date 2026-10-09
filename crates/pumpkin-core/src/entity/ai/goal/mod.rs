@@ -4,6 +4,10 @@ use std::{any::TypeId, ops::BitOr, ptr};
 pub mod active_target;
 pub mod ambient_stand;
 pub mod avoid_entity;
+#[cfg(test)]
+mod avoid_entity_followup_tests;
+#[cfg(test)]
+mod avoidance_tick_benchmark;
 pub mod beg;
 pub mod blaze_attack;
 pub mod bow_attack;
@@ -44,6 +48,7 @@ pub mod restrict_sun;
 pub mod revenge;
 pub mod run_around_like_crazy;
 pub mod sit_when_ordered_to;
+pub mod species_avoid_entity;
 pub mod spider_attack;
 pub mod step_and_destroy_block;
 pub mod swim;

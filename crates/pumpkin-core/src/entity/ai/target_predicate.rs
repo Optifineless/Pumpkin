@@ -5,7 +5,7 @@ use crate::entity::living::{LivingEntity, can_be_seen_as_enemy};
 use crate::world::World;
 use std::sync::Arc;
 
-const MIN_DISTANCE: f64 = 2.0;
+const MIN_VISIBILITY_DISTANCE_FOR_INVISIBLE_TARGET: f64 = 2.0;
 
 pub type PredicateFn = dyn Fn(&LivingEntity, &World) -> bool + Send + Sync;
 
@@ -121,11 +121,19 @@ impl TargetPredicate {
         }
 
         if self.base_max_distance > 0.0 {
-            // TODO: use distance_scaling_factor from target
-            // Vanilla `getVisibilityPercent`: sneaking, invisibility (by armor cover) and mob heads
-            // shrink the range, min 2 blocks. Only piglin_ai::visibility_percent has it, move to
-            // `LivingEntity` and gate on `use_distance_scaling_factor` (revenge ignores it).
-            let max_dist = self.base_max_distance.max(MIN_DISTANCE);
+            // TargetingConditions.test: scale visibility, then clamp the range to two blocks.
+            let modifier = if self.use_distance_scaling_factor {
+                target_living.visibility_percent(Some(tester.get_entity()))
+            } else {
+                1.0
+            };
+            let scaled = self.base_max_distance * modifier;
+            // Java Math.max preserves NaN received through MobVisibility.STREAM_CODEC.
+            let max_dist = if scaled.is_nan() {
+                scaled
+            } else {
+                scaled.max(MIN_VISIBILITY_DISTANCE_FOR_INVISIBLE_TARGET)
+            };
             let dist_sq = tester
                 .get_entity()
                 .pos

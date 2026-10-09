@@ -17,6 +17,16 @@ pub struct GoalSelector {
 }
 
 impl GoalSelector {
+    /// Borrows the registered goals of a type so tests can exercise constructor wiring.
+    #[cfg(test)]
+    pub(crate) fn goals_for_test<G: Goal + 'static>(
+        &mut self,
+    ) -> impl Iterator<Item = &mut PrioritizedGoal> {
+        self.goals
+            .iter_mut()
+            .filter(|goal| goal.type_id == TypeId::of::<G>())
+    }
+
     pub fn add_goal<G: Goal + 'static>(&mut self, priority: u8, goal: Box<G>) {
         self.goals
             .push(PrioritizedGoal::new(TypeId::of::<G>(), priority, goal));

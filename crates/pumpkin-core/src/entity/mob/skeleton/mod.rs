@@ -71,7 +71,7 @@ impl SkeletonEntityBase {
             goal_selector.add_goal(4, Box::new(MeleeAttackGoal::new(1.2, false)));
             goal_selector.add_goal(
                 3,
-                Box::new(AvoidEntityGoal::new(&EntityType::WOLF, 6.0, 1.0, 1.2)),
+                Box::new(AvoidEntityGoal::new(&EntityType::WOLF, 6.0, 1.0, 1.2, None)),
             );
             goal_selector.add_goal(7, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(

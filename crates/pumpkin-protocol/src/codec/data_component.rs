@@ -9,6 +9,9 @@ mod item_components;
 #[path = "book_components.rs"]
 mod book_components;
 
+#[path = "mob_visibility.rs"]
+mod mob_visibility;
+
 #[cfg(test)]
 #[path = "component_crash_tests.rs"]
 mod component_crash_tests;
@@ -1003,6 +1006,7 @@ pub fn deserialize(
         DataComponent::AttackRange => Ok(AttackRangeImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Enchantable => Ok(EnchantableImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Equippable => Ok(EquippableImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::MobVisibility => Ok(MobVisibilityImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Repairable => Ok(RepairableImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Glider => Ok(GliderImpl::deserialize(seq)?.to_dyn()),
         DataComponent::TooltipStyle => Ok(TooltipStyleImpl::deserialize(seq)?.to_dyn()),
@@ -1155,6 +1159,7 @@ pub fn serialize(
         DataComponent::AttackRange => get::<AttackRangeImpl>(value).serialize(seq),
         DataComponent::Enchantable => get::<EnchantableImpl>(value).serialize(seq),
         DataComponent::Equippable => get::<EquippableImpl>(value).serialize(seq),
+        DataComponent::MobVisibility => get::<MobVisibilityImpl>(value).serialize(seq),
         DataComponent::Repairable => get::<RepairableImpl>(value).serialize(seq),
         DataComponent::Glider => get::<GliderImpl>(value).serialize(seq),
         DataComponent::TooltipStyle => get::<TooltipStyleImpl>(value).serialize(seq),

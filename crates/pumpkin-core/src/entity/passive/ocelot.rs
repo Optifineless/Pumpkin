@@ -14,10 +14,10 @@ use rand::RngExt;
 use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
-        active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal, breed::BreedGoal,
-        escape_danger::EscapeDangerGoal, follow_parent::FollowParentGoal,
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        tempt::TemptGoal, wander_around::WanderAroundGoal,
+        active_target::ActiveTargetGoal, breed::BreedGoal, escape_danger::EscapeDangerGoal,
+        follow_parent::FollowParentGoal, look_around::RandomLookAroundGoal,
+        look_at_entity::LookAtEntityGoal, species_avoid_entity::OcelotAvoidEntityGoal,
+        swim::SwimGoal, tempt::TemptGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
     passive::animal::Animal,
@@ -61,10 +61,7 @@ impl OcelotEntity {
             // Goal 3: OcelotTemptGoal
             goal_selector.add_goal(3, Box::new(TemptGoal::new(0.6, TEMPT_ITEMS, true)));
             // Goal 4: OcelotAvoidEntityGoal (when not trusting)
-            goal_selector.add_goal(
-                4,
-                Box::new(AvoidEntityGoal::new(&EntityType::PLAYER, 16.0, 0.8, 1.33)),
-            );
+            goal_selector.add_goal(4, OcelotAvoidEntityGoal::new(&mob_arc));
             // Goal 9: BreedGoal
             goal_selector.add_goal(9, BreedGoal::new(0.8));
             // Goal 9: FollowParentGoal
