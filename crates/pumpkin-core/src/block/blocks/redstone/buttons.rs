@@ -185,3 +185,7 @@ impl ButtonBlock {
         world.update_neighbors(&block_pos.offset(direction.to_offset()), None);
     }
 }
+
+#[cfg(test)]
+#[path = "button_tests.rs"]
+mod tests;
