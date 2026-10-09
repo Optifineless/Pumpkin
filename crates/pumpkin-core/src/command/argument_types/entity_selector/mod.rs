@@ -419,7 +419,7 @@ impl RotationType {
     }
 }
 
-fn matches_nbt(expected: &NbtTag, actual: &NbtTag) -> bool {
+pub(crate) fn matches_nbt(expected: &NbtTag, actual: &NbtTag) -> bool {
     match (expected, actual) {
         (NbtTag::Compound(expected_comp), NbtTag::Compound(actual_comp)) => {
             for (key, expected_val) in &expected_comp.child_tags {
@@ -434,6 +434,10 @@ fn matches_nbt(expected: &NbtTag, actual: &NbtTag) -> bool {
             true
         }
         (NbtTag::List(expected_list), NbtTag::List(actual_list)) => {
+            // NbtUtils.compareNbt: an empty expected list requires an empty actual list.
+            if expected_list.is_empty() {
+                return actual_list.is_empty();
+            }
             for expected_val in expected_list {
                 if !actual_list
                     .iter()

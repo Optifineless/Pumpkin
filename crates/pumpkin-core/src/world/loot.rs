@@ -40,7 +40,7 @@ use functions::{LootStack, apply_functions, new_stack};
 use number_provider::{number_float, number_int};
 use predicates::{
     attacker_enchantment_level, enchantment_level, entity_predicate, entity_target, item_component,
-    item_predicate, match_block, read_loot_component,
+    item_predicate, read_loot_component,
 };
 const MAX_LOOT_DEPTH: usize = 64;
 const MAX_LOOT_ROLLS: i32 = 4096;
@@ -432,3 +432,6 @@ pub fn generate_loot_from_handle(
         LootTableHandle::Dynamic(table) => generate_dynamic_loot_with_context(table, seed, params),
     }
 }
+
+// Shared StatePropertiesPredicate matcher for adventure-mode block actions.
+pub(crate) use predicates::match_block;

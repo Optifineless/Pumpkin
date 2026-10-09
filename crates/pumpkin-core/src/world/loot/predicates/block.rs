@@ -1,7 +1,7 @@
 use super::registry_matches;
 use crate::world::loot::LootContextParameters;
 use serde_json::Value;
-pub(in crate::world::loot) fn match_block(
+pub(crate) fn match_block(
     blocks: &Value,
     properties: &Value,
     params: &LootContextParameters,
