@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use pumpkin_data::game_event::GameEvent;
-use pumpkin_data::item_stack::{DamageResult, ItemStack};
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::SoundCategory;
-use pumpkin_util::GameMode;
+use pumpkin_util::Hand;
 
 use crate::entity::Entity;
 use crate::entity::mob::Mob;
@@ -33,13 +33,22 @@ pub fn shear_by_player(
     player: &Arc<Player>,
     tool: &mut ItemStack,
 ) -> bool {
+    shear_by_player_with_hand(shearable, player, tool, Hand::Right)
+}
+
+fn shear_by_player_with_hand(
+    shearable: &dyn Shearable,
+    player: &Arc<Player>,
+    tool: &mut ItemStack,
+    hand: Hand,
+) -> bool {
     let entity = &shearable.get_mob_entity().living_entity.entity;
     let world = entity.world.load();
     if let Some(server) = world.server.upgrade() {
         let mut event = PlayerShearEntityEvent {
             player: player.clone(),
             entity_id: entity.entity_id,
-            hand: 0,
+            hand: u8::from(hand == Hand::Left),
             cancelled: false,
         };
         server.plugin_manager.fire_blocking(&server, &mut event);
@@ -53,14 +62,7 @@ pub fn shear_by_player(
         return false;
     }
     world.emit_game_event(GameEvent::Shear.name(), pos);
-    if player.gamemode.load() != GameMode::Creative {
-        let item: &pumpkin_data::item::Item = tool.item;
-        let result = tool.damage_item(1);
-        if result != DamageResult::Untouched {
-            // Not `damage_item_in_slot`: the interact handler writes `tool` back to the hand and counts the break.
-            player.fire_item_damage_events(item, 1, result == DamageResult::Broken);
-        }
-    }
+    player.damage_detached_item(tool, 1);
     true
 }
 
@@ -80,3 +82,36 @@ pub fn shearing_loot(
 #[cfg(test)]
 #[path = "shearing_loot_tests.rs"]
 mod loot_tests;
+
+/// Handles the authoritative shearing hand; `None` preserves species-specific fallback.
+pub(crate) fn interact_with_hand(
+    mob: &dyn Mob,
+    player: &Arc<Player>,
+    tool: &mut ItemStack,
+    hand: Hand,
+) -> Option<bool> {
+    // Mob.interact -> Entity.interact -> Sheep/SnowGolem/Bogged/MushroomCow.mobInteract.
+    if !mob.get_entity().is_alive() || mob.get_mob_entity().living_entity.health.load() <= 0.0 {
+        return Some(false);
+    }
+    if tool.item != &pumpkin_data::item::Item::SHEARS {
+        return None;
+    }
+    if crate::entity::leash_shearing::shear_leashes_by_player(mob.get_entity(), player, tool) {
+        return Some(true);
+    }
+    let shearable = mob.as_shearable().filter(|mob| mob.ready_for_shearing())?;
+    let result = shear_by_player_with_hand(shearable, player, tool, hand);
+    if result
+        && mob
+            .cast_any()
+            .is::<crate::entity::passive::sheep::SheepEntity>()
+    {
+        player.swing_hand(hand, true);
+    }
+    Some(result)
+}
+
+#[cfg(test)]
+#[path = "shearing_hand_tests.rs"]
+mod hand_tests;

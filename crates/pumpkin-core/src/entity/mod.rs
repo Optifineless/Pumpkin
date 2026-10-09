@@ -104,6 +104,7 @@ pub mod projectile;
 pub mod projectile_deflection;
 pub(crate) mod spawn_mount;
 
+mod leash_shearing;
 pub mod shearable;
 pub mod spawn_util;
 pub mod synched_entity_data;
@@ -114,8 +115,8 @@ pub mod vehicle;
 pub use lightning::LightningBoltEntity;
 
 pub(crate) mod combat;
-pub mod equipment_damage;
 mod detached_stack_damage;
+pub mod equipment_damage;
 pub(crate) mod ignite;
 pub mod predicate;
 pub(crate) mod recipe_properties;
@@ -553,8 +554,8 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     /// Called when a player right-clicks this entity with an item.
     /// Called when a player right-clicks this entity with an item.
     /// Returns true if the interaction was handled.
-    fn interact(&self, _player: &Arc<Player>, _item_stack: &mut ItemStack) -> bool {
-        false
+    fn interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
+        leash_shearing::shear_leashes_by_player(self.get_entity(), player, item_stack)
     }
 
     /// Called when a player right-clicks a specific position on this entity.
@@ -567,6 +568,27 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         _position: Vector3<f64>,
     ) -> bool {
         self.interact(player, item_stack)
+    }
+
+    /// Carries the validated hand while preserving the existing interaction fallback.
+    fn interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        stack: &mut ItemStack,
+        _hand: pumpkin_util::Hand,
+    ) -> bool {
+        self.interact(player, stack)
+    }
+
+    /// Carries the validated hand without changing position-sensitive overrides.
+    fn interact_at_with_hand(
+        &self,
+        player: &Arc<Player>,
+        stack: &mut ItemStack,
+        position: Vector3<f64>,
+        _hand: pumpkin_util::Hand,
+    ) -> bool {
+        self.interact_at(player, stack, position)
     }
 
     fn set_on_fire_for(&self, seconds: f32) {
@@ -3422,59 +3444,7 @@ impl Entity {
     }
 
     pub fn unleash(&self) {
-        let world = self.world.load();
-        if let Some(server) = world.server.upgrade() {
-            let mut event =
-                crate::plugin::api::events::entity::entity_unleash::EntityUnleashEvent::new(
-                    self.entity_id,
-                    "unleashed".to_string(),
-                );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
-        }
-
-        let old_holder = self
-            .leashed_to
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if old_holder.is_none() {
-            return;
-        }
-
-        if let Some(holder) = &old_holder
-            && let Some(server) = world.server.upgrade()
-            && let Some(player) = holder.get_player()
-            && let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
-        {
-            let mut event = crate::plugin::api::events::player::player_unleash_entity::PlayerUnleashEntityEvent {
-                player: player_arc,
-                entity_id: self.entity_id,
-                cancelled: false,
-            };
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-
-        let je_packet =
-            pumpkin_protocol::java::client::play::CSetEntityLink::new(self.entity_id, -1, true);
-        let be_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::ActorLink {
-                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
-                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(-1),
-                link_type: 0, // Unlink
-                immediate: true,
-                rider_initiated: false,
-                vehicle_angular_velocity: 0.0,
-            },
-        };
-
-        self.world.load().broadcast_to_chunk_editioned(
-            self.chunk_pos.load(),
-            &je_packet,
-            &be_packet,
-        );
+        self.unleash_if_leashed();
     }
 
     pub fn tick_leash(&self) {

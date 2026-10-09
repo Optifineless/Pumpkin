@@ -959,6 +959,16 @@ impl DispenserBlock {
         let target_box = BoundingBox::from_block(&target);
 
         for entity in ctx.world.get_entities_at_box(&target_box) {
+            if entity
+                .get_player()
+                .is_some_and(|player| player.is_spectator())
+            {
+                continue;
+            }
+            // ShearsDispenseItemBehavior.tryShearEntity snips leashes even on dying mobs.
+            if entity.get_entity().shear_off_all_leash_connections(None) {
+                return true;
+            }
             // Vanilla `LivingEntity.isAlive` also needs health left, so mobs in their death animation are skipped.
             if !entity.get_entity().is_alive()
                 || entity
@@ -1288,3 +1298,7 @@ impl DispenserBlock {
 #[cfg(test)]
 #[path = "dispenser_bottle_tests.rs"]
 mod bottle_tests;
+
+#[cfg(test)]
+#[path = "dispenser_shearing_tests.rs"]
+mod shearing_tests;

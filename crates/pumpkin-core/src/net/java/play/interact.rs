@@ -107,12 +107,12 @@ impl JavaClient {
                             let interacted = if event.action == ActionType::InteractAt {
                                 match event.target_position {
                                     Some(position) => {
-                                        event.target.interact_at(player, &mut stack, position)
+                                        event.target.interact_at_with_hand(player, &mut stack, position, hand)
                                     }
-                                    None => event.target.interact(player, &mut stack),
+                                    None => event.target.interact_with_hand(player, &mut stack, hand),
                                 }
                             } else {
-                                event.target.interact(player, &mut stack)
+                                event.target.interact_with_hand(player, &mut stack, hand)
                             };
                             let stand_swap = interacted && event.target.cast_any().is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
                             if !interacted {
