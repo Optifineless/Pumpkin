@@ -172,6 +172,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Change | Checked in-game |
 |:--|:--|
 | [#110] Charged respawn anchors set a Nether spawn or explode in unsafe dimensions when used without glowstone | Not yet; positional `RESPAWN_ANCHOR_WORKS` environment-attribute overrides are not evaluated |
+| Bedrock block use consumes from the packet's hand and syncs the changed equipment to tracking players | Not yet |
 | [#109] Firework Stars craft with colors, shapes and effects, can receive fade colors, and can be used in rockets | Not yet |
 | Powered activator rails eject rideable minecart passengers without freezing the tick; normal dismount events, cooldown and repositioning apply; mirrors `Minecart.activateMinecart` -> `Entity.ejectPassengers` ([fork #38](https://github.com/Optifineless/Pumpkin/issues/38); regression audit item 1) | Not yet |
 | Creative inventory packets arriving after a switch to Survival are ignored instead of disconnecting the player; mirrors `ServerGamePacketListenerImpl.handleSetCreativeModeSlot` (regression audit item 6) | Not yet |
