@@ -185,6 +185,10 @@ impl Animal for SheepEntity {
 }
 
 impl Mob for SheepEntity {
+    fn mob_tick(&self, _caller: &dyn EntityBase) {
+        self.ageable_ai_step();
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }
@@ -218,6 +222,19 @@ impl Mob for SheepEntity {
 
     fn on_eating_grass(&self) {
         self.set_sheared(false);
+    }
+
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Hand,
+    ) -> bool {
+        if self.is_food(item_stack) {
+            self.animal_interact_with_hand(player, item_stack, Sound::EntitySheepAmbient, hand)
+        } else {
+            self.mob_interact(player, item_stack)
+        }
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {

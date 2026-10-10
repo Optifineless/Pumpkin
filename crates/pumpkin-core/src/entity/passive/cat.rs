@@ -9,14 +9,17 @@ use pumpkin_data::data_component_impl::FoodImpl;
 use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use pumpkin_protocol::codec::var_int::VarInt;
+use pumpkin_util::Hand;
 use rand::RngExt;
 use uuid::Uuid;
 
 use crate::entity::custom_sound::CustomSound;
+use crate::entity::mob::interaction::MobInteraction;
 use crate::entity::{
     Entity, EntityBase,
     ageable::AgeableMob,
@@ -34,8 +37,12 @@ use crate::entity::{
     },
     player::Player,
 };
+use crate::item::item_utils::use_player_item;
 
 const TEMPT_ITEMS: &[&Item] = &[&Item::COD, &Item::SALMON];
+
+#[path = "cat_breeding.rs"]
+mod breeding;
 
 fn get_dye_color_from_item(item: &Item) -> Option<u8> {
     let key = item.registry_key;
@@ -249,6 +256,98 @@ impl CatEntity {
         );
     }
 
+    fn interact_with_parent(
+        &self,
+        player: &Arc<Player>,
+        input: &mut ItemStack,
+        sound: Sound,
+        hand: Option<Hand>,
+    ) -> bool {
+        match hand {
+            Some(hand) => self.animal_interact_with_hand(player, input, sound, hand),
+            None => self.animal_interact(player, input, sound),
+        }
+    }
+
+    fn interact_internal(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Option<Hand>,
+    ) -> bool {
+        let interaction = hand.map(|hand| MobInteraction::new(player, item_stack, hand));
+        let finish = |input: &ItemStack| {
+            interaction
+                .as_ref()
+                .is_none_or(|context| context.finish(self, player, input))
+        };
+        let item = item_stack.get_item();
+        let is_food = self.is_food(item_stack);
+        let sound_variant = CatSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
+            .unwrap_or_default();
+        let eating_sound =
+            sound_variant.eat_sound(self.get_entity().age.load(Ordering::Relaxed) < 0);
+
+        if self.is_tame() {
+            if self.get_owner_uuid() == Some(player.gameprofile.id) {
+                if item.has_tag(&tag::Item::MINECRAFT_CAT_COLLAR_DYES)
+                    || item.has_tag(&tag::Item::C_DYES)
+                {
+                    if let Some(color) = get_dye_color_from_item(item)
+                        && color != self.get_collar_color()
+                    {
+                        self.set_collar_color(color);
+                        item_stack.decrement_unless_creative(player.gamemode.load(), 1);
+                        return finish(item_stack);
+                    }
+                } else if is_food
+                    && self.mob_entity.living_entity.health.load()
+                        < self.mob_entity.living_entity.get_max_health()
+                {
+                    let healing = item_stack
+                        .get_data_component::<FoodImpl>()
+                        .map_or(1.0, |food| food.nutrition as f32);
+                    use_player_item(player, item_stack, hand);
+                    self.mob_entity.living_entity.heal(healing);
+                    self.play_eating_sound();
+                    return finish(item_stack);
+                }
+
+                let parent_interaction =
+                    self.interact_with_parent(player, item_stack, eating_sound, hand);
+                if !parent_interaction {
+                    self.set_sitting(!self.is_sitting());
+                    return finish(item_stack);
+                }
+                return parent_interaction;
+            }
+        } else if is_food {
+            use_player_item(player, item_stack, hand);
+            self.play_eating_sound();
+
+            let mut rng = rand::rng();
+            if rng.random_range(0..3) == 0 {
+                self.set_tame(true, Some(player.gameprofile.id));
+                self.set_sitting(true);
+                self.get_entity().world.load().send_entity_status(
+                    self.get_entity(),
+                    EntityStatus::TamingSucceeded,
+                    Some(ActorEventID::TamingSucceeded),
+                );
+            } else {
+                self.get_entity().world.load().send_entity_status(
+                    self.get_entity(),
+                    EntityStatus::TamingFailed,
+                    Some(ActorEventID::TamingFailed),
+                );
+            }
+
+            return finish(item_stack);
+        }
+
+        self.interact_with_parent(player, item_stack, eating_sound, hand)
+    }
+
     pub fn play_eating_sound(&self) {
         let mob_entity = self.get_mob_entity();
         let entity = &mob_entity.living_entity.entity;
@@ -287,6 +386,10 @@ impl AgeableMob for CatEntity {
 }
 
 impl Animal for CatEntity {
+    fn play_eating_sound(&self, _sound: Sound) {
+        Self::play_eating_sound(self);
+    }
+
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         let item = item_stack.get_item();
         item.has_tag(&tag::Item::MINECRAFT_CAT_FOOD) || item == &Item::COD || item == &Item::SALMON
@@ -300,6 +403,10 @@ impl TamableAnimal for CatEntity {
 }
 
 impl Mob for CatEntity {
+    fn mob_tick(&self, _caller: &dyn EntityBase) {
+        self.ageable_ai_step();
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }
@@ -413,69 +520,15 @@ impl Mob for CatEntity {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        let item = item_stack.get_item();
-        let is_food = self.is_food(item_stack);
-        let sound_variant = CatSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
-            .unwrap_or_default();
-        let eating_sound =
-            sound_variant.eat_sound(self.get_entity().age.load(Ordering::Relaxed) < 0);
+        self.interact_internal(player, item_stack, None)
+    }
 
-        if self.is_tame() {
-            if self.get_owner_uuid() == Some(player.gameprofile.id) {
-                if item.has_tag(&tag::Item::MINECRAFT_CAT_COLLAR_DYES)
-                    || item.has_tag(&tag::Item::C_DYES)
-                {
-                    if let Some(color) = get_dye_color_from_item(item)
-                        && color != self.get_collar_color()
-                    {
-                        self.set_collar_color(color);
-                        item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                        return true;
-                    }
-                } else if is_food
-                    && self.mob_entity.living_entity.health.load()
-                        < self.mob_entity.living_entity.get_max_health()
-                {
-                    let healing = item_stack
-                        .get_data_component::<FoodImpl>()
-                        .map_or(1.0, |food| food.nutrition as f32);
-                    item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                    self.mob_entity.living_entity.heal(healing);
-                    self.play_eating_sound();
-                    return true;
-                }
-
-                let parent_interaction = self.animal_interact(player, item_stack, eating_sound);
-                if !parent_interaction {
-                    self.set_sitting(!self.is_sitting());
-                    return true;
-                }
-                return parent_interaction;
-            }
-        } else if is_food {
-            item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-            self.play_eating_sound();
-
-            let mut rng = rand::rng();
-            if rng.random_range(0..3) == 0 {
-                self.set_tame(true, Some(player.gameprofile.id));
-                self.set_sitting(true);
-                self.get_entity().world.load().send_entity_status(
-                    self.get_entity(),
-                    EntityStatus::TamingSucceeded,
-                    Some(ActorEventID::TamingSucceeded),
-                );
-            } else {
-                self.get_entity().world.load().send_entity_status(
-                    self.get_entity(),
-                    EntityStatus::TamingFailed,
-                    Some(ActorEventID::TamingFailed),
-                );
-            }
-
-            return true;
-        }
-
-        self.animal_interact(player, item_stack, eating_sound)
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Hand,
+    ) -> bool {
+        self.interact_internal(player, item_stack, Some(hand))
     }
 }

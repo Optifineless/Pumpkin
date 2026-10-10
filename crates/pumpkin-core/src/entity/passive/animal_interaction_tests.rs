@@ -25,6 +25,9 @@ use pumpkin_util::{
 };
 use std::sync::{Arc, atomic::Ordering::Relaxed};
 
+#[path = "animal_interaction_review_tests.rs"]
+mod review;
+
 struct Fixture {
     server: Arc<Server>,
     world: Arc<World>,

@@ -4,13 +4,35 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 
-use crate::entity::{ageable::AgeableMob, mob::Mob, player::Player};
+use crate::entity::{
+    ageable::AgeableMob,
+    mob::{Mob, interaction::MobInteraction},
+    player::Player,
+};
+use crate::item::item_utils::use_player_item;
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
+use pumpkin_util::Hand;
 use pumpkin_util::math::vector3::Vector3;
 
 #[cfg(test)]
 #[path = "animal_interaction_tests.rs"]
 mod interaction_tests;
+
+#[cfg(test)]
+#[path = "animal_review_test_support.rs"]
+pub(crate) mod review_test_support;
+
+#[cfg(test)]
+#[path = "animal_tick_review_tests.rs"]
+mod tick_review_tests;
+
+#[cfg(test)]
+#[path = "animal_love_review_tests.rs"]
+mod love_review_tests;
+
+#[cfg(test)]
+#[path = "animal_clock_review_tests.rs"]
+mod clock_review_tests;
 
 pub trait Animal: Mob {
     fn is_food(&self, item_stack: &ItemStack) -> bool;
@@ -55,73 +77,83 @@ pub trait Animal: Mob {
         item_stack: &mut ItemStack,
         ambient_sound: Sound,
     ) -> bool {
-        let mob_entity = self.get_mob_entity();
-        if self.is_food(item_stack) {
-            let age = mob_entity
-                .living_entity
-                .entity
-                .age
-                .load(std::sync::atomic::Ordering::Relaxed);
-
-            if age >= 0 && mob_entity.is_breeding_ready() && !mob_entity.is_in_love() {
-                item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-
-                mob_entity.set_love_ticks(600, Some(player.gameprofile.id));
-                let entity = &mob_entity.living_entity.entity;
-                let world = entity.world.load();
-                let pos = entity.pos.load();
-
-                world.send_entity_status(
-                    entity,
-                    pumpkin_data::entity::EntityStatus::InLoveHearts,
-                    Some(ActorEventID::InLoveHearts),
-                );
-
-                world.spawn_particle(
-                    pos + Vector3::new(0.0, f64::from(entity.height()), 0.0),
-                    Vector3::new(0.5, 0.5, 0.5),
-                    1.0,
-                    7,
-                    Particle::Heart,
-                );
-                world.play_sound(ambient_sound, SoundCategory::Neutral, &entity.pos.load());
-                return true;
-            }
-
-            if age < 0 && self.as_ageable().is_none_or(AgeableMob::can_age_up) {
-                item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                if let Some(ageable) = self.as_ageable() {
-                    let seconds = crate::entity::ageable::feeding_speed_up_seconds(-age);
-                    ageable.age_up(seconds, true);
-                } else {
-                    // Preserve feeding for legacy species without AgeableData. Their
-                    // full age lifecycle is separate from the ageable feeding contract.
-                    let speedup = (-age / 10).max(1);
-                    mob_entity
-                        .living_entity
-                        .entity
-                        .age
-                        .fetch_add(speedup, std::sync::atomic::Ordering::Relaxed);
-                }
-
-                let entity = &mob_entity.living_entity.entity;
-                let world = entity.world.load();
-                let pos = entity.pos.load();
-
-                world.spawn_particle(
-                    pos + Vector3::new(0.0, f64::from(entity.height()), 0.0),
-                    Vector3::new(0.5, 0.5, 0.5),
-                    1.0,
-                    7,
-                    Particle::HappyVillager,
-                );
-                self.play_eating_sound(ambient_sound);
-                return true;
-            }
+        if interact_with_food(self, player, item_stack, ambient_sound, None) {
+            return true;
         }
-
-        mob_entity.mob_interact(player, item_stack)
+        self.get_mob_entity().mob_interact(player, item_stack)
     }
+
+    fn animal_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        ambient_sound: Sound,
+        hand: Hand,
+    ) -> bool {
+        let interaction = MobInteraction::new(player, item_stack, hand);
+        if interact_with_food(self, player, item_stack, ambient_sound, Some(hand)) {
+            return interaction.finish(self, player, item_stack);
+        }
+        // Leash/unleash belongs to the superclass, outside mobInteract's food result.
+        self.get_mob_entity().mob_interact(player, item_stack)
+    }
+}
+
+fn interact_with_food<A: Animal + ?Sized>(
+    animal: &A,
+    player: &Arc<Player>,
+    item_stack: &mut ItemStack,
+    ambient_sound: Sound,
+    hand: Option<Hand>,
+) -> bool {
+    if !animal.is_food(item_stack) {
+        return false;
+    }
+    let mob_entity = animal.get_mob_entity();
+    let entity = &mob_entity.living_entity.entity;
+    let age = entity.age.load(std::sync::atomic::Ordering::Relaxed);
+    // Legacy species still use positive Entity.age as an elapsed clock.
+    let adult = if animal.as_ageable().is_some() {
+        age == 0
+    } else {
+        age >= 0
+    };
+    if adult && mob_entity.is_breeding_ready() && !mob_entity.is_in_love() {
+        use_player_item(player, item_stack, hand);
+        mob_entity.set_love_ticks(600, Some(player.gameprofile.id));
+        // Vanilla Animal.setInLove sends status 18; clients render its seven-heart burst.
+        entity.world.load().send_entity_status(
+            entity,
+            pumpkin_data::entity::EntityStatus::InLoveHearts,
+            Some(ActorEventID::InLoveHearts),
+        );
+        animal.play_eating_sound(ambient_sound);
+        return true;
+    }
+
+    if age < 0 && animal.as_ageable().is_none_or(AgeableMob::can_age_up) {
+        use_player_item(player, item_stack, hand);
+        if let Some(ageable) = animal.as_ageable() {
+            let seconds = crate::entity::ageable::feeding_speed_up_seconds(-age);
+            ageable.age_up(seconds, true);
+        } else {
+            // Preserve feeding for legacy species without AgeableData. Their
+            // full age lifecycle is separate from the ageable feeding contract.
+            entity
+                .age
+                .fetch_add((-age / 10).max(1), std::sync::atomic::Ordering::Relaxed);
+        }
+        entity.world.load().spawn_particle(
+            entity.pos.load() + Vector3::new(0.0, f64::from(entity.height()), 0.0),
+            Vector3::new(0.5, 0.5, 0.5),
+            1.0,
+            7,
+            Particle::HappyVillager,
+        );
+        animal.play_eating_sound(ambient_sound);
+        return true;
+    }
+    false
 }
 
 #[must_use]

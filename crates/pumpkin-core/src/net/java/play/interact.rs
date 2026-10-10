@@ -105,7 +105,6 @@ impl JavaClient {
                             let source_slot = super::hand_use_result::hand_slot(player, hand);
                             let mut stack = player.inventory().get_stack_in_hand(hand);
 
-                            let item_id = stack.item.id;
                             let before = stack.clone();
                             let interacted = if event.action == ActionType::InteractAt {
                                 match event.target_position {
@@ -126,9 +125,8 @@ impl JavaClient {
                             super::hand_use_result::write_back_hand_item(player, hand, source_slot, &before, &stack,
                                 if stand_swap { super::hand_use_result::HandMutation::EquipmentTransfer }
                                 else { super::hand_use_result::HandMutation::ItemUse });
-                            if !stand_swap && !stack.are_equal(&before) {
-                                player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-                            }
+                            // Player.interactOn does not award a generic Used statistic;
+                            // item implementations own any item-specific awards.
                         }
                     }
                 }
