@@ -239,8 +239,10 @@ impl Fixture {
 
     pub fn assert_unchanged(&mut self, state: BlockStateId, inventory: &[ItemStack]) {
         assert_eq!(self.world.get_block_state_id(&POS), state);
+        let current_inventory = self.inventory();
+        assert_eq!(current_inventory.len(), inventory.len());
         assert!(
-            self.inventory()
+            current_inventory
                 .iter()
                 .zip(inventory)
                 .all(|(a, b)| a.are_equal(b))
