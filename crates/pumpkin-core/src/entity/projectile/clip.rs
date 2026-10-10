@@ -53,7 +53,7 @@ pub(super) fn nearest_direction(movement: Vector3<f64>) -> BlockDirection {
 }
 
 // AABB.clip / clipPoint: only entering planes strictly inside the ray segment count.
-pub(super) fn clip_box(
+pub fn clip_box(
     from: Vector3<f64>,
     movement: Vector3<f64>,
     bounds: BoundingBox,
