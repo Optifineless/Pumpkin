@@ -11,7 +11,7 @@ use crate::block::{
     BlockBehaviour, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnScheduledTickArgs,
     RandomTickArgs,
 };
-use crate::world::World;
+use crate::world::fluid_lookup::get_fluid_from_state_id;
 
 #[pumpkin_block("minecraft:sugar_cane")]
 pub struct SugarCaneBlock;
@@ -82,7 +82,7 @@ fn can_place_at(block_accessor: &dyn BlockAccessor, block_pos: &BlockPos) -> boo
         for direction in HorizontalFacing::all() {
             let neighbour = block_pos.down().offset(direction.to_offset());
             let (block, state) = block_accessor.get_block_and_state(&neighbour);
-            let fluid = World::get_fluid_from_state_id(state.id);
+            let fluid = get_fluid_from_state_id(state.id);
             // SugarCaneBlock.canSurvive admits either tagged fluid or tagged block support.
             if fluid.has_tag(&tag::Fluid::MINECRAFT_SUPPORTS_SUGAR_CANE_ADJACENTLY)
                 || block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_SUGAR_CANE_ADJACENTLY)
