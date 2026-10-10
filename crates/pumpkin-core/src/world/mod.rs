@@ -4500,7 +4500,7 @@ impl World {
     }
 
     /// Makes the saved entity copy live once; the next snapshot replaces saved records.
-    fn make_chunk_entities_live(
+    pub(crate) fn make_chunk_entities_live(
         self: &Arc<Self>,
         chunk: &Arc<ChunkEntityData>,
         player: Option<&Arc<Player>>,
