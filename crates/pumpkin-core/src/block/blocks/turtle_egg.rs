@@ -58,10 +58,12 @@ impl TurtleEggBlock {
         state_id: BlockStateId,
         block: &Block,
     ) {
-        world.play_sound(
-            Sound::EntityTurtleEggBreak,
+        world.play_sound_raw(
+            Sound::EntityTurtleEggBreak as u16,
             SoundCategory::Blocks,
             &pos.to_f64(),
+            0.7,
+            rand::random::<f32>().mul_add(0.2, 0.9),
         );
 
         let props = TurtleEggProperties::from_state_id(state_id);
@@ -71,7 +73,20 @@ impl TurtleEggBlock {
         } else {
             let mut new_props = props;
             new_props.eggs -= 1;
-            world.set_block_state(pos, new_props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+            world.set_block_state(
+                pos,
+                new_props.to_state_id(block),
+                BlockFlags::NOTIFY_LISTENERS,
+            );
+            world.emit_game_event(
+                pumpkin_data::game_event::GameEvent::BlockDestroy.name(),
+                pos.to_f64(),
+            );
+            world.sync_world_event(
+                pumpkin_data::world::WorldEvent::ParticlesDestroyBlock,
+                *pos,
+                i32::from(state_id.as_u16()),
+            );
         }
     }
 
@@ -216,12 +231,9 @@ impl BlockBehaviour for TurtleEggBlock {
     }
 
     fn broken(&self, args: BrokenArgs<'_>) {
-        {
-            args.world.play_sound(
-                Sound::EntityTurtleEggBreak,
-                SoundCategory::Blocks,
-                &args.position.to_f64(),
-            );
+        // TurtleEggBlock.playerDestroy runs after loot; Creative skips playerDestroy entirely.
+        if args.player.gamemode.load() != pumpkin_util::GameMode::Creative {
+            Self::decrease_eggs(args.world, args.position, args.state.id, args.block);
         }
     }
 }

@@ -5398,11 +5398,8 @@ impl World {
             crate::block::drop_loot(self, broken_block, position, true, &params);
         }
 
-        let new_state_id = if broken_block.is_waterlogged(broken_block_state.id) {
-            Block::WATER.default_state.id
-        } else {
-            Block::AIR.default_state.id
-        };
+        let new_state_id =
+            crate::block::blocks::growing_plant::fluid_state_after_break(broken_block_state.id);
 
         let broken_state_id = self.set_block_state_with_limit(
             position,
@@ -5973,7 +5970,8 @@ impl World {
         }
     }
 
-    fn fluid_state_from_block_state(id: BlockStateId) -> (&'static Fluid, FluidState) {
+    /// Returns the fluid family and actual contained fluid state, including waterlogged plants.
+    pub(crate) fn fluid_state_from_block_state(id: BlockStateId) -> (&'static Fluid, FluidState) {
         let fluid = Self::get_fluid_from_state_id(id);
         let source = if fluid.matches_type(&Fluid::WATER) {
             &Fluid::WATER

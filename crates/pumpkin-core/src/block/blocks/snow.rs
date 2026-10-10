@@ -8,7 +8,7 @@ use pumpkin_world::{
 };
 
 use crate::block::{
-    BlockBehaviour, CanUpdateAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
+    BlockBehaviour, CanPlaceAtArgs, CanUpdateAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
     OnScheduledTickArgs, PathComputationType, RandomTickArgs,
 };
 
@@ -16,6 +16,11 @@ use crate::block::{
 pub struct LayeredSnowBlock;
 
 impl BlockBehaviour for LayeredSnowBlock {
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        // SnowLayerBlock.canSurvive is required by BlockItem.getPlacementState.
+        can_place_at(args.block_accessor, args.position)
+    }
+
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         if !can_place_at(args.world, args.position) {
             return Block::AIR.default_state.id;

@@ -5,10 +5,17 @@ use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 
+use crate::block::blocks::growing_plant::GrowingPlant;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
     BlockBehaviour, BlockMetadata, BonemealArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,
-    NormalUseArgs, PlacedArgs,
+    NormalUseArgs, OnPlaceArgs, OnScheduledTickArgs,
+};
+
+const PLANT: GrowingPlant = GrowingPlant {
+    head: &Block::CAVE_VINES,
+    body: &Block::CAVE_VINES_PLANT,
+    growth_direction: BlockDirection::Down,
 };
 
 pub struct CaveVinesBlock;
@@ -22,12 +29,7 @@ impl BlockMetadata for CaveVinesBlock {
 impl CaveVinesBlock {
     #[must_use]
     pub fn can_survive(world: &dyn BlockAccessor, pos: &BlockPos) -> bool {
-        let support_pos = pos.up();
-        let (support_block, support_state) = world.get_block_and_state(&support_pos);
-        if support_block == &Block::CAVE_VINES || support_block == &Block::CAVE_VINES_PLANT {
-            return true;
-        }
-        support_state.is_side_solid(BlockDirection::Down) && support_block.is_solid()
+        PLANT.can_survive(world, pos)
     }
 }
 
@@ -36,30 +38,19 @@ impl BlockBehaviour for CaveVinesBlock {
         Self::can_survive(args.block_accessor, args.position)
     }
 
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+        PLANT.get_state_for_placement(&args)
+    }
+
     fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        if !Self::can_survive(args.world, args.position) {
-            return Block::AIR.default_state.id;
-        }
-        args.state_id
+        PLANT.update_shape(&args)
     }
 
-    fn placed(&self, args: PlacedArgs<'_>) {
-        let support_pos = args.position.up();
-        let support_block = args.world.get_block(&support_pos);
-        if support_block == &Block::CAVE_VINES {
-            let support_state_id = args.world.get_block_state_id(&support_pos);
-            let support_props = CaveVinesLikeProperties::from_state_id(support_state_id);
-            let mut plant_props = CaveVinesPlantLikeProperties::default(&Block::CAVE_VINES_PLANT);
-            plant_props.berries = support_props.berries;
-            args.world.set_block_state(
-                &support_pos,
-                plant_props.to_state_id(&Block::CAVE_VINES_PLANT),
-                BlockFlags::empty(),
-            );
-        }
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        PLANT.tick(&args);
     }
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {

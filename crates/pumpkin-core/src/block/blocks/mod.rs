@@ -139,3 +139,9 @@ pub mod structure_block;
 pub mod trial_spawner;
 pub mod turtle_egg;
 pub mod vault;
+
+pub mod dried_ghast;
+pub mod growing_plant;
+
+#[cfg(test)]
+mod hunt_plants_tests;

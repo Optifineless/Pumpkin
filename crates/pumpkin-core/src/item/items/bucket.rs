@@ -330,13 +330,19 @@ pub(crate) fn empty_bucket_at(world: &Arc<World>, item: &Item, pos: BlockPos) ->
         if !block.is_waterlogged(state.id)
             && let Some(state_id) = block.set_waterlogged(state.id, true)
         {
-            world.set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
-            world.schedule_fluid_tick(
-                &Fluid::WATER,
-                pos,
-                FlowingWater.get_flow_speed(world),
-                TickPriority::Normal,
-            );
+            if block == &Block::DRIED_GHAST {
+                crate::block::blocks::dried_ghast::DriedGhastBlock::place_liquid(
+                    world, &pos, state.id,
+                );
+            } else {
+                world.set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
+                world.schedule_fluid_tick(
+                    &Fluid::WATER,
+                    pos,
+                    FlowingWater.get_flow_speed(world),
+                    TickPriority::Normal,
+                );
+            }
         }
     } else {
         if !state.is_air() && !state.is_liquid() {

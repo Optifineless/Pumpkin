@@ -1,6 +1,4 @@
 use pumpkin_data::block_properties::SnifferEggLikeProperties;
-use pumpkin_data::item::Item;
-use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{BlockId, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
@@ -8,7 +6,7 @@ use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
 
 use crate::block::{
-    BlockBehaviour, BrokenArgs, OnPlaceArgs, OnScheduledTickArgs, PathComputationType, PlacedArgs,
+    BlockBehaviour, OnPlaceArgs, OnScheduledTickArgs, PathComputationType, PlacedArgs,
 };
 
 #[pumpkin_block("minecraft:sniffer_egg")]
@@ -30,6 +28,7 @@ impl SnifferEggBlock {
     }
 }
 
+// SnifferEggBlock has no playerDestroy override; Blocks uses SoundType.METAL.
 impl BlockBehaviour for SnifferEggBlock {
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let props = SnifferEggLikeProperties::default(args.block);
@@ -82,18 +81,6 @@ impl BlockBehaviour for SnifferEggBlock {
                 SoundCategory::Blocks,
                 &args.position.to_f64(),
             );
-        }
-    }
-
-    fn broken(&self, args: BrokenArgs<'_>) {
-        {
-            args.world.play_sound(
-                Sound::BlockSnifferEggCrack,
-                SoundCategory::Blocks,
-                &args.position.to_f64(),
-            );
-            args.world
-                .drop_stack(args.position, ItemStack::new(1, &Item::SNIFFER_EGG));
         }
     }
 
