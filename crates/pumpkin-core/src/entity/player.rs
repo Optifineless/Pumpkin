@@ -4,6 +4,7 @@ mod container_menu_block_effects;
 mod death;
 mod equipment_updates;
 mod experience_orb;
+mod inventory_sync;
 mod known_movement;
 mod mace;
 mod melee;
@@ -1272,27 +1273,7 @@ impl Player {
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
-                use pumpkin_protocol::bedrock::{
-                    client::inventory_slot::CInventorySlot,
-                    network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
-                };
-                use pumpkin_protocol::codec::var_uint::VarUInt;
-
-                let item_stack = &*packet.item.0;
-                let item_desc = NetworkItemStackDescriptor::from(item_stack);
-                let bedrock_packet = CInventorySlot {
-                    container_id: VarUInt(0),
-                    slot: VarUInt(packet.slot.0 as u32),
-                    full_container_name: Some(FullContainerName {
-                        container_name: ContainerName::Inventory,
-                        dynamic_id: None,
-                    }),
-                    storage_item: None,
-                    item: item_desc,
-                };
-                if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                    crate::world::guard_effects::send(self.client.clone(), data);
-                }
+                self.send_bedrock_inventory_slot(bedrock, packet);
             }
         }
     }
