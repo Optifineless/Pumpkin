@@ -5,6 +5,7 @@ use std::sync::{
 
 use pumpkin_data::cat_sound_variant::CatSoundVariant;
 use pumpkin_data::cat_variant::CatVariant;
+use pumpkin_data::data_component_impl::FoodImpl;
 use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -401,6 +402,10 @@ impl Mob for CatEntity {
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
         let item = item_stack.get_item();
         let is_food = self.is_food(item_stack);
+        let sound_variant = CatSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
+            .unwrap_or_default();
+        let eating_sound =
+            sound_variant.eat_sound(self.get_entity().age.load(Ordering::Relaxed) < 0);
 
         if self.is_tame() {
             if self.get_owner_uuid() == Some(player.gameprofile.id) {
@@ -418,13 +423,16 @@ impl Mob for CatEntity {
                     && self.mob_entity.living_entity.health.load()
                         < self.mob_entity.living_entity.get_max_health()
                 {
+                    let healing = item_stack
+                        .get_data_component::<FoodImpl>()
+                        .map_or(1.0, |food| food.nutrition as f32);
                     item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                    self.mob_entity.living_entity.heal(2.0);
+                    self.mob_entity.living_entity.heal(healing);
                     self.play_eating_sound();
                     return true;
                 }
 
-                let parent_interaction = self.mob_entity.mob_interact(player, item_stack);
+                let parent_interaction = self.animal_interact(player, item_stack, eating_sound);
                 if !parent_interaction {
                     self.set_sitting(!self.is_sitting());
                     return true;
@@ -455,6 +463,6 @@ impl Mob for CatEntity {
             return true;
         }
 
-        self.mob_entity.mob_interact(player, item_stack)
+        self.animal_interact(player, item_stack, eating_sound)
     }
 }

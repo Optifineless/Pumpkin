@@ -4,9 +4,13 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 
-use crate::entity::{mob::Mob, player::Player};
+use crate::entity::{ageable::AgeableMob, mob::Mob, player::Player};
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use pumpkin_util::math::vector3::Vector3;
+
+#[cfg(test)]
+#[path = "animal_interaction_tests.rs"]
+mod interaction_tests;
 
 pub trait Animal: Mob {
     fn is_food(&self, item_stack: &ItemStack) -> bool;
@@ -84,14 +88,21 @@ pub trait Animal: Mob {
                 return true;
             }
 
-            if age < 0 {
+            if age < 0 && self.as_ageable().is_none_or(AgeableMob::can_age_up) {
                 item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                let speedup = (-age / 10).max(1);
-                mob_entity
-                    .living_entity
-                    .entity
-                    .age
-                    .fetch_add(speedup, std::sync::atomic::Ordering::Relaxed);
+                if let Some(ageable) = self.as_ageable() {
+                    let seconds = crate::entity::ageable::feeding_speed_up_seconds(-age);
+                    ageable.age_up(seconds, true);
+                } else {
+                    // Preserve feeding for legacy species without AgeableData. Their
+                    // full age lifecycle is separate from the ageable feeding contract.
+                    let speedup = (-age / 10).max(1);
+                    mob_entity
+                        .living_entity
+                        .entity
+                        .age
+                        .fetch_add(speedup, std::sync::atomic::Ordering::Relaxed);
+                }
 
                 let entity = &mob_entity.living_entity.entity;
                 let world = entity.world.load();

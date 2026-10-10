@@ -3,6 +3,7 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
+use pumpkin_data::data_component_impl::FoodImpl;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -345,8 +346,12 @@ impl Mob for WolfEntity {
                 && self.mob_entity.living_entity.health.load()
                     < self.mob_entity.living_entity.get_max_health()
             {
+                // TamableAnimal.feed snapshots FOOD before consuming the last item.
+                let healing = item_stack
+                    .get_data_component::<FoodImpl>()
+                    .map_or(2.0, |food| 2.0 * food.nutrition as f32);
                 item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                self.mob_entity.living_entity.heal(2.0);
+                self.mob_entity.living_entity.heal(healing);
                 self.play_eating_sound(ambient);
                 return true;
             }

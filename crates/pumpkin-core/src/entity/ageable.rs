@@ -6,6 +6,11 @@ use crate::entity::mob::Mob;
 pub const BABY_START_AGE: i32 = -24000;
 pub const FORCED_AGE_PARTICLE_TICKS: i32 = 40;
 
+/// AgeableMob.getSpeedUpSecondsWhenFeeding divides ticks as integers first.
+pub(crate) fn feeding_speed_up_seconds(ticks_until_adult: i32) -> i32 {
+    ((ticks_until_adult / 20) as f32 * 0.1) as i32
+}
+
 pub struct AgeableData {
     pub forced_age: AtomicI32,
     pub forced_age_timer: AtomicI32,
@@ -95,7 +100,7 @@ pub trait AgeableMob: Mob {
     where
         Self: Sized,
     {
-        (ticks_until_adult as f32 / 20.0 * 0.1) as i32
+        feeding_speed_up_seconds(ticks_until_adult)
     }
 
     fn write_ageable_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
