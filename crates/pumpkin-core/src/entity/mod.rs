@@ -97,6 +97,7 @@ pub mod lightning;
 pub mod living;
 pub mod marker;
 pub mod mob;
+mod movement_safety;
 pub mod passive;
 mod pickability;
 pub mod player;
@@ -2148,6 +2149,10 @@ impl Entity {
             );
 
             self.velocity.store(Vector3::default());
+        }
+
+        if !self.accept_movement(motion) {
+            return;
         }
 
         let final_move = self.adjust_movement_for_collisions(motion, caller);

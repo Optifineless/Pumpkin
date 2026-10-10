@@ -186,6 +186,8 @@ mod experience_orbs;
 mod fishing_hook;
 mod game_events;
 pub(crate) mod generation_spawning;
+#[cfg(test)]
+mod minecart_stall_tests;
 pub mod natural_spawner;
 pub mod scoreboard;
 #[cfg(test)]

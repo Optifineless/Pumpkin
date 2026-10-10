@@ -2,6 +2,7 @@ mod chest;
 mod container;
 mod furnace;
 mod hopper;
+mod movement;
 mod rideable;
 mod tnt;
 
@@ -135,8 +136,10 @@ impl EntityBase for MinecartEntity {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         self.vehicle.tick();
+        let max_speed = self.max_speed(server);
+        let new_behavior = Self::uses_new_behavior(server);
         if let MinecartKind::Furnace(minecart) = &self.kind {
             minecart.tick(&self.vehicle.entity);
         }
@@ -205,11 +208,12 @@ impl EntityBase for MinecartEntity {
             let powered = props.powered;
 
             if powered {
-                if is_powered_rail {
+                if is_powered_rail && !new_behavior {
                     let mut velocity = self.vehicle.entity.velocity.load();
                     let speed = velocity.length();
                     if speed > 0.01 {
-                        let new_speed = (speed + 0.06).min(0.4);
+                        // OldMinecartBehavior.moveAlongTrack caps the move, not the boosted delta.
+                        let new_speed = speed + Self::POWERED_RAIL_ACCELERATION;
                         velocity = velocity
                             .normalize()
                             .multiply(new_speed, new_speed, new_speed);
@@ -336,6 +340,7 @@ impl EntityBase for MinecartEntity {
 
         let mut velocity = self.vehicle.entity.velocity.load();
 
+        let mut rail_direction = Vector3::default();
         if is_on_rails {
             use pumpkin_data::block_properties::RailLikeProperties;
             use pumpkin_data::block_properties::{RailShape, RailShapeStraight};
@@ -405,6 +410,7 @@ impl EntityBase for MinecartEntity {
             if velocity.dot(&horizontal_out_direction) < velocity.dot(&horizontal_in_direction) {
                 horizontal_out_direction = horizontal_in_direction;
             }
+            rail_direction = horizontal_out_direction.normalize();
 
             let out_position = block_center_bottom.add(&horizontal_out_direction).add(
                 &horizontal_out_direction
@@ -417,19 +423,34 @@ impl EntityBase for MinecartEntity {
             let towards_length = towards_out.length();
             if towards_length > 1e-5 {
                 towards_out = towards_out.normalize();
-                let speed = velocity.length();
+                rail_direction = towards_out;
+                // OldMinecartBehavior.moveAlongTrack limits rail alignment speed to 2.
+                let speed = if new_behavior {
+                    velocity.x.hypot(velocity.z)
+                } else {
+                    velocity.x.hypot(velocity.z).min(2.0)
+                };
                 velocity = towards_out.multiply(speed, speed, speed);
             }
 
             velocity.y = 0.0;
-            self.vehicle.entity.velocity.store(velocity);
-        } else if !self.vehicle.entity.on_ground.load(Ordering::Relaxed) {
+        } else {
+            // Both vanilla minecart behaviours apply gravity before comeOffTrack.
             velocity.y -= GRAVITY;
-            self.vehicle.entity.velocity.store(velocity);
         }
 
-        if velocity.length() > 0.001 {
-            self.move_entity(caller, velocity);
+        let powered_rail =
+            is_powered_rail && PoweredRailLikeProperties::from_state_id(state_id).powered;
+        let movement = self.limit_movement(
+            server,
+            &mut velocity,
+            is_on_rails,
+            max_speed,
+            powered_rail.then_some(rail_direction),
+        );
+        self.vehicle.entity.velocity.store(velocity);
+        if movement.length() > 0.001 {
+            self.move_entity(caller, movement);
 
             if let MinecartKind::Tnt(minecart) = &self.kind
                 && self
@@ -455,46 +476,10 @@ impl EntityBase for MinecartEntity {
                 }
             }
 
-            #[allow(clippy::useless_let_if_seq)]
-            let mut friction = 0.95; // Vanilla minecart air drag
-
-            if is_on_rails {
-                let has_passengers = self
-                    .vehicle
-                    .entity
-                    .passengers
-                    .try_lock()
-                    .is_ok_and(|p| !p.is_empty());
-                friction = if has_passengers { 0.99 } else { 0.96 };
-            } else {
-                let below_block_pos = BlockPos(Vector3::new(
-                    block_pos.0.x,
-                    block_pos.0.y - 1,
-                    block_pos.0.z,
-                ));
-                let below_block = world.get_block(&below_block_pos);
-
-                let is_on_ground = self.vehicle.entity.on_ground.load(Ordering::Relaxed)
-                    || (below_block.id != Block::AIR.id
-                        && below_block.id != Block::WATER.id
-                        && below_block.id != Block::LAVA.id);
-                let is_in_water = self.vehicle.entity.touching_water.load(Ordering::Relaxed)
-                    || below_block.id == Block::WATER.id;
-
-                if is_on_ground {
-                    friction = 0.5;
-                } else if is_in_water {
-                    friction = 0.95;
-                }
+            if !is_on_rails {
+                velocity = self.vehicle.entity.velocity.load();
             }
-
-            let mut next_vel = if is_on_rails && let MinecartKind::Furnace(minecart) = &self.kind {
-                minecart.velocity(&self.vehicle.entity, velocity)
-            } else if is_on_rails && let Some(inventory) = self.container() {
-                container::velocity(&self.vehicle.entity, inventory, velocity)
-            } else {
-                velocity.multiply(friction, friction, friction)
-            };
+            let mut next_vel = self.movement_slowdown(velocity, is_on_rails, new_behavior);
             if next_vel.length() < 0.005 {
                 next_vel = Vector3::new(0.0, 0.0, 0.0);
             }
@@ -507,6 +492,8 @@ impl EntityBase for MinecartEntity {
         if let MinecartKind::Hopper(minecart) = &self.kind {
             minecart.tick(&self.vehicle.entity);
         }
+        // AbstractMinecart.tick refreshes fluid flags after the behaviour's movement.
+        self.vehicle.entity.update_fluid_interaction(caller);
     }
 
     fn get_entity(&self) -> &Entity {
