@@ -105,6 +105,7 @@ impl TestPlayer {
         let mut packets = Vec::new();
         while let Ok(packet) = self.packets.try_recv() {
             if let OutgoingPacket::Data { data, .. } = packet {
+                decrement_pending_bytes(&self.client().pending_bytes, data.len());
                 packets.push(data);
             }
         }
@@ -123,6 +124,7 @@ impl TestPlayer {
                 () = &mut task => break,
                 packet = self.packets.recv() => {
                     if let Some(OutgoingPacket::Data { data, completion }) = packet {
+                        decrement_pending_bytes(&self.client().pending_bytes, data.len());
                         packets.push(data);
                         if let Some(super::outgoing::Completion::Framed(done)
                             | super::outgoing::Completion::Flushed(done)) = completion {
@@ -135,4 +137,32 @@ impl TestPlayer {
         packets.extend(self.take_packets());
         packets
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn review7_packet_collection_balances_pending_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = crate::server::combat_test_support::server(dir.path());
+    let world = crate::server::combat_test_support::world(&server, dir.path());
+    let mut fixture = TestPlayer::new(&world);
+    fixture.take_packets();
+    let player = fixture.player.clone();
+    let packet = pumpkin_protocol::java::client::play::CEntityVelocity::new(
+        player.entity_id().into(),
+        pumpkin_util::math::vector3::Vector3::new(0.0, 0.2, 0.0),
+    );
+    let packets = fixture
+        .collect_packets_during(async {
+            let ClientPlatform::Java(client) = player.client.as_ref() else {
+                panic!("Java combat fixture required");
+            };
+            client
+                .send_packet_now_data(client.serialize_packet(&packet).unwrap())
+                .await;
+            player.try_send_client_packet(&packet);
+        })
+        .await;
+    assert_eq!(packets.len(), 2);
+    assert_eq!(fixture.client().pending_bytes.load(Ordering::Acquire), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }

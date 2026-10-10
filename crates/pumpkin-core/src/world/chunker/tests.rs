@@ -43,6 +43,11 @@ fn install(hooks: &Hooks, entity_id: i32, hook: impl FnOnce() + Send + 'static) 
         .insert(entity_id, Box::new(hook));
 }
 
+/// Installs a one-shot callback at the real tracker walk boundary for movement regressions.
+pub fn on_next_tracker_walk(entity_id: i32, hook: impl FnOnce() + Send + 'static) {
+    install(&TRACKER_HOOKS, entity_id, hook);
+}
+
 pub(super) fn before_tracker_update(entity_id: i32) {
     run_hook(&TRACKER_HOOKS, entity_id);
 }

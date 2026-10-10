@@ -162,19 +162,12 @@ impl JavaClient {
                         player.gamemode.load() == GameMode::Creative,
                     );
                 }
-                chunker::update_position(player);
                 let delta = Vector3::new(
                     pos.x - last_pos.x,
                     pos.y - last_pos.y,
                     pos.z - last_pos.z,
                 );
-                // Only update idle timeout if there's actual movement (vanilla threshold)
-                if delta.length_squared() > 1.0E-5 {
-                    player.update_last_action_time();
-                    player.check_location_enchantments(pos, packet.collision & FLAG_ON_GROUND != 0);
-                }
-                player.known_movement.record(delta);
-                player.progress_motion(delta);
+                Self::finish_position_movement(player, &life, pos, delta, packet.collision & FLAG_ON_GROUND != 0);
             }
 
             'cancelled: {
@@ -323,25 +316,49 @@ impl JavaClient {
                         player.gamemode.load() == GameMode::Creative,
                     );
                 }
-                chunker::update_position(player);
                 let delta = Vector3::new(
                     pos.x - last_pos.x,
                     pos.y - last_pos.y,
                     pos.z - last_pos.z,
                 );
-                // Only update idle timeout if there's actual movement (vanilla threshold)
-                if delta.length_squared() > 1.0E-5 {
-                    player.update_last_action_time();
-                    player.check_location_enchantments(pos, (packet.collision & FLAG_ON_GROUND) != 0);
-                }
-                player.known_movement.record(delta);
-                player.progress_motion(delta);
+                Self::finish_position_movement(player, &life, pos, delta, (packet.collision & FLAG_ON_GROUND) != 0);
             }
 
             'cancelled: {
                 self.force_tp(player, position);
             }
         }}
+    }
+
+    fn finish_position_movement(
+        player: &Arc<Player>,
+        life: &crate::entity::living::damage_transaction::DamageToken,
+        position: Vector3<f64>,
+        delta: Vector3<f64>,
+        on_ground: bool,
+    ) {
+        if !life.is_current_life() || player.living_entity.is_respawning() {
+            return;
+        }
+        {
+            // ServerGamePacketListenerImpl.handleMovePlayer -> ChunkMap.move can pair entities.
+            let _released = crate::entity::living::suspend_damage();
+            chunker::update_position(player);
+        };
+        if !life.is_current_life() || player.living_entity.is_respawning() {
+            return;
+        }
+        // ServerGamePacketListenerImpl.handleMovePlayer: location effects can also update blocks.
+        if delta.length_squared() > 1.0E-5 {
+            player.update_last_action_time();
+            let _released = crate::entity::living::suspend_damage();
+            player.check_location_enchantments(position, on_ground);
+        }
+        if !life.is_current_life() || player.living_entity.is_respawning() {
+            return;
+        }
+        player.known_movement.record(delta);
+        player.progress_motion(delta);
     }
 
     pub fn force_tp(&self, player: &Arc<Player>, position: Vector3<f64>) {

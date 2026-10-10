@@ -179,9 +179,17 @@ async fn followup4_inflight_teleport_cannot_be_detached_by_respawn() {
                         player.living_entity.begin_respawn().is_none(),
                         "respawn detached an in-flight transfer"
                     );
+                    let waiting = player.living_entity.notify_when_respawn_waits();
                     let respawn = source.respawn_player(&player, false);
                     tokio::pin!(respawn);
-                    assert!(futures::poll!(respawn.as_mut()).is_pending());
+                    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                        tokio::select! {
+                            () = &mut respawn => panic!("respawn did not wait for the transfer"),
+                            () = waiting.notified() => {}
+                        }
+                    })
+                    .await
+                    .unwrap();
                     assert!(!player.living_entity.is_respawning());
                     resume.notify_one();
                     respawn.await;

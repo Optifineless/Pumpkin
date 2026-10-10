@@ -14,6 +14,8 @@ use tokio::sync::Notify;
 pub(super) struct WorldTransferState {
     active: AtomicBool,
     finished: Notify,
+    #[cfg(test)]
+    waiting: std::sync::Mutex<Option<Arc<Notify>>>,
 }
 
 pub struct WorldTransfer<'a>(&'a LivingEntity);
@@ -87,8 +89,30 @@ impl LivingEntity {
                     return self.begin_respawn();
                 }
             }
+            #[cfg(test)]
+            if let Some(waiting) = self
+                .world_transfer
+                .waiting
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take()
+            {
+                waiting.notify_one();
+            }
             finished.await;
         }
+    }
+
+    /// Signals once when respawn reaches the active-transfer wait.
+    #[cfg(test)]
+    pub(crate) fn notify_when_respawn_waits(&self) -> Arc<Notify> {
+        let waiting = Arc::new(Notify::new());
+        *self
+            .world_transfer
+            .waiting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(waiting.clone());
+        waiting
     }
 
     /// Reserves a transfer from this source until the returned guard is dropped.
