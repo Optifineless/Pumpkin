@@ -6,8 +6,8 @@ use std::sync::{
 use super::BlockEntity;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::click::ClickEvent;
+use pumpkin_util::text::{TextComponent, TextContent};
 
 pub use pumpkin_data::dye_color::DyeColor;
 
@@ -220,7 +220,31 @@ impl SignText {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for ((message, line), previous) in messages.iter_mut().zip(lines).zip(original) {
             let mut literal = TextComponent::text(line.to_string());
-            literal.0.style = previous.0.style;
+            literal.0.style.clone_from(&previous.0.style);
+            if let TextContent::Opaque { component } = &*previous.0.content {
+                // SignBlockEntity.updateMessages keeps Style.Serializer.MAP_CODEC fields.
+                const STYLE_FIELDS: [&str; 11] = [
+                    "color",
+                    "shadow_color",
+                    "bold",
+                    "italic",
+                    "underlined",
+                    "strikethrough",
+                    "obfuscated",
+                    "click_event",
+                    "hover_event",
+                    "insertion",
+                    "font",
+                ];
+                let mut styled_literal = NbtCompound::new();
+                for field in STYLE_FIELDS {
+                    if let Some(value) = component.0.get(field) {
+                        styled_literal.put(field, value.clone());
+                    }
+                }
+                styled_literal.put_string("text", line.to_string());
+                literal = TextComponent::from_nbt(&NbtTag::Compound(styled_literal));
+            }
             *message = literal;
         }
         self.filtered_messages

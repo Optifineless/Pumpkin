@@ -35,3 +35,39 @@ fn sign_plugin_getter_returns_flattened_component_text() {
     let text = InternalText::from(pumpkin_nbt::tag::NbtTag::Compound(nbt));
     assert_eq!(to_wasm_sign_text(&text).messages, ["first second"; 4]);
 }
+
+#[test]
+fn sign_plugin_setter_replaces_filtered_and_unfiltered_messages() {
+    let target = InternalText::default();
+    let mut command = pumpkin_util::text::TextComponent::text("old command");
+    command.0.style.click_event = Some(pumpkin_util::text::click::ClickEvent::RunCommand {
+        command: "/say old".into(),
+    });
+    target
+        .messages
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)[0] = command.clone();
+    target
+        .filtered_messages
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)[0] = command;
+    assert!(target.has_any_click_commands(false));
+    assert!(target.has_any_click_commands(true));
+
+    let replacement = from_wasm_sign_text(SignText {
+        messages: vec![
+            "plain replacement".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        color: DyeColor::Black,
+        has_glowing_text: false,
+    });
+    replace_sign_text_messages(&target, &replacement);
+
+    assert_eq!(target.get_message(0, false).as_ref(), "plain replacement");
+    assert_eq!(target.get_message(0, true).as_ref(), "plain replacement");
+    assert!(!target.has_any_click_commands(false));
+    assert!(!target.has_any_click_commands(true));
+}
