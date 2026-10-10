@@ -587,10 +587,6 @@ impl Player {
             Vector3::new(0.0, 100.0, 0.0),
             &EntityType::PLAYER,
         ));
-        living_entity.entity.invulnerable.store(
-            matches!(gamemode, GameMode::Creative | GameMode::Spectator),
-            Ordering::Relaxed,
-        );
         living_entity
             .entity
             .no_physics
@@ -616,7 +612,7 @@ impl Player {
             Some(server.recipe_manager.clone()),
         )));
 
-        // Initialize abilities based on gamemode (like vanilla's GameMode.setAbilities())
+        // GameType.updatePlayerAbilities keeps game-mode immunity in abilities.
         let mut abilities = Abilities::default();
         abilities.set_for_gamemode(gamemode);
 
@@ -4366,10 +4362,6 @@ impl Player {
             self.try_send_client_packet(&CSetCamera::new(self.entity_id().into()));
         }
 
-        self.living_entity.entity.invulnerable.store(
-            matches!(gamemode, GameMode::Creative | GameMode::Spectator),
-            Ordering::Relaxed,
-        );
         self.living_entity
             .entity
             .no_physics
@@ -6524,10 +6516,6 @@ impl EntityBase for Player {
             }
         }
 
-        self.living_entity.entity.invulnerable.store(
-            matches!(gamemode, GameMode::Creative | GameMode::Spectator),
-            Ordering::Relaxed,
-        );
         self.living_entity
             .entity
             .no_physics
