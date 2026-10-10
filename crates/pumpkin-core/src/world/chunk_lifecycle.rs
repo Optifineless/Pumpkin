@@ -78,6 +78,7 @@ impl World {
         }
         let Some(chunk) = self.level.get_entity_chunk_sync(&pos) else {
             if !selected.is_empty() {
+                self.request_unload_entity_storage(pos);
                 return false;
             }
             self.unloading_entities.insert(

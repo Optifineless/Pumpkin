@@ -3,7 +3,7 @@ use crate::entity::EntityBase;
 use pumpkin_util::math::vector2::Vector2;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicUsize, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -16,6 +16,10 @@ struct BoundaryAction {
 const UNLOAD_QUEUE_LIMIT: usize = 2_000;
 const UNLOAD_BUDGET: Duration = Duration::from_millis(5);
 const ADMISSION_BATCH_SIZE: usize = 32;
+
+#[cfg(test)]
+#[path = "chunk_unload_owner_review_tests.rs"]
+mod owner_review_tests;
 
 pub(super) fn entity_address(entity: &Arc<dyn EntityBase>) -> usize {
     Arc::as_ptr(entity).cast::<()>() as usize
@@ -133,6 +137,8 @@ struct DrainBatch {
 #[derive(Default)]
 pub(super) struct ChunkUnloadRequests {
     terrain: dashmap::DashMap<Vector2<i32>, pumpkin_world::level::SyncChunk>,
+    terrain_cursor: AtomicUsize,
+    entity_loads: Arc<dashmap::DashSet<Vector2<i32>>>,
     actions: crossbeam::queue::SegQueue<BoundaryAction>,
     batch: Mutex<Option<DrainBatch>>,
     draining: Mutex<()>,
@@ -192,29 +198,7 @@ impl World {
             + self.chunk_unload_requests.actions.len())
         .saturating_sub(UNLOAD_QUEUE_LIMIT);
         let mut batch = DrainBatch::default();
-        let mut requests = Vec::new();
-        for request in &self.chunk_unload_requests.terrain {
-            // Leave room for publication work and bound the pre-index admission pass.
-            if requests.len() >= forced + ADMISSION_BATCH_SIZE {
-                break;
-            }
-            if forced == 0 && !have_time() {
-                break;
-            }
-            let pos = *request.key();
-            if self.level.is_chunk_watched(&pos) {
-                requests.push((pos, request.value().clone()));
-                continue;
-            }
-            if self.level.chunk_unload_save_in_progress(pos) {
-                continue;
-            }
-            let Some(generation) = self.level.close_queued_chunk_admission(pos, 0) else {
-                continue;
-            };
-            batch.generations.insert(pos, generation);
-            requests.push((pos, request.value().clone()));
-        }
+        let requests = self.index_terrain_requests(forced, &have_time, &mut batch);
         let actions = self.index_boundary_actions(forced, &have_time, &mut batch);
         if !requests.is_empty() || !actions.is_empty() {
             for entity in self.entities.load().iter() {
@@ -241,7 +225,8 @@ impl World {
         let mut progressed = false;
         for (pos, chunk) in requests {
             if progressed && forced == 0 && !have_time() {
-                break;
+                self.release_queued_admission(pos);
+                continue;
             }
             progressed = true;
             forced = forced.saturating_sub(1);
@@ -253,6 +238,9 @@ impl World {
         }
         for action in actions {
             if progressed && forced == 0 && !have_time() {
+                if let Some(pos) = action.pos {
+                    self.release_queued_admission(pos);
+                }
                 self.chunk_unload_requests.actions.push(action);
                 continue;
             }
@@ -261,6 +249,78 @@ impl World {
             (action.run)(self);
         }
         self.publish_unloaded_members();
+    }
+
+    fn index_terrain_requests(
+        &self,
+        forced: usize,
+        have_time: &impl Fn() -> bool,
+        batch: &mut DrainBatch,
+    ) -> Vec<(Vector2<i32>, pumpkin_world::level::SyncChunk)> {
+        let queue = &self.chunk_unload_requests;
+        let len = queue.terrain.len();
+        let offset = queue.terrain_cursor.load(Ordering::Relaxed) % len.max(1);
+        let mut requests = Vec::new();
+        // ChunkMap.processUnloads polls a queue: failed requests must not monopolize its head.
+        for request in queue
+            .terrain
+            .iter()
+            .skip(offset)
+            .chain(queue.terrain.iter().take(offset))
+        {
+            if requests.len() >= forced + ADMISSION_BATCH_SIZE || (forced == 0 && !have_time()) {
+                break;
+            }
+            queue.terrain_cursor.fetch_add(1, Ordering::Relaxed);
+            let pos = *request.key();
+            if self.level.is_chunk_watched(&pos) {
+                requests.push((pos, request.value().clone()));
+                continue;
+            }
+            if self.level.chunk_unload_save_in_progress(pos) {
+                continue;
+            }
+            let Some(generation) = self.level.close_queued_chunk_admission(pos, 0) else {
+                continue;
+            };
+            batch.generations.insert(pos, generation);
+            requests.push((pos, request.value().clone()));
+        }
+        requests
+    }
+
+    fn release_queued_admission(&self, pos: Vector2<i32>) {
+        let generation = self
+            .chunk_unload_requests
+            .batch
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .and_then(|batch| batch.generations.get(&pos).copied());
+        if let Some(generation) = generation {
+            self.level.reopen_queued_chunk_admission(pos, generation);
+        }
+    }
+
+    pub(super) fn request_unload_entity_storage(&self, pos: Vector2<i32>) {
+        let pending = self.chunk_unload_requests.entity_loads.clone();
+        if !pending.insert(pos) {
+            return;
+        }
+        // PersistentEntitySectionManager.storeChunkSections requests FRESH storage before retrying.
+        // Only enqueue here: get_entity_chunk runs outside the caller's lifecycle mutex.
+        let level = self.level.clone();
+        self.level.spawn_task(async move {
+            tokio::select! {
+                () = level.cancel_token.cancelled() => {},
+                result = level.get_entity_chunk(pos) => {
+                    if let Err(error) = result {
+                        tracing::error!(?pos, %error, "Entity chunk remains unloaded");
+                    }
+                },
+            }
+            pending.remove(&pos);
+        });
     }
 
     fn publish_unloaded_members(&self) {

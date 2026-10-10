@@ -4,6 +4,7 @@ use std::sync::{Arc, Weak, atomic::Ordering};
 use arc_swap::ArcSwap;
 use pumpkin_core::{entity::EntityBase, world::World};
 use pumpkin_data::{dimension::Dimension, entity::EntityType};
+use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::{math::vector3::Vector3, world_seed::Seed};
 use pumpkin_wasm_host_common::state::PluginHostState;
 use wasmtime::component::Resource;
@@ -57,7 +58,7 @@ async fn removed_entity_setters_complete_without_trapping_or_writing() {
 }
 
 #[tokio::test]
-async fn replaced_chunk_setter_succeeds_without_writing() {
+async fn owner_review_replaced_chunk_setter_succeeds_without_writing() {
     use crate::pumpkin::plugin::world::{Chunk, HostChunk};
     let dir = tempfile::tempdir().unwrap();
     let level = pumpkin_world::level::Level::from_root_folder(
@@ -77,12 +78,20 @@ async fn replaced_chunk_setter_succeeds_without_writing() {
     ));
     let stale = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
     let canonical = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
-    world.level.loaded_chunks.insert(
-        pumpkin_util::math::vector2::Vector2::new(0, 0),
-        canonical.clone(),
-    );
+    let pos = pumpkin_util::math::vector2::Vector2::new(0, 0);
+    world.level.loaded_chunks.insert(pos, stale.clone());
+    world
+        .level
+        .set_retained_chunk_custom_data(&stale, "test", "key", NbtTag::Int(7))
+        .unwrap();
+    world.level.loaded_chunks.insert(pos, canonical.clone());
+    world
+        .level
+        .set_retained_chunk_custom_data(&canonical, "test", "key", NbtTag::Int(8))
+        .unwrap();
     let mut host = PluginHostState::new();
     let handle: Resource<Chunk> = host.add((world.clone(), Arc::downgrade(&stale))).unwrap();
+    let rep = handle.rep();
     assert!(
         HostChunk::set_block_state(
             &mut host,
@@ -100,5 +109,66 @@ async fn replaced_chunk_setter_succeeds_without_writing() {
         canonical.section.get_block_absolute_y(1, 64, 1),
         Some(pumpkin_data::Block::AIR.default_state.id)
     );
+    assert_stale_custom_setters(&mut host, rep, stale, &canonical);
     world.level.shutdown().await.unwrap();
+}
+
+fn assert_stale_custom_setters(
+    host: &mut PluginHostState,
+    rep: u32,
+    stale: Arc<pumpkin_world::chunk::ChunkData>,
+    canonical: &pumpkin_world::chunk::ChunkData,
+) {
+    use crate::pumpkin::plugin::world::HostChunk;
+    let set = HostChunk::set_custom_data(
+        host,
+        Resource::new_borrow(rep),
+        "test".into(),
+        "key".into(),
+        crate::common::to_wit_nbt_tree(NbtTag::Int(9)),
+    );
+    let remove =
+        HostChunk::remove_custom_data(host, Resource::new_borrow(rep), "test".into(), "key".into());
+    assert!(
+        set.is_ok() && remove.is_ok(),
+        "stale custom setters: set={set:?}, remove={remove:?}"
+    );
+    assert_eq!(stale.get_custom_data("test", "key"), Some(NbtTag::Int(7)));
+    assert_eq!(
+        canonical.get_custom_data("test", "key"),
+        Some(NbtTag::Int(8))
+    );
+    assert!(
+        HostChunk::set_custom_data(
+            host,
+            Resource::new_borrow(rep),
+            "test".into(),
+            "key".into(),
+            crate::common::WitNbtTree {
+                root: 0,
+                tags: Vec::new()
+            },
+        )
+        .is_err()
+    );
+    drop(stale);
+    assert!(
+        HostChunk::set_custom_data(
+            host,
+            Resource::new_borrow(rep),
+            "test".into(),
+            "key".into(),
+            crate::common::to_wit_nbt_tree(NbtTag::Int(9)),
+        )
+        .is_err()
+    );
+    assert!(
+        HostChunk::remove_custom_data(
+            host,
+            Resource::new_borrow(rep),
+            "test".into(),
+            "key".into(),
+        )
+        .is_err()
+    );
 }

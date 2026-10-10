@@ -88,6 +88,31 @@ async fn finish(fixture: Fixture) {
 }
 
 #[tokio::test]
+async fn owner_review_spawn_without_entity_storage_loads_before_unload() {
+    let fixture = Fixture::new();
+    let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(fixture.world.clone()));
+    fixture
+        .world
+        .level
+        .world_portal
+        .store(Arc::new(Some(portal)));
+    let chunk = publish(&fixture.world, proto(&Biome::PLAINS, &Block::STONE));
+    fixture.world.level.update_chunk_watchers(&[POS], &[]);
+    let pig = pig(&fixture, 1.5);
+    assert!(fixture.world.spawn_entity(pig.clone()));
+    assert!(fixture.world.level.get_entity_chunk_sync(&POS).is_none());
+    fixture.world.level.update_chunk_watchers(&[], &[POS]);
+    unload(&fixture, &chunk).await;
+    assert!(!fixture.world.level.is_chunk_loaded(&POS));
+    assert!(pig.get_entity().is_removed());
+    assert_eq!(
+        disk_entities(&fixture, POS).await[0].get_uuid("UUID"),
+        Some(pig.get_entity().entity_uuid)
+    );
+    finish(fixture).await;
+}
+
+#[tokio::test]
 async fn spawn_during_publication_retries_and_persists_pig() {
     let (fixture, chunk) = fixture().await;
     let pig = pig(&fixture, 1.5);

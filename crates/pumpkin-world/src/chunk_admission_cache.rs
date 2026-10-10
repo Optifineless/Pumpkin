@@ -13,6 +13,13 @@ pub struct ChunkAdmissionCache {
     live: AtomicBool,
 }
 
+impl Drop for ChunkAdmissionCache {
+    fn drop(&mut self) {
+        self.cell.store(None);
+        self.admission.retire_absent();
+    }
+}
+
 impl ChunkAdmissionCache {
     /// Retains canonical ownership for this read; an empty cache requires a fresh level lookup.
     #[must_use]
