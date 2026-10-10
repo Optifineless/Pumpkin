@@ -2163,7 +2163,11 @@ impl Entity {
 
         let velocity_multiplier = f64::from(caller.get_block_speed_factor());
 
-        self.velocity.store(final_move * velocity_multiplier);
+        if caller.cast_any().is::<vehicle::minecart::MinecartEntity>() {
+            self.apply_minecart_movement_velocity(motion, final_move, velocity_multiplier);
+        } else {
+            self.velocity.store(final_move * velocity_multiplier);
+        }
 
         if let Some(living) = caller.get_living_entity() {
             let on_ground = self.on_ground.load(Ordering::SeqCst);

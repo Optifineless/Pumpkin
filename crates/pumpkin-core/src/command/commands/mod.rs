@@ -38,7 +38,7 @@ mod fillbiome;
 mod forceload;
 mod function;
 mod gamemode;
-mod gamerule;
+pub(crate) mod gamerule;
 mod give;
 mod help;
 mod item;

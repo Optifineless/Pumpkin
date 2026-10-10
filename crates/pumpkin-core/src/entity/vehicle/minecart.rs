@@ -12,7 +12,6 @@ mod activator_tests;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use pumpkin_protocol::java::server::play::SPlayerInput;
 use rand::RngExt;
 
 use crate::{
@@ -138,7 +137,6 @@ impl EntityBase for MinecartEntity {
     #[allow(clippy::too_many_lines)]
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         self.vehicle.tick();
-        let max_speed = self.max_speed(server);
         let new_behavior = Self::uses_new_behavior(server);
         if let MinecartKind::Furnace(minecart) = &self.kind {
             minecart.tick(&self.vehicle.entity);
@@ -282,65 +280,11 @@ impl EntityBase for MinecartEntity {
             return;
         }
 
-        let mut velocity = self.vehicle.entity.velocity.load();
-
-        let mut has_driver = false;
-        let mut driver_input = 0;
-        let mut driver_yaw = 0.0f32;
-
-        if let Ok(passengers) = self.vehicle.entity.passengers.try_lock()
-            && let Some(passenger) = passengers.first()
-            && let Some(player) = passenger.get_player()
-        {
-            driver_input = player.last_input.load(Ordering::Relaxed);
-            driver_yaw = player.get_entity().yaw.load();
-            has_driver = true;
-        }
-
-        if has_driver && is_on_rails {
-            let forward = driver_input & SPlayerInput::FORWARD != 0;
-            let backward = driver_input & SPlayerInput::BACKWARD != 0;
-
-            let mut force_dir = Vector3::new(0.0, 0.0, 0.0);
-            if forward {
-                let yaw_rad = f64::from(driver_yaw).to_radians();
-                force_dir.x = -yaw_rad.sin();
-                force_dir.z = yaw_rad.cos();
-            } else if backward {
-                let yaw_rad = f64::from(driver_yaw).to_radians();
-                force_dir.x = yaw_rad.sin();
-                force_dir.z = -yaw_rad.cos();
-            }
-
-            if forward || backward {
-                velocity.x += force_dir.x * 0.02;
-                velocity.z += force_dir.z * 0.02;
-
-                let speed = velocity.x.hypot(velocity.z);
-                if speed > 0.15 {
-                    #[allow(clippy::suboptimal_flops)]
-                    let old_speed = self
-                        .vehicle
-                        .entity
-                        .velocity
-                        .load()
-                        .x
-                        .hypot(self.vehicle.entity.velocity.load().z);
-
-                    let max_speed = old_speed.clamp(0.15, 0.4);
-                    if speed > max_speed {
-                        velocity.x = (velocity.x / speed) * max_speed;
-                        velocity.z = (velocity.z / speed) * max_speed;
-                    }
-                }
-                self.vehicle.entity.velocity.store(velocity);
-                self.vehicle.entity.send_velocity();
-            }
-        }
+        self.apply_player_input(is_on_rails);
 
         let mut velocity = self.vehicle.entity.velocity.load();
 
-        let mut rail_direction = Vector3::default();
+        let mut redstone_direction = Vector3::default();
         if is_on_rails {
             use pumpkin_data::block_properties::RailLikeProperties;
             use pumpkin_data::block_properties::{RailShape, RailShapeStraight};
@@ -359,6 +303,10 @@ impl EntityBase for MinecartEntity {
                     RailShapeStraight::AscendingSouth => RailShape::AscendingSouth,
                 }
             };
+
+            if new_behavior && is_powered_rail {
+                redstone_direction = self.redstone_direction(block_pos, shape);
+            }
 
             let pos = self.vehicle.entity.pos.load();
             let block_center_bottom = Vector3::new(
@@ -410,7 +358,6 @@ impl EntityBase for MinecartEntity {
             if velocity.dot(&horizontal_out_direction) < velocity.dot(&horizontal_in_direction) {
                 horizontal_out_direction = horizontal_in_direction;
             }
-            rail_direction = horizontal_out_direction.normalize();
 
             let out_position = block_center_bottom.add(&horizontal_out_direction).add(
                 &horizontal_out_direction
@@ -423,7 +370,6 @@ impl EntityBase for MinecartEntity {
             let towards_length = towards_out.length();
             if towards_length > 1e-5 {
                 towards_out = towards_out.normalize();
-                rail_direction = towards_out;
                 // OldMinecartBehavior.moveAlongTrack limits rail alignment speed to 2.
                 let speed = if new_behavior {
                     velocity.x.hypot(velocity.z)
@@ -445,11 +391,17 @@ impl EntityBase for MinecartEntity {
             server,
             &mut velocity,
             is_on_rails,
-            max_speed,
-            powered_rail.then_some(rail_direction),
+            self.max_speed(server, is_on_rails),
+            powered_rail.then_some(redstone_direction),
         );
         self.vehicle.entity.velocity.store(velocity);
-        if movement.length() > 0.001 {
+        // OldMinecartBehavior.moveAlongTrack must retain the rider's 0.001 starting nudge.
+        let should_move = if is_on_rails {
+            movement.length_squared() > 0.0
+        } else {
+            movement.length() > 0.001
+        };
+        if should_move {
             self.move_entity(caller, movement);
 
             if let MinecartKind::Tnt(minecart) = &self.kind
@@ -476,11 +428,9 @@ impl EntityBase for MinecartEntity {
                 }
             }
 
-            if !is_on_rails {
-                velocity = self.vehicle.entity.velocity.load();
-            }
+            velocity = self.vehicle.entity.velocity.load();
             let mut next_vel = self.movement_slowdown(velocity, is_on_rails, new_behavior);
-            if next_vel.length() < 0.005 {
+            if !is_on_rails && next_vel.length() < 0.005 {
                 next_vel = Vector3::new(0.0, 0.0, 0.0);
             }
             self.vehicle.entity.velocity.store(next_vel);

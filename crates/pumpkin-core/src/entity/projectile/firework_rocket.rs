@@ -244,6 +244,11 @@ impl FireworkRocketEntity {
     fn tick_flight(&self, caller: &dyn EntityBase) {
         let entity = self.get_entity();
         let movement = entity.velocity.load();
+        // Safety divergence: reject before ray queries and never restore the rejected impulse.
+        if !entity.no_physics.load(Ordering::Relaxed) && !entity.accept_movement(movement) {
+            entity.tick_block_collisions(caller);
+            return;
+        }
         let hit = self.entity.find_hit(caller, entity.pos.load(), movement);
         entity.move_entity(caller, movement);
         entity.tick_block_collisions(caller);
