@@ -3,20 +3,25 @@ use std::sync::Arc;
 use pumpkin_data::block_properties::BubbleColumnLikeProperties;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_data::{Block, BlockId, BlockStateId};
+use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
 
 use crate::block::{
-    BlockBehaviour, BlockMetadata, OnEntityCollisionArgs, OnNeighborUpdateArgs,
-    OnScheduledTickArgs, PlacedArgs,
+    BlockBehaviour, BlockMetadata, GetStateForNeighborUpdateArgs, OnEntityCollisionArgs,
+    OnNeighborUpdateArgs, OnScheduledTickArgs, PlacedArgs, fluid::water::WATER_FLOW_SPEED,
 };
 use crate::world::World;
 
-const CREATE_DELAY_TICKS: u8 = 20;
-const REMOVE_DELAY_TICKS: u8 = 5;
+#[cfg(test)]
+mod runtime_test_support;
+#[cfg(test)]
+mod runtime_tests;
+
+const BUBBLE_COLUMN_CHECK_DELAY: u8 = 20;
+const CHECK_PERIOD: u8 = 5;
 
 const UPWARD_ACCELERATION: f64 = 0.06;
 const UPWARD_MAX_SPEED: f64 = 0.7;
@@ -37,21 +42,6 @@ impl BlockMetadata for BubbleColumnBlock {
 enum BubbleColumnKind {
     Upward,
     Downward,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ReconcileAction {
-    SetBubble(BubbleColumnKind),
-    RestoreWater,
-    Stop,
-}
-
-fn source_water_state() -> BlockStateId {
-    Fluid::WATER
-        .states
-        .iter()
-        .find(|state| state.is_still && state.is_source)
-        .map_or(BlockStateId::new_or_air(0), |state| state.block_state_id)
 }
 
 fn bubble_column_state(kind: BubbleColumnKind) -> BlockStateId {
@@ -80,58 +70,93 @@ fn kind_from_state(state: BlockStateId) -> BubbleColumnKind {
     }
 }
 
-fn kind_from_below(block: &Block, state: BlockStateId) -> Option<BubbleColumnKind> {
-    if block == &Block::BUBBLE_COLUMN {
-        Some(kind_from_state(state))
-    } else {
-        kind_from_support(block)
-    }
-}
-
 fn is_source_water_state(state: BlockStateId) -> bool {
+    // BubbleColumnBlock.canOccupy requires a LiquidBlock, not contained water.
+    if !matches!(state.to_block_id(), BlockId::WATER | BlockId::LAVA) {
+        return false;
+    }
     let Some(fluid) = Fluid::from_state_id(state) else {
         return false;
     };
 
     fluid.has_tag(&tag::Fluid::MINECRAFT_BUBBLE_COLUMN_CAN_OCCUPY)
-        && fluid.is_source(state)
         && fluid.states.iter().any(|fluid_state| {
-            fluid_state.block_state_id == state && fluid_state.is_still && fluid_state.is_source
+            fluid_state.block_state_id == state && fluid_state.is_source && fluid_state.level >= 8
         })
 }
 
-fn is_source_water(world: &World, position: BlockPos) -> bool {
-    is_source_water_state(world.get_block_state_id(&position))
+fn can_occupy(state: BlockStateId) -> bool {
+    state.to_block_id() == BlockId::BUBBLE_COLUMN || is_source_water_state(state)
 }
 
-fn reconcile_action(
-    current_block: &Block,
-    current_state: BlockStateId,
-    below_block: &Block,
-    below_state: BlockStateId,
-) -> ReconcileAction {
-    let current_is_bubble = current_block == &Block::BUBBLE_COLUMN;
-    let current_is_source_water = is_source_water_state(current_state);
-
-    if let Some(kind) = kind_from_below(below_block, below_state)
-        && (current_is_bubble || current_is_source_water)
-    {
-        return ReconcileAction::SetBubble(kind);
-    }
-
-    if current_is_bubble {
-        ReconcileAction::RestoreWater
+fn get_column_state(below_state: BlockStateId, occupy_state: BlockStateId) -> BlockStateId {
+    if below_state.to_block_id() == BlockId::BUBBLE_COLUMN {
+        below_state
+    } else if let Some(kind) = kind_from_support(below_state.to_block()) {
+        bubble_column_state(kind)
+    } else if occupy_state.to_block_id() == BlockId::BUBBLE_COLUMN {
+        Block::WATER.default_state.id
     } else {
-        ReconcileAction::Stop
+        occupy_state
     }
 }
 
-fn schedule_reconcile(world: &Arc<World>, position: BlockPos, delay: u8) {
-    // Scheduled ticks only run while the block they were scheduled for is still there,
-    // so water that may turn into a column has to tick as water.
-    let block = world.get_block(&position);
-    if block == &Block::BUBBLE_COLUMN || block == &Block::WATER {
-        world.schedule_block_tick(block, position, delay, TickPriority::Normal);
+fn update_column(world: &Arc<World>, position: &BlockPos) {
+    let Some(state) = world.get_block_state_id_if_loaded(position) else {
+        return;
+    };
+    if !can_occupy(state) {
+        return;
+    }
+    let below_state = world.get_block_state_id(&position.down());
+    let column_state = get_column_state(below_state, state);
+    // BubbleColumnBlock.updateColumn continues after an unchanged first write.
+    if world
+        .set_block_state_if(
+            position,
+            column_state,
+            BlockFlags::NOTIFY_LISTENERS,
+            |current| current == state,
+        )
+        .is_none()
+    {
+        return;
+    }
+
+    let mut above = position.up();
+    while let Some(state) = world.get_block_state_id_if_loaded(&above) {
+        if !can_occupy(state) {
+            break;
+        }
+        let Some(replaced) = world.set_block_state_if(
+            &above,
+            column_state,
+            BlockFlags::NOTIFY_LISTENERS,
+            |current| current == state,
+        ) else {
+            break;
+        };
+        if replaced == column_state {
+            break;
+        }
+        above = above.up();
+    }
+}
+
+fn try_schedule_bubble_block_column(
+    world: &World,
+    position: &BlockPos,
+    state: BlockStateId,
+    below_state: BlockStateId,
+) {
+    // LiquidBlock.tryScheduleBubbleBlockColumn schedules the water, not its support.
+    if is_source_water_state(state) && kind_from_support(below_state.to_block()).is_some() {
+        world.schedule_block_tick(
+            &Block::WATER,
+            *position,
+            BUBBLE_COLUMN_CHECK_DELAY,
+            TickPriority::Normal,
+        );
     }
 }
 
@@ -188,73 +213,77 @@ impl BlockBehaviour for BubbleColumnBlock {
     }
 
     fn placed(&self, args: PlacedArgs<'_>) {
-        {
-            if args.block == &Block::WATER && is_source_water(args.world, *args.position) {
-                schedule_reconcile(args.world, *args.position, CREATE_DELAY_TICKS);
-            }
+        if args.block == &Block::WATER {
+            try_schedule_bubble_block_column(
+                args.world,
+                args.position,
+                args.world.get_block_state_id(args.position),
+                args.world.get_block_state_id(&args.position.down()),
+            );
         }
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        {
-            let state = args.world.get_block_state_id(args.position);
-            if args.block == &Block::BUBBLE_COLUMN {
-                schedule_reconcile(args.world, *args.position, REMOVE_DELAY_TICKS);
-            } else if args.block == &Block::WATER
-                && is_source_water_state(state)
-                && (args.source_block == &Block::BUBBLE_COLUMN
-                    || kind_from_support(args.source_block).is_some())
-            {
-                schedule_reconcile(args.world, *args.position, CREATE_DELAY_TICKS);
-            }
+        if args.block == &Block::WATER {
+            // LiquidBlock.neighborChanged reads the actual support, not the notification's block.
+            try_schedule_bubble_block_column(
+                args.world,
+                args.position,
+                args.world.get_block_state_id(args.position),
+                args.world.get_block_state_id(&args.position.down()),
+            );
         }
     }
 
-    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        let state = args.world.get_block_state_id(args.position);
-        let block = Block::from_state_id(state);
-        if block != &Block::BUBBLE_COLUMN && block != &Block::WATER {
-            return;
-        }
-
-        let below_pos = args.position.down();
-        let below_state = args.world.get_block_state_id(&below_pos);
-        let below_block = Block::from_state_id(below_state);
-
-        match reconcile_action(block, state, below_block, below_state) {
-            ReconcileAction::SetBubble(kind) => {
-                let new_state = bubble_column_state(kind);
-                args.world
-                    .set_block_state(args.position, new_state, BlockFlags::NOTIFY_ALL);
-                schedule_reconcile(args.world, args.position.up(), CREATE_DELAY_TICKS);
-            }
-            ReconcileAction::RestoreWater => {
-                args.world.set_block_state(
+    fn get_state_for_neighbor_update(
+        &self,
+        args: GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        if args.block == &Block::WATER {
+            // Only LiquidBlock.updateShape's column scheduling is handled here.
+            if args.direction == BlockDirection::Down {
+                try_schedule_bubble_block_column(
+                    args.world,
                     args.position,
-                    source_water_state(),
-                    BlockFlags::NOTIFY_ALL,
+                    args.state_id,
+                    args.neighbor_state_id,
                 );
-                schedule_reconcile(args.world, args.position.up(), REMOVE_DELAY_TICKS);
             }
-            ReconcileAction::Stop => {}
+        } else if args.block == &Block::BUBBLE_COLUMN {
+            // BubbleColumnBlock.updateShape always keeps its source-water fluid ticking.
+            args.world.schedule_fluid_tick(
+                &Fluid::FLOWING_WATER,
+                *args.position,
+                WATER_FLOW_SPEED,
+                TickPriority::Normal,
+            );
+            let below = args.world.get_block(&args.position.down());
+            let supported = below == &Block::BUBBLE_COLUMN || kind_from_support(below).is_some();
+            if !supported
+                || args.direction == BlockDirection::Down
+                || (args.direction == BlockDirection::Up
+                    && args.neighbor_state_id.to_block_id() != BlockId::BUBBLE_COLUMN
+                    && can_occupy(args.neighbor_state_id))
+            {
+                args.world.schedule_block_tick(
+                    &Block::BUBBLE_COLUMN,
+                    *args.position,
+                    CHECK_PERIOD,
+                    TickPriority::Normal,
+                );
+            }
         }
+        args.state_id
+    }
+
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        update_column(args.world, args.position);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_data::BlockStateId;
-    use pumpkin_data::fluid::{Falling, FlowingWaterLikeFluidProperties, FluidProperties, Level};
-
     use super::*;
-
-    fn flowing_water_state() -> BlockStateId {
-        FlowingWaterLikeFluidProperties {
-            r#falling: Falling::False,
-            r#level: Level::L1,
-        }
-        .to_state_id(&Fluid::FLOWING_WATER)
-    }
 
     #[test]
     fn support_tags_map_to_expected_kinds() {
@@ -267,91 +296,5 @@ mod tests {
             Some(BubbleColumnKind::Downward)
         );
         assert_eq!(kind_from_support(&Block::STONE), None);
-    }
-
-    #[test]
-    fn reconciliation_creates_from_upward_support() {
-        assert_eq!(
-            reconcile_action(
-                &Block::WATER,
-                source_water_state(),
-                &Block::SOUL_SAND,
-                Block::SOUL_SAND.default_state.id,
-            ),
-            ReconcileAction::SetBubble(BubbleColumnKind::Upward)
-        );
-    }
-
-    #[test]
-    fn reconciliation_creates_from_downward_support() {
-        assert_eq!(
-            reconcile_action(
-                &Block::WATER,
-                source_water_state(),
-                &Block::MAGMA_BLOCK,
-                Block::MAGMA_BLOCK.default_state.id,
-            ),
-            ReconcileAction::SetBubble(BubbleColumnKind::Downward)
-        );
-    }
-
-    #[test]
-    fn reconciliation_inherits_direction_from_lower_column() {
-        let upward_state = bubble_column_state(BubbleColumnKind::Upward);
-        let downward_state = bubble_column_state(BubbleColumnKind::Downward);
-
-        assert_eq!(
-            reconcile_action(
-                &Block::WATER,
-                source_water_state(),
-                &Block::BUBBLE_COLUMN,
-                upward_state
-            ),
-            ReconcileAction::SetBubble(BubbleColumnKind::Upward)
-        );
-        assert_eq!(
-            reconcile_action(
-                &Block::WATER,
-                source_water_state(),
-                &Block::BUBBLE_COLUMN,
-                downward_state,
-            ),
-            ReconcileAction::SetBubble(BubbleColumnKind::Downward)
-        );
-    }
-
-    #[test]
-    fn reconciliation_rejects_flowing_water_and_air() {
-        assert_eq!(
-            reconcile_action(
-                &Block::WATER,
-                flowing_water_state(),
-                &Block::SOUL_SAND,
-                Block::SOUL_SAND.default_state.id,
-            ),
-            ReconcileAction::Stop
-        );
-        assert_eq!(
-            reconcile_action(
-                &Block::AIR,
-                BlockStateId::AIR,
-                &Block::SOUL_SAND,
-                Block::SOUL_SAND.default_state.id,
-            ),
-            ReconcileAction::Stop
-        );
-    }
-
-    #[test]
-    fn reconciliation_restores_invalidated_column() {
-        assert_eq!(
-            reconcile_action(
-                &Block::BUBBLE_COLUMN,
-                bubble_column_state(BubbleColumnKind::Upward),
-                &Block::STONE,
-                Block::STONE.default_state.id,
-            ),
-            ReconcileAction::RestoreWater
-        );
     }
 }

@@ -342,3 +342,13 @@ Creeper power remains 3, or 6 when charged; `ServerExplosion.hurtEntities` (line
 - Wither roses give Creative players the 40-tick Wither effect without damaging them, while permanent entity invulnerability and equipped-enchantment damage immunity still block the effect. Mirrors `WitherRoseBlock.entityInside`, `LivingEntity.isInvulnerableTo`, `Entity.isInvulnerableToBase`, and `Player.hurtServer`; mob-specific effect immunity comes from effect admission. Player NBT saves game-mode abilities separately; legacy player `Invulnerable:true` tags are cleared on load by the #130 hotfix above. Non-player tags remain permanent. In-game verification: **Not yet**.
 
 Living fall damage applies the `fall_damage_multiplier` attribute, including stalagmite landings. Mirrors `LivingEntity.calculateFallDamage`. In-game verification: **Not yet**.
+
+## Bubble-column runtime activation (#62)
+
+Source water checks the current magma/soul-sand support below on placement and ordinary neighbor updates, and the captured lower neighbor on a shape update, then schedules WATER after 20 ticks. Existing columns schedule their survival, direction and extension checks after five ticks. Mirrors Java 26.3 `LiquidBlock.onPlace/neighborChanged/updateShape/tryScheduleBubbleBlockColumn` and `BubbleColumnBlock.updateShape/canSurvive`.
+
+`BubbleColumnBlock.updateColumn` reconciles the whole eligible run in one callback using listener/shape writes. It continues after an unchanged first write, stops at a later unchanged write, and uses conditional writes to avoid overwriting a changed or unloaded cell. Eligibility retains the literal liquid-block class boundary, fluid tag and full-source amount; waterlogged obstructions and flowing water are not converted. Bubble shape updates use the existing normalized water-fluid family and flow delay.
+
+Ordinary neighbor callbacks retain the existing cancellable `BlockPhysicsEvent`; shape callbacks retain their separate contract. This ports the column-scheduling part of WATER shape handling, not the complete fluid-shape behavior. Entity collision, movement and breath handling are outside this change.
+
+Addresses runtime findings A and C in [fork issue #62](https://github.com/Optifineless/Pumpkin/issues/62), reported by **VisionGlitcher**. Generated-chunk initialization in finding B remains with [PR #107](https://github.com/Optifineless/Pumpkin/pull/107), so the issue stays open. In-game verification: **Not yet**.
