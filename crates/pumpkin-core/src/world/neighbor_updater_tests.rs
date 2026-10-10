@@ -28,7 +28,7 @@ impl BlockBehaviour for Probe {
     }
 }
 
-fn probe_world(
+pub(super) fn probe_world(
     fixture: &DeathTestWorld,
     neighbor: NeighborCallback,
     shape: ShapeCallback,
@@ -47,12 +47,79 @@ fn probe_world(
 fn unchanged(args: &GetStateForNeighborUpdateArgs<'_>) -> BlockStateId {
     args.state_id
 }
-fn stone(world: &Arc<World>, pos: BlockPos) {
+pub(super) fn stone(world: &Arc<World>, pos: BlockPos) {
     world.set_block_state(
         &pos,
         Block::STONE.default_state.id,
         BlockFlags::FORCE_STATE | BlockFlags::UPDATE_KNOWN_SHAPE,
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hf3_unchanged_barrel_probes_emit_no_comparator_updates() {
+    use crate::{
+        block::entities::{BlockEntity, barrel::BarrelBlockEntity},
+        plugin::{
+            BoxFuture, EventHandler, EventPriority,
+            api::events::block::block_physics::BlockPhysicsEvent,
+        },
+        server::Server,
+    };
+    use pumpkin_inventory::Inventory;
+    struct PhysicsCount(Arc<AtomicUsize>);
+    impl EventHandler<BlockPhysicsEvent> for PhysicsCount {
+        fn handle_blocking<'a>(
+            &'a self,
+            _: &'a Arc<Server>,
+            _: &'a mut BlockPhysicsEvent,
+        ) -> BoxFuture<'a, ()> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Box::pin(async {})
+        }
+    }
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    let pos = BlockPos::new(8, 64, 8);
+    let barrel = Arc::new(BarrelBlockEntity::new(pos));
+    world.set_block_state(
+        &pos,
+        Block::BARREL.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    world.add_block_entity(barrel.clone());
+    let comparator = pos.offset(pumpkin_util::math::vector3::Vector3::new(1, 0, 0));
+    world.set_block_state(
+        &comparator,
+        Block::COMPARATOR.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    let updates = Arc::new(AtomicUsize::new(0));
+    fixture
+        .server
+        .plugin_manager
+        .register::<BlockPhysicsEvent, _>(
+            Arc::new(PhysicsCount(updates.clone())),
+            EventPriority::Normal,
+            true,
+        );
+    barrel.clear_dirty();
+    barrel.clear_comparator_dirty();
+    let entities: [Arc<dyn BlockEntity>; 1] = [barrel.clone()];
+    for _ in 0..100 {
+        barrel.update_slot(0, &mut |_| {});
+        world.flush_comparator_updates(&entities);
+    }
+    assert!(!barrel.is_dirty());
+    assert!(!barrel.is_comparator_dirty());
+    assert_eq!(updates.load(Ordering::Relaxed), 0);
+    // Confirm the observation sees a comparator notification after a real mutation.
+    barrel.update_slot(0, &mut |stack| {
+        *stack = pumpkin_data::item_stack::ItemStack::new(1, &pumpkin_data::item::Item::DIAMOND);
+    });
+    world.flush_comparator_updates(&entities);
+    assert!(updates.load(Ordering::Relaxed) > 0);
+    fixture.server.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -260,5 +327,110 @@ async fn shape_update_limit_stops_replacement_propagation() {
     );
     assert_eq!(world.get_block(&pos), &Block::DIRT);
     assert_eq!(count.load(Ordering::Relaxed), 1);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unrelated_shape_submit_waits_until_its_update_is_applied() {
+    use std::{
+        sync::{Barrier, mpsc},
+        time::Duration,
+    };
+    let fixture = DeathTestWorld::new().await;
+    publish(&fixture.world(), proto(&Biome::PLAINS, &Block::STONE));
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let callback_release = release.clone();
+    let callback_entered = entered.clone();
+    let target = BlockPos::new(8, 64, 8);
+    let trigger = BlockPos::new(2, 64, 2);
+    let world = probe_world(
+        &fixture,
+        Arc::new(move |_| {
+            callback_entered.wait();
+            callback_release.wait();
+        }),
+        Arc::new(|_| Block::DIRT.default_state.id),
+    );
+    stone(&world, target);
+    stone(&world, trigger);
+    let (waiting, waiting_rx) = mpsc::channel();
+    world.neighbor_updates.lock().unwrap().waiting_probe = Some(waiting);
+    let (returned, returned_rx) = mpsc::channel();
+    let early_return = std::thread::scope(|scope| {
+        let first = scope.spawn(|| world.update_neighbor(&trigger, &Block::STONE));
+        entered.wait();
+        let second = scope.spawn(|| {
+            world.replace_with_state_for_neighbor_update(
+                &target,
+                BlockDirection::East,
+                BlockFlags::FORCE_STATE,
+            );
+            returned.send(world.get_block_state_id(&target)).unwrap();
+        });
+        waiting_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let early = returned_rx.recv_timeout(Duration::from_millis(100)).ok();
+        release.wait();
+        first.join().unwrap();
+        second.join().unwrap();
+        if early.is_none() {
+            assert_eq!(returned_rx.recv().unwrap(), Block::DIRT.default_state.id);
+        }
+        early
+    });
+    assert!(
+        early_return.is_none(),
+        "unrelated submission returned before shape update"
+    );
+    assert_eq!(world.get_block(&target), &Block::DIRT);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn callback_worker_shape_submission_is_recursive_and_does_not_deadlock() {
+    use std::{sync::mpsc, time::Duration};
+    let fixture = DeathTestWorld::new().await;
+    publish(&fixture.world(), proto(&Biome::PLAINS, &Block::STONE));
+    let target = BlockPos::new(8, 64, 8);
+    let trigger = BlockPos::new(2, 64, 2);
+    let returned = Arc::new(AtomicBool::new(false));
+    let observed = returned.clone();
+    let workers = Arc::new(Mutex::new(Vec::new()));
+    let handles = workers.clone();
+    let world = probe_world(
+        &fixture,
+        Arc::new(move |args| {
+            let context = NeighborUpdateContext::capture();
+            let world = args.world.clone();
+            let (done, received) = mpsc::channel();
+            handles.lock().unwrap().push(std::thread::spawn(move || {
+                context.with(|| {
+                    world.replace_with_state_for_neighbor_update(
+                        &target,
+                        BlockDirection::East,
+                        BlockFlags::FORCE_STATE,
+                    );
+                });
+                done.send(()).unwrap();
+            }));
+            // The cascade waits for a plugin worker, so that worker must enqueue and return.
+            observed.store(
+                received.recv_timeout(Duration::from_secs(5)).is_ok(),
+                Ordering::Relaxed,
+            );
+        }),
+        Arc::new(|_| Block::DIRT.default_state.id),
+    );
+    stone(&world, trigger);
+    stone(&world, target);
+    world.update_neighbor(&trigger, &Block::STONE);
+    for worker in workers.lock().unwrap().drain(..) {
+        worker.join().unwrap();
+    }
+    assert!(
+        returned.load(Ordering::Relaxed),
+        "callback worker waited for its own cascade"
+    );
+    assert_eq!(world.get_block(&target), &Block::DIRT);
     fixture.server.shutdown().await;
 }

@@ -155,6 +155,24 @@ impl Inventory for MinecartInventory {
         }
     }
 
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        let before = stack.clone();
+        update(stack);
+        let changed = !before.are_equal(stack);
+        drop(items);
+        // HopperBlockEntity.tryMoveInItem calls setChanged only after a transfer.
+        if changed {
+            self.mark_dirty();
+        }
+    }
+
     fn set_stack(&self, slot: usize, stack: ItemStack) {
         self.items
             .write()
@@ -172,6 +190,19 @@ impl Clearable for MinecartInventory {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .fill_with(|| ItemStack::EMPTY.clone());
+    }
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::*;
+
+    #[test]
+    fn hf3_minecart_invalid_slot_does_not_invoke_callback() {
+        let inventory = MinecartInventory::new(5);
+        inventory.update_slot(5, &mut |_| panic!("invalid slot callback"));
+        inventory.update_slot(usize::MAX, &mut |_| panic!("invalid slot callback"));
+        assert!(inventory.is_empty());
     }
 }
 

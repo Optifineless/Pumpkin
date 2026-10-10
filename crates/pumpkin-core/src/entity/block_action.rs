@@ -18,16 +18,7 @@ impl Player {
         world: &World,
         position: &BlockPos,
     ) -> bool {
-        // ServerPlayerGameMode.handleBlockBreakAction checks protection before BlockState.attack.
-        if !world.is_in_build_limit(*position)
-            || world.is_in_spawn_protection(self, position)
-            || !world
-                .worldborder
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .contains(f64::from(position.0.x), f64::from(position.0.z))
-            || self.block_action_restricted(world, position)
-        {
+        if !self.may_break_block(world, position) {
             return false;
         }
         if let Some(server) = world.server.upgrade() {
@@ -41,6 +32,23 @@ impl Player {
             if event.cancelled {
                 return false;
             }
+        }
+        self.may_break_block(world, position)
+    }
+
+    /// Checks current dig permissions without firing the start-only damage event.
+    pub(crate) fn may_break_block(&self, world: &World, position: &BlockPos) -> bool {
+        // ServerPlayerGameMode.handleBlockBreakAction / destroyBlock check live restrictions.
+        if !world.is_in_build_limit(*position)
+            || world.is_in_spawn_protection(self, position)
+            || !world
+                .worldborder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(f64::from(position.0.x), f64::from(position.0.z))
+            || self.block_action_restricted(world, position)
+        {
+            return false;
         }
         true
     }

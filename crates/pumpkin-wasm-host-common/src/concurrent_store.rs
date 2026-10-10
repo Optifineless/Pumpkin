@@ -27,7 +27,8 @@ impl RuntimeSpawner for TokioSpawner {
     }
 
     fn spawn_blocking(&self, task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), SpawnError> {
-        drop(self.runtime.spawn_blocking(task));
+        let context = pumpkin_core::world::neighbor_context::NeighborUpdateContext::capture();
+        drop(self.runtime.spawn_blocking(move || context.with(task)));
         Ok(())
     }
 }
