@@ -678,6 +678,7 @@ impl Dirtiable for ChunkEntityData {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .clone(),
             ),
+            dormant_records: std::sync::Mutex::new(None),
             live: std::sync::atomic::AtomicBool::new(false),
             dirty: crate::chunk::io::DirtyFlag::new(false),
         })
@@ -775,6 +776,7 @@ impl ChunkEntityData {
             x: position.x,
             z: position.y,
             data: std::sync::Mutex::new(entities),
+            dormant_records: std::sync::Mutex::new(None),
             live: AtomicBool::new(false),
             dirty: crate::chunk::io::DirtyFlag::new(false),
         })

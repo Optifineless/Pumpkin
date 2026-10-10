@@ -846,14 +846,11 @@ impl World {
                     }
                 }
             };
-            let live = chunk.live.load(Relaxed);
-            if !live && records.is_empty() {
-                continue;
-            }
             let mut data = chunk
                 .data
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let live = chunk.prepare_snapshot(&mut data, &records);
             merge_entity_records(&mut data, live, records);
             drop(data);
             chunk.mark_dirty(true);

@@ -23,7 +23,7 @@ use crate::{
         palette::has_random_ticking_fluid,
     },
     generation::get_world_gen_with_all_settings,
-    tick::{MAX_SAVED_TICK_DELAY, OrderedTick, ScheduledTick, TickPriority},
+    tick::{OrderedTick, ScheduledTick, TickPriority},
     world::WorldPortalExt,
 };
 use arc_swap::ArcSwap;
@@ -402,6 +402,7 @@ impl Level {
                 x: pos.x,
                 z: pos.y,
                 data: std::sync::Mutex::new(Vec::new()),
+                dormant_records: std::sync::Mutex::new(None),
                 live: AtomicBool::new(false),
                 dirty: crate::chunk::io::DirtyFlag::new(false),
             });
@@ -937,7 +938,7 @@ impl Level {
     pub fn live_entity_chunk_positions(&self) -> Vec<Vector2<i32>> {
         self.loaded_entity_chunks
             .iter()
-            .filter(|entry| entry.value().live.load(Ordering::Relaxed))
+            .filter(|entry| entry.value().has_live_snapshot())
             .map(|entry| *entry.key())
             .collect()
     }

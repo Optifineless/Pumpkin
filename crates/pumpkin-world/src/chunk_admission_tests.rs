@@ -15,6 +15,7 @@ async fn entity_cleanup_waits_for_an_admitted_mutation() {
         x: pos.x,
         z: pos.y,
         data: Mutex::new(Vec::new()),
+        dormant_records: std::sync::Mutex::new(None),
         live: AtomicBool::new(false),
         dirty: crate::chunk::io::DirtyFlag::new(false),
     });

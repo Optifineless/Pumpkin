@@ -8,6 +8,7 @@ fn snapshot(pos: Vector2<i32>, name: &str) -> SyncEntityChunk {
         x: pos.x,
         z: pos.y,
         data: Mutex::new(vec![nbt]),
+        dormant_records: std::sync::Mutex::new(None),
         live: AtomicBool::new(false),
         dirty: crate::chunk::io::DirtyFlag::new(true),
     })

@@ -18,6 +18,9 @@ use super::{
 };
 use crate::entity::EntityBase;
 
+#[path = "chunk_unload_missing_storage_tests.rs"]
+mod missing_storage_tests;
+
 const POS: Vector2<i32> = Vector2::new(0, 0);
 
 async fn fixture() -> (Fixture, SyncChunk) {
@@ -85,6 +88,23 @@ async fn disk_entities(fixture: &Fixture, pos: Vector2<i32>) -> Vec<NbtCompound>
 async fn finish(fixture: Fixture) {
     fixture.world.level.world_portal.store(Arc::new(None));
     fixture.finish().await;
+}
+
+#[tokio::test]
+async fn owner_review_spawn_without_entity_storage_loads_before_unload() {
+    let (fixture, chunk) = missing_storage_tests::fixture();
+    let pig = pig(&fixture, 1.5);
+    assert!(fixture.world.spawn_entity(pig.clone()));
+    assert!(fixture.world.level.get_entity_chunk_sync(&POS).is_none());
+    fixture.world.level.update_chunk_watchers(&[], &[POS]);
+    unload(&fixture, &chunk).await;
+    assert!(!fixture.world.level.is_chunk_loaded(&POS));
+    assert!(pig.get_entity().is_removed());
+    assert_eq!(
+        disk_entities(&fixture, POS).await[0].get_uuid("UUID"),
+        Some(pig.get_entity().entity_uuid)
+    );
+    finish(fixture).await;
 }
 
 #[tokio::test]

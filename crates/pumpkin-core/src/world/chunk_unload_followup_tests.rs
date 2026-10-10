@@ -27,9 +27,10 @@ async fn absent_shape_and_custom_data_writes_have_no_side_effects() {
     assert!(world.custom_block_entity_data.is_empty());
     assert!(world.unsent_block_changes.lock().unwrap().is_empty());
     // A retained entity admission cell must not turn missing terrain into a writable chunk.
-    drop(world.level.begin_chunk_mutation(pos.chunk_position()));
+    let admission = world.level.begin_chunk_mutation(pos.chunk_position());
     world.set_block_entity_custom_data(&pos, "test", "key", NbtTag::Int(7));
     assert!(world.custom_block_entity_data.is_empty());
+    drop(admission);
     fixture.finish().await;
 }
 

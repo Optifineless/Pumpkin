@@ -4,12 +4,18 @@
 mod chunk_admission_cache;
 pub use chunk_admission_cache::ChunkAdmissionCache;
 
+#[path = "chunk_admission_retirement.rs"]
+mod chunk_admission_retirement;
+
+#[path = "chunk_unload_admission.rs"]
+mod chunk_unload_admission;
+
 #[path = "tick_admission.rs"]
 mod tick_admission;
 pub use tick_admission::TickMutationScope;
 
 use std::sync::{
-    Arc, Mutex, RwLock,
+    Arc, Mutex, OnceLock, RwLock,
     atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
 };
 
@@ -34,6 +40,8 @@ pub struct ChunkLifecycle {
     pub generation: u64,
     /// Read under the lifecycle mutex; change only through `set_quiescing`.
     pub quiescing: bool,
+    /// Retains admission until the last canonical block entity is unpublished under this mutex.
+    pub live_block_entities: bool,
     admission: Arc<ChunkAdmission>,
     pending: Option<PendingUnload>,
     caches: Vec<std::sync::Weak<ChunkAdmissionCache>>,
@@ -75,6 +83,7 @@ impl ChunkLifecycle {
 struct ChunkAdmission {
     quiescing: AtomicBool,
     mutations: AtomicUsize,
+    retirement: OnceLock<chunk_admission_retirement::AbsentAdmission>,
 }
 
 /// A position's slow lifecycle state and its mutex-free mutation admission.
@@ -120,7 +129,12 @@ impl ChunkAdmission {
         if self.quiescing.load(Ordering::SeqCst) {
             return None;
         }
-        if tick {
+        if tick
+            && self
+                .retirement
+                .get()
+                .is_none_or(|retirement| retirement.resident.load(Ordering::Acquire))
+        {
             // The tick read barrier excludes both snapshot and detach until this scope ends.
             return Some(ChunkMutation(None));
         }
@@ -138,7 +152,8 @@ type UnloadGate = Arc<dyn Fn(Vector2<i32>) -> bool + Send + Sync>;
 
 #[derive(Default)]
 pub struct ChunkLifecycles {
-    states: DashMap<Vector2<i32>, Arc<ChunkLifecycleCell>>,
+    states: Arc<DashMap<Vector2<i32>, Arc<ChunkLifecycleCell>>>,
+    absent_retirements: Arc<crossbeam::queue::SegQueue<std::sync::Weak<ChunkAdmission>>>,
     unload_gate: RwLock<Option<UnloadGate>>,
     #[cfg(any(test, feature = "test-hooks"))]
     benchmark_off: std::sync::atomic::AtomicBool,
@@ -231,6 +246,7 @@ impl ChunkLifecycles {
                 state.watchers == 0
                     && state.mutations() == 0
                     && !state.quiescing
+                    && !state.live_block_entities
                     && state.pending.is_none()
             })
         });
@@ -249,8 +265,10 @@ pub struct ChunkMutation(Option<Arc<ChunkAdmission>>);
 
 impl Drop for ChunkMutation {
     fn drop(&mut self) {
-        if let Some(admission) = &self.0 {
-            admission.mutations.fetch_sub(1, Ordering::SeqCst);
+        if let Some(admission) = &self.0
+            && admission.mutations.fetch_sub(1, Ordering::SeqCst) == 1
+        {
+            admission.retire_absent();
         }
     }
 }
@@ -266,25 +284,6 @@ impl Level {
                 .as_ref()
                 .is_some_and(|pending| pending.completion.load(Ordering::Acquire) == SAVING)
         })
-    }
-
-    /// Closes a queued position before a shared root index is built. Active writers
-    /// are checked again by poll; later writers invalidate the captured generation.
-    /// `owned_mutations` counts only the caller's retained entity-cleanup permits.
-    pub fn close_queued_chunk_admission(
-        &self,
-        pos: Vector2<i32>,
-        owned_mutations: usize,
-    ) -> Option<u64> {
-        let cell = self.chunk_lifecycles.at(pos);
-        let mut state = cell
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if state.watchers != 0 {
-            return Some(state.generation);
-        }
-        state.set_quiescing(true);
-        (state.mutations() <= owned_mutations).then_some(state.generation)
     }
 
     /// Pauses the next entity-region publication after serialization for regression tests.
@@ -313,7 +312,7 @@ impl Level {
     /// Never call while holding `chunk_lifecycles.at(pos)` for this position: closing
     /// admission needs that same mutex. Acquire admission before lifecycle ownership.
     pub fn begin_chunk_mutation(&self, pos: Vector2<i32>) -> ChunkMutation {
-        let lifecycle = self.chunk_lifecycles.at(pos);
+        let lifecycle = self.chunk_mutation_cell(pos);
         self.admit_chunk_mutation(&lifecycle)
     }
 
@@ -445,15 +444,14 @@ impl Level {
                             .is_some_and(|current| Arc::ptr_eq(&current, entity))
                 });
             if result == SAVED && current && !chunk.is_dirty() {
-                if let Some(portal) = self.world_portal.load().as_ref()
-                    && !portal.finish_chunk_unload(chunk, pending.generation)
-                {
-                    if let Some(portal) = self.world_portal.load().as_ref() {
+                if let Some(portal) = self.world_portal.load().as_ref() {
+                    if !portal.finish_chunk_unload(chunk, pending.generation) {
                         portal.cancel_chunk_unload(pos, pending.generation);
+                        state.pending = None;
+                        state.invalidate();
+                        return false;
                     }
-                    state.pending = None;
-                    state.invalidate();
-                    return false;
+                    state.live_block_entities = false;
                 }
                 state.pending = None;
                 self.detach_saved_entity_chunk(pos);

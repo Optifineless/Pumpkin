@@ -1325,6 +1325,7 @@ impl GenerationSchedule {
             // This must run even when the queue is empty: `garbage_collect_dependencies`
             // is what puts stale dependency holders into the queue in the first place.
             if self.last_unload.elapsed() >= std::time::Duration::from_secs(1) {
+                level.chunk_lifecycles.prune_absent_admissions();
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();
                 self.last_unload = std::time::Instant::now();

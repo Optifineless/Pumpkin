@@ -58,7 +58,7 @@ impl World {
             return None;
         }
         let lifecycle = self.level.chunk_lifecycles.at(chunk_pos);
-        let _state = lifecycle
+        let mut state = lifecycle
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(entity) = self
@@ -92,6 +92,7 @@ impl World {
         {
             self.custom_block_entity_data.insert(*pos, custom.clone());
         }
+        state.live_block_entities = true;
         Some(
             self.block_entities
                 .entry(chunk_pos)
@@ -211,7 +212,7 @@ impl World {
             return;
         };
         let lifecycle = self.level.chunk_lifecycles.at(chunk_pos);
-        let _state = lifecycle
+        let mut state = lifecycle
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let removed = self
@@ -227,6 +228,7 @@ impl World {
         self.custom_block_entity_data.remove(pos);
         self.block_entities
             .remove_if(&chunk_pos, |_, entities| entities.is_empty());
+        state.live_block_entities = self.block_entities.contains_key(&chunk_pos);
     }
     pub fn add_block_entity(&self, entity: Arc<dyn BlockEntity>) {
         // LevelChunk.setBlockEntity: explicit publication creates admission before live state.
@@ -236,9 +238,10 @@ impl World {
         let lifecycle = self.level.chunk_lifecycles.at(pos.chunk_position());
         let notification = entity.clone();
         {
-            let _state = lifecycle
+            let mut state = lifecycle
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.live_block_entities = true;
             self.block_entities
                 .entry(pos.chunk_position())
                 .or_default()

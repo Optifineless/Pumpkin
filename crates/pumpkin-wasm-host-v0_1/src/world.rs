@@ -1563,10 +1563,10 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
             return Err(wasmtime::Error::msg("Chunk unloaded"));
         };
         let tag = super::common::from_wit_nbt_tree(&value).map_err(wasmtime::Error::msg)?;
-        world
+        // Like set_block_state, a replaced but retained handle succeeds without writing.
+        let _ = world
             .level
-            .set_retained_chunk_custom_data(&chunk_data, &namespace, &key, tag)
-            .map_err(wasmtime::Error::msg)?;
+            .set_retained_chunk_custom_data(&chunk_data, &namespace, &key, tag);
         Ok(())
     }
 
@@ -1596,10 +1596,10 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
         let Some(chunk_data) = chunk_data.upgrade() else {
             return Err(wasmtime::Error::msg("Chunk unloaded"));
         };
-        world
+        // Like set_block_state, a replaced but retained handle succeeds without writing.
+        let _ = world
             .level
-            .remove_retained_chunk_custom_data(&chunk_data, &namespace, &key)
-            .map_err(wasmtime::Error::msg)?;
+            .remove_retained_chunk_custom_data(&chunk_data, &namespace, &key);
         Ok(())
     }
 

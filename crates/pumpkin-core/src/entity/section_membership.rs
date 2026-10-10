@@ -264,7 +264,7 @@ impl Entity {
                 return permit;
             }
         }
-        let cell = level.chunk_lifecycles.at(pos);
+        let cell = level.chunk_mutation_cell(pos);
         let permit = level.admit_chunk_mutation(&cell);
         // Border oscillation reuses two cells; quiescence releases their canonical ownership.
         let previous = cache.as_ref().and_then(|cache| {

@@ -4,6 +4,141 @@ use pumpkin_config::world::LevelConfig;
 use pumpkin_data::dimension::Dimension;
 
 #[tokio::test]
+async fn owner_review_final_absent_admission_retires_its_cell() {
+    let dir = tempfile::tempdir().unwrap();
+    let level = Level::from_root_folder(
+        &LevelConfig::default(),
+        dir.path().into(),
+        0,
+        Dimension::OVERWORLD,
+    );
+    let pos = Vector2::new(123, 456);
+    let before = level.chunk_lifecycles.state_count();
+    let first = level.begin_chunk_mutation(pos);
+    let last = level.begin_chunk_mutation(pos);
+    assert_eq!(level.chunk_lifecycles.state_count(), before + 1);
+    drop(first);
+    assert_eq!(
+        level.chunk_lifecycles.state_count(),
+        before + 1,
+        "another writer still owns admission"
+    );
+    drop(last);
+    assert_eq!(level.chunk_lifecycles.state_count(), before);
+
+    // A concurrent load must keep using the cell that the outstanding writer admitted through.
+    let writer = level.begin_chunk_mutation(pos);
+    let generation = level.chunk_lifecycles.at(pos).lock().unwrap().generation;
+    level
+        .loaded_chunks
+        .insert(pos, ChunkData::empty_sync(pos.x, pos.y));
+    drop(writer);
+    assert_eq!(
+        level.chunk_lifecycles.at(pos).lock().unwrap().generation,
+        generation
+    );
+    let tick = level.enter_tick_mutations();
+    let reader = level.try_chunk_mutation(pos).unwrap();
+    assert_eq!(
+        level.chunk_lifecycles.at(pos).lock().unwrap().mutations(),
+        0
+    );
+    drop(reader);
+    drop(tick);
+    level.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn followup_review_absent_inspection_release_reclaims_permit_cell() {
+    inspected_absent_cell_is_reclaimed(false).await;
+}
+
+#[tokio::test]
+async fn followup_review_absent_inspection_release_reclaims_cache_cell() {
+    inspected_absent_cell_is_reclaimed(true).await;
+}
+
+async fn inspected_absent_cell_is_reclaimed(cached: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    let level = Level::from_root_folder(
+        &LevelConfig::default(),
+        dir.path().into(),
+        0,
+        Dimension::OVERWORLD,
+    );
+    let before = level.chunk_lifecycles.state_count();
+    let pos = Vector2::new(123, 456);
+    let permit = level.begin_chunk_mutation(pos);
+    let inspection = level.chunk_lifecycles.get(pos).unwrap();
+    let cache = cached.then(|| inspection.cache());
+    drop(permit);
+    drop(cache);
+    level.chunk_lifecycles.prune_absent_admissions();
+    assert!(Arc::ptr_eq(
+        &inspection,
+        &level.chunk_lifecycles.get(pos).unwrap()
+    ));
+    drop(inspection);
+    // The normal scheduler must retry even without another holder or mutation at this position.
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        while level.chunk_lifecycles.get(pos).is_some() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(level.chunk_lifecycles.state_count(), before);
+    level.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn owner_review_skipped_admission_preserves_only_its_current_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let level = Level::from_root_folder(
+        &LevelConfig::default(),
+        dir.path().into(),
+        0,
+        Dimension::OVERWORLD,
+    );
+    let pos = Vector2::new(0, 0);
+    level.loaded_chunks.insert(pos, ChunkData::empty_sync(0, 0));
+    let cell = level.chunk_lifecycles.at(pos);
+    let generation = {
+        let mut state = cell.lock().unwrap();
+        state.pending = Some(PendingUnload {
+            generation: state.generation,
+            revision: 0,
+            entity: None,
+            completion: Arc::new(AtomicU8::new(SAVED)),
+        });
+        state.set_quiescing(true);
+        state.generation
+    };
+    level.reopen_queued_chunk_admission(pos, generation);
+    assert!(
+        cell.lock().unwrap().quiescing,
+        "a retained current snapshot must remain closed"
+    );
+    let invalidated = {
+        let mut state = cell.lock().unwrap();
+        state.invalidate();
+        state.generation
+    };
+    assert_eq!(
+        level.close_queued_chunk_admission(pos, 0),
+        Some(invalidated)
+    );
+    level.reopen_queued_chunk_admission(pos, invalidated);
+    assert_ne!(cell.lock().unwrap().generation, invalidated);
+    assert!(
+        level.try_chunk_mutation(pos).is_some(),
+        "an obsolete completion must not keep skipped admission closed"
+    );
+    cell.lock().unwrap().pending = None;
+    level.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn retry_keeps_admission_closed_through_the_next_snapshot_gate() {
     let dir = tempfile::tempdir().unwrap();
     let level = Level::from_root_folder(

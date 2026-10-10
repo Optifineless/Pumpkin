@@ -78,6 +78,7 @@ impl World {
         }
         let Some(chunk) = self.level.get_entity_chunk_sync(&pos) else {
             if !selected.is_empty() {
+                self.request_unload_entity_storage(pos);
                 return false;
             }
             self.unloading_entities.insert(
@@ -107,11 +108,8 @@ impl World {
             .data
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        merge_entity_records(
-            &mut data,
-            chunk.live.load(Ordering::Acquire),
-            records.clone(),
-        );
+        let live = chunk.prepare_snapshot(&mut data, &records);
+        merge_entity_records(&mut data, live, records.clone());
         chunk.mark_dirty(true);
         self.unloading_entities.insert(
             pos,
