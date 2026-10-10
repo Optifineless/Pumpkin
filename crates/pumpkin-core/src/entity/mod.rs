@@ -104,6 +104,7 @@ pub(crate) mod player_skin;
 mod player_teleport;
 pub mod projectile;
 pub mod projectile_deflection;
+mod removal;
 pub(crate) mod spawn_mount;
 
 mod leash_shearing;
@@ -3592,6 +3593,11 @@ impl Entity {
                 .vehicle
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            // Entity.removePassenger uses this cooldown for lifecycle dismounts too.
+            passenger
+                .get_entity()
+                .riding_cooldown
+                .store(Self::BOARDING_COOLDOWN, Relaxed);
         }
 
         let passenger_ids: Vec<VarInt> = passengers
@@ -3696,7 +3702,9 @@ impl Entity {
             };
 
             // Vanilla: ridingCooldown = 60 (prevents immediate re-mount)
-            passenger_entity.riding_cooldown.store(60, Relaxed);
+            passenger_entity
+                .riding_cooldown
+                .store(Self::BOARDING_COOLDOWN, Relaxed);
             // TODO: world.emitGameEvent(passenger, GameEvent.ENTITY_DISMOUNT, vehicle.pos)
 
             // Send CSetPassengers directly to the dismounting player before broadcasting it.
