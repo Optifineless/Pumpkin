@@ -1,297 +1,269 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "Packet fixtures must construct successfully"
-)]
-
-use super::super::inventory_exploit_tests::{assert_conserved, packet_payload, stock, transaction};
 use super::*;
 use crate::{
-    entity::{Entity, EntityBase, death_test_world::DeathTestWorld, passive::sheep::SheepEntity},
-    net::bedrock::combat_test_support::TestBedrockPlayer,
+    entity::{EntityBase, death_test_world::DeathTestWorld},
+    net::{bedrock::combat_test_support::TestBedrockPlayer, java::combat_test_support::TestPlayer},
     world::spawn_test_support::{proto, publish},
 };
-use pumpkin_data::{Block, biome::Biome, entity::EntityType, item::Item};
-use pumpkin_protocol::{
-    bedrock::server::inventory_transaction::{
-        InventoryAction, UseItemOnEntityTransactionData, UseItemTransactionData,
-    },
-    codec::var_ulong::VarULong,
-    serial::PacketRead,
+use pumpkin_data::{
+    Block, biome::Biome, block_properties::RespawnAnchorLikeProperties, item::Item,
 };
-use pumpkin_util::{math::vector3::Vector3, permission::PermissionLvl};
+use pumpkin_protocol::{
+    bedrock::{
+        network_item::NetworkItemDescriptor,
+        server::inventory_transaction::{
+            HandSlot, InventoryAction, SInventoryTransaction, TransactionData,
+            UseItemTransactionData, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
+        },
+    },
+    codec::{var_int::VarInt, var_uint::VarUInt},
+    java::client::play::CSetEquipment,
+};
+use pumpkin_util::{Hand, math::position::BlockPos, math::vector3::Vector3};
 
-fn prediction(before: &ItemStack, after: &ItemStack) -> InventoryAction {
-    InventoryAction {
-        source_type: 0,
-        window_id: Some(0),
-        source_flags: None,
-        inventory_slot: 0,
-        old_item: NetworkItemDescriptor::from(before),
-        new_item: NetworkItemDescriptor::from(after),
+fn descriptor(id: i32, stack_size: u16) -> NetworkItemDescriptor {
+    NetworkItemDescriptor {
+        id: VarInt(id),
+        stack_size,
+        ..NetworkItemDescriptor::default()
     }
 }
 
-fn use_item(stack: &ItemStack, action: i32, position: BlockPos) -> TransactionData {
-    TransactionData::UseItem(UseItemTransactionData {
-        action_type: VarInt(action),
-        trigger_type: 0,
-        block_position: position,
-        block_face: 1,
-        hot_bar_slot: VarInt(0),
-        hand: HandSlot::Mainhand,
-        item_in_hand: NetworkItemDescriptor::from(stack),
-        player_position: Vector3::new(8.5, 64.0, 8.5),
-        click_position: Vector3::new(0.5, 1.0, 0.5),
-        block_runtime_id: VarUInt(0),
-        client_prediction: 0,
-        client_cooldown_state: 0,
-    })
+fn action(
+    window_id: Option<i32>,
+    inventory_slot: u32,
+    old_item: NetworkItemDescriptor,
+    new_item: NetworkItemDescriptor,
+) -> InventoryAction {
+    InventoryAction {
+        source_type: 0,
+        window_id,
+        source_flags: None,
+        inventory_slot,
+        old_item,
+        new_item,
+    }
 }
 
-fn send_use(fixture: &mut TestBedrockPlayer, actions: Vec<InventoryAction>, data: TransactionData) {
-    fixture.take_packets();
-    let mut packet = transaction(actions, data);
-    packet.legacy_request_id = VarInt(1);
-    fixture
-        .client()
-        .handle_inventory_action(&fixture.player, packet);
-}
-
-fn assert_hand_correction(
-    fixture: &mut TestBedrockPlayer,
-    item: &'static Item,
-    amount: u8,
-    result: u8,
-) {
-    let packets = fixture.take_packets();
-    // CInventoryContent must describe the hand AFTER the authoritative use.
-    let corrections: Vec<_> = packets
-        .iter()
-        .filter_map(|packet| {
-            let mut bytes = packet_payload(packet, 49)?;
-            (VarUInt::read(&mut bytes).unwrap().0 == 0).then_some(bytes)
-        })
-        .collect();
-    assert_eq!(
-        corrections.len(),
-        1,
-        "expected one final main-inventory correction"
-    );
-    let mut bytes = corrections[0];
-    assert!(VarUInt::read(&mut bytes).unwrap().0 > 0);
-    let corrected = NetworkItemStackDescriptor::read(&mut bytes).unwrap();
-    let expected = NetworkItemStackDescriptor::from(&ItemStack::new(amount, item));
-    assert_eq!(corrected.id, expected.id);
-    assert_eq!(corrected.stack_size, u16::from(amount));
-    let mut response = packets
-        .iter()
-        .find_map(|packet| packet_payload(packet, 148))
-        .unwrap();
-    assert_eq!(VarUInt::read(&mut response).unwrap().0, 1);
-    assert_eq!(u8::read(&mut response).unwrap(), result);
-    assert_eq!(VarInt::read(&mut response).unwrap(), VarInt(1));
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn predicted_decrement_still_places_one_block() {
-    let server = DeathTestWorld::new().await;
-    let world = server.world();
-    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
-    let mut fixture = TestBedrockPlayer::new(&world).await;
-    fixture.player.permission_lvl.store(PermissionLvl::Four);
-    fixture
-        .player
-        .get_entity()
-        .set_pos(Vector3::new(8.5, 64.0, 8.5));
-    let position = BlockPos::new(10, 63, 8);
-    let held = ItemStack::new(64, &Item::STONE);
-    fixture.player.inventory().set_held_item(held.clone());
-    let before = stock(&fixture.player, &[]);
-    send_use(
-        &mut fixture,
-        vec![prediction(&held, &held.copy_with_count(63))],
-        use_item(&held, 0, position),
-    );
-    assert_eq!(world.get_block(&position.up()), &Block::STONE);
-    assert_eq!(fixture.player.inventory().held_item().item_count, 63);
-    assert_conserved(before, &fixture.player, 1);
-    assert_hand_correction(&mut fixture, &Item::STONE, 63, 0);
-    fixture.close().await;
-    server.server.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn predicted_decrement_still_throws_one_egg() {
-    let server = DeathTestWorld::new().await;
-    let world = server.world();
-    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
-    let mut fixture = TestBedrockPlayer::new(&world).await;
-    fixture
-        .player
-        .get_entity()
-        .set_pos(Vector3::new(8.5, 64.0, 8.5));
-    let held = ItemStack::new(2, &Item::EGG);
-    fixture.player.inventory().set_held_item(held.clone());
-    let before = stock(&fixture.player, &[]);
-    send_use(
-        &mut fixture,
-        vec![prediction(&held, &held.copy_with_count(1))],
-        use_item(&held, 1, BlockPos::new(8, 64, 8)),
-    );
-    assert_eq!(
-        world
-            .entities
-            .load()
-            .iter()
-            .filter(|entity| entity.get_entity().entity_type == &EntityType::EGG)
-            .count(),
-        1
-    );
-    assert_eq!(fixture.player.inventory().held_item().item_count, 1);
-    assert_conserved(before, &fixture.player, 1);
-    assert_hand_correction(&mut fixture, &Item::EGG, 1, 0);
-    fixture
-        .player
-        .inventory()
-        .set_held_item(ItemStack::EMPTY.clone());
-    let before_forgery = stock(&fixture.player, &[]);
-    send_use(
-        &mut fixture,
-        vec![prediction(
-            ItemStack::EMPTY,
-            &ItemStack::new(64, &Item::DIAMOND),
-        )],
-        use_item(ItemStack::EMPTY, 1, BlockPos::new(8, 64, 8)),
-    );
-    assert_conserved(before_forgery, &fixture.player, 0);
-    assert!(fixture.player.inventory().held_item().is_empty());
-    assert_eq!(
-        world
-            .entities
-            .load()
-            .iter()
-            .filter(|entity| entity.get_entity().entity_type == &EntityType::EGG)
-            .count(),
-        1
-    );
-    assert_hand_correction(&mut fixture, &Item::AIR, 0, 0);
-    fixture.close().await;
-    server.server.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn prediction_still_allows_authoritative_shearing() {
-    let server = DeathTestWorld::new().await;
-    let world = server.world();
-    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
-    let mut fixture = TestBedrockPlayer::new(&world).await;
-    fixture
-        .player
-        .get_entity()
-        .set_pos(Vector3::new(8.5, 64.0, 8.5));
-    let sheep = SheepEntity::new(Entity::new(
-        world.clone(),
-        Vector3::new(9.5, 64.0, 8.5),
-        &EntityType::SHEEP,
-    ));
-    world.add_entity_silent(sheep.clone());
-    let held = ItemStack::new(1, &Item::SHEARS);
-    fixture.player.inventory().set_held_item(held.clone());
-    let before = stock(&fixture.player, &[]);
-    send_use(
-        &mut fixture,
-        vec![prediction(&held, &held)],
-        TransactionData::UseItemOnEntity(UseItemOnEntityTransactionData {
-            target_entity_runtime_id: VarULong(sheep.mob_entity.living_entity.entity_id() as u64),
+fn click_block_packet(
+    hand: HandSlot,
+    position: BlockPos,
+    held_item: &ItemStack,
+    actions: Vec<InventoryAction>,
+) -> SInventoryTransaction {
+    SInventoryTransaction {
+        legacy_request_id: VarInt(0),
+        legacy_set_item_slots: Vec::new(),
+        has_value: true,
+        actions,
+        transaction_type: VarUInt(2),
+        transaction_data: TransactionData::UseItem(UseItemTransactionData {
             action_type: VarInt(0),
+            trigger_type: 0,
+            block_position: position,
+            block_face: 1,
             hot_bar_slot: VarInt(0),
-            item_in_hand: NetworkItemDescriptor::from(&held),
+            hand,
+            item_in_hand: NetworkItemDescriptor::from(held_item),
             player_position: Vector3::new(8.5, 64.0, 8.5),
-            click_position: Vector3::new(0.0, 0.0, 0.0),
+            click_position: Vector3::new(0.5, 1.0, 0.5),
+            block_runtime_id: VarUInt(0),
+            client_prediction: 0,
+            client_cooldown_state: 0,
         }),
-    );
-    assert!(sheep.is_sheared());
-    let after = fixture.player.inventory().held_item();
-    assert_eq!(after.item, &Item::SHEARS);
-    assert_eq!(after.item_count, 1);
-    assert_eq!(after.get_damage(), held.get_damage() + 1);
-    // Generated wool is mob loot; no player-owned stock is transferred or consumed.
-    assert_conserved(before, &fixture.player, 0);
-    assert_hand_correction(&mut fixture, &Item::SHEARS, 1, 0);
-    fixture.close().await;
-    server.server.shutdown().await;
+    }
+}
+
+#[test]
+fn selected_hand_transaction_action_is_not_consumed_twice() {
+    assert!(transaction_consumes_hand(
+        &[action(
+            Some(WINDOW_ID_INVENTORY),
+            4,
+            descriptor(5, 2),
+            descriptor(5, 1)
+        )],
+        Hand::Right,
+        4
+    ));
+    assert!(transaction_consumes_hand(
+        &[action(
+            Some(WINDOW_ID_INVENTORY),
+            4,
+            descriptor(5, 1),
+            descriptor(0, 0)
+        )],
+        Hand::Right,
+        4
+    ));
+    assert!(!transaction_consumes_hand(
+        &[action(
+            Some(WINDOW_ID_INVENTORY),
+            3,
+            descriptor(5, 2),
+            descriptor(5, 1)
+        )],
+        Hand::Right,
+        4
+    ));
+    assert!(transaction_consumes_hand(
+        &[action(
+            Some(WINDOW_ID_OFF_HAND),
+            0,
+            descriptor(5, 2),
+            descriptor(5, 1)
+        )],
+        Hand::Left,
+        4
+    ));
+    assert!(!transaction_consumes_hand(
+        &[action(
+            Some(WINDOW_ID_OFF_HAND),
+            0,
+            descriptor(5, 2),
+            descriptor(5, 1)
+        )],
+        Hand::Right,
+        4
+    ));
+    assert!(!transaction_consumes_hand(
+        &[action(
+            Some(WINDOW_ID_INVENTORY),
+            4,
+            descriptor(5, 1),
+            descriptor(5, 1)
+        )],
+        Hand::Right,
+        4
+    ));
+    assert!(!transaction_consumes_hand(
+        &[action(None, 4, descriptor(5, 2), descriptor(5, 1))],
+        Hand::Right,
+        4
+    ));
+}
+
+#[test]
+fn consumed_hand_stack_is_written_back_only_when_server_authoritative() {
+    let before = ItemStack::new(2, &Item::GLOWSTONE);
+    let after = ItemStack::new(1, &Item::GLOWSTONE);
+
+    assert!(should_write_back_consumed_stack(
+        &before, &after, true, false
+    ));
+    assert!(!should_write_back_consumed_stack(
+        &before, &after, true, true
+    ));
+    assert!(!should_write_back_consumed_stack(
+        &before, &after, false, false
+    ));
+    assert!(!should_write_back_consumed_stack(
+        &before, &before, true, false
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn predicted_decrement_still_charges_anchor_once() {
-    use pumpkin_data::block_properties::RespawnAnchorLikeProperties;
-    use pumpkin_world::world::BlockFlags;
-    let server = DeathTestWorld::new().await;
-    let world = server.world();
-    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
-    let mut fixture = TestBedrockPlayer::new(&world).await;
-    let position = BlockPos::new(10, 64, 8);
+async fn offhand_anchor_charge_consumes_only_the_offhand_transaction_stack() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::AIR));
+    let bedrock = TestBedrockPlayer::new(&world).await;
+    let position = BlockPos::new(8, 64, 8);
     world.set_block_state(
         &position,
         Block::RESPAWN_ANCHOR.default_state.id,
-        BlockFlags::FORCE_STATE,
+        pumpkin_world::world::BlockFlags::FORCE_STATE,
     );
-    let held = ItemStack::new(2, &Item::GLOWSTONE);
-    fixture.player.inventory().set_held_item(held.clone());
-    let before = stock(&fixture.player, &[]);
-    send_use(
-        &mut fixture,
-        vec![prediction(&held, &held.copy_with_count(1))],
-        use_item(&held, 0, position),
+    let glowstone = ItemStack::new(2, &Item::GLOWSTONE);
+    bedrock
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Right, glowstone.clone());
+    bedrock
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Left, glowstone.clone());
+    let after_transaction = ItemStack::new(1, &Item::GLOWSTONE);
+    let packet = click_block_packet(
+        HandSlot::Offhand,
+        position,
+        &glowstone,
+        vec![action(
+            Some(WINDOW_ID_OFF_HAND),
+            0,
+            NetworkItemDescriptor::from(&glowstone),
+            NetworkItemDescriptor::from(&after_transaction),
+        )],
     );
-    assert_eq!(
-        RespawnAnchorLikeProperties::from_state_id(world.get_block_state_id(&position)).charges,
-        1
-    );
-    assert_eq!(fixture.player.inventory().held_item().item_count, 1);
-    assert_conserved(before, &fixture.player, 1);
-    assert_hand_correction(&mut fixture, &Item::GLOWSTONE, 1, 0);
-    fixture.close().await;
-    server.server.shutdown().await;
+
+    bedrock
+        .client()
+        .handle_inventory_action(&bedrock.player, packet);
+
+    let anchor = RespawnAnchorLikeProperties::from_state_id(world.get_block_state_id(&position));
+    assert_eq!(anchor.charges, 1);
+    assert_eq!(bedrock.player.inventory().held_item().item_count, 2);
+    assert_eq!(bedrock.player.inventory().off_hand_item().item_count, 1);
+
+    bedrock.close().await;
+    fixture.server.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn prediction_still_allows_release_item() {
-    use pumpkin_protocol::bedrock::server::inventory_transaction::ReleaseItemTransactionData;
-    let server = DeathTestWorld::new().await;
-    let mut fixture = TestBedrockPlayer::new(&server.world()).await;
-    let held = ItemStack::new(1, &Item::BOW);
-    fixture.player.inventory().set_held_item(held.clone());
-    fixture.player.living_entity.set_active_hand(
-        Hand::Right,
-        held.clone(),
-        held.get_max_use_time(),
-    );
-    let before = stock(&fixture.player, &[]);
-    send_use(
-        &mut fixture,
-        vec![prediction(&held, &held)],
-        TransactionData::ReleaseItem(ReleaseItemTransactionData {
-            action_type: VarInt(0),
-            hot_bar_slot: VarInt(0),
-            item_in_hand: NetworkItemDescriptor::from(&held),
-            head_position: Vector3::new(8.5, 65.0, 8.5),
-        }),
-    );
-    assert!(
-        fixture
-            .player
-            .living_entity
-            .item_in_use
-            .lock()
-            .unwrap()
-            .is_none()
-    );
-    assert_conserved(before, &fixture.player, 0);
-    assert_hand_correction(&mut fixture, &Item::BOW, 1, 0);
-    fixture.close().await;
-    server.server.shutdown().await;
-}
+async fn consuming_last_block_use_item_sends_equipment_to_tracker() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::AIR));
+    let bedrock = TestBedrockPlayer::new(&world).await;
+    let mut tracker = TestPlayer::new(&world);
+    world.players.store(Arc::new(vec![
+        bedrock.player.clone(),
+        tracker.player.clone(),
+    ]));
+    if let Some(tracked) = world
+        .entity_tracker
+        .get_tracked_entity(bedrock.player.get_entity().entity_id)
+    {
+        tracked.seen_by.insert(tracker.player.gameprofile.id);
+    }
 
-#[path = "inventory_followup_tests.rs"]
-mod followup;
+    let position = BlockPos::new(8, 64, 8);
+    world.set_block_state(
+        &position,
+        Block::RESPAWN_ANCHOR.default_state.id,
+        pumpkin_world::world::BlockFlags::FORCE_STATE,
+    );
+    let glowstone = ItemStack::new(1, &Item::GLOWSTONE);
+    bedrock
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Right, glowstone.clone());
+    tracker.take_packets();
+    let packet = click_block_packet(HandSlot::Mainhand, position, &glowstone, Vec::new());
+
+    bedrock
+        .client()
+        .handle_inventory_action(&bedrock.player, packet);
+
+    assert!(bedrock.player.inventory().held_item().is_empty());
+    let expected_equipment = CSetEquipment::new(
+        bedrock.player.get_entity().entity_id.into(),
+        vec![(
+            EquipmentSlot::MAIN_HAND.discriminant(),
+            pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer::from(
+                ItemStack::EMPTY.clone(),
+            ),
+        )],
+    );
+    let expected_packet = tracker.client().serialize_packet(&expected_equipment);
+    assert!(expected_packet.is_ok());
+    let packets = tracker.take_packets();
+    if let Ok(expected_packet) = expected_packet {
+        assert!(
+            packets.iter().any(|packet| packet == &expected_packet),
+            "tracking player did not receive the empty main-hand equipment update"
+        );
+    }
+
+    bedrock.close().await;
+    fixture.server.shutdown().await;
+}
