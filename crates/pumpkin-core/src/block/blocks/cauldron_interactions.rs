@@ -3,10 +3,13 @@ use std::sync::Arc;
 use crate::block::{UseWithItemArgs, registry::BlockActionResult};
 use crate::entity::EntityBase;
 use crate::item::item_utils::create_filled_result;
+use crate::net::java::play::hand_use_result::{HandMutation, hand_slot, write_back_hand_item};
 use crate::plugin::block::cauldron_level_change::{CauldronChangeReason, CauldronLevelChangeEvent};
 use pumpkin_data::block_properties::WaterCauldronLikeProperties;
 use pumpkin_data::data_component::DataComponent;
-use pumpkin_data::data_component_impl::{BannerPatternsImpl, DyedColorImpl, PotionContentsImpl};
+use pumpkin_data::data_component_impl::{
+    BannerPatternsImpl, DyedColorImpl, EquipmentSlot, PotionContentsImpl,
+};
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::item::Item;
@@ -15,36 +18,73 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::{CustomStatistic, StatisticCategory};
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockId, BlockStateId};
+use pumpkin_inventory::screen_handler::InventoryPlayer;
+use pumpkin_util::Hand;
 use pumpkin_world::world::BlockFlags;
 
+struct HandContext {
+    hand: Hand,
+    source_slot: usize,
+    before: ItemStack,
+}
+
+impl HandContext {
+    fn capture(args: &UseWithItemArgs<'_>) -> Self {
+        let hand = if args.equipment_slot == &EquipmentSlot::MAIN_HAND {
+            Hand::Right
+        } else {
+            Hand::Left
+        };
+        Self {
+            hand,
+            source_slot: hand_slot(args.player, hand),
+            before: args.item_stack.clone(),
+        }
+    }
+
+    // CauldronInteractions updates the live hand before state changes and game-event callbacks.
+    fn publish(&self, args: &UseWithItemArgs<'_>) {
+        write_back_hand_item(
+            args.player,
+            self.hand,
+            self.source_slot,
+            &self.before,
+            args.item_stack,
+            HandMutation::ItemUse,
+        );
+    }
+}
+
 pub(super) fn interact(mut args: UseWithItemArgs<'_>) -> BlockActionResult {
+    // Capture before the cancellable event: a plugin may replace the hand or select another slot.
+    let hand = HandContext::capture(&args);
     // CauldronInteractions.addDefaultInteractions registers filled buckets on all four maps.
-    if let Some(result) = try_empty_bucket(&mut args) {
+    if let Some(result) = try_empty_bucket(&mut args, &hand) {
         return result;
     }
     let item = args.item_stack.get_item();
     if item == &Item::BUCKET {
-        return fill_bucket(&mut args);
+        return fill_bucket(&mut args, &hand);
     }
     if item == &Item::POTION && matches!(args.block.id, BlockId::CAULDRON | BlockId::WATER_CAULDRON)
     {
-        return empty_bottle(&mut args);
+        return empty_bottle(&mut args, &hand);
     }
     if args.block.id != BlockId::WATER_CAULDRON {
         return BlockActionResult::PassToDefaultBlockAction;
     }
     if item == &Item::GLASS_BOTTLE {
-        return fill_bottle(&mut args);
+        return fill_bottle(&mut args, &hand);
     }
     if item.has_tag(&pumpkin_data::tag::Item::MINECRAFT_SHULKER_BOXES) && item != &Item::SHULKER_BOX
     {
-        return shulker_box_interaction(&mut args);
+        return shulker_box_interaction(&mut args, &hand);
     }
     if item.has_tag(&pumpkin_data::tag::Item::MINECRAFT_BANNERS) {
-        return banner_interaction(&mut args);
+        return banner_interaction(&mut args, &hand);
     }
     if item.has_tag(&pumpkin_data::tag::Item::MINECRAFT_CAULDRON_CAN_REMOVE_DYE) {
-        return dyed_item_interaction(&mut args);
+        return dyed_item_interaction(&mut args, &hand);
     }
     BlockActionResult::PassToDefaultBlockAction
 }
@@ -87,9 +127,24 @@ fn award_custom(args: &UseWithItemArgs<'_>, statistic: CustomStatistic) {
         .increment_stat(StatisticCategory::Custom, statistic as i32, 1);
 }
 
-fn exchange_item(args: &mut UseWithItemArgs<'_>, output: ItemStack, statistic: CustomStatistic) {
-    let item_id = args.item_stack.get_item().id;
+fn exchange_item(
+    args: &mut UseWithItemArgs<'_>,
+    hand: &HandContext,
+    output: ItemStack,
+    statistic: CustomStatistic,
+) {
+    // WATER's potion lambda reads the consumed input alias; EMPTY snapshots its item first.
+    let item_id = if args.block.id == BlockId::WATER_CAULDRON
+        && args.item_stack.get_item() == &Item::POTION
+        && args.item_stack.item_count == 1
+        && !args.player.has_infinite_materials()
+    {
+        Item::AIR.id
+    } else {
+        args.item_stack.get_item().id
+    };
     create_filled_result(args.item_stack, args.player, output, true);
+    hand.publish(args);
     award_custom(args, statistic);
     args.player
         .increment_stat(StatisticCategory::Used, i32::from(item_id), 1);
@@ -102,12 +157,15 @@ fn set_state(args: &UseWithItemArgs<'_>, state: BlockStateId) {
 
 fn fluid_effects(args: &UseWithItemArgs<'_>, sound: Sound, event: GameEvent) {
     args.world
-        .play_sound(sound, SoundCategory::Blocks, &args.position.to_f64());
+        .play_block_sound(sound, SoundCategory::Blocks, *args.position);
     args.world
         .emit_game_event(event.name(), args.position.to_centered_f64());
 }
 
-fn try_empty_bucket(args: &mut UseWithItemArgs<'_>) -> Option<BlockActionResult> {
+fn try_empty_bucket(
+    args: &mut UseWithItemArgs<'_>,
+    hand: &HandContext,
+) -> Option<BlockActionResult> {
     let item = args.item_stack.get_item();
     let (state, sound) = if item == &Item::WATER_BUCKET {
         (water_state(3), Sound::ItemBucketEmpty)
@@ -130,12 +188,13 @@ fn try_empty_bucket(args: &mut UseWithItemArgs<'_>) -> Option<BlockActionResult>
     {
         return Some(BlockActionResult::Consume);
     }
-    Some(empty_bucket(args, state, sound))
+    Some(empty_bucket(args, hand, state, sound))
 }
 
 // CauldronInteractions.emptyBucket exchanges even when the destination is already full.
 fn empty_bucket(
     args: &mut UseWithItemArgs<'_>,
+    hand: &HandContext,
     state: BlockStateId,
     sound: Sound,
 ) -> BlockActionResult {
@@ -144,6 +203,7 @@ fn empty_bucket(
     }
     exchange_item(
         args,
+        hand,
         ItemStack::new(1, &Item::BUCKET),
         CustomStatistic::FillCauldron,
     );
@@ -153,7 +213,7 @@ fn empty_bucket(
 }
 
 // CauldronInteractions.fillBucket requires a full layered cauldron, or any lava cauldron.
-fn fill_bucket(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
+fn fill_bucket(args: &mut UseWithItemArgs<'_>, hand: &HandContext) -> BlockActionResult {
     let level = fill_level(args.world.get_block_state_id(args.position));
     let (item, sound) = match args.block.id {
         BlockId::WATER_CAULDRON if level == 3 => (&Item::WATER_BUCKET, Sound::ItemBucketFill),
@@ -166,14 +226,19 @@ fn fill_bucket(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
     if !allow_change(args, 0, CauldronChangeReason::BucketFill) {
         return BlockActionResult::Consume;
     }
-    exchange_item(args, ItemStack::new(1, item), CustomStatistic::UseCauldron);
+    exchange_item(
+        args,
+        hand,
+        ItemStack::new(1, item),
+        CustomStatistic::UseCauldron,
+    );
     set_state(args, Block::CAULDRON.default_state.id);
     fluid_effects(args, sound, GameEvent::FluidPickup);
     BlockActionResult::Success
 }
 
 // CauldronInteractions.bootStrap accepts only PotionContents.is(WATER).
-fn empty_bottle(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
+fn empty_bottle(args: &mut UseWithItemArgs<'_>, hand: &HandContext) -> BlockActionResult {
     let level = fill_level(args.world.get_block_state_id(args.position));
     let is_water = args
         .item_stack
@@ -190,6 +255,7 @@ fn empty_bottle(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
     }
     exchange_item(
         args,
+        hand,
         ItemStack::new(1, &Item::GLASS_BOTTLE),
         CustomStatistic::UseCauldron,
     );
@@ -198,13 +264,14 @@ fn empty_bottle(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
     BlockActionResult::Success
 }
 
-fn fill_bottle(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
+fn fill_bottle(args: &mut UseWithItemArgs<'_>, hand: &HandContext) -> BlockActionResult {
     let level = fill_level(args.world.get_block_state_id(args.position)) - 1;
     if !allow_change(args, level, CauldronChangeReason::BottleFill) {
         return BlockActionResult::Consume;
     }
     exchange_item(
         args,
+        hand,
         crate::item::items::glass_bottle::water_bottle(),
         CustomStatistic::UseCauldron,
     );
@@ -223,7 +290,10 @@ fn lower_fill_level(args: &UseWithItemArgs<'_>, new_level: u8) {
 }
 
 // CauldronInteractions.shulkerBoxInteraction uses a one-item transmuted copy and unlimited output.
-fn shulker_box_interaction(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
+fn shulker_box_interaction(
+    args: &mut UseWithItemArgs<'_>,
+    hand: &HandContext,
+) -> BlockActionResult {
     let level = fill_level(args.world.get_block_state_id(args.position)) - 1;
     if !allow_change(args, level, CauldronChangeReason::Unknown) {
         return BlockActionResult::Consume;
@@ -231,12 +301,13 @@ fn shulker_box_interaction(args: &mut UseWithItemArgs<'_>) -> BlockActionResult 
     let mut cleaned = args.item_stack.copy_with_count(1);
     cleaned.item = &Item::SHULKER_BOX;
     create_filled_result(args.item_stack, args.player, cleaned, false);
+    hand.publish(args);
     award_custom(args, CustomStatistic::CleanShulkerBox);
     lower_fill_level(args, level);
     BlockActionResult::Success
 }
 
-fn banner_interaction(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
+fn banner_interaction(args: &mut UseWithItemArgs<'_>, hand: &HandContext) -> BlockActionResult {
     if args
         .item_stack
         .get_data_component::<BannerPatternsImpl>()
@@ -254,12 +325,13 @@ fn banner_interaction(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
         patterns.layers.pop();
     }
     create_filled_result(args.item_stack, args.player, cleaned, false);
+    hand.publish(args);
     award_custom(args, CustomStatistic::CleanBanner);
     lower_fill_level(args, level);
     BlockActionResult::Success
 }
 
-fn dyed_item_interaction(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
+fn dyed_item_interaction(args: &mut UseWithItemArgs<'_>, hand: &HandContext) -> BlockActionResult {
     if args
         .item_stack
         .get_data_component::<DyedColorImpl>()
@@ -273,6 +345,7 @@ fn dyed_item_interaction(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
     }
     args.item_stack
         .remove_data_component(DataComponent::DyedColor);
+    hand.publish(args);
     award_custom(args, CustomStatistic::CleanArmor);
     lower_fill_level(args, level);
     BlockActionResult::Success

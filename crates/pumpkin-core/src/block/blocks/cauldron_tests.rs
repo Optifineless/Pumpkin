@@ -20,6 +20,9 @@ use pumpkin_util::{GameMode, Hand};
 mod support;
 use support::{Fixture, POS, dyed_armor, layered, named_shulker, other_hand, patterned_banner};
 
+#[path = "cauldron_effect_tests.rs"]
+mod effects;
+
 fn starting_cauldron_states() -> [(BlockStateId, i32); 8] {
     [
         (layered(&Block::WATER_CAULDRON, "1"), 1),
@@ -341,6 +344,11 @@ async fn water_bottles_fill_one_level_and_ineligible_containers_do_not_mutate() 
             [GameEvent::FluidPlace.name()]
         );
         assert_eq!(fixture.sound_count(), 1);
+        let used_item = if state == Block::CAULDRON.default_state.id {
+            &Item::POTION
+        } else {
+            &Item::AIR
+        };
         assert_eq!(
             fixture
                 .client
@@ -348,7 +356,7 @@ async fn water_bottles_fill_one_level_and_ineligible_containers_do_not_mutate() 
                 .stats
                 .lock()
                 .unwrap()
-                .get(StatisticCategory::Used, i32::from(Item::POTION.id)),
+                .get(StatisticCategory::Used, i32::from(used_item.id)),
             1
         );
     }
@@ -465,7 +473,7 @@ async fn creative_shulker_washing_keeps_components_and_produces_each_clean_copy(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn creative_shulker_washing_drops_the_copy_when_inventory_is_full() {
+async fn creative_shulker_washing_discards_the_copy_when_inventory_is_full() {
     let mut fixture = Fixture::new();
     fixture.client.player.gamemode.store(GameMode::Creative);
     let colored = named_shulker();
@@ -479,13 +487,12 @@ async fn creative_shulker_washing_drops_the_copy_when_inventory_is_full() {
         inventory.set_stack(slot, ItemStack::new(64, &Item::STONE));
     }
     fixture.use_top(Hand::Left);
-    let mut cleaned = colored.clone();
-    cleaned.item = &Item::SHULKER_BOX;
     assert!(inventory.off_hand_item().are_equal(&colored));
     assert_eq!(fixture.count(&Item::SHULKER_BOX), 0);
-    let drops = fixture.drops();
-    assert_eq!(drops.len(), 1);
-    assert!(drops[0].are_equal(&cleaned));
+    assert!(
+        fixture.drops().is_empty(),
+        "Creative inventory overflow is discarded"
+    );
     assert_eq!(
         fixture.world.get_block_state_id(&POS),
         Block::CAULDRON.default_state.id

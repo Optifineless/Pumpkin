@@ -3,10 +3,11 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
 
-/// Gives extra items to the player, dropping anything their inventory cannot hold.
+/// Gives extra items to the player, dropping Survival overflow and discarding Creative overflow.
 pub fn give_or_drop(player: &Player, mut stack: ItemStack) {
     player.inventory().insert_stack_anywhere(&mut stack);
-    if !stack.is_empty() {
+    // Inventory.add discards remaining items and reports success for infinite materials.
+    if !stack.is_empty() && !player.has_infinite_materials() {
         player
             .world()
             .drop_stack(&player.position().to_block_pos(), stack);
