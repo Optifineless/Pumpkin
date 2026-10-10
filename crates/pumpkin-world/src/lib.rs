@@ -14,6 +14,8 @@ pub mod generation;
 pub mod level;
 pub mod lighting;
 pub mod poi;
+mod retained_chunk_data;
+pub use retained_chunk_data::ChunkMutationRejected;
 pub mod session_lock;
 mod storage;
 pub use storage::{recover_temporaries, replace, safe_replace_file, sync_parent, temporary_path};

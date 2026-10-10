@@ -1,3 +1,4 @@
+// PersistentEntitySectionManager.unloadEntity: removed handles cannot mutate the saved life.
 use std::sync::Arc;
 use wasmtime::component::{Access, HasSelf, Resource};
 
@@ -163,6 +164,9 @@ impl HostLivingEntity for PluginHostState {
 
     fn set_health(&mut self, this: Resource<WitLivingEntity>, health: f32) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(living) = entity.get_living_entity() {
             living.set_health(health);
         }
@@ -183,6 +187,9 @@ impl HostLivingEntity for PluginHostState {
         max_health: f32,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(living) = entity.get_living_entity() {
             living.set_max_health(max_health);
         }
@@ -210,6 +217,9 @@ impl HostLivingEntity for PluginHostState {
         amount: f32,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(living) = entity.get_living_entity() {
             living.set_absorption(amount);
         }
@@ -251,6 +261,9 @@ impl HostLivingEntity for PluginHostState {
         value: f64,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         let attribute = from_wit_attribute(attr);
         if let Some(living) = entity.get_living_entity() {
             living.set_attribute_base(attribute, value);
@@ -269,6 +282,9 @@ impl HostLivingEntity for PluginHostState {
         modifier: WitAttributeModifier,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         let attribute = from_wit_attribute(attr);
         if let Some(living) = entity.get_living_entity() {
             let internal_mod = pumpkin_core::entity::attributes::Modifier {
@@ -293,6 +309,9 @@ impl HostLivingEntity for PluginHostState {
         id: String,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         let attribute = from_wit_attribute(attr);
         if let Some(living) = entity.get_living_entity() {
             living.update_attribute(attribute, |inst| inst.remove_modifier(&id));
@@ -395,6 +414,9 @@ impl HostLivingEntity for PluginHostState {
         };
 
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(living) = entity.get_living_entity() {
             let slot = from_wit_equipment_slot(slot);
             {
@@ -412,6 +434,9 @@ impl HostLivingEntity for PluginHostState {
 
     fn clear_equipment(&mut self, this: Resource<WitLivingEntity>) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(living) = entity.get_living_entity() {
             let mut equipment = living
                 .entity_equipment
@@ -441,6 +466,9 @@ impl HostLivingEntity for PluginHostState {
 
     fn set_age(&mut self, this: Resource<WitLivingEntity>, age: i32) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(living) = entity.get_living_entity() {
             living
                 .entity
@@ -481,9 +509,13 @@ impl crate::pumpkin::plugin::world::HostLivingEntityWithStore<PluginHostState>
             (state.get(&this)?.clone(), active_plugin(state)?)
         };
         let damage_type = from_wit_damage_type(damage_type);
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
             .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
                 entity.damage(&*entity, amount, damage_type);
             })
             .await

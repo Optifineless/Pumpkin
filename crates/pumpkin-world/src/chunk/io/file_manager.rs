@@ -31,11 +31,11 @@ pub struct ChunkFileManager<S: ChunkSerializer<WriteBackend = PathBuf>> {
     after_drain_pass: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     #[cfg(test)]
     before_publish: Mutex<Option<Box<dyn FnOnce() + Send>>>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     publication_pause: Mutex<Option<PublicationPause>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 type PublicationPause = (
     tokio::sync::oneshot::Sender<()>,
     tokio::sync::oneshot::Receiver<()>,
@@ -160,7 +160,7 @@ impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
             after_drain_pass: Mutex::new(None),
             #[cfg(test)]
             before_publish: Mutex::new(None),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-hooks"))]
             publication_pause: Mutex::new(None),
         }
     }
@@ -592,6 +592,12 @@ mod tests;
 
 #[path = "pending.rs"]
 mod pending;
+
+#[cfg(any(test, feature = "test-hooks"))]
+#[path = "publication_test_hook.rs"]
+mod publication_test_hook;
+#[cfg(any(test, feature = "test-hooks"))]
+pub use publication_test_hook::PublicationBarrier;
 
 #[cfg(test)]
 #[path = "serialization_failure_tests.rs"]

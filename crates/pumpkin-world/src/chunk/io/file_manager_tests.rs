@@ -25,6 +25,7 @@ fn entities(position: Vector2<i32>, name: &str) -> Arc<ChunkEntityData> {
         x: position.x,
         z: position.y,
         data: Mutex::new(vec![entity]),
+        dormant_records: std::sync::Mutex::new(None),
         live: AtomicBool::new(false),
         dirty: crate::chunk::io::DirtyFlag::new(true),
     })

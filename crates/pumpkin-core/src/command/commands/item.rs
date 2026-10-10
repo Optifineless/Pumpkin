@@ -123,6 +123,10 @@ impl CommandExecutor for EntityReplaceExecutor {
         item_stack.item_count = count as u8;
 
         for target in &targets {
+            // PersistentEntitySectionManager.storeChunkSections fences asynchronous state writes.
+            let Some(_mutation) = target.get_entity().try_begin_mutation() else {
+                continue;
+            };
             if let Some(player) = target.get_player() {
                 if let Some(player_arc) = player.world().get_player_by_uuid(player.gameprofile.id) {
                     if (200..=226).contains(&mojang_slot) {

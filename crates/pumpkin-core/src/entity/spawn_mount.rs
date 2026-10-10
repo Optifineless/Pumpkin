@@ -27,16 +27,8 @@ impl Drop for UnpublishedRidingTree {
             let mut pending = vec![self.root.clone()];
             while let Some(entity) = pending.pop() {
                 let base = entity.get_entity();
-                pending.extend(std::mem::take(
-                    &mut *base
-                        .passengers
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner),
-                ));
-                base.vehicle
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .take();
+                pending.extend(base.take_unpublished_passenger_links());
+                base.set_vehicle_link(None);
             }
         }
     }
@@ -44,17 +36,10 @@ impl Drop for UnpublishedRidingTree {
 
 /// Links a configured passenger without events or packets; insertion validates the entire tree.
 pub fn attach_unpublished(vehicle: &Arc<dyn EntityBase>, passenger: Arc<dyn EntityBase>) {
-    *passenger
+    passenger
         .get_entity()
-        .vehicle
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner) = Some(vehicle.clone());
-    vehicle
-        .get_entity()
-        .passengers
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(passenger);
+        .set_vehicle_link(Some(vehicle.clone()));
+    vehicle.get_entity().push_passenger_link(passenger);
 }
 
 /// Checks mount events before publishing any member; cancellation rejects the whole spawn.

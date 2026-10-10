@@ -13,6 +13,7 @@ use pumpkin_util::PermissionLvl;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
+use pumpkin_world::chunk::io::Dirtiable;
 use rustc_hash::FxHashMap;
 
 const DESCRIPTION: &str = "Changes biomes of an area.";
@@ -95,9 +96,12 @@ impl CommandExecutor for FillBiomeExecutor {
 
         let mut changed_count = 0;
         for (chunk_pos, mods) in chunk_modifications {
-            let result = world.level.read_chunk_sync(&chunk_pos, |chunk| {
+            // ServerChunkCache.getChunk serializes supported writes with ChunkMap.scheduleUnload.
+            let Some((chunk, _mutation)) = world.level.try_mutate_chunk_at(chunk_pos) else {
+                continue;
+            };
+            let count = {
                 let mut local_count = 0;
-                let mut modified = false;
                 for &(rel_x, rel_y, rel_z) in &mods {
                     let section_index = rel_y / 4;
                     let scale_y = rel_y % 4;
@@ -111,13 +115,13 @@ impl CommandExecutor for FillBiomeExecutor {
                             .section
                             .set_relative_biome(rel_x, rel_y, rel_z, target_biome_id);
                         local_count += 1;
-                        modified = true;
                     }
                 }
-                (local_count, modified.then(|| chunk.clone()))
-            });
+                local_count
+            };
 
-            if let Some((count, Some(chunk))) = result {
+            if count != 0 {
+                chunk.mark_dirty(true);
                 changed_count += count;
                 world.broadcast_to_chunk_except(chunk_pos, &[], &CChunkData(&chunk));
             }

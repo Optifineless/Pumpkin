@@ -45,6 +45,7 @@ fn anvil_entity_save_and_reload_fit_on_a_one_mib_stack() {
                         x: 0,
                         z: 0,
                         data: std::sync::Mutex::new(vec![entity.clone()]),
+                        dormant_records: std::sync::Mutex::new(None),
                         live: AtomicBool::new(false),
                         dirty: crate::chunk::io::DirtyFlag::new(true),
                     });

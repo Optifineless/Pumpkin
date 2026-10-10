@@ -57,6 +57,28 @@ impl std::fmt::Display for GetBlockError {
 }
 
 pub trait WorldPortalExt: Send + Sync {
+    /// Queue a retained unload for a tick boundary; do not inspect contents or wait here.
+    fn queue_chunk_unload(&self, _chunk: &crate::level::SyncChunk) {}
+
+    /// Snapshot live objects into this retained chunk after mutation admission has closed.
+    /// Return false when outstanding users prevent a coherent snapshot; never call plugins.
+    fn prepare_chunk_unload(&self, _chunk: &crate::level::SyncChunk, _generation: u64) -> bool {
+        true
+    }
+
+    /// Detach live objects only after storage published the snapshot and generation is current.
+    fn finish_chunk_unload(&self, _chunk: &crate::level::SyncChunk, _generation: u64) -> bool {
+        true
+    }
+
+    /// Releases the captured live-object set when its unload generation is cancelled.
+    fn cancel_chunk_unload(
+        &self,
+        _pos: pumpkin_util::math::vector2::Vector2<i32>,
+        _generation: u64,
+    ) {
+    }
+
     fn can_place_at(
         &self,
         block: &Block,
