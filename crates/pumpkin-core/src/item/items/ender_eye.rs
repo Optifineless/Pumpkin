@@ -58,6 +58,8 @@ impl ItemBehaviour for EnderEyeItem {
         props.eye = true;
         let new_state_id = props.to_state_id(block);
 
+        // EnderEyeItem.useOn lifts occupants before writing the frame's larger shape.
+        crate::block::push_entities_up(state_id, new_state_id, &world, &location);
         world.set_block_state(&location, new_state_id, BlockFlags::NOTIFY_LISTENERS);
         // Consume one item.
         item.decrement_unless_creative(player.gamemode.load(), 1);

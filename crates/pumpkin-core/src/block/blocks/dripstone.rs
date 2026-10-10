@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     block::{
-        BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
-        PathComputationType, PlacedArgs,
+        BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,
+        OnLandedUponArgs, OnPlaceArgs, OnScheduledTickArgs, PathComputationType, PlacedArgs,
     },
     entity::player::Player,
     world::World,
@@ -11,16 +11,80 @@ use crate::{
 use pumpkin_data::{
     Block, BlockDirection, BlockState, BlockStateId,
     block_properties::{PointedDripstoneLikeProperties, SpeleothemThickness, VerticalDirection},
+    damage::DamageType,
+    tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
+use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 
 #[pumpkin_block("minecraft:pointed_dripstone")]
 pub struct DripstoneBlock;
 
+impl DripstoneBlock {
+    /// Returns the enhanced fall distance for an upward tip, given a pointed-dripstone state.
+    pub(crate) fn stalagmite_fall_distance(state: BlockStateId, distance: f64) -> Option<f64> {
+        // PointedDripstoneBlock.fallOn also adjusts distance for FallingBlockEntity's override.
+        const STALAGMITE_FALL_DISTANCE_OFFSET: f64 = 2.5;
+        let props = PointedDripstoneLikeProperties::from_state_id(state);
+        (props.vertical_direction == VerticalDirection::Up
+            && props.thickness == SpeleothemThickness::Tip)
+            .then_some(distance + STALAGMITE_FALL_DISTANCE_OFFSET)
+    }
+}
+
 impl BlockBehaviour for DripstoneBlock {
+    fn on_landed_upon(&self, args: OnLandedUponArgs<'_>) {
+        // PointedDripstoneBlock.fallOn; adapted from upstream #3416 to vanilla 26.3.
+        const STALAGMITE_FALL_DAMAGE_MODIFIER: f32 = 2.0;
+        let Some(living) = args.entity.get_living_entity() else {
+            return;
+        };
+        if let Some(distance) = Self::stalagmite_fall_distance(
+            args.world.get_block_state_id(args.position),
+            f64::from(args.fall_distance),
+        ) {
+            living.handle_fall_damage_from(
+                args.entity,
+                distance as f32,
+                STALAGMITE_FALL_DAMAGE_MODIFIER,
+                DamageType::STALAGMITE,
+            );
+        } else {
+            living.handle_fall_damage(args.entity, args.fall_distance, 1.0);
+        }
+    }
+
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let state = args.world.get_block_state_id(args.position);
+        let props = PointedDripstoneLikeProperties::from_state_id(state);
+        // SpeleothemBlock.tick rechecks stalagmite survival; a scheduled stalactite still falls.
+        if props.vertical_direction == VerticalDirection::Up
+            && !can_survive(
+                args.world.as_ref(),
+                args.position,
+                args.block,
+                props.vertical_direction,
+            )
+        {
+            args.world
+                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+        } else {
+            spawn_falling_stalactite(args.world, *args.position);
+        }
+    }
+
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        if args.direction.is_none() {
+            let props = PointedDripstoneLikeProperties::from_state_id(args.state.id);
+            return can_survive(
+                args.block_accessor,
+                args.position,
+                args.block,
+                props.vertical_direction,
+            );
+        }
         can_place_at_pos(
             args.block_accessor,
             args.position,
@@ -89,10 +153,40 @@ impl BlockBehaviour for DripstoneBlock {
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        if !can_place_at_pos(args.world, args.position, None, None) {
-            return Block::AIR.default_state.id;
-        }
         let mut dripstone_props = PointedDripstoneLikeProperties::from_state_id(args.state_id);
+        // SpeleothemBlock.updateShape retains the state while the delayed fall/break is pending.
+        if !matches!(args.direction, BlockDirection::Up | BlockDirection::Down) {
+            return args.state_id;
+        }
+        if dripstone_props.vertical_direction == VerticalDirection::Down
+            && args
+                .world
+                .level
+                .is_block_tick_scheduled(args.position, args.block)
+        {
+            return args.state_id;
+        }
+        let support_direction = match dripstone_props.vertical_direction {
+            VerticalDirection::Up => BlockDirection::Down,
+            VerticalDirection::Down => BlockDirection::Up,
+        };
+        if args.direction == support_direction
+            && !can_survive(
+                args.world,
+                args.position,
+                args.block,
+                dripstone_props.vertical_direction,
+            )
+        {
+            let delay = if dripstone_props.vertical_direction == VerticalDirection::Down {
+                2
+            } else {
+                1
+            };
+            args.world
+                .schedule_block_tick(args.block, *args.position, delay, TickPriority::Normal);
+            return args.state_id;
+        }
         if dripstone_props.thickness != SpeleothemThickness::TipMerge {
             return args.state_id;
         }
@@ -118,6 +212,53 @@ impl BlockBehaviour for DripstoneBlock {
     fn is_pathfindable(&self, _state: &BlockState, _computation_type: PathComputationType) -> bool {
         false
     }
+}
+
+// SpeleothemBlock.spawnFallingStalactite gives only the tip the whole column's damage scale.
+fn spawn_falling_stalactite(world: &Arc<World>, start: BlockPos) {
+    const MIN_FALL_DAMAGE_PER_DISTANCE: i32 = 6;
+    const FALL_DAMAGE_MAX: i32 = 40;
+    let mut pos = start;
+    while world
+        .get_block(&pos)
+        .has_tag(&tag::Block::MINECRAFT_SPELEOTHEMS)
+    {
+        let state = world.get_block_state_id(&pos);
+        let props = PointedDripstoneLikeProperties::from_state_id(state);
+        if props.vertical_direction != VerticalDirection::Down {
+            break;
+        }
+        let falling = crate::entity::falling::FallingEntity::replace_spawn(world, pos, state);
+        if matches!(
+            props.thickness,
+            SpeleothemThickness::Tip | SpeleothemThickness::TipMerge
+        ) {
+            let size = (1 + start.0.y - pos.0.y).max(MIN_FALL_DAMAGE_PER_DISTANCE);
+            falling.set_hurts_entities(size as f32, FALL_DAMAGE_MAX);
+            break;
+        }
+        pos = pos.down();
+    }
+}
+
+// SpeleothemBlock.isValidSpeleothemPlacement requires the same block and tip direction.
+fn can_survive(
+    world: &dyn BlockAccessor,
+    pos: &BlockPos,
+    block: &Block,
+    tip: VerticalDirection,
+) -> bool {
+    let (behind, face) = match tip {
+        VerticalDirection::Up => (pos.down(), BlockDirection::Up),
+        VerticalDirection::Down => (pos.up(), BlockDirection::Down),
+    };
+    let state = world.get_block_state(&behind);
+    state.is_side_solid(face)
+        || (world
+            .get_block(&behind)
+            .has_tag(&tag::Block::MINECRAFT_SPELEOTHEMS)
+            && world.get_block(&behind) == block
+            && PointedDripstoneLikeProperties::from_state_id(state.id).vertical_direction == tip)
 }
 fn update_stalagmite(world: &Arc<World>, stalagmite_len: u8, tip_pos: &BlockPos) {
     let block_above = world.get_block(&tip_pos.up());

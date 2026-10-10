@@ -21,7 +21,8 @@ thread_local! {
 
 impl LivingEntity {
     // LivingEntity.isInvulnerableTo / EnchantmentHelper.isImmuneToDamage / Enchantment.isImmuneToDamage.
-    pub(super) fn is_immune_to_enchantment_damage(
+    /// Returns whether equipped enchantments reject the supplied damage source.
+    pub(crate) fn is_immune_to_enchantment_damage(
         &self,
         victim: &dyn EntityBase,
         damage_type: DamageType,
