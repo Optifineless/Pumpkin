@@ -53,13 +53,8 @@ impl PortalSearchResult {
             return current_yaw;
         }
 
-        // Axis changed, rotate yaw by 90 degrees
-        // X axis portal faces East/West, Z axis portal faces North/South
-        match (src_axis, self.axis) {
-            (HorizontalAxis::X, HorizontalAxis::Z) => current_yaw + 90.0,
-            (HorizontalAxis::Z, HorizontalAxis::X) => current_yaw - 90.0,
-            _ => current_yaw,
-        }
+        // NetherPortalBlock.createDimensionTransition uses relative +90 for either axis change.
+        current_yaw + 90.0
     }
 
     #[must_use]
@@ -628,9 +623,17 @@ impl NetherPortal {
         let mut acceptable_pos: Option<(BlockPos, HorizontalAxis, f64)> = None;
 
         for offset_x in -32..=32 {
-            for offset_z in -32..=32 {
+            'columns: for offset_z in -32..=32 {
                 let check_x = target_pos.0.x + offset_x;
                 let check_z = target_pos.0.z + offset_z;
+
+                // PortalForcer.createPortal reads terrain; unavailable chunks are not empty terrain.
+                if !world
+                    .level
+                    .is_chunk_loaded(&Vector2::new(check_x >> 4, check_z >> 4))
+                {
+                    continue;
+                }
 
                 if !worldborder.contains_block(check_x, check_z) {
                     continue;
@@ -652,13 +655,17 @@ impl NetherPortal {
                 let mut y = start_y;
                 while y >= min_y {
                     let pos = BlockPos(Vector3::new(check_x, y, check_z));
-                    let state = world.get_block_state(&pos);
+                    let Some(state) = world.get_block_state_if_loaded(&pos) else {
+                        continue 'columns;
+                    };
 
                     if Self::is_valid_portal_air(state) {
                         let mut bottom_y = y;
                         while bottom_y > min_y {
                             let below = BlockPos(Vector3::new(check_x, bottom_y - 1, check_z));
-                            let below_state = world.get_block_state(&below);
+                            let Some(below_state) = world.get_block_state_if_loaded(&below) else {
+                                continue 'columns;
+                            };
                             if !Self::is_valid_portal_air(below_state) {
                                 break;
                             }
@@ -718,11 +725,24 @@ impl NetherPortal {
             target_pos.0.z - direction.to_offset().z,
         ));
         let clamped_pos = worldborder.clamp_block(fallback_pos.0.x, fallback_pos.0.z);
-        Some((
-            BlockPos(Vector3::new(clamped_pos.0, fallback_y, clamped_pos.1)),
-            axis,
-            true,
-        ))
+        let fallback_pos = BlockPos(Vector3::new(clamped_pos.0, fallback_y, clamped_pos.1));
+        // PortalForcer.createPortal must have terrain available for the entire fallback frame.
+        for width in -1..3 {
+            for box_offset in -1..2 {
+                let perpendicular = if axis == HorizontalAxis::X {
+                    BlockDirection::South
+                } else {
+                    BlockDirection::West
+                };
+                let pos = fallback_pos
+                    .offset_dir(direction.to_offset(), width)
+                    .offset_dir(perpendicular.to_offset(), box_offset);
+                if !world.is_loaded(&pos) {
+                    return None;
+                }
+            }
+        }
+        Some((fallback_pos, axis, true))
     }
 
     const fn is_valid_portal_air(state: &BlockState) -> bool {
@@ -753,7 +773,9 @@ impl NetherPortal {
                     .offset_dir(perpendicular.to_offset(), perpendicular_offset)
                     .offset_dir(BlockDirection::Up.to_offset(), height);
 
-                let state = world.get_block_state(&pos);
+                let Some(state) = world.get_block_state_if_loaded(&pos) else {
+                    return false;
+                };
 
                 if height < 0 {
                     if !state.is_solid_block() {
@@ -851,6 +873,21 @@ impl NetherPortal {
 mod tests {
     use super::*;
     use pumpkin_util::math::boundingbox::EntityDimensions;
+
+    #[tokio::test]
+    async fn portal_creation_rejects_unloaded_frame_terrain() {
+        let fixture = crate::world::spawn_test_support::Fixture::new();
+        assert!(
+            NetherPortal::find_safe_location(
+                &fixture.world,
+                BlockPos::new(1, 80, 1),
+                HorizontalAxis::Z,
+            )
+            .is_none()
+        );
+        assert!(fixture.world.level.loaded_chunks.is_empty());
+        fixture.finish().await;
+    }
 
     #[test]
     fn portal_teleport_position_x_axis() {
@@ -972,7 +1009,7 @@ mod tests {
         );
         assert_eq!(
             x_portal.calculate_teleport_yaw(45.0, Some(HorizontalAxis::Z)),
-            -45.0
+            135.0
         );
     }
 }

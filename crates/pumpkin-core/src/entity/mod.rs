@@ -277,6 +277,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         pitch: Option<f32>,
         world: Arc<World>,
     ) {
+        self.get_entity().invalidate_portal_travel();
         if self.projectile_state().is_some()
             && projectile::ownership::teleport_projectile(
                 self.get_entity(),
@@ -1031,6 +1032,7 @@ pub struct Entity {
     pub portal_cooldown: AtomicU32,
 
     pub portal_manager: std::sync::Mutex<Option<PortalProcessor>>,
+    pub(crate) portal_travel: portal_travel::PortalTravelState,
     /// Custom name for the entity
     pub custom_name: ArcSwap<Option<TextComponent>>,
     /// Indicates whether the entity's custom name is visible
@@ -1182,6 +1184,7 @@ impl Entity {
             last_biome_update_pos: AtomicCell::new(BlockPos::new(floor_x, floor_y, floor_z)),
             portal_cooldown: AtomicU32::new(0),
             portal_manager: std::sync::Mutex::new(None),
+            portal_travel: portal_travel::PortalTravelState::default(),
             custom_name: ArcSwap::new(Arc::new(None)),
             custom_name_visible: AtomicBool::new(false),
             silent: AtomicBool::new(false),
@@ -1214,6 +1217,7 @@ impl Entity {
     /// Updates the world reference for this entity.
     /// Called when the entity changes dimensions (e.g., through a nether portal).
     pub fn set_world(&self, world: Arc<World>) {
+        self.invalidate_portal_travel();
         let block_pos = self.block_pos.load();
         let biome = world.level.get_rough_biome(&block_pos);
         self.current_biome.store(Arc::new(biome));
@@ -2240,9 +2244,6 @@ impl Entity {
         let mut should_remove = false;
         if let Some(portal_processor) = manager_guard.as_mut() {
             if portal_processor.process_portal_teleportation(&self.world.load(), caller, true) {
-                self.portal_cooldown
-                    .store(self.default_portal_cooldown(), Ordering::Relaxed);
-
                 self.teleport_through_portal(
                     portal_processor.portal_type,
                     portal_processor.destination_world.clone(),
@@ -3238,6 +3239,7 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
+        self.invalidate_portal_travel();
         // Update server-side position and bounding box
         self.set_pos(position);
         if let Some(yaw) = yaw {

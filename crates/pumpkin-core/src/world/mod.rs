@@ -4073,6 +4073,7 @@ impl World {
 
     #[allow(clippy::too_many_lines)]
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        player.get_entity().invalidate_portal_travel();
         let last_pos = player.get_entity().last_pos.load();
         let death_dimension = ResourceLocation::from(player.world().dimension.minecraft_name);
         let death_location = BlockPos(Vector3::new(

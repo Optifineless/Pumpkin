@@ -175,6 +175,8 @@ impl PortalType {
                 }
             }
             Self::Nether => {
+                #[cfg(test)]
+                caller.get_entity().pause_portal_search_for_test().await;
                 let pos = caller.get_entity().pos.load();
                 let current_yaw = caller.get_entity().yaw.load();
                 let dimensions = caller.get_entity().entity_dimension.load();
@@ -208,32 +210,30 @@ impl PortalType {
                         source_portal_axis,
                     )
                     .await
-                };
+                }?;
 
-                let (final_pos, yaw) = exit_portal.map_or_else(
-                    || (approximate_exit_pos.0.to_f64(), None),
-                    |exit_portal| {
-                        let relative_offset = source_portal.map_or_else(
-                            || Vector3::new(0.5, 0.0, 0.0),
-                            |source| {
-                                let source_result = PortalSearchResult {
-                                    lower_corner: source.lower_corner,
-                                    axis: source.axis,
-                                    width: source.width,
-                                    height: source.height,
-                                };
-                                source_result.entity_pos_in_portal(pos, &dimensions)
-                            },
-                        );
-                        let target_pos =
-                            exit_portal.calculate_exit_position(relative_offset, &dimensions);
-                        let collision_free_pos =
-                            exit_portal.find_open_position(&dest_world, target_pos, &dimensions);
-                        let yaw = exit_portal
-                            .calculate_teleport_yaw(current_yaw, source_portal.map(|p| p.axis));
-                        (collision_free_pos, Some(yaw))
-                    },
-                );
+                // NetherPortalBlock.getExitPortal returns no transition if creation fails.
+                let (final_pos, yaw) = {
+                    let relative_offset = source_portal.map_or_else(
+                        || Vector3::new(0.5, 0.0, 0.0),
+                        |source| {
+                            let source_result = PortalSearchResult {
+                                lower_corner: source.lower_corner,
+                                axis: source.axis,
+                                width: source.width,
+                                height: source.height,
+                            };
+                            source_result.entity_pos_in_portal(pos, &dimensions)
+                        },
+                    );
+                    let target_pos =
+                        exit_portal.calculate_exit_position(relative_offset, &dimensions);
+                    let collision_free_pos =
+                        exit_portal.find_open_position(&dest_world, target_pos, &dimensions);
+                    let yaw = exit_portal
+                        .calculate_teleport_yaw(current_yaw, source_portal.map(|p| p.axis));
+                    (collision_free_pos, Some(yaw))
+                };
 
                 Some(TeleportTransition {
                     new_world: dest_world,
@@ -245,7 +245,8 @@ impl PortalType {
         }
     }
 
-    async fn create_nether_portal(
+    /// Loads creation chunks before scanning loaded terrain and building on the blocking pool.
+    pub(crate) async fn create_nether_portal(
         world: &Arc<World>,
         approximate_exit_pos: BlockPos,
         axis: HorizontalAxis,
@@ -264,14 +265,24 @@ impl PortalType {
                     .ok()?;
             }
         }
-        let (build_pos, axis, is_fallback) =
-            NetherPortal::find_safe_location(world, approximate_exit_pos, axis)?;
-        NetherPortal::build_portal_frame(world, build_pos, axis, is_fallback);
-        Some(PortalSearchResult {
-            lower_corner: build_pos,
-            axis,
-            width: 2,
-            height: 3,
+        let world = world.clone();
+        // PortalForcer.createPortal: only synchronous, loaded-chunk reads and writes below.
+        // Use Tokio's separate blocking pool: Rayon also runs the chunk decoding we awaited.
+        tokio::task::spawn_blocking(move || {
+            let (build_pos, axis, is_fallback) =
+                NetherPortal::find_safe_location(&world, approximate_exit_pos, axis)?;
+            NetherPortal::build_portal_frame(&world, build_pos, axis, is_fallback);
+            Some(PortalSearchResult {
+                lower_corner: build_pos,
+                axis,
+                width: 2,
+                height: 3,
+            })
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!("Portal creation task failed: {error}");
+            None
         })
     }
 }

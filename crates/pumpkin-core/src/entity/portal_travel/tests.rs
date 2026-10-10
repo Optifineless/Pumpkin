@@ -25,7 +25,7 @@ use pumpkin_world::{
 };
 
 use crate::{
-    entity::{Entity, death_test_world::DeathTestWorld},
+    entity::{Entity, EntityBase, death_test_world::DeathTestWorld},
     world::{
         World,
         portal::{PortalProcessor, PortalType, SourcePortalInfo},
@@ -34,14 +34,20 @@ use crate::{
 };
 
 // A separate process isolates the two-worker global pool and lets a deadlock fail by timeout.
-fn bounded_regression(name: &str, existing_portal: bool) {
+fn bounded_regression(name: &str, existing_portal: Option<bool>) {
     if std::env::var_os("PUMPKIN_PORTAL_DEADLOCK_CHILD").is_some() {
         let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
+            .worker_threads(if existing_portal.is_some() { 2 } else { 1 })
             .enable_all()
             .build()
             .unwrap();
-        runtime.block_on(portal_travel(existing_portal));
+        runtime.block_on(async {
+            if let Some(existing_portal) = existing_portal {
+                portal_travel(existing_portal).await;
+            } else {
+                portal_creation_yields().await;
+            }
+        });
         return;
     }
 
@@ -84,7 +90,7 @@ fn unloaded_existing_portal_does_not_block_world_tick() {
         )
         .strip_prefix("pumpkin_core::")
         .unwrap(),
-        true,
+        Some(true),
     );
 }
 
@@ -97,7 +103,7 @@ fn unloaded_new_portal_does_not_block_world_tick() {
         )
         .strip_prefix("pumpkin_core::")
         .unwrap(),
-        false,
+        Some(false),
     );
 }
 
@@ -237,7 +243,7 @@ async fn portal_travel(existing_portal: bool) {
     for entity in travelers {
         assert_eq!(
             entity.yaw.load(),
-            if existing_portal { -60.0 } else { 30.0 }
+            if existing_portal { 120.0 } else { 30.0 }
         );
         assert_eq!(
             entity.portal_cooldown.load(Relaxed),
@@ -246,7 +252,7 @@ async fn portal_travel(existing_portal: bool) {
     }
     assert_eq!(
         passenger.yaw.load(),
-        if existing_portal { -75.0 } else { 15.0 }
+        if existing_portal { 105.0 } else { 15.0 }
     );
     assert_eq!(
         passenger.portal_cooldown.load(Relaxed),
@@ -260,4 +266,170 @@ async fn portal_travel(existing_portal: bool) {
     assert_eq!(destination.get_block(&frame), &Block::NETHER_PORTAL);
     assert_eq!(destination.get_block(&frame.down()), &Block::OBSIDIAN);
     fixture.server.shutdown().await;
+}
+
+#[test]
+fn portal_creation_does_not_occupy_tokio_worker() {
+    bounded_regression(
+        concat!(
+            module_path!(),
+            "::portal_creation_does_not_occupy_tokio_worker"
+        )
+        .strip_prefix("pumpkin_core::")
+        .unwrap(),
+        None,
+    );
+}
+
+async fn portal_creation_yields() {
+    let fixture = DeathTestWorld::new().await;
+    let destination = fixture
+        .server
+        .get_world_from_dimension(&Dimension::THE_NETHER);
+    save_destination(&destination, false).await;
+    for x in -1..=1 {
+        for z in -1..=1 {
+            destination
+                .level
+                .get_or_fetch_chunk(Vector2::new(x, z), |_| ())
+                .await
+                .unwrap();
+        }
+    }
+    let (locked_tx, locked_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let held_world = destination.clone();
+    let blocker = std::thread::spawn(move || {
+        let _border = held_world.worldborder.lock().unwrap();
+        locked_tx.send(()).unwrap();
+        // A slow synchronous scan is emulated without making a failed test hang forever.
+        let _ = release_rx.recv_timeout(Duration::from_secs(2));
+    });
+    locked_rx.await.unwrap();
+    let start = Instant::now();
+    let world = destination.clone();
+    let creation = tokio::spawn(async move {
+        PortalType::create_nether_portal(&world, BlockPos::new(1, 80, 1), HorizontalAxis::Z).await
+    });
+    // On the one-worker runtime this timer cannot run if creation occupies the worker.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let elapsed = start.elapsed();
+    let _ = release_tx.send(());
+    blocker.join().unwrap();
+    let portal = creation.await.unwrap().unwrap();
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "Tokio worker stalled for {elapsed:?}"
+    );
+    assert_eq!(portal.lower_corner, BlockPos::new(1, 80, 0));
+    assert_eq!(
+        destination.get_block(&portal.lower_corner),
+        &Block::NETHER_PORTAL
+    );
+    fixture.server.shutdown().await;
+}
+
+#[derive(Clone, Copy)]
+enum Invalidation {
+    Removed,
+    Dead,
+    OtherWorld,
+    NewTeleport,
+    ReplacedLife,
+    DisconnectedPlayer,
+}
+
+async fn stale_portal_trip(invalidation: Invalidation) {
+    let fixture = DeathTestWorld::new().await;
+    let source = fixture.world();
+    let destination = fixture
+        .server
+        .get_world_from_dimension(&Dimension::THE_NETHER);
+    save_destination(&destination, true).await;
+    publish(&source, proto(&Biome::PLAINS, &Block::STONE));
+    let traveler: Arc<dyn EntityBase> = if matches!(invalidation, Invalidation::DisconnectedPlayer)
+    {
+        fixture.player("portal-traveler")
+    } else {
+        fixture.mob(&EntityType::COW)
+    };
+    let entity = traveler.get_entity();
+    entity.set_pos(Vector3::new(8.5, 80.0, 9.0));
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+    *entity.portal_travel.continuation_gate.lock().unwrap() = Some((ready_tx, resume_rx));
+    entity.teleport_through_portal(PortalType::Nether, destination.clone(), None);
+    tokio::time::timeout(Duration::from_secs(5), ready_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    // Destination resolution is still awaiting; mutate the entity before it returns.
+    match invalidation {
+        Invalidation::Removed => entity.remove(),
+        Invalidation::Dead => traveler.get_living_entity().unwrap().set_health(0.0),
+        Invalidation::OtherWorld => entity.set_world(destination.clone()),
+        Invalidation::NewTeleport => {
+            entity.teleport(Vector3::new(12.0, 81.0, 12.0), None, None, &source);
+        }
+        Invalidation::ReplacedLife => {
+            let living = traveler.get_living_entity().unwrap();
+            living.set_health(0.0);
+            living.reset_state();
+        }
+        Invalidation::DisconnectedPlayer => {
+            let player = source.get_player_by_id(entity.entity_id).unwrap();
+            source.remove_player(&player, false).await.unwrap();
+        }
+    }
+    let expected = entity.pos.load();
+    let cooldown = entity.portal_cooldown.load(Relaxed);
+    resume_tx.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while entity.portal_travel.state.lock().unwrap().pending {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(entity.pos.load(), expected, "stale trip changed position");
+    assert_eq!(
+        entity.portal_cooldown.load(Relaxed),
+        cooldown,
+        "stale trip changed cooldown"
+    );
+    assert!(
+        destination.get_entity_by_uuid(entity.entity_uuid).is_none(),
+        "stale trip resurrected the entity in the destination"
+    );
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removed_entity_is_not_teleported_after_portal_search() {
+    stale_portal_trip(Invalidation::Removed).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dead_entity_is_not_teleported_after_portal_search() {
+    stale_portal_trip(Invalidation::Dead).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn changed_world_invalidates_pending_portal_search() {
+    stale_portal_trip(Invalidation::OtherWorld).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn newer_teleport_invalidates_pending_portal_search() {
+    stale_portal_trip(Invalidation::NewTeleport).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn replaced_life_invalidates_pending_portal_search() {
+    stale_portal_trip(Invalidation::ReplacedLife).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn disconnected_player_is_not_resurrected_after_portal_search() {
+    stale_portal_trip(Invalidation::DisconnectedPlayer).await;
 }
