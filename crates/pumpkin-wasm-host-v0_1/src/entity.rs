@@ -300,10 +300,8 @@ impl HostEntity for PluginHostState {
         invulnerable: bool,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
-        entity
-            .get_entity()
-            .invulnerable
-            .store(invulnerable, std::sync::atomic::Ordering::Relaxed);
+        // Entity.setInvulnerable: the saved, permanent flag (players included).
+        entity.get_entity().set_invulnerable(invulnerable);
         Ok(())
     }
 
