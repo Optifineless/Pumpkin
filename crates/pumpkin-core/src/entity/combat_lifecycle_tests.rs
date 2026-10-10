@@ -259,7 +259,7 @@ async fn boss_effect_rejection_and_absorption_removal_run_the_shared_lifecycle()
     assert_eq!(living.absorption.load(), 6.0);
     living.add_effect(effect(&StatusEffect::ABSORPTION, 100, 0));
     living.set_absorption(0.0);
-    living.tick_effects();
+    living.tick_effects(&living);
     assert!(!living.has_effect(&StatusEffect::ABSORPTION));
 }
 
@@ -281,7 +281,7 @@ async fn periodic_damage_resurrection_cannot_publish_a_removed_hidden_effect() {
         .living_entity
         .add_effect(effect(&StatusEffect::WITHER, 1, 6));
     fixture.take_packets();
-    player.living_entity.tick_effects();
+    player.living_entity.tick_effects(player.as_ref());
     assert_eq!(player.living_entity.health.load(), 1.0);
     assert!(player.inventory.held_item().is_empty());
     assert!(!player.living_entity.has_effect(&StatusEffect::WITHER));
@@ -323,7 +323,7 @@ async fn periodic_damage_callback_refreshes_the_live_effect_before_decrement() {
                 .living_entity
                 .add_effect(effect(&StatusEffect::WITHER, 100, 6));
         });
-        player.living_entity.tick_effects();
+        player.living_entity.tick_effects(player.as_ref());
         assert_eq!(
             player
                 .living_entity

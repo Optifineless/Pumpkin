@@ -1844,7 +1844,13 @@ impl World {
                 let _guard = entity_handle.enter();
 
                 for (entity, entity_chunk) in batch {
-                    entity.get_entity().age.fetch_add(1, Relaxed);
+                    // Ageable mobs advance growth/cooldown in their species tick.
+                    if !entity.get_mob().is_some_and(|mob| {
+                        mob.as_ageable()
+                            .is_some_and(crate::entity::ageable::AgeableMob::can_be_a_baby)
+                    }) {
+                        entity.get_entity().age.fetch_add(1, Relaxed);
+                    }
                     entity.tick(entity.as_ref(), server_ref);
 
                     let entity_inner = entity.get_entity();

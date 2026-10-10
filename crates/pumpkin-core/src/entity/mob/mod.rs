@@ -56,6 +56,7 @@ pub mod giant;
 pub mod guardian;
 pub mod hoglin;
 pub mod illusioner;
+pub(crate) mod interaction;
 pub mod magma_cube;
 pub mod movement;
 pub mod neutral;
@@ -268,7 +269,7 @@ impl MobEntity {
     /// Vanilla `Mob.serverAiStep`: sensing, goals, navigation and controls.
     pub fn server_ai_step(&self, mob: &dyn Mob, caller: &dyn EntityBase) {
         self.living_entity.no_action_time.fetch_add(1, Relaxed);
-        let age = self.living_entity.entity.age.load(Relaxed);
+        let tick_count = self.ticks_lived.load(Relaxed);
         let entity_id = self.living_entity.entity.entity_id;
 
         self.sensing
@@ -293,7 +294,7 @@ impl MobEntity {
         };
 
         // 2. Perform AI logic
-        if (age + entity_id) % 2 != 0 && age > 1 {
+        if (tick_count + entity_id) % 2 != 0 && tick_count > 1 {
             target_selector.tick_goals(mob, false);
             goals_selector.tick_goals(mob, false);
         } else {
@@ -1263,6 +1264,16 @@ pub trait Mob: EntityBase + Send + Sync {
         self.get_mob_entity().mob_interact(player, item_stack)
     }
 
+    /// Carries the used hand to species whose callbacks must see the consumed item.
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        _hand: pumpkin_util::Hand,
+    ) -> bool {
+        self.mob_interact(player, item_stack)
+    }
+
     fn tame(&self, player: &Arc<Player>) {
         let mob = self.get_mob_entity();
         let mut event = crate::plugin::api::events::entity::entity_tame::EntityTameEvent::new(
@@ -1564,7 +1575,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         hand: pumpkin_util::Hand,
     ) -> bool {
         crate::entity::shearable::interact_with_hand(self, player, item_stack, hand)
-            .unwrap_or_else(|| self.mob_interact(player, item_stack))
+            .unwrap_or_else(|| self.mob_interact_with_hand(player, item_stack, hand))
     }
 
     fn interact_at_with_hand(
