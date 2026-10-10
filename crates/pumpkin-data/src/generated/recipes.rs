@@ -8,6 +8,19 @@ pub enum CraftingRecipeTypes {
         ingredients: &'static [RecipeIngredientTypes],
         result: RecipeResultStruct,
     },
+    FireworkStar {
+        shapes: &'static [(&'static str, RecipeIngredientTypes)],
+        trail: RecipeIngredientTypes,
+        twinkle: RecipeIngredientTypes,
+        fuel: RecipeIngredientTypes,
+        dye: RecipeIngredientTypes,
+        result: RecipeResultStruct,
+    },
+    FireworkStarFade {
+        target: RecipeIngredientTypes,
+        dye: RecipeIngredientTypes,
+        result: RecipeResultStruct,
+    },
     BookCloning {
         ingredients: &'static [RecipeIngredientTypes],
         allowed_generations: (u8, u8),
@@ -8452,6 +8465,41 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         result: RecipeResultStruct {
             id: "minecraft:firework_rocket",
             count: 3u8,
+            components: None,
+        },
+    },
+    CraftingRecipeTypes::FireworkStar {
+        shapes: &[
+            ("burst", RecipeIngredientTypes::Simple("minecraft:feather")),
+            (
+                "creeper",
+                RecipeIngredientTypes::Tagged("#minecraft:skulls"),
+            ),
+            (
+                "large_ball",
+                RecipeIngredientTypes::Simple("minecraft:fire_charge"),
+            ),
+            (
+                "star",
+                RecipeIngredientTypes::Simple("minecraft:gold_nugget"),
+            ),
+        ],
+        trail: RecipeIngredientTypes::Simple("minecraft:diamond"),
+        twinkle: RecipeIngredientTypes::Simple("minecraft:glowstone_dust"),
+        fuel: RecipeIngredientTypes::Simple("minecraft:gunpowder"),
+        dye: RecipeIngredientTypes::Tagged("#minecraft:dyes"),
+        result: RecipeResultStruct {
+            id: "minecraft:firework_star",
+            count: 1u8,
+            components: None,
+        },
+    },
+    CraftingRecipeTypes::FireworkStarFade {
+        target: RecipeIngredientTypes::Simple("minecraft:firework_star"),
+        dye: RecipeIngredientTypes::Tagged("#minecraft:dyes"),
+        result: RecipeResultStruct {
+            id: "minecraft:firework_star",
+            count: 1u8,
             components: None,
         },
     },

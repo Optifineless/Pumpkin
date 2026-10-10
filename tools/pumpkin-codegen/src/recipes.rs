@@ -50,9 +50,9 @@ pub enum RecipeTypes {
     #[serde(rename = "minecraft:crafting_special_firework_rocket")]
     CraftingSpecialFireworkRocket(SpecialRecipeStruct),
     #[serde(rename = "minecraft:crafting_special_firework_star")]
-    CraftingSpecialFireworkStar,
+    CraftingSpecialFireworkStar(FireworkStarRecipeStruct),
     #[serde(rename = "minecraft:crafting_special_firework_star_fade")]
-    CraftingSpecialFireworkStarFade,
+    CraftingSpecialFireworkStarFade(FireworkStarFadeRecipeStruct),
     #[serde(rename = "minecraft:crafting_special_mapextending")]
     CraftingSpecialMapExtending,
     #[serde(rename = "minecraft:crafting_special_repairitem")]
@@ -67,6 +67,70 @@ pub enum RecipeTypes {
     #[serde(other)]
     #[serde(rename = "minecraft:crafting_special_*")]
     CraftingSpecial,
+}
+
+/// Deserialized firework-star recipe inputs.
+#[derive(Deserialize)]
+pub struct FireworkStarRecipeStruct {
+    shapes: indexmap::IndexMap<String, RecipeIngredientTypes>,
+    trail: RecipeIngredientTypes,
+    twinkle: RecipeIngredientTypes,
+    fuel: RecipeIngredientTypes,
+    dye: RecipeIngredientTypes,
+    result: RecipeResultStruct,
+}
+
+impl ToTokens for FireworkStarRecipeStruct {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let shapes = self
+            .shapes
+            .iter()
+            .map(|(shape, ingredient)| {
+                let ingredient = ingredient.to_token_stream();
+                quote! { (#shape, #ingredient) }
+            })
+            .collect::<Vec<_>>();
+        let trail = self.trail.to_token_stream();
+        let twinkle = self.twinkle.to_token_stream();
+        let fuel = self.fuel.to_token_stream();
+        let dye = self.dye.to_token_stream();
+        let result = self.result.to_token_stream();
+
+        tokens.extend(quote! {
+            CraftingRecipeTypes::FireworkStar {
+                shapes: &[#(#shapes),*],
+                trail: #trail,
+                twinkle: #twinkle,
+                fuel: #fuel,
+                dye: #dye,
+                result: #result,
+            }
+        });
+    }
+}
+
+/// Deserialized firework-star fade recipe inputs.
+#[derive(Deserialize)]
+pub struct FireworkStarFadeRecipeStruct {
+    target: RecipeIngredientTypes,
+    dye: RecipeIngredientTypes,
+    result: RecipeResultStruct,
+}
+
+impl ToTokens for FireworkStarFadeRecipeStruct {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let target = self.target.to_token_stream();
+        let dye = self.dye.to_token_stream();
+        let result = self.result.to_token_stream();
+
+        tokens.extend(quote! {
+            CraftingRecipeTypes::FireworkStarFade {
+                target: #target,
+                dye: #dye,
+                result: #result,
+            }
+        });
+    }
 }
 
 /// Deserialized smithing table transform recipe.
@@ -652,13 +716,17 @@ pub fn build() -> TokenStream {
             RecipeTypes::CraftingSpecialFireworkRocket(recipe) => {
                 crafting_recipes.push(recipe.tokens("FireworkRocket"))
             }
+            RecipeTypes::CraftingSpecialFireworkStar(recipe) => {
+                crafting_recipes.push(recipe.to_token_stream())
+            }
+            RecipeTypes::CraftingSpecialFireworkStarFade(recipe) => {
+                crafting_recipes.push(recipe.to_token_stream())
+            }
             RecipeTypes::CraftingDye(recipe) => crafting_recipes.push(recipe.tokens("Dye")),
             RecipeTypes::CraftingSpecialRepairItem => {
                 crafting_recipes.push(quote! { CraftingRecipeTypes::RepairItem })
             }
             RecipeTypes::CraftingSpecial
-            | RecipeTypes::CraftingSpecialFireworkStar
-            | RecipeTypes::CraftingSpecialFireworkStarFade
             | RecipeTypes::CraftingSpecialMapExtending
             | RecipeTypes::CraftingSpecialShieldDecoration
             | RecipeTypes::CraftingImbue => {}
@@ -673,6 +741,8 @@ pub fn build() -> TokenStream {
         #[derive(Clone, Debug, Serialize)]
         pub enum CraftingRecipeTypes {
             FireworkRocket { ingredients: &'static [RecipeIngredientTypes], result: RecipeResultStruct },
+            FireworkStar { shapes: &'static [(&'static str, RecipeIngredientTypes)], trail: RecipeIngredientTypes, twinkle: RecipeIngredientTypes, fuel: RecipeIngredientTypes, dye: RecipeIngredientTypes, result: RecipeResultStruct },
+            FireworkStarFade { target: RecipeIngredientTypes, dye: RecipeIngredientTypes, result: RecipeResultStruct },
             BookCloning { ingredients: &'static [RecipeIngredientTypes], allowed_generations: (u8, u8), result: RecipeResultStruct },
             BannerDuplicate { ingredients: &'static [RecipeIngredientTypes], result: RecipeResultStruct },
             Dye { category: RecipeCategoryTypes, group: Option<&'static str>, ingredients: &'static [RecipeIngredientTypes], result: RecipeResultStruct },
@@ -952,5 +1022,12 @@ mod tests {
     #[test]
     fn test_build_recipes() {
         let _ = build();
+    }
+
+    #[test]
+    fn generates_firework_star_special_recipes() {
+        let generated = build().to_string();
+        assert!(generated.contains("CraftingRecipeTypes :: FireworkStar {"));
+        assert!(generated.contains("CraftingRecipeTypes :: FireworkStarFade {"));
     }
 }

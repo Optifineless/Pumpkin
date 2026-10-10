@@ -420,6 +420,8 @@ fn write_entry(
             | CraftingRecipeTypes::CraftingTransmute { .. }
             | CraftingRecipeTypes::CraftingSpecial
             | CraftingRecipeTypes::FireworkRocket { .. }
+            | CraftingRecipeTypes::FireworkStar { .. }
+            | CraftingRecipeTypes::FireworkStarFade { .. }
             | CraftingRecipeTypes::BookCloning { .. }
             | CraftingRecipeTypes::BannerDuplicate { .. }
             | CraftingRecipeTypes::Dye { .. }
@@ -514,6 +516,8 @@ impl ClientPacket for CRecipeBookAdd<'_> {
                 CraftingRecipeTypes::CraftingDecoratedPot { .. }
                 | CraftingRecipeTypes::CraftingSpecial
                 | CraftingRecipeTypes::FireworkRocket { .. }
+                | CraftingRecipeTypes::FireworkStar { .. }
+                | CraftingRecipeTypes::FireworkStarFade { .. }
                 | CraftingRecipeTypes::BookCloning { .. }
                 | CraftingRecipeTypes::BannerDuplicate { .. }
                 | CraftingRecipeTypes::RepairItem => (None, true),
