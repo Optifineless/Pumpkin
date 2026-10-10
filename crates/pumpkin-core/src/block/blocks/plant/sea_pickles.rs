@@ -1,95 +1,82 @@
 use crate::block::BlockIsReplacing;
 use crate::block::blocks::plant::PlantBlockBase;
-use crate::block::registry::BlockActionResult;
 use crate::block::{
-    BlockBehaviour, CanPlaceAtArgs, CanUpdateAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
-    PathComputationType, UseWithItemArgs,
+    BlockBehaviour, BonemealArgs, CanPlaceAtArgs, CanUpdateAtArgs, GetStateForNeighborUpdateArgs,
+    OnPlaceArgs, PathComputationType,
 };
 use crate::entity::EntityBase;
 use pumpkin_data::entity::EntityPose;
-use pumpkin_data::item::Item;
 use pumpkin_data::tag::Taggable;
-use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, tag};
+use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, fluid::Fluid, tag};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
-use pumpkin_world::world::BlockFlags;
+use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 use rand::RngExt;
 
 type SeaPickleProperties = pumpkin_data::block_properties::SeaPickleLikeProperties;
+// VoxelShape.java:222 (calculateFace) samples just inside the upper boundary.
+const UP_FACE_SAMPLE: f64 = 0.999_999_9;
 
 #[pumpkin_block("minecraft:sea_pickle")]
 pub struct SeaPickleBlock;
 
 impl BlockBehaviour for SeaPickleBlock {
-    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        {
-            if args.item_stack.item != &Item::BONE_MEAL
-                || !args
-                    .world
-                    .get_block(&args.position.down())
-                    .has_tag(&tag::Block::MINECRAFT_CORAL_BLOCKS)
-                || !SeaPickleProperties::from_state_id(args.world.get_block_state_id(args.position))
-                    .waterlogged
-            {
-                return BlockActionResult::Pass;
-            }
+    fn is_valid_bonemeal_target(&self, args: BonemealArgs<'_>) -> bool {
+        // SeaPickleBlock.isValidBonemealTarget requires water and living coral.
+        let properties = SeaPickleProperties::from_state_id(args.state_id);
+        properties.waterlogged
+            && args
+                .world
+                .get_block(&args.position.down())
+                .has_tag(&tag::Block::MINECRAFT_CORAL_BLOCKS)
+    }
 
-            //1:1 vanilla algorithm
-            //TODO use pumpkin random
-
-            //let mut j = 1;
-            let mut count = 0;
-            let base_x = args.position.0.x - 2;
-            let mut removed_z = 0;
-            for added_x in 0..5 {
-                for added_z in 0..1 {
-                    let temp_y = 2 + args.position.0.y - 1;
-                    for y in (temp_y - 2)..temp_y {
-                        //let mut lv2: BlockState;
-                        let lv = BlockPos::new(
-                            base_x + added_x,
-                            y,
-                            args.position.0.z - removed_z + added_z,
-                        );
-                        if &lv == args.position
-                            || rand::rng().random_range(0..6) != 0
-                            || !args.world.get_block(&lv).eq(&Block::WATER)
-                            || !args
-                                .world
-                                .get_block(&lv.down())
-                                .has_tag(&tag::Block::MINECRAFT_CORAL_BLOCKS)
-                        {
-                            continue;
-                        }
-                        let mut sea_pickle_prop = SeaPickleProperties::default(args.block);
-
-                        sea_pickle_prop.pickles = rand::rng().random_range(1..=4);
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+        // SeaPickleBlock.performBonemeal spreads only into water over living coral.
+        let mut z_span = 1;
+        let mut z_offset = 0;
+        for x in 0..5 {
+            for z in 0..z_span {
+                for y in (args.position.0.y - 1)..=(args.position.0.y) {
+                    let target = BlockPos::new(
+                        args.position.0.x - 2 + x,
+                        y,
+                        args.position.0.z - z_offset + z,
+                    );
+                    if target != *args.position
+                        && rand::rng().random_range(0..6) == 0
+                        && args.world.get_block(&target) == &Block::WATER
+                        && args
+                            .world
+                            .get_block(&target.down())
+                            .has_tag(&tag::Block::MINECRAFT_CORAL_BLOCKS)
+                    {
+                        let mut properties = SeaPickleProperties::default(args.block);
+                        properties.pickles = rand::rng().random_range(1..=4);
                         args.world.set_block_state(
-                            &lv,
-                            sea_pickle_prop.to_state_id(args.block),
+                            &target,
+                            properties.to_state_id(args.block),
                             BlockFlags::NOTIFY_ALL,
                         );
                     }
                 }
-                if count < 2 {
-                    //j += 2;
-                    removed_z += 1;
-                } else {
-                    //j -= 2;
-                    removed_z -= 1;
-                }
-                count += 1;
             }
-            let mut sea_pickle_prop = SeaPickleProperties::default(args.block);
-            sea_pickle_prop.pickles = 4;
-            args.world.set_block_state(
-                args.position,
-                sea_pickle_prop.to_state_id(args.block),
-                BlockFlags::NOTIFY_LISTENERS,
-            );
-
-            BlockActionResult::Consume
+            if x < 2 {
+                z_span += 2;
+                z_offset += 1;
+            } else {
+                z_span -= 2;
+                z_offset -= 1;
+            }
         }
+
+        let mut properties = SeaPickleProperties::from_state_id(args.state_id);
+        properties.pickles = 4;
+        args.world.set_block_state(
+            args.position,
+            properties.to_state_id(args.block),
+            BlockFlags::NOTIFY_LISTENERS,
+        );
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
@@ -109,8 +96,7 @@ impl BlockBehaviour for SeaPickleBlock {
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        let support_block = args.block_accessor.get_block_state(&args.position.down());
-        support_block.is_center_solid(BlockDirection::Up)
+        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
     }
 
     fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {
@@ -122,12 +108,20 @@ impl BlockBehaviour for SeaPickleBlock {
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        <Self as PlantBlockBase>::get_state_for_neighbor_update(
-            self,
-            args.world,
-            args.position,
-            args.state_id,
-        )
+        // SeaPickleBlock.updateShape checks survival before scheduling water.
+        if !<Self as PlantBlockBase>::can_place_at(self, args.world, args.position) {
+            return Block::AIR.default_state.id;
+        }
+        let properties = SeaPickleProperties::from_state_id(args.state_id);
+        if properties.waterlogged {
+            args.world.schedule_fluid_tick(
+                &Fluid::WATER,
+                *args.position,
+                Fluid::WATER.flow_speed as u8,
+                TickPriority::Normal,
+            );
+        }
+        args.state_id
     }
 
     fn is_pathfindable(&self, _state: &BlockState, _computation_type: PathComputationType) -> bool {
@@ -135,4 +129,17 @@ impl BlockBehaviour for SeaPickleBlock {
     }
 }
 
-impl PlantBlockBase for SeaPickleBlock {}
+impl PlantBlockBase for SeaPickleBlock {
+    fn can_plant_on_top(
+        &self,
+        block_accessor: &dyn pumpkin_world::world::BlockAccessor,
+        pos: &BlockPos,
+    ) -> bool {
+        // SeaPickleBlock.mayPlaceOn and VoxelShape.calculateFace sample the upper face.
+        let state = block_accessor.get_block_state(pos);
+        state.is_side_solid(BlockDirection::Up)
+            || state
+                .get_block_collision_shapes_at(pos)
+                .any(|shape| shape.min.y <= UP_FACE_SAMPLE && shape.max.y > UP_FACE_SAMPLE)
+    }
+}

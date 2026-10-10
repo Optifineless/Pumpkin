@@ -11,7 +11,10 @@ use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
 
-use crate::{block::blocks::plant::PlantBlockBase, world::World};
+use crate::{
+    block::{CanPlaceAtArgs, GetStateForNeighborUpdateArgs, blocks::plant::PlantBlockBase},
+    world::World,
+};
 
 type CropProperties = WheatLikeProperties;
 type FarmlandProperties = FarmlandLikeProperties;
@@ -26,7 +29,40 @@ pub mod sweet_berry_bush;
 pub mod torch_flower;
 pub mod wheat;
 
-trait CropBlockBase: PlantBlockBase {
+// CropBlock.java:143 (hasSufficientLight) and :73 (randomTick).
+const SURVIVAL_LIGHT: u8 = 8;
+const GROWTH_LIGHT: u8 = 9;
+
+/// Shares vanilla crop survival and growth behavior within the plant module.
+pub(super) trait CropBlockBase: PlantBlockBase {
+    /// Mirrors CropBlock.canSurvive and hasSufficientLight.
+    fn can_place_crop_at(&self, args: &CanPlaceAtArgs<'_>) -> bool {
+        args.world
+            .is_some_and(|world| self.can_survive_crop(world, args.block_accessor, args.position))
+    }
+
+    fn can_survive_crop(
+        &self,
+        world: &World,
+        block_accessor: &dyn BlockAccessor,
+        position: &BlockPos,
+    ) -> bool {
+        world.get_raw_brightness(position, 0) >= SURVIVAL_LIGHT
+            && self.can_plant_crop_on_top(block_accessor, &position.down())
+    }
+
+    fn get_state_for_crop_neighbor_update(
+        &self,
+        args: GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        // VegetationBlock.updateShape calls CropBlock.canSurvive on every update.
+        if self.can_survive_crop(args.world, args.world, args.position) {
+            args.state_id
+        } else {
+            Block::AIR.default_state.id
+        }
+    }
+
     // Deliberately NOT named `can_plant_on_top`: that would collide with the
     // `PlantBlockBase` method of the same name without overriding it, and
     // `PlantBlockBase`'s defaults would silently keep using the generic
@@ -74,11 +110,25 @@ trait CropBlockBase: PlantBlockBase {
     }
 
     fn random_tick(&self, world: &Arc<World>, pos: &BlockPos) {
+        self.random_tick_with_rng(world, pos, &mut rand::rng());
+    }
+
+    // CropBlock.randomTick receives its random source from the level.
+    fn random_tick_with_rng(
+        &self,
+        world: &Arc<World>,
+        pos: &BlockPos,
+        random: &mut impl rand::Rng,
+    ) {
+        // CropBlock.randomTick does not advance crops below raw brightness 9.
+        if world.get_raw_brightness(pos, 0) < GROWTH_LIGHT {
+            return;
+        }
         let (block, state) = world.get_block_and_state_id(pos);
         let age = self.get_age(state, block);
         if age < self.max_age() {
             let f = get_available_moisture(world, pos, block);
-            if rand::rng().random_range(0..=(25.0 / f).floor() as i64) == 0 {
+            if random.random_range(0..=(25.0 / f).floor() as i64) == 0 {
                 let new_state_id = self.state_with_age(block, state, age + 1);
                 if let Some(server) = world.server.upgrade() {
                     let mut event =
