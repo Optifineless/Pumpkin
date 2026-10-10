@@ -57,7 +57,21 @@ pub type PortalScanGate = (
 );
 
 #[cfg(test)]
+pub type PortalBlockingGate = (
+    tokio::sync::oneshot::Sender<()>,
+    std::sync::mpsc::Receiver<()>,
+);
+
+#[cfg(test)]
 impl super::World {
+    pub(crate) fn pause_portal_blocking_for_test(&self) {
+        let gate = self.portal_blocking_gate.lock().unwrap().take();
+        if let Some((ready, resume)) = gate {
+            let _ = ready.send(());
+            let _ = resume.recv();
+        }
+    }
+
     pub(crate) async fn pause_portal_scan_for_test(&self) {
         let gate = self.portal_scan_gate.lock().unwrap().take();
         if let Some((ready, resume)) = gate {

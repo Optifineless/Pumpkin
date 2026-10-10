@@ -18,7 +18,10 @@ mod residency;
 mod residency_tests;
 
 #[cfg(test)]
-pub(crate) use residency::PortalScanGate;
+mod cooldown_storage_tests;
+
+#[cfg(test)]
+pub(crate) use residency::{PortalBlockingGate, PortalScanGate};
 use residency::{PortalChunkResidency, ResidentPortal};
 
 pub use nether::{NetherPortal, PortalSearchResult};
@@ -284,6 +287,8 @@ impl PortalType {
         // Use Tokio's separate blocking pool: Rayon also runs the chunk decoding we awaited.
         tokio::task::spawn_blocking(move || {
             // A started blocking job outlives cancellation of the awaiting task.
+            #[cfg(test)]
+            world.pause_portal_blocking_for_test();
             let (build_pos, axis, is_fallback) =
                 NetherPortal::find_safe_location(&world, approximate_exit_pos, axis)?;
             NetherPortal::build_portal_frame(&world, build_pos, axis, is_fallback);

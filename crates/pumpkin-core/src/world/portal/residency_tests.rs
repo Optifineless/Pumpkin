@@ -111,16 +111,52 @@ fn enter_portal(fixture: &DeathTestWorld, target: BlockPos) -> Arc<Entity> {
 
 async fn await_arrival(entity: &Entity) {
     tokio::time::timeout(Duration::from_secs(20), async {
-        while entity
-            .portal_cooldown
-            .load(std::sync::atomic::Ordering::Relaxed)
-            == 0
-        {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+        while entity.portal_travel_pending_for_test() {
+            tokio::task::yield_now().await;
         }
     })
     .await
     .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn arrival_waits_for_transfer_completion_even_with_cooldown_set() {
+    use std::{future::Future, task::Poll};
+
+    let fixture = DeathTestWorld::new().await;
+    let destination = fixture
+        .server
+        .get_world_from_dimension(&Dimension::THE_NETHER);
+    save_destination(&destination, false).await;
+    let (ready, started) = tokio::sync::oneshot::channel();
+    let (resume, gate) = tokio::sync::oneshot::channel();
+    *destination.portal_scan_gate.lock().unwrap() = Some((ready, gate));
+    let entity = enter_portal(&fixture, BlockPos::new(1, 80, 1));
+    tokio::time::timeout(Duration::from_secs(20), started)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        entity
+            .portal_cooldown
+            .load(std::sync::atomic::Ordering::Relaxed)
+            > 0
+    );
+    assert!(Arc::ptr_eq(&entity.world.load_full(), &fixture.world()));
+    let mut arrival = Box::pin(await_arrival(&entity));
+    // A cooldown-based helper would report arrival immediately while resolution is gated.
+    std::future::poll_fn(|cx| {
+        assert!(
+            arrival.as_mut().poll(cx).is_pending(),
+            "cooldown is not arrival"
+        );
+        Poll::Ready(())
+    })
+    .await;
+    resume.send(()).unwrap();
+    arrival.await;
+    assert_eq!(entity.pos.load(), Vector3::new(1.0, 80.0, 1.5));
+    fixture.server.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -300,17 +336,15 @@ async fn portal_creation_retains_residency_until_cancelled_blocking_job_finishes
         .await
         .unwrap()
         .unwrap();
-    let (locked_tx, locked_rx) = tokio::sync::oneshot::channel();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
-    let world = destination.clone();
-    let blocker = std::thread::spawn(move || {
-        let _border = world.worldborder.lock().unwrap();
-        locked_tx.send(()).unwrap();
-        let _ = release_rx.recv_timeout(Duration::from_secs(2));
-    });
-    locked_rx.await.unwrap();
+    *destination.portal_blocking_gate.lock().unwrap() = Some((started_tx, release_rx));
     resume_tx.send(()).unwrap();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // The job owns residency before announcing this phase; no job-start timing assumption.
+    tokio::time::timeout(Duration::from_secs(20), started_rx)
+        .await
+        .unwrap()
+        .unwrap();
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
     let held = !destination
@@ -321,7 +355,6 @@ async fn portal_creation_retains_residency_until_cancelled_blocking_job_finishes
         .ticket
         .is_empty();
     release_tx.send(()).unwrap();
-    blocker.join().unwrap();
     tokio::time::timeout(Duration::from_secs(20), async {
         while !destination
             .level
@@ -331,7 +364,7 @@ async fn portal_creation_retains_residency_until_cancelled_blocking_job_finishes
             .ticket
             .is_empty()
         {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::task::yield_now().await;
         }
     })
     .await

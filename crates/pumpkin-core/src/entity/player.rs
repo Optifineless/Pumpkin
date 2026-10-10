@@ -1181,16 +1181,18 @@ impl Player {
     }
 
     pub fn clean_up_chunk_tickets(&self, level: &Arc<pumpkin_world::level::Level>) {
+        #[cfg(test)]
+        crate::world::chunker::ticket_tests::pause_cleanup(self);
+        // ChunkMap.move / DistanceManager ticket updates: match update_position's lock order.
+        let mut held = self
+            .held_chunk_tickets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut lock = level
             .chunk_loading
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let held = self
-            .held_chunk_tickets
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some((view_level, sim_level)) = held {
+        if let Some((view_level, sim_level)) = held.take() {
             let center = self.get_entity().chunk_pos.load();
             if let Some(view) = view_level {
                 lock.remove_ticket(center, view);
@@ -3572,11 +3574,6 @@ impl Player {
                 let Some(player) = current_world.remove_player(self, false).await else {
                     return false;
                 };
-                if portal.is_some() {
-                    self.get_entity().portal_cooldown.store(
-                        self.get_entity().default_portal_cooldown(), Ordering::Relaxed,
-                    );
-                }
                new_world.players.rcu(|current_list| {
                     let mut new_list = (**current_list).clone();
                     new_list.push(player.clone());

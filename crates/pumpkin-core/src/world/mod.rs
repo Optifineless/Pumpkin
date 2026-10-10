@@ -356,6 +356,8 @@ pub struct World {
     pub portal_poi: std::sync::Mutex<portal::PortalPoiStorage>,
     #[cfg(test)]
     pub(crate) portal_scan_gate: std::sync::Mutex<Option<portal::PortalScanGate>>,
+    #[cfg(test)]
+    pub(crate) portal_blocking_gate: std::sync::Mutex<Option<portal::PortalBlockingGate>>,
     /// Villager job sites and their current owners.
     pub villager_poi: std::sync::Mutex<villager_poi::VillagerPoiStorage>,
     /// Active raids in this world.
@@ -513,6 +515,8 @@ impl World {
             portal_poi: std::sync::Mutex::new(portal_poi),
             #[cfg(test)]
             portal_scan_gate: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            portal_blocking_gate: std::sync::Mutex::new(None),
             villager_poi: std::sync::Mutex::new(villager_poi::VillagerPoiStorage::default()),
             raids: std::sync::Mutex::new(raid::Raids::default()),
             dragon_fight,

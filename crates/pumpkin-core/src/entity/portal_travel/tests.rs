@@ -44,6 +44,10 @@ fn bounded_regression(name: &str, existing_portal: Option<bool>) {
         runtime.block_on(async {
             if let Some(existing_portal) = existing_portal {
                 portal_travel(existing_portal).await;
+            } else if name.ends_with("portal_poi_search_does_not_occupy_tokio_worker") {
+                portal_search_yields(false).await;
+            } else if name.ends_with("portal_validation_does_not_occupy_tokio_worker") {
+                portal_search_yields(true).await;
             } else {
                 portal_creation_yields().await;
             }
@@ -107,7 +111,7 @@ fn unloaded_new_portal_does_not_block_world_tick() {
     );
 }
 
-async fn save_destination(world: &World, existing_portal: bool) {
+pub(super) async fn save_destination(world: &World, existing_portal: bool) {
     let generator = WorldGenerator::Flat(Box::new(FlatGenerator::new(
         Seed(0),
         world.dimension.clone(),
@@ -328,6 +332,95 @@ async fn portal_creation_yields() {
         destination.get_block(&portal.lower_corner),
         &Block::NETHER_PORTAL
     );
+    fixture.server.shutdown().await;
+}
+
+#[test]
+fn portal_poi_search_does_not_occupy_tokio_worker() {
+    bounded_regression(
+        concat!(
+            module_path!(),
+            "::portal_poi_search_does_not_occupy_tokio_worker"
+        )
+        .strip_prefix("pumpkin_core::")
+        .unwrap(),
+        None,
+    );
+}
+
+#[test]
+fn portal_validation_does_not_occupy_tokio_worker() {
+    bounded_regression(
+        concat!(
+            module_path!(),
+            "::portal_validation_does_not_occupy_tokio_worker"
+        )
+        .strip_prefix("pumpkin_core::")
+        .unwrap(),
+        None,
+    );
+}
+
+async fn portal_search_yields(validation: bool) {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture
+        .server
+        .get_world_from_dimension(&Dimension::THE_NETHER);
+    save_destination(&world, true).await;
+    let (scan_ready, scan_started) = tokio::sync::oneshot::channel();
+    let (scan_resume, scan_gate) = tokio::sync::oneshot::channel();
+    if validation {
+        *world.portal_scan_gate.lock().unwrap() = Some((scan_ready, scan_gate));
+    }
+    let (ready, started) = tokio::sync::oneshot::channel();
+    let (resume, gate) = std::sync::mpsc::channel();
+    if validation {
+        // Arm validation only after the POI lookup and chunk awaits have finished.
+        let pending_world = world.clone();
+        tokio::spawn(async move {
+            scan_started.await.unwrap();
+            *pending_world.portal_blocking_gate.lock().unwrap() = Some((ready, gate));
+            scan_resume.send(()).unwrap();
+        });
+    } else {
+        *world.portal_blocking_gate.lock().unwrap() = Some((ready, gate));
+    }
+    let searching = world.clone();
+    let search = tokio::spawn(async move {
+        crate::world::portal::NetherPortal::search_for_portal(&searching, BlockPos::new(1, 80, 1))
+            .await
+    });
+    // A synchronous gate on this single-worker runtime would stall both delivery and timeout.
+    tokio::time::timeout(Duration::from_secs(5), started)
+        .await
+        .unwrap()
+        .unwrap();
+    let probe = tokio::spawn(async {});
+    let responded = tokio::time::timeout(Duration::from_secs(1), probe).await;
+    if validation {
+        search.abort();
+        assert!(search.await.unwrap_err().is_cancelled());
+        let held = !world.level.chunk_loading.lock().unwrap().ticket.is_empty();
+        resume.send(()).unwrap();
+        responded.unwrap().unwrap();
+        assert!(
+            held,
+            "cancelled validation released its still-running job's terrain"
+        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !world.level.chunk_loading.lock().unwrap().ticket.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        fixture.server.shutdown().await;
+        return;
+    }
+    resume.send(()).unwrap();
+    responded.unwrap().unwrap();
+    let portal = search.await.unwrap().unwrap();
+    assert_eq!(portal.lower_corner, BlockPos::new(1, 80, 1));
     fixture.server.shutdown().await;
 }
 

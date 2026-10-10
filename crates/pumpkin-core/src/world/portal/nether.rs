@@ -513,22 +513,28 @@ impl NetherPortal {
             world.dimension.minecraft_name,
             target_pos
         );
-        let min_y = world.min_y;
-        let max_y = min_y + world.dimension.height - 1;
-
         let search_radius = if world.dimension.has_ceiling {
             SEARCH_RADIUS_NETHER
         } else {
             SEARCH_RADIUS_OVERWORLD
         };
 
-        let portal_positions = {
-            let mut poi_storage = world
+        // PortalForcer.findClosestPortalPosition: POI region loading is synchronous IO.
+        let poi_world = world.clone();
+        let portal_positions = tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            poi_world.pause_portal_blocking_for_test();
+            let mut poi_storage = poi_world
                 .portal_poi
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             poi_storage.get_in_square(target_pos, search_radius, Some(poi::POI_TYPE_NETHER_PORTAL))
-        };
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!("Portal POI task failed: {error}");
+            Vec::new()
+        });
 
         let mut residency = PortalChunkResidency::new(world.level.clone());
         // NetherPortalBlock.getExitPortal inspects up to 21 portal blocks in either direction.
@@ -543,6 +549,34 @@ impl NetherPortal {
         residency.load().await?;
         #[cfg(test)]
         world.pause_portal_scan_for_test().await;
+
+        let world = world.clone();
+        tokio::task::spawn_blocking(move || {
+            // Keep terrain resident even if the awaiting trip is cancelled during validation.
+            #[cfg(test)]
+            world.pause_portal_blocking_for_test();
+            Self::find_portal_in_loaded_chunks(&world, target_pos, portal_positions).map(|portal| {
+                ResidentPortal {
+                    portal,
+                    _residency: residency,
+                }
+            })
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!("Portal search task failed: {error}");
+            None
+        })
+    }
+
+    // PortalForcer.findClosestPortalPosition validates loaded terrain before choosing a POI.
+    fn find_portal_in_loaded_chunks(
+        world: &Arc<World>,
+        target_pos: BlockPos,
+        portal_positions: Vec<BlockPos>,
+    ) -> Option<PortalSearchResult> {
+        let min_y = world.min_y;
+        let max_y = min_y + world.dimension.height - 1;
 
         let worldborder = world
             .worldborder
@@ -597,10 +631,7 @@ impl NetherPortal {
             }
         }
 
-        best.map(|(portal, _, _)| ResidentPortal {
-            portal,
-            _residency: residency,
-        })
+        best.map(|(portal, _, _)| portal)
     }
 
     #[allow(clippy::too_many_lines)]

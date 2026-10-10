@@ -94,9 +94,6 @@ impl PortalTravel {
                     return;
                 }
             } else {
-                entity
-                    .portal_cooldown
-                    .store(entity.default_portal_cooldown(), Relaxed);
                 self.entity.teleport(
                     transition.position,
                     transition.yaw,
@@ -127,6 +124,11 @@ impl Drop for PortalTravel {
 }
 
 impl Entity {
+    #[cfg(test)]
+    pub(crate) fn portal_travel_pending_for_test(&self) -> bool {
+        self.portal_travel.state.lock().unwrap().pending
+    }
+
     #[cfg(test)]
     pub(crate) async fn pause_portal_search_for_test(&self) {
         let gate = self
@@ -189,6 +191,10 @@ impl Entity {
         };
         let yaw = self.yaw.load();
 
+        // Entity.handlePortal sets cooldown before resolving even a null destination.
+        self.portal_cooldown
+            .store(self.default_portal_cooldown(), Relaxed);
+
         // Entity.handlePortal / teleport: resolve the exit before moving the entity and passengers.
         // Chunk decoding uses the tick's Rayon pool, so chunk waits must yield on Tokio.
         server.spawn_task(trip.teleport(portal_type, destination_world, source_portal, yaw));
@@ -197,3 +203,6 @@ impl Entity {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod review_tests;

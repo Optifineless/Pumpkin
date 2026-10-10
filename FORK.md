@@ -178,7 +178,8 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 =======
 =======
 =======
-| Portal chunk loading, including End platforms, awaits on Tokio; Nether creation uses a separate blocking pool with the full vanilla 16-block scan footprint held resident, stale arrivals are discarded, and changed portal axes rotate +90 degrees | Not yet |
+=======
+| Portal chunk loading, including End platforms, awaits on Tokio without losing ready notifications; player ticket cleanup follows movement's lock order, Nether POI search, validation and creation use the blocking pool with terrain held resident, failed or cancelled trips retain vanilla's cooldown, stale arrivals are discarded, and changed portal axes rotate +90 degrees | Not yet |
 | Hoppers keep their facing after a restart | Yes, 2026-10-07 |
 | Player saves clear legacy game-mode `Invulnerable:1b` while persisting explicit plugin entity invulnerability; loaded abilities are re-derived for the saved game mode, fire ignition applies the one-tick ability clamp, and invulnerable mobs keep their protection. Mirrors `Entity.load/saveWithoutId`, `ServerPlayer.readAdditionalSaveData`, `GameType.updatePlayerAbilities`, `Player.hurtServer`, `BaseFireBlock.fireIgnite` and `Player.setRemainingFireTicks` ([#130](https://github.com/Optifineless/Pumpkin/issues/130)) | Not yet |
 | Village ground uses biomes at the actual structure position, even across chunk borders; terrain shaping includes nearby chunks within vanilla's expanded bounds. Regression fixtures compare 24,064 surface columns (height and top two blocks) and 144,384 biome cells. Coverage stops before paths, buildings and decoration and does not check underground ancient-city shaping. The biome registry separately matches 67 captured vanilla network entries; this does not establish a colouring fix. | Not yet |
