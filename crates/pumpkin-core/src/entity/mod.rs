@@ -4158,9 +4158,7 @@ impl Entity {
         if let Some(on_ground) = nbt.get_bool("OnGround") {
             self.on_ground.store(on_ground, Relaxed);
         }
-        if let Some(invulnerable) = nbt.get_bool("Invulnerable") {
-            self.set_invulnerable(invulnerable);
-        }
+        self.read_invulnerability_nbt(nbt);
         if let Some(cooldown) = nbt.get_int("PortalCooldown") {
             self.portal_cooldown.store(cooldown as u32, Relaxed);
         }

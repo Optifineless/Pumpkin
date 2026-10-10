@@ -174,6 +174,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Change | Checked in-game |
 |:--|:--|
 | Hoppers keep their facing after a restart | Yes, 2026-10-07 |
+| Players with legacy `Invulnerable:1b` saves take mob and fall damage again after login; game-mode immunity uses abilities, and invulnerable mobs keep their protection ([#130](https://github.com/Optifineless/Pumpkin/issues/130)) | Not yet |
 | Village ground uses biomes at the actual structure position, even across chunk borders; terrain shaping includes nearby chunks within vanilla's expanded bounds. Regression fixtures compare 24,064 surface columns (height and top two blocks) and 144,384 biome cells. Coverage stops before paths, buildings and decoration and does not check underground ancient-city shaping. The biome registry separately matches 67 captured vanilla network entries; this does not establish a colouring fix. | Not yet |
 | Redstone torches burn out when toggled too fast | Yes, 2026-10-07 |
 | Sticky pistons pull back in every direction | Yes, 2026-10-07 |
@@ -206,6 +207,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Villagers remember nearby/summoned golems for 600 ticks, require recent sleep, and place summons on clear collider tops; killed creepers stop their fuse and living creepers defuse when targets die (volunteer play-test bugs 2) | Not yet |
 | Crafting Q/right-click keeps the whole output; exhausted crafter slots produce no remainders; mined shulker menus close; styled keys and processed maps survive saves (survival task 1 deep review 1–5) | Not yet |
 | Cartography drags/clones and repeated shift-clicks, bounded drag selection, occupied smithing input routing and occupied-hive bundle weight (survival task 1 deep review 6–10) | Not yet |
+| Ender Dragon respawn explosions run after the fight lock is released, and crystals destroyed while it is held are queued, so the respawn sequence no longer freezes the server (Singapore hang 2026-10-10, PR #122) | Not yet |
 
 - R2-01: syntax-error context budgets ten UTF-16 units on safe UTF-8 boundaries, including cursors inside a character. In-game verification: Not yet.
 - R2-02: implicit command targets follow the executing player through `execute as`; command positions follow the execution context, while permissions and feedback stay with the sender. In-game verification: Not yet.
@@ -332,7 +334,7 @@ Creeper power remains 3, or 6 when charged; `ServerExplosion.hurtEntities` (line
 - Paths turning into dirt lift occupants out of the added collision volume, including placement fallback. Mirrors `PathBlock.getStateForPlacement/turnToBaseBlock` and `Block.pushEntitiesUp`. Farmland still has a TODO rather than a separate push implementation; its owning lane can use the shared helper. In-game verification: **Not yet**.
 - Inserting an Ender Eye lifts occupants out of the eye's added collision volume before changing the frame. Mirrors `EnderEyeItem.useOn` and `Block.pushEntitiesUp`. In-game verification: **Not yet**.
 - Opening an End portal drops interior blocks and container contents before replacing them with portal blocks, retaining cancellable break events. A cancelled `BlockBreakEvent` leaves that interior cell unchanged and unfilled, unlike vanilla, which always places the portal block. Mirrors `EnderEyeItem.useOn`. In-game verification: **Not yet**.
-- Wither roses give Creative players the 40-tick Wither effect without damaging them, while permanent entity invulnerability and equipped-enchantment damage immunity still block the effect. Mirrors `WitherRoseBlock.entityInside`, `LivingEntity.isInvulnerableTo`, `Entity.isInvulnerableToBase`, and `Player.hurtServer`; mob-specific effect immunity comes from effect admission. Player NBT now saves permanent invulnerability separately from game-mode abilities; existing `Invulnerable:true` tags remain permanent, including tags saved by older fork builds in Creative/Spectator. In-game verification: **Not yet**.
+- Wither roses give Creative players the 40-tick Wither effect without damaging them, while permanent entity invulnerability and equipped-enchantment damage immunity still block the effect. Mirrors `WitherRoseBlock.entityInside`, `LivingEntity.isInvulnerableTo`, `Entity.isInvulnerableToBase`, and `Player.hurtServer`; mob-specific effect immunity comes from effect admission. Player NBT saves game-mode abilities separately; legacy player `Invulnerable:true` tags are cleared on load by the #130 hotfix above. Non-player tags remain permanent. In-game verification: **Not yet**.
 
 Living fall damage applies the `fall_damage_multiplier` attribute, including stalagmite landings. Mirrors `LivingEntity.calculateFallDamage`. In-game verification: **Not yet**.
 

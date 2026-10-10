@@ -360,6 +360,8 @@ pub struct World {
     pub raids: std::sync::Mutex<raid::Raids>,
     /// End Dragon fight manager (only present in `THE_END` dimension).
     pub dragon_fight: Option<std::sync::Mutex<dragon_fight::DragonFight>>,
+    /// Crystal notifications deferred by callbacks that re-enter the fight mutex.
+    pub(crate) pending_destroyed_crystals: crossbeam::queue::SegQueue<Uuid>,
     pub spawn_state: ArcSwap<SpawnState>,
     pub active_chunks: RwLock<FxHashSet<Vector2<i32>>>,
     active_chunk_tracker: std::sync::Mutex<ActiveChunkTracker>,
@@ -510,6 +512,7 @@ impl World {
             villager_poi: std::sync::Mutex::new(villager_poi::VillagerPoiStorage::default()),
             raids: std::sync::Mutex::new(raid::Raids::default()),
             dragon_fight,
+            pending_destroyed_crystals: crossbeam::queue::SegQueue::new(),
             spawn_state: ArcSwap::new(Arc::new(SpawnState::empty())),
             ticking_experience_orbs: arc_swap::ArcSwapOption::empty(),
             active_chunks: RwLock::new(FxHashSet::default()),
