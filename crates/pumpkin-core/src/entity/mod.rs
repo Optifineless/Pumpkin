@@ -1,4 +1,5 @@
 mod damage_motion;
+use damage_motion::push_collision_impulse;
 pub mod death_loot;
 #[cfg(test)]
 pub(crate) mod death_test_world;
@@ -664,19 +665,11 @@ pub trait EntityBase: Send + Sync + std::any::Any {
             dz *= 0.05;
 
             if !self_entity.has_passengers() && self.is_pushable() {
-                let mut vel = self_entity.velocity.load();
-                vel.x -= dx;
-                vel.z -= dz;
-                self_entity.velocity.store(vel);
-                self_entity.velocity_dirty.store(true, Ordering::SeqCst);
+                push_collision_impulse(self, Vector3::new(-dx, 0.0, -dz));
             }
 
             if !other_entity.has_passengers() && entity.is_pushable() {
-                let mut vel = other_entity.velocity.load();
-                vel.x += dx;
-                vel.z += dz;
-                other_entity.velocity.store(vel);
-                other_entity.velocity_dirty.store(true, Ordering::SeqCst);
+                push_collision_impulse(entity, Vector3::new(dx, 0.0, dz));
             }
         }
     }
@@ -1503,7 +1496,7 @@ impl Entity {
     }
 
     #[expect(clippy::float_cmp)]
-    fn adjust_movement_for_collisions(
+    pub(super) fn adjust_movement_for_collisions(
         &self,
         movement: Vector3<f64>,
         caller: &dyn EntityBase,
@@ -4217,6 +4210,10 @@ impl Entity {
 
 impl EntityBase for Entity {
     fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
+        let life = living::PlayerTickLife::capture(caller);
+        if !life.is_current() {
+            return;
+        }
         // Recomputed during movement/block-collision handling in the same tick.
         let was_in_powder_snow = self.is_in_powder_snow.load(Ordering::Relaxed);
         self.was_in_powder_snow
@@ -4225,8 +4222,17 @@ impl EntityBase for Entity {
 
         self.update_last_pos();
         self.tick_portal(caller);
+        if !life.is_current() {
+            return;
+        }
         self.update_fluid_state(caller);
+        if !life.is_current() {
+            return;
+        }
         self.check_out_of_world(caller);
+        if !life.is_current() {
+            return;
+        }
         let fire_ticks = self.fire_ticks.load(Ordering::Relaxed);
 
         // Check for fire immunity (or if the specific entity is)
@@ -4241,6 +4247,9 @@ impl EntityBase for Entity {
                 // lava deals its own damage.
                 if fire_ticks % 20 == 0 && !self.touching_lava.load(Ordering::SeqCst) {
                     caller.damage(caller, 1.0, DamageType::ON_FIRE);
+                    if !life.is_current() {
+                        return;
+                    }
                 }
 
                 self.fire_ticks.store(fire_ticks - 1, Ordering::Relaxed);

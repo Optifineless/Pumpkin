@@ -21,25 +21,28 @@ async fn enabled_weather_cycle_expires_a_timed_rain() -> Result<(), Box<dyn std:
     world.weather.lock().unwrap().rain_level = 0.5;
     player.take_packets();
     world.tick_environment();
-    let weather = world.weather.lock().unwrap();
-    assert_eq!(
-        (weather.data().rain_time, weather.data().raining),
-        (0, false)
-    );
-    drop(weather);
-    let game_event = pumpkin_data::packet::clientbound::play::GAME_EVENT.0;
-    let is_end_raining = |packet: &bytes::Bytes| {
-        let mut bytes = packet.as_ref();
-        let id = pumpkin_protocol::codec::var_int::VarInt::decode(&mut bytes)
-            .unwrap()
-            .0;
-        id == game_event && bytes.first() == Some(&(super::GameEvent::EndRaining as u8))
+    {
+        let weather = world.weather.lock().unwrap();
+        assert_eq!(
+            (weather.data().rain_time, weather.data().raining),
+            (0, false)
+        );
+        drop(weather);
+        let game_event = pumpkin_data::packet::clientbound::play::GAME_EVENT.0;
+        let is_end_raining = |packet: &bytes::Bytes| {
+            let mut bytes = packet.as_ref();
+            let id = pumpkin_protocol::codec::var_int::VarInt::decode(&mut bytes)
+                .unwrap()
+                .0;
+            id == game_event && bytes.first() == Some(&(super::GameEvent::EndRaining as u8))
+        };
+        assert!(!player.take_packets().iter().any(is_end_raining));
+        for _ in 0..30 {
+            world.tick_environment();
+        }
+        assert!(player.take_packets().iter().any(is_end_raining));
     };
-    assert!(!player.take_packets().iter().any(is_end_raining));
-    for _ in 0..30 {
-        world.tick_environment();
-    }
-    assert!(player.take_packets().iter().any(is_end_raining));
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -63,34 +66,37 @@ async fn disabled_weather_gamerule_preserves_timers_but_interpolates()
         .unwrap()
         .set_weather_parameters(&world, 0, 1, true, true);
     world.tick_environment();
-    let weather = world.weather.lock().unwrap();
-    assert_eq!(
-        (
-            weather.data().rain_time,
-            weather.data().raining,
-            weather.data().thunder_time,
-            weather.data().thundering
-        ),
-        (1, true, 1, true)
-    );
-    assert!(!weather.weather_cycle_enabled);
-    assert_eq!(weather.rain_level, 0.01);
-    assert_eq!(weather.thunder_level, 0.01);
-    drop(weather);
-    dispatcher
-        .execute_input("gamerule advance_weather true", &source)
-        .map_err(|error| format!("{error:?}"))?;
-    world.tick_environment();
-    let weather = world.weather.lock().unwrap();
-    assert_eq!(
-        (
-            weather.data().rain_time,
-            weather.data().raining,
-            weather.data().thunder_time,
-            weather.data().thundering
-        ),
-        (0, false, 0, false)
-    );
+    {
+        let weather = world.weather.lock().unwrap();
+        assert_eq!(
+            (
+                weather.data().rain_time,
+                weather.data().raining,
+                weather.data().thunder_time,
+                weather.data().thundering
+            ),
+            (1, true, 1, true)
+        );
+        assert!(!weather.weather_cycle_enabled);
+        assert_eq!(weather.rain_level, 0.01);
+        assert_eq!(weather.thunder_level, 0.01);
+        drop(weather);
+        dispatcher
+            .execute_input("gamerule advance_weather true", &source)
+            .map_err(|error| format!("{error:?}"))?;
+        world.tick_environment();
+        let weather = world.weather.lock().unwrap();
+        assert_eq!(
+            (
+                weather.data().rain_time,
+                weather.data().raining,
+                weather.data().thunder_time,
+                weather.data().thundering
+            ),
+            (0, false, 0, false)
+        );
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -110,18 +116,21 @@ async fn weather_command_duration_expires_through_environment_tick()
         .execute_input("weather rain 2t", &source)
         .map_err(|error| format!("{error:?}"))?;
     world.tick_environment();
-    let weather = world.weather.lock().unwrap();
-    assert_eq!(
-        (weather.data().rain_time, weather.data().raining),
-        (1, true)
-    );
-    drop(weather);
-    world.tick_environment();
-    let weather = world.weather.lock().unwrap();
-    assert_eq!(
-        (weather.data().rain_time, weather.data().raining),
-        (0, false)
-    );
+    {
+        let weather = world.weather.lock().unwrap();
+        assert_eq!(
+            (weather.data().rain_time, weather.data().raining),
+            (1, true)
+        );
+        drop(weather);
+        world.tick_environment();
+        let weather = world.weather.lock().unwrap();
+        assert_eq!(
+            (weather.data().rain_time, weather.data().raining),
+            (0, false)
+        );
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -144,7 +153,7 @@ fn dimension_world(
     path: &std::path::Path,
     dimension: pumpkin_data::dimension::Dimension,
 ) -> std::sync::Arc<super::World> {
-    std::sync::Arc::new(super::World::load(
+    let world = std::sync::Arc::new(super::World::load(
         pumpkin_world::level::Level::from_root_folder(
             &pumpkin_config::world::LevelConfig::default(),
             path.to_path_buf(),
@@ -155,7 +164,9 @@ fn dimension_world(
         dimension,
         server.block_registry.clone(),
         std::sync::Arc::downgrade(server),
-    ))
+    ));
+    crate::server::fixture_lifecycle::track_world(&world);
+    world
 }
 
 #[tokio::test]
@@ -182,22 +193,25 @@ async fn weather_restart_round_trip_preserves_active_duration_and_prepares_visua
     };
     let server = server(directory.path());
     let world = world(&server, directory.path());
-    let weather = world.weather.lock().unwrap();
-    let data = weather.data();
-    assert_eq!(
-        (
-            data.clear_weather_time,
-            data.rain_time,
-            data.thunder_time,
-            data.raining,
-            data.thundering
-        ),
-        (0, 121, 121, true, true)
-    );
-    assert_eq!((weather.rain_level, weather.thunder_level), (1.0, 1.0));
-    drop(weather);
-    world.tick_environment();
-    assert_eq!(world.weather.lock().unwrap().data().rain_time, 120);
+    {
+        let weather = world.weather.lock().unwrap();
+        let data = weather.data();
+        assert_eq!(
+            (
+                data.clear_weather_time,
+                data.rain_time,
+                data.thunder_time,
+                data.raining,
+                data.thundering
+            ),
+            (0, 121, 121, true, true)
+        );
+        assert_eq!((weather.rain_level, weather.thunder_level), (1.0, 1.0));
+        drop(weather);
+        world.tick_environment();
+        assert_eq!(world.weather.lock().unwrap().data().rain_time, 120);
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -250,6 +264,7 @@ async fn excluded_dimensions_do_not_advance_shared_weather_or_visuals_and_nether
     assert!(game_events(end_player.take_packets()).is_empty());
     overworld.tick_environment();
     assert_eq!(nether.weather.lock().unwrap().data().rain_time, 99);
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -306,6 +321,7 @@ async fn weather_commands_send_only_tick_ordered_level_and_transition_packets_wi
         );
         assert!((events[0].1 - 0.2).abs() < 0.00001);
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -378,5 +394,6 @@ async fn sleep_resets_only_visual_rain_after_weather_tick_and_before_time_tick()
             (41, 0, 0, false, false)
         );
     };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }

@@ -82,6 +82,7 @@ async fn vanilla_map_index_survives_real_server_restart_without_replacing_map_ze
         assert_eq!(reconciled.next_map_id(), 20);
         reconciled.shutdown().await;
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -111,6 +112,7 @@ async fn archived_maximum_map_id_is_not_reused_after_restart() {
         17
     );
     assert_eq!(fs::read(archived).unwrap(), MAP);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -127,6 +129,7 @@ async fn map_cache_misses_load_and_unchanged_maps_are_not_rewritten() {
     manager.save(dir.path(), 5000).await.unwrap();
     assert_eq!(fs::read(&path).unwrap(), MAP);
     assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), before);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -165,6 +168,7 @@ async fn map_mutation_during_save_remains_dirty_for_the_next_save() {
             .colors[0],
         231
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -178,6 +182,7 @@ async fn shutdown_drains_requested_legacy_maps_and_migrates_them() {
     assert!(dir.path().join("data/minecraft/maps/last_id.dat").exists());
     let imported = server.map_manager.get_map(0).unwrap();
     assert_eq!(imported.lock().unwrap().colors[0], 231);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -221,6 +226,7 @@ async fn shutdown_waits_for_in_flight_map_writes_and_saves_later_mutations() {
             .colors[0],
         231
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -232,31 +238,34 @@ async fn saved_banner_and_frame_markers_rebuild_named_packet_decorations() {
     import(dir.path(), false);
     let manager = MapManager::load(dir.path()).unwrap();
     let map = manager.load_map(0).await.unwrap();
-    let map = map.lock().unwrap();
-    assert_eq!(map.decorations.len(), 2);
-    let banner = &map.decorations[0];
-    assert_eq!(
-        (banner.icon_type, banner.x, banner.z, banner.direction),
-        (MapDecorationType::BANNER_RED.id as i32, 20, -19, 8)
-    );
-    assert_eq!(
-        banner.display_name,
-        Some(pumpkin_util::text::TextComponent::text("Home").bold())
-    );
-    let frame = &map.decorations[1];
-    assert_eq!(
-        (frame.icon_type, frame.x, frame.z, frame.direction),
-        (MapDecorationType::FRAME.id as i32, -23, 28, 4)
-    );
-    let mut bytes = Vec::new();
-    MapIcon::new(
-        VarInt(frame.icon_type),
-        frame.x,
-        frame.z,
-        frame.direction,
-        frame.display_name.clone(),
-    )
-    .write_with_version(&mut bytes, &JavaMinecraftVersion::V_26_3)
-    .unwrap();
-    assert_eq!(bytes, [1, 233, 28, 4, 0]);
+    {
+        let map = map.lock().unwrap();
+        assert_eq!(map.decorations.len(), 2);
+        let banner = &map.decorations[0];
+        assert_eq!(
+            (banner.icon_type, banner.x, banner.z, banner.direction),
+            (MapDecorationType::BANNER_RED.id as i32, 20, -19, 8)
+        );
+        assert_eq!(
+            banner.display_name,
+            Some(pumpkin_util::text::TextComponent::text("Home").bold())
+        );
+        let frame = &map.decorations[1];
+        assert_eq!(
+            (frame.icon_type, frame.x, frame.z, frame.direction),
+            (MapDecorationType::FRAME.id as i32, -23, 28, 4)
+        );
+        let mut bytes = Vec::new();
+        MapIcon::new(
+            VarInt(frame.icon_type),
+            frame.x,
+            frame.z,
+            frame.direction,
+            frame.display_name.clone(),
+        )
+        .write_with_version(&mut bytes, &JavaMinecraftVersion::V_26_3)
+        .unwrap();
+        assert_eq!(bytes, [1, 233, 28, 4, 0]);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }

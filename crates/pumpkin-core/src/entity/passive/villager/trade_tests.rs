@@ -110,6 +110,7 @@ async fn successful_trade_player_click_returns_and_preserves_payment() {
     assert_eq!(villager.offers.lock().unwrap()[0].uses, 1);
     assert_eq!(villager.xp.load(Ordering::Relaxed), 2);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -144,6 +145,7 @@ async fn only_assigned_job_sites_restock_and_respect_the_second_restock_cooldown
     assert_eq!(villager.offers.lock().unwrap()[0].uses, 12);
     assert_eq!(villager.restocks_today.load(Ordering::Relaxed), 2);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -169,4 +171,5 @@ async fn pending_job_site_does_not_consume_work_start_cooldown() {
         assert_eq!(villager.last_worked_at_poi.load(Ordering::Relaxed), 0);
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

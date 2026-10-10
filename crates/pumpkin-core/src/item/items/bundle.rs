@@ -168,6 +168,7 @@ mod tests {
                 .is_empty()
         );
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -256,5 +257,6 @@ mod tests {
             assert_eq!(used(), 2);
         }
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

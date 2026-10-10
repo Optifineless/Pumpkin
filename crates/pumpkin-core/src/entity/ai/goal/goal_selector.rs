@@ -230,5 +230,6 @@ mod spawn_tests {
             }
         }
         fixture.finish().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

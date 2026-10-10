@@ -1,5 +1,7 @@
 #[cfg(test)]
 pub(crate) mod combat_test_support;
+#[cfg(test)]
+pub(crate) mod fixture_lifecycle;
 mod map_storage;
 #[cfg(test)]
 mod startup_tests;

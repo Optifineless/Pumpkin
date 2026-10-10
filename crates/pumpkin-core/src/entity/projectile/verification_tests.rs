@@ -60,11 +60,13 @@ fn pearl_impact_uses_previous_tick_position(ceiling: bool) {
 #[tokio::test]
 async fn verification_pearl_wall_impact_uses_previous_tick_position() {
     pearl_impact_uses_previous_tick_position(false);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
 async fn verification_pearl_ceiling_impact_uses_previous_tick_position() {
     pearl_impact_uses_previous_tick_position(true);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 fn remaining_projectile_base_tick(kind: &'static EntityType) {
@@ -116,16 +118,19 @@ fn remaining_projectile_base_tick(kind: &'static EntityType) {
 #[tokio::test]
 async fn verification_shulker_bullet_runs_base_tick() {
     remaining_projectile_base_tick(&EntityType::SHULKER_BULLET);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
 async fn verification_firework_runs_base_tick() {
     remaining_projectile_base_tick(&EntityType::FIREWORK_ROCKET);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
 async fn verification_fishing_hook_runs_base_tick() {
     remaining_projectile_base_tick(&EntityType::FISHING_BOBBER);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct TransitingProjectile {
@@ -188,6 +193,7 @@ async fn verification_projectile_skips_stale_hit_after_base_tick_dimension_chang
         server.block_registry.clone(),
         Arc::downgrade(&server),
     ));
+    crate::server::fixture_lifecycle::track_world(&destination);
     let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
     chunk.set_block_absolute_y(8, 64, 8, Block::STONE.default_state.id);
     source.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
@@ -223,6 +229,7 @@ async fn verification_projectile_skips_stale_hit_after_base_tick_dimension_chang
         projectile.get_entity().pos.load(),
         Vector3::new(8.5, 70.0, 8.5)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -251,6 +258,7 @@ async fn verification_shift_overflow_instant_health_lowers_live_health() {
         true,
     );
     assert_eq!(target.health.load(), 0.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -294,6 +302,7 @@ async fn verification_dense_dead_owner_projectiles_scan_once_per_tick() {
         lookups, 512,
         "256 dead-owner projectiles, 64 requests each, two ticks"
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -353,4 +362,5 @@ async fn verification_missing_owner_cache_retries_after_tick_owner_reload_and_wo
         arrow.projectile_owner().unwrap().get_entity().entity_id,
         destination_owner.entity.entity_id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

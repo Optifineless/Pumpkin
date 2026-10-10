@@ -48,6 +48,7 @@ async fn review_offhand_xp_bottle_preserves_mainhand_sword() {
     assert!(fixture.player.inventory().held_item().are_equal(&sword));
     assert_eq!(fixture.player.inventory().off_hand_item().item_count, 1);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 async fn check_both_hands(item: &'static Item) {
@@ -148,6 +149,7 @@ async fn review_raising_shield_does_not_increment_used_stat() {
         0
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -200,6 +202,7 @@ async fn review_one_click_fills_one_bottle() {
         crate::block::registry::BlockActionResult::Pass
     ));
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[test]
@@ -277,4 +280,5 @@ async fn review_shearing_unsmoked_hive_releases_angry_bees() {
             .is_some()
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }

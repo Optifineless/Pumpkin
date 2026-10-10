@@ -94,6 +94,7 @@ async fn malformed_unicode_msg_reports_error_without_panicking() -> TestResult {
             &SChatCommand { command },
         )
         .await;
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -117,6 +118,7 @@ async fn execute_as_implicit_clear_targets_executing_entity() -> TestResult {
             assert!(fixture.bob.player.inventory.held_item().is_empty());
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -148,6 +150,7 @@ async fn execute_as_implicit_gamemode_matches_self_selector() -> TestResult {
             );
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -173,6 +176,7 @@ async fn execute_as_implicit_spawnpoint_matches_self_selector() -> TestResult {
             );
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -206,6 +210,7 @@ async fn execute_as_implicit_transfer_matches_self_selector() -> TestResult {
             );
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -230,6 +235,7 @@ async fn execute_as_implicit_spectate_matches_self_selector() -> TestResult {
             assert_eq!(fixture.bob.player.camera_target_id.load(), None);
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -275,6 +281,7 @@ async fn execute_as_implicit_playsound_matches_self_selector() -> TestResult {
             );
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -304,6 +311,7 @@ async fn execute_run_respects_disabled_command_configuration() -> TestResult {
             .iter()
             .all(|entry| entry.suggestion != "gamemode")
     );
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -374,6 +382,7 @@ async fn execute_as_raid_uses_executing_player_and_source_position() -> TestResu
         entities.last().unwrap().get_entity().pos.load(),
         source.position
     );
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 

@@ -303,5 +303,6 @@ mod tests {
         living.apply_death_teleport(&living, 0.0, false);
         assert_eq!(living.fall_distance.load(), 0.0);
         assert_eq!(living.impulse.effective_fall_distance(10.0, 60.0), 10.0);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

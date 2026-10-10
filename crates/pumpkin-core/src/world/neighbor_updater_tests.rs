@@ -36,13 +36,15 @@ fn probe_world(
     let original = fixture.world();
     let mut registry = crate::block::registry::BlockRegistry::default();
     registry.register(Probe { neighbor, shape });
-    Arc::new(World::load(
+    let world = Arc::new(World::load(
         original.level.clone(),
         original.level_info.clone(),
         original.dimension.clone(),
         Arc::new(registry),
         Arc::downgrade(&fixture.server),
-    ))
+    ));
+    crate::server::fixture_lifecycle::track_world(&world);
+    world
 }
 fn unchanged(args: &GetStateForNeighborUpdateArgs<'_>) -> BlockStateId {
     args.state_id
@@ -92,6 +94,7 @@ async fn neighbor_multi_update_counts_once_and_resumes_depth_first() {
     expected.insert(1, child);
     assert_eq!(*seen.lock().unwrap(), expected);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -119,6 +122,7 @@ async fn neighbor_budgets_are_per_world() {
     source.update_neighbor(&pos, &Block::STONE);
     assert_eq!(count.load(Ordering::Relaxed), 1);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -159,6 +163,7 @@ async fn shape_update_uses_enqueued_neighbor_state() {
     world.update_neighbor(&trigger, &Block::STONE);
     assert_eq!(*captured.lock().unwrap(), [Block::STONE.default_state.id]);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -188,6 +193,7 @@ async fn cascade_panic_cleanup_allows_next_update() {
     world.update_neighbor(&pos, &Block::STONE);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -210,6 +216,7 @@ async fn deep_neighbor_cascade_does_not_overflow() {
     world.update_neighbor(&pos, &Block::STONE);
     assert_eq!(calls.load(Ordering::Relaxed), 20_001);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -230,6 +237,7 @@ async fn zero_neighbor_budget_suppresses_callbacks() {
     world.update_neighbors_at(&pos, &Block::STONE, None);
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -261,4 +269,5 @@ async fn shape_update_limit_stops_replacement_propagation() {
     assert_eq!(world.get_block(&pos), &Block::DIRT);
     assert_eq!(count.load(Ordering::Relaxed), 1);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

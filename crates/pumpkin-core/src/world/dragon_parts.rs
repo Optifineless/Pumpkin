@@ -24,7 +24,7 @@ impl World {
         }
     }
 
-    pub(super) fn stop_tracking_dragon_parts(&self, entity: &dyn EntityBase) {
+    pub(crate) fn stop_tracking_dragon_parts(&self, entity: &dyn EntityBase) {
         // ServerLevel.EntityCallbacks.onTrackingEnd, including chunk unloads.
         if let Some(dragon) = entity.cast_any().downcast_ref::<EnderDragonEntity>() {
             for part in &dragon.parts {

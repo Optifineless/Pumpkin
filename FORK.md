@@ -198,6 +198,8 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Dust removed by water or explosions updates neighbours | Not yet |
 | Incoming damage follows difficulty, PvP and team rules; callbacks release combat ownership; cooldown excess, shield responses and melee/spear motion and statistics follow vanilla; instant healing and harming invert for undead mobs (combat task 1, related upstream PRs #3637, #3544 and #3525) | Not yet |
 | Shields respect piercing shots, cooldowns and hand changes; death protectors use their configured effects (combat task 2 review follow-up, related to #3520) | Not yet |
+| Combat play-test bugs 1: all attack goals retain the living attacker for shield disabling; owned horizontal pushes and minecart collisions cannot replay a player's upward hurt motion; stored player motion advances through travel and collisions; arrow Punch shares one final tracking delivery; respawn remains unavailable until restored and positioned, and resends the complete inventory. Skeleton approach and bow strafing speed match the existing movement port (related to #3520, #1404 and #3468; mirrors `LivingEntity.pushEntities`, `AbstractMinecart.push`, `ServerEntity.sendChanges`, `PlayerList.respawn` and `ServerPlayer.restoreFrom`). | Not yet |
+| Combat PR #3 review: cross-world respawn removes source tracking and viewer entries even while the player is hidden; disconnect aborts respawn publication; hunger is restored before callbacks and their changes survive; riders do not accumulate falling motion; cramming, input and command callbacks cannot continue an old life after respawn (`PlayerList.respawn`, `ChunkMap.applyChunkTrackingView`, `Entity.rideTick` / `LivingEntity.rideTick`, `LivingEntity.pushEntities` and `ServerGamePacketListenerImpl.tryHandleChat`). | Not yet |
 | Disconnect counts games quit once and keeps the saved statistic consistent with plugin changes and the scoreboard | Not yet |
 | Projectile and TNT owners persist by UUID; explosions, fireworks, splash potions and lingering clouds follow 26.3 damage and timing rules (combat task 4) | Not yet |
 | Hand use consumes jukebox discs, compost and snow layers; off-hand buckets, milk, books, signs, pots, honey and consumable remainders keep their source hand and success rules (survival audit 1, 4, 16–18, 42, 44–46, 51–52, 55; overlaps upstream #3849) | Not yet |
@@ -235,6 +237,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 - API 8 (same version): the shared text decoder retains translated names with fallback and typed numeric arguments in `TextContent::Translatable`. Item names and entity reload use the same lossless decoder; server text uses vanilla fallback precedence and substitutions. Rebuild native plugins for the enum layout. Translated-name anvil repairs, entity reload and equivalent lock encodings: in-game verification **Not yet**.
 
 - API 8 (same version): survival task 1 second review adds opaque text contents, vanilla custom-name equality, dye recipe metadata, a menu tick hook, a disk-backed map cache and MapIndex allocation; map decoration names retain components. Rebuild native plugins for the changed enum, vtable and layouts. Map imports/restarts, whole cartography/stonecutter results, named map markers, hive occupant transfer and transmute/dye displays: in-game verification **Not yet**.
+- API 8 (same version), combat PR #3: `LivingEntity` gains respawn availability and world-transfer state, `Player` gains chunk-tracking state, and `CalculatedRespawnPoint` retains its destination world. The additive `entity::living::suspend_damage` bridge releases local combat scopes and reacquires them on drop; continuations must revalidate their captured life. Native plugins must rebuild; event payloads and Wasm WIT are unchanged. Respawn visibility, restoration, teardown and destination selection mirror `PlayerList.respawn`, `ServerPlayer.restoreFrom`, `ServerPlayer.findRespawnPositionAndUseSpawnBlock` and `ChunkMap.applyChunkTrackingView`; owned player motion and collision delivery mirror `LivingEntity.pushEntities`, `AbstractMinecart.push` and `ServerEntity.sendChanges`; rider motion mirrors `Entity.rideTick` / `LivingEntity.rideTick`; command continuation checks mirror `ServerGamePacketListenerImpl.tryHandleChat`. In-game verification: **Not yet**.
 
 Rebuild native plugins against this checkout. The Wasm WIT is unchanged throughout.
 
@@ -331,3 +334,28 @@ Creeper power remains 3, or 6 when charged; `ServerExplosion.hurtEntities` (line
 - Wither roses give Creative players the 40-tick Wither effect without damaging them, while permanent entity invulnerability and equipped-enchantment damage immunity still block the effect. Mirrors `WitherRoseBlock.entityInside`, `LivingEntity.isInvulnerableTo`, `Entity.isInvulnerableToBase`, and `Player.hurtServer`; mob-specific effect immunity comes from effect admission. Player NBT now saves permanent invulnerability separately from game-mode abilities; existing `Invulnerable:true` tags remain permanent, including tags saved by older fork builds in Creative/Spectator. In-game verification: **Not yet**.
 
 Living fall damage applies the `fall_damage_multiplier` attribute, including stalagmite landings. Mirrors `LivingEntity.calculateFallDamage`. In-game verification: **Not yet**.
+Combat PR #3 follow-up 4: respawn detaches from the player's live world after spawn callbacks;
+world transfers commit membership and world together and respawn waits until that commit finishes.
+Movement and chunk teardown share an atomic view claim; pending watcher changes finish before
+unwatching. `SuspendedDamage` guards must be dropped before outer damage tokens; an orphaned
+suspended scope is discarded. Java commands recheck their captured life immediately before
+dispatch, but command execution is not serialised with respawn on a main thread as in vanilla
+`ServerGamePacketListenerImpl.tryHandleChat`. A concurrent respawn after that final check can
+still interleave with command execution. In-game verification: **Not yet**.
+
+Combat PR #3 follow-up 5: ticket cleanup uses movement's lock order, and the chunker's own combat
+guard follows the entity-tracker walk and rechecks the chunk-view commit as in
+`ChunkMap.applyChunkTrackingView`. Respawn retains the world that supplied its position as in
+`ServerPlayer.findRespawnPositionAndUseSpawnBlock` / `PlayerList.respawn`, so a spawn callback
+teleport to another overworld still requires world teardown and transfer. Findings 3 and 4 from
+the follow-up 4 review remain documented there. In-game verification: **Not yet**.
+
+Combat PR #3 behavior: respawn restores hunger before callbacks and keeps their changes; living
+world transfers retain hunger. Restoring players stay hidden from tick, pickup and management
+lookups until publication. Java and Bedrock commands release sender ownership, and both Wasm
+command hosts suspend it across guest execution. Input and command continuations discard an
+old life. Passenger motion clears velocity and fall distance; Pumpkin's client-authoritative
+rider omits vanilla's one-tick travel remainder. Movement releases combat ownership during
+landing callbacks and chunk tracking, then rechecks its captured life before continuing
+(`Entity.checkFallDamage`, `ServerGamePacketListenerImpl.handleMovePlayer`, `ChunkMap.move`).
+In-game verification: **Not yet**.

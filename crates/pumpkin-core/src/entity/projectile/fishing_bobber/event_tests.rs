@@ -72,6 +72,7 @@ async fn fishing_cancelled_failed_attempt_preserves_nibble_timers_and_biting() {
         .entity
         .set_synced_data(tracked_data::fishing_bobber::DATA_BITING, true);
     assert!(!bobber.entity.synched_data.is_dirty());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -104,6 +105,7 @@ async fn fishing_cancelled_bite_skips_nibble_metadata_kick_sound_and_particles()
         [1]
     );
     assert!(owner.take_packets().is_empty());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -153,4 +155,5 @@ async fn fishing_cancelled_caught_entity_skips_pull_status_durability_and_remova
         id != pumpkin_data::packet::clientbound::play::ENTITY_EVENT.0
             && id != pumpkin_data::packet::clientbound::play::SOUND.0
     }));
+    crate::server::fixture_lifecycle::finish().await;
 }

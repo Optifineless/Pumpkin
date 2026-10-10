@@ -69,6 +69,7 @@ async fn orchestration_review_absorption_granted_by_a_callback_is_consumed_from_
         ),
         60
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -106,10 +107,11 @@ async fn orchestration_review_excess_is_not_counted_twice_across_health_statisti
     assert!(victim.damage(victim.as_ref(), 10.0, DamageType::PLAYER_ATTACK));
     assert_eq!(victim.living_entity.health.load(), 8.0);
     assert_eq!(victim.living_entity.last_damage_taken.load(), 12.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn orchestration_review_excess_sprint_knockback_is_sent_by_normal_tracking() {
+async fn orchestration_review_excess_sprint_knockback_is_sent_only_to_observers() {
     use crate::entity::EntityBase;
     use pumpkin_data::{attributes::Attributes, packet::clientbound::play::SET_ENTITY_MOTION};
     let dir = tempfile::tempdir().unwrap();
@@ -117,14 +119,22 @@ async fn orchestration_review_excess_sprint_knockback_is_sent_by_normal_tracking
     let world = world(&server, dir.path());
     let mut fixture = TestPlayer::new(&world);
     let victim = fixture.player.clone();
-    let attacker = TestPlayer::new(&world).player;
+    let mut observer = TestPlayer::new(&world);
+    let attacker = observer.player.clone();
     world
         .players
         .store(Arc::new(vec![victim.clone(), attacker.clone()]));
+    world
+        .entity_tracker
+        .get_tracked_entity(victim.entity_id())
+        .unwrap()
+        .seen_by
+        .insert(attacker.gameprofile.id);
     assert!(victim.damage(victim.as_ref(), 6.0, DamageType::GENERIC));
     victim.get_entity().acknowledge_motion_delivery();
     victim.get_entity().velocity.store(Vector3::default());
     super::tests::packet_ids(&mut fixture);
+    super::tests::packet_ids(&mut observer);
     attacker
         .living_entity
         .set_attribute_base(&Attributes::ATTACK_DAMAGE, 10.0);
@@ -134,13 +144,23 @@ async fn orchestration_review_excess_sprint_knockback_is_sent_by_normal_tracking
     assert!(victim.get_entity().velocity_dirty.load(Relaxed));
     assert!(!victim.get_entity().hurt_marked.load(Relaxed));
     victim.living_entity.flush_player_motion();
+    // Player.causeExtraKnockback sends to self only when syncVelocity is set.
+    // ServerEntity.sendChanges sends this needsSync-only impulse to observers.
     assert_eq!(
         super::tests::packet_ids(&mut fixture)
             .iter()
             .filter(|id| **id == SET_ENTITY_MOTION.0)
             .count(),
+        0
+    );
+    assert_eq!(
+        super::tests::packet_ids(&mut observer)
+            .iter()
+            .filter(|id| **id == SET_ENTITY_MOTION.0)
+            .count(),
         1
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -169,6 +189,7 @@ async fn orchestration_review_reset_discards_the_previous_life_melee_motion_and_
     assert_eq!(victim.get_entity().velocity.load(), Vector3::default());
     assert!(!victim.get_entity().hurt_marked.load(Relaxed));
     assert_eq!(attack.health_damage(), 0.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct RescueCallback(Arc<crate::entity::player::Player>);
@@ -236,4 +257,5 @@ async fn orchestration_review_resurrection_and_death_callbacks_can_rescue_on_gue
             assert_eq!(victim.inventory.held_item().item_count, 1);
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

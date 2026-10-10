@@ -298,10 +298,12 @@ mod review_tests {
     #[tokio::test]
     async fn burning_arrow_minecart_explosion_retains_player_credit() {
         triggered_minecart_credit(true);
+        crate::server::fixture_lifecycle::finish().await;
     }
     #[tokio::test]
     async fn primed_minecart_fuse_retains_triggering_damage_credit() {
         triggered_minecart_credit(false);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]
@@ -348,5 +350,6 @@ mod review_tests {
         ));
         assert!(cart.get_entity().is_removed());
         assert_eq!(*victim.cause.lock().unwrap(), None);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

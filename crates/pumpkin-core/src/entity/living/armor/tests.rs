@@ -101,6 +101,7 @@ async fn armor_absorption_reads_live_attributes() {
         living.get_damage_after_armor_absorb_with_weapon(&living, 20.0, &DamageType::FALL, None),
         20.0
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -159,6 +160,7 @@ async fn armor_mitigation_sanitizes_live_attribute_ranges() {
         });
     });
     assert_eq!(absorb(100.0), 100.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -196,35 +198,43 @@ async fn wolf_armor_absorbs_admitted_hits_and_respects_bypass() {
             .get_damage(),
         17
     );
-    let mut equipment = living.entity_equipment.lock().unwrap();
-    let stack = equipment.equipment.get_mut(&EquipmentSlot::BODY).unwrap();
-    stack.set_damage(stack.get_max_damage().unwrap() - 1);
-    drop(equipment);
-    assert!(living.try_absorb_wolf_armor_damage(&DamageType::MOB_ATTACK, 8.0));
-    assert!(
-        living
-            .entity_equipment
-            .lock()
-            .unwrap()
-            .get(&EquipmentSlot::BODY)
-            .is_empty()
-    );
-    assert!(!living.try_absorb_wolf_armor_damage(&DamageType::MOB_ATTACK, 8.0));
-    living.entity_equipment.lock().unwrap().put(
-        &EquipmentSlot::BODY,
-        ItemStack::new(1, &Item::IRON_CHESTPLATE),
-    );
-    assert!(!living.try_absorb_wolf_armor_damage(&DamageType::MOB_ATTACK, 8.0));
-    living.get_damage_after_armor_absorb_with_weapon(&living, 8.0, &DamageType::MOB_ATTACK, None);
-    assert_eq!(
-        living
-            .entity_equipment
-            .lock()
-            .unwrap()
-            .get(&EquipmentSlot::BODY)
-            .get_damage(),
-        2
-    );
+    {
+        let mut equipment = living.entity_equipment.lock().unwrap();
+        let stack = equipment.equipment.get_mut(&EquipmentSlot::BODY).unwrap();
+        stack.set_damage(stack.get_max_damage().unwrap() - 1);
+        drop(equipment);
+        assert!(living.try_absorb_wolf_armor_damage(&DamageType::MOB_ATTACK, 8.0));
+        assert!(
+            living
+                .entity_equipment
+                .lock()
+                .unwrap()
+                .get(&EquipmentSlot::BODY)
+                .is_empty()
+        );
+        assert!(!living.try_absorb_wolf_armor_damage(&DamageType::MOB_ATTACK, 8.0));
+        living.entity_equipment.lock().unwrap().put(
+            &EquipmentSlot::BODY,
+            ItemStack::new(1, &Item::IRON_CHESTPLATE),
+        );
+        assert!(!living.try_absorb_wolf_armor_damage(&DamageType::MOB_ATTACK, 8.0));
+        living.get_damage_after_armor_absorb_with_weapon(
+            &living,
+            8.0,
+            &DamageType::MOB_ATTACK,
+            None,
+        );
+        assert_eq!(
+            living
+                .entity_equipment
+                .lock()
+                .unwrap()
+                .get(&EquipmentSlot::BODY)
+                .get_damage(),
+            2
+        );
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[test]
@@ -297,6 +307,7 @@ async fn equipment_wear_mutates_and_breaks_the_stored_body_stack() {
             .get(&EquipmentSlot::BODY)
             .is_empty()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -353,4 +364,5 @@ async fn armor_effects_use_the_direct_projectiles_stored_weapon() {
             .id,
         Item::TRIDENT.id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

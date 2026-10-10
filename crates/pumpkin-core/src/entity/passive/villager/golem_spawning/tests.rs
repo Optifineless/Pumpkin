@@ -86,6 +86,7 @@ async fn recently_detected_golem_twenty_blocks_away_prevents_house_summons() {
     }
     assert_eq!(golems(&fixture.world).len(), 1);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -114,6 +115,7 @@ async fn five_qualifying_villagers_summon_one_golem_on_a_clear_collider_top() {
     );
     assert!(golem.pos.load().y == 64.0 || golem.pos.load().y == 67.0);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -147,6 +149,7 @@ async fn golem_placement_rejects_a_fence_protruding_from_below_its_feet() {
     );
     assert!(golems(&fixture.world).is_empty());
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -181,6 +184,7 @@ async fn summon_marks_every_nearby_villager_and_blocks_the_next_panic_check() {
     }
     assert_eq!(golems(&fixture.world).len(), 1);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -208,6 +212,7 @@ async fn golem_eligibility_requires_sleep_and_memory_expires_after_six_hundred_t
     let saved = villager.mob_entity.brain.lock().unwrap().pack();
     assert_eq!(make_brain(&saved).get(types::LAST_SLEPT), Some(&0));
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -238,6 +243,7 @@ async fn panic_and_gossip_use_three_and_five_willing_villagers() {
     caller.golem_ai_step_with_random(&mut StdRng::seed_from_u64(5));
     assert_eq!(golems(&fixture.world).len(), 1);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -255,6 +261,7 @@ async fn concurrent_villagers_summon_exactly_one_golem() {
     });
     assert_eq!(golems(&fixture.world).len(), 1);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -275,6 +282,7 @@ async fn five_idle_villagers_summon_through_social_ai_step() {
     );
     assert_eq!(caller.last_gossip_share_time.load(Relaxed), 1_200);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -301,6 +309,7 @@ async fn five_working_villagers_do_not_gossip_summon() {
             .has_memory_value(types::INTERACTION_TARGET.id())
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -314,6 +323,7 @@ async fn social_ai_uses_idle_when_scheduled_work_or_meet_lacks_its_poi() {
         assert_eq!(golems(&fixture.world).len(), 1);
         fixture.finish().await;
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -333,6 +343,7 @@ async fn five_meeting_villagers_summon_through_social_ai_step() {
     caller.golem_ai_step_with_random(&mut StdRng::seed_from_u64(1));
     assert_eq!(golems(&fixture.world).len(), 1);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -370,6 +381,7 @@ async fn social_ai_needs_an_interaction_partner_in_gossip_range() {
     );
     assert_eq!(caller.last_gossip_share_time.load(Relaxed), 0);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -435,4 +447,5 @@ async fn villager_nbt_round_trip_preserves_active_golem_memory_remaining_ttl() {
     loaded.mob_entity.tick_brain(loaded.as_ref());
     assert!(loaded.wants_to_spawn_golem(1_200));
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -57,5 +57,6 @@ mod tests {
         player.hunger_manager.set_exhaustion(0.0);
         assert!(effect.apply_effect_tick(&player.living_entity, 255));
         assert_eq!(player.hunger_manager.get_exhaustion(), 0.0);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

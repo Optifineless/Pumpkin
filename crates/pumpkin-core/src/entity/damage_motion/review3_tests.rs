@@ -61,10 +61,11 @@ async fn verification3_mace_braking_waits_for_attacker_motion_restoration() {
         attacker.get_entity().velocity.load(),
         Vector3::new(old.x, f64::from(0.01f32), old.z)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn verification3_owned_player_tick_delivers_motion_without_nested_acquisition() {
+async fn verification3_final_player_tracking_delivers_motion_with_one_acquisition() {
     let dir = tempfile::tempdir().unwrap();
     let server = server(dir.path());
     let world = world(&server, dir.path());
@@ -80,6 +81,10 @@ async fn verification3_owned_player_tick_delivers_motion_without_nested_acquisit
         }
     });
     player.living_entity.tick(player.as_ref(), &server);
-    // This empty player fixture has only the tick's initial combat acquisition before delivery.
-    assert_eq!(observed.load(SeqCst), 1);
+    assert_eq!(observed.load(SeqCst), usize::MAX);
+    let before_tracking = player.living_entity.damage_entry_count();
+    player.living_entity.flush_tracked_player_motion();
+    // Final tracking acquires ownership once; player ticking does not deliver motion.
+    assert_eq!(observed.load(SeqCst), before_tracking - before + 1);
+    crate::server::fixture_lifecycle::finish().await;
 }

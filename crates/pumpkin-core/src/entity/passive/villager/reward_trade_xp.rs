@@ -90,5 +90,6 @@ mod tests {
         assert!((8..=11).contains(&orb.get_value()));
         assert_eq!(villager.villager_data.lock().unwrap().level.0, 2);
         assert_eq!(villager.xp.load(Ordering::Relaxed), 10);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

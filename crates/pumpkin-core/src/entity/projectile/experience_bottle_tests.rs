@@ -52,6 +52,7 @@ async fn experience_bottle_awards_only_on_impact_and_discards() {
     bottle.tick(bottle.as_ref(), &fixture.server);
     assert_eq!(total_xp(&world), amount);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -100,6 +101,7 @@ async fn experience_bottle_offhand_launch_uses_shooter_origin_and_movement() {
     assert!(entity.velocity.load().y < 1.0);
     assert_eq!(total_xp(&world), 0);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -130,4 +132,5 @@ async fn experience_bottle_item_survives_nbt_reload() {
             .are_equal(&item.copy_with_count(1))
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -58,6 +58,7 @@ async fn natural_and_non_save_admission_consume_finalized_mounts_once() {
         2
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -101,6 +102,7 @@ async fn tree_uuid_rejection_and_cancelled_admission_leave_live_chicken_untouche
     dead_chicken.get_living_entity().unwrap().health.store(0.0);
     assert!(!spawn_mount::available_chicken(&dead_chicken));
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -182,6 +184,7 @@ async fn ordinary_unload_and_restart_restore_nested_riders_and_equipment() {
     world.make_chunk_entities_live(&chunk, None);
     assert_eq!(world.entities.load().len(), 3);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -216,4 +219,5 @@ async fn restored_tree_skips_unknown_passengers() {
         root.get_entity().entity_uuid
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -54,6 +54,7 @@ async fn fishing_hook_resting_on_target_fires_one_hit_in_40_ticks() {
     }
     assert_eq!(bobber.entity.pos.load(), Vector3::new(8.5, 64.0, 8.5));
     assert_eq!(hits.0.load(Relaxed), 1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -84,6 +85,7 @@ async fn fishing_hook_cast_onto_stone_survives_1300_ticks_with_a_rod() {
         owner.player.fishing_bobber.load(Relaxed),
         bobber.entity.entity_id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -117,6 +119,7 @@ async fn fishing_entity_collision_requires_positive_ray_distance() {
         bobber.hooked_entity_id.load(Relaxed),
         target.player.get_entity().entity_id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -138,6 +141,7 @@ async fn fishing_short_block_rays_do_not_fire_hits() {
         bobber.check_collision(&world, &mut Vector3::new(0.0, y, 0.0));
     }
     assert_eq!(hits.0.load(Relaxed), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 pub(super) fn tracked_value(entity: &Entity, tracked: tracked_data::TrackedData) -> Vec<u8> {
@@ -250,6 +254,7 @@ async fn fishing_full_tick_sequence_reads_rod_enchantments_bites_and_retrieves_r
             .count(),
         1
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -285,6 +290,7 @@ async fn fishing_hook_tracks_entity_id_and_follows_at_eighty_percent_height() {
         tracked_value(&bobber.entity, tracked_data::fishing_bobber::HOOKED_ENTITY),
         [0]
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -311,10 +317,12 @@ async fn fishing_owner_dimension_change_discards_hook_and_clears_reference() {
         server.block_registry.clone(),
         Arc::downgrade(&server),
     ));
+    crate::server::fixture_lifecycle::track_world(&destination);
     owner.player.get_entity().world.store(destination);
     bobber.process_tick(&bobber);
     assert!(bobber.entity.is_removed());
     assert_eq!(owner.player.fishing_bobber.load(Relaxed), -1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -373,6 +381,7 @@ async fn fishing_projectile_owner_persists_resolves_from_cache_and_clears_the_cu
     assert!(bobber.entity.is_removed());
     assert_eq!(replacement.player.fishing_bobber.load(Relaxed), -1);
     assert_eq!(owner.player.fishing_bobber.load(Relaxed), id);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -403,6 +412,7 @@ async fn fishing_non_player_projectile_owner_discards_the_hook() {
     assert!(!bobber.entity.is_removed());
     bobber.process_tick(&bobber);
     assert!(bobber.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -435,4 +445,5 @@ async fn fishing_hook_deflects_from_breeze_before_hooking_it() {
         bobber.get_owner_id(),
         Some(owner.player.get_entity().entity_id)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

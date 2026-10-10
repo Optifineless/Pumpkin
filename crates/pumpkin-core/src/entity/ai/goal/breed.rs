@@ -223,6 +223,7 @@ mod tests {
             assert_eq!(orbs[0].get_entity().pos.load(), pos);
         }
         fixture.finish().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]
@@ -254,5 +255,6 @@ mod tests {
             assert_eq!(saved.get_string("variant"), Some("minecraft:warm"));
         }
         fixture.finish().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

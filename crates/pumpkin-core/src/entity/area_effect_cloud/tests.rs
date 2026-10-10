@@ -88,4 +88,5 @@ async fn cloud_applies_at_full_strength_in_a_half_block_disc_and_refreshes_after
     assert_eq!(cloud.radius(), 3.0);
     assert!(cloud.state.lock().unwrap().victims.is_empty());
     assert_eq!(cloud.effects.lock().unwrap()[0].1, 100);
+    crate::server::fixture_lifecycle::finish().await;
 }

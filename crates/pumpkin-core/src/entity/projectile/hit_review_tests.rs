@@ -52,6 +52,7 @@ async fn healing_splash_outer_range_and_dead_targets_are_harmless() {
     target.entity.set_pos(potion.get_entity().pos.load());
     splash();
     assert_eq!(target.health.load(), 5.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -95,6 +96,7 @@ async fn saved_weapon_preserves_arrow_hit_damage_and_punch_after_reload() {
             Vector3::new(0.0, 0.1, 1.2)
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -123,6 +125,7 @@ async fn arrow_damage_enchantments_use_the_actual_hit_target() {
         });
         assert_eq!(target.hits.lock().unwrap()[0].amount, damage);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -143,6 +146,7 @@ async fn arrow_pickup_waits_for_shaking_to_end() {
     arrow.shake_time.store(0, Ordering::Relaxed);
     arrow.on_player_collision(&player);
     assert!(arrow.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -181,4 +185,5 @@ async fn trident_pickup_waits_and_restricts_resolved_owner() {
     unresolved.in_ground.store(true, Ordering::Relaxed);
     unresolved.on_player_collision(&other);
     assert!(unresolved.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }

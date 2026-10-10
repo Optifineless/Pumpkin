@@ -36,4 +36,5 @@ async fn dead_mob_dispenser_is_not_sheared() {
             .ready_for_shearing()
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

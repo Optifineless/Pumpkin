@@ -155,6 +155,7 @@ mod tests {
             1
         );
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -205,5 +206,6 @@ mod tests {
         write_back_used_item(&fixture.player, Hand::Right, 0, &after, &empty);
         assert_eq!(fixture.player.inventory().get_stack(0).item, &Item::AIR);
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

@@ -641,21 +641,12 @@ impl EntityBase for MinecartEntity {
                     }
                 }
             } else {
-                if !self_entity.has_passengers() && self.is_pushable() {
-                    let mut vel = self_entity.velocity.load();
-                    vel.x -= xa;
-                    vel.z -= za;
-                    self_entity.velocity.store(vel);
-                    self_entity.send_velocity();
-                }
-
-                if !other_entity.has_passengers() && entity.is_pushable() {
-                    let mut vel = other_entity.velocity.load();
-                    vel.x += xa / 4.0;
-                    vel.z += za / 4.0;
-                    other_entity.velocity.store(vel);
-                    other_entity.send_velocity();
-                }
+                // AbstractMinecart.push delegates both horizontal impulses to Entity.push.
+                self_entity.push_impulse(Vector3::new(-xa, 0.0, -za));
+                crate::entity::damage_motion::push_collision_impulse(
+                    entity,
+                    Vector3::new(xa / 4.0, 0.0, za / 4.0),
+                );
             }
         }
     }

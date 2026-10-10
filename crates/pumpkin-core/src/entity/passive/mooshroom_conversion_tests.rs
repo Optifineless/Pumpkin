@@ -64,6 +64,7 @@ async fn cancelled_mooshroom_conversion_has_no_effects() {
     assert!(mob.get_entity().is_removed());
     assert_eq!(tool.get_damage(), 1);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -150,6 +151,7 @@ async fn mooshroom_conversion_preserves_common_state_and_mounts() {
         0
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -180,4 +182,5 @@ async fn mooshroom_conversion_preserves_combat_hurt_animation() {
         7
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

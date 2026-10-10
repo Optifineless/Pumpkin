@@ -45,6 +45,7 @@ async fn disabled_clicked_slot_falls_back_to_mainhand() {
     assert!(!stand.interact(&player.player, &mut helmet));
     assert!(stand.item_in_slot(&EquipmentSlot::MAIN_HAND).is_empty());
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -64,6 +65,7 @@ async fn scaled_armor_stand_click_selects_correct_slot() {
         .set_attribute_base(&Attributes::SCALE, 3.0);
     assert!(stand.get_clicked_slot(Vector3::new(0.0, 1.0, 0.0)) == EquipmentSlot::FEET);
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -109,6 +111,7 @@ async fn prevent_equipment_drop_survives_break() {
             .is_empty()
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct EquipEvents(Mutex<Vec<String>>);
@@ -145,6 +148,7 @@ async fn armor_stand_equipment_emits_one_event_per_change() {
     stand.set_item_slot(&EquipmentSlot::HEAD, &ItemStack::EMPTY.clone());
     assert_eq!(*events.0.lock().unwrap(), ["equip", "unequip"]);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct AdjustHit {
@@ -216,6 +220,7 @@ async fn interact_at_honors_plugin_adjusted_position_and_skips_item_use_stats() 
         0
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -267,6 +272,7 @@ async fn java_equipment_transfer_never_records_a_durability_break() {
         .unwrap();
     assert!(!player.take_packets().contains(&status));
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -344,4 +350,5 @@ async fn bedrock_equipment_transfer_never_records_a_durability_break() {
     assert!(!observer.take_packets().contains(&status));
     player.close().await;
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -38,6 +38,7 @@ async fn orchestration_inactivity_resets_before_cooldown_and_peaceful_rejection(
     assert!(!hit(&player, 6.0, DamageType::MOB_ATTACK, &zombie));
     assert_eq!(player.living_entity.no_action_time.load(Relaxed), 0);
     assert_eq!(player.living_entity.health.load(), 20.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -136,6 +137,7 @@ async fn orchestration_damage_packets_preserve_cause_and_direct_source_and_tilt_
     packet_ids(&mut victim);
     victim.player.living_entity.flush_player_motion();
     assert!(packet_ids(&mut victim).is_empty());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -178,21 +180,24 @@ async fn orchestration_team_gate_and_blocked_arrow_criterion_run_at_the_player_b
     raise(&victim, 1.0);
     let arrow = crate::entity::Entity::new(world, Vector3::new(0.0, 0.0, 1.0), &EntityType::ARROW);
     assert!(!hit(&victim, 4.0, DamageType::ARROW, &arrow));
-    let advancements = victim.advancements.lock().unwrap();
-    assert!(
-        advancements
-            .progress
-            .map
-            .get(Advancement::STORY_DEFLECT_ARROW)
-            .unwrap()
-            .is_done()
-    );
-    drop(advancements);
-    assert_eq!(
-        victim.stats.lock().unwrap().get(
-            StatisticCategory::Custom,
-            CustomStatistic::DamageBlockedByShield as i32
-        ),
-        40
-    );
+    {
+        let advancements = victim.advancements.lock().unwrap();
+        assert!(
+            advancements
+                .progress
+                .map
+                .get(Advancement::STORY_DEFLECT_ARROW)
+                .unwrap()
+                .is_done()
+        );
+        drop(advancements);
+        assert_eq!(
+            victim.stats.lock().unwrap().get(
+                StatisticCategory::Custom,
+                CustomStatistic::DamageBlockedByShield as i32
+            ),
+            40
+        );
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }

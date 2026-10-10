@@ -104,6 +104,7 @@ async fn lethal_hits_supply_projectile_and_wolf_credit_and_advance_named_streams
             .state();
         assert_ne!(before, after);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -150,6 +151,7 @@ async fn environmental_deaths_keep_player_credit_without_attacker_looting() {
         None
     ));
     assert_eq!(super::tests::count(&dropped(&world), &Item::DIAMOND), 1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct RemoveContainer;
@@ -206,6 +208,7 @@ async fn block_drop_events_run_after_component_copy_and_their_edits_survive() {
             .get_data_component::<pumpkin_data::data_component_impl::ContainerImpl>()
             .is_none()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -243,4 +246,5 @@ async fn loot_kill_command_credits_the_executing_player_without_target_hurt_memo
     );
     assert_eq!(super::tests::count(&dropped(&world), &Item::EMERALD), 1);
     assert!(!victim.get_living_entity().unwrap().dead.load(Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }

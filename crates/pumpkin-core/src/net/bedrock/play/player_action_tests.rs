@@ -85,18 +85,22 @@ async fn egg_attack(mode: GameMode, protected: bool, cancelled: bool, allowed: b
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bedrock_protected_egg_attack_has_no_effect() {
     egg_attack(GameMode::Survival, true, false, false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bedrock_cancelled_egg_attack_has_no_effect() {
     egg_attack(GameMode::Survival, false, true, false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bedrock_spectator_egg_attack_has_no_effect() {
     egg_attack(GameMode::Spectator, false, false, false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bedrock_adventure_egg_attack_has_no_effect() {
     egg_attack(GameMode::Adventure, false, false, false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bedrock_border_rejected_note_attack_has_no_effect() {
@@ -136,8 +140,10 @@ async fn bedrock_border_rejected_note_attack_has_no_effect() {
     );
     player.close().await;
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bedrock_survival_egg_attack_teleports() {
     egg_attack(GameMode::Survival, false, false, true).await;
+    crate::server::fixture_lifecycle::finish().await;
 }

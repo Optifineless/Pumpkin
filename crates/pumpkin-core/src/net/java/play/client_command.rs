@@ -52,17 +52,6 @@ impl JavaClient {
                 server.spawn_task(async move {
                     respawn_after_death(&player_c, is_hardcore).await;
 
-                    {
-                        let screen_handler = player_c
-                            .current_screen_handler
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        let mut screen_handler = screen_handler
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        screen_handler.sync_state();
-                    };
-
                     // Restore abilities based on gamemode after respawn
                     {
                         let mut abilities = player_c

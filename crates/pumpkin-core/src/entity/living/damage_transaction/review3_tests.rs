@@ -86,4 +86,58 @@ async fn verification4_uncontended_acquisition_skips_runtime_bridge() {
     }
     assert_eq!(owner.0.runtime_checks.load(Relaxed), 0);
     assert_eq!(owner.0.waiting.load(Relaxed), 0);
+    crate::server::fixture_lifecycle::finish().await;
+}
+
+#[test]
+fn followup4_dropping_suspended_token_does_not_release_a_later_owner() {
+    let owner = DamageOwner::default();
+    let token = owner.enter();
+    let suspended = suspend_damage();
+    let later = owner.enter();
+    let dropped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(token)));
+    if let Err(panic) = dropped {
+        // The unfixed destructor pops the later scope. Restore it only to avoid a second
+        // destructor panic aborting the entire regression suite during negative checks.
+        SCOPES.with(|current| current.borrow_mut().push(later.scope.clone()));
+        drop(later);
+        drop(suspended);
+        std::panic::resume_unwind(panic);
+    }
+    assert!(owner.is_owned_by_current_thread());
+    assert!(
+        *owner
+            .0
+            .occupied
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    );
+    drop(later);
+    drop(suspended);
+    assert!(!owner.is_owned_by_current_thread());
+    assert!(
+        !*owner
+            .0
+            .occupied
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    );
+}
+
+#[test]
+fn followup4_orphaned_suspension_never_restores_a_dropped_token() {
+    let owner = DamageOwner::default();
+    let token = owner.enter();
+    let suspended = suspend_damage();
+    drop(token);
+    drop(suspended);
+    assert!(!owner.is_owned_by_current_thread());
+    assert!(
+        !*owner
+            .0
+            .occupied
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    );
+    drop(owner.enter());
 }

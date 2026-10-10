@@ -53,6 +53,8 @@ pub struct WasmCommandExecutor {
 
 impl CommandExecutor for WasmCommandExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        // Like fire_blocking, release combat ownership before the guest calls host mutations.
+        let _callback = pumpkin_core::entity::living::suspend_damage();
         let sender = context.source.output.clone();
         let server = self.server.clone();
         let consumed_args = build_consumed_args_from_context(context);

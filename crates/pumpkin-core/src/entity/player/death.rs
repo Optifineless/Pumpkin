@@ -4,6 +4,17 @@ use super::{
 };
 use pumpkin_inventory::Clearable;
 
+#[cfg(test)]
+mod external_review_tests;
+#[cfg(test)]
+mod followup_tests;
+#[cfg(test)]
+mod playtest_tests;
+#[cfg(test)]
+mod transfer_race_tests;
+#[cfg(test)]
+mod verification_tests;
+
 impl Player {
     pub(crate) fn drop_equipment_on_death(&self, lifecycle: u64) {
         // Player.dropEquipment / Inventory.dropAll; the vanishing sweep excludes menus.
@@ -42,6 +53,15 @@ impl Player {
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
             self.player_screen_handler.clone();
         self.open_container_pos.store(None);
+    }
+
+    /// Resends every inventory and cursor slot after the client's respawn reset.
+    pub(crate) fn sync_respawn_inventory(&self) {
+        // PlayerList.respawn -> ServerPlayer.initInventoryMenu sends a fresh menu's full contents.
+        self.player_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .sync_state();
     }
 
     /// Removes temporary menu contents in the old world, before a respawn world transfer.
@@ -279,6 +299,7 @@ mod tests {
             .map(|stack| u32::from(stack.item_count))
             .sum();
         assert_eq!(planks, 10);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -303,48 +324,51 @@ mod tests {
             .get_behaviour()
             .slots[1]
             .set_stack(cursed.clone());
-        let handler = table.lock().unwrap();
-        handler.get_behaviour().slots[1].set_stack(cursed.clone());
-        *handler.get_behaviour().cursor_stack.lock().unwrap() = cursed;
-        drop(handler);
-        *player.current_screen_handler.lock().unwrap() = table.clone();
-        player
-            .living_entity
-            .damage(&*player, f32::MAX, DamageType::GENERIC_KILL);
-        assert_eq!(player.inventory.get_slot(0).item, &Item::IRON_SWORD);
-        assert!(
-            fixture
-                .world()
-                .entities
-                .load()
+        {
+            let handler = table.lock().unwrap();
+            handler.get_behaviour().slots[1].set_stack(cursed.clone());
+            *handler.get_behaviour().cursor_stack.lock().unwrap() = cursed;
+            drop(handler);
+            *player.current_screen_handler.lock().unwrap() = table.clone();
+            player
+                .living_entity
+                .damage(&*player, f32::MAX, DamageType::GENERIC_KILL);
+            assert_eq!(player.inventory.get_slot(0).item, &Item::IRON_SWORD);
+            assert!(
+                fixture
+                    .world()
+                    .entities
+                    .load()
+                    .iter()
+                    .all(|entity| entity.get_item_entity().is_none())
+            );
+            player.remove_respawn_menus(false);
+            player.restore_inventory_after_respawn(false);
+            assert_eq!(player.inventory.get_slot(0).item, &Item::IRON_SWORD);
+            let entities = fixture.world().entities.load_full();
+            let drops = entities
                 .iter()
-                .all(|entity| entity.get_item_entity().is_none())
-        );
-        player.remove_respawn_menus(false);
-        player.restore_inventory_after_respawn(false);
-        assert_eq!(player.inventory.get_slot(0).item, &Item::IRON_SWORD);
-        let entities = fixture.world().entities.load_full();
-        let drops = entities
-            .iter()
-            .filter_map(|entity| entity.get_item_entity())
-            .filter(|item| item.get_item_stack().lock().unwrap().item == &Item::IRON_SWORD)
-            .count();
-        assert_eq!(drops, 3);
-        assert!(
-            table
-                .lock()
-                .unwrap()
-                .get_behaviour()
-                .cursor_stack
-                .lock()
-                .unwrap()
-                .is_empty()
-        );
-        let current = player.current_screen_handler.lock().unwrap().clone();
-        assert_eq!(
-            Arc::as_ptr(&current).cast::<()>(),
-            Arc::as_ptr(&player.player_screen_handler).cast::<()>()
-        );
+                .filter_map(|entity| entity.get_item_entity())
+                .filter(|item| item.get_item_stack().lock().unwrap().item == &Item::IRON_SWORD)
+                .count();
+            assert_eq!(drops, 3);
+            assert!(
+                table
+                    .lock()
+                    .unwrap()
+                    .get_behaviour()
+                    .cursor_stack
+                    .lock()
+                    .unwrap()
+                    .is_empty()
+            );
+            let current = player.current_screen_handler.lock().unwrap().clone();
+            assert_eq!(
+                Arc::as_ptr(&current).cast::<()>(),
+                Arc::as_ptr(&player.player_screen_handler).cast::<()>()
+            );
+        };
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -427,6 +451,7 @@ mod tests {
                 .iter()
                 .all(|entity| entity.get_item_entity().is_none())
         );
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -466,6 +491,7 @@ mod tests {
         player.restore_inventory_after_respawn(false);
         assert_eq!(player.experience_level.load(Ordering::Relaxed), 0);
         assert!(player.inventory.get_slot(0).is_empty());
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -504,6 +530,7 @@ mod tests {
         assert_eq!(player.inventory.get_slot(0).item, &Item::DIAMOND);
         assert_eq!(player.experience_level.load(Ordering::Relaxed), 10);
         assert!(fixture.world().entities.load().is_empty());
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]

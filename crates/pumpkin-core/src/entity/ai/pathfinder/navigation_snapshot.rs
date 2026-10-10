@@ -120,5 +120,6 @@ mod tests {
         } else {
             panic!("expected the ground node evaluator");
         }
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

@@ -1,9 +1,15 @@
 pub mod advancement;
+mod chunk_tracking;
+#[cfg(test)]
+pub(crate) use chunk_tracking::pause_pending_watch_update;
+#[cfg(test)]
+mod chunk_tracking_tests;
 mod death;
 mod experience_orb;
 mod known_movement;
 mod mace;
 mod melee;
+mod world_transfer;
 use known_movement::KnownMovement;
 pub mod statistics;
 
@@ -258,7 +264,6 @@ use pumpkin_inventory::screen_handler::{
     ScreenHandlerListener,
 };
 use pumpkin_inventory::sync_handler::SyncHandler;
-use pumpkin_macros::send_cancellable;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::IdOr;
@@ -271,14 +276,13 @@ use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_protocol::java::client::play::{
     Animation, CAcknowledgeBlockChange, CActionBar, CAwardStats, CBlockUpdate, CChangeDifficulty,
     CCloseContainer, CCombatDeath, CCustomPayload, CDisguisedChatMessage, CEntityAnimation,
-    CEntityPositionSync, CEntityVelocity, CGameEvent, CHurtAnimation, CItemCooldown, CMapItemData,
-    COpenBook, COpenScreen, COpenSignEditor, CParticle, CPlayServerLinks, CPlayerAbilities,
-    CPlayerInfoUpdate, CPlayerPosition, CPlayerSpawnPosition, CRespawn, CSetCamera,
-    CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem, CSetExperience,
-    CSetHealth, CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound, CSubtitle,
-    CSystemChatMessage, CTabList, CTitleAnimation, CTitleText, CUnloadChunk, CUpdateMobEffect,
-    CUpdateTime, GameEvent, MapIcon, MapPatch, PlayerAction, PlayerInfoFlags, PlayerSpawnData,
-    PreviousMessage, Statistic,
+    CEntityPositionSync, CGameEvent, CHurtAnimation, CItemCooldown, CMapItemData, COpenBook,
+    COpenScreen, COpenSignEditor, CParticle, CPlayServerLinks, CPlayerAbilities, CPlayerInfoUpdate,
+    CPlayerPosition, CPlayerSpawnPosition, CRespawn, CSetCamera, CSetContainerContent,
+    CSetContainerProperty, CSetContainerSlot, CSetCursorItem, CSetExperience, CSetHealth,
+    CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound, CSubtitle, CSystemChatMessage,
+    CTabList, CTitleAnimation, CTitleText, CUnloadChunk, CUpdateMobEffect, CUpdateTime, GameEvent,
+    MapIcon, MapPatch, PlayerAction, PlayerInfoFlags, PlayerSpawnData, PreviousMessage, Statistic,
 };
 use pumpkin_protocol::java::server::play::{
     SClickSlot, SContainerButtonClick, SRenameItem, SlotActionType,
@@ -468,6 +472,7 @@ pub struct Player {
     pub awaiting_teleport: Mutex<Option<(VarInt, Vector3<f64>)>>,
     /// The coordinates of the chunk section the player is currently watching.
     pub watched_section: AtomicCell<Cylindrical>,
+    pub(crate) chunk_tracking: chunk_tracking::ChunkTrackingState,
     /// The last time the player performed an action (for idle timeout).
     pub last_action_time: AtomicCell<Instant>,
     /// The ping in millis.
@@ -681,6 +686,7 @@ impl Player {
             // We want this to be an impossible watched section so that `chunker::update_position`
             // will mark chunks as watched for a new join rather than a respawn.
             // (We left shift by one so we can search around that chunk)
+            chunk_tracking: chunk_tracking::ChunkTrackingState::default(),
             watched_section: AtomicCell::new(Cylindrical::new(
                 Vector2::new(0, 0),
                 // Since 1 is not possible in vanilla it is used as uninit
@@ -1126,7 +1132,11 @@ impl Player {
         let world = self.world();
         world.remove_player(self, true).await;
 
-        let cylindrical = self.watched_section.load();
+        // Teardown resolves a concurrent transfer before the remaining chunk cleanup.
+        let world = self.world();
+        // ChunkMap.applyChunkTrackingView(EMPTY) claims removal before any asynchronous cleanup.
+        let (cylindrical, pending) = self.take_watched_section();
+        Self::await_chunk_watch_update(pending).await;
         self.clean_up_chunk_tickets(&world.level);
         if let Ok(mut sender) = self.chunk_sender.lock() {
             sender.reset();
@@ -1145,7 +1155,11 @@ impl Player {
         let level = &world.level;
 
         // Decrement the value of watched chunks
-        let chunks_to_clean = level.mark_chunks_as_not_watched(radial_chunks).await;
+        let chunks_to_clean = if radial_chunks.len() == 0 {
+            Vec::new()
+        } else {
+            level.mark_chunks_as_not_watched(radial_chunks).await
+        };
         // Remove chunks with no watchers from the cache
         if !chunks_to_clean.is_empty() {
             world.remove_entities_in_chunks(&chunks_to_clean).await;
@@ -1185,27 +1199,7 @@ impl Player {
     }
 
     pub fn clean_up_chunk_tickets(&self, level: &Arc<pumpkin_world::level::Level>) {
-        let mut lock = level
-            .chunk_loading
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let held = self
-            .held_chunk_tickets
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some((view_level, sim_level)) = held {
-            let center = self.get_entity().chunk_pos.load();
-            if let Some(view) = view_level {
-                lock.remove_ticket(center, view);
-            }
-            if let Some(sim) = sim_level {
-                lock.remove_ticket(center, sim);
-            }
-        }
-        lock.send_change();
-        level.should_unload.store(true, Ordering::Relaxed);
-        level.level_channel.notify();
+        self.remove_chunk_tickets(level);
     }
 
     pub fn update_chunk_tickets_for_gamemode(self: &Arc<Self>) {
@@ -1217,6 +1211,7 @@ impl Player {
         old_level: &Arc<pumpkin_world::level::Level>,
         new_world: &Arc<crate::world::World>,
     ) {
+        self.resume_chunk_tracking();
         self.clean_up_chunk_tickets(old_level);
         if let Ok(mut listener) = self.chunk_listener.lock() {
             *listener = new_world.level.chunk_listener.add_global_chunk_listener();
@@ -1495,6 +1490,7 @@ impl Player {
                     yaw: respawn_point.yaw,
                     pitch: 0.0,
                     dimension: respawn_point.dimension.clone(),
+                    world,
                 });
             }
             return None;
@@ -1513,6 +1509,7 @@ impl Player {
                     yaw: respawn_point.yaw,
                     pitch: 0.0,
                     dimension: respawn_point.dimension.clone(),
+                    world,
                 });
             }
             return None;
@@ -1545,6 +1542,7 @@ impl Player {
                     yaw: respawn_point.yaw,
                     pitch: 0.0,
                     dimension: respawn_point.dimension.clone(),
+                    world,
                 });
             }
             return None;
@@ -1854,6 +1852,9 @@ impl Player {
     }
 
     pub fn wake_up(&self) {
+        let _owner = self.living_entity.own_damage();
+        // Player.stopSleepInBed must not continue on a replacement ServerPlayer.
+        let life = super::living::PlayerTickLife::capture(self);
         let world = self.world();
         let Some(bed_pos) = self.sleeping_bed_pos.load() else {
             self.living_entity.entity.set_pose(EntityPose::Standing);
@@ -1871,6 +1872,9 @@ impl Player {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
 
+        if !life.is_current() {
+            return;
+        }
         let (bed, bed_state) = world.get_block_and_state_id(&bed_pos);
         if bed == &Block::STRAW_BED {
             StrawBedBlock::destroy_after_use(&world, bed_pos);
@@ -1893,6 +1897,9 @@ impl Player {
             0,
         );
 
+        if !life.is_current() {
+            return;
+        }
         let chunk_pos = self.living_entity.entity.chunk_pos.load();
         world.broadcast_to_chunk(
             chunk_pos,
@@ -2108,6 +2115,7 @@ impl Player {
     }
 
     pub fn set_velocity(&self, mut velocity: Vector3<f64>) {
+        let life = self.living_entity.own_damage();
         if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
             && let Some(server) = self.world().server.upgrade()
         {
@@ -2123,8 +2131,9 @@ impl Player {
             }
             velocity = event.velocity;
         }
-        self.living_entity.entity.set_velocity(velocity);
-        self.try_send_client_packet(&CEntityVelocity::new(self.entity_id().into(), velocity));
+        if life.is_current_life() && !self.living_entity.is_respawning() {
+            self.living_entity.entity.set_velocity(velocity);
+        }
     }
 
     pub fn apply_knockback(&self, strength: f64, x: f64, z: f64) {
@@ -2260,7 +2269,14 @@ impl Player {
 
     #[expect(clippy::too_many_lines)]
     pub fn tick<'a>(&'a self, server: &'a Server) {
+        let life = self.living_entity.own_damage();
+        if self.living_entity.is_respawning() {
+            return;
+        }
         self.process_inbound_packets();
+        if !life.is_current_life() || self.living_entity.is_respawning() {
+            return;
+        }
 
         if self.is_spectator() {
             self.living_entity
@@ -2491,11 +2507,20 @@ impl Player {
                 }
             }
         }
+        if !life.is_current_life() || self.living_entity.is_respawning() {
+            return;
+        }
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
 
         self.living_entity.tick(self, server);
+        if !life.is_current_life() || self.living_entity.is_respawning() {
+            return;
+        }
 
         self.breath_manager.tick(self);
+        if !life.is_current_life() || self.living_entity.is_respawning() {
+            return;
+        }
 
         let level_info = self.world().level_info.load();
         if level_info.difficulty == Difficulty::Peaceful
@@ -2519,6 +2544,9 @@ impl Player {
         }
 
         self.hunger_manager.tick(self);
+        if !life.is_current_life() || self.living_entity.is_respawning() {
+            return;
+        }
 
         // Vanilla updates pose in PlayerEntity#tick after super.tick().
         self.update_player_pose();
@@ -3494,27 +3522,7 @@ impl Player {
         res.map(|(pos, _)| pos)
     }
 
-    pub async fn unload_watched_chunks(&self, world: &World) {
-        let radial_chunks = self.watched_section.load().all_chunks_within();
-        let level = &world.level;
-        let chunks_to_clean = level.mark_chunks_as_not_watched(radial_chunks).await;
-        if !chunks_to_clean.is_empty() {
-            world.remove_entities_in_chunks(&chunks_to_clean).await;
-            level.clean_entity_chunks(&chunks_to_clean);
-        }
-        for chunk in &chunks_to_clean {
-            self.send_client_packet(&CUnloadChunk::new(chunk.x, chunk.y))
-                .await;
-        }
-
-        self.watched_section.store(Cylindrical::new(
-            Vector2::new(0, 0),
-            NonZero::new(1).unwrap_or(NonZero::<u8>::MIN),
-        ));
-    }
-
     /// Teleports the player to a different world or dimension with an optional position, yaw, and pitch.
-    #[expect(clippy::too_many_lines)]
     pub async fn teleport_world(
         self: &Arc<Self>,
         new_world: Arc<World>,
@@ -3522,142 +3530,8 @@ impl Player {
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) {
-        let current_world = self.living_entity.entity.world.load_full();
-        let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
-        let pitch = pitch.unwrap_or(new_world.level_info.load().spawn_pitch);
-
-        let Some(server) = new_world.server.upgrade() else {
-            return;
-        };
-
-        send_cancellable! {{
-            server;
-            PlayerChangeWorldEvent {
-                player: self.clone(),
-                previous_world: current_world.clone(),
-                new_world: new_world.clone(),
-                position,
-                yaw,
-                pitch,
-                cancelled: false,
-            };
-
-            'after: {
-                // TODO: this is duplicate code from world
-                let position = event.position;
-                let yaw = event.yaw;
-                let pitch = event.pitch;
-                let new_world = event.new_world;
-
-                self.set_client_loaded(false);
-                let Some(player) = current_world.remove_player(self, false).await else {
-                    return;
-                };
-               new_world.players.rcu(|current_list| {
-                    let mut new_list = (**current_list).clone();
-                    new_list.push(player.clone());
-                    new_list
-                });
-                self.unload_watched_chunks(&current_world).await;
-
-                self.change_world_chunks(&current_world.level, &new_world);
-                self.living_entity.entity.set_world(new_world.clone());
-
-                if new_world.dimension == pumpkin_data::dimension::Dimension::THE_NETHER {
-                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
-                        dimension: "the_nether".to_string(),
-                    });
-                } else if new_world.dimension == pumpkin_data::dimension::Dimension::THE_END {
-                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
-                        dimension: "the_end".to_string(),
-                    });
-                }
-
-                let last_pos = self.living_entity.entity.last_pos.load();
-                let death_dimension = ResourceLocation::from(self.world().dimension.minecraft_name);
-                let death_location = BlockPos(Vector3::new(
-                    last_pos.x.round() as i32,
-                    last_pos.y.round() as i32,
-                    last_pos.z.round() as i32,
-                ));
-                match self.client.as_ref() {
-                    ClientPlatform::Java(java) => {
-                        let packet = CRespawn::new(
-                            PlayerSpawnData::new(
-                                new_world.dimension.clone(),
-                                biome::hash_seed(new_world.level.seed.0), // seed
-                                self.gamemode.load() as u8,
-                                self.previous_gamemode.load().unwrap_or(self.gamemode.load()) as i8,
-                                false,
-                                false,
-                                Some((death_dimension, death_location)),
-                                VarInt(self.get_entity().portal_cooldown.load(Ordering::Relaxed) as i32),
-                                new_world.sea_level.into(),
-                            ),
-                            CRespawn::KEEP_ALL_DATA,
-                        );
-                        if let Ok(data) = java.serialize_packet(&packet) {
-                            java.send_packet_now(data).await;
-                        }
-                    }
-                    ClientPlatform::Bedrock(bedrock) => {
-                        let bedrock_dimension = if new_world.dimension == Dimension::OVERWORLD {
-                            0
-                        } else if new_world.dimension == Dimension::THE_NETHER {
-                            1
-                        } else if new_world.dimension == Dimension::THE_END {
-                            2
-                        } else {
-                            0
-                        };
-                        let pos_f32 = Vector3::new(position.x as f32, position.y as f32, position.z as f32);
-                        let change_dim_packet = pumpkin_protocol::bedrock::client::CChangeDimension {
-                            dimension_id: bedrock_dimension.into(),
-                            position: pos_f32,
-                            respawn: false,
-                            loading_screen_id: None
-                        };
-                        if let Ok(data) = bedrock.serialize_packet(&change_dim_packet) {
-                            bedrock.enqueue_packet(data).await;
-                        }
-                        self.bedrock_spawned.store(false, Ordering::Relaxed);
-                    }
-                }
-
-                self.send_permission_lvl_update();
-
-                player.get_entity().set_pos(position);
-                player.get_entity().set_rotation(yaw, pitch);
-                player.get_entity().last_pos.store(position);
-
-                // Registered after positioning, so spawns carry the new position.
-                new_world.add_arriving_player(&player);
-
-                self.send_abilities_update();
-
-                self.enqueue_set_held_item_packet(&CSetSelectedSlot::new(
-                    self.get_inventory().get_selected_slot() as i8,
-                ));
-
-                self.on_screen_handler_opened(&self.player_screen_handler);
-
-                self.send_health();
-
-                new_world.send_world_info(&player);
-                new_world.send_center_chunk(&player).await;
-
-                // cancellation leaves the current position untouched.
-                let _ = player.request_teleport(position, yaw, pitch);
-
-                let mut changed_world_event = crate::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent {
-                    player: player.clone(),
-                    from_world: current_world,
-                    to_world: new_world,
-                    cancelled: false,
-                };
-                server.plugin_manager.fire(&server, &mut changed_world_event).await;
-            }
-        }}
+        self.teleport_world_inner(new_world, position, yaw, pitch)
+            .await;
     }
 
     /// `yaw` and `pitch` are in degrees.
@@ -6198,6 +6072,15 @@ impl NBTStorage for EnderChestInventory {
 impl NBTStorageInit for EnderChestInventory {}
 
 impl EntityBase for Player {
+    fn get_gravity(&self) -> f64 {
+        // Entity.getGravity / LivingEntity.getDefaultGravity apply NoGravity and the attribute.
+        if self.get_entity().has_no_gravity() {
+            0.0
+        } else {
+            self.living_entity.get_gravity()
+        }
+    }
+
     fn damage_with_context(
         &self,
         caller: &dyn EntityBase,
@@ -6741,6 +6624,8 @@ pub struct RespawnPoint {
 }
 
 pub struct CalculatedRespawnPoint {
+    /// The level whose blocks were used to resolve this position.
+    pub(crate) world: Arc<World>,
     /// The exact position to spawn at (centered in block).
     pub position: Vector3<f64>,
     /// The yaw rotation.

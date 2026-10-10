@@ -314,6 +314,7 @@ mod tests {
             );
             painting.entity.synched_data.clear_dirty();
         }
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     use super::*;

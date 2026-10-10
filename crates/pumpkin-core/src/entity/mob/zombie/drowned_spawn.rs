@@ -145,5 +145,6 @@ mod tests {
             &Item::TRIDENT
         );
         fixture.finish().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

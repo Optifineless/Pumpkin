@@ -56,5 +56,6 @@ mod tests {
         assert_eq!(packets.first(), Some(&expected));
         assert!(packets.len() >= 2);
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

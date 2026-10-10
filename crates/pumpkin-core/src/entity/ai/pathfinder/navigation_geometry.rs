@@ -170,6 +170,7 @@ mod tests {
         assert!(!navigation.is_stable_destination(&world, &candidate, &entity));
         navigation.inner.stands_on_lava = true;
         assert!(navigation.is_stable_destination(&world, &candidate, &entity));
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]

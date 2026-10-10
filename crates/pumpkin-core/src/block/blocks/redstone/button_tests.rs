@@ -64,9 +64,11 @@ async fn press(player_source: bool) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn button_press_excludes_only_presser() {
     press(true).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn wind_charge_button_press_broadcasts() {
     press(false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
