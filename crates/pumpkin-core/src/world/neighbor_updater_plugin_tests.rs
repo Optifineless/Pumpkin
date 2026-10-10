@@ -119,6 +119,11 @@ async fn native_worker(propagate: bool, notify_all: bool) {
             waiting_rx.try_recv().is_err(),
             "context propagation fell back to the timeout"
         );
+    } else {
+        assert!(
+            waiting_rx.try_recv().is_ok(),
+            "unscoped worker skipped the bounded wait"
+        );
     }
     assert_eq!(world.get_block(&target), &Block::DIRT);
     fixture.server.shutdown().await;

@@ -1,4 +1,7 @@
-use pumpkin_data::{Block, block_properties::JukeboxLikeProperties, game_event::GameEvent};
+use pumpkin_data::{
+    Block, block_properties::JukeboxLikeProperties, data_component_impl::JukeboxPlayableImpl,
+    game_event::GameEvent, jukebox_song::JukeboxSong, world::WorldEvent,
+};
 use pumpkin_world::world::BlockFlags;
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -35,6 +38,16 @@ type NotificationPause = Arc<dyn Fn() + Send + Sync>;
 
 const RECORD_ITEM_NBT_KEY: &str = "RecordItem";
 const TICKS_SINCE_SONG_STARTED_NBT_KEY: &str = "ticks_since_song_started";
+
+/// Resolves a nonempty record's playable component through the generated song registry.
+pub(crate) fn song_from_stack(stack: &ItemStack) -> Option<JukeboxSong> {
+    // JukeboxSong.fromStack / ItemStack.getComponents hide components on empty stacks.
+    if stack.is_empty() {
+        return None;
+    }
+    let playable = stack.get_data_component::<JukeboxPlayableImpl>()?;
+    JukeboxSong::from_name(playable.song.rsplit(':').next()?)
+}
 
 impl BlockEntity for JukeboxBlockEntity {
     fn resource_location(&self) -> &'static str {
@@ -155,7 +168,7 @@ impl JukeboxBlockEntity {
     }
 
     fn update_record(&self, update: &mut dyn FnMut(&mut ItemStack)) -> ItemStack {
-        let (previous, changed, has_record, revision) = {
+        let (previous, changed, has_record, revision, song) = {
             let mut record = self
                 .record_stack
                 .lock()
@@ -168,27 +181,85 @@ impl JukeboxBlockEntity {
             } else {
                 self.record_revision.load(Ordering::Relaxed)
             };
-            (previous, changed, !record.is_empty(), revision)
+            let song = if changed {
+                song_from_stack(&record)
+            } else {
+                None
+            };
+            (previous, changed, !record.is_empty(), revision, song)
         };
         if changed {
             self.mark_dirty();
-            self.notify_item_changed_in_jukebox(has_record, revision);
+            let world = self.notify_item_changed_in_jukebox(has_record, revision);
+            // JukeboxBlockEntity.setTheItem notifies the item change before play/stop.
+            self.update_playback(song, revision, world.as_ref());
         }
         previous
     }
 
-    fn notify_item_changed_in_jukebox(&self, has_record: bool, revision: u64) {
+    fn update_playback(
+        &self,
+        song: Option<JukeboxSong>,
+        revision: u64,
+        world: Option<&Arc<World>>,
+    ) {
+        let song_changed = {
+            let _record = self
+                .record_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.record_revision.load(Ordering::Relaxed) != revision {
+                return;
+            }
+            if let Some(song) = song {
+                self.start_playing(song.length_in_ticks());
+                true
+            } else {
+                let was_playing = self.song_length_ticks.load(Ordering::Relaxed) > 0;
+                self.stop_playing();
+                was_playing
+            }
+        };
+        let Some(world) = world else {
+            return;
+        };
+        if !song_changed || self.record_revision.load(Ordering::Relaxed) != revision {
+            return;
+        }
+        // JukeboxSongPlayer.play/stop -> JukeboxBlockEntity.onSongChanged.
+        if let Some(song) = song {
+            world.sync_world_event(
+                WorldEvent::SoundPlayJukeboxSong,
+                self.position,
+                song.get_id() as i32,
+            );
+        } else {
+            world.emit_game_event(
+                GameEvent::JukeboxStopPlay.name(),
+                self.position.to_centered_f64(),
+            );
+            if self.record_revision.load(Ordering::Relaxed) != revision {
+                return;
+            }
+            world.sync_world_event(WorldEvent::SoundStopJukeboxSong, self.position, 0);
+        }
+        world.update_neighbors_at(&self.position, &Block::JUKEBOX, None);
+    }
+
+    fn notify_item_changed_in_jukebox(
+        &self,
+        has_record: bool,
+        revision: u64,
+    ) -> Option<Arc<World>> {
         let world = self
             .world
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .upgrade();
-        let Some(world) = world else {
-            return;
-        };
+        let world = world?;
         let expected = world.get_block_state_id(&self.position);
         if Block::from_state_id(expected) != &Block::JUKEBOX {
-            return;
+            return None;
         }
         #[cfg(test)]
         {
@@ -225,7 +296,9 @@ impl JukeboxBlockEntity {
                 GameEvent::BlockChange.name(),
                 self.position.to_centered_f64(),
             );
+            return Some(world);
         }
+        None
     }
 
     pub const ID: &'static str = "minecraft:jukebox";
@@ -254,15 +327,25 @@ impl JukeboxBlockEntity {
             .clone()
     }
 
-    /// Replaces the record and notifies its world when the stored item changes.
+    /// Replaces the record, updates playback and notifies its world when the stored item changes.
     pub fn set_record(&self, stack: ItemStack) {
         self.replace_record(stack);
     }
 
     /// Clear the stack and return what was there - used for dropping
     pub fn clear_record(&self) -> ItemStack {
-        self.stop_playing();
-        self.replace_record(ItemStack::EMPTY.clone())
+        let previous = self.replace_record(ItemStack::EMPTY.clone());
+        if previous.is_empty() {
+            let record = self
+                .record_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // JukeboxBlockEntity.setTheItem(EMPTY) also stops an already-empty jukebox.
+            if record.is_empty() {
+                self.stop_playing();
+            }
+        }
+        previous
     }
 
     /// Start playing a song with the given length in ticks
