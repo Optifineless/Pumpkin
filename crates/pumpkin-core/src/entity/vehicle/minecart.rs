@@ -5,6 +5,9 @@ mod hopper;
 mod rideable;
 mod tnt;
 
+#[cfg(test)]
+mod activator_tests;
+
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -230,20 +233,23 @@ impl EntityBase for MinecartEntity {
                             minecart.prime(&self.vehicle.entity, 80, None);
                         }
                         MinecartKind::Rideable(_) => {
-                            if let Ok(passengers) = self.vehicle.entity.passengers.try_lock() {
-                                let p_ids: Vec<i32> = passengers
+                            // Minecart.activateMinecart -> Entity.ejectPassengers: release the
+                            // passenger guard before dismount helpers or plugin callbacks run.
+                            let passenger_ids: Vec<i32> = {
+                                let passengers = self
+                                    .vehicle
+                                    .entity
+                                    .passengers
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                passengers
                                     .iter()
+                                    .rev()
                                     .map(|p| p.get_entity().entity_id)
-                                    .collect();
-                                if !p_ids.is_empty() {
-                                    let world = self.vehicle.entity.world.load();
-                                    let vid = self.vehicle.entity.entity_id;
-                                    if let Some(v) = world.get_entity_by_id(vid) {
-                                        for pid in p_ids {
-                                            v.get_entity().remove_passenger_sync(pid);
-                                        }
-                                    }
-                                }
+                                    .collect()
+                            };
+                            for passenger_id in passenger_ids {
+                                self.vehicle.entity.remove_passenger(passenger_id);
                             }
                             if self.vehicle.get_hurt_time() == 0 {
                                 self.vehicle.set_hurt_dir(-self.vehicle.get_hurt_dir());
