@@ -1,5 +1,7 @@
 #[cfg(test)]
 pub(crate) mod combat_test_support;
+#[cfg(test)]
+pub(crate) mod sound_test_support;
 use pumpkin_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CPlayDisconnect};
 use pumpkin_world::level::SyncChunk;
 use std::net::SocketAddr;

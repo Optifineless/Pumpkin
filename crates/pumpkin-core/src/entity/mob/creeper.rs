@@ -28,6 +28,8 @@ const DEFAULT_FUSE_TIME: i32 = 30;
 const DEFAULT_EXPLOSION_RADIUS: i32 = 3;
 
 #[cfg(test)]
+mod sound_tests;
+#[cfg(test)]
 mod tests;
 
 pub struct CreeperEntity {
@@ -230,8 +232,10 @@ impl Mob for CreeperEntity {
         let world = entity.world.load();
         let pos = entity.pos.load();
 
-        world.play_sound_fine(
-            Sound::ItemFlintandsteelUse,
+        // Creeper.mobInteract passes the initiating player as the sound exception.
+        world.play_sound_raw_expect(
+            player,
+            Sound::ItemFlintandsteelUse as u16,
             SoundCategory::Hostile,
             &pos,
             1.0,

@@ -15,6 +15,9 @@ use pumpkin_protocol::{
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering::Relaxed;
 
+#[cfg(test)]
+mod tests;
+
 impl LivingEntity {
     // LivingEntity.hurtServer (1239-1252): any blocked portion selects BlocksAttacks.onBlocked.
     pub(super) fn full_hit_feedback(
@@ -149,7 +152,13 @@ impl LivingEntity {
                 return;
             }
             if full_hit {
-                self.make_damage_sound(caller, self.death_sound(caller));
+                // Player.getDeathSound overrides the generic entity-data fallback.
+                let sound = if caller.get_player().is_some() {
+                    Sound::EntityPlayerDeath
+                } else {
+                    self.death_sound(caller)
+                };
+                self.make_damage_sound(caller, sound);
                 self.play_secondary_hurt_sound(caller, damage_type);
             }
             let mut death_event =
@@ -183,17 +192,21 @@ impl LivingEntity {
     }
 
     fn make_damage_sound(&self, caller: &dyn EntityBase, sound: Sound) {
-        if !self.entity.is_silent() {
+        if let Some(player) = caller.get_player() {
+            // Player.playSound excludes itself and bypasses Entity.playSound's Silent guard.
+            self.entity.world.load().play_sound_expect(
+                player,
+                sound,
+                SoundCategory::Players,
+                &self.entity.pos.load(),
+            );
+        } else if !self.entity.is_silent() {
             self.entity.world.load().play_sound_fine(
                 sound,
                 self.item_effect_sound_category(caller),
                 &self.entity.pos.load(),
                 1.0,
-                if caller.get_player().is_some() {
-                    1.0
-                } else {
-                    self.get_pitch()
-                },
+                self.get_pitch(),
             );
         }
     }
