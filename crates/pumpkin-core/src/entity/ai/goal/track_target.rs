@@ -127,7 +127,8 @@ impl Goal for TrackTargetGoal {
             return false;
         };
 
-        if !mob.can_attack(target_base.as_ref()) {
+        // TargetGoal.canContinueToUse -> LivingEntity.canAttack/canBeSeenAsEnemy.
+        if !target.is_alive() || !mob.can_attack(target_base.as_ref()) {
             return false;
         }
 
