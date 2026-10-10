@@ -5,7 +5,8 @@ use super::{
 use pumpkin_data::{
     data_component_impl::{
         BannerPatternsImpl, DamageImpl, DyeImpl, DyedColorImpl, EnchantmentsImpl,
-        FireworkExplosionImpl, FireworksImpl, MaxDamageImpl, WrittenBookContentImpl,
+        FireworkExplosionImpl, FireworkExplosionShape, FireworksImpl, MaxDamageImpl,
+        WrittenBookContentImpl,
     },
     item_stack::ItemStack,
     recipes::{CraftingRecipeTypes, RecipeIngredientTypes, RecipeResultStruct},
@@ -24,6 +25,19 @@ pub(super) fn assemble(
         .collect();
     let mut remaining_items = default_remainders(inventory);
     let stack = match recipe {
+        CraftingRecipeTypes::FireworkStar {
+            shapes,
+            trail,
+            twinkle,
+            fuel,
+            dye,
+            result,
+        } => firework_star(&stacks, shapes, trail, twinkle, fuel, dye, result)?,
+        CraftingRecipeTypes::FireworkStarFade {
+            target,
+            dye,
+            result,
+        } => firework_star_fade(&stacks, target, dye, result)?,
         CraftingRecipeTypes::FireworkRocket {
             ingredients,
             result,
@@ -77,6 +91,155 @@ pub(super) fn assemble(
         stack,
         remaining_items,
     })
+}
+
+fn firework_star(
+    stacks: &[(usize, ItemStack)],
+    shapes: &[(&str, RecipeIngredientTypes)],
+    trail: &RecipeIngredientTypes,
+    twinkle: &RecipeIngredientTypes,
+    fuel: &RecipeIngredientTypes,
+    dye: &RecipeIngredientTypes,
+    result: &RecipeResultStruct,
+) -> Option<ItemStack> {
+    if !firework_star_matches(stacks, shapes, trail, twinkle, fuel, dye) {
+        return None;
+    }
+
+    let mut has_trail = false;
+    let mut has_twinkle = false;
+    let mut shape = FireworkExplosionShape::SmallBall;
+    let mut colors = Vec::new();
+    for (_, stack) in stacks {
+        // FireworkStarRecipe.assemble checks shapes before effects, unlike matches.
+        if let Some(matched_shape) = firework_star_shape(stack, shapes) {
+            shape = matched_shape;
+        } else if twinkle.match_item(stack.item) {
+            has_twinkle = true;
+        } else if trail.match_item(stack.item) {
+            has_trail = true;
+        } else if dye.match_item(stack.item)
+            && let Some(dye_component) = stack.get_data_component::<DyeImpl>()
+        {
+            colors.push(dye_component.color.firework_color() as i32);
+        }
+    }
+
+    let mut stack = result.assemble(None, 0);
+    stack.set_data_component(FireworkExplosionImpl::new(
+        shape,
+        colors,
+        Vec::new(),
+        has_trail,
+        has_twinkle,
+    ));
+    Some(stack)
+}
+
+// FireworkStarRecipe.matches checks effects before shapes; overlapping ingredients count once.
+fn firework_star_matches(
+    stacks: &[(usize, ItemStack)],
+    shapes: &[(&str, RecipeIngredientTypes)],
+    trail: &RecipeIngredientTypes,
+    twinkle: &RecipeIngredientTypes,
+    fuel: &RecipeIngredientTypes,
+    dye: &RecipeIngredientTypes,
+) -> bool {
+    let mut has_fuel = false;
+    let mut has_dye = false;
+    let mut has_shape = false;
+    let mut has_trail = false;
+    let mut has_twinkle = false;
+
+    for (_, stack) in stacks {
+        if twinkle.match_item(stack.item) {
+            if has_twinkle {
+                return false;
+            }
+            has_twinkle = true;
+        } else if trail.match_item(stack.item) {
+            if has_trail {
+                return false;
+            }
+            has_trail = true;
+        } else if fuel.match_item(stack.item) {
+            if has_fuel {
+                return false;
+            }
+            has_fuel = true;
+        } else if dye.match_item(stack.item) && stack.get_data_component::<DyeImpl>().is_some() {
+            has_dye = true;
+        } else {
+            if firework_star_shape(stack, shapes).is_none() {
+                return false;
+            }
+            if has_shape {
+                return false;
+            }
+            has_shape = true;
+        }
+    }
+
+    has_fuel && has_dye
+}
+
+fn firework_star_shape(
+    stack: &ItemStack,
+    shapes: &[(&str, RecipeIngredientTypes)],
+) -> Option<FireworkExplosionShape> {
+    shapes.iter().find_map(|(name, ingredient)| {
+        ingredient
+            .match_item(stack.item)
+            .then(|| FireworkExplosionShape::from_name(name))
+            .flatten()
+    })
+}
+
+fn firework_star_fade(
+    stacks: &[(usize, ItemStack)],
+    target: &RecipeIngredientTypes,
+    dye: &RecipeIngredientTypes,
+    result: &RecipeResultStruct,
+) -> Option<ItemStack> {
+    // FireworkStarFadeRecipe.transmutes the target and replaces only its fade colors.
+    let mut target_stack = None;
+    let mut fade_colors = Vec::new();
+    for (_, stack) in stacks {
+        if dye.match_item(stack.item) {
+            let dye_component = stack.get_data_component::<DyeImpl>()?;
+            fade_colors.push(dye_component.color.firework_color() as i32);
+        } else if target.match_item(stack.item) {
+            if target_stack.is_some() {
+                return None;
+            }
+            target_stack = Some(stack);
+        } else {
+            return None;
+        }
+    }
+
+    let target_stack = target_stack?;
+    if fade_colors.is_empty() {
+        return None;
+    }
+
+    let mut stack = result.assemble(Some(target_stack), 0);
+    let mut explosion = stack
+        .get_data_component::<FireworkExplosionImpl>()
+        .cloned()
+        .unwrap_or_else(|| {
+            // FireworkExplosion.DEFAULT is a small ball with no colors or effects.
+            FireworkExplosionImpl::new(
+                FireworkExplosionShape::SmallBall,
+                Vec::new(),
+                Vec::new(),
+                false,
+                false,
+            )
+        });
+    explosion.fade_colors = fade_colors;
+    stack.set_data_component(explosion);
+    Some(stack)
 }
 
 fn rocket(
@@ -278,3 +441,7 @@ fn book<'a>(
     let (slot, source) = original?;
     (copies > 0).then_some((slot, source, copies))
 }
+
+#[cfg(test)]
+#[path = "special_recipes_tests.rs"]
+mod tests;
