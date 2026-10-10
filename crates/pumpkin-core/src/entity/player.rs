@@ -1,6 +1,7 @@
 pub mod advancement;
 mod death;
 mod experience_orb;
+mod inventory_drop;
 mod known_movement;
 mod mace;
 mod melee;

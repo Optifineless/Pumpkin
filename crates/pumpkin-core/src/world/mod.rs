@@ -1,8 +1,6 @@
 pub(crate) use explosion::ExplosionDamageSource;
 mod storage_failure;
-use crate::block::entities::{
-    BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
-};
+use crate::block::entities::{BlockEntity, block_entity_from_nbt, block_owns_block_entity};
 use dashmap::DashMap;
 use pumpkin_data::chunk::Biome;
 use pumpkin_data::item::{BedrockItem, BedrockItemVersion};
@@ -26,11 +24,14 @@ use tracing::{debug, error, info, trace, warn};
 
 mod active_chunks;
 mod block_entity_context;
+mod block_state;
 pub mod brightness;
 pub mod chunker;
 pub(crate) mod collision_shapes;
+mod containers;
 mod dragon_parts;
 mod entity_persistence;
+mod entity_removal;
 pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
@@ -45,13 +46,13 @@ pub mod stopwatches;
 pub mod time;
 pub mod villager_poi;
 
-use crate::block::RandomTickArgs;
+use crate::block::{RandomTickArgs, blocks::doors::DoorBlock};
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
     block::{OnScheduledTickArgs, registry::BlockRegistry},
     command::client_suggestions,
-    entity::{Entity, EntityBase, RemovalReason, player::Player},
+    entity::{Entity, EntityBase, player::Player},
     error::PumpkinError,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
     plugin::{
@@ -795,8 +796,7 @@ impl World {
         let mut groups: FxHashMap<Vector2<i32>, Vec<NbtCompound>> = FxHashMap::default();
         for entity in entities {
             let base_entity = entity.get_entity();
-            // Entity.save saves passengers only inside their root's record.
-            if base_entity.is_removed() || base_entity.get_vehicle().is_some() {
+            if !entity_persistence::should_save_root(entity.as_ref()) {
                 continue;
             }
             let nbt = entity_persistence::save_riding_tree(entity);
@@ -4997,27 +4997,6 @@ impl World {
         removed_player
     }
 
-    pub fn remove_entity(&self, entity: &dyn EntityBase) {
-        let base_entity = entity.get_entity();
-        if base_entity
-            .removal_reason
-            .swap(Some(RemovalReason::Discarded))
-            .is_some()
-        {
-            return;
-        }
-        self.clear_fishing_hook_owner(base_entity);
-        base_entity.removed.store(true, Ordering::Release);
-
-        self.spawn_state.load().remove_entity(self, entity);
-        self.entity_tracker.remove_entity(entity, self);
-        self.entities.rcu(|current_entities| {
-            let mut new_entities = (**current_entities).clone();
-            new_entities.retain(|e| e.get_entity().entity_uuid != base_entity.entity_uuid);
-            new_entities
-        });
-    }
-
     pub async fn remove_entities_in_chunks(
         &self,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
@@ -5026,33 +5005,12 @@ impl World {
         if chunks_set.is_empty() {
             return;
         }
-        let mut entities_to_remove = Vec::new();
-
-        self.entities.rcu(|current_entities| {
-            entities_to_remove.clear();
-            let mut new_entities = (**current_entities).clone();
-            new_entities.retain(|entity| {
-                let pos = entity_persistence::root_chunk(entity);
-                if chunks_set.contains(&pos) {
-                    entities_to_remove.push(entity.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            new_entities
-        });
+        let entities_to_remove = self.claim_chunk_unloads(&chunks_set);
 
         self.save_entities_by_chunk(&entities_to_remove, chunks_set.iter().copied())
             .await;
 
-        for entity in &entities_to_remove {
-            self.entity_tracker.remove_entity(entity.as_ref(), self);
-            self.spawn_state.load().remove_entity(self, entity.as_ref());
-        }
-
-        // Serialized trees own the unload result; release the old strong riding links.
-        entity_persistence::detach_unloaded_trees(&entities_to_remove);
+        self.finish_chunk_unloads(&entities_to_remove);
         for chunk_pos in &chunks_set {
             self.save_block_entities(*chunk_pos);
             self.block_entities.remove(chunk_pos);
@@ -5207,14 +5165,7 @@ impl World {
         let is_new_block = old_block != new_block;
         let block_moved = flags.contains(BlockFlags::MOVED);
 
-        if is_new_block && block_entity_name(old_block).is_some() {
-            if let Some(entity) = self.get_block_entity(position)
-                && !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK)
-            {
-                entity.on_block_replaced(self, position);
-            }
-            self.remove_block_entity(position);
-        }
+        self.remove_replaced_block_entity(position, old_block, new_block, flags);
 
         if is_new_block && (flags.contains(BlockFlags::NOTIFY_NEIGHBORS) || block_moved) {
             self.block_registry.on_state_replaced(
@@ -5227,12 +5178,10 @@ impl World {
         }
 
         if !flags.contains(BlockFlags::SKIP_BLOCK_ADDED_CALLBACK) && is_new_block {
-            self.block_registry.on_placed(
-                self,
-                new_block,
-                block_state_id,
+            self.on_block_placed(
                 position,
                 replaced_block_state_id,
+                block_state_id,
                 block_moved,
             );
             let new_fluid = self.get_fluid(position);
@@ -5401,6 +5350,7 @@ impl World {
             Block::AIR.default_state.id
         };
 
+        DoorBlock::player_will_destroy(self, position, broken_block_state.id, flags, cause);
         let broken_state_id = self.set_block_state_with_limit(
             position,
             new_state_id,
@@ -5866,8 +5816,9 @@ impl World {
             );
 
             let entity = Entity::new(self.clone(), Vector3::new(x, y, z), &EntityType::ITEM);
-            let entity = Arc::new(ItemEntity::new_with_velocity(entity, item, velocity, 10));
-            self.spawn_entity(entity);
+            // Containers.dropItemStack uses the ItemEntity constructor's zero delay.
+            let entity = ItemEntity::new_with_velocity(entity, item, velocity, 0);
+            self.spawn_item_with_event(entity);
         }
     }
     /* End ItemScatterer.java */

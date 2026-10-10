@@ -1,5 +1,5 @@
 use crossbeam::atomic::AtomicCell;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crate::entity::Entity;
 use pumpkin_protocol::java::client::play::Metadata;
@@ -13,6 +13,7 @@ pub struct VehicleEntity {
     pub hurt_time: AtomicI32,
     pub hurt_dir: AtomicI32,
     pub damage: AtomicCell<f32>,
+    pub(super) destruction_claimed: AtomicBool,
 }
 
 impl VehicleEntity {
@@ -22,6 +23,7 @@ impl VehicleEntity {
             hurt_time: AtomicI32::new(0),
             hurt_dir: AtomicI32::new(1),
             damage: AtomicCell::new(0.0),
+            destruction_claimed: AtomicBool::new(false),
         }
     }
 
@@ -192,7 +194,32 @@ impl VehicleEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        if !self.entity.is_alive() {
+        self.damage_with_destruction(amount, source, cause, |creative| {
+            if creative {
+                self.entity.remove();
+            } else {
+                self.kill_and_drop_self();
+            }
+        })
+    }
+
+    /// Runs the vehicle damage events and delegates a lethal hit to its concrete vehicle.
+    pub(crate) fn damage_with_destruction(
+        &self,
+        amount: f32,
+        source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+        destroy: impl FnOnce(bool),
+    ) -> bool {
+        if !self.entity.is_alive() || self.destruction_claimed.load(Ordering::Acquire) {
+            return true;
+        }
+        // VehicleEntity.hurtServer is serial in vanilla; reserve lethal hits before plugin events.
+        let is_creative = cause
+            .and_then(|s| s.get_player())
+            .is_some_and(|p| p.gamemode.load() == GameMode::Creative);
+        let lethal = is_creative || self.get_damage() + amount * 10.0 > 40.0;
+        if lethal && self.destruction_claimed.swap(true, Ordering::AcqRel) {
             return true;
         }
 
@@ -209,17 +236,18 @@ impl VehicleEntity {
                 .fire_blocking(&server, &mut damage_event);
         }
         if damage_event.cancelled {
+            if lethal {
+                self.destruction_claimed.store(false, Ordering::Release);
+            }
             return false;
         }
 
         let new_strength = self.apply_damage_wobble(amount);
 
-        // VehicleEntity.hurtServer tests the causing player.
-        let is_creative = cause
-            .and_then(|s| s.get_player())
-            .is_some_and(|p| p.gamemode.load() == GameMode::Creative);
-
         if is_creative || new_strength > 40.0 {
+            if !lethal && self.destruction_claimed.swap(true, Ordering::AcqRel) {
+                return true;
+            }
             let mut destroy_event =
                 crate::plugin::api::events::vehicle::vehicle_destroy::VehicleDestroyEvent::new(
                     self.entity.entity_id,
@@ -231,14 +259,14 @@ impl VehicleEntity {
                     .fire_blocking(&server, &mut destroy_event);
             }
             if destroy_event.cancelled {
+                self.destruction_claimed.store(false, Ordering::Release);
                 return false;
             }
 
-            if is_creative {
-                self.entity.remove();
-            } else {
-                self.kill_and_drop_self();
-            }
+            destroy(is_creative);
+        } else if lethal {
+            // VehicleEntity.hurtServer: tick decay during callbacks can invalidate the prediction.
+            self.destruction_claimed.store(false, Ordering::Release);
         }
 
         true

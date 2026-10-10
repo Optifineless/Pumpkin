@@ -15,13 +15,11 @@ use pumpkin_world::world::BlockFlags;
 use std::sync::Arc;
 
 use crate::block::BlockBehaviour;
-use crate::block::BrokenArgs;
 use crate::block::CanPlaceAtArgs;
 use crate::block::GetStateForNeighborUpdateArgs;
 use crate::block::NormalUseArgs;
 use crate::block::OnNeighborUpdateArgs;
 use crate::block::OnPlaceArgs;
-use crate::block::OnStateReplacedArgs;
 use crate::block::PathComputationType;
 use crate::block::PlacedArgs;
 use crate::block::blocks::redstone::block_receives_redstone_power;
@@ -30,7 +28,6 @@ use crate::entity::player::Player;
 use pumpkin_protocol::java::server::play::SUseItemOn;
 
 use crate::world::World;
-use pumpkin_util::GameMode;
 
 type DoorProperties = pumpkin_data::block_properties::OakDoorLikeProperties;
 
@@ -154,6 +151,63 @@ fn get_hinge(
 pub struct DoorBlock;
 
 impl DoorBlock {
+    // DoorBlock.playerWillDestroy -> DoublePlantBlock.preventDropFromBottomPart.
+    pub(crate) fn player_will_destroy(
+        world: &Arc<World>,
+        pos: &BlockPos,
+        state: BlockStateId,
+        flags: BlockFlags,
+        cause: Option<&Arc<Player>>,
+    ) {
+        let Some(player) = cause else {
+            return;
+        };
+        if !flags.contains(BlockFlags::SKIP_DROPS) {
+            return;
+        }
+        let block = Block::from_state_id(state);
+        if !block.has_tag(&tag::Block::MINECRAFT_DOORS)
+            || DoorProperties::from_state_id(state).half != DoubleBlockHalf::Upper
+        {
+            return;
+        }
+        let bottom = pos.down();
+        let (bottom_block, bottom_state) = world.get_block_and_state_id(&bottom);
+        if bottom_block == block
+            && DoorProperties::from_state_id(bottom_state).half == DoubleBlockHalf::Lower
+        {
+            let replacement = if bottom_block.is_waterlogged(bottom_state) {
+                Block::WATER.default_state.id
+            } else {
+                BlockStateId::AIR
+            };
+            world.set_block_state(
+                &bottom,
+                replacement,
+                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
+            );
+            let java = pumpkin_protocol::java::client::play::CWorldEvent::new(
+                pumpkin_data::world::WorldEvent::ParticlesDestroyBlock as i32,
+                bottom,
+                i32::from(bottom_state.as_u16()),
+                false,
+            );
+            let bedrock = pumpkin_protocol::bedrock::client::level_event::CLevelEvent {
+                event_id: pumpkin_protocol::VarInt(
+                    pumpkin_protocol::bedrock::client::level_event::LevelEvent::ParticlesDestroyBlock as i32,
+                ),
+                position: bottom.to_centered_f64().to_f32_lossy(),
+                data: pumpkin_protocol::VarInt(BlockState::to_be_network_id(bottom_state) as i32),
+            };
+            world.broadcast_to_chunk_except_editioned(
+                bottom.chunk_position(),
+                &[crate::entity::EntityBase::get_entity(player.as_ref()).entity_uuid],
+                &java,
+                &bedrock,
+            );
+        }
+    }
+
     #[must_use]
     pub fn is_wooden_door(world: &World, block_pos: &BlockPos) -> bool {
         let block = world.get_block(block_pos);
@@ -254,35 +308,6 @@ impl BlockBehaviour for DoorBlock {
         }
     }
 
-    fn broken(&self, args: BrokenArgs<'_>) {
-        let door_props = DoorProperties::from_state_id(args.state.id);
-        let other_half_pos = match door_props.half {
-            DoubleBlockHalf::Upper => args.position.down(),
-            DoubleBlockHalf::Lower => args.position.up(),
-        };
-
-        let (other_block, other_state) = args.world.get_block_and_state(&other_half_pos);
-        if other_block.id != args.block.id {
-            args.world.update_neighbors(&other_half_pos, None);
-            return; // Neighbor is already gone or is a different block
-        }
-
-        let other_props = DoorProperties::from_state_id(other_state.id);
-        if other_props.half == door_props.half {
-            return;
-        }
-
-        let is_creative = args.player.gamemode.load() == GameMode::Creative;
-        let flags = if door_props.half == DoubleBlockHalf::Upper && !is_creative {
-            BlockFlags::NOTIFY_ALL
-        } else {
-            BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
-        };
-
-        args.world
-            .break_block(&other_half_pos, Some(args.player), flags);
-    }
-
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         let block_state = args.world.get_block_state(args.position);
         let mut door_props = DoorProperties::from_state_id(block_state.id);
@@ -342,6 +367,7 @@ impl BlockBehaviour for DoorBlock {
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
+        // DoorBlock.updateShape -> Block.updateOrDestroy drops the remaining lower half.
         let lv = DoorProperties::from_state_id(args.state_id).half;
         if args.direction.to_axis() != Axis::Y
             || (lv == DoubleBlockHalf::Lower) != (args.direction == BlockDirection::Up)
@@ -352,40 +378,17 @@ impl BlockBehaviour for DoorBlock {
             {
                 return BlockStateId::AIR;
             }
-        } else if Block::from_state_id(args.neighbor_state_id).id == args.block.id
+        } else if Block::from_state_id(args.neighbor_state_id).has_tag(&tag::Block::MINECRAFT_DOORS)
             && DoorProperties::from_state_id(args.neighbor_state_id).half != lv
         {
+            // DoorBlock.updateShape accepts another door variant during transformations.
             let mut new_state = DoorProperties::from_state_id(args.neighbor_state_id);
             new_state.half = lv;
-            return new_state.to_state_id(args.block);
+            return new_state.to_state_id(Block::from_state_id(args.neighbor_state_id));
         } else {
             return BlockStateId::AIR;
         }
         args.state_id
-    }
-
-    fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
-        if args.moved {
-            return;
-        }
-
-        let door_props = DoorProperties::from_state_id(args.old_state_id);
-        let other_half_pos = match door_props.half {
-            DoubleBlockHalf::Upper => args.position.down(),
-            DoubleBlockHalf::Lower => args.position.up(),
-        };
-
-        let (other_block, other_state) = args.world.get_block_and_state(&other_half_pos);
-        if other_block.id == args.block.id {
-            let other_props = DoorProperties::from_state_id(other_state.id);
-            if other_props.half != door_props.half {
-                args.world.break_block(
-                    &other_half_pos,
-                    None,
-                    BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
-                );
-            }
-        }
     }
 
     fn is_pathfindable(&self, state: &BlockState, computation_type: PathComputationType) -> bool {

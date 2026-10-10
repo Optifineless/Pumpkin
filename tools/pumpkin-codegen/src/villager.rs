@@ -224,7 +224,8 @@ pub fn build() -> TokenStream {
         let gives = quote! { VillagerTradeItem { item: &crate::item::Item::#gives_item, count: #gives_count } };
 
         let max_uses = trade.max_uses.unwrap_or(16.0) as i32;
-        let xp = trade.xp.unwrap_or(2.0) as i32;
+        // VillagerTrade.CODEC defaults omitted xp to exactly(1).
+        let xp = trade.xp.unwrap_or(1.0) as i32;
         let price_multiplier = trade.reputation_discount.unwrap_or(0.05);
 
         let modifier = trade
