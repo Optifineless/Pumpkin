@@ -109,6 +109,19 @@ impl World {
         existing_mounts: &[ExistingMount],
     ) -> bool {
         use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+        // PersistentEntitySectionManager.addEntity must invalidate snapshots before publication.
+        let Some(_mutations) = members
+            .iter()
+            .map(|member| member.get_entity().try_begin_mutation())
+            .chain(
+                existing_mounts
+                    .iter()
+                    .map(|(_, mount)| mount.get_entity().try_begin_mutation()),
+            )
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
         let accepted = AtomicBool::new(false);
         let rejected_index = AtomicUsize::new(0);
         for member in members {

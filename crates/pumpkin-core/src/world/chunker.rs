@@ -83,6 +83,8 @@ pub fn update_position(player: &Arc<Player>) {
     let unloading_chunks: Vec<_> = unloading_iter.collect();
 
     let level = &world.level;
+    // ChunkMap.move: watcher ownership changes before ticket removal can start an unload.
+    let chunks_to_clean = level.update_chunk_watchers(&loading_chunks, &unloading_chunks);
     let mut held_tickets = player
         .held_chunk_tickets
         .lock()
@@ -147,8 +149,7 @@ pub fn update_position(player: &Arc<Player>) {
     }
     player.watched_section.store(new_cylindrical);
 
-    // Make sure the watched section and the chunk watcher updates are async atomic. We want to
-    // ensure what we unload when the player disconnects is correct.
+    // Storage residency follows asynchronously; live ownership was updated before ticket changes.
     if !loading_chunks.is_empty() || !unloading_chunks.is_empty() {
         let level = world.level.clone();
         let world_clone = world.clone();
@@ -158,10 +159,7 @@ pub fn update_position(player: &Arc<Player>) {
         if let Some(server) = world.server.upgrade() {
             server.spawn_task(async move {
                 level
-                    .mark_chunks_as_newly_watched(&loading_chunks_clone)
-                    .await;
-                let chunks_to_clean = level
-                    .mark_chunks_as_not_watched(&unloading_chunks_clone)
+                    .update_entity_region_watchers(&loading_chunks_clone, &unloading_chunks_clone)
                     .await;
 
                 if !chunks_to_clean.is_empty() {

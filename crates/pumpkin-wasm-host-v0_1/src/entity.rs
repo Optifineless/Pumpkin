@@ -1,3 +1,4 @@
+// PersistentEntitySectionManager.unloadEntity: detached handles cannot change live state.
 use std::sync::Arc;
 use wasmtime::component::{Access, HasSelf, Resource};
 
@@ -151,6 +152,9 @@ impl HostEntity for PluginHostState {
         velocity: Position,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity
             .get_entity()
             .velocity
@@ -167,12 +171,18 @@ impl HostEntity for PluginHostState {
 
     fn set_sneaking(&mut self, entity: Resource<Entity>, sneaking: bool) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_sneaking(sneaking);
         Ok(())
     }
 
     fn set_sprinting(&mut self, entity: Resource<Entity>, sprinting: bool) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_sprinting(sprinting);
         Ok(())
     }
@@ -187,12 +197,18 @@ impl HostEntity for PluginHostState {
 
     fn set_invisible(&mut self, entity: Resource<Entity>, invisible: bool) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_invisible(invisible);
         Ok(())
     }
 
     fn set_glowing(&mut self, entity: Resource<Entity>, glowing: bool) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_glowing(glowing);
         Ok(())
     }
@@ -211,6 +227,9 @@ impl HostEntity for PluginHostState {
         fall_flying: bool,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_fall_flying(fall_flying);
         Ok(())
     }
@@ -226,6 +245,9 @@ impl HostEntity for PluginHostState {
 
     fn set_on_fire(&mut self, entity: Resource<Entity>, on_fire: bool) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_on_fire(on_fire);
         Ok(())
     }
@@ -249,6 +271,9 @@ impl HostEntity for PluginHostState {
     ) -> wasmtime::Result<()> {
         let text = self.take(name)?;
         let entity_base = self.get(&entity)?;
+        let Some(_mutation) = entity_base.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity_base.get_entity().set_custom_name(text);
         Ok(())
     }
@@ -274,6 +299,9 @@ impl HostEntity for PluginHostState {
         visible: bool,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_custom_name_visible(visible);
         Ok(())
     }
@@ -300,6 +328,9 @@ impl HostEntity for PluginHostState {
         invulnerable: bool,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         // Entity.setInvulnerable: the saved, permanent flag (players included).
         entity.get_entity().set_invulnerable(invulnerable);
         Ok(())
@@ -315,6 +346,9 @@ impl HostEntity for PluginHostState {
 
     fn set_fire_ticks(&mut self, entity: Resource<Entity>, ticks: i32) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity
             .get_entity()
             .fire_ticks
@@ -335,6 +369,9 @@ impl HostEntity for PluginHostState {
         distance: f32,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(living) = entity.get_living_entity() {
             living.fall_distance.store(distance);
         }
@@ -348,6 +385,9 @@ impl HostEntity for PluginHostState {
 
     fn set_silent(&mut self, entity: Resource<Entity>, silent: bool) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_silent(silent);
         Ok(())
     }
@@ -359,6 +399,9 @@ impl HostEntity for PluginHostState {
 
     fn set_has_gravity(&mut self, entity: Resource<Entity>, gravity: bool) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_has_no_gravity(!gravity);
         Ok(())
     }
@@ -476,6 +519,9 @@ impl HostEntity for PluginHostState {
 
     fn set_ticks_lived(&mut self, entity: Resource<Entity>, ticks: i32) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity
             .get_entity()
             .age
@@ -500,6 +546,9 @@ impl HostEntity for PluginHostState {
         pitch: f32,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_rotation(yaw, pitch);
         Ok(())
     }
@@ -518,6 +567,9 @@ impl HostEntity for PluginHostState {
         visual_fire: bool,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_on_fire(visual_fire);
         Ok(())
     }
@@ -536,6 +588,9 @@ impl HostEntity for PluginHostState {
         cooldown: u32,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity
             .get_entity()
             .portal_cooldown
@@ -555,6 +610,9 @@ impl HostEntity for PluginHostState {
 
     fn set_remaining_air(&mut self, entity: Resource<Entity>, air: i32) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(player) = entity.get_player() {
             player
                 .breath_manager
@@ -571,6 +629,9 @@ impl HostEntity for PluginHostState {
 
     fn remove(&mut self, entity: Resource<Entity>) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().remove();
         Ok(())
     }
@@ -670,6 +731,9 @@ impl HostEntity for PluginHostState {
         value: WitNbtTree,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         let base_entity = entity.get_entity();
         let tag = super::common::from_wit_nbt_tree(&value).map_err(wasmtime::Error::msg)?;
         base_entity.set_custom_data(&namespace, &key, tag);
@@ -695,6 +759,9 @@ impl HostEntity for PluginHostState {
         key: String,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         let base_entity = entity.get_entity();
         base_entity.remove_custom_data(&namespace, &key);
         Ok(())
@@ -763,9 +830,15 @@ impl crate::pumpkin::plugin::world::HostEntityWithStore<PluginHostState>
             (entity, world, active_plugin(state)?)
         };
         let pos = Vector3::new(pos.0, pos.1, pos.2);
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
-            .pump_blocking(&mut host, move || entity.teleport(pos, None, None, world))
+            .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
+                entity.teleport(pos, None, None, world);
+            })
             .await
     }
 
@@ -778,9 +851,13 @@ impl crate::pumpkin::plugin::world::HostEntityWithStore<PluginHostState>
             let state = host.get();
             (state.get(&entity)?.clone(), active_plugin(state)?)
         };
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
             .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
                 entity.get_entity().set_swimming(swimming);
             })
             .await
@@ -797,9 +874,13 @@ impl crate::pumpkin::plugin::world::HostEntityWithStore<PluginHostState>
             let vehicle = vehicle.map(|vehicle| state.take(vehicle)).transpose()?;
             (entity, vehicle, active_plugin(state)?)
         };
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
             .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
                 let current_vehicle = entity
                     .get_entity()
                     .vehicle
@@ -833,9 +914,13 @@ impl crate::pumpkin::plugin::world::HostEntityWithStore<PluginHostState>
                 active_plugin(state)?,
             )
         };
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
             .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
                 entity
                     .get_entity()
                     .add_passenger(Arc::clone(&entity), passenger);
@@ -858,9 +943,13 @@ impl crate::pumpkin::plugin::world::HostEntityWithStore<PluginHostState>
                 active_plugin(state)?,
             )
         };
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
             .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
                 entity.get_entity().remove_passenger(passenger_id);
             })
             .await
@@ -874,9 +963,13 @@ impl crate::pumpkin::plugin::world::HostEntityWithStore<PluginHostState>
             let state = host.get();
             (state.get(&entity)?.clone(), active_plugin(state)?)
         };
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
             .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
                 let passenger_ids: Vec<i32> = entity
                     .get_entity()
                     .passengers

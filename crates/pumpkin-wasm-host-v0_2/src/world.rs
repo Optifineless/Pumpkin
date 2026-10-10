@@ -1424,6 +1424,11 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
             return Err(wasmtime::Error::msg("Chunk unloaded"));
         };
 
+        // Preserve setter success for an upgradable handle replaced by a canonical chunk.
+        let Some(_mutation) = world.level.try_mutate_retained_chunk(&chunk_data) else {
+            return Ok(());
+        };
+
         let Some(state) = BlockStateId::new(state) else {
             return Err(wasmtime::Error::msg("Invalid BlockStateId"));
         };
@@ -1553,12 +1558,15 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
         value: super::common::WitNbtTree,
     ) -> wasmtime::Result<()> {
         let chunk_res = self.get(&chunk)?;
-        let (_, chunk_data) = &chunk_res;
+        let (world, chunk_data) = &chunk_res;
         let Some(chunk_data) = chunk_data.upgrade() else {
             return Err(wasmtime::Error::msg("Chunk unloaded"));
         };
         let tag = super::common::from_wit_nbt_tree(&value).map_err(wasmtime::Error::msg)?;
-        chunk_data.set_custom_data(&namespace, &key, tag);
+        world
+            .level
+            .set_retained_chunk_custom_data(&chunk_data, &namespace, &key, tag)
+            .map_err(wasmtime::Error::msg)?;
         Ok(())
     }
 
@@ -1584,11 +1592,14 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
         key: String,
     ) -> wasmtime::Result<()> {
         let chunk_res = self.get(&chunk)?;
-        let (_, chunk_data) = &chunk_res;
+        let (world, chunk_data) = &chunk_res;
         let Some(chunk_data) = chunk_data.upgrade() else {
             return Err(wasmtime::Error::msg("Chunk unloaded"));
         };
-        chunk_data.remove_custom_data(&namespace, &key);
+        world
+            .level
+            .remove_retained_chunk_custom_data(&chunk_data, &namespace, &key)
+            .map_err(wasmtime::Error::msg)?;
         Ok(())
     }
 

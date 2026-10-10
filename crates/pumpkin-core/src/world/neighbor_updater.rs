@@ -268,12 +268,19 @@ impl World {
         flags: BlockFlags,
         update_limit: u32,
     ) -> BlockStateId {
+        let Some(_mutation) = self
+            .level
+            .begin_existing_chunk_mutation(position.chunk_position())
+        else {
+            return BlockStateId::AIR;
+        };
         if !self.is_in_build_limit(*position) {
             return BlockStateId::AIR;
         }
-        let old = self
-            .write_block_state_if(position, state, |_| true)
-            .unwrap_or(BlockStateId::AIR);
+        // Level.setBlock returns before notifications when LevelChunk.setBlockState fails.
+        let Some(old) = self.write_block_state_if(position, state, |_| true) else {
+            return BlockStateId::AIR;
+        };
         self.on_block_state_set(position, old, state, flags, update_limit)
     }
 

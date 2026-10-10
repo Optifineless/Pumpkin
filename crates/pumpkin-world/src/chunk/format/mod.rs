@@ -592,7 +592,12 @@ impl ChunkData {
         nbt.write()
     }
 
-    pub fn set_custom_data(&self, namespace: &str, key: &str, value: pumpkin_nbt::tag::NbtTag) {
+    pub(crate) fn set_custom_data(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: pumpkin_nbt::tag::NbtTag,
+    ) {
         let mut custom_data = self
             .custom_data
             .lock()
@@ -627,7 +632,7 @@ impl ChunkData {
             .cloned()
     }
 
-    pub fn remove_custom_data(&self, namespace: &str, key: &str) {
+    pub(crate) fn remove_custom_data(&self, namespace: &str, key: &str) {
         let mut custom_data = self
             .custom_data
             .lock()

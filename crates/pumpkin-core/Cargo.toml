@@ -118,6 +118,7 @@ xxhash-rust.workspace = true
 
 
 [dev-dependencies]
+pumpkin-world = { workspace = true, features = ["test-hooks"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
