@@ -32,6 +32,7 @@ pub(crate) mod collision_shapes;
 mod dragon_parts;
 mod entity_persistence;
 pub mod explosion;
+pub(crate) mod fluid_lookup;
 pub mod generation_cache;
 pub mod loot;
 pub mod map;
@@ -5949,25 +5950,8 @@ impl World {
         self.get_block_state_id_if_loaded(position).is_some()
     }
 
-    /// Returns the fluid family in a block state, including contained and waterlogged water.
-    pub(crate) fn get_fluid_from_state_id(id: BlockStateId) -> &'static pumpkin_data::fluid::Fluid {
-        if let Some(fluid) = Fluid::from_state_id(id) {
-            return fluid.to_flowing();
-        }
-        // These blocks contain source water without a `waterlogged` property.
-        if matches!(
-            id.to_block_id(),
-            pumpkin_data::BlockId::KELP
-                | pumpkin_data::BlockId::KELP_PLANT
-                | pumpkin_data::BlockId::SEAGRASS
-                | pumpkin_data::BlockId::TALL_SEAGRASS
-                | pumpkin_data::BlockId::BUBBLE_COLUMN
-        ) || id.is_waterlogged()
-        {
-            &Fluid::FLOWING_WATER
-        } else {
-            &Fluid::EMPTY
-        }
+    fn get_fluid_from_state_id(id: BlockStateId) -> &'static pumpkin_data::fluid::Fluid {
+        fluid_lookup::get_fluid_from_state_id(id)
     }
 
     fn fluid_state_from_block_state(id: BlockStateId) -> (&'static Fluid, FluidState) {
