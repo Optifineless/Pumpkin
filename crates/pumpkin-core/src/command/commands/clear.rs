@@ -300,13 +300,17 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
 mod tests {
     use super::*;
     use crate::entity::EntityBase;
+    use crate::net::bedrock::combat_test_support::TestBedrockPlayer;
     use crate::net::java::combat_test_support::TestPlayer;
     use crate::server::{Server, combat_test_support};
     use pumpkin_data::attributes::Attributes;
     use pumpkin_data::item::Item;
     use pumpkin_data::packet::{CURRENT_MC_VERSION, clientbound::play::SET_EQUIPMENT};
     use pumpkin_protocol::{
-        ServerPacket, codec::var_int::VarInt, java::client::play::CSetEquipment,
+        ServerPacket,
+        bedrock::{client::CMobArmorEquipment, network_item::NetworkItemStackDescriptor},
+        codec::var_int::VarInt,
+        java::client::play::CSetEquipment,
     };
     use pumpkin_util::PermissionLvl;
     use std::sync::Arc;
@@ -467,6 +471,62 @@ mod tests {
                 slot.discriminant()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn clear_sends_empty_armor_to_bedrock_tracking_players() {
+        let mut fixture = ClearFixture::new();
+        let world = fixture.target.player.world();
+        let mut bedrock_observer = TestBedrockPlayer::new(&world).await;
+        bedrock_observer.player.watched_section.store(
+            pumpkin_world::cylindrical_chunk_iterator::Cylindrical::new(
+                fixture.target.player.get_entity().chunk_pos.load(),
+                std::num::NonZeroU8::new(2).unwrap(),
+            ),
+        );
+        bedrock_observer
+            .player
+            .chunk_sender
+            .lock()
+            .unwrap()
+            .mark_sent_out_of_band(fixture.target.player.get_entity().chunk_pos.load());
+        world.players.store(Arc::new(vec![
+            fixture.target.player.clone(),
+            fixture.observer.player.clone(),
+            bedrock_observer.player.clone(),
+        ]));
+        world
+            .entity_tracker
+            .get_tracked_entity(fixture.target.player.entity_id())
+            .unwrap()
+            .update_player(&bedrock_observer.player, &world);
+
+        fixture.equip_diamond_armor();
+        fixture.target.take_packets();
+        fixture.observer.take_packets();
+        bedrock_observer.take_packets();
+
+        assert_eq!(fixture.run_clear("clear @s").unwrap(), 4);
+
+        let empty = NetworkItemStackDescriptor::default();
+        let expected = CMobArmorEquipment {
+            target_runtime_id: (fixture.target.player.entity_id() as u64).into(),
+            head: empty.clone(),
+            torso: empty.clone(),
+            legs: empty.clone(),
+            feet: empty.clone(),
+            body: empty,
+        };
+        let expected_packet = bedrock_observer
+            .client()
+            .serialize_packet(&expected)
+            .unwrap();
+        assert!(
+            bedrock_observer.take_packets().contains(&expected_packet),
+            "Bedrock observer did not receive the cleared armor state"
+        );
+
+        bedrock_observer.close().await;
     }
 
     #[tokio::test]
