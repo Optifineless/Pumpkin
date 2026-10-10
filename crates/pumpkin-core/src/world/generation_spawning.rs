@@ -127,14 +127,17 @@ impl World {
     }
 
     pub(super) fn publish_generated_entities(self: &Arc<Self>, pos: Vector2<i32>) {
-        let data = self
+        let Some(chunk) = self.level.read_chunk_sync(&pos, Clone::clone) else {
+            return;
+        };
+        let data = chunk.get_custom_data("murgicraft", "generated_entities");
+        if self
             .level
-            .read_chunk_sync(&pos, |chunk| {
-                let data = chunk.get_custom_data("murgicraft", "generated_entities");
-                chunk.remove_custom_data("murgicraft", "generated_entities");
-                data
-            })
-            .flatten();
+            .remove_retained_chunk_custom_data(&chunk, "murgicraft", "generated_entities")
+            .is_err()
+        {
+            return;
+        }
         if let Some(list) = data
             .as_ref()
             .and_then(pumpkin_nbt::tag::NbtTag::extract_list)

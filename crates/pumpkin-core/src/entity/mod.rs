@@ -5,6 +5,8 @@ pub(crate) mod death_test_world;
 #[cfg(test)]
 mod harvest_tests;
 pub mod kill_credit;
+mod riding_admission;
+pub mod section_membership;
 use crate::{
     entity::item::ItemEntity,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
@@ -69,7 +71,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::{
     Arc,
     atomic::{
-        AtomicBool, AtomicI32, AtomicU8, AtomicU32,
+        AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicUsize,
         Ordering::{self, Relaxed},
     },
 };
@@ -168,6 +170,9 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     fn write_custom_nbt(&self, _nbt: &mut NbtCompound) {}
 
     fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
+        let Some(_mutation) = self.get_entity().try_begin_mutation() else {
+            return;
+        };
         self.get_entity().read_nbt_non_mut(nbt);
         if let Some(mob) = self.get_mob() {
             mob.mob_pre_load_nbt(nbt);
@@ -276,6 +281,12 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         pitch: Option<f32>,
         world: Arc<World>,
     ) {
+        let Some(_source) = self.get_entity().try_begin_position_mutation(position) else {
+            return;
+        };
+        let _destination = world
+            .level
+            .begin_chunk_mutation(BlockPos::floored_v(position).chunk_position());
         if self.projectile_state().is_some()
             && projectile::ownership::teleport_projectile(
                 self.get_entity(),
@@ -602,6 +613,9 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     }
 
     fn set_on_fire_for_ticks(&self, ticks: u32) {
+        let Some(_mutation) = self.get_entity().try_begin_mutation() else {
+            return;
+        };
         ignite::ignite_for_ticks(self, ticks);
     }
 
@@ -942,6 +956,7 @@ pub struct Entity {
     pub entity_type: &'static EntityType,
     /// The world in which the entity exists.
     /// Uses `ArcSwap` to allow atomic updates when changing dimensions.
+    /// Writes must use `set_world` to update the membership generation.
     pub world: ArcSwap<World>,
     /// The entity's current position in the world
     pub pos: AtomicCell<Vector3<f64>>,
@@ -1014,8 +1029,10 @@ pub struct Entity {
     pub was_in_powder_snow: AtomicBool,
     pub removal_reason: AtomicCell<Option<RemovalReason>>,
     // The passengers that entity has
+    /// Writes must use the passenger link helpers to update the riding generation.
     pub passengers: std::sync::Mutex<Vec<Arc<dyn EntityBase>>>,
     /// The vehicle that entity is in
+    /// Writes must use `set_vehicle_link` to update the riding generation.
     pub vehicle: std::sync::Mutex<Option<Arc<dyn EntityBase>>>,
     /// The entity this entity is attached/leashed to (if any)
     pub leashed_to: std::sync::Mutex<Option<Arc<dyn EntityBase>>>,
@@ -1070,6 +1087,10 @@ pub struct Entity {
     pub last_sent_velocity: AtomicCell<Vector3<f64>>,
     /// Persistent custom data container for plugins
     pub custom_data: std::sync::Mutex<NbtCompound>,
+    mutation_admissions: Arc<AtomicUsize>,
+    riding_admission: riding_admission::RidingAdmission,
+    world_membership: section_membership::WorldMembership,
+    mutation_chunk: arc_swap::ArcSwapOption<section_membership::CachedAdmission>,
 }
 
 impl Entity {
@@ -1198,6 +1219,10 @@ impl Entity {
             last_sent_pos: AtomicCell::new(position),
             last_sent_velocity: AtomicCell::new(Vector3::default()),
             custom_data: std::sync::Mutex::new(NbtCompound::new()),
+            mutation_admissions: Arc::new(AtomicUsize::new(0)),
+            riding_admission: riding_admission::RidingAdmission::default(),
+            world_membership: section_membership::WorldMembership::default(),
+            mutation_chunk: arc_swap::ArcSwapOption::empty(),
         }
     }
 
@@ -1206,6 +1231,7 @@ impl Entity {
     }
 
     pub fn set_velocity(&self, velocity: Vector3<f64>) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.velocity.store(velocity);
         self.send_velocity();
     }
@@ -1213,11 +1239,15 @@ impl Entity {
     /// Updates the world reference for this entity.
     /// Called when the entity changes dimensions (e.g., through a nether portal).
     pub fn set_world(&self, world: Arc<World>) {
+        let Some(_source) = self.try_begin_mutation() else {
+            return;
+        };
         let block_pos = self.block_pos.load();
+        let _destination = world.level.begin_chunk_mutation(block_pos.chunk_position());
         let biome = world.level.get_rough_biome(&block_pos);
         self.current_biome.store(Arc::new(biome));
         self.last_biome_update_pos.store(block_pos);
-        self.world.store(world);
+        self.store_world(world);
     }
 
     pub fn bedrock_metadata(&self) -> SyncedActorDataList {
@@ -1285,6 +1315,7 @@ impl Entity {
     /// Sets the entity's age in ticks.
     /// Negative values indicate that the entity is a baby.
     pub fn set_age(&self, age: i32) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.age.store(age, Relaxed);
     }
 
@@ -1293,6 +1324,9 @@ impl Entity {
     /// Returns `false` if the entity already has the tag or already carries
     /// [`MAX_SCOREBOARD_TAGS`] tags.
     pub fn add_scoreboard_tag(&self, tag: &str) -> bool {
+        let Some(_mutation) = self.try_begin_mutation() else {
+            return false;
+        };
         let mut tags = self
             .scoreboard_tags
             .lock()
@@ -1304,6 +1338,9 @@ impl Entity {
     ///
     /// Returns `false` if the entity did not have the tag.
     pub fn remove_scoreboard_tag(&self, tag: &str) -> bool {
+        let Some(_mutation) = self.try_begin_mutation() else {
+            return false;
+        };
         self.scoreboard_tags
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1312,6 +1349,7 @@ impl Entity {
 
     /// Sets a custom name for the entity, typically used with nametags
     pub fn set_custom_name(&self, name: TextComponent) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.custom_name.store(Arc::new(Some(name.clone())));
         let mut bedrock_meta = SyncedActorDataList::new();
         bedrock_meta.set(
@@ -1334,6 +1372,7 @@ impl Entity {
     }
 
     pub fn set_custom_name_visible(&self, visible: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.custom_name_visible.store(visible, Ordering::Relaxed);
         let mut bedrock_meta = SyncedActorDataList::new();
         if let Some(name) = &**self.custom_name.load() {
@@ -1361,6 +1400,7 @@ impl Entity {
     }
 
     pub fn set_silent(&self, silent: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.silent.store(silent, Ordering::Relaxed);
         self.set_synced_data(tracked_data::entity::DATA_SILENT, silent);
     }
@@ -1370,6 +1410,7 @@ impl Entity {
     }
 
     pub fn set_has_no_gravity(&self, no_gravity: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.has_no_gravity.store(no_gravity, Ordering::Relaxed);
         self.set_synced_data(tracked_data::entity::DATA_NO_GRAVITY, no_gravity);
     }
@@ -1418,6 +1459,9 @@ impl Entity {
     ///
     /// This function calculates the new position, block position, and chunk position based on the provided coordinates. If any of these values change, the corresponding fields are updated.
     pub fn set_pos(&self, new_position: Vector3<f64>) {
+        let Some(_mutation) = self.try_begin_position_mutation(new_position) else {
+            return;
+        };
         let pos = self.pos.load();
         if pos != new_position {
             self.pos.store(new_position);
@@ -2422,6 +2466,7 @@ impl Entity {
 
     /// Extinguishes this entity.
     pub fn extinguish(&self) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.fire_ticks.store(0, Ordering::Relaxed);
     }
 
@@ -2522,6 +2567,7 @@ impl Entity {
 
     /// Sets the number of ticks the entity has been frozen.
     pub fn set_frozen_ticks(&self, ticks: i32) {
+        let _mutation = section_membership::admit_mutation!(self);
         let new_frozen_ticks = ticks.clamp(0, Self::MAX_FROZEN_TICKS);
         self.frozen_ticks.store(new_frozen_ticks, Ordering::Relaxed);
         let mut bedrock_meta = SyncedActorDataList::new();
@@ -2543,6 +2589,7 @@ impl Entity {
 
     /// Sets the `Entity` yaw & pitch rotation
     pub fn set_rotation(&self, yaw: f32, pitch: f32) {
+        let _mutation = section_membership::admit_mutation!(self);
         // TODO
         self.yaw.store(yaw);
         // Java players have no separate head-yaw packet from the client- look yaw is also head yaw.
@@ -2552,6 +2599,7 @@ impl Entity {
     }
 
     pub fn set_pitch(&self, pitch: f32) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.pitch.store(pitch.clamp(-90.0, 90.0) % 360.0);
     }
 
@@ -2631,6 +2679,7 @@ impl Entity {
     }
 
     pub fn set_sneaking(&self, sneaking: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         //assert!(self.sneaking.load(Relaxed) != sneaking);
         self.sneaking.store(sneaking, Relaxed);
         self.set_flag(Flag::Sneaking, sneaking);
@@ -2678,6 +2727,7 @@ impl Entity {
     }
 
     pub fn set_swimming(&self, swimming: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         if self.swimming.load(Ordering::Relaxed) != swimming {
             let mut event =
                 crate::plugin::api::events::entity::entity_toggle_swim::EntityToggleSwimEvent::new(
@@ -2697,6 +2747,7 @@ impl Entity {
 
     /// Sets whether the entity is invisible and sends updated metadata.
     pub fn set_invisible(&self, invisible: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         if self.invisible.load(Ordering::Relaxed) != invisible {
             self.invisible.store(invisible, Relaxed);
             self.set_flag(Flag::Invisible, invisible);
@@ -2705,6 +2756,7 @@ impl Entity {
 
     /// Sets whether the entity is glowing and sends updated metadata.
     pub fn set_glowing(&self, glowing: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         if self.glowing.load(Ordering::Relaxed) != glowing {
             self.glowing.store(glowing, Ordering::Relaxed);
             self.set_flag(Flag::Glowing, glowing);
@@ -2713,6 +2765,7 @@ impl Entity {
 
     /// Sets whether the entity is on fire for visual and damage purposes. This is separate from `fire_ticks` which tracks the damage aspect of being on fire.
     pub fn set_on_fire(&self, on_fire: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         if self.has_visual_fire.load(Ordering::Relaxed) != on_fire {
             self.has_visual_fire.store(on_fire, Ordering::Relaxed);
             self.set_flag(Flag::OnFire, on_fire);
@@ -2830,6 +2883,7 @@ impl Entity {
     }
 
     pub fn set_sprinting(&self, sprinting: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         //assert!(self.sprinting.load(Relaxed) != sprinting);
         self.sprinting.store(sprinting, Relaxed);
         self.set_flag(Flag::Sprinting, sprinting);
@@ -2843,6 +2897,7 @@ impl Entity {
     }
 
     pub fn set_fall_flying(&self, fall_flying: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         assert_ne!(self.fall_flying.load(Relaxed), fall_flying);
         self.fall_flying.store(fall_flying, Relaxed);
         self.set_flag(Flag::FallFlying, fall_flying);
@@ -3133,6 +3188,7 @@ impl Entity {
     }
 
     pub fn set_pose(&self, pose: EntityPose) {
+        let _mutation = section_membership::admit_mutation!(self);
         if self.pose.load() == pose {
             return;
         }
@@ -3195,6 +3251,7 @@ impl Entity {
 
     /// Sets if the entity is invulnerable to a specific damage type
     pub fn set_damage_immunity(&self, damage_type: DamageType, immune: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         let mut immunities = self
             .damage_immunities
             .lock()
@@ -3211,6 +3268,7 @@ impl Entity {
 
     /// Sets if the entity is invulnerable to all damage types (except `GENERIC_KILL` and `OUT_OF_WORLD`)
     pub fn set_invulnerable(&self, invulnerable: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         self.permanently_invulnerable.store(invulnerable, Relaxed);
         self.invulnerable.store(invulnerable, Relaxed);
     }
@@ -3271,6 +3329,9 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
+        let Some(_mutation) = self.try_begin_position_mutation(position) else {
+            return;
+        };
         // Update server-side position and bounding box
         self.set_pos(position);
         if let Some(yaw) = yaw {
@@ -3530,6 +3591,10 @@ impl Entity {
     }
 
     pub fn add_passenger(&self, vehicle: Arc<dyn EntityBase>, passenger: Arc<dyn EntityBase>) {
+        let _mutation = section_membership::admit_mutation!(self);
+        let Some(_passenger) = passenger.get_entity().try_begin_owned_mutation() else {
+            return;
+        };
         let mut mount_event =
             crate::plugin::api::events::entity::entity_mount::EntityMountEvent::new(
                 passenger.get_entity().entity_id,
@@ -3553,16 +3618,13 @@ impl Entity {
         }
 
         let passenger_entity = passenger.get_entity();
-        *passenger_entity
-            .vehicle
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(vehicle);
+        passenger_entity.set_vehicle_link(Some(vehicle));
 
         let mut passengers = self
             .passengers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        passengers.push(passenger);
+        self.insert_passenger_link(&mut passengers, passenger);
 
         let passenger_ids: Vec<VarInt> = passengers
             .iter()
@@ -3578,6 +3640,7 @@ impl Entity {
     }
 
     pub(crate) fn remove_passenger_on_disconnect(&self, passenger_id: i32) {
+        let _mutation = section_membership::admit_mutation!(self);
         let mut passengers = self
             .passengers
             .lock()
@@ -3587,11 +3650,7 @@ impl Entity {
             .position(|passenger| passenger.get_entity().entity_id == passenger_id)
         {
             let passenger = passengers.remove(index);
-            *passenger
-                .get_entity()
-                .vehicle
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            self.removed_passenger_link(&passenger, passengers.is_empty());
         }
 
         let passenger_ids: Vec<VarInt> = passengers
@@ -3620,6 +3679,7 @@ impl Entity {
 
     #[allow(clippy::too_many_lines)]
     fn remove_passenger_internal(&self, passenger_id: i32, reposition: bool) {
+        let _mutation = section_membership::admit_mutation!(self);
         let mut dismount_event =
             crate::plugin::api::events::entity::entity_dismount::EntityDismountEvent::new(
                 passenger_id,
@@ -3652,11 +3712,7 @@ impl Entity {
                 .position(|p| p.get_entity().entity_id == passenger_id)
                 .map(|idx| {
                     let passenger = passengers.remove(idx);
-                    *passenger
-                        .get_entity()
-                        .vehicle
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                    self.removed_passenger_link(&passenger, passengers.is_empty());
                     passenger
                 });
 
@@ -3977,6 +4033,7 @@ impl Entity {
     }
 
     pub fn set_custom_data(&self, namespace: &str, key: &str, value: NbtTag) {
+        let _mutation = section_membership::admit_mutation!(self);
         let mut custom_data = self
             .custom_data
             .lock()
@@ -4010,6 +4067,7 @@ impl Entity {
     }
 
     pub fn remove_custom_data(&self, namespace: &str, key: &str) {
+        let _mutation = section_membership::admit_mutation!(self);
         let mut custom_data = self
             .custom_data
             .lock()
@@ -4112,6 +4170,7 @@ impl Entity {
     }
 
     pub fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
+        let _mutation = section_membership::admit_mutation!(self);
         if let Some(position) = nbt.get_list("Pos")
             && position.len() >= 3
         {

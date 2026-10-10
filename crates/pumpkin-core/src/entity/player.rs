@@ -3494,7 +3494,7 @@ impl Player {
         res.map(|(pos, _)| pos)
     }
 
-    pub async fn unload_watched_chunks(&self, world: &World) {
+    pub async fn unload_watched_chunks(&self, world: &Arc<World>) {
         let radial_chunks = self.watched_section.load().all_chunks_within();
         let level = &world.level;
         let chunks_to_clean = level.mark_chunks_as_not_watched(radial_chunks).await;
