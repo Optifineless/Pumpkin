@@ -24,6 +24,8 @@ use std::{
     time::Duration,
 };
 
+mod review;
+
 fn fixture() -> (tempfile::TempDir, Arc<Server>, Arc<World>) {
     let dir = tempfile::tempdir().unwrap();
     let server = combat_test_support::server(dir.path());
@@ -171,6 +173,11 @@ async fn minecart_stall_powered_rail_reaches_max_without_allowing_overspeed() {
         .get_entity()
         .set_pos(cart.get_entity().pos.load());
     assert!(cart.interact(&owner.player, &mut ItemStack::EMPTY.clone()));
+    owner.player.get_entity().yaw.store(-90.0);
+    owner.player.last_input.store(
+        pumpkin_protocol::java::server::play::SPlayerInput::FORWARD,
+        Relaxed,
+    );
     within_deadline(move || {
         let _owner = owner;
         // Keep the cart on the same powered cell while exercising real successive ticks.
@@ -244,17 +251,9 @@ async fn minecart_stall_experimental_speed_rule_limits_both_movement_paths() {
             .store(Vector3::new(20.0, 0.0, 0.0));
         within_deadline(move || {
             cart.tick(cart.as_ref(), &server);
-            // NewMinecartBehavior boosts by 0.06 after its one-block speed limit.
-            let expected = if on_rails { 1.06 } else { 1.0 };
+            // High experimental rail speeds wait for the vanilla stepAlongTrack loop.
+            let expected = if on_rails { 0.46 } else { 1.0 };
             assert!((cart.get_entity().pos.load().x - 8.5 - expected).abs() < 1.0e-9);
-            if on_rails {
-                cart.get_entity().set_pos(Vector3::new(8.5, 64.0625, 8.5));
-                cart.get_entity().velocity.store(Vector3::default());
-                cart.tick(cart.as_ref(), &server);
-                let moved = cart.get_entity().pos.load() - Vector3::new(8.5, 64.0625, 8.5);
-                assert!((moved.x.abs() - 0.1).abs() < 1.0e-9);
-                assert_eq!(moved.z, 0.0);
-            }
         });
     }
 }
@@ -378,6 +377,9 @@ async fn minecart_stall_limits_follow_behavior_water_furnace_and_ground() {
                                 (true, true, false) | (true, false, true) => 0.5,
                                 (true, true, true) => 0.375,
                             };
+                            if new_behavior && on_rails {
+                                expected *= 0.4;
+                            }
                             if on_ground && !on_rails {
                                 expected *= 0.5;
                             }

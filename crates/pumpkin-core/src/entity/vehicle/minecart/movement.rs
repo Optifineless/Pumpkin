@@ -1,11 +1,20 @@
 use super::{MinecartEntity, MinecartKind};
-use crate::{entity::Entity, server::Server};
+use crate::{
+    command::commands::gamerule::{MAX_MINECART_SPEED, MIN_MINECART_SPEED},
+    entity::{Entity, EntityBase},
+    server::Server,
+};
+use pumpkin_data::{block_properties::RailShape, game_rules::GameRuleRegistry};
+use pumpkin_protocol::java::server::play::SPlayerInput;
+use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering::Relaxed;
 
 // OldMinecartBehavior's named speed constants.
 const MAX_SPEED_IN_WATER: f64 = 0.2;
 const MAX_SPEED_ON_LAND: f64 = 0.4;
+// Mth.equal uses the float EPSILON even when comparing doubles.
+const EPSILON: f32 = 1.0e-5;
 
 impl MinecartEntity {
     // OldMinecartBehavior.moveAlongTrack/NewMinecartBehavior.calculateBoostTrackSpeed.
@@ -19,10 +28,10 @@ impl MinecartEntity {
     }
 
     // OldMinecartBehavior/NewMinecartBehavior.getMaxSpeed and MinecartFurnace.getMaxSpeed.
-    pub(super) fn max_speed(&self, server: &Server) -> f64 {
+    pub(super) fn max_speed(&self, server: &Server, on_rails: bool) -> f64 {
         let in_water = self.vehicle.entity.touching_water.load(Relaxed);
         let base = if Self::uses_new_behavior(server) {
-            let rule = self
+            let mut rule = self
                 .vehicle
                 .entity
                 .world
@@ -30,7 +39,12 @@ impl MinecartEntity {
                 .level_info
                 .load()
                 .game_rules
-                .max_minecart_speed;
+                .max_minecart_speed
+                .clamp(i64::from(MIN_MINECART_SPEED), i64::from(MAX_MINECART_SPEED));
+            // Until NewMinecartBehavior.stepAlongTrack is ported, do not skip whole rails.
+            if on_rails {
+                rule = rule.min(GameRuleRegistry::default().max_minecart_speed);
+            }
             rule as f64 * if in_water { 0.5 } else { 1.0 } / 20.0
         } else if in_water {
             MAX_SPEED_IN_WATER
@@ -78,9 +92,8 @@ impl MinecartEntity {
                 if velocity.length() > 0.01 {
                     *velocity = velocity.normalize()
                         * (velocity.length() + Self::POWERED_RAIL_ACCELERATION);
-                } else {
-                    // Preserve the existing starting impulse along the aligned rail.
-                    *velocity = direction * 0.1;
+                } else if direction.length_squared() > 0.0 {
+                    *velocity = direction * (velocity.length() + 0.2);
                 }
             }
             *velocity
@@ -96,6 +109,63 @@ impl MinecartEntity {
                 0.0,
                 (scale * velocity.z).clamp(-max_speed, max_speed),
             )
+        }
+    }
+
+    // OldMinecartBehavior.moveAlongTrack/NewMinecartBehavior.calculatePlayerInputSpeed.
+    pub(super) fn apply_player_input(&self, on_rails: bool) {
+        let entity = &self.vehicle.entity;
+        let velocity = entity.velocity.load();
+        if !on_rails || velocity.x.mul_add(velocity.x, velocity.z * velocity.z) >= 0.01 {
+            return;
+        }
+        let intent = {
+            let Ok(passengers) = entity.passengers.try_lock() else {
+                return;
+            };
+            let Some(player) = passengers
+                .first()
+                .and_then(|passenger| passenger.get_player())
+            else {
+                return;
+            };
+            // ServerPlayer.getLastClientMoveIntent cancels opposing keys and normalizes diagonals.
+            let input = player.last_input.load(Relaxed);
+            let left = i32::from(input & SPlayerInput::LEFT != 0)
+                - i32::from(input & SPlayerInput::RIGHT != 0);
+            let forward = i32::from(input & SPlayerInput::FORWARD != 0)
+                - i32::from(input & SPlayerInput::BACKWARD != 0);
+            player.get_entity().movement_input_to_velocity(
+                Vector3::new(f64::from(left), 0.0, f64::from(forward)),
+                1.0,
+            )
+        };
+        if intent.length_squared() > 0.0 {
+            entity.velocity.store(velocity + intent * 0.001);
+            entity.send_velocity();
+        }
+    }
+
+    // AbstractMinecart.getRedstoneDirection: only straight powered rails have end-block starts.
+    pub(super) fn redstone_direction(&self, pos: BlockPos, shape: RailShape) -> Vector3<f64> {
+        let direction = match shape {
+            RailShape::EastWest => Vector3::new(1, 0, 0),
+            RailShape::NorthSouth => Vector3::new(0, 0, 1),
+            _ => return Vector3::default(),
+        };
+        let world = self.vehicle.entity.world.load();
+        if world
+            .get_block_state(&BlockPos(pos.0 - direction))
+            .is_solid_block()
+        {
+            direction.to_f64()
+        } else if world
+            .get_block_state(&BlockPos(pos.0 + direction))
+            .is_solid_block()
+        {
+            direction.to_f64() * -1.0
+        } else {
+            Vector3::default()
         }
     }
 
@@ -135,6 +205,28 @@ impl MinecartEntity {
             };
             velocity * slowdown
         }
+    }
+}
+
+impl Entity {
+    /// Preserves horizontal minecart momentum while applying collision and block speed factors.
+    pub(crate) fn apply_minecart_movement_velocity(
+        &self,
+        motion: Vector3<f64>,
+        movement: Vector3<f64>,
+        block_speed_factor: f64,
+    ) {
+        // Entity.move/restituteMovementAfterCollisions preserves unobstructed horizontal delta.
+        let mut velocity = self.velocity.load();
+        if (motion.x - movement.x).abs() >= f64::from(EPSILON) {
+            velocity.x = 0.0;
+        }
+        // Keep Pumpkin's vertical landing/bounce path; rail clamping only changes horizontal steps.
+        velocity.y = movement.y;
+        if (motion.z - movement.z).abs() >= f64::from(EPSILON) {
+            velocity.z = 0.0;
+        }
+        self.velocity.store(velocity * block_speed_factor);
     }
 }
 

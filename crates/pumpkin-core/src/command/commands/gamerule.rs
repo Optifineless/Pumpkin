@@ -15,6 +15,10 @@ use crate::command::node::{CommandExecutor, CommandExecutorResult};
 const DESCRIPTION: &str = "Sets or queries a game rule value.";
 const PERMISSION: &str = "minecraft:command.gamerule";
 
+// GameRules.MAX_MINECART_SPEED registers an integer bounded to 1..=1000.
+pub const MIN_MINECART_SPEED: i32 = 1;
+pub const MAX_MINECART_SPEED: i32 = 1000;
+
 struct QueryExecutor(GameRule);
 
 impl CommandExecutor for QueryExecutor {
@@ -127,8 +131,15 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
         let rule_literal = literal(rule.to_string()).executes(QueryExecutor(rule.clone()));
         let branch = match rule_registry.get(rule) {
             GameRuleValue::Int(_) => rule_literal.then(
-                argument("value", IntegerArgumentType::any())
-                    .executes(SetIntExecutor(rule.clone())),
+                argument(
+                    "value",
+                    if *rule == GameRule::MaxMinecartSpeed {
+                        IntegerArgumentType::new(MIN_MINECART_SPEED, MAX_MINECART_SPEED)
+                    } else {
+                        IntegerArgumentType::any()
+                    },
+                )
+                .executes(SetIntExecutor(rule.clone())),
             ),
             GameRuleValue::Bool(_) => rule_literal
                 .then(argument("value", BoolArgumentType).executes(SetBoolExecutor(rule.clone()))),
