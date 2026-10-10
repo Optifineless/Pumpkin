@@ -4,6 +4,7 @@ use crate::{
         Entity, EntityBase,
         ageable::AgeableMob,
         item::ItemEntity,
+        mob::Mob,
         passive::{cat::CatEntity, cow::CowEntity, tamable::TamableAnimal, wolf::WolfEntity},
     },
     net::java::combat_test_support::TestPlayer,
@@ -52,6 +53,18 @@ impl Fixture {
 
     fn entity(&self, kind: &'static EntityType) -> Entity {
         Entity::new(self.world.clone(), Vector3::new(9.5, 64.0, 8.5), kind)
+    }
+
+    fn kitten(&self, age: i32) -> Arc<CatEntity> {
+        let entity = self.entity(&EntityType::CAT);
+        entity.set_age(age);
+        let cat = CatEntity::new(entity);
+        cat.set_tame(true, Some(self.player.player.gameprofile.id));
+        cat.set_sitting(false);
+        let living = &cat.mob_entity.living_entity;
+        living.set_health(living.get_max_health());
+        assert!(self.world.spawn_entity(cat.clone()));
+        cat
     }
 
     fn interact(&self, target: &dyn EntityBase, offhand: bool) {
@@ -383,5 +396,126 @@ async fn animal_interaction_repeated_feeding_keeps_baby_metadata_and_respects_ad
     fixture.interact(cow.as_ref(), false);
     assert_eq!(cow.mob_entity.love_ticks.load(Relaxed), 600);
     assert!(inventory.held_item().is_empty());
+    fixture.finish().await;
+}
+
+fn kitten_metadata(cat: &CatEntity) -> Box<[u8]> {
+    cat.get_entity()
+        .synched_data
+        .get_non_default_values_for_version(&JavaMinecraftVersion::V_26_3)
+        .unwrap()
+}
+
+fn assert_kitten_feeding_boundary(fixture: &Fixture, age: i32, offhand: bool) {
+    // Set the age before spawning so Cat.mob_init_data_tracker publishes a baby.
+    let cat = fixture.kitten(age);
+    let baby_metadata = kitten_metadata(&cat);
+    let inventory = fixture.player.player.inventory();
+    let (slot, other_slot) = if offhand { (40, 0) } else { (0, 40) };
+    let other_hand = ItemStack::new(1, &Item::STICK);
+    inventory.set_stack(slot, ItemStack::new(2, &Item::COD));
+    inventory.set_stack(other_slot, other_hand.clone());
+
+    fixture.interact(cat.as_ref(), offhand);
+
+    // Vanilla consumes the fish even when whole-second rounding gives zero growth.
+    assert_eq!(cat.get_entity().age.load(Relaxed), age);
+    assert!(
+        inventory
+            .get_stack(slot)
+            .are_equal(&ItemStack::new(1, &Item::COD))
+    );
+    assert!(inventory.get_stack(other_slot).are_equal(&other_hand));
+    assert!(!cat.mob_entity.is_in_love());
+    assert!(!cat.is_sitting());
+    assert_eq!(kitten_metadata(&cat), baby_metadata);
+    let ageable = cat
+        .as_ageable()
+        .expect("kitten feeding exposes ageable data");
+    assert!(ageable.is_baby());
+    assert_eq!(ageable.get_ageable_data().forced_age.load(Relaxed), 0);
+    assert_eq!(
+        ageable.get_ageable_data().forced_age_timer.load(Relaxed),
+        40
+    );
+    let mut saved = NbtCompound::new();
+    cat.write_custom_nbt(&mut saved);
+    assert_eq!(saved.get_int("Age"), Some(age));
+    assert_eq!(saved.get_int("ForcedAge"), Some(0));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn animal_interaction_kitten_feeding_rounds_down_at_199_ticks() {
+    let fixture = Fixture::new();
+    for offhand in [false, true] {
+        assert_kitten_feeding_boundary(&fixture, -199, offhand);
+    }
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn animal_interaction_kitten_feeding_keeps_last_tick_baby_state() {
+    let fixture = Fixture::new();
+    for offhand in [false, true] {
+        assert_kitten_feeding_boundary(&fixture, -1, offhand);
+    }
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn animal_interaction_kitten_growth_persists_forced_age_and_respects_lock() {
+    let fixture = Fixture::new();
+    let cat = fixture.kitten(-200);
+    let baby_metadata = kitten_metadata(&cat);
+    let inventory = fixture.player.player.inventory();
+    inventory.set_stack(40, ItemStack::new(2, &Item::SALMON));
+    fixture.interact(cat.as_ref(), true);
+    assert_eq!(cat.get_entity().age.load(Relaxed), -180);
+    assert_eq!(inventory.off_hand_item().item_count, 1);
+    assert_eq!(kitten_metadata(&cat), baby_metadata);
+    assert!(!cat.is_sitting());
+    assert!(!cat.mob_entity.is_in_love());
+
+    let mut saved = NbtCompound::new();
+    cat.write_custom_nbt(&mut saved);
+    assert_eq!(saved.get_int("Age"), Some(-180));
+    assert_eq!(saved.get_int("ForcedAge"), Some(20));
+    let ageable = cat
+        .as_ageable()
+        .expect("kitten feeding exposes ageable data");
+    assert_eq!(
+        ageable.get_ageable_data().forced_age_timer.load(Relaxed),
+        40
+    );
+    ageable.set_age_locked(true);
+    fixture.interact(cat.as_ref(), true);
+    assert_eq!(ageable.get_age(), -180);
+    assert_eq!(ageable.get_ageable_data().forced_age.load(Relaxed), 20);
+    assert_eq!(inventory.off_hand_item().item_count, 1);
+    assert!(!cat.mob_entity.is_in_love());
+    assert!(cat.is_sitting(), "unhandled owner feeding reaches sitting");
+
+    cat.write_custom_nbt(&mut saved);
+    assert_eq!(saved.get_bool("AgeLocked"), Some(true));
+    let restored = CatEntity::new(fixture.entity(&EntityType::CAT));
+    restored.read_custom_nbt(&saved);
+    assert!(fixture.world.spawn_entity(restored.clone()));
+    let restored_ageable = restored.as_ageable().expect("restored kitten is ageable");
+    assert_eq!(restored_ageable.get_age(), -180);
+    assert_eq!(
+        restored_ageable.get_ageable_data().forced_age.load(Relaxed),
+        20
+    );
+    assert!(restored_ageable.is_age_locked());
+    assert!(restored_ageable.is_baby());
+
+    // Exercise the shared setter locally; this does not simulate world ticking.
+    restored_ageable.set_age_locked(false);
+    restored_ageable.set_age(-1);
+    let restored_baby_metadata = kitten_metadata(&restored);
+    restored_ageable.ageable_ai_step();
+    assert_eq!(restored_ageable.get_age(), 0);
+    assert!(!restored_ageable.is_baby());
+    assert_ne!(kitten_metadata(&restored), restored_baby_metadata);
     fixture.finish().await;
 }

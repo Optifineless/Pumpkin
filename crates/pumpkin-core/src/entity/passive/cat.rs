@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::entity::custom_sound::CustomSound;
 use crate::entity::{
     Entity, EntityBase,
+    ageable::AgeableMob,
     ai::goal::{
         active_target::ActiveTargetGoal, avoid_entity::AvoidEntityGoal, breed::BreedGoal,
         escape_danger::EscapeDangerGoal, follow_owner::FollowOwnerGoal,
@@ -77,6 +78,7 @@ fn get_dye_color_from_item(item: &Item) -> Option<u8> {
 
 pub struct CatEntity {
     pub mob_entity: MobEntity,
+    pub ageable_data: crate::entity::ageable::AgeableData,
     pub variant: AtomicU8,
     pub sound_variant: AtomicU8,
     pub collar_color: AtomicU8,
@@ -90,6 +92,7 @@ impl CatEntity {
         let mob_entity = MobEntity::new(entity);
         let cat = Self {
             mob_entity,
+            ageable_data: crate::entity::ageable::AgeableData::default(),
             variant: AtomicU8::new(CatVariant::Black.id()),
             sound_variant: AtomicU8::new(0), // Default to classic
             collar_color: AtomicU8::new(14), // Default to red
@@ -277,6 +280,12 @@ impl CustomSound for CatEntity {
     }
 }
 
+impl AgeableMob for CatEntity {
+    fn get_ageable_data(&self) -> &crate::entity::ageable::AgeableData {
+        &self.ageable_data
+    }
+}
+
 impl Animal for CatEntity {
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         let item = item_stack.get_item();
@@ -291,6 +300,10 @@ impl TamableAnimal for CatEntity {
 }
 
 impl Mob for CatEntity {
+    fn as_ageable(&self) -> Option<&dyn AgeableMob> {
+        Some(self)
+    }
+
     fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
         // Cat.removeWhenFarAway.
         crate::entity::mob::despawn::aged_wild_mob_can_despawn(
