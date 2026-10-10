@@ -5,8 +5,14 @@ use std::sync::atomic::Ordering;
 /// Applies living fire-duration scaling and the cancellable combustion event.
 pub fn ignite_for_ticks<T: EntityBase + ?Sized>(target: &T, ticks: u32) {
     let entity = target.get_entity();
-    let ticks = if target.get_player().is_some() && entity.invulnerable.load(Ordering::Relaxed) {
-        // Preserve Pumpkin's one-tick fire duration for invulnerable players.
+    let ticks = if target.get_player().is_some_and(|player| {
+        player
+            .abilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .invulnerable
+    }) {
+        // Player.setRemainingFireTicks clamps ability-invulnerable players to one tick.
         1
     } else {
         target
