@@ -76,6 +76,40 @@ async fn followup2_unload_prunes_home_caches_but_keeps_saved_tickets() {
     fixture.finish().await;
 }
 
+#[tokio::test]
+async fn pr102_p2_workstation_replaced_by_bed_head_keeps_acquirable_home() {
+    let fixture = Fixture::new();
+    publish(&fixture.world, proto(&Biome::PLAINS, &Block::STONE));
+    let head = BlockPos::new(6, 64, 5);
+    assert!(fixture.world.available_homes(head).is_empty());
+
+    fixture.world.set_block_state(
+        &head,
+        Block::LECTERN.default_state.id,
+        pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+    );
+    let mut foot = WhiteBedLikeProperties::default(&Block::RED_BED);
+    foot.facing = pumpkin_data::block_properties::HorizontalFacing::East;
+    foot.part = BedPart::Foot;
+    fixture.world.set_block_state(
+        &BlockPos::new(5, 64, 5),
+        foot.to_state_id(&Block::RED_BED),
+        pumpkin_world::world::BlockFlags::NOTIFY_LISTENERS
+            | pumpkin_world::world::BlockFlags::UPDATE_KNOWN_SHAPE,
+    );
+    let mut bed_head = foot;
+    bed_head.part = BedPart::Head;
+    fixture.world.set_block_state(
+        &head,
+        bed_head.to_state_id(&Block::RED_BED),
+        pumpkin_world::world::BlockFlags::NOTIFY_LISTENERS
+            | pumpkin_world::world::BlockFlags::UPDATE_KNOWN_SHAPE,
+    );
+
+    assert_eq!(fixture.world.available_homes(head), vec![head]);
+    fixture.finish().await;
+}
+
 struct CountingOwner {
     entity: crate::entity::Entity,
     checks: std::sync::atomic::AtomicUsize,

@@ -290,9 +290,10 @@ impl VillagerEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(types::LAST_WOKEN)
             .copied();
-        if last_woken.is_some_and(|woken| {
-            timestamp - woken > 0 && timestamp - woken < COOLDOWN_AFTER_BEING_WOKEN
-        }) {
+        // Brain.tick cannot restart SleepInBed after a same-tick wake; this direct tick adapter can.
+        if last_woken
+            .is_some_and(|woken| (0..COOLDOWN_AFTER_BEING_WOKEN).contains(&(timestamp - woken)))
+        {
             return;
         }
         let (block, state) = world.get_block_and_state_id(&home);

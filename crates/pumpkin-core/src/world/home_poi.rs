@@ -27,6 +27,35 @@ pub fn is_home(state: BlockStateId) -> bool {
 }
 
 impl World {
+    pub(super) fn update_pois_on_block_state_change(
+        &self,
+        pos: BlockPos,
+        old: BlockStateId,
+        new: BlockStateId,
+        is_new_block: bool,
+    ) {
+        // ServerLevel.updatePOIOnBlockStateChange removes an old POI before adding its replacement.
+        let old_block = Block::from_state_id(old);
+        let new_block = Block::from_state_id(new);
+        if is_new_block && super::villager_poi::profession_for_block(old_block).is_some() {
+            self.portal_poi
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&pos);
+        }
+        self.update_home_poi(pos, old, new);
+        self.villager_poi
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .update_block(pos, new_block);
+        if is_new_block && let Some(poi_type) = super::villager_poi::poi_type_for_block(new_block) {
+            self.portal_poi
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .add_with_free_tickets(pos, poi_type, 1);
+        }
+    }
+
     pub(super) fn update_home_poi(&self, pos: BlockPos, old: BlockStateId, new: BlockStateId) {
         if !is_home(old) && !is_home(new) {
             return;

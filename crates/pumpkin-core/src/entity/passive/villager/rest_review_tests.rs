@@ -254,6 +254,40 @@ async fn panic_prevents_sleep_and_wakes_resting_villager() {
     fixture.finish().await;
 }
 
+#[tokio::test]
+async fn pr102_p2_same_tick_wake_does_not_resleep() {
+    let fixture = Fixture::new();
+    publish(&fixture.world, proto(&Biome::PLAINS, &Block::STONE));
+    let home = bed(&fixture.world, BlockPos::new(8, 64, 5));
+    let villager = spawn_villager(&fixture.world, Vector3::new(8.5, 64.0, 5.5));
+    set_home(
+        &villager,
+        &pumpkin_data::dimension::Dimension::OVERWORLD,
+        home,
+    );
+    fixture.world.level_time.lock().unwrap().time_of_day = 13_000;
+    fixture.world.level_time.lock().unwrap().world_age = 1_000;
+
+    villager.rest_tick(1_000);
+    assert!(villager.get_entity().pose.load() == EntityPose::Sleeping);
+    villager.get_entity().set_rotation(90.0, 0.0);
+    assert!(villager.wake_up_if_sleeping_at(home));
+    assert_eq!(villager.get_home_pos(), Some(home));
+    assert!(villager.wants_to_sleep());
+    let wake_position = villager.get_entity().pos.load();
+    let wake_distance_squared = home
+        .to_centered_f64()
+        .squared_distance_to_vec(&wake_position);
+    assert!(
+        wake_distance_squared < 4.0,
+        "wake position {wake_position:?} is outside the sleep range of {home:?}"
+    );
+    villager.rest_tick(1_000);
+
+    assert!(villager.get_entity().pose.load() == EntityPose::Standing);
+    fixture.finish().await;
+}
+
 struct DoorEvents(std::sync::Mutex<Vec<String>>);
 impl crate::plugin::EventHandler<crate::plugin::api::events::world::generic_game::GenericGameEvent>
     for DoorEvents

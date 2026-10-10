@@ -5302,24 +5302,12 @@ impl World {
                 );
             }
 
-            self.update_home_poi(*position, replaced_block_state_id, block_state_id);
-            self.villager_poi
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .update_block(*position, new_block);
-
-            if is_new_block {
-                let mut poi = self
-                    .portal_poi
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if villager_poi::profession_for_block(old_block).is_some() {
-                    poi.remove(position);
-                }
-                if let Some(poi_type) = villager_poi::poi_type_for_block(new_block) {
-                    poi.add_with_free_tickets(*position, poi_type, 1);
-                }
-            }
+            self.update_pois_on_block_state_change(
+                *position,
+                replaced_block_state_id,
+                block_state_id,
+                is_new_block,
+            );
         }
 
         let old_state = replaced_block_state_id.to_state();
