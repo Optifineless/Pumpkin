@@ -19,6 +19,7 @@ mod effect_load_tests;
 #[path = "effects.rs"]
 pub(crate) mod effects;
 mod equipment_modifiers;
+mod equipment_packets;
 #[cfg(test)]
 mod ext_review_tests;
 mod fall_damage;
@@ -420,40 +421,7 @@ impl LivingEntity {
             })
             .collect();
         let je_packet = CSetEquipment::new(self.entity_id().into(), equipment_java);
-
-        let mut sent_editioned = false;
-        for (slot, stack) in equipment {
-            if *slot == EquipmentSlot::MAIN_HAND || *slot == EquipmentSlot::OFF_HAND {
-                let window_id = if *slot == EquipmentSlot::OFF_HAND {
-                    120
-                } else {
-                    0
-                };
-
-                let be_packet = pumpkin_protocol::bedrock::client::CMobEquipment {
-                    target_runtime_id: (self.entity_id() as u64).into(),
-                    item: pumpkin_protocol::bedrock::network_item::NetworkItemStackDescriptor::from(
-                        stack,
-                    ),
-                    slot: 0,
-                    selected_slot: 0,
-                    container_id: window_id,
-                };
-                self.entity.world.load().send_to_tracking_players_editioned(
-                    &self.entity,
-                    &je_packet,
-                    &be_packet,
-                );
-                sent_editioned = true;
-            }
-        }
-
-        if !sent_editioned {
-            self.entity
-                .world
-                .load()
-                .send_to_tracking_players(&self.entity, &je_packet);
-        }
+        equipment_packets::send_equipment_changes(self, equipment, &je_packet);
     }
 
     /// Picks up an Item entity or XP Orb
