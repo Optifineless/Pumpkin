@@ -1,14 +1,18 @@
-use crate::block::blocks::plant::PlantBlockBase;
+use crate::block::blocks::growing_plant::GrowingPlant;
 use crate::block::{
-    BlockBehaviour, BlockMetadata, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,
-    PlacedArgs,
+    BlockBehaviour, BlockMetadata, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
+    OnScheduledTickArgs,
 };
-use pumpkin_data::BlockStateId;
-use pumpkin_data::{Block, BlockId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId};
 
 pub struct WeepingVinesBlock;
+
+const PLANT: GrowingPlant = GrowingPlant {
+    head: &Block::WEEPING_VINES,
+    body: &Block::WEEPING_VINES_PLANT,
+    growth_direction: BlockDirection::Down,
+};
+
 impl BlockMetadata for WeepingVinesBlock {
     fn ids() -> Box<[BlockId]> {
         [BlockId::WEEPING_VINES, BlockId::WEEPING_VINES_PLANT].into()
@@ -17,76 +21,21 @@ impl BlockMetadata for WeepingVinesBlock {
 
 impl BlockBehaviour for WeepingVinesBlock {
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
+        PLANT.can_survive(args.block_accessor, args.position)
     }
+
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+        PLANT.get_state_for_placement(&args)
+    }
+
     fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        <Self as PlantBlockBase>::get_state_for_neighbor_update(
-            self,
-            args.world,
-            args.position,
-            args.state_id,
-        )
+        PLANT.update_shape(&args)
     }
-    fn placed(&self, args: PlacedArgs<'_>) {
-        {
-            let support_pos = args.position.up();
-            let support_block = args.world.get_block(&support_pos);
-            if support_block == &Block::WEEPING_VINES {
-                args.world.set_block_state(
-                    &support_pos,
-                    Block::WEEPING_VINES_PLANT.default_state.id,
-                    BlockFlags::empty(),
-                );
-            }
-        }
-    }
-    fn broken(&self, args: BrokenArgs<'_>) {
-        {
-            let support_pos = args.position.up();
-            let support_block = args.world.get_block(&support_pos);
-            if support_block == &Block::WEEPING_VINES_PLANT {
-                args.world.set_block_state(
-                    &support_pos,
-                    Block::WEEPING_VINES.default_state.id,
-                    BlockFlags::empty(),
-                );
-            }
-        }
-    }
-}
 
-impl PlantBlockBase for WeepingVinesBlock {
-    fn can_place_at(
-        &self,
-        block_accessor: &dyn pumpkin_world::world::BlockAccessor,
-        pos: &pumpkin_util::math::position::BlockPos,
-    ) -> bool {
-        // Determine support block
-        let support_pos = pos.up();
-        let (support_block, support_block_state) = block_accessor.get_block_and_state(&support_pos);
-
-        if support_block == &Block::WEEPING_VINES || support_block == &Block::WEEPING_VINES_PLANT {
-            return true;
-        }
-        if support_block_state.is_side_solid(pumpkin_data::BlockDirection::Down)
-            && support_block.is_solid()
-        {
-            return true;
-        }
-        false
-    }
-    fn get_state_for_neighbor_update(
-        &self,
-        block_accessor: &dyn BlockAccessor,
-        block_pos: &BlockPos,
-        block_state: BlockStateId,
-    ) -> BlockStateId {
-        if !<Self as PlantBlockBase>::can_place_at(self, block_accessor, block_pos) {
-            return Block::AIR.default_state.id;
-        }
-        block_state
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        PLANT.tick(&args);
     }
 }

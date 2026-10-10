@@ -14,7 +14,7 @@ use crate::{
         palette::has_random_ticking_fluid,
     },
     generation::get_world_gen_with_all_settings,
-    tick::{OrderedTick, ScheduledTick, TickPriority},
+    tick::{MAX_SAVED_TICK_DELAY, OrderedTick, ScheduledTick, TickPriority},
     world::WorldPortalExt,
 };
 use arc_swap::ArcSwap;
@@ -31,7 +31,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::{Arc, Mutex, Weak};
 use std::{
     path::PathBuf,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicI64, Ordering},
     thread,
 };
 use tokio_util::sync::CancellationToken;
@@ -114,7 +114,7 @@ pub struct Level {
     pub lighting_config: LightingEngineConfig,
 
     /// Counts the number of ticks that have been scheduled for this world
-    schedule_tick_counts: AtomicU64,
+    schedule_tick_counts: AtomicI64,
 
     // Chunks that are paired with chunk watchers. When a chunk is no longer watched, it is removed
     // from the loaded chunks map and sent to the underlying ChunkIO
@@ -328,7 +328,7 @@ impl Level {
             light_engine: DynamicLightEngine::new(dim_min_y, dim_min_y + dim_height),
             chunk_saver,
             entity_saver,
-            schedule_tick_counts: AtomicU64::new(0),
+            schedule_tick_counts: AtomicI64::new(0),
             loaded_chunks: Arc::new(DashMap::new()),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
             loaded_entity_chunks: Arc::new(DashMap::new()),
@@ -1082,9 +1082,21 @@ impl Level {
         delay: u8,
         priority: TickPriority,
     ) {
+        self.schedule_block_tick_after(block, block_pos, u32::from(delay), priority);
+    }
+
+    /// Schedules a block tick with a delay that can exceed the short tick wheel.
+    /// Delays above the signed-int range of vanilla's `SavedTick` are capped at `i32::MAX`.
+    pub fn schedule_block_tick_after(
+        &self,
+        block: &Block,
+        block_pos: BlockPos,
+        delay: u32,
+        priority: TickPriority,
+    ) {
         let tick_order = self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed);
         let scheduled_tick = ScheduledTick {
-            delay,
+            delay: delay.min(MAX_SAVED_TICK_DELAY),
             position: block_pos,
             priority,
             // SAFETY: `block` is a valid reference that outlives this function call for scheduling.
@@ -1111,7 +1123,7 @@ impl Level {
     ) {
         let tick_order = self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed);
         let scheduled_tick = ScheduledTick {
-            delay,
+            delay: u32::from(delay),
             position: block_pos,
             priority,
             // SAFETY: `fluid` is a valid reference that outlives this function call for scheduling.

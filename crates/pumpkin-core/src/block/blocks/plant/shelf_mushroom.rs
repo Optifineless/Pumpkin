@@ -1,8 +1,7 @@
 use pumpkin_data::block_properties::{HorizontalFacing, ShelfMushroomLikeProperties};
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{
-    Block, BlockDirection, BlockState, BlockStateId, FacingExt, HorizontalFacingExt, Mirror,
-    Rotation,
+    Block, BlockState, BlockStateId, FacingExt, HorizontalFacingExt, Mirror, Rotation,
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
@@ -23,18 +22,18 @@ pub struct ShelfMushroomBlock;
 
 impl ShelfMushroomBlock {
     fn can_survive(world: &dyn BlockAccessor, pos: &BlockPos, facing: HorizontalFacing) -> bool {
-        let support_pos = pos.offset(facing.to_offset());
+        // ShelfMushroomBlock.canSurvive checks the face of the block behind FACING.
+        let support_pos = pos.offset(facing.opposite().to_offset());
         world
             .get_block_state(&support_pos)
-            .is_center_solid(facing.opposite().to_block_direction())
+            .is_side_solid(facing.to_block_direction())
     }
 }
 
 impl BlockBehaviour for ShelfMushroomBlock {
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        let state_id = args.block_accessor.get_block_state_id(args.position);
-        if state_id != Block::AIR.default_state.id {
-            let props = ShelfMushroomProperties::from_state_id(state_id);
+        if args.player.is_none() {
+            let props = ShelfMushroomProperties::from_state_id(args.state.id);
             return Self::can_survive(args.block_accessor, args.position, props.facing);
         }
         for facing in [
@@ -54,21 +53,20 @@ impl BlockBehaviour for ShelfMushroomBlock {
         let mut props = ShelfMushroomProperties::default(args.block);
         props.age = 0;
 
-        if args.direction != BlockDirection::Up
-            && args.direction != BlockDirection::Down
-            && let Some(facing) = args.direction.to_horizontal_facing()
-            && Self::can_survive(args.world, args.position, facing)
+        // ShelfMushroomBlock.getStateForPlacement uses BlockPlaceContext's direction order.
+        let mut directions = args.player.get_entity().get_entity_facing_order();
+        if args.position != &args.use_item_on.position
+            && let Some(index) = directions
+                .iter()
+                .position(|d| d.to_block_direction() == args.direction)
         {
-            props.facing = facing;
-            return props.to_state_id(args.block);
+            directions[..=index].rotate_right(1);
         }
-
-        let directions = args.player.get_entity().get_entity_facing_order();
         for dir in directions {
             if let Some(facing) = dir.to_horizontal_facing()
-                && Self::can_survive(args.world, args.position, facing)
+                && Self::can_survive(args.world, args.position, facing.opposite())
             {
-                props.facing = facing;
+                props.facing = facing.opposite();
                 return props.to_state_id(args.block);
             }
         }
@@ -81,7 +79,7 @@ impl BlockBehaviour for ShelfMushroomBlock {
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
         let props = ShelfMushroomProperties::from_state_id(args.state_id);
-        if args.direction == props.facing.to_block_direction()
+        if args.direction == props.facing.opposite().to_block_direction()
             && !Self::can_survive(args.world, args.position, props.facing)
         {
             return Block::AIR.default_state.id;

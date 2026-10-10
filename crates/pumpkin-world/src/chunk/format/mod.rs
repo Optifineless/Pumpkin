@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::{
     path::PathBuf,
-    str::FromStr,
     sync::{
         RwLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -11,7 +10,7 @@ use std::{
 use bytes::Bytes;
 use pumpkin_data::{Block, BlockStateId, chunk::ChunkStatus, fluid::Fluid};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::resource_location::{FromResourceLocation, ResourceLocation, ToResourceLocation};
+use pumpkin_util::resource_location::FromResourceLocation;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -23,7 +22,7 @@ use crate::{
     },
     generation::section_coords,
     level::LevelFolder,
-    tick::{ScheduledTick, TickPriority, scheduler::ChunkTickScheduler},
+    tick::{ScheduledTick, scheduler::ChunkTickScheduler},
 };
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector2::Vector2;
@@ -167,21 +166,8 @@ fn parse_scheduled_tick<T>(nbt: &pumpkin_nbt::compound::NbtCompound) -> Option<S
 where
     T: FromResourceLocation,
 {
-    let x = nbt.get_int("x")?;
-    let y = nbt.get_int("y")?;
-    let z = nbt.get_int("z")?;
-    // Vanilla saves overdue ticks with a delay of 0 or less, and those run on the next tick.
-    let delay = nbt.get_int("t")?.clamp(0, i32::from(u8::MAX)) as u8;
-    let priority = TickPriority::try_from(nbt.get_int("p")?).ok()?;
-    let res_loc_str = nbt.get_string("i")?;
-    let res_loc = ResourceLocation::from_str(res_loc_str).ok()?;
-    let value = T::from_resource_location(&res_loc)?;
-    Some(ScheduledTick {
-        delay,
-        priority,
-        position: BlockPos::new(x, y, z),
-        value,
-    })
+    // SavedTick.codec/unpack preserve long delays and schedule overdue ticks on the next tick.
+    ScheduledTick::from_nbt_compound(nbt)
 }
 
 impl ChunkData {
@@ -572,27 +558,13 @@ impl ChunkData {
 
         let mut block_ticks_list = Vec::new();
         for tick in self.block_ticks.to_vec() {
-            let mut tick_comp = NbtCompound::new();
-            tick_comp.put_int("x", tick.position.0.x);
-            tick_comp.put_int("y", tick.position.0.y);
-            tick_comp.put_int("z", tick.position.0.z);
-            tick_comp.put_int("t", tick.delay as i32);
-            tick_comp.put_int("p", tick.priority as i32);
-            tick_comp.put_string("i", tick.value.to_resource_location());
-            block_ticks_list.push(NbtTag::Compound(tick_comp));
+            block_ticks_list.push(NbtTag::Compound(tick.to_nbt_compound()));
         }
         root_compound.put_list("block_ticks", block_ticks_list);
 
         let mut fluid_ticks_list = Vec::new();
         for tick in self.fluid_ticks.to_vec() {
-            let mut tick_comp = NbtCompound::new();
-            tick_comp.put_int("x", tick.position.0.x);
-            tick_comp.put_int("y", tick.position.0.y);
-            tick_comp.put_int("z", tick.position.0.z);
-            tick_comp.put_int("t", tick.delay as i32);
-            tick_comp.put_int("p", tick.priority as i32);
-            tick_comp.put_string("i", tick.value.to_resource_location());
-            fluid_ticks_list.push(NbtTag::Compound(tick_comp));
+            fluid_ticks_list.push(NbtTag::Compound(tick.to_nbt_compound()));
         }
         root_compound.put_list("fluid_ticks", fluid_ticks_list);
 
@@ -1042,7 +1014,7 @@ mod tests {
     }
 
     #[test]
-    fn saved_tick_delay_is_clamped_instead_of_wrapping() {
+    fn saved_tick_delay_preserves_long_delays_without_wrapping() {
         let saved = |t: i32| {
             let mut nbt = NbtCompound::new();
             nbt.put_int("x", 0);
@@ -1055,7 +1027,90 @@ mod tests {
         };
         // Vanilla saves a tick that was already due with a delay of 0 or less.
         assert_eq!(saved(-1), Some(0));
-        assert_eq!(saved(300), Some(u8::MAX));
+        assert_eq!(saved(5000), Some(5000));
+    }
+
+    #[test]
+    fn chunk_writer_bounds_tick_delays_without_immediate_reload() {
+        use crate::tick::{MAX_SAVED_TICK_DELAY, TickPriority};
+        let dimension = &pumpkin_data::dimension::Dimension::OVERWORLD;
+        let chunk = ChunkData::internal_from_bytes(
+            &test_chunk(Vec::new()).write(),
+            Vector2::new(0, 0),
+            dimension,
+        )
+        .unwrap();
+        for (index, (delay, expected)) in [
+            (5000, 5000),
+            (MAX_SAVED_TICK_DELAY, i32::MAX),
+            (MAX_SAVED_TICK_DELAY + 1, i32::MAX),
+            (u32::MAX, i32::MAX),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let pos = BlockPos::new(index as i32, 64, 0);
+            let tick = ScheduledTick {
+                delay,
+                position: pos,
+                priority: TickPriority::Normal,
+                value: &Block::STONE,
+            };
+            let saved = tick.to_nbt_compound();
+            assert_eq!(saved.get_int("t"), Some(expected));
+            chunk.block_ticks.schedule_tick(&tick, index as i64);
+            chunk.fluid_ticks.schedule_tick(
+                &ScheduledTick {
+                    value: &Fluid::WATER,
+                    delay,
+                    position: pos,
+                    priority: TickPriority::Normal,
+                },
+                index as i64,
+            );
+        }
+        // Exercise the actual chunk writer and reader, not just the standalone tick codec.
+        let reloaded = ChunkData::internal_from_bytes(
+            &chunk.internal_to_bytes(),
+            Vector2::new(0, 0),
+            dimension,
+        )
+        .unwrap();
+        let expected = [
+            5000,
+            MAX_SAVED_TICK_DELAY,
+            MAX_SAVED_TICK_DELAY,
+            MAX_SAVED_TICK_DELAY,
+        ];
+        assert_eq!(
+            reloaded
+                .block_ticks
+                .to_vec()
+                .iter()
+                .map(|tick| tick.delay)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            reloaded
+                .fluid_ticks
+                .to_vec()
+                .iter()
+                .map(|tick| tick.delay)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            chunk
+                .block_ticks
+                .to_vec()
+                .iter()
+                .map(|tick| tick.delay)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(reloaded.block_ticks.step_tick().is_empty());
+        assert!(reloaded.fluid_ticks.step_tick().is_empty());
     }
 
     #[test]

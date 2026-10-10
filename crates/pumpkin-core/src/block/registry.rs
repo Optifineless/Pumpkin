@@ -318,6 +318,7 @@ pub fn default_registry() -> Arc<BlockRegistry> {
     manager.register(DecoratedPotBlock);
     manager.register(CreakingHeartBlock);
     manager.register(SnifferEggBlock);
+    manager.register(crate::block::blocks::dried_ghast::DriedGhastBlock);
     manager.register(TurtleEggBlock);
     manager.register(BrushableBlock);
     manager.register(BushBlock);
@@ -757,6 +758,11 @@ impl BlockRegistry {
             replacing,
             use_item_on,
         );
+
+        // BlockItem.place treats a null placement state as a failed placement.
+        if !placed_block.is_air() && new_state == BlockStateId::AIR {
+            return Ok(None);
+        }
 
         // Mirror vanilla obstruction checks: only entities that block building should prevent
         // placement. (e.g. arrows/xp orbs/displays/markers should not)
