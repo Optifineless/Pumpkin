@@ -5,12 +5,11 @@ use crate::server::Server;
 use pumpkin_data::block_properties::{DoubleBlockHalf, OakDoorLikeProperties};
 use pumpkin_data::block_transformer::AXE;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, tag};
-use pumpkin_util::GameMode;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::{GameMode, Hand};
 use pumpkin_world::world::BlockFlags;
 
 pub struct AxeItem;
@@ -28,26 +27,45 @@ impl ItemBehaviour for AxeItem {
         player: &Player,
         location: BlockPos,
         face: BlockDirection,
+        cursor_pos: Vector3<f32>,
+        block: &Block,
+        server: &Server,
+    ) -> BlockActionResult {
+        self.use_on_block_with_hand(
+            item,
+            player,
+            location,
+            face,
+            cursor_pos,
+            block,
+            server,
+            Hand::Right,
+        )
+    }
+
+    fn use_on_block_with_hand(
+        &self,
+        item: &mut ItemStack,
+        player: &Player,
+        location: BlockPos,
+        face: BlockDirection,
         _cursor_pos: Vector3<f32>,
         block: &Block,
         _server: &Server,
+        hand: Hand,
     ) -> BlockActionResult {
         let world = player.world();
-        let get_block = |dx: i8, dy: i8, dz: i8| {
-            let check_pos = BlockPos(location.0 + Vector3::new(dx as i32, dy as i32, dz as i32));
-            world.get_block(&check_pos)
-        };
-
         let current_state_id = world.get_block_state_id(&location);
-
-        if let Some(result) = AXE.transform(block, current_state_id, face, &get_block) {
-            if let Some(sound) = result.entry.sound {
-                world.play_sound(sound, SoundCategory::Blocks, &location.to_f64());
+        let result = match super::block_transformer::prepare_transform(
+            &AXE, player, location, face, block, hand,
+        ) {
+            Ok(result) => result,
+            Err(action) => return action,
+        };
+        if let Some(result) = result {
+            if player.gamemode.load() != GameMode::Creative {
+                let _ = item.damage_item(i32::from(result.entry.item_damage_per_use));
             }
-            if let Some(particle) = result.entry.particle {
-                world.sync_world_event(particle, location, 0);
-            }
-
             if block.has_tag(&tag::Block::MINECRAFT_DOORS) {
                 let door_props = OakDoorLikeProperties::from_state_id(current_state_id);
                 let other_half_pos = match door_props.half {
@@ -76,10 +94,12 @@ impl ItemBehaviour for AxeItem {
             }
 
             world.set_block_state(&location, result.new_state_id, BlockFlags::NOTIFY_ALL);
-
-            if player.gamemode.load() != GameMode::Creative {
-                let _ = item.damage_item(i32::from(result.entry.item_damage_per_use));
-            }
+            super::block_transformer::send_transform_effects(
+                player,
+                location,
+                current_state_id,
+                result,
+            );
             return BlockActionResult::Success;
         }
         BlockActionResult::Pass

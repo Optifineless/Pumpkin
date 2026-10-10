@@ -1,13 +1,11 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    fs,
-    path::Path,
-};
+use std::{collections::HashSet, fs, path::Path};
 
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
+
+use crate::block::BlockAssets;
 
 #[derive(Deserialize, Debug)]
 struct TransformerEntryJson {
@@ -230,10 +228,10 @@ fn state_provider_to_tokens(provider: &StateProviderJson) -> TokenStream {
 }
 
 pub fn build() -> TokenStream {
-    let blocks_file: BTreeMap<String, serde_json::Value> =
+    let blocks_assets: BlockAssets =
         serde_json::from_str(&fs::read_to_string("../../assets/blocks.json").unwrap())
             .expect("Failed to parse blocks.json");
-    let valid_blocks: HashSet<String> = blocks_file.into_keys().collect();
+    let valid_blocks: HashSet<String> = blocks_assets.blocks.into_iter().map(|b| b.name).collect();
 
     let dir = Path::new("../../assets/datapack/data/minecraft/block_transformer");
     let mut files: Vec<(String, Vec<TransformerEntryJson>)> = Vec::new();
@@ -500,5 +498,43 @@ pub fn build() -> TokenStream {
                 _ => None,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build;
+
+    #[test]
+    fn b1019_g04_real_wrapper_emits_usable_tool_rules() {
+        // build() reads assets/blocks.json, whose block IDs live under its `blocks` array.
+        // Assert against freshly emitted tokens so this catches schema traversal regressions,
+        // independently of the checked-in generated constants.
+        let generated = build().to_string();
+
+        for expected in [
+            "pub static AXE",
+            "pub static HOE",
+            "pub static SHOVEL",
+            "BlockId :: OAK_LOG",
+            "BlockId :: STRIPPED_OAK_LOG",
+            "BlockId :: EXPOSED_COPPER",
+            "BlockId :: COPPER_BLOCK",
+            "BlockId :: WAXED_EXPOSED_COPPER",
+            "BlockId :: DIRT",
+            "BlockId :: FARMLAND",
+            "BlockId :: ROOTED_DIRT",
+            "MINECRAFT_TURNS_INTO_DIRT_PATH",
+            "BlockId :: DIRT_PATH",
+            "DropStrategy :: ClickedFace",
+        ] {
+            assert!(
+                generated.contains(expected),
+                "missing emitted token: {expected}"
+            );
+        }
+
+        // Includes the generated `BlockTransformerRule` field declaration plus 134 data rules.
+        assert_eq!(generated.matches("predicate : BlockPredicate").count(), 135);
     }
 }

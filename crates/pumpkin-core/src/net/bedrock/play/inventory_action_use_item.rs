@@ -243,7 +243,7 @@ impl BedrockClient {
             self.correct_rejected_block_use(context.player, context.data);
             return None;
         }
-        let result = context.server.item_registry.use_on_block(
+        let result = context.server.item_registry.use_on_block_with_hand(
             &mut stack,
             context.player,
             context.data.block_position,
@@ -251,6 +251,7 @@ impl BedrockClient {
             context.data.click_position,
             context.block,
             &context.server,
+            context.hand,
         );
         let denied = if should_try_block_placement(&result)
             && let Some(block) = Block::from_item_id(stack.item.id)
