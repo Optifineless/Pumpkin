@@ -2,16 +2,33 @@ use super::{EntityBase, living::LivingEntity};
 use pumpkin_data::attributes::Attributes;
 use std::sync::atomic::Ordering;
 
-/// Applies living fire-duration scaling and the cancellable combustion event.
-pub fn ignite_for_ticks<T: EntityBase + ?Sized>(target: &T, ticks: u32) {
-    let entity = target.get_entity();
-    let ticks = if target.get_player().is_some_and(|player| {
+fn is_ability_invulnerable_player<T: EntityBase + ?Sized>(target: &T) -> bool {
+    target.get_player().is_some_and(|player| {
         player
             .abilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invulnerable
-    }) {
+    })
+}
+
+/// Applies `Player.setRemainingFireTicks`'s ability-invulnerability clamp.
+pub fn set_remaining_fire_ticks(target: &dyn EntityBase, ticks: i32) {
+    let ticks = if is_ability_invulnerable_player(target) {
+        ticks.min(1)
+    } else {
+        ticks
+    };
+    target
+        .get_entity()
+        .fire_ticks
+        .store(ticks, Ordering::Relaxed);
+}
+
+/// Applies living fire-duration scaling and the cancellable combustion event.
+pub fn ignite_for_ticks<T: EntityBase + ?Sized>(target: &T, ticks: u32) {
+    let entity = target.get_entity();
+    let ticks = if is_ability_invulnerable_player(target) {
         // Player.setRemainingFireTicks clamps ability-invulnerable players to one tick.
         1
     } else {
