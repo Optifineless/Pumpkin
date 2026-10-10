@@ -229,3 +229,40 @@ pub fn can_plant_dripleaf_on_top(support_block: &Block) -> bool {
 
     support_block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_BIG_DRIPLEAF)
 }
+
+// BigDripleafBlock.placeWithRandomHeight / canGrowInto: desired height 2..5, clipped by space/build height.
+pub(super) fn place_with_random_height(
+    world: &Arc<World>,
+    bottom: BlockPos,
+    facing: HorizontalFacing,
+) {
+    let desired = rand::rng().random_range(2..=5);
+    let mut height = 0;
+    while height < desired {
+        let pos = bottom.offset(Vector3::new(0, height, 0));
+        let block = world.get_block(&pos);
+        if pos.0.y < world.dimension.min_y
+            || pos.0.y > world.get_top_y()
+            || !(block.is_air() || block == &Block::WATER || block == &Block::SMALL_DRIPLEAF)
+        {
+            break;
+        }
+        height += 1;
+    }
+    for offset in 0..height {
+        let pos = bottom.offset(Vector3::new(0, offset, 0));
+        let waterlogged = super::double_plant::water_source(world.get_block_state(&pos));
+        let state = if offset == height - 1 {
+            let mut props = BigDripleafLikeProperties::default(&Block::BIG_DRIPLEAF);
+            props.facing = facing;
+            props.waterlogged = waterlogged;
+            props.to_state_id(&Block::BIG_DRIPLEAF)
+        } else {
+            let mut props = BigDripleafStemLikeProperties::default(&Block::BIG_DRIPLEAF_STEM);
+            props.facing = facing;
+            props.waterlogged = waterlogged;
+            props.to_state_id(&Block::BIG_DRIPLEAF_STEM)
+        };
+        world.set_block_state(&pos, state, BlockFlags::NOTIFY_ALL);
+    }
+}

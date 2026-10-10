@@ -144,7 +144,8 @@ impl PathfindingContext {
         }
 
         if block.has_tag(&tag::Block::MINECRAFT_DOORS) {
-            if state.collision_shapes.is_empty() {
+            // WalkNodeEvaluator.getPathTypeFromState: open doors still have a hinged collision slab.
+            if pumpkin_data::block_properties::OakDoorLikeProperties::from_state_id(state_id).open {
                 return PathType::DoorOpen;
             }
 

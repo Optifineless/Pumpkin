@@ -51,6 +51,10 @@ pub(super) fn initial_scan_delay() -> i32 {
 pub(super) fn make_brain(packed: &PackedMemories) -> Brain {
     let mut brain = Brain::default();
     brain.register_memory(types::LAST_SLEPT.id());
+    brain.register_memory(types::LAST_WOKEN.id());
+    brain.register_memory(types::HOME.id());
+    brain.register_memory(types::CANT_REACH_WALK_TARGET_SINCE.id());
+    brain.register_memory(types::DOORS_TO_CLOSE.id());
     brain.register_memory(types::GOLEM_DETECTED_RECENTLY.id());
     brain.register_memory(types::INTERACTION_TARGET.id());
     brain.register_memory(types::MEETING_POINT.id());
@@ -94,7 +98,7 @@ impl VillagerEntity {
             .set_with_expiry(types::GOLEM_DETECTED_RECENTLY, true, MEMORY_TIME_TO_LIVE);
     }
 
-    fn nearby_entities(&self) -> Vec<Arc<dyn EntityBase>> {
+    pub(super) fn nearby_entities(&self) -> Vec<Arc<dyn EntityBase>> {
         let entity = self.get_entity();
         let range = self
             .mob_entity
@@ -140,6 +144,8 @@ impl VillagerEntity {
             return;
         }
         let panicking = self.is_panicking(&nearby);
+        // NearestLivingEntitySensor updates panic input at the sensor cadence, not per REST check.
+        self.sensed_panic.store(panicking, Relaxed);
         if panic_check && panicking {
             // VillagerPanicTrigger.tick requires three villagers that themselves want a golem.
             self.spawn_golem_if_needed(timestamp, PANIC_VILLAGERS_NEEDED, random);
@@ -153,7 +159,7 @@ impl VillagerEntity {
         }
     }
 
-    fn is_panicking(&self, nearby: &[Arc<dyn EntityBase>]) -> bool {
+    pub(super) fn is_panicking(&self, nearby: &[Arc<dyn EntityBase>]) -> bool {
         // VillagerPanicTrigger.isHurt / HurtBySensor use the remembered damage source.
         if self
             .mob_entity

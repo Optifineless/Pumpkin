@@ -1153,6 +1153,24 @@ pub trait Mob: EntityBase + Send + Sync {
         }
     }
 
+    /// Enables paths through closed doors that this mob can open.
+    fn set_can_open_doors(&self, can_open: bool) {
+        self.get_mob_entity()
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_open_doors(can_open);
+    }
+
+    /// Enables paths through open doors.
+    fn set_can_pass_doors(&self, can_pass: bool) {
+        self.get_mob_entity()
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_can_pass_doors(can_pass);
+    }
+
     /// Bee navigation pauses while pollinating.
     fn can_tick_navigation(&self) -> bool {
         true

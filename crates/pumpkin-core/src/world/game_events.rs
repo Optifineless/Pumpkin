@@ -16,3 +16,23 @@ impl World {
         self.emit_game_event("teleport", departure);
     }
 }
+
+impl World {
+    /// Emits an event with the initiating entity's identity; legacy Wasm payloads remain unchanged.
+    pub fn emit_game_event_with_source(
+        &self,
+        key: impl Into<String>,
+        position: Vector3<f64>,
+        source: Option<&Entity>,
+    ) {
+        // Level.gameEvent(sourceEntity, ...), including DoorBlock.setOpen's actor context.
+        let mut event = crate::plugin::api::events::world::generic_game::GenericGameEvent::new(
+            key.into(),
+            position,
+        );
+        event.source_entity = source.map(|entity| entity.entity_uuid);
+        if let Some(server) = self.server.upgrade() {
+            server.plugin_manager.fire_blocking(&server, &mut event);
+        }
+    }
+}

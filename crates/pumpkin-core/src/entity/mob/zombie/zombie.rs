@@ -82,9 +82,7 @@ impl ZombieEntity {
     }
 
     pub fn set_can_break_doors(&self, can_break: bool) {
-        self.entity
-            .can_break_doors
-            .store(can_break, std::sync::atomic::Ordering::Relaxed);
+        self.entity.set_can_break_doors(can_break, self);
     }
 
     #[must_use]

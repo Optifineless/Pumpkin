@@ -28,6 +28,7 @@ mod mob_malus;
 mod navigation_following;
 pub(crate) mod navigation_geometry;
 mod navigation_snapshot;
+mod navigation_targets;
 pub mod node;
 pub mod node_evaluator;
 mod passive_malus;
@@ -431,6 +432,15 @@ pub trait PathNavigationTrait: Send + Sync {
         destination: Vector3<f64>,
         reach_range: i32,
     ) -> Option<Path>;
+    /// Searches a batch of POI positions with one evaluator traversal; ground navigation supports this.
+    fn create_path_to_targets(
+        &mut self,
+        _mob: &MobEntity,
+        _targets: &[BlockPos],
+        _reach_range: i32,
+    ) -> Option<Path> {
+        None
+    }
     fn recompute_path(&mut self, mob: &MobEntity);
     fn set_avoid_sun(&mut self, avoid_sun: bool);
     fn set_can_walk_over_fences(&mut self, can_walk: bool);
@@ -1089,6 +1099,16 @@ impl PathNavigationTrait for GroundPathNavigation {
             f64::from(dest_pos.0.z) + 0.5,
         );
         self.inner.compute_path(mob, dest_v, reach_range)
+    }
+
+    fn create_path_to_targets(
+        &mut self,
+        mob: &MobEntity,
+        targets: &[BlockPos],
+        reach_range: i32,
+    ) -> Option<Path> {
+        self.inner
+            .compute_path_to_targets(mob, targets, reach_range)
     }
 
     fn recompute_path(&mut self, mob: &MobEntity) {

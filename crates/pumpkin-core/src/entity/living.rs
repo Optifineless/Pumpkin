@@ -1160,7 +1160,8 @@ impl LivingEntity {
             .get_mob()
             .is_none_or(|mob| !mob.get_mob_entity().is_no_ai());
 
-        if !effective_ai {
+        // LivingEntity.isImmobile prevents sleeping bodies from travelling.
+        if !effective_ai || self.entity.pose.load() == pumpkin_data::entity::EntityPose::Sleeping {
             // No travel.
         } else if caller
             .get_mob()
@@ -1180,7 +1181,8 @@ impl LivingEntity {
 
         let suffocating = self.entity.tick_block_collisions(caller);
 
-        if suffocating {
+        // LivingEntity.isInWall excludes sleeping entities.
+        if suffocating && self.entity.pose.load() != pumpkin_data::entity::EntityPose::Sleeping {
             caller.damage(caller, 1.0, DamageType::IN_WALL);
         }
 
@@ -2098,7 +2100,8 @@ impl EntityBase for LivingEntity {
             self.apply_travel_friction();
 
             let suffocating = self.entity.tick_block_collisions(caller);
-            if suffocating {
+            if suffocating && self.entity.pose.load() != pumpkin_data::entity::EntityPose::Sleeping
+            {
                 caller.damage(caller, 1.0, DamageType::IN_WALL);
             }
 

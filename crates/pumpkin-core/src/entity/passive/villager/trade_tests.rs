@@ -7,6 +7,7 @@ use pumpkin_protocol::{
     java::server::play::{SClickSlot, SlotActionType},
     ser::NetworkWriteExt,
 };
+use pumpkin_util::math::vector3::Vector3;
 use std::{borrow::Cow, sync::mpsc, time::Duration};
 
 fn offer(uses: i32, output_count: u8) -> MerchantOffer {

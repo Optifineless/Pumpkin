@@ -1,6 +1,7 @@
 use crate::block::blocks::plant::PlantBlockBase;
 use crate::block::{
-    BlockBehaviour, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs, PlacedArgs,
+    BlockBehaviour, BonemealArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
+    PlacedArgs,
 };
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{DoubleBlockHalf, SmallDripleafLikeProperties};
@@ -14,8 +15,44 @@ use pumpkin_world::world::{BlockAccessor, BlockFlags};
 pub struct SmallDripleafBlock;
 
 impl BlockBehaviour for SmallDripleafBlock {
+    fn player_will_destroy(&self, args: crate::block::PlayerWillDestroyArgs<'_>) {
+        super::double_plant::player_will_destroy(args);
+    }
+
+    fn is_valid_bonemeal_target(&self, _args: BonemealArgs<'_>) -> bool {
+        true
+    }
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+        // SmallDripleafBlock.performBonemeal replaces the upper half with its water before growing.
+        let props = SmallDripleafLikeProperties::from_state_id(args.state_id);
+        let lower = if props.half == DoubleBlockHalf::Lower {
+            *args.position
+        } else {
+            args.position.down()
+        };
+        let upper = args.world.get_block_state(&lower.up());
+        let replacement = if super::double_plant::water_source(upper) {
+            &Block::WATER
+        } else {
+            &Block::AIR
+        };
+        args.world.set_block_state(
+            &lower.up(),
+            replacement.default_state.id,
+            BlockFlags::NOTIFY_LISTENERS | BlockFlags::UPDATE_KNOWN_SHAPE,
+        );
+        super::big_dripleaf::place_with_random_height(args.world, lower, props.facing);
+    }
+
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
         <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
+            && args
+                .block_accessor
+                .get_block_state(&args.position.up())
+                .replaceable()
+            && args
+                .world
+                .is_none_or(|world| args.position.0.y < world.get_top_y())
     }
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let facing = args
@@ -37,17 +74,26 @@ impl BlockBehaviour for SmallDripleafBlock {
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        <Self as PlantBlockBase>::get_state_for_neighbor_update(
-            self,
-            args.world,
-            args.position,
-            args.state_id,
-        )
+        if let Some(state) = super::double_plant::partner_update(&args) {
+            return state;
+        }
+        let props = SmallDripleafLikeProperties::from_state_id(args.state_id);
+        if props.half == DoubleBlockHalf::Lower
+            && args.direction == pumpkin_data::BlockDirection::Down
+            && !supports_small_dripleaf(
+                args.world.get_block(&args.position.down()),
+                props.waterlogged,
+            )
+        {
+            return Block::AIR.default_state.id;
+        }
+        args.state_id
     }
     fn placed(&self, args: PlacedArgs<'_>) {
         {
             let lower_small_dripleaf_props =
                 SmallDripleafLikeProperties::from_state_id(args.state_id);
+            // DoublePlantBlock.setPlacedBy is the lower-half item placement callback.
             if lower_small_dripleaf_props.half != DoubleBlockHalf::Lower {
                 return;
             }
@@ -68,60 +114,18 @@ impl BlockBehaviour for SmallDripleafBlock {
         }
     }
 }
-fn is_small_dripleaf_waterlogged(state_id: BlockStateId) -> bool {
-    let dripleaf_props = SmallDripleafLikeProperties::from_state_id(state_id);
-    dripleaf_props.waterlogged
-}
 impl PlantBlockBase for SmallDripleafBlock {
     fn can_plant_on_top(&self, block_accessor: &dyn BlockAccessor, pos: &BlockPos) -> bool {
-        let support_block = block_accessor.get_block(pos);
-
-        if support_block == &Block::SMALL_DRIPLEAF {
-            return true;
-        }
-        let upper_block = block_accessor.get_block(&pos.up_height(2));
-        if upper_block != &Block::AIR
-            && upper_block != &Block::WATER
-            && upper_block != &Block::SMALL_DRIPLEAF
-        {
-            return false;
-        }
-        let (replacing_block, replacing_block_state) =
-            block_accessor.get_block_and_state(&pos.up());
-        if replacing_block == &Block::SMALL_DRIPLEAF && replacing_block_state.is_waterlogged() {
-            //in case of neighbor update check
-            supports_small_dripleaf(support_block, true)
-        } else {
-            supports_small_dripleaf(support_block, replacing_block == &Block::WATER)
-        }
-    }
-
-    fn get_state_for_neighbor_update(
-        &self,
-        block_accessor: &dyn BlockAccessor,
-        block_pos: &BlockPos,
-        block_state: BlockStateId,
-    ) -> BlockStateId {
-        if !<Self as PlantBlockBase>::can_place_at(self, block_accessor, block_pos) {
-            if is_small_dripleaf_waterlogged(block_state) {
-                return Block::WATER.default_state.id;
-            }
-            return Block::AIR.default_state.id;
-        }
-        let upper_block = block_accessor.get_block(&block_pos.up());
-        let below_blow = block_accessor.get_block(&block_pos.down());
-        if upper_block != &Block::SMALL_DRIPLEAF && below_blow != &Block::SMALL_DRIPLEAF {
-            if is_small_dripleaf_waterlogged(block_state) {
-                return Block::WATER.default_state.id;
-            }
-            return Block::AIR.default_state.id;
-        }
-        block_state
+        // SmallDripleafBlock.mayPlaceOn uses the water at the lower half's position.
+        supports_small_dripleaf(
+            block_accessor.get_block(pos),
+            super::double_plant::water_source(block_accessor.get_block_state(&pos.up())),
+        )
     }
 }
 fn supports_small_dripleaf(support_block: &Block, underwater: bool) -> bool {
     if support_block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_SMALL_DRIPLEAF) {
         return true;
     }
-    underwater && support_block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_BIG_DRIPLEAF)
+    underwater && support_block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_VEGETATION)
 }

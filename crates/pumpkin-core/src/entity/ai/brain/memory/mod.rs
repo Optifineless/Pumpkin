@@ -220,6 +220,17 @@ impl MemoryStore {
             .map(MemorySlot::time_to_live)
     }
 
+    /// Borrows a present memory with the key's concrete type.
+    pub fn get_mut<T: MemoryValue>(&mut self, key: MemoryModuleType<T>) -> Option<&mut T> {
+        self.slots
+            .get_mut(key.id.index())?
+            .as_mut()?
+            .value
+            .as_mut()?
+            .as_any_mut()
+            .downcast_mut::<T>()
+    }
+
     pub fn set<T: MemoryValue>(&mut self, key: MemoryModuleType<T>, value: T) {
         self.set_with_expiry(key, value, NEVER_EXPIRE);
     }

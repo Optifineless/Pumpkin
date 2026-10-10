@@ -15,6 +15,9 @@ pub struct BedRule {
     pub can_sleep: BedRuleOption,
     pub can_set_spawn: BedRuleOption,
     pub explodes: bool,
+    pub destroy_on_use: bool,
+    pub destroy_on_leave: bool,
+    pub error_message: Option<&'static str>,
 }
 impl BedRule {
     #[inline]
@@ -70,6 +73,7 @@ pub struct Dimension {
     pub can_start_raid: bool,
     pub nether_portal_spawns_piglin: bool,
     pub bed_rule: BedRule,
+    pub straw_bed_rule: BedRule,
     pub timelines: Option<&'static str>,
 }
 impl Dimension {
@@ -114,6 +118,17 @@ impl Dimension {
             can_sleep: BedRuleOption::WhenDark,
             can_set_spawn: BedRuleOption::Always,
             explodes: false,
+            destroy_on_use: false,
+            destroy_on_leave: false,
+            error_message: Some("{\"translate\":\"block.minecraft.bed.no_sleep\"}"),
+        },
+        straw_bed_rule: BedRule {
+            can_sleep: BedRuleOption::WhenDark,
+            can_set_spawn: BedRuleOption::Never,
+            explodes: false,
+            destroy_on_use: false,
+            destroy_on_leave: true,
+            error_message: Some("{\"translate\":\"block.minecraft.bed.no_sleep\"}"),
         },
         timelines: Some("#minecraft:in_overworld"),
     };
@@ -158,6 +173,17 @@ impl Dimension {
             can_sleep: BedRuleOption::WhenDark,
             can_set_spawn: BedRuleOption::Always,
             explodes: false,
+            destroy_on_use: false,
+            destroy_on_leave: false,
+            error_message: Some("{\"translate\":\"block.minecraft.bed.no_sleep\"}"),
+        },
+        straw_bed_rule: BedRule {
+            can_sleep: BedRuleOption::WhenDark,
+            can_set_spawn: BedRuleOption::Never,
+            explodes: false,
+            destroy_on_use: false,
+            destroy_on_leave: true,
+            error_message: Some("{\"translate\":\"block.minecraft.bed.no_sleep\"}"),
         },
         timelines: Some("#minecraft:in_overworld"),
     };
@@ -196,7 +222,18 @@ impl Dimension {
         bed_rule: BedRule {
             can_sleep: BedRuleOption::Never,
             can_set_spawn: BedRuleOption::Never,
+            explodes: true,
+            destroy_on_use: true,
+            destroy_on_leave: false,
+            error_message: None,
+        },
+        straw_bed_rule: BedRule {
+            can_sleep: BedRuleOption::Never,
+            can_set_spawn: BedRuleOption::Never,
             explodes: false,
+            destroy_on_use: true,
+            destroy_on_leave: false,
+            error_message: None,
         },
         timelines: Some("#minecraft:in_end"),
     };
@@ -235,7 +272,18 @@ impl Dimension {
         bed_rule: BedRule {
             can_sleep: BedRuleOption::Never,
             can_set_spawn: BedRuleOption::Never,
+            explodes: true,
+            destroy_on_use: true,
+            destroy_on_leave: false,
+            error_message: None,
+        },
+        straw_bed_rule: BedRule {
+            can_sleep: BedRuleOption::Never,
+            can_set_spawn: BedRuleOption::Never,
             explodes: false,
+            destroy_on_use: true,
+            destroy_on_leave: false,
+            error_message: None,
         },
         timelines: Some("#minecraft:in_nether"),
     };

@@ -10,6 +10,9 @@ pub struct GenericGameEvent {
 
     /// The position where the game event occurred.
     pub position: Vector3<f64>,
+
+    /// The entity whose action caused the event, when supplied by the caller.
+    pub source_entity: Option<uuid::Uuid>,
 }
 
 impl GenericGameEvent {
@@ -18,6 +21,7 @@ impl GenericGameEvent {
         Self {
             event_key,
             position,
+            source_entity: None,
             cancelled: false,
         }
     }
