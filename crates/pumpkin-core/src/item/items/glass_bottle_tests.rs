@@ -16,6 +16,9 @@ use std::sync::Arc;
 const WATER: BlockPos = BlockPos::new(8, 65, 11);
 const OBSTACLE: BlockPos = BlockPos::new(8, 65, 10);
 
+#[path = "glass_bottle_review_tests.rs"]
+mod review;
+
 struct BottleFixture {
     _dir: tempfile::TempDir,
     server: Arc<Server>,
@@ -25,8 +28,13 @@ struct BottleFixture {
 
 impl BottleFixture {
     fn new() -> Self {
+        Self::configured(|_| {})
+    }
+
+    fn configured(configure: impl FnOnce(&mut Server)) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let server = combat_test_support::server(dir.path());
+        let mut server = combat_test_support::server(dir.path());
+        configure(Arc::get_mut(&mut server).unwrap());
         let world = combat_test_support::world(&server, dir.path());
         let mut chunk = spawn_test_support::proto(&Biome::PLAINS, &Block::STONE);
         chunk.set_block_state(8, 65, 11, Block::WATER.default_state);
