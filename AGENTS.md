@@ -4,14 +4,24 @@
 
 This checkout is the Murgicraft fork of Pumpkin (see [FORK.md](FORK.md)), not upstream. Development here is done by AI agents. The owner play-tests changes in-game but does not read or review code. Everything below this section is upstream's guide and still applies, except where this section says otherwise. Keep this section at the top and keep the rest of the file identical to upstream, so merging upstream stays easy.
 
-**Nobody reviews your diff, so you are the reviewer.** Upstream relies on maintainers comparing each PR to the decompiled Java. Here nobody does, so do that comparison yourself before every commit, and treat "it compiles and looks plausible" as not done.
+**You are the first reviewer of your diff.** Upstream relies on maintainers comparing each PR to the decompiled Java. Here every change also gets an independent agent review against vanilla before it merges, but do that comparison yourself before every commit, and treat "it compiles and looks plausible" as not done. Bot reviews on the fork's PRs (CodeRabbit, Codex) are advisory and often rate-limited: a green status from them is not evidence that a review happened.
 
 - Port from the decompiled vanilla source of the target version, never from memory or the wiki. Name the Java class and method a change mirrors in a short comment where it isn't obvious.
-- Run `cargo fmt --check`, `cargo clippy` and the tests for every crate you touched and the crates that depend on them. All must pass with no new warnings before a commit lands on `murgicraft`.
+- Run `cargo fmt --check`, `cargo clippy` and the tests for every crate you touched and the crates that depend on them. All must pass with no new warnings on the exact commit that will merge (a rebase or a review fix means running them again), and the PR description records that commit, the commands and the results.
 - Boot the server in a scratch directory outside the repo after any gameplay change, and read the log for new warnings, errors or panics.
 - Add a regression test whenever one can catch the bug (see "Tests" below), and check that it fails without the fix.
 - Do the "Read your own diff before handover" checks below on every commit, not just before handover.
 - If you could not verify part of a change, say so plainly to the owner. Never claim a play test, review or capture that didn't happen.
+
+**Changing shared state.** Most regressions so far came from changing what a piece of state means without updating everything around it (for example a saved `Invulnerable` tag written by older builds loading as permanent immunity, #130, or `/clear` leaving cached armor attributes behind, #98). When a change alters an entity, player, world or saved field, a cache, or a lock, write down in the PR and check:
+
+- every place that writes, reads or derives the state, not only the one you changed;
+- what saves written by older fork builds and by vanilla contain, and what they mean after your change (add a regression that loads such a save);
+- who invalidates a cache when its source changes, including commands such as `/clear` and `/give`;
+- what happens on disconnect, rejoin, death and respawn, dimension change, chunk unload and server restart;
+- whether a callback, event or plugin hook can run while you hold a lock, or touch an old player or entity instance.
+
+Test transitions through the real entry points (the actual command, packet handler, login path or tick), not by calling the helper the fix added.
 
 **Size and structure.** Upstream has files over 8,000 lines. Our own code must not make that worse, and nothing of ours should need a later split.
 
@@ -23,18 +33,21 @@ This checkout is the Murgicraft fork of Pumpkin (see [FORK.md](FORK.md)), not up
 
 **Branches and upstream.**
 
-- `master` mirrors upstream `master` and never gets fork commits. `murgicraft` is upstream plus the fork's commits, and is what the server runs. Work on a topic branch from `murgicraft` and fast-forward it in once the checks pass.
+- `murgicraft` is upstream plus the fork's commits, and is what the servers run. Work on a topic branch from `murgicraft`; it lands through a pull request on the fork (`Optifineless/Pumpkin`, base `murgicraft`), never by pushing `murgicraft` directly.
+- The fork's `master` is not a reliable copy of upstream (it can lag or carry stray commits). To compare with upstream, use `upstream/master` and name the upstream commit you compared against.
 - Merge upstream into the fork regularly. When upstream lands a fix the fork also has, drop the fork's version and keep upstream's.
 - Before writing a fix, search upstream's open PRs. If a good one exists, cherry-pick it onto `murgicraft` with its original author instead of writing a parallel version, and list it in FORK.md.
 - Never open pull requests, issues, comments or reviews on upstream, even when asked. Upstream can take commits from this fork if it wants them.
 
-**Commits.** Upstream's commit rules apply, with one change: end every agent-written commit with the AI `Co-Authored-By` trailer. The fork has no PR descriptions, so that trailer and FORK.md are where AI authorship is disclosed. Keep commits small and single-topic so upstream could cherry-pick them.
+**Commits.** Upstream's commit rules apply, with one change: end every agent-written commit with the AI `Co-Authored-By` trailer. AI authorship is disclosed by that trailer, the PR description and FORK.md. Keep commits small and single-topic so upstream could cherry-pick them.
 
-**Handover to the owner.** The "Pull requests" section below doesn't apply here. When a change is ready:
+**Handover and pull requests.** The "Pull requests" section below is upstream's and applies only in part: its rule that agents never open pull requests means upstream. On the fork, an implementing agent hands over its branch (usually uncommitted, as its brief says); the orchestrating agent commits it, opens the PR against `murgicraft` on `Optifineless/Pumpkin`, reads every review, and merges only after:
 
-1. Push the topic branch and the updated `murgicraft` to `origin` (the fork).
-2. Give the owner a play-test checklist in "do X, expect Y" form, written for someone who plays Minecraft but doesn't know its internals. Say what changed in plain words, not code.
-3. Record upstream issues the change addresses in FORK.md, marked "Not yet" until the owner confirms them in-game.
+1. the checks above passed on the PR's final head (or on a commit with an identical tree);
+2. an independent review of that head, or of the final delta since the last reviewed head, has completed and its findings are fixed or refuted with evidence;
+3. PRs that touch the same files as already-merged work are rebased and re-checked on top of it, not merged on a stale base.
+
+For each change, give the owner a play-test checklist in "do X, expect Y" form, written for someone who plays Minecraft but doesn't know its internals; say what changed in plain words, not code. Record issues the change addresses in FORK.md, marked "Not yet" until confirmed in-game. A fix is "merged", then "deployed" (name the server and binary), then "verified" only after a player confirms it on that build.
 
 **Priorities.** The goal is a survival server the owner can run instead of Paper, with plugins written by the fork. Prefer work that players of a survival server will notice: redstone, combat, world generation, commands, and the plugin API.
 
