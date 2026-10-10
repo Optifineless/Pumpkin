@@ -211,14 +211,17 @@ impl JukeboxBlockEntity {
             if self.record_revision.load(Ordering::Relaxed) != revision {
                 return;
             }
-            if let Some(song) = song {
-                self.start_playing(song.length_in_ticks());
-                true
-            } else {
-                let was_playing = self.song_length_ticks.load(Ordering::Relaxed) > 0;
-                self.stop_playing();
-                was_playing
-            }
+            song.map_or_else(
+                || {
+                    let was_playing = self.song_length_ticks.load(Ordering::Relaxed) > 0;
+                    self.stop_playing();
+                    was_playing
+                },
+                |song| {
+                    self.start_playing(song.length_in_ticks());
+                    true
+                },
+            )
         };
         let Some(world) = world else {
             return;

@@ -158,6 +158,14 @@ impl Player {
             }
             *pending = None;
             drop(pending);
+            if !authorized {
+                // ServerPlayerGameMode.tick publishes delayed progress to chunk observers.
+                world.set_block_breaking(
+                    &self.living_entity.entity,
+                    delayed.position,
+                    crate::world::BlockBreakingProgress::Stop,
+                );
+            }
             if finished {
                 player.destroy_mined_block(world, &delayed.position, state, server);
             }

@@ -5,6 +5,7 @@ use crate::{
     world::spawn_test_support::{proto, publish},
 };
 use pumpkin_data::biome::Biome;
+use pumpkin_protocol::{VarInt, java::client::play::CSetBlockDestroyStage};
 use pumpkin_util::permission::PermissionLvl;
 
 fn action(player: &TestPlayer, server: &Server, status: Status, position: BlockPos) {
@@ -128,6 +129,49 @@ async fn java_life_reset_abandons_active_and_delayed_targets() {
         player.player.tick_block_breaking();
         assert_eq!(world.get_block(&pos), &Block::STONE, "delayed={delayed}");
     }
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn java_abandoned_delayed_destroy_broadcasts_stop_stage() {
+    let (fixture, player, pos) = fixture().await;
+    let world = fixture.world();
+    let mut observer = TestPlayer::new(&world);
+    world.players.rcu(|current| {
+        let mut players = (**current).clone();
+        players.push(player.player.clone());
+        players
+    });
+
+    action(&player, &fixture.server, Status::StartedDigging, pos);
+    action(&player, &fixture.server, Status::FinishedDigging, pos);
+    observer.take_packets();
+    assert!(!player.player.mining.load(Ordering::Relaxed));
+    assert_eq!(world.get_block(&pos), &Block::STONE);
+
+    player
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(1000.5, 64.0, 1000.5));
+    player.player.tick_block_breaking();
+
+    let stop = observer
+        .client()
+        .serialize_packet(&CSetBlockDestroyStage::new(
+            VarInt(player.player.get_entity().entity_id),
+            pos,
+            -1,
+        ))
+        .unwrap();
+    assert_eq!(
+        observer
+            .take_packets()
+            .iter()
+            .filter(|packet| **packet == stop)
+            .count(),
+        1,
+        "abandoning the delayed dig sends one stop-stage packet to observers"
+    );
     fixture.server.shutdown().await;
 }
 
