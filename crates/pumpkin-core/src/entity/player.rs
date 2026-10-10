@@ -6328,6 +6328,8 @@ impl EntityBase for Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .write_nbt(nbt);
+        // Entity.saveWithoutId persists Invulnerable; this marker distinguishes new player saves from legacy mode flags.
+        nbt.put_bool("pumpkin:invulnerable_v2", true);
 
         let total_exp = experience::points_to_level(self.experience_level.load(Ordering::Relaxed))
             + self.experience_points.load(Ordering::Relaxed);
@@ -6503,18 +6505,10 @@ impl EntityBase for Player {
                 .abilities
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            abilities.set_for_gamemode(gamemode);
             abilities.read_nbt(nbt);
-            if gamemode == GameMode::Creative {
-                abilities.allow_flying = true;
-                abilities.creative = true;
-                abilities.invulnerable = true;
-            } else if gamemode == GameMode::Spectator {
-                abilities.allow_flying = true;
-                abilities.creative = false;
-                abilities.invulnerable = true;
-            }
-        }
+            // ServerPlayer.readAdditionalSaveData calls GameType.updatePlayerAbilities after Player.readAdditionalSaveData.
+            abilities.set_for_gamemode(gamemode);
+        };
 
         self.living_entity
             .entity

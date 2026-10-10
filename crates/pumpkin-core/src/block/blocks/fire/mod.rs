@@ -122,14 +122,12 @@ impl FireBlockBase {
         if !base_entity.is_fire_immune() {
             let ticks = base_entity.fire_ticks.load(Ordering::Relaxed);
 
-            // Timer logic
+            // BaseFireBlock.fireIgnite routes player timer changes through Player.setRemainingFireTicks.
             if ticks < 0 {
-                base_entity.fire_ticks.store(ticks + 1, Ordering::Relaxed);
+                crate::entity::ignite::set_remaining_fire_ticks(args.entity, ticks + 1);
             } else if base_entity.entity_type == &EntityType::PLAYER {
                 let rnd_ticks = rand::rng().random_range(1..3);
-                base_entity
-                    .fire_ticks
-                    .store(ticks + rnd_ticks, Ordering::Relaxed);
+                crate::entity::ignite::set_remaining_fire_ticks(args.entity, ticks + rnd_ticks);
             }
 
             // Apply fire ticks
