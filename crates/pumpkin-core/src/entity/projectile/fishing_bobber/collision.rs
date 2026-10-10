@@ -24,6 +24,11 @@ impl FishingBobberEntity {
             .load()
             .stretch(*velocity)
             .expand(1.0, 1.0, 1.0);
+        // Safety divergence: FishingHook.checkCollision has no cap; bound our volume query.
+        if !self.entity.accept_collision_sweep(search, *velocity) {
+            *velocity = Vector3::default();
+            return;
+        }
         let (blocks, positions) = world.get_block_collisions(search, self);
         let mut closest = 1.0;
         let mut block_hit = None;
