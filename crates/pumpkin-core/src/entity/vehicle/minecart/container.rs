@@ -22,6 +22,8 @@ pub struct MinecartInventory {
     size: usize,
     loot_table: Mutex<Option<(String, i64)>>,
     drops_claimed: AtomicBool,
+    #[cfg(test)]
+    before_loot_fill: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 impl MinecartInventory {
@@ -31,6 +33,8 @@ impl MinecartInventory {
             size,
             loot_table: Mutex::new(None),
             drops_claimed: AtomicBool::new(false),
+            #[cfg(test)]
+            before_loot_fill: Mutex::new(None),
         }
     }
 
@@ -99,27 +103,35 @@ impl MinecartInventory {
         self: &Arc<Self>,
         params: &crate::world::loot::LootContextParameters,
     ) {
-        let loot_table = self
+        // ContainerEntity.unpackChestVehicleLootTable and addChestVehicleSaveData cannot
+        // interleave in vanilla. Retain the loot lock until all generated items are stored.
+        let mut deferred = self
             .loot_table
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        let Some((loot_table, seed)) = loot_table else {
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some((loot_table, seed)) = deferred.take() else {
             return;
         };
         let Some(table) = params.world.as_ref().map_or_else(
             || crate::world::loot::get_loot_table(&loot_table),
             |world| world.get_loot_table(&loot_table),
         ) else {
-            *self
-                .loot_table
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((loot_table, seed));
+            *deferred = Some((loot_table, seed));
             return;
         };
 
+        #[cfg(test)]
+        if let Some(pause) = self
+            .before_loot_fill
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            pause();
+        }
         let inventory: Arc<dyn Inventory> = self.clone();
         crate::world::loot::fill_chest_inventory_with_context(&inventory, &table, seed, params);
+        drop(deferred);
     }
 }
 
@@ -394,6 +406,83 @@ mod tests {
         assert_eq!(nbt.get_long("LootTableSeed"), Some(1234));
         assert!(nbt.get_list("Items").is_none());
         Ok(())
+    }
+
+    #[test]
+    fn regression_save_during_loot_unpack_preserves_contents()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::sync::{Arc, mpsc};
+        use std::time::Duration;
+
+        let inventory = Arc::new(MinecartInventory::new(27));
+        let mut source = NbtCompound::new();
+        source.put_string(
+            "LootTable",
+            "minecraft:chests/abandoned_mineshaft".to_owned(),
+        );
+        source.put_long("LootTableSeed", 1234);
+        inventory.read_nbt(&source);
+        let (paused_tx, paused_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        *inventory
+            .before_loot_fill
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(move || {
+            assert!(paused_tx.send(()).is_ok());
+            assert!(resume_rx.recv_timeout(Duration::from_secs(5)).is_ok());
+        }));
+
+        std::thread::scope(|scope| {
+            let unpack = scope.spawn(|| {
+                inventory.unpack_loot(&crate::world::loot::LootContextParameters::default());
+            });
+            paused_rx.recv_timeout(Duration::from_secs(5))?;
+            assert!(
+                inventory.is_empty(),
+                "pause before any generated item is stored"
+            );
+            let (started_tx, started_rx) = mpsc::channel();
+            let (saved_tx, saved_rx) = mpsc::channel();
+            let inventory = &inventory;
+            scope.spawn(move || {
+                assert!(started_tx.send(()).is_ok());
+                let mut nbt = NbtCompound::new();
+                inventory.write_nbt(&mut nbt);
+                assert!(saved_tx.send(nbt).is_ok());
+            });
+            let started = started_rx.recv_timeout(Duration::from_secs(5));
+            let early_save = saved_rx.recv_timeout(Duration::from_millis(100));
+            // Resume before checking results so a failed assertion cannot strand unpacking.
+            resume_tx.send(())?;
+            started?;
+            let saved = match early_save {
+                Ok(nbt) => nbt,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    saved_rx.recv_timeout(Duration::from_secs(5))?
+                }
+                Err(error) => return Err(error.into()),
+            };
+            assert!(
+                saved.get_string("LootTable").is_some()
+                    || saved
+                        .get_list("Items")
+                        .is_some_and(|items| !items.is_empty()),
+                "saving during unpack must retain deferred loot or generated items"
+            );
+            let restored = Arc::new(MinecartInventory::new(27));
+            restored.read_nbt(&saved);
+            restored.unpack_loot(&crate::world::loot::LootContextParameters::default());
+            assert!(unpack.join().is_ok());
+            assert!(!restored.is_empty());
+            for slot in 0..inventory.size() {
+                assert!(
+                    restored
+                        .get_stack(slot)
+                        .are_equal(&inventory.get_stack(slot))
+                );
+            }
+            Ok(())
+        })
     }
 
     #[test]

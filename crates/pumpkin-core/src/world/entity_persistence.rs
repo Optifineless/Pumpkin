@@ -5,7 +5,16 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::math::vector2::Vector2;
 
 use super::World;
-use crate::entity::{EntityBase, player::Player, spawn_mount::UnpublishedRidingTree};
+use crate::entity::{
+    EntityBase, RemovalReason, player::Player, spawn_mount::UnpublishedRidingTree,
+};
+
+pub(super) fn should_save_root(entity: &dyn EntityBase) -> bool {
+    // Entity.save excludes passengers; PersistentEntitySectionManager stores unloading trees.
+    let base = entity.get_entity();
+    (!base.is_removed() || base.removal_reason.load() == Some(RemovalReason::UnloadedToChunk))
+        && base.get_vehicle().is_none()
+}
 
 pub(super) fn save_riding_tree(entity: &Arc<dyn EntityBase>) -> NbtCompound {
     let mut nbt = NbtCompound::new();
