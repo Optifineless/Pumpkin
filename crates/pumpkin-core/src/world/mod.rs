@@ -354,6 +354,10 @@ pub struct World {
     unsent_block_changes: std::sync::Mutex<HashMap<BlockPos, BlockStateId>>,
     /// Persisted vanilla POI storage for portal and villager lookups.
     pub portal_poi: std::sync::Mutex<portal::PortalPoiStorage>,
+    #[cfg(test)]
+    pub(crate) portal_scan_gate: std::sync::Mutex<Option<portal::PortalScanGate>>,
+    #[cfg(test)]
+    pub(crate) portal_blocking_gate: std::sync::Mutex<Option<portal::PortalBlockingGate>>,
     /// Villager job sites and their current owners.
     pub villager_poi: std::sync::Mutex<villager_poi::VillagerPoiStorage>,
     /// Active raids in this world.
@@ -509,6 +513,10 @@ impl World {
             handling_tick: std::sync::atomic::AtomicBool::new(false),
             unsent_block_changes: std::sync::Mutex::new(HashMap::new()),
             portal_poi: std::sync::Mutex::new(portal_poi),
+            #[cfg(test)]
+            portal_scan_gate: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            portal_blocking_gate: std::sync::Mutex::new(None),
             villager_poi: std::sync::Mutex::new(villager_poi::VillagerPoiStorage::default()),
             raids: std::sync::Mutex::new(raid::Raids::default()),
             dragon_fight,
@@ -4073,6 +4081,7 @@ impl World {
 
     #[allow(clippy::too_many_lines)]
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        player.get_entity().invalidate_portal_travel();
         let last_pos = player.get_entity().last_pos.load();
         let death_dimension = ResourceLocation::from(player.world().dimension.minecraft_name);
         let death_location = BlockPos(Vector3::new(

@@ -1181,16 +1181,18 @@ impl Player {
     }
 
     pub fn clean_up_chunk_tickets(&self, level: &Arc<pumpkin_world::level::Level>) {
+        #[cfg(test)]
+        crate::world::chunker::ticket_tests::pause_cleanup(self);
+        // ChunkMap.move / DistanceManager ticket updates: match update_position's lock order.
+        let mut held = self
+            .held_chunk_tickets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut lock = level
             .chunk_loading
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let held = self
-            .held_chunk_tickets
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some((view_level, sim_level)) = held {
+        if let Some((view_level, sim_level)) = held.take() {
             let center = self.get_entity().chunk_pos.load();
             if let Some(view) = view_level {
                 lock.remove_ticket(center, view);
@@ -3510,7 +3512,6 @@ impl Player {
     }
 
     /// Teleports the player to a different world or dimension with an optional position, yaw, and pitch.
-    #[expect(clippy::too_many_lines)]
     pub async fn teleport_world(
         self: &Arc<Self>,
         new_world: Arc<World>,
@@ -3518,14 +3519,34 @@ impl Player {
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) {
+        self.get_entity().invalidate_portal_travel();
+        self.teleport_world_for_portal(new_world, position, yaw, pitch, None)
+            .await;
+    }
+
+    /// Transfers the player, rechecking a captured portal trip after world-change callbacks.
+    /// Returns whether the world transfer was applied.
+    #[expect(clippy::too_many_lines)]
+    pub(crate) async fn teleport_world_for_portal(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        position: Vector3<f64>,
+        yaw: Option<f32>,
+        pitch: Option<f32>,
+        portal: Option<&super::portal_travel::PortalTravel>,
+    ) -> bool {
+        if portal.is_some_and(|trip| !trip.is_valid()) {
+            return false;
+        }
         let current_world = self.living_entity.entity.world.load_full();
         let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
         let pitch = pitch.unwrap_or(new_world.level_info.load().spawn_pitch);
 
         let Some(server) = new_world.server.upgrade() else {
-            return;
+            return false;
         };
 
+        let mut transferred = false;
         send_cancellable! {{
             server;
             PlayerChangeWorldEvent {
@@ -3539,6 +3560,10 @@ impl Player {
             };
 
             'after: {
+                // Entity.teleport rejects an invalid entity; world-change callbacks can invalidate this trip.
+                if portal.is_some_and(|trip| !trip.is_valid()) {
+                    return false;
+                }
                 // TODO: this is duplicate code from world
                 let position = event.position;
                 let yaw = event.yaw;
@@ -3547,7 +3572,7 @@ impl Player {
 
                 self.set_client_loaded(false);
                 let Some(player) = current_world.remove_player(self, false).await else {
-                    return;
+                    return false;
                 };
                new_world.players.rcu(|current_list| {
                     let mut new_list = (**current_list).clone();
@@ -3558,6 +3583,7 @@ impl Player {
 
                 self.change_world_chunks(&current_world.level, &new_world);
                 self.living_entity.entity.set_world(new_world.clone());
+                transferred = true;
 
                 if new_world.dimension == pumpkin_data::dimension::Dimension::THE_NETHER {
                     self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
@@ -3654,6 +3680,7 @@ impl Player {
                 server.plugin_manager.fire(&server, &mut changed_world_event).await;
             }
         }}
+        transferred
     }
 
     /// `yaw` and `pitch` are in degrees.
@@ -3665,6 +3692,7 @@ impl Player {
         yaw: f32,
         pitch: f32,
     ) -> Option<Vector3<f64>> {
+        self.get_entity().invalidate_portal_travel();
         let position = self.accept_teleport_destination(position)?;
 
         let i = self.teleport_id_count.fetch_add(1, Ordering::Relaxed);
@@ -6209,6 +6237,7 @@ impl EntityBase for Player {
         pitch: Option<f32>,
         world: Arc<World>,
     ) {
+        self.get_entity().invalidate_portal_travel();
         if Arc::ptr_eq(&world, &self.world()) {
             // Same world
             let yaw = yaw.unwrap_or_else(|| self.living_entity.entity.yaw.load());

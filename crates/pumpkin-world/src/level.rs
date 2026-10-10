@@ -128,8 +128,10 @@ pub struct Level {
     before_entity_read: Mutex<Option<oneshot::Receiver<()>>>,
     #[cfg(test)]
     entity_read_count: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    before_chunk_listener: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     pub chunks_with_scheduled_ticks: Arc<dashmap::DashSet<Vector2<i32>>>,
-    pub chunk_loading: Mutex<ChunkLoading>,
+    pub chunk_loading: Arc<Mutex<ChunkLoading>>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
 
@@ -339,8 +341,10 @@ impl Level {
             before_entity_read: Mutex::new(None),
             #[cfg(test)]
             entity_read_count: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            before_chunk_listener: Mutex::new(None),
             chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
-            chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
+            chunk_loading: Arc::new(Mutex::new(ChunkLoading::new(level_channel.clone()))),
             chunk_watchers: Arc::new(DashMap::new()),
             tasks: TaskTracker::new(),
             chunk_system_tasks: TaskTracker::new(),
@@ -735,29 +739,28 @@ impl Level {
         self: &Arc<Self>,
         pos: Vector2<i32>,
     ) -> Result<SyncChunk, ChunkReadingError> {
-        let recv = self.chunk_listener.add_single_chunk_listener(pos);
-
+        #[cfg(test)]
         {
-            let mut lock = self
-                .chunk_loading
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            lock.add_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
-            lock.send_change();
-        };
+            let hook = self.before_chunk_listener.lock().unwrap().take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+        let mut listener = self.chunk_listener.listen(pos);
+
+        let mut residency =
+            crate::chunk_system::residency::ChunkResidency::new(self.chunk_loading.clone());
+        residency.add(pos);
+
+        // ServerChunkCache.getChunkFutureMainThread uses a persistent holder future.
+        // Publication may precede listener registration, so recheck under our ticket.
+        if let Some(chunk) = self.loaded_chunks.get(&pos) {
+            return Ok(chunk.clone());
+        }
 
         let chunk = select! {
-            result = recv => result.map_err(|error| error.to_string()).and_then(std::convert::identity),
+            result = &mut listener.receiver => result.map_err(|error| error.to_string()).and_then(std::convert::identity),
             () = self.cancel_token.cancelled() => Err("Level is shutting down".to_owned()),
-        };
-
-        {
-            let mut lock = self
-                .chunk_loading
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            lock.remove_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
-            lock.send_change();
         };
 
         chunk.map_err(|error| ChunkReadingError::IoError(std::io::Error::other(error)))
@@ -1260,3 +1263,6 @@ mod tests {
 #[cfg(test)]
 #[path = "entity_storage_tests.rs"]
 mod entity_storage_tests;
+
+#[cfg(test)]
+mod chunk_fetch_tests;

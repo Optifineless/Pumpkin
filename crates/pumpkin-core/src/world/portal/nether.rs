@@ -1,4 +1,7 @@
-use super::poi;
+use super::{
+    poi,
+    residency::{PortalChunkResidency, ResidentPortal},
+};
 use pumpkin_data::{
     Block, BlockDirection, BlockState,
     block_properties::{HorizontalAxis, NetherPortalLikeProperties},
@@ -15,6 +18,11 @@ use crate::world::World;
 
 const SEARCH_RADIUS_NETHER: i32 = 16;
 const SEARCH_RADIUS_OVERWORLD: i32 = 128;
+// PortalForcer.createPortal: BlockPos.spiralAround(origin, 16, EAST, SOUTH).
+pub(super) const CREATE_RADIUS: i32 = 16;
+// PortalForcer.canHostFrame / createPortal share these frame width bounds.
+pub(super) const FRAME_WIDTH_START: i32 = -1;
+pub(super) const FRAME_WIDTH_END: i32 = 3;
 
 #[derive(Debug, Clone)]
 pub struct PortalSearchResult {
@@ -53,13 +61,8 @@ impl PortalSearchResult {
             return current_yaw;
         }
 
-        // Axis changed, rotate yaw by 90 degrees
-        // X axis portal faces East/West, Z axis portal faces North/South
-        match (src_axis, self.axis) {
-            (HorizontalAxis::X, HorizontalAxis::Z) => current_yaw + 90.0,
-            (HorizontalAxis::Z, HorizontalAxis::X) => current_yaw - 90.0,
-            _ => current_yaw,
-        }
+        // NetherPortalBlock.createDimensionTransition uses relative +90 for either axis change.
+        current_yaw + 90.0
     }
 
     #[must_use]
@@ -492,62 +495,88 @@ impl NetherPortal {
         }
     }
 
-    pub fn search_for_portal(
+    pub async fn search_for_portal(
         world: &Arc<World>,
         target_pos: BlockPos,
     ) -> Option<PortalSearchResult> {
+        Self::search_for_portal_resident(world, target_pos)
+            .await
+            .map(|resident| resident.portal)
+    }
+
+    pub(super) async fn search_for_portal_resident(
+        world: &Arc<World>,
+        target_pos: BlockPos,
+    ) -> Option<ResidentPortal> {
         tracing::debug!(
             "Searching for portal in {:?} around {:?}",
             world.dimension.minecraft_name,
             target_pos
         );
-        let min_y = world.min_y;
-        let max_y = min_y + world.dimension.height - 1;
-
         let search_radius = if world.dimension.has_ceiling {
             SEARCH_RADIUS_NETHER
         } else {
             SEARCH_RADIUS_OVERWORLD
         };
 
-        let portal_positions = {
-            let mut poi_storage = world
+        // PortalForcer.findClosestPortalPosition: POI region loading is synchronous IO.
+        let poi_world = world.clone();
+        let portal_positions = tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            poi_world.pause_portal_blocking_for_test();
+            let mut poi_storage = poi_world
                 .portal_poi
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             poi_storage.get_in_square(target_pos, search_radius, Some(poi::POI_TYPE_NETHER_PORTAL))
-        };
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!("Portal POI task failed: {error}");
+            Vec::new()
+        });
 
-        let mut candidate_chunks: Vec<Vector2<i32>> = Vec::new();
+        let mut residency = PortalChunkResidency::new(world.level.clone());
+        // NetherPortalBlock.getExitPortal inspects up to 21 portal blocks in either direction.
         for pos in &portal_positions {
-            let chunk = Vector2::new(pos.0.x >> 4, pos.0.z >> 4);
-            if !candidate_chunks.contains(&chunk) {
-                candidate_chunks.push(chunk);
+            let radius = Self::MAX_WIDTH as i32;
+            for x in (pos.0.x - radius) >> 4..=(pos.0.x + radius) >> 4 {
+                for z in (pos.0.z - radius) >> 4..=(pos.0.z + radius) >> 4 {
+                    residency.add(Vector2::new(x, z));
+                }
             }
         }
-        if !candidate_chunks.is_empty()
-            && let Ok(handle) = tokio::runtime::Handle::try_current()
-        {
-            tokio::task::block_in_place(|| {
-                handle.block_on(async {
-                    for chunk in &candidate_chunks {
-                        for dx in -1..=1 {
-                            for dz in -1..=1 {
-                                world
-                                    .level
-                                    .get_or_fetch_chunk(
-                                        Vector2::new(chunk.x + dx, chunk.y + dz),
-                                        |_| (),
-                                    )
-                                    .await
-                                    .ok()?;
-                            }
-                        }
-                    }
-                    Some(())
-                })
-            })?;
-        }
+        residency.load().await?;
+        #[cfg(test)]
+        world.pause_portal_scan_for_test().await;
+
+        let world = world.clone();
+        tokio::task::spawn_blocking(move || {
+            // Keep terrain resident even if the awaiting trip is cancelled during validation.
+            #[cfg(test)]
+            world.pause_portal_blocking_for_test();
+            Self::find_portal_in_loaded_chunks(&world, target_pos, portal_positions).map(|portal| {
+                ResidentPortal {
+                    portal,
+                    _residency: residency,
+                }
+            })
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!("Portal search task failed: {error}");
+            None
+        })
+    }
+
+    // PortalForcer.findClosestPortalPosition validates loaded terrain before choosing a POI.
+    fn find_portal_in_loaded_chunks(
+        world: &Arc<World>,
+        target_pos: BlockPos,
+        portal_positions: Vec<BlockPos>,
+    ) -> Option<PortalSearchResult> {
+        let min_y = world.min_y;
+        let max_y = min_y + world.dimension.height - 1;
 
         let worldborder = world
             .worldborder
@@ -602,7 +631,7 @@ impl NetherPortal {
             }
         }
 
-        best.map(|(result, _, _)| result)
+        best.map(|(portal, _, _)| portal)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -638,10 +667,18 @@ impl NetherPortal {
         let mut ideal_pos: Option<(BlockPos, HorizontalAxis, f64)> = None;
         let mut acceptable_pos: Option<(BlockPos, HorizontalAxis, f64)> = None;
 
-        for offset_x in -32..=32 {
-            for offset_z in -32..=32 {
+        for offset_x in -CREATE_RADIUS..=CREATE_RADIUS {
+            'columns: for offset_z in -CREATE_RADIUS..=CREATE_RADIUS {
                 let check_x = target_pos.0.x + offset_x;
                 let check_z = target_pos.0.z + offset_z;
+
+                // PortalForcer.createPortal reads terrain; unavailable chunks are not empty terrain.
+                if !world
+                    .level
+                    .is_chunk_loaded(&Vector2::new(check_x >> 4, check_z >> 4))
+                {
+                    continue;
+                }
 
                 if !worldborder.contains_block(check_x, check_z) {
                     continue;
@@ -663,13 +700,17 @@ impl NetherPortal {
                 let mut y = start_y;
                 while y >= min_y {
                     let pos = BlockPos(Vector3::new(check_x, y, check_z));
-                    let state = world.get_block_state(&pos);
+                    let Some(state) = world.get_block_state_if_loaded(&pos) else {
+                        continue 'columns;
+                    };
 
                     if Self::is_valid_portal_air(state) {
                         let mut bottom_y = y;
                         while bottom_y > min_y {
                             let below = BlockPos(Vector3::new(check_x, bottom_y - 1, check_z));
-                            let below_state = world.get_block_state(&below);
+                            let Some(below_state) = world.get_block_state_if_loaded(&below) else {
+                                continue 'columns;
+                            };
                             if !Self::is_valid_portal_air(below_state) {
                                 break;
                             }
@@ -729,11 +770,24 @@ impl NetherPortal {
             target_pos.0.z - direction.to_offset().z,
         ));
         let clamped_pos = worldborder.clamp_block(fallback_pos.0.x, fallback_pos.0.z);
-        Some((
-            BlockPos(Vector3::new(clamped_pos.0, fallback_y, clamped_pos.1)),
-            axis,
-            true,
-        ))
+        let fallback_pos = BlockPos(Vector3::new(clamped_pos.0, fallback_y, clamped_pos.1));
+        // PortalForcer.createPortal must have terrain available for the entire fallback frame.
+        for width in -1..3 {
+            for box_offset in -1..2 {
+                let perpendicular = if axis == HorizontalAxis::X {
+                    BlockDirection::South
+                } else {
+                    BlockDirection::West
+                };
+                let pos = fallback_pos
+                    .offset_dir(direction.to_offset(), width)
+                    .offset_dir(perpendicular.to_offset(), box_offset);
+                if !world.is_loaded(&pos) {
+                    return None;
+                }
+            }
+        }
+        Some((fallback_pos, axis, true))
     }
 
     const fn is_valid_portal_air(state: &BlockState) -> bool {
@@ -757,14 +811,16 @@ impl NetherPortal {
             BlockDirection::West // Fixed: South.rotateYClockwise()
         };
 
-        for portal_dir in -1..3 {
+        for portal_dir in FRAME_WIDTH_START..FRAME_WIDTH_END {
             for height in -1..4 {
                 let pos = floor_pos
                     .offset_dir(direction.to_offset(), portal_dir)
                     .offset_dir(perpendicular.to_offset(), perpendicular_offset)
                     .offset_dir(BlockDirection::Up.to_offset(), height);
 
-                let state = world.get_block_state(&pos);
+                let Some(state) = world.get_block_state_if_loaded(&pos) else {
+                    return false;
+                };
 
                 if height < 0 {
                     if !state.is_solid_block() {
@@ -823,7 +879,7 @@ impl NetherPortal {
             }
         }
 
-        for portal_dir in -1..3 {
+        for portal_dir in FRAME_WIDTH_START..FRAME_WIDTH_END {
             for height in -1..4 {
                 if portal_dir == -1 || portal_dir == 2 || height == -1 || height == 3 {
                     let pos = lower_corner
@@ -862,6 +918,21 @@ impl NetherPortal {
 mod tests {
     use super::*;
     use pumpkin_util::math::boundingbox::EntityDimensions;
+
+    #[tokio::test]
+    async fn portal_creation_rejects_unloaded_frame_terrain() {
+        let fixture = crate::world::spawn_test_support::Fixture::new();
+        assert!(
+            NetherPortal::find_safe_location(
+                &fixture.world,
+                BlockPos::new(1, 80, 1),
+                HorizontalAxis::Z,
+            )
+            .is_none()
+        );
+        assert!(fixture.world.level.loaded_chunks.is_empty());
+        fixture.finish().await;
+    }
 
     #[test]
     fn portal_teleport_position_x_axis() {
@@ -983,7 +1054,7 @@ mod tests {
         );
         assert_eq!(
             x_portal.calculate_teleport_yaw(45.0, Some(HorizontalAxis::Z)),
-            -45.0
+            135.0
         );
     }
 }

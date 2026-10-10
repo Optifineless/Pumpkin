@@ -13,6 +13,16 @@ use super::World;
 pub mod end;
 pub mod nether;
 pub mod poi;
+mod residency;
+#[cfg(test)]
+mod residency_tests;
+
+#[cfg(test)]
+mod cooldown_storage_tests;
+
+#[cfg(test)]
+pub(crate) use residency::{PortalBlockingGate, PortalScanGate};
+use residency::{PortalChunkResidency, ResidentPortal};
 
 pub use nether::{NetherPortal, PortalSearchResult};
 pub use poi::PortalPoiStorage;
@@ -69,7 +79,7 @@ impl PortalType {
     }
 
     #[expect(clippy::too_many_lines)]
-    pub fn get_portal_destination(
+    pub async fn get_portal_destination(
         &self,
         current_level: &World,
         dest_world: Arc<World>,
@@ -91,21 +101,14 @@ impl PortalType {
 
                         let platform_pos = BlockPos::new(100, 49, 0);
 
-                        // Ensure chunks covering the platform are loaded/generated
-                        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                            tokio::task::block_in_place(|| {
-                                handle.block_on(async {
-                                    let center_chunk =
-                                        Vector2::new(platform_pos.0.x >> 4, platform_pos.0.z >> 4);
-                                    dest_world
-                                        .level
-                                        .get_or_fetch_chunk(center_chunk, |_| ())
-                                        .await
-                                        .ok()?;
-                                    Some(())
-                                })
-                            })?;
-                        }
+                        // EndPortalBlock.getPortalDestination loads the platform before building it.
+                        let center_chunk =
+                            Vector2::new(platform_pos.0.x >> 4, platform_pos.0.z >> 4);
+                        dest_world
+                            .level
+                            .get_or_fetch_chunk(center_chunk, |_| ())
+                            .await
+                            .ok()?;
 
                         // Generate/regenerate the obsidian platform (5x5 obsidian at Y=48, and 5x5x3 air above it)
                         for dx in -2..=2 {
@@ -182,6 +185,8 @@ impl PortalType {
                 }
             }
             Self::Nether => {
+                #[cfg(test)]
+                caller.get_entity().pause_portal_search_for_test().await;
                 let pos = caller.get_entity().pos.load();
                 let current_yaw = caller.get_entity().yaw.load();
                 let dimensions = caller.get_entity().entity_dimension.load();
@@ -189,90 +194,60 @@ impl PortalType {
                 let scale_factor_current = current_level.dimension.coordinate_scale;
 
                 let teleportation_scale = scale_factor_current / scale_factor_new;
-                let worldborder = dest_world
-                    .worldborder
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let (clamped_x, clamped_z) = worldborder.clamp_block(
-                    (pos.x * teleportation_scale).floor() as i32,
-                    (pos.z * teleportation_scale).floor() as i32,
-                );
-                drop(worldborder);
+                let (clamped_x, clamped_z) = {
+                    let worldborder = dest_world
+                        .worldborder
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    worldborder.clamp_block(
+                        (pos.x * teleportation_scale).floor() as i32,
+                        (pos.z * teleportation_scale).floor() as i32,
+                    )
+                };
 
                 let approximate_exit_pos =
                     BlockPos::new(clamped_x, pos.y.floor() as i32, clamped_z);
                 let source_portal_axis = source_portal.map_or(HorizontalAxis::X, |p| p.axis);
 
-                let exit_portal = NetherPortal::search_for_portal(
-                    &dest_world,
-                    approximate_exit_pos,
-                )
-                .or_else(|| {
-                    // Ensure the chunks around approximate_exit_pos are generated/loaded in dest_world
-                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                        tokio::task::block_in_place(|| {
-                            handle.block_on(async {
-                                let center_chunk = Vector2::new(
-                                    approximate_exit_pos.0.x >> 4,
-                                    approximate_exit_pos.0.z >> 4,
-                                );
-                                for dx in -1..=1 {
-                                    for dz in -1..=1 {
-                                        let chunk_pos =
-                                            Vector2::new(center_chunk.x + dx, center_chunk.y + dz);
-                                        dest_world
-                                            .level
-                                            .get_or_fetch_chunk(chunk_pos, |_| ())
-                                            .await
-                                            .ok()?;
-                                    }
-                                }
-                                Some(())
-                            })
-                        })?;
-                    }
-
-                    if let Some((build_pos, axis, is_fallback)) = NetherPortal::find_safe_location(
+                let resident_portal = if let Some(portal) =
+                    NetherPortal::search_for_portal_resident(&dest_world, approximate_exit_pos)
+                        .await
+                {
+                    Some(portal)
+                } else {
+                    Self::create_nether_portal_resident(
                         &dest_world,
                         approximate_exit_pos,
                         source_portal_axis,
-                    ) {
-                        NetherPortal::build_portal_frame(&dest_world, build_pos, axis, is_fallback);
-                        Some(PortalSearchResult {
-                            lower_corner: build_pos,
-                            axis,
-                            width: 2,
-                            height: 3,
-                        })
-                    } else {
-                        None
-                    }
-                });
+                    )
+                    .await
+                }?;
 
-                let (final_pos, yaw) = exit_portal.map_or_else(
-                    || (approximate_exit_pos.0.to_f64(), None),
-                    |exit_portal| {
-                        let relative_offset = source_portal.map_or_else(
-                            || Vector3::new(0.5, 0.0, 0.0),
-                            |source| {
-                                let source_result = PortalSearchResult {
-                                    lower_corner: source.lower_corner,
-                                    axis: source.axis,
-                                    width: source.width,
-                                    height: source.height,
-                                };
-                                source_result.entity_pos_in_portal(pos, &dimensions)
-                            },
-                        );
-                        let target_pos =
-                            exit_portal.calculate_exit_position(relative_offset, &dimensions);
-                        let collision_free_pos =
-                            exit_portal.find_open_position(&dest_world, target_pos, &dimensions);
-                        let yaw = exit_portal
-                            .calculate_teleport_yaw(current_yaw, source_portal.map(|p| p.axis));
-                        (collision_free_pos, Some(yaw))
-                    },
-                );
+                // NetherPortalBlock.getExitPortal also reads terrain to place the arriving entity.
+                let exit_portal = &resident_portal.portal;
+
+                // NetherPortalBlock.getExitPortal returns no transition if creation fails.
+                let (final_pos, yaw) = {
+                    let relative_offset = source_portal.map_or_else(
+                        || Vector3::new(0.5, 0.0, 0.0),
+                        |source| {
+                            let source_result = PortalSearchResult {
+                                lower_corner: source.lower_corner,
+                                axis: source.axis,
+                                width: source.width,
+                                height: source.height,
+                            };
+                            source_result.entity_pos_in_portal(pos, &dimensions)
+                        },
+                    );
+                    let target_pos =
+                        exit_portal.calculate_exit_position(relative_offset, &dimensions);
+                    let collision_free_pos =
+                        exit_portal.find_open_position(&dest_world, target_pos, &dimensions);
+                    let yaw = exit_portal
+                        .calculate_teleport_yaw(current_yaw, source_portal.map(|p| p.axis));
+                    (collision_free_pos, Some(yaw))
+                };
 
                 Some(TeleportTransition {
                     new_world: dest_world,
@@ -282,6 +257,56 @@ impl PortalType {
                 })
             }
         }
+    }
+
+    /// Loads creation chunks before scanning loaded terrain and building on the blocking pool.
+    #[cfg(test)]
+    pub(crate) async fn create_nether_portal(
+        world: &Arc<World>,
+        approximate_exit_pos: BlockPos,
+        axis: HorizontalAxis,
+    ) -> Option<PortalSearchResult> {
+        Self::create_nether_portal_resident(world, approximate_exit_pos, axis)
+            .await
+            .map(|resident| resident.portal)
+    }
+
+    async fn create_nether_portal_resident(
+        world: &Arc<World>,
+        approximate_exit_pos: BlockPos,
+        axis: HorizontalAxis,
+    ) -> Option<ResidentPortal> {
+        // PortalForcer.createPortal reads terrain before choosing and building the frame.
+        let mut residency = PortalChunkResidency::new(world.level.clone());
+        residency.add_creation_area(approximate_exit_pos);
+        residency.load().await?;
+        #[cfg(test)]
+        world.pause_portal_scan_for_test().await;
+        let world = world.clone();
+        // PortalForcer.createPortal: only synchronous, loaded-chunk reads and writes below.
+        // Use Tokio's separate blocking pool: Rayon also runs the chunk decoding we awaited.
+        tokio::task::spawn_blocking(move || {
+            // A started blocking job outlives cancellation of the awaiting task.
+            #[cfg(test)]
+            world.pause_portal_blocking_for_test();
+            let (build_pos, axis, is_fallback) =
+                NetherPortal::find_safe_location(&world, approximate_exit_pos, axis)?;
+            NetherPortal::build_portal_frame(&world, build_pos, axis, is_fallback);
+            Some(ResidentPortal {
+                portal: PortalSearchResult {
+                    lower_corner: build_pos,
+                    axis,
+                    width: 2,
+                    height: 3,
+                },
+                _residency: residency,
+            })
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!("Portal creation task failed: {error}");
+            None
+        })
     }
 }
 
