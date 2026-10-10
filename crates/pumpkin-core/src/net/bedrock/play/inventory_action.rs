@@ -1,10 +1,32 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::item::registry::should_try_block_placement;
-use pumpkin_protocol::bedrock::server::inventory_transaction::{HandSlot, InventoryAction};
+use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_protocol::bedrock::server::inventory_transaction::{
+    HandSlot, InventoryAction, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
+};
 
-fn transaction_consumes_selected_hotbar(actions: &[InventoryAction], selected_slot: u8) -> bool {
-    let screen_slot = usize::from(selected_slot) + 36;
+// ServerboundUseItemOnPacket.getHand selects the stack passed to ServerPlayerGameMode.useItemOn.
+fn hand_screen_handler_slot(hand: Hand, selected_slot: u8) -> Option<usize> {
+    match hand {
+        Hand::Right => {
+            map_bedrock_slot_to_screen_handler(WINDOW_ID_INVENTORY, u32::from(selected_slot))
+        }
+        Hand::Left => map_bedrock_slot_to_screen_handler(WINDOW_ID_OFF_HAND, 0),
+    }
+}
+
+fn hand_inventory_slot(hand: Hand, selected_slot: u8) -> usize {
+    match hand {
+        Hand::Right => usize::from(selected_slot),
+        Hand::Left => PlayerInventory::OFF_HAND_SLOT,
+    }
+}
+
+fn transaction_consumes_hand(actions: &[InventoryAction], hand: Hand, selected_slot: u8) -> bool {
+    let Some(screen_slot) = hand_screen_handler_slot(hand, selected_slot) else {
+        return false;
+    };
     actions.iter().any(|action| {
         let updates_selected_slot = action
             .window_id
@@ -51,16 +73,20 @@ impl BedrockClient {
         });
     }
 
-    fn sync_consumed_hand_item(&self, player: &Player, stack: ItemStack) {
+    fn sync_consumed_hand_item(player: &Player, hand: Hand, stack: ItemStack) {
         let selected_slot = player.inventory().get_selected_slot();
-        player.inventory().set_held_item(stack.clone());
-        let mut screen_handler = player
-            .player_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        screen_handler.set_received_stack(36 + usize::from(selected_slot), stack);
-        drop(screen_handler);
-        self.send_player_inventory_content(player);
+        let inventory_slot = hand_inventory_slot(hand, selected_slot);
+        player.inventory().set_stack(inventory_slot, stack.clone());
+        if let Some(screen_slot) = hand_screen_handler_slot(hand, selected_slot) {
+            let mut screen_handler = player
+                .player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            screen_handler.set_received_stack(screen_slot, stack.clone());
+        }
+        // Mirrors ServerPlayerGameMode.useItemOn hand writeback and LivingEntity.setItemInHand
+        // equipment updates for tracking clients.
+        player.sync_hand_slot(inventory_slot, stack);
     }
 
     fn correct_rejected_food_use(&self, player: &Player) {
@@ -243,8 +269,17 @@ impl BedrockClient {
                 if data.action_type.0 == 0 {
                     // Click block
                     let client_stack = descriptor_to_stack(&data.item_in_hand);
+                    // Bedrock UseItemTransactionData.hand serves as ServerboundUseItemOnPacket.getHand.
+                    let hand = match data.hand {
+                        HandSlot::Mainhand => Hand::Right,
+                        HandSlot::Offhand => Hand::Left,
+                    };
+                    let equipment_slot = match hand {
+                        Hand::Right => EquipmentSlot::MAIN_HAND,
+                        Hand::Left => EquipmentSlot::OFF_HAND,
+                    };
 
-                    let mut held_item = player.inventory().held_item();
+                    let mut held_item = player.inventory().get_stack_in_hand(hand);
                     let authoritative_held_item = client_stack.is_empty()
                         || (!held_item.is_empty() && held_item.item.id == client_stack.item.id);
                     if !authoritative_held_item {
@@ -252,8 +287,9 @@ impl BedrockClient {
                     }
                     let before_block_use = held_item.clone();
                     // Inventory transaction actions are applied before the Bedrock UseItem callback.
-                    let held_slot_consumed_in_transaction = transaction_consumes_selected_hotbar(
+                    let held_slot_consumed_in_transaction = transaction_consumes_hand(
                         &packet.actions,
+                        hand,
                         player.inventory().get_selected_slot(),
                     );
 
@@ -266,7 +302,7 @@ impl BedrockClient {
                             cursor_pos: &data.click_position,
                         },
                         &mut held_item,
-                        &EquipmentSlot::MAIN_HAND,
+                        &equipment_slot,
                         &server,
                         &world,
                     );
@@ -279,7 +315,7 @@ impl BedrockClient {
                             held_slot_consumed_in_transaction,
                         ) {
                             // ServerPlayerGameMode.useItemOn persists the item after the block callback consumes it.
-                            self.sync_consumed_hand_item(player, held_item);
+                            Self::sync_consumed_hand_item(player, hand, held_item);
                         }
                         return;
                     }

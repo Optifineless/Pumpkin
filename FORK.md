@@ -172,6 +172,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Change | Checked in-game |
 |:--|:--|
 | [#110] Charged respawn anchors set a Nether spawn or explode in unsafe dimensions when used without glowstone | Not yet; positional `RESPAWN_ANCHOR_WORKS` environment-attribute overrides are not evaluated |
+| Bedrock block use consumes from the packet's hand and syncs the changed equipment to tracking players | Not yet |
 | [#109] Firework Stars craft with colors, shapes and effects, can receive fade colors, and can be used in rockets | Not yet |
 | Hoppers keep their facing after a restart | Yes, 2026-10-07 |
 | Player saves clear legacy game-mode `Invulnerable:1b` while persisting explicit plugin entity invulnerability; loaded abilities are re-derived for the saved game mode, fire ignition applies the one-tick ability clamp, and invulnerable mobs keep their protection. Mirrors `Entity.load/saveWithoutId`, `ServerPlayer.readAdditionalSaveData`, `GameType.updatePlayerAbilities`, `Player.hurtServer`, `BaseFireBlock.fireIgnite` and `Player.setRemainingFireTicks` ([#130](https://github.com/Optifineless/Pumpkin/issues/130)) | Not yet |
