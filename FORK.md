@@ -332,3 +332,13 @@ Creeper power remains 3, or 6 when charged; `ServerExplosion.hurtEntities` (line
 - Wither roses give Creative players the 40-tick Wither effect without damaging them, while permanent entity invulnerability and equipped-enchantment damage immunity still block the effect. Mirrors `WitherRoseBlock.entityInside`, `LivingEntity.isInvulnerableTo`, `Entity.isInvulnerableToBase`, and `Player.hurtServer`; mob-specific effect immunity comes from effect admission. Player NBT saves game-mode abilities separately; legacy player `Invulnerable:true` tags are cleared on load by the #130 hotfix above. Non-player tags remain permanent. In-game verification: **Not yet**.
 
 Living fall damage applies the `fall_damage_multiplier` attribute, including stalagmite landings. Mirrors `LivingEntity.calculateFallDamage`. In-game verification: **Not yet**.
+
+## Interaction and hurt sound delivery (#99)
+
+Reports by **uelq** (bucket interactions and creeper ignition) and **latent.exe** (hurt sounds). In-game verification: **Not yet**.
+
+- Bucket filling excludes the acting player and uses the player's position and Players sound category (`BucketItem.use` / `Player.playSound`). Emptying and Nether evaporation exclude the actor and use the destination block center (`BucketItem.emptyContents/playEmptySound`, `MobBucketItem.playEmptySound`, `SolidBucketItem` and `Level.playSound`). Dispensers keep the actorless broadcast path. Existing cancellation, item exchanges, game events and mob spawning remain in their existing order.
+- Creeper flint-and-steel ignition excludes the igniter (`Creeper.mobInteract`). The later primed/fuse sound still broadcasts to both players.
+- Primary player hurt/death sounds exclude the victim; observers receive the source-specific hurt sound or player death sound (`Player.getHurtSound/getDeathSound`). Damage and death-status packets remain unchanged, so the victim's client plays its local feedback (`LivingEntity.handleDamageEvent/handleEntityEvent`, `Player.playSound`, `LocalPlayer.playSound`). The player sound override bypasses `Silent`; non-player primary sounds retain the normal silence guard. Secondary Thorns sounds still reach the victim and observers.
+
+Checked against the official Java 26.3 server (inner JAR SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`) and client (SHA-1 `e877b6a07acd633fb3bb475002175cec036e7b87`), decompiled with Vineflower 1.12.0. The existing World sound helpers keep their Java-only recipient grouping and chunk-based audible range. TNT doubling remains unconfirmed and separate; creeper fire-charge support and broader sound-call-site parity are outside this fix. No native layout, trait, Wasm WIT or saved-data change.
