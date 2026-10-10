@@ -58,7 +58,12 @@ impl FurnaceMinecart {
         }
     }
 
-    pub(super) fn velocity(&self, entity: &Entity, velocity: Vector3<f64>) -> Vector3<f64> {
+    pub(super) fn velocity(
+        &self,
+        entity: &Entity,
+        velocity: Vector3<f64>,
+        new_behavior: bool,
+    ) -> Vector3<f64> {
         let mut push = self.push.load();
         let push_length_squared = push.x.mul_add(push.x, push.z * push.z);
         let velocity_length_squared = velocity.x.mul_add(velocity.x, velocity.z * velocity.z);
@@ -81,15 +86,21 @@ impl FurnaceMinecart {
         };
 
         let in_water = entity.touching_water.load(Ordering::Relaxed);
-        if in_water {
+        // MinecartFurnace.applyNaturalSlowdown applies this water penalty only while pushing.
+        if in_water && (!new_behavior || push_length_squared > 1.0e-7) {
             next = next.multiply(0.1, 0.0, 0.1);
         }
-        let slowdown = 0.96 * if in_water { 0.95 } else { 1.0 };
-        next = next.multiply(slowdown, 0.0, slowdown);
+        if new_behavior {
+            next = super::movement::experimental_slowdown(entity, next);
+        } else {
+            let slowdown = 0.96 * if in_water { 0.95 } else { 1.0 };
+            next = next.multiply(slowdown, 0.0, slowdown);
+        }
 
         let max_speed = if in_water { 0.3 } else { 0.2 };
         let speed = next.x.hypot(next.z);
-        if speed > max_speed {
+        // NewMinecartBehavior.calculateTrackSpeed applies the configured limit after slowdown.
+        if !new_behavior && speed > max_speed {
             next.x = next.x / speed * max_speed;
             next.z = next.z / speed * max_speed;
         }
