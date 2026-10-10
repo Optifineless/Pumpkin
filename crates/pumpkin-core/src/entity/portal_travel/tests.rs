@@ -115,8 +115,10 @@ async fn save_destination(world: &World, existing_portal: bool) {
         Biome::NETHER_WASTES.registry_id.to_owned(),
     )));
     let mut chunks = Vec::new();
-    for x in -1..=1 {
-        for z in -1..=1 {
+    // Save the full 21-block PortalForcer / NetherPortalBlock inspection footprint.
+    // These lifecycle tests must not depend on generating surrounding Nether terrain.
+    for x in -2..=1 {
+        for z in -2..=1 {
             let mut proto = ProtoChunk::new(x, z, &generator);
             proto.stage = StagedChunkEnum::Full;
             if existing_portal && x == 0 && z == 0 {

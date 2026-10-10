@@ -13,6 +13,13 @@ use super::World;
 pub mod end;
 pub mod nether;
 pub mod poi;
+mod residency;
+#[cfg(test)]
+mod residency_tests;
+
+#[cfg(test)]
+pub(crate) use residency::PortalScanGate;
+use residency::{PortalChunkResidency, ResidentPortal};
 
 pub use nether::{NetherPortal, PortalSearchResult};
 pub use poi::PortalPoiStorage;
@@ -199,18 +206,22 @@ impl PortalType {
                     BlockPos::new(clamped_x, pos.y.floor() as i32, clamped_z);
                 let source_portal_axis = source_portal.map_or(HorizontalAxis::X, |p| p.axis);
 
-                let exit_portal = if let Some(portal) =
-                    NetherPortal::search_for_portal(&dest_world, approximate_exit_pos).await
+                let resident_portal = if let Some(portal) =
+                    NetherPortal::search_for_portal_resident(&dest_world, approximate_exit_pos)
+                        .await
                 {
                     Some(portal)
                 } else {
-                    Self::create_nether_portal(
+                    Self::create_nether_portal_resident(
                         &dest_world,
                         approximate_exit_pos,
                         source_portal_axis,
                     )
                     .await
                 }?;
+
+                // NetherPortalBlock.getExitPortal also reads terrain to place the arriving entity.
+                let exit_portal = &resident_portal.portal;
 
                 // NetherPortalBlock.getExitPortal returns no transition if creation fails.
                 let (final_pos, yaw) = {
@@ -246,37 +257,44 @@ impl PortalType {
     }
 
     /// Loads creation chunks before scanning loaded terrain and building on the blocking pool.
+    #[cfg(test)]
     pub(crate) async fn create_nether_portal(
         world: &Arc<World>,
         approximate_exit_pos: BlockPos,
         axis: HorizontalAxis,
     ) -> Option<PortalSearchResult> {
+        Self::create_nether_portal_resident(world, approximate_exit_pos, axis)
+            .await
+            .map(|resident| resident.portal)
+    }
+
+    async fn create_nether_portal_resident(
+        world: &Arc<World>,
+        approximate_exit_pos: BlockPos,
+        axis: HorizontalAxis,
+    ) -> Option<ResidentPortal> {
         // PortalForcer.createPortal reads terrain before choosing and building the frame.
-        let center_chunk = approximate_exit_pos.chunk_position();
-        for dx in -1..=1 {
-            for dz in -1..=1 {
-                world
-                    .level
-                    .get_or_fetch_chunk(
-                        Vector2::new(center_chunk.x + dx, center_chunk.y + dz),
-                        |_| (),
-                    )
-                    .await
-                    .ok()?;
-            }
-        }
+        let mut residency = PortalChunkResidency::new(world.level.clone());
+        residency.add_creation_area(approximate_exit_pos);
+        residency.load().await?;
+        #[cfg(test)]
+        world.pause_portal_scan_for_test().await;
         let world = world.clone();
         // PortalForcer.createPortal: only synchronous, loaded-chunk reads and writes below.
         // Use Tokio's separate blocking pool: Rayon also runs the chunk decoding we awaited.
         tokio::task::spawn_blocking(move || {
+            // A started blocking job outlives cancellation of the awaiting task.
             let (build_pos, axis, is_fallback) =
                 NetherPortal::find_safe_location(&world, approximate_exit_pos, axis)?;
             NetherPortal::build_portal_frame(&world, build_pos, axis, is_fallback);
-            Some(PortalSearchResult {
-                lower_corner: build_pos,
-                axis,
-                width: 2,
-                height: 3,
+            Some(ResidentPortal {
+                portal: PortalSearchResult {
+                    lower_corner: build_pos,
+                    axis,
+                    width: 2,
+                    height: 3,
+                },
+                _residency: residency,
             })
         })
         .await

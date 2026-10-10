@@ -129,7 +129,7 @@ pub struct Level {
     #[cfg(test)]
     entity_read_count: std::sync::atomic::AtomicUsize,
     pub chunks_with_scheduled_ticks: Arc<dashmap::DashSet<Vector2<i32>>>,
-    pub chunk_loading: Mutex<ChunkLoading>,
+    pub chunk_loading: Arc<Mutex<ChunkLoading>>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
 
@@ -340,7 +340,7 @@ impl Level {
             #[cfg(test)]
             entity_read_count: std::sync::atomic::AtomicUsize::new(0),
             chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
-            chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
+            chunk_loading: Arc::new(Mutex::new(ChunkLoading::new(level_channel.clone()))),
             chunk_watchers: Arc::new(DashMap::new()),
             tasks: TaskTracker::new(),
             chunk_system_tasks: TaskTracker::new(),
@@ -737,27 +737,13 @@ impl Level {
     ) -> Result<SyncChunk, ChunkReadingError> {
         let recv = self.chunk_listener.add_single_chunk_listener(pos);
 
-        {
-            let mut lock = self
-                .chunk_loading
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            lock.add_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
-            lock.send_change();
-        };
+        let mut residency =
+            crate::chunk_system::residency::ChunkResidency::new(self.chunk_loading.clone());
+        residency.add(pos);
 
         let chunk = select! {
             result = recv => result.map_err(|error| error.to_string()).and_then(std::convert::identity),
             () = self.cancel_token.cancelled() => Err("Level is shutting down".to_owned()),
-        };
-
-        {
-            let mut lock = self
-                .chunk_loading
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            lock.remove_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
-            lock.send_change();
         };
 
         chunk.map_err(|error| ChunkReadingError::IoError(std::io::Error::other(error)))

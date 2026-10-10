@@ -1,4 +1,7 @@
-use super::poi;
+use super::{
+    poi,
+    residency::{PortalChunkResidency, ResidentPortal},
+};
 use pumpkin_data::{
     Block, BlockDirection, BlockState,
     block_properties::{HorizontalAxis, NetherPortalLikeProperties},
@@ -15,6 +18,11 @@ use crate::world::World;
 
 const SEARCH_RADIUS_NETHER: i32 = 16;
 const SEARCH_RADIUS_OVERWORLD: i32 = 128;
+// PortalForcer.createPortal: BlockPos.spiralAround(origin, 16, EAST, SOUTH).
+pub(super) const CREATE_RADIUS: i32 = 16;
+// PortalForcer.canHostFrame / createPortal share these frame width bounds.
+pub(super) const FRAME_WIDTH_START: i32 = -1;
+pub(super) const FRAME_WIDTH_END: i32 = 3;
 
 #[derive(Debug, Clone)]
 pub struct PortalSearchResult {
@@ -491,6 +499,15 @@ impl NetherPortal {
         world: &Arc<World>,
         target_pos: BlockPos,
     ) -> Option<PortalSearchResult> {
+        Self::search_for_portal_resident(world, target_pos)
+            .await
+            .map(|resident| resident.portal)
+    }
+
+    pub(super) async fn search_for_portal_resident(
+        world: &Arc<World>,
+        target_pos: BlockPos,
+    ) -> Option<ResidentPortal> {
         tracing::debug!(
             "Searching for portal in {:?} around {:?}",
             world.dimension.minecraft_name,
@@ -513,25 +530,19 @@ impl NetherPortal {
             poi_storage.get_in_square(target_pos, search_radius, Some(poi::POI_TYPE_NETHER_PORTAL))
         };
 
-        let mut candidate_chunks: Vec<Vector2<i32>> = Vec::new();
+        let mut residency = PortalChunkResidency::new(world.level.clone());
+        // NetherPortalBlock.getExitPortal inspects up to 21 portal blocks in either direction.
         for pos in &portal_positions {
-            let chunk = Vector2::new(pos.0.x >> 4, pos.0.z >> 4);
-            if !candidate_chunks.contains(&chunk) {
-                candidate_chunks.push(chunk);
-            }
-        }
-        // PortalForcer.findClosestPortalPosition loads candidates before inspecting their blocks.
-        for chunk in &candidate_chunks {
-            for dx in -1..=1 {
-                for dz in -1..=1 {
-                    world
-                        .level
-                        .get_or_fetch_chunk(Vector2::new(chunk.x + dx, chunk.y + dz), |_| ())
-                        .await
-                        .ok()?;
+            let radius = Self::MAX_WIDTH as i32;
+            for x in (pos.0.x - radius) >> 4..=(pos.0.x + radius) >> 4 {
+                for z in (pos.0.z - radius) >> 4..=(pos.0.z + radius) >> 4 {
+                    residency.add(Vector2::new(x, z));
                 }
             }
         }
+        residency.load().await?;
+        #[cfg(test)]
+        world.pause_portal_scan_for_test().await;
 
         let worldborder = world
             .worldborder
@@ -586,7 +597,10 @@ impl NetherPortal {
             }
         }
 
-        best.map(|(result, _, _)| result)
+        best.map(|(portal, _, _)| ResidentPortal {
+            portal,
+            _residency: residency,
+        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -622,8 +636,8 @@ impl NetherPortal {
         let mut ideal_pos: Option<(BlockPos, HorizontalAxis, f64)> = None;
         let mut acceptable_pos: Option<(BlockPos, HorizontalAxis, f64)> = None;
 
-        for offset_x in -32..=32 {
-            'columns: for offset_z in -32..=32 {
+        for offset_x in -CREATE_RADIUS..=CREATE_RADIUS {
+            'columns: for offset_z in -CREATE_RADIUS..=CREATE_RADIUS {
                 let check_x = target_pos.0.x + offset_x;
                 let check_z = target_pos.0.z + offset_z;
 
@@ -766,7 +780,7 @@ impl NetherPortal {
             BlockDirection::West // Fixed: South.rotateYClockwise()
         };
 
-        for portal_dir in -1..3 {
+        for portal_dir in FRAME_WIDTH_START..FRAME_WIDTH_END {
             for height in -1..4 {
                 let pos = floor_pos
                     .offset_dir(direction.to_offset(), portal_dir)
@@ -834,7 +848,7 @@ impl NetherPortal {
             }
         }
 
-        for portal_dir in -1..3 {
+        for portal_dir in FRAME_WIDTH_START..FRAME_WIDTH_END {
             for height in -1..4 {
                 if portal_dir == -1 || portal_dir == 2 || height == -1 || height == 3 {
                     let pos = lower_corner
