@@ -279,6 +279,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Stale teleport confirmations (pearl into a remote End gateway, back-to-back /tp) are ignored like vanilla instead of kicking with "Wrong teleport id"; repeated confirmations of the latest accepted ID disconnect, matching `ServerGamePacketListenerImpl.handleAcceptTeleportPacket` (tester R20, PR #123) | Not yet |
 | Ender Dragon respawn explosions run after the fight lock is released, and crystals destroyed while it is held are queued, so the respawn sequence no longer freezes the server (Singapore hang 2026-10-10, PR #122) | Not yet |
 | Plugin-written sign text also replaces the filtered text, styled plain-text signs stay editable, and meadow tall grass generates as whole plants (PR #103 review follow-up) | Not yet |
+| `/clear` updates worn armor and held items for Java and Bedrock observers and the owning inventory, and removes cleared item attributes (issue #98) | Not yet |
 
 - R2-01: syntax-error context budgets ten UTF-16 units on safe UTF-8 boundaries, including cursors inside a character. In-game verification: Not yet.
 - R2-02: implicit command targets follow the executing player through `execute as`; command positions follow the execution context, while permissions and feedback stay with the sender. In-game verification: Not yet.
