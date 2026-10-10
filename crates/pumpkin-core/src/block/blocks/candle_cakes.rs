@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use pumpkin_data::{Block, BlockState, BlockStateId, item::Item, item_stack::ItemStack};
+use pumpkin_data::{
+    Block, BlockState, BlockStateId, block_properties::RedstoneOreLikeProperties, item::Item,
+    item_stack::ItemStack,
+};
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::{
@@ -87,6 +90,13 @@ impl CandleCakeBlock {
 
 impl BlockBehaviour for CandleCakeBlock {
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
+        let state_id = args.world.get_block_state_id(args.position);
+        let properties = RedstoneOreLikeProperties::from_state_id(state_id);
+        // CandleCakeBlock.useItemOn and candleHit keep extinguishing separate from eating.
+        if args.item_stack.is_empty() && candle_hit(args.hit.cursor_pos.y) && properties.lit {
+            super::candles::extinguish(args.world, args.block, args.position);
+            return BlockActionResult::Success;
+        }
         let item_id = args.item_stack.item.id;
         match item_id {
             id if id == Item::FIRE_CHARGE.id || id == Item::FLINT_AND_STEEL.id => {
@@ -131,4 +141,8 @@ impl BlockBehaviour for CandleCakeBlock {
 fn can_place_at(world: &dyn BlockAccessor, position: &BlockPos) -> bool {
     let state = world.get_block_state(&position.down());
     state.is_solid()
+}
+
+fn candle_hit(local_y: f32) -> bool {
+    local_y > 0.5
 }

@@ -222,6 +222,14 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 
 ## Native plugin API 8
 
+- API 8 (same version), [#7](https://github.com/Optifineless/Pumpkin/issues/7): candle stacks now use ordinary item placement, consuming one candle in survival while preserving the lit state and four-candle limit. In-game verification **Not yet**.
+- API 8 (same version), [#8](https://github.com/Optifineless/Pumpkin/issues/8): sugar cane accepts tagged adjacent water fluids, including waterlogged blocks, or tagged frosted-ice support. In-game verification **Not yet**.
+- API 8 (same version), [#9](https://github.com/Optifineless/Pumpkin/issues/9): newly grown sugar-cane segments start at age zero instead of inheriting the mature source age. In-game verification **Not yet**.
+- API 8 (same version), [#55](https://github.com/Optifineless/Pumpkin/issues/55): sea-pickle bonemeal uses the ordinary item lifecycle, consumes one bone meal, and preserves vanilla coral and water eligibility. In-game verification **Not yet**.
+- API 8 (same version), [#56](https://github.com/Optifineless/Pumpkin/issues/56): sea pickles accept a nonempty upper collision face or sturdy upper face during placement and neighbor updates, while surviving waterlogged pickles continue scheduling water ticks. In-game verification **Not yet**.
+- API 8 (same version), [#57](https://github.com/Optifineless/Pumpkin/issues/57): an empty-hand upper-half click extinguishes a lit candle cake without eating it; lower clicks retain cake eating. Extinguishing uses the shared candle state, sound and block-change event path, without server particle packets. In-game verification **Not yet**.
+- API 8 (same version), [#58](https://github.com/Optifineless/Pumpkin/issues/58): farmland crops require raw brightness 8 to survive and crops and gourd stems require raw brightness 9 to grow; nether wart remains light-independent. In-game verification **Not yet**.
+
 - API 8 (same version): the shared text decoder retains translated names with fallback and typed numeric arguments in `TextContent::Translatable`. Item names and entity reload use the same lossless decoder; server text uses vanilla fallback precedence and substitutions. Rebuild native plugins for the enum layout. Translated-name anvil repairs, entity reload and equivalent lock encodings: in-game verification **Not yet**.
 
 - API 8 (same version): survival task 1 second review adds opaque text contents, vanilla custom-name equality, dye recipe metadata, a menu tick hook, a disk-backed map cache and MapIndex allocation; map decoration names retain components. Rebuild native plugins for the changed enum, vtable and layouts. Map imports/restarts, whole cartography/stonecutter results, named map markers, hive occupant transfer and transmute/dye displays: in-game verification **Not yet**.

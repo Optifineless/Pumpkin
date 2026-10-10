@@ -44,6 +44,9 @@ pub mod twisting_vines;
 pub mod weeping_vines;
 pub mod wither_rose;
 
+#[cfg(test)]
+mod regression_tests;
+
 trait PlantBlockBase {
     fn can_plant_on_top(&self, block_accessor: &dyn BlockAccessor, pos: &BlockPos) -> bool {
         let block = block_accessor.get_block(pos);

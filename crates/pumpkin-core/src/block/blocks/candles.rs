@@ -1,6 +1,10 @@
-use pumpkin_data::item::Item;
 use pumpkin_data::{
-    BlockDirection, BlockStateId, block_properties::CandleLikeProperties, entity::EntityPose,
+    Block, BlockDirection, BlockStateId,
+    block_properties::CandleLikeProperties,
+    entity::EntityPose,
+    game_event::GameEvent,
+    sound::{Sound, SoundCategory},
+    tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
@@ -13,10 +17,7 @@ use crate::{
     block::{
         BlockIsReplacing,
         registry::BlockActionResult,
-        {
-            BlockBehaviour, CanPlaceAtArgs, CanUpdateAtArgs, NormalUseArgs, OnPlaceArgs,
-            UseWithItemArgs,
-        },
+        {BlockBehaviour, CanPlaceAtArgs, CanUpdateAtArgs, OnPlaceArgs, UseWithItemArgs},
     },
     entity::EntityBase,
 };
@@ -42,66 +43,25 @@ impl BlockBehaviour for CandleBlock {
     }
 
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        {
-            let state = args.world.get_block_state(args.position);
-            let mut properties = CandleLikeProperties::from_state_id(state.id);
-
-            let item = args.item_stack.item;
-
-            match item.id {
-                id if (Item::CANDLE.id..=Item::BLACK_CANDLE.id).contains(&id)
-                    && item.id == args.block.item_id =>
-                {
-                    let was_lit = properties.lit;
-
-                    if properties.candles < 4 {
-                        properties.candles += 1;
-                    }
-
-                    properties.lit = was_lit;
-
-                    args.world.set_block_state(
-                        args.position,
-                        properties.to_state_id(args.block),
-                        BlockFlags::NOTIFY_ALL,
-                    );
-                }
-                _ => {
-                    if properties.lit {
-                        properties.lit = false;
-                    } else {
-                        return BlockActionResult::Pass;
-                    }
-
-                    args.world.set_block_state(
-                        args.position,
-                        properties.to_state_id(args.block),
-                        BlockFlags::NOTIFY_ALL,
-                    );
-                }
-            }
-
-            BlockActionResult::Consume
+        // CandleBlock.useItemOn handles only empty-hand extinguishing. Candle stacking
+        // falls through to BlockItem.place, which consumes the placed item.
+        if !args.item_stack.is_empty() {
+            return BlockActionResult::Pass;
         }
-    }
-
-    fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
+        let properties =
+            CandleLikeProperties::from_state_id(args.world.get_block_state_id(args.position));
+        if !properties.lit
+            || !args
+                .player
+                .abilities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .allow_modify_world
         {
-            let state_id = args.world.get_block_state_id(args.position);
-            let mut properties = CandleLikeProperties::from_state_id(state_id);
-
-            if properties.lit {
-                properties.lit = false;
-            }
-
-            args.world.set_block_state(
-                args.position,
-                properties.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL,
-            );
-
-            BlockActionResult::Consume
+            return BlockActionResult::Pass;
         }
+        extinguish(args.world, args.block, args.position);
+        BlockActionResult::Success
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
@@ -137,4 +97,37 @@ impl BlockBehaviour for CandleBlock {
 fn can_place_at(block_accessor: &dyn BlockAccessor, position: &BlockPos) -> bool {
     let (support_block, state) = block_accessor.get_block_and_state(&position.down());
     !support_block.is_waterlogged(state.id) && state.is_center_solid(BlockDirection::Up)
+}
+
+/// Extinguishes a candle or candle cake, with AbstractCandleBlock.extinguish effects.
+/// The block must be a candle or candle cake at the supplied position.
+pub(crate) fn extinguish(
+    world: &std::sync::Arc<crate::world::World>,
+    block: &Block,
+    position: &BlockPos,
+) {
+    let state = world.get_block_state_id(position);
+    if block.has_tag(&tag::Block::MINECRAFT_CANDLES) {
+        let mut properties = CandleLikeProperties::from_state_id(state);
+        properties.lit = false;
+        world.set_block_state(
+            position,
+            properties.to_state_id(block),
+            BlockFlags::NOTIFY_ALL,
+        );
+    } else {
+        let properties = pumpkin_data::block_properties::RedstoneOreLikeProperties { lit: false };
+        world.set_block_state(
+            position,
+            properties.to_state_id(block),
+            BlockFlags::NOTIFY_ALL,
+        );
+    }
+    // AbstractCandleBlock.extinguish uses Level.addParticle, a no-op on the server.
+    world.play_sound(
+        Sound::BlockCandleExtinguish,
+        SoundCategory::Blocks,
+        &position.to_centered_f64(),
+    );
+    world.emit_game_event(GameEvent::BlockChange.name(), position.to_centered_f64());
 }
