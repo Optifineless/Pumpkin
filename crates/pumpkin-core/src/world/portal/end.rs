@@ -90,8 +90,17 @@ impl EndPortal {
     fn create_portal(world: &Arc<World>, pos: BlockPos) {
         for x in -1..=1 {
             for z in -1..=1 {
+                let portal_pos = pos.offset(Vector3::new(x, 0, z));
+                // EnderEyeItem.useOn destroys each interior block, including container contents.
+                if !world.get_block_state(&portal_pos).is_air()
+                    && world
+                        .break_block(&portal_pos, None, BlockFlags::NOTIFY_ALL)
+                        .is_none()
+                {
+                    continue;
+                }
                 world.set_block_state(
-                    &pos.offset(Vector3::new(x, 0, z)),
+                    &portal_pos,
                     Block::END_PORTAL.default_state.id,
                     BlockFlags::NOTIFY_LISTENERS,
                 );

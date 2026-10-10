@@ -23,6 +23,13 @@ use std::sync::Mutex;
 pub struct AnvilBlock;
 
 impl AnvilBlock {
+    // AnvilBlock.falling.
+    pub(crate) fn falling(entity: &crate::entity::falling::FallingEntity) {
+        const FALL_DAMAGE_PER_DISTANCE: f32 = 2.0;
+        const FALL_DAMAGE_MAX: i32 = 40;
+        entity.set_hurts_entities(FALL_DAMAGE_PER_DISTANCE, FALL_DAMAGE_MAX);
+    }
+
     #[must_use]
     pub fn damage(state_id: BlockStateId) -> Option<BlockStateId> {
         let block = Block::from_state_id(state_id);

@@ -89,6 +89,7 @@ pub mod experience_orb;
 pub mod falling;
 pub mod hunger;
 pub mod interaction;
+mod invulnerability;
 pub mod item;
 pub mod item_steerable;
 pub mod item_use;
@@ -995,8 +996,9 @@ pub struct Entity {
     pub bounding_box: AtomicCell<BoundingBox>,
     ///The size (width and height) of the bounding box
     pub entity_dimension: AtomicCell<EntityDimensions>,
-    /// Whether this entity is invulnerable to all damage
+    /// Damage invulnerability, including the player's game-mode abilities.
     pub invulnerable: AtomicBool,
+    permanently_invulnerable: AtomicBool,
     /// List of damage types this entity is immune to
     pub damage_immunities: std::sync::Mutex<Vec<DamageType>>,
     // Whether the entity is immune to fire (to disable visual fire and fire damage)
@@ -1156,6 +1158,7 @@ impl Entity {
             )),
             entity_dimension: AtomicCell::new(bounding_box_size),
             invulnerable: AtomicBool::new(false),
+            permanently_invulnerable: AtomicBool::new(false),
             damage_immunities: std::sync::Mutex::new(Vec::new()),
             data: AtomicI32::new(0),
             flags: std::sync::atomic::AtomicI8::new(0),
@@ -3182,25 +3185,12 @@ impl Entity {
         damage_type: &DamageType,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        let bypasses = damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_INVULNERABILITY);
-        let creative_cause = cause
-            .and_then(EntityBase::get_player)
-            .is_some_and(Player::is_creative);
-
-        self.removed.load(Ordering::SeqCst)
-            || (self.invulnerable.load(Ordering::Relaxed) && !bypasses && !creative_cause)
-            || (damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FIRE) && self.is_fire_immune())
-            || (damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FALL)
-                && self
-                    .entity_type
-                    .has_tag(&tag::EntityType::MINECRAFT_FALL_DAMAGE_IMMUNE))
-            // Plugin immunities, which never block damage that bypasses invulnerability.
-            || (!bypasses
-                && self
-                    .damage_immunities
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .contains(damage_type))
+        self.is_invulnerable_to_with_flag(
+            damage_type,
+            cause,
+            self.invulnerable.load(Ordering::Relaxed)
+                || self.permanently_invulnerable.load(Ordering::Relaxed),
+        )
     }
 
     /// Sets if the entity is invulnerable to a specific damage type
@@ -3221,6 +3211,7 @@ impl Entity {
 
     /// Sets if the entity is invulnerable to all damage types (except `GENERIC_KILL` and `OUT_OF_WORLD`)
     pub fn set_invulnerable(&self, invulnerable: bool) {
+        self.permanently_invulnerable.store(invulnerable, Relaxed);
         self.invulnerable.store(invulnerable, Relaxed);
     }
 
@@ -4073,7 +4064,7 @@ impl Entity {
         );
         nbt.put_short("Fire", self.fire_ticks.load(Relaxed) as i16);
         nbt.put_bool("OnGround", self.on_ground.load(Relaxed));
-        nbt.put_bool("Invulnerable", self.invulnerable.load(Relaxed));
+        nbt.put_bool("Invulnerable", self.is_permanently_invulnerable());
         nbt.put_int("PortalCooldown", self.portal_cooldown.load(Relaxed) as i32);
         if self.has_visual_fire.load(Relaxed) {
             nbt.put_bool("HasVisualFire", true);
@@ -4166,7 +4157,7 @@ impl Entity {
             self.on_ground.store(on_ground, Relaxed);
         }
         if let Some(invulnerable) = nbt.get_bool("Invulnerable") {
-            self.invulnerable.store(invulnerable, Relaxed);
+            self.set_invulnerable(invulnerable);
         }
         if let Some(cooldown) = nbt.get_int("PortalCooldown") {
             self.portal_cooldown.store(cooldown as u32, Relaxed);

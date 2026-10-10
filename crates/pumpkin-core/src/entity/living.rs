@@ -21,6 +21,7 @@ pub(crate) mod effects;
 mod equipment_modifiers;
 #[cfg(test)]
 mod ext_review_tests;
+mod fall_damage;
 #[cfg(test)]
 mod hand_use_tests;
 mod heal_or_harm;
@@ -68,7 +69,8 @@ use crate::entity::attributes::AttributeInstance;
 use crate::entity::attributes::Modifier;
 use crate::entity::attributes::ModifierOperation;
 use crate::entity::combat::CombatTracker;
-use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
+#[cfg(test)]
+use crate::entity::player::statistics::StatisticCategory;
 use crate::server::Server;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::Block;
@@ -1598,11 +1600,13 @@ impl LivingEntity {
                 return;
             }
             let world = self.entity.world.load();
-            let block = world.get_block(&self.entity.get_pos_with_y_offset(0.2).0);
+            let landing_pos = self.entity.get_pos_with_y_offset(0.2).0;
+            let block = world.get_block(&landing_pos);
             let pumpkin_block = world.block_registry.get_pumpkin_block(block.id);
             if let Some(pumpkin_block) = pumpkin_block {
                 pumpkin_block.on_landed_upon(OnLandedUponArgs {
                     world: &world,
+                    position: &landing_pos,
                     fall_distance,
                     entity: caller,
                 });
@@ -1621,6 +1625,10 @@ impl LivingEntity {
                 0f32
             };
             self.fall_distance.store(new_fall_distance);
+            crate::block::blocks::honey::HoneyBlock::reset_player_fall_distance(
+                caller,
+                height_difference,
+            );
         }
     }
 
@@ -1630,56 +1638,7 @@ impl LivingEntity {
         fall_distance: f32,
         damage_per_distance: f32,
     ) {
-        let may_fly = caller.get_player().is_some_and(|player| {
-            player
-                .abilities
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .allow_flying
-        });
-        if may_fly || self.is_immune_to_fall_damage() {
-            return;
-        }
-
-        // Vanilla parity: the fall_damage gamerule only affects players.
-        if caller.get_player().is_some()
-            && !self
-                .entity
-                .world
-                .load()
-                .level_info
-                .load()
-                .game_rules
-                .fall_damage
-        {
-            return;
-        }
-
-        if fall_distance >= 2.0
-            && let Some(player) = caller.get_player()
-        {
-            player.increment_stat(
-                StatisticCategory::Custom,
-                CustomStatistic::FallOneCm as i32,
-                (fall_distance * 100.0).round() as i32,
-            );
-        }
-
-        let fall_distance = self
-            .impulse
-            .effective_fall_distance(fall_distance, self.entity.pos.load().y);
-        let safe_fall_distance = self.get_attribute_value(&Attributes::SAFE_FALL_DISTANCE) as f32;
-        let unsafe_fall_distance = fall_distance + 1.0E-6 - safe_fall_distance;
-
-        let damage = (unsafe_fall_distance * damage_per_distance).floor();
-        if damage > 0.0 {
-            self.impulse.reset();
-            let check_damage = self.damage(caller, damage, DamageType::FALL); // Fall
-            if check_damage {
-                self.entity
-                    .play_sound(Self::get_fall_sound(fall_distance as i32));
-            }
-        }
+        self.handle_fall_damage_from(caller, fall_distance, damage_per_distance, DamageType::FALL);
     }
 
     const fn get_fall_sound(distance: i32) -> Sound {

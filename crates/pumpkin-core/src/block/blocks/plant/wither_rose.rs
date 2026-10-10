@@ -1,8 +1,8 @@
 use crate::block::{GetStateForNeighborUpdateArgs, blocks::plant::PlantBlockBase};
 use pumpkin_data::BlockStateId;
 use pumpkin_data::{
+    damage::DamageType,
     effect::StatusEffect,
-    entity::EntityType,
     tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
@@ -18,10 +18,17 @@ impl BlockBehaviour for WitherRoseBlock {
             if args.world.level_info.load().difficulty == Difficulty::Peaceful {
                 return;
             }
-            let entity_type = args.entity.get_entity().entity_type;
-            if entity_type == &EntityType::ENDER_DRAGON
-                || entity_type == &EntityType::WITHER
-                || entity_type == &EntityType::WITHER_SKELETON
+            // WitherRoseBlock.entityInside checks base immunity, not Player.hurtServer's abilities.
+            if args
+                .entity
+                .get_entity()
+                .is_invulnerable_to_base(&DamageType::WITHER, None)
+                || living_entity.is_immune_to_enchantment_damage(
+                    args.entity,
+                    DamageType::WITHER,
+                    None,
+                    None,
+                )
             {
                 return;
             }
