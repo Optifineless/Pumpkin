@@ -123,6 +123,21 @@ fn from_wasm_sign_text(text: SignText) -> InternalText {
     )
 }
 
+fn replace_sign_text_messages(target: &InternalText, source: &InternalText) {
+    // SignBlockEntity.updateMessages keeps raw and filtered lines synchronized when no filtered copy is supplied.
+    let messages = source.get_messages(false);
+    target
+        .messages
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone_from(&messages);
+    target
+        .filtered_messages
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone_from(&messages);
+}
+
 #[cfg(test)]
 #[path = "sign_text_tests.rs"]
 mod sign_text_tests;
@@ -417,17 +432,7 @@ impl HostSignBlockEntity for PluginHostState {
             Ordering::Relaxed,
         );
         sign.front_text.set_color(new_text.get_color());
-        (*sign
-            .front_text
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner))
-        .clone_from(
-            &new_text
-                .messages
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        replace_sign_text_messages(&sign.front_text, &new_text);
         Ok(())
     }
 
@@ -447,17 +452,7 @@ impl HostSignBlockEntity for PluginHostState {
             Ordering::Relaxed,
         );
         sign.back_text.set_color(new_text.get_color());
-        (*sign
-            .back_text
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner))
-        .clone_from(
-            &new_text
-                .messages
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        replace_sign_text_messages(&sign.back_text, &new_text);
         Ok(())
     }
 
@@ -658,17 +653,7 @@ impl HostHangingSignBlockEntity for PluginHostState {
             Ordering::Relaxed,
         );
         sign.front_text.set_color(new_text.get_color());
-        (*sign
-            .front_text
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner))
-        .clone_from(
-            &new_text
-                .messages
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        replace_sign_text_messages(&sign.front_text, &new_text);
         Ok(())
     }
 
@@ -691,17 +676,7 @@ impl HostHangingSignBlockEntity for PluginHostState {
             Ordering::Relaxed,
         );
         sign.back_text.set_color(new_text.get_color());
-        (*sign
-            .back_text
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner))
-        .clone_from(
-            &new_text
-                .messages
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        replace_sign_text_messages(&sign.back_text, &new_text);
         Ok(())
     }
 

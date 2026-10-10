@@ -668,13 +668,21 @@ fn other_player_is_editing_sign(
 /// Checks whether all messages on the given sign text face are plain text or empty.
 fn has_editable_text(text: &Text, should_filter: bool) -> bool {
     let messages = text.get_messages(should_filter);
-    // SignText.hasEditableText checks contents, retaining styles when lines are edited.
-    messages.iter().all(|component| {
-        matches!(
-            *component.0.content,
-            pumpkin_util::text::TextContent::Text { .. }
-        )
-    })
+    // SignText.hasEditableText checks PlainTextContents, independent of styles the local codec preserves opaquely.
+    messages
+        .iter()
+        .all(|component| match &*component.0.content {
+            pumpkin_util::text::TextContent::Text { .. } => true,
+            pumpkin_util::text::TextContent::Opaque { component } => {
+                component.0.get_string("text").is_some()
+            }
+            pumpkin_util::text::TextContent::Translatable { .. }
+            | pumpkin_util::text::TextContent::Translate { .. }
+            | pumpkin_util::text::TextContent::EntityNames { .. }
+            | pumpkin_util::text::TextContent::Keybind { .. }
+            | pumpkin_util::text::TextContent::Custom { .. }
+            | pumpkin_util::text::TextContent::PlayerSprite { .. } => false,
+        })
 }
 
 /// Returns the direction of the block supporting the wall sign.
@@ -755,6 +763,7 @@ fn get_yaw_from_rotation_16(rotation: u8) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 
     fn placement(block: &Block, waterlogged: bool) -> SignPlacement {
         SignPlacement {
@@ -787,6 +796,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn plain_text_with_opaque_click_style_remains_editable() {
+        let mut click_event = NbtCompound::new();
+        click_event.put_string("action", "show_dialog".to_string());
+        click_event.put_string("dialog", "minecraft:test".to_string());
+        let mut component_nbt = NbtCompound::new();
+        component_nbt.put_string("text", "click".to_string());
+        component_nbt.put_compound("click_event", click_event);
+
+        let component = TextComponent::from_nbt(&NbtTag::Compound(component_nbt));
+        assert!(matches!(
+            &*component.0.content,
+            pumpkin_util::text::TextContent::Opaque { .. }
+        ));
+        let text = Text::default();
+        text.messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)[0] = component;
+
+        assert!(has_editable_text(&text, false));
     }
 }
 
