@@ -21,6 +21,12 @@ use super::{
 };
 use crate::entity::{Entity, EntityBase, decoration::end_crystal::EndCrystalEntity};
 
+mod respawn_actions;
+use respawn_actions::RespawnAction;
+
+#[cfg(test)]
+mod respawn_tests;
+
 // ── Constants (match vanilla exactly) ────────────────────────────────────────
 
 pub const MAX_TICKS_BEFORE_DRAGON_RESPAWN: i32 = 1200;
@@ -156,6 +162,8 @@ impl DragonFight {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
+        fight.drain_crystal_notifications(world);
+
         // 1. Update boss-bar recipients every 20 ticks
         fight.ticks_since_last_player_scan += 1;
         if fight.ticks_since_last_player_scan >= TIME_BETWEEN_PLAYER_SCANS {
@@ -176,12 +184,19 @@ impl DragonFight {
         if fight.needs_state_scanning {
             fight.scan_state(world);
             fight.needs_state_scanning = false;
+            fight.drain_crystal_notifications(world);
         }
 
         // 3. Respawn sequence
         if let Some(stage) = fight.respawn_stage {
-            fight.tick_respawn_stage(world, stage);
+            let action = fight.tick_respawn_stage(world, stage);
             fight.respawn_time += 1;
+            fight.drain_crystal_notifications(world);
+            // DragonRespawnStage.tick: explosions notify the fight synchronously.
+            drop(fight);
+            if let Some(action) = action {
+                action.execute(world);
+            }
             return;
         }
 
@@ -201,6 +216,7 @@ impl DragonFight {
                 fight.ticks_since_crystals_scanned = 0;
             }
         }
+        fight.drain_crystal_notifications(world);
     }
 
     // ── State scanning ────────────────────────────────────────────────────────
@@ -546,6 +562,13 @@ impl DragonFight {
 
     // ── Crystal destruction ───────────────────────────────────────────────────
 
+    fn drain_crystal_notifications(&mut self, world: &Arc<World>) {
+        // EnderDragonFight.onCrystalDestroyed must abort before the next animation step.
+        while let Some(uuid) = world.pending_destroyed_crystals.pop() {
+            self.on_crystal_destroyed(world, uuid);
+        }
+    }
+
     pub fn on_crystal_destroyed(&mut self, world: &Arc<World>, crystal_uuid: Uuid) {
         if self.respawn_stage.is_some() && self.respawn_crystals.contains(&crystal_uuid) {
             self.abort_respawn_sequence(world);
@@ -665,8 +688,11 @@ impl DragonFight {
         }
     }
 
-    #[expect(clippy::too_many_lines)]
-    fn tick_respawn_stage(&mut self, world: &Arc<World>, stage: DragonRespawnStage) {
+    fn tick_respawn_stage(
+        &mut self,
+        world: &Arc<World>,
+        stage: DragonRespawnStage,
+    ) -> Option<RespawnAction> {
         let time = self.respawn_time;
         let origin_y = self.origin.0.y + DRAGON_SPAWN_Y;
         let origin_target = BlockPos::new(self.origin.0.x, origin_y, self.origin.0.z);
@@ -679,18 +705,18 @@ impl DragonFight {
                 .find(|e| e.get_entity().entity_uuid == *uuid)
                 && let Some(crystal) = e.cast_any().downcast_ref::<EndCrystalEntity>()
             {
-                live_crystals.push(crystal);
+                live_crystals.push((e.clone(), crystal));
             }
         }
 
         if live_crystals.is_empty() {
             self.abort_respawn_sequence(world);
-            return;
+            return None;
         }
 
         match stage {
             DragonRespawnStage::Start => {
-                for crystal in &live_crystals {
+                for (_, crystal) in &live_crystals {
                     crystal.set_beam_target(Some(origin_target));
                 }
                 self.set_respawn_stage(world, DragonRespawnStage::PreparingToSummonPillars);
@@ -719,43 +745,11 @@ impl DragonFight {
                         if flag {
                             let spike_target =
                                 BlockPos::new(spike.center_x, spike.height + 1, spike.center_z);
-                            for crystal in &live_crystals {
+                            for (_, crystal) in &live_crystals {
                                 crystal.set_beam_target(Some(spike_target));
                             }
                         } else {
-                            for dx in -10i32..=10 {
-                                for dy in -10i32..=10 {
-                                    for dz in -10i32..=10 {
-                                        let pos = BlockPos::new(
-                                            spike.center_x + dx,
-                                            spike.height + dy,
-                                            spike.center_z + dz,
-                                        );
-                                        let block = world.get_block(&pos);
-                                        if block != &Block::BEDROCK
-                                            && block != &Block::OBSIDIAN
-                                            && block != &Block::AIR
-                                        {
-                                            world.set_block_state(
-                                                &pos,
-                                                Block::AIR.default_state.id,
-                                                BlockFlags::NOTIFY_ALL,
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            world.explode(
-                                Vector3::new(
-                                    spike.center_x as f64 + 0.5,
-                                    spike.height as f64,
-                                    spike.center_z as f64 + 0.5,
-                                ),
-                                5.0,
-                                crate::world::ExplosionInteraction::Block,
-                            );
-
-                            Self::regenerate_spike(world, spike);
+                            return Some(RespawnAction::RegenerateSpike(*spike));
                         }
                     } else if flag {
                         self.set_respawn_stage(world, DragonRespawnStage::SummoningDragon);
@@ -766,18 +760,12 @@ impl DragonFight {
                 if time >= 100 {
                     self.set_respawn_stage(world, DragonRespawnStage::End);
                     self.reset_spike_crystals(world);
-                    for crystal in &live_crystals {
-                        crystal.set_beam_target(None);
-                        let pos = crystal.get_entity().pos.load();
-                        world.explode_from(
-                            *crystal,
-                            pos,
-                            6.0,
-                            crate::world::ExplosionInteraction::None,
-                            false,
-                        );
-                        crystal.get_entity().remove();
-                    }
+                    return Some(RespawnAction::DestroyRespawnCrystals(
+                        live_crystals
+                            .into_iter()
+                            .map(|(entity, _)| entity)
+                            .collect(),
+                    ));
                 } else if time >= 80 {
                     world.sync_world_event(WorldEvent::AnimationDragonSummonRoar, origin_target, 0);
                 } else if time == 0 {
@@ -807,6 +795,7 @@ impl DragonFight {
             }
             DragonRespawnStage::End => {}
         }
+        None
     }
 
     fn regenerate_spike(world: &Arc<World>, spike: &EndSpike) {
