@@ -206,6 +206,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Crafting Q/right-click keeps the whole output; exhausted crafter slots produce no remainders; mined shulker menus close; styled keys and processed maps survive saves (survival task 1 deep review 1–5) | Not yet |
 | Cartography drags/clones and repeated shift-clicks, bounded drag selection, occupied smithing input routing and occupied-hive bundle weight (survival task 1 deep review 6–10) | Not yet |
 | Ender Dragon respawn explosions run after the fight lock is released, and crystals destroyed while it is held are queued, so the respawn sequence no longer freezes the server (Singapore hang 2026-10-10, PR #122) | Not yet |
+| Stale teleport confirmations (pearl into a remote End gateway, back-to-back /tp) are ignored like vanilla instead of kicking with "Wrong teleport id" (tester R20, PR #123) | Not yet |
 
 - R2-01: syntax-error context budgets ten UTF-16 units on safe UTF-8 boundaries, including cursors inside a character. In-game verification: Not yet.
 - R2-02: implicit command targets follow the executing player through `execute as`; command positions follow the execution context, while permissions and feedback stay with the sender. In-game verification: Not yet.
