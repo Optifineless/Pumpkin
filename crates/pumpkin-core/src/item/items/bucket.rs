@@ -93,14 +93,18 @@ const fn get_empty_sound(item: &Item) -> Sound {
     }
 }
 
-pub(crate) fn play_empty_sound(world: &Arc<World>, item: &Item, pos: BlockPos) {
+// BucketItem/MobBucketItem.playEmptySound and SolidBucketItem.emptyContents.
+fn play_empty_sound(world: &Arc<World>, player: Option<&Player>, item: &Item, pos: BlockPos) {
     let category = if get_mob_for_bucket(item).is_some() {
         SoundCategory::Neutral
     } else {
         SoundCategory::Blocks
     };
-    world.play_sound(get_empty_sound(item), category, &pos.to_f64());
-    // BucketItem/SolidBucketItem.playEmptySound (MobBucketItem overrides it).
+    if let Some(player) = player {
+        world.play_block_sound_expect(player, get_empty_sound(item), category, pos);
+    } else {
+        world.play_block_sound(get_empty_sound(item), category, pos);
+    }
     if get_mob_for_bucket(item).is_none() {
         world.emit_game_event(
             pumpkin_data::game_event::GameEvent::FluidPlace.name(),
@@ -245,14 +249,27 @@ pub(crate) const fn should_evaporate_in_nether(item: &Item, world: &World) -> bo
         && world.dimension.water_evaporates
 }
 
-pub(crate) fn play_bucket_evaporation(world: &Arc<World>, position: &Vector3<f64>) {
-    world.play_sound_raw(
-        Sound::BlockFireExtinguish as u16,
-        SoundCategory::Blocks,
-        position,
-        0.5,
-        (rand::random::<f32>() - rand::random::<f32>()).mul_add(0.8, 2.6),
-    );
+fn play_bucket_evaporation(world: &Arc<World>, player: Option<&Player>, pos: BlockPos) {
+    let position = pos.to_centered_f64();
+    let pitch = (rand::random::<f32>() - rand::random::<f32>()).mul_add(0.8, 2.6);
+    if let Some(player) = player {
+        world.play_sound_raw_expect(
+            player,
+            Sound::BlockFireExtinguish as u16,
+            SoundCategory::Blocks,
+            &position,
+            0.5,
+            pitch,
+        );
+    } else {
+        world.play_sound_raw(
+            Sound::BlockFireExtinguish as u16,
+            SoundCategory::Blocks,
+            &position,
+            0.5,
+            pitch,
+        );
+    }
 }
 
 // BucketItem.use/emptyContents dispatch on LiquidBlockContainer.
@@ -315,11 +332,21 @@ pub(crate) fn bucket_destination(
 }
 
 pub(crate) fn empty_bucket_at(world: &Arc<World>, item: &Item, pos: BlockPos) -> Option<BlockPos> {
+    empty_bucket_at_with_player(world, None, item, pos)
+}
+
+// BucketItem.emptyContents carries the nullable sound source through every placement branch.
+fn empty_bucket_at_with_player(
+    world: &Arc<World>,
+    player: Option<&Player>,
+    item: &Item,
+    pos: BlockPos,
+) -> Option<BlockPos> {
     if !can_empty_bucket_at(world, item, pos) {
         return None;
     }
     if should_evaporate_in_nether(item, world) {
-        play_bucket_evaporation(world, &pos.to_f64());
+        play_bucket_evaporation(world, player, pos);
         return Some(pos);
     }
     let (block, state) = world.get_block_and_state(&pos);
@@ -351,7 +378,7 @@ pub(crate) fn empty_bucket_at(world: &Arc<World>, item: &Item, pos: BlockPos) ->
         };
         world.set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
     }
-    play_empty_sound(world, item, pos);
+    play_empty_sound(world, player, item, pos);
     Some(pos)
 }
 
@@ -421,10 +448,12 @@ impl ItemBehaviour for EmptyBucketItem {
         {
             return;
         }
-        world.play_sound(
+        // BucketItem.use -> Player.playSound excludes the player and uses their sound source.
+        world.play_sound_expect(
+            player,
             get_fill_sound(item),
-            SoundCategory::Blocks,
-            &block_pos.to_f64(),
+            SoundCategory::Players,
+            &player.position(),
         );
 
         crate::item::item_utils::create_filled_result(
@@ -562,9 +591,11 @@ impl ItemBehaviour for FilledBucketItem {
                 Block::POWDER_SNOW.default_state.id,
                 BlockFlags::NOTIFY_ALL,
             );
-            play_empty_sound(&world, item, destination);
+            play_empty_sound(&world, Some(player), item, destination);
             destination
-        } else if let Some(pos) = empty_bucket_at(&world, item, destination) {
+        } else if let Some(pos) =
+            empty_bucket_at_with_player(&world, Some(player), item, destination)
+        {
             pos
         } else {
             return;
@@ -616,6 +647,13 @@ impl ItemBehaviour for FilledBucketItem {
         self
     }
 }
+
+#[cfg(test)]
+#[path = "bucket_sound_test_support.rs"]
+mod sound_test_support;
+#[cfg(test)]
+#[path = "bucket_sound_tests.rs"]
+mod sound_tests;
 
 #[cfg(test)]
 mod tests {
