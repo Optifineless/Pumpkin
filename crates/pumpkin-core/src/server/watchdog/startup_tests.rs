@@ -43,8 +43,12 @@ pub(super) fn callback<E: Payload + Send + Sync + 'static>(
 }
 
 pub(super) fn fixture(path: &std::path::Path) -> PumpkinServer {
+    fixture_with_limit(path, i64::MAX)
+}
+
+pub(super) fn fixture_with_limit(path: &std::path::Path, limit: i64) -> PumpkinServer {
     let mut server = combat_test_support::server(path);
-    Arc::get_mut(&mut server).unwrap().watchdog = Arc::new(Watchdog::new(i64::MAX));
+    Arc::get_mut(&mut server).unwrap().watchdog = Arc::new(Watchdog::new(limit));
     let world = combat_test_support::world(&server, path);
     server.worlds.store(Arc::new(vec![world]));
     server.watchdog_prepare_workers();

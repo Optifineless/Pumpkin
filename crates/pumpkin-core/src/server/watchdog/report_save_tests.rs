@@ -50,3 +50,41 @@ fn successful_enrichment_appends_without_repeating_phase_report() {
         report.buffer.as_str()
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn published_report_is_owner_only_with_permissive_umask() {
+    use std::os::unix::fs::PermissionsExt;
+    const CHILD: &str = "PUMPKIN_WATCHDOG_REPORT_PERMISSIONS_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "published_report_is_owner_only_with_permissive_umask",
+                "--test-threads=1",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    // SAFETY: this isolated child runs one test; no other test creates files.
+    unsafe { libc::umask(0) };
+    let directory = tempfile::tempdir().unwrap();
+    let mut report = report(directory.path());
+    report.save();
+    assert_eq!(
+        std::fs::metadata(&report.path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600,
+        "The published report exposes diagnostics to other users"
+    );
+}

@@ -47,11 +47,17 @@ exception. `PR_SET_PTRACER_ANY` is never used. The separate launcher waits for
 `SIGCONT` before returning; it remains runnable if the tracer left the server
 stopped. Capture requires `/bin/sh`, GNU `timeout`, an executable debugger and
 normal same-user/dumpable permissions.
-Yama modes 2/3 and other security policies can still deny capture. Attachment,
+Yama modes 2/3 and other security policies can still deny capture. The attachment
+integration test is opt-in on hosts that permit ptrace; ordinary tests cover
+capture failure and fallback.
 A standalone Linux probe validated mode-1 attachment, a timed-out debugger's
 group stop and server resumption. Scratch boot and in-game verification remain
-separate checks. Temporary stack dumps are readable only by their owner, and
-enrichment appends without truncating the saved phase report.
+separate checks. Final reports and temporary stack dumps are readable only by
+their owner, and enrichment appends without truncating the saved phase report.
+The external supervisor and its descendants have a 4 MiB file-size limit;
+overflow cannot terminate the supervisor before it reaps and resumes the server.
+A supervised real tick-start callback regression checks fatal exit and the saved
+phase report with a short positive watchdog limit.
 
 The synthetic slot benchmark measures warm, pre-registered workers, including
 per-batch scopes and per-subject markers. It excludes first-use registration,

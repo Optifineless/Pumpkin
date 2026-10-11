@@ -3,6 +3,9 @@
 
 mod permission;
 
+#[cfg(target_os = "linux")]
+const MAX_STACK_BYTES: u64 = 4 * 1024 * 1024;
+
 fn capture_with_fallback(mut capture: impl FnMut(&str) -> Result<String, String>) -> String {
     let first = match capture("eu-stack") {
         Ok(output) => return output,
@@ -159,6 +162,33 @@ fn authorized_status(
 }
 
 #[cfg(target_os = "linux")]
+fn limit_output(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: the post-fork closure uses only async-signal-safe syscalls and
+    // stack values. The limit applies to the external supervisor and descendants.
+    unsafe {
+        command.pre_exec(|| {
+            let mut disposition: libc::sigaction = std::mem::zeroed();
+            disposition.sa_sigaction = libc::SIG_IGN;
+            if libc::sigemptyset(&raw mut disposition.sa_mask) != 0
+                || libc::sigaction(libc::SIGXFSZ, &raw const disposition, std::ptr::null_mut()) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            // EFBIG must not kill the supervisor before it reaps and resumes the server.
+            let limit = libc::rlimit {
+                rlim_cur: MAX_STACK_BYTES,
+                rlim_max: MAX_STACK_BYTES,
+            };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &raw const limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn capture_stacks(
     timeout: &std::path::Path,
     debugger: &std::path::Path,
@@ -167,7 +197,6 @@ fn capture_stacks(
     use std::os::unix::fs::OpenOptionsExt;
     use std::process::Stdio;
 
-    const MAX_STACK_BYTES: u64 = 4 * 1024 * 1024;
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -183,6 +212,7 @@ fn capture_stacks(
         .open(&path)?;
     let result = (|| {
         let mut command = capture_command(timeout, debugger);
+        limit_output(&mut command);
         command
             .stdout(Stdio::from(file.try_clone()?))
             .stderr(Stdio::from(file));
@@ -192,8 +222,8 @@ fn capture_stacks(
             .take(MAX_STACK_BYTES)
             .read_to_end(&mut bytes)?;
         let mut output = String::from_utf8_lossy(&bytes).into_owned();
-        if std::fs::metadata(&path)?.len() > MAX_STACK_BYTES {
-            output.push_str("\nThread dump truncated at 4 MiB.\n");
+        if std::fs::metadata(&path)?.len() >= MAX_STACK_BYTES {
+            output.push_str("\nThread dump reached its 4 MiB limit.\n");
         }
         checked_output(
             status.success(),
@@ -369,6 +399,36 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn debugger_output_producer_cannot_exceed_four_mib() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let debugger = directory.path().join("eu-stack");
+        std::fs::write(
+            &debugger,
+            "#!/bin/sh\nexec 3>&1\nprintf '#0 tick\\n'\ndd if=/dev/zero bs=65536 count=128 2>/dev/null\nstat -Lc '%s' /proc/self/fd/3 > \"$0.size\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&debugger, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = capture_stacks(&find_on_path("timeout").unwrap(), &debugger).unwrap();
+        assert!(output.contains("#0 tick"));
+        let produced: u64 = std::fs::read_to_string(debugger.with_extension("size"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            produced > 0,
+            "The producer fixture did not measure its dump"
+        );
+        assert!(
+            produced <= 4 * 1024 * 1024,
+            "Debugger produced {produced} bytes before the bounded reader"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires host ptrace permission; run explicitly on a supported host"]
     fn gated_debugger_child_can_trace_its_parent() {
         const CHILD: &str = "PUMPKIN_WATCHDOG_PTRACE_PARENT";
         if let Some(parent) = std::env::var_os(CHILD) {
@@ -385,15 +445,13 @@ mod tests {
             };
             return;
         }
-        // Stricter Yama modes intentionally forbid this unprivileged attachment.
-        let scope =
-            std::fs::read_to_string("/proc/sys/kernel/yama/ptrace_scope").unwrap_or_default();
-        if matches!(scope.trim(), "2" | "3") {
-            return;
-        }
         let mut command = gated_command(&std::env::current_exe().unwrap());
         command
-            .args(["gated_debugger_child_can_trace_its_parent", "--nocapture"])
+            .args([
+                "gated_debugger_child_can_trace_its_parent",
+                "--ignored",
+                "--nocapture",
+            ])
             .env(CHILD, std::process::id().to_string());
         assert!(authorized_status(command).unwrap().success());
     }

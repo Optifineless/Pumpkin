@@ -91,10 +91,14 @@ impl PreparedReport {
         write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
     ) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.directory)?;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600)
+        };
+        let mut file = options.open(&self.path)?;
         // The already-published phase report must survive a failed or interrupted enrichment.
         write(
             &mut file,
