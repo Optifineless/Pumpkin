@@ -362,10 +362,37 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
+    fn fixture_timeout(required: &[&str]) -> Option<std::path::PathBuf> {
+        use std::io::Write;
+        for name in required {
+            let compatible = find_on_path(name).is_some_and(|path| {
+                std::process::Command::new(path)
+                    .arg("--version")
+                    .output()
+                    .is_ok_and(|output| {
+                        output.status.success()
+                            && String::from_utf8_lossy(&output.stdout).contains("GNU coreutils")
+                    })
+            });
+            if !compatible {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "SKIPPED optional watchdog fixture: compatible GNU {name} unavailable"
+                );
+                return None;
+            }
+        }
+        find_on_path("timeout")
+    }
+
+    #[cfg(target_os = "linux")]
     #[test]
     fn temporary_stack_dump_is_owner_only_with_permissive_umask() {
         use std::os::unix::fs::PermissionsExt;
         const CHILD: &str = "PUMPKIN_WATCHDOG_PERMISSIONS_CHILD";
+        let Some(timeout) = fixture_timeout(&["timeout", "stat"]) else {
+            return;
+        };
         if std::env::var_os(CHILD).is_none() {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
@@ -393,7 +420,7 @@ mod tests {
         )
         .unwrap();
         std::fs::set_permissions(&debugger, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let output = capture_stacks(&find_on_path("timeout").unwrap(), &debugger).unwrap();
+        let output = capture_stacks(&timeout, &debugger).unwrap();
         assert!(output.contains("MODE=600\n"), "{output}");
     }
 
@@ -401,6 +428,9 @@ mod tests {
     #[test]
     fn debugger_output_producer_cannot_exceed_four_mib() {
         use std::os::unix::fs::PermissionsExt;
+        let Some(timeout) = fixture_timeout(&["timeout", "stat", "dd"]) else {
+            return;
+        };
         let directory = tempfile::tempdir().unwrap();
         let debugger = directory.path().join("eu-stack");
         std::fs::write(
@@ -409,7 +439,7 @@ mod tests {
         )
         .unwrap();
         std::fs::set_permissions(&debugger, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let output = capture_stacks(&find_on_path("timeout").unwrap(), &debugger).unwrap();
+        let output = capture_stacks(&timeout, &debugger).unwrap();
         assert!(output.contains("#0 tick"));
         let produced: u64 = std::fs::read_to_string(debugger.with_extension("size"))
             .unwrap()
@@ -454,5 +484,55 @@ mod tests {
             ])
             .env(CHILD, std::process::id().to_string());
         assert!(authorized_status(command).unwrap().success());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn optional_debugger_fixtures_skip_without_compatible_utilities() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let tests = [
+            "server::watchdog::debugger::tests::temporary_stack_dump_is_owner_only_with_permissive_umask",
+            "server::watchdog::debugger::tests::debugger_output_producer_cannot_exceed_four_mib",
+        ];
+        let mut outputs = Vec::new();
+        for incompatible in [false, true] {
+            if incompatible {
+                for name in ["timeout", "stat", "dd"] {
+                    let path = directory.path().join(name);
+                    std::fs::write(
+                        &path,
+                        "#!/bin/sh\nprintf 'BusyBox incompatible fixture\\n'\n",
+                    )
+                    .unwrap();
+                    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+                }
+            }
+            for test in tests {
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([test, "--exact", "--nocapture", "--test-threads=1"])
+                    .env("PATH", directory.path())
+                    .output()
+                    .unwrap();
+                outputs.push((incompatible, test, output));
+            }
+        }
+        for (incompatible, test, output) in outputs {
+            assert!(
+                output.status.success(),
+                "Optional fixture failed on restricted PATH (incompatible={incompatible}, {test}): {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                combined.contains("SKIPPED optional watchdog fixture"),
+                "The fixture silently omitted its prerequisite disposition: {combined}"
+            );
+        }
     }
 }

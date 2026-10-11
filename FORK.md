@@ -18,6 +18,8 @@ Upstream is merged in regularly. When upstream fixes something this fork also fi
 
 ## Tick stall watchdog
 
+Watchdog report directories are created or secured to Unix mode0700; symlink directories are refused. Final reports retain mode0600. This complements the bounded `ServerWatchdog.createWatchdogCrashReport` phase diagnostics. Optional GNU debugger fixtures explicitly skip absent or incompatible utilities; isolated restricted-PATH regressions verify that disposition. In-game verification **Not yet**.
+
 Vanilla 26.3's `ServerWatchdog` now has a dedicated thread that reports a stalled
 tick and exits without saving. `max_tick_time` in `pumpkin.toml` defaults to
 60000 milliseconds; non-positive values disable it. Every executing tick is

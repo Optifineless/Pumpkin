@@ -90,7 +90,7 @@ impl PreparedReport {
         &mut self,
         write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
     ) -> std::io::Result<()> {
-        std::fs::create_dir_all(&self.directory)?;
+        self.prepare_directory()?;
         let mut options = std::fs::OpenOptions::new();
         options.create(true).append(true);
         #[cfg(unix)]
@@ -106,6 +106,27 @@ impl PreparedReport {
         )?;
         self.saved_len = self.buffer.as_str().len();
         Ok(())
+    }
+
+    #[cfg(unix)]
+    fn prepare_directory(&self) -> std::io::Result<()> {
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&self.directory)?;
+        // Protect directory entries as well as file contents. Refuse a symlink
+        // and change permissions on the opened directory, including old installs.
+        let directory = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(&self.directory)?;
+        directory.set_permissions(std::fs::Permissions::from_mode(0o700))
+    }
+
+    #[cfg(not(unix))]
+    fn prepare_directory(&self) -> std::io::Result<()> {
+        std::fs::create_dir_all(&self.directory)
     }
 
     pub(super) fn enrich(&mut self) {
