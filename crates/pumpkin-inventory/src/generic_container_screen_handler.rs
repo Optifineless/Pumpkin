@@ -118,11 +118,15 @@ pub fn create_hopper(
     )
 }
 
+type ContainerValidityCheck = Box<dyn Fn() -> bool + Send + Sync>;
+
 /// Generic container screen handler.
 ///
 /// Handles simple grid-based containers without special behaviors.
 /// The container grid is followed by the player's inventory (27 slots + 9 hotbar).
 pub struct GenericContainerScreenHandler {
+    /// Optional live container validity check, owned by this menu's opener.
+    pub validity_check: Option<ContainerValidityCheck>,
     /// The container's inventory.
     pub inventory: Arc<dyn Inventory>,
     /// Number of rows in the container grid.
@@ -157,6 +161,7 @@ impl GenericContainerScreenHandler {
     ) -> Self {
         let mut handler = Self {
             inventory,
+            validity_check: None,
             rows,
             columns,
             is_spectator,
@@ -188,6 +193,10 @@ impl GenericContainerScreenHandler {
 }
 
 impl ScreenHandler for GenericContainerScreenHandler {
+    fn can_use(&self, _player: &dyn InventoryPlayer) -> bool {
+        self.validity_check.as_ref().is_none_or(|check| check())
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

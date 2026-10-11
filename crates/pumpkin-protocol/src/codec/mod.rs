@@ -23,3 +23,5 @@ pub use u24_type::u24;
 
 #[cfg(test)]
 mod item_decode_tests;
+
+mod item_cost_component_ids;

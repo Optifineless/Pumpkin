@@ -1,6 +1,7 @@
 pub mod armor_stand;
 pub mod arrow;
 pub mod axe;
+mod block_transformer;
 pub mod boat;
 pub mod bone_meal;
 pub mod bow;

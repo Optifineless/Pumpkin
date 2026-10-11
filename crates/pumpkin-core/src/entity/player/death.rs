@@ -17,11 +17,13 @@ impl Player {
             self.world().level_info.load().game_rules.keep_inventory,
         );
         let world = self.world();
-        let pos = self.position().to_block_pos();
+        // LivingEntity.createItemStackToDrop uses eye Y minus the Java float 0.3F.
+        let mut pos = self.eye_position();
+        pos.y -= f64::from(0.3f32);
         // Inventory.dropAll / Player.dropEquipment: finish delivering stacks already taken.
         // A spawn callback may replace this life, but must not delete the remaining old items.
         for stack in drops {
-            world.drop_stack(&pos, stack);
+            super::inventory_drop::spawn_death_inventory_stack(&world, pos, stack);
         }
     }
 

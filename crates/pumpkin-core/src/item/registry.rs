@@ -145,6 +145,31 @@ impl ItemRegistry {
         block: &Block,
         server: &Server,
     ) -> BlockActionResult {
+        self.use_on_block_with_hand(
+            stack,
+            player,
+            location,
+            face,
+            cursor_pos,
+            block,
+            server,
+            Hand::Right,
+        )
+    }
+
+    /// Dispatches block use with the actual hand, retaining the legacy main-hand entry point.
+    #[expect(clippy::too_many_arguments)]
+    pub fn use_on_block_with_hand(
+        &self,
+        stack: &mut ItemStack,
+        player: &Player,
+        location: BlockPos,
+        face: BlockDirection,
+        cursor_pos: Vector3<f32>,
+        block: &Block,
+        server: &Server,
+        hand: Hand,
+    ) -> BlockActionResult {
         let cooldown = stack.get_use_cooldown().cloned();
         let cooldown_group = cooldown
             .as_ref()
@@ -157,7 +182,9 @@ impl ItemRegistry {
 
         let pumpkin_item = self.get_pumpkin_item(stack.item.id);
         let result = pumpkin_item.map_or(BlockActionResult::Pass, |pumpkin_item| {
-            pumpkin_item.use_on_block(stack, player, location, face, cursor_pos, block, server)
+            pumpkin_item.use_on_block_with_hand(
+                stack, player, location, face, cursor_pos, block, server, hand,
+            )
         });
 
         // Block items are placed by the caller after Pass, so retain their cooldown.

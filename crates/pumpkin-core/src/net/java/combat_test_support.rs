@@ -5,7 +5,7 @@ use crate::world::World;
 
 pub struct TestPlayer {
     pub player: Arc<Player>,
-    packets: UnboundedReceiver<OutgoingPacket>,
+    pub(crate) packets: UnboundedReceiver<OutgoingPacket>,
 }
 
 impl TestPlayer {

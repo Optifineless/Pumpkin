@@ -151,25 +151,34 @@ fn serialize_length_prefixed_item_stack_with_id(
 fn serialize_item_cost_with_id(
     stack: &ItemStack,
     item_id: u16,
-    _version: JavaMinecraftVersion,
+    version: JavaMinecraftVersion,
     write: &mut impl NetworkWriteExt,
 ) -> Result<(), WritingError> {
-    let component_count = stack
+    // ItemCost.STREAM_CODEC -> TypedDataComponent: an older client can only receive
+    // predicates present in its component registry; omit unsupported types for compatibility.
+    let components: Vec<_> = stack
         .patch
         .iter()
-        .filter(|(_, data)| data.is_some())
-        .count();
-    let component_count = i32::try_from(component_count)
+        .filter_map(|(id, data)| {
+            let data = data.as_ref()?;
+            match super::item_cost_component_ids::to_id(*id, version) {
+                Ok(wire_id) => Some((*id, data, wire_id)),
+                Err(error) => {
+                    tracing::warn!(component = id.to_name(), %error, "Skipping unsupported item cost component");
+                    None
+                }
+            }
+        })
+        .collect();
+    let component_count = i32::try_from(components.len())
         .map_err(|_| WritingError::Message("Too many item cost components".into()))?;
 
     write.put_var_int(&VarInt::from(item_id))?;
     write.put_var_int(&VarInt::from(stack.item_count))?;
     write.put_var_int(&VarInt(component_count))?;
-    for (id, data) in &stack.patch {
-        if let Some(data) = data {
-            write.put_var_int(&VarInt(i32::from(id.to_id())))?;
-            serialize(*id, data.as_ref(), write)?;
-        }
+    for (id, data, wire_id) in components {
+        write.put_var_int(&VarInt(i32::from(wire_id)))?;
+        serialize(id, data.as_ref(), write)?;
     }
     Ok(())
 }
@@ -293,6 +302,52 @@ fn read_length_prefixed_component(
 }
 
 impl ItemStackSerializer<'_> {
+    /// Decodes `ItemCost.STREAM_CODEC`, including its typed component predicate.
+    pub fn read_item_cost(
+        read: &mut impl NetworkReadExt,
+        version: &JavaMinecraftVersion,
+    ) -> Result<ItemStackSerializer<'static>, ReadingError> {
+        let _scope = crate::ser::decode_budget::DecodeScope::packet();
+        let item_id: u16 = read
+            .get_var_int()?
+            .0
+            .try_into()
+            .map_err(|_| ReadingError::Message("Invalid item cost id".into()))?;
+        let count: u8 = read
+            .get_var_int()?
+            .0
+            .try_into()
+            .map_err(|_| ReadingError::Message("Invalid item cost count".into()))?;
+        let component_count = read.get_var_int()?.0;
+        if !(0..=MAX_COMPONENTS).contains(&component_count) {
+            return Err(ReadingError::Message(
+                "Invalid item cost component count".into(),
+            ));
+        }
+        // DataComponentExactPredicate.STREAM_CODEC retains a typed list, including repeated types.
+        let mut patch = Vec::with_capacity(crate::ser::collection_capacity(component_count)?);
+        for _ in 0..component_count {
+            let wire_id: u8 = read
+                .get_var_int()?
+                .0
+                .try_into()
+                .map_err(|_| ReadingError::Message("Invalid item cost component ID".into()))?;
+            let id = super::item_cost_component_ids::from_id(wire_id, *version)
+                .map_err(ReadingError::Message)?;
+            let value = if id == DataComponent::CustomData {
+                CustomDataImpl::deserialize(read)?.to_dyn()
+            } else {
+                deserialize(id, read)?
+            };
+            patch.push((id, Some(value)));
+        }
+        let item = Item::from_id(item_id)
+            .ok_or_else(|| ReadingError::Message("Unknown item cost registry id".into()))?;
+        Ok(ItemStackSerializer(Cow::Owned(
+            ItemStack::new_with_component(count, item, patch),
+        )))
+    }
+
     pub fn read(
         read: &mut impl NetworkReadExt,
     ) -> Result<ItemStackSerializer<'static>, ReadingError> {

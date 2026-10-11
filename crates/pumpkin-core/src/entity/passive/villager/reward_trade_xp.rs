@@ -69,7 +69,7 @@ mod tests {
         let villager = VillagerEntity::new(Entity::new(world.clone(), pos, &EntityType::VILLAGER));
         villager.generate_trades(VillagerProfession::Farmer, 1);
         villager.offers.lock().unwrap()[0].xp = 0;
-        villager.complete_trade(0, &world, Uuid::nil());
+        let _ = villager.complete_trade(0, &world, Uuid::nil());
         let entities = world.entities.load_full();
         assert_eq!(entities.len(), 1);
         let orb = entities[0]
@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(orb.get_entity().pos.load(), pos.add_raw(0.0, 0.5, 0.0));
         world.entities.store(Arc::new(Vec::new()));
         villager.offers.lock().unwrap()[0].xp = 10;
-        villager.complete_trade(0, &world, Uuid::nil());
+        let _ = villager.complete_trade(0, &world, Uuid::nil());
         let entities = world.entities.load_full();
         assert_eq!(entities.len(), 1);
         let orb = entities[0]

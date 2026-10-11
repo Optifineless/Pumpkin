@@ -19,6 +19,10 @@ use crate::{
     slot::{NormalSlot, Slot},
 };
 
+type TradeCallback = Box<
+    dyn Fn(usize) -> Option<Vec<pumpkin_protocol::java::client::play::MerchantOffer>> + Send + Sync,
+>;
+
 type MerchantValidityCheck = Box<dyn Fn(&dyn InventoryPlayer) -> bool + Send + Sync>;
 
 pub struct MerchantScreenHandler {
@@ -27,7 +31,8 @@ pub struct MerchantScreenHandler {
     selected_offer: usize,
     active_offer: Option<usize>,
     pub offers: Vec<pumpkin_protocol::java::client::play::MerchantOffer>,
-    pub on_trade: Option<Box<dyn Fn(usize) + Send + Sync>>,
+    /// Notifies the merchant and replaces this menu's offers when a live snapshot is returned.
+    pub on_trade: Option<TradeCallback>,
     pub on_trade_updated: Option<Box<dyn Fn(bool) + Send + Sync>>,
     pub on_close: Option<Box<dyn Fn() + Send + Sync>>,
     pub validity_check: Option<MerchantValidityCheck>,
@@ -120,9 +125,35 @@ impl MerchantScreenHandler {
         cost
     }
 
+    // ItemCost.test / DataComponentExactPredicate.test only require predicate components.
+    fn cost_predicate_matches(cost: &ItemStack, input: &ItemStack) -> bool {
+        cost.item == input.item
+            && cost.patch.iter().all(|(id, expected)| {
+                let Some(expected) = expected else {
+                    return true;
+                };
+                let actual = input
+                    .patch
+                    .iter()
+                    .find(|(actual_id, _)| actual_id == id)
+                    .map_or_else(
+                        || {
+                            input
+                                .item
+                                .components
+                                .iter()
+                                .find(|(actual_id, _)| actual_id == id)
+                                .map(|(_, value)| *value)
+                        },
+                        |(_, value)| value.as_deref(),
+                    );
+                actual.is_some_and(|value| expected.equal(value))
+            })
+    }
+
     fn matches_cost(cost: &ItemStack, input: &ItemStack) -> bool {
         !input.is_empty()
-            && cost.are_items_and_components_equal(input)
+            && Self::cost_predicate_matches(cost, input)
             && input.item_count >= cost.item_count
     }
 
@@ -208,7 +239,11 @@ impl MerchantScreenHandler {
         self.offers[offer_index].uses += 1;
 
         if let Some(on_trade) = &self.on_trade {
-            on_trade(offer_index);
+            // MerchantMenu.getOffers reads live offers, including newly unlocked trades.
+            if let Some(offers) = on_trade(offer_index) {
+                self.offers = offers;
+                self.active_offer = None;
+            }
         }
         player.increment_stat(
             StatisticCategory::Custom,
@@ -265,7 +300,7 @@ impl MerchantScreenHandler {
             let mut source = slot.get_stack();
             if source.is_empty()
                 || source.item.id != cost.item.id
-                || !cost.are_items_and_components_equal(&source)
+                || !Self::cost_predicate_matches(cost, &source)
                 || (!payment.is_empty()
                     && (!source.are_items_and_components_equal(&payment)
                         || !payment.are_items_and_components_equal(&source)))
@@ -635,6 +670,53 @@ mod tests {
     }
 
     #[test]
+    fn fletcher_selection_autofills_both_costs_and_consumes_adjusted_payment() {
+        let (player_inventory, merchant_inventory) = inventories();
+        player_inventory.set_stack(9, ItemStack::new(40, &Item::STICK));
+        player_inventory.set_stack(10, ItemStack::new(20, &Item::GRAVEL));
+        player_inventory.set_stack(0, ItemStack::new(3, &Item::EMERALD));
+        let mut sticks = single_cost_offer(&Item::STICK, 32, &Item::EMERALD, 16);
+        sticks.demand = 2;
+        sticks.special_price = -1;
+        let mut gravel = single_cost_offer(&Item::GRAVEL, 10, &Item::FLINT, 12);
+        gravel.output = ItemStack::new(10, &Item::FLINT).into();
+        gravel.xp = 1;
+        gravel.cost_b = Some(ItemStackSerializer(Cow::Owned(ItemStack::new(
+            1,
+            &Item::EMERALD,
+        ))));
+        let player = TestPlayer::new(player_inventory.clone());
+        let mut handler = MerchantScreenHandler::new(
+            1,
+            &player_inventory,
+            merchant_inventory.clone(),
+            vec![sticks, gravel],
+        );
+        handler.set_selected_offer(0);
+        assert!(player_inventory.get_stack(9).is_empty());
+        assert_eq!(merchant_inventory.get_stack(0).item_count, 40);
+        assert_eq!(merchant_inventory.get_stack(2).item, &Item::EMERALD);
+        handler.on_slot_click(2, 0, SlotActionType::Pickup, &player);
+        assert_eq!(merchant_inventory.get_stack(0).item_count, 6);
+        assert_eq!(handler.offers[0].uses, 1);
+        handler.set_selected_offer(1);
+        assert_eq!(merchant_inventory.get_stack(0).item, &Item::GRAVEL);
+        assert_eq!(merchant_inventory.get_stack(0).item_count, 20);
+        assert_eq!(merchant_inventory.get_stack(1).item_count, 3);
+        assert_eq!(merchant_inventory.get_stack(2).item, &Item::FLINT);
+        handler.on_slot_click(2, 0, SlotActionType::QuickMove, &player);
+        assert!(merchant_inventory.get_stack(0).is_empty());
+        assert_eq!(merchant_inventory.get_stack(1).item_count, 1);
+        assert_eq!(handler.offers[1].uses, 2);
+        let flint: u32 = (0..player_inventory.size())
+            .map(|slot| player_inventory.get_stack(slot))
+            .filter(|stack| stack.item == &Item::FLINT)
+            .map(|stack| u32::from(stack.item_count))
+            .sum();
+        assert_eq!(flint, 20);
+    }
+
+    #[test]
     fn numeric_hotbar_key_swaps_occupied_stacks() {
         let (player_inventory, merchant_inventory) = inventories();
         player_inventory.set_stack(0, ItemStack::new(1, &Item::WOODEN_PICKAXE));
@@ -679,6 +761,35 @@ mod tests {
     }
 
     #[test]
+    fn regression_refreshed_offers_require_a_new_active_selection() {
+        let (player_inventory, merchant_inventory) = inventories();
+        merchant_inventory.set_stack(0, ItemStack::new(36, &Item::EMERALD));
+        let player = TestPlayer::new(player_inventory.clone());
+        let mut handler = MerchantScreenHandler::new(
+            1,
+            &player_inventory,
+            merchant_inventory.clone(),
+            vec![bookshelf_offer()],
+        );
+        handler.on_trade = Some(Box::new(|_| {
+            Some(vec![
+                single_cost_offer(&Item::EMERALD, 9, &Item::APPLE, 12),
+                bookshelf_offer(),
+            ])
+        }));
+        handler.update_result_slot();
+
+        assert!(handler.complete_trade(&player));
+        assert!(!handler.complete_trade(&player));
+        assert_eq!(merchant_inventory.get_stack(0).item_count, 27);
+        assert_eq!(player.traded.load(Ordering::Relaxed), 1);
+
+        handler.update_result_slot();
+        assert_eq!(merchant_inventory.get_stack(2).item, &Item::APPLE);
+        assert!(handler.complete_trade(&player));
+    }
+
+    #[test]
     fn taking_result_commits_payment_after_delivery() {
         let (player_inventory, merchant_inventory) = inventories();
         merchant_inventory.set_stack(0, ItemStack::new(12, &Item::EMERALD));
@@ -694,6 +805,7 @@ mod tests {
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
+                None
             }
         }));
         handler.update_result_slot();
@@ -733,6 +845,7 @@ mod tests {
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
+                None
             }
         }));
         handler.update_result_slot();
@@ -765,6 +878,7 @@ mod tests {
             let traded_offer = traded_offer.clone();
             move |offer_index| {
                 traded_offer.store(offer_index, Ordering::Relaxed);
+                None
             }
         }));
         handler.update_result_slot();
@@ -803,6 +917,7 @@ mod tests {
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
+                None
             }
         }));
 
@@ -894,5 +1009,44 @@ mod tests {
         assert_eq!(handler.offers[0].uses, 1);
         assert!(merchant_inventory.get_stack(0).is_empty());
         assert!(merchant_inventory.get_stack(1).is_empty());
+    }
+    #[test]
+    fn renamed_sticks_autofill_and_complete_a_fletcher_trade() {
+        use pumpkin_data::data_component_impl::CustomNameImpl;
+        let (player_inventory, merchant_inventory) = inventories();
+        let mut sticks = ItemStack::new(40, &Item::STICK);
+        sticks.set_data_component(CustomNameImpl {
+            name: pumpkin_util::text::TextComponent::text("Kindling"),
+        });
+        player_inventory.set_stack(9, sticks.clone());
+        let player = TestPlayer::new(player_inventory.clone());
+        let offer = single_cost_offer(&Item::STICK, 32, &Item::EMERALD, 16);
+        let mut handler = MerchantScreenHandler::new(
+            1,
+            &player_inventory,
+            merchant_inventory.clone(),
+            vec![offer],
+        );
+        handler.set_selected_offer(0);
+        assert_eq!(merchant_inventory.get_stack(0).item_count, 40);
+        assert_eq!(merchant_inventory.get_stack(2).item, &Item::EMERALD);
+        handler.on_slot_click(2, 0, SlotActionType::Pickup, &player);
+        assert_eq!(merchant_inventory.get_stack(0).item_count, 8);
+        assert_eq!(handler.offers[0].uses, 1);
+        assert!(
+            merchant_inventory
+                .get_stack(0)
+                .get_data_component::<CustomNameImpl>()
+                .is_some()
+        );
+        // Predicate values remain mandatory even when the input has additional components.
+        let mut named_cost = ItemStack::new(32, &Item::STICK);
+        named_cost.set_data_component(CustomNameImpl {
+            name: pumpkin_util::text::TextComponent::text("Other"),
+        });
+        assert!(!MerchantScreenHandler::cost_predicate_matches(
+            &named_cost,
+            &sticks
+        ));
     }
 }

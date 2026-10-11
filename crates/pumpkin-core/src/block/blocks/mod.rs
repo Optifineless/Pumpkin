@@ -8,6 +8,7 @@ pub mod nether_portal;
 // Storage & containers
 pub mod barrel;
 pub mod chests;
+pub(crate) mod copper_chest;
 pub mod ender_chest;
 pub mod hopper;
 pub mod shulker_box;

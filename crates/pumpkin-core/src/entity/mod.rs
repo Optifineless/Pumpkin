@@ -5,6 +5,7 @@ pub(crate) mod death_test_world;
 #[cfg(test)]
 mod harvest_tests;
 pub mod kill_credit;
+mod removal;
 use crate::{
     entity::item::ItemEntity,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
@@ -872,6 +873,9 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         name
     }
 
+    /// Handles side effects of an owned removal transition, before world publication ends.
+    fn on_removed(&self, _reason: RemovalReason) {}
+
     /// Kills the Entity.
     fn kill(&self, caller: &dyn EntityBase) {
         if self.get_living_entity().is_some() {
@@ -1013,6 +1017,7 @@ pub struct Entity {
     /// True if the entity was in powder snow during the previous tick.
     pub was_in_powder_snow: AtomicBool,
     pub removal_reason: AtomicCell<Option<RemovalReason>>,
+    pub(crate) removal_hook: std::sync::OnceLock<std::sync::Weak<dyn EntityBase>>,
     // The passengers that entity has
     pub passengers: std::sync::Mutex<Vec<Arc<dyn EntityBase>>>,
     /// The vehicle that entity is in
@@ -1171,6 +1176,7 @@ impl Entity {
             is_in_powder_snow: AtomicBool::new(false),
             was_in_powder_snow: AtomicBool::new(false),
             removal_reason: AtomicCell::new(None),
+            removal_hook: std::sync::OnceLock::new(),
             passengers: std::sync::Mutex::new(Vec::new()),
             vehicle: std::sync::Mutex::new(None),
             leashed_to: std::sync::Mutex::new(None),
@@ -2230,6 +2236,9 @@ impl Entity {
     }
 
     fn tick_portal(&self, caller: &dyn EntityBase) {
+        if self.defer_boat_portal() {
+            return;
+        }
         if self.portal_cooldown.load(Ordering::Relaxed) > 0 {
             self.portal_cooldown.fetch_sub(1, Ordering::Relaxed);
         }
@@ -2328,6 +2337,9 @@ impl Entity {
     }
 
     pub fn try_use_portal(&self, portal_world: Arc<World>, pos: BlockPos) {
+        if self.defer_boat_portal() {
+            return;
+        }
         let mut portal_event =
             crate::plugin::api::events::entity::entity_portal::EntityPortalEvent::new(
                 self.entity_id,
@@ -2555,9 +2567,9 @@ impl Entity {
         self.pitch.store(pitch.clamp(-90.0, 90.0) % 360.0);
     }
 
-    /// Removes the `Entity` from their current `World`
-    pub fn remove(&self) {
-        self.world.load().remove_entity(self);
+    /// Removes the entity from its world, returning whether this call owned removal.
+    pub fn remove(&self) -> bool {
+        self.world.load().remove_entity(self)
     }
 
     /// Vanilla `ClientboundAddEntityPacket(entity, serverEntity)`: tracker, not live.
@@ -3489,7 +3501,7 @@ impl Entity {
             Self::new(world.clone(), self.pos.load(), &EntityType::ITEM),
             stack,
         );
-        world.spawn_entity(Arc::new(item_entity));
+        world.spawn_item_with_event(item_entity);
     }
 
     pub fn has_passengers(&self) -> bool {

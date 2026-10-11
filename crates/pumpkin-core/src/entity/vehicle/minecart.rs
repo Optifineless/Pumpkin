@@ -1,5 +1,5 @@
 mod chest;
-mod container;
+pub(crate) mod container;
 mod furnace;
 mod hopper;
 mod rideable;

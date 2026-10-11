@@ -112,6 +112,7 @@ impl World {
         let accepted = AtomicBool::new(false);
         let rejected_index = AtomicUsize::new(0);
         for member in members {
+            member.get_entity().register_removal_hook(member);
             member.init_data_tracker();
         }
         self.entities.rcu(|current| {

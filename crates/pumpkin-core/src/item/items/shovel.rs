@@ -9,9 +9,9 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, tag};
-use pumpkin_util::GameMode;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::{GameMode, Hand};
 use pumpkin_world::world::BlockFlags;
 
 pub struct ShovelItem;
@@ -29,22 +29,45 @@ impl ItemBehaviour for ShovelItem {
         player: &Player,
         location: BlockPos,
         face: BlockDirection,
+        cursor_pos: Vector3<f32>,
+        block: &Block,
+        server: &Server,
+    ) -> BlockActionResult {
+        self.use_on_block_with_hand(
+            item,
+            player,
+            location,
+            face,
+            cursor_pos,
+            block,
+            server,
+            Hand::Right,
+        )
+    }
+
+    fn use_on_block_with_hand(
+        &self,
+        item: &mut ItemStack,
+        player: &Player,
+        location: BlockPos,
+        face: BlockDirection,
         _cursor_pos: Vector3<f32>,
         block: &Block,
         _server: &Server,
+        hand: Hand,
     ) -> BlockActionResult {
         let world = player.world();
-        let get_block = |dx: i8, dy: i8, dz: i8| {
-            let check_pos = BlockPos(location.0 + Vector3::new(dx as i32, dy as i32, dz as i32));
-            world.get_block(&check_pos)
+        let result = match super::block_transformer::prepare_transform(
+            &SHOVEL, player, location, face, block, hand,
+        ) {
+            Ok(result) => result,
+            Err(action) => return action,
         };
 
         let mut changed = false;
         let mut damage = 1;
 
-        if let Some(result) =
-            SHOVEL.transform(block, world.get_block_state_id(&location), face, &get_block)
-        {
+        if let Some(result) = result {
             if let Some(sound) = result.entry.sound {
                 world.play_sound(sound, SoundCategory::Blocks, &location.to_f64());
             }
