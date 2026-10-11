@@ -3774,10 +3774,7 @@ impl World {
                 .await;
         }
 
-        self.worldborder
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .init_client(client);
+        self.send_border_info(player);
 
         // Sends initial time
         player.send_time(self);
@@ -3920,14 +3917,7 @@ impl World {
     }
 
     pub fn send_world_info(&self, player: &Arc<Player>) {
-        if let ClientPlatform::Java(client) = player.client.as_ref() {
-            let border = self
-                .worldborder
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-            border.init_client(client);
-        }
+        self.send_border_info(player);
 
         // TODO: World spawn (compass stuff)
 

@@ -1,4 +1,4 @@
-//! Explicit synchronous effect batches for menu and scoreboard mutations.
+//! Synchronous effect batches and ordered notifications for state owners.
 //!
 //! Start a batch BEFORE acquiring its owner guard; it must end AFTER all guards
 //! are released, nested batches must drop in reverse creation order, and no batch
@@ -28,6 +28,171 @@ impl GuardEffects {
     pub fn new() -> Self {
         BATCHES.with_borrow_mut(|batches| batches.push(Vec::new()));
         Self(PhantomData)
+    }
+
+    fn take(self) -> Vec<Effect> {
+        let effects = BATCHES.with_borrow_mut(|batches| batches.pop().unwrap_or_default());
+        std::mem::forget(self);
+        effects
+    }
+}
+
+/// A state owner's notification queue, enqueued while that owner's guard is held.
+#[derive(Debug, Default)]
+pub(crate) struct OwnerEffects(Arc<OrderedEffects>);
+
+impl Clone for OwnerEffects {
+    fn clone(&self) -> Self {
+        // A cloned scoreboard/border is independent state, not another notification owner.
+        Self::default()
+    }
+}
+
+impl OwnerEffects {
+    /// Captures notifications under the owner guard in mutation order.
+    /// Start a `GuardEffects` batch before taking that guard; never cross await.
+    pub(crate) fn capture(&self, operation: impl FnOnce()) {
+        self.0.capture(operation);
+    }
+}
+
+#[derive(Default)]
+struct OrderedEffects(std::sync::Mutex<Delivery>);
+
+#[derive(Default)]
+struct Delivery {
+    effects: std::collections::VecDeque<PendingEffects>,
+    draining: bool,
+}
+
+struct PendingEffects {
+    ready: Arc<std::sync::atomic::AtomicBool>,
+    effects: Vec<Effect>,
+}
+
+impl std::fmt::Debug for OrderedEffects {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrderedEffects").finish_non_exhaustive()
+    }
+}
+
+impl OrderedEffects {
+    /// Captures reviewed sends in mutation order and schedules delivery after unlocking.
+    /// The caller must start a `GuardEffects` batch before acquiring the owner guard.
+    pub(crate) fn capture(self: &Arc<Self>, operation: impl FnOnce()) {
+        let batch = GuardEffects::new();
+        operation();
+        let effects = batch.take();
+        if effects.is_empty() {
+            return;
+        }
+        let ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .effects
+            .push_back(PendingEffects {
+                ready: ready.clone(),
+                effects,
+            });
+        let request = DispatchRequest {
+            owner: self.clone(),
+            ready,
+        };
+        let effect = move || request.run();
+        if let Err(effect) = defer(effect) {
+            effect();
+        }
+    }
+
+    fn drain(&self) {
+        assert_no_guards_held("OrderedEffects::dispatch");
+        {
+            let mut delivery = self
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if delivery.draining {
+                return;
+            }
+            delivery.draining = true;
+        };
+        let _reset = DrainReset(self);
+        loop {
+            let effect = {
+                let mut delivery = self
+                    .0
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let effect =
+                    if delivery.effects.front().is_some_and(|pending| {
+                        pending.ready.load(std::sync::atomic::Ordering::Acquire)
+                    }) {
+                        delivery.effects.pop_front()
+                    } else {
+                        None
+                    };
+                if effect.is_none() {
+                    delivery.draining = false;
+                    return;
+                }
+                effect
+            };
+            if let Some(pending) = effect {
+                for effect in pending.effects {
+                    effect();
+                }
+            }
+        }
+    }
+}
+
+struct DispatchRequest {
+    owner: Arc<OrderedEffects>,
+    ready: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl DispatchRequest {
+    fn run(self) {
+        // Only the outer batch can mark this mutation ready, after its guards unlock.
+        self.ready.store(true, std::sync::atomic::Ordering::Release);
+        self.owner.drain();
+    }
+}
+
+impl Drop for DispatchRequest {
+    fn drop(&mut self) {
+        if self.ready.load(std::sync::atomic::Ordering::Acquire) {
+            return;
+        }
+        // An unwinding batch discards its effects; do not retain an unready queue head.
+        let pending = {
+            let mut delivery = self
+                .owner
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let index = delivery
+                .effects
+                .iter()
+                .position(|pending| Arc::ptr_eq(&pending.ready, &self.ready));
+            index.and_then(|index| delivery.effects.remove(index))
+        };
+        drop(pending);
+    }
+}
+
+struct DrainReset<'a>(&'a OrderedEffects);
+
+impl Drop for DrainReset<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .draining = false;
+        }
     }
 }
 

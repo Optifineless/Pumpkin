@@ -1526,7 +1526,7 @@ impl ScreenHandlerFactory for VillagerEntity {
             })
         }));
         let update_weak = self_weak.clone();
-        handler.on_trade_updated = Some(Box::new(move |has_result| {
+        handler.on_trade_updated = Some(Arc::new(move |has_result| {
             let Some(villager) = update_weak.upgrade() else {
                 return;
             };
@@ -1543,7 +1543,7 @@ impl ScreenHandlerFactory for VillagerEntity {
             }
         }));
         let close_weak = self_weak.clone();
-        handler.on_close = Some(Box::new(move || {
+        handler.on_close = Some(Arc::new(move || {
             if let Some(villager) = close_weak.upgrade() {
                 villager.is_trading.store(false, Ordering::Relaxed);
                 *villager
@@ -1554,7 +1554,7 @@ impl ScreenHandlerFactory for VillagerEntity {
             }
         }));
 
-        handler.on_trade = Some(Box::new(move |offer_index| {
+        handler.on_trade = Some(Arc::new(move |offer_index| {
             if let Some(villager) = self_weak.upgrade() {
                 villager.complete_trade(offer_index, &world, player_uuid);
             }

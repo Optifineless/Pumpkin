@@ -53,6 +53,8 @@ impl JavaClient {
                     respawn_after_death(&player_c, is_hardcore).await;
 
                     {
+                        // PlayerList.respawn initializes inventoryMenu before sending its state.
+                        let _effects = crate::world::guard_effects::GuardEffects::new();
                         let screen_handler = player_c
                             .current_screen_handler
                             .lock()

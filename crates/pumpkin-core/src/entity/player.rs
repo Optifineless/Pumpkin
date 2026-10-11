@@ -7011,6 +7011,10 @@ impl MessageCache {
 }
 
 impl InventoryPlayer for Player {
+    fn run_menu_callback(&self, callback: Box<dyn FnOnce() + Send>) {
+        Self::dispatch_menu_callback(callback);
+    }
+
     fn play_bundle_sound(&self, sound: Sound) {
         if self.defer_menu_effect(move |player| InventoryPlayer::play_bundle_sound(player, sound)) {
             return;

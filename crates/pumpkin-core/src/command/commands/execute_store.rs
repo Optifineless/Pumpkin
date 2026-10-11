@@ -51,7 +51,6 @@ const fn stored_value(result: ReturnValue, store_result: bool) -> i32 {
 }
 
 fn store_score(context: &CommandContext, store_result: bool) -> RedirectModifierResult {
-    let _guard_effects = crate::world::guard_effects::GuardEffects::new();
     let holders = ScoreHolderArgumentType::get_score_holders(context, "store_holders")?;
     let objective = ObjectiveArgumentType::get(context, "store_objective")?.to_string();
     let world = context.world().clone();
@@ -64,6 +63,7 @@ fn store_score(context: &CommandContext, store_result: bool) -> RedirectModifier
     };
     // ExecuteCommand.storeValue chains callbacks, including failure (which stores zero).
     Ok(with_callback(context, move |result| {
+        let _effects = crate::world::guard_effects::GuardEffects::new();
         let mut scoreboard = world
             .scoreboard
             .lock()
@@ -292,7 +292,6 @@ mod tests {
     #[tokio::test]
     async fn store_callbacks_write_command_results_and_failures()
     -> Result<(), Box<dyn std::error::Error>> {
-        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let directory = tempfile::tempdir()?;
         // Existing service fixtures construct a world without listeners, ticks or startup tasks.
         let server = crate::server::combat_test_support::server(directory.path());

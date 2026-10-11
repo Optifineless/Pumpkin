@@ -203,6 +203,7 @@ impl AdvancementProgressMap {
 ///
 /// This handles saving, loading, and tracking the state of granted / revoked advancements.
 pub struct PlayerAdvancement {
+    effects: crate::world::guard_effects::OwnerEffects,
     pub progress: AdvancementProgressMap,
     pub is_first_packet: bool,
     pub roots_to_update: HashSet<&'static AdvancementNode>,
@@ -254,6 +255,7 @@ impl PlayerAdvancement {
     #[must_use]
     pub fn new(manager: Arc<AdvancementManager>, uuid: Uuid) -> Self {
         Self {
+            effects: crate::world::guard_effects::OwnerEffects::default(),
             progress: AdvancementProgressMap::default(),
             path: manager.advancement_path.join(format!("{uuid}.json")),
             manager,
@@ -564,40 +566,43 @@ impl Serialize for PlayerAdvancement {
 }
 
 impl Player {
-    /// Captures advancement changes and sends them after releasing their owner guard.
+    /// Captures advancement changes in owner order before delivering them unlocked.
     pub fn flush_advancements(&self, show: bool) {
-        let packet = self
+        let _effects = crate::world::guard_effects::GuardEffects::new();
+        let mut state = self
             .advancements
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .flush_dirty(show);
-        if let Some(packet) = packet {
-            self.try_send_client_packet(&packet);
-        }
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.queue_advancement_flush(&mut state, show);
     }
 
     pub(super) fn try_flush_advancements(&self, show: bool) {
-        let packet = self
-            .advancements
-            .try_lock()
-            .ok()
-            .and_then(|mut state| state.flush_dirty(show));
-        if let Some(packet) = packet {
-            self.try_send_client_packet(&packet);
+        let _effects = crate::world::guard_effects::GuardEffects::new();
+        if let Ok(mut state) = self.advancements.try_lock() {
+            self.queue_advancement_flush(&mut state, show);
         }
     }
-}
 
-impl Player {
-    /// Changes the advancement tab and sends its notification after releasing the state guard.
+    fn queue_advancement_flush(&self, state: &mut PlayerAdvancement, show: bool) {
+        // PlayerAdvancements.flushDirty notifies in the order dirty state is consumed.
+        if let Some(packet) = state.flush_dirty(show) {
+            state
+                .effects
+                .capture(|| self.try_send_client_packet(&packet));
+        }
+    }
+
+    /// Changes the advancement tab and queues its notification in owner order.
     pub fn select_advancement_tab(&self, advancement: Option<&'static Advancement>) {
-        let packet = self
+        let _effects = crate::world::guard_effects::GuardEffects::new();
+        let mut state = self
             .advancements
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .set_selected_tab(advancement);
-        if let Some(packet) = packet {
-            self.try_send_client_packet(&packet);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(packet) = state.set_selected_tab(advancement) {
+            state
+                .effects
+                .capture(|| self.try_send_client_packet(&packet));
         }
     }
 }

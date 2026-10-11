@@ -115,6 +115,7 @@ impl ScoreboardTarget for NoTarget {
 
 #[derive(Clone, Debug, Default)]
 pub struct Scoreboard {
+    effects: super::guard_effects::OwnerEffects,
     objectives: FxHashMap<String, ScoreboardObjective>,
     display_slots: FxHashMap<ScoreboardDisplaySlot, String>,
     scores: FxHashMap<String, FxHashMap<String, ScoreboardScore>>,
@@ -236,7 +237,8 @@ impl Scoreboard {
             sort_order: VarInt(0),
         };
 
-        target.send_editioned(&je_update, &be_update);
+        self.effects
+            .capture(|| target.send_editioned(&je_update, &be_update));
 
         self.objectives.insert(objective.name.clone(), objective);
     }
@@ -270,7 +272,8 @@ impl Scoreboard {
             sort_order: VarInt(0),
         };
 
-        target.send_editioned(&je_update, &be_update);
+        self.effects
+            .capture(|| target.send_editioned(&je_update, &be_update));
 
         self.objectives.insert(objective.name.clone(), objective);
     }
@@ -305,7 +308,8 @@ impl Scoreboard {
             sort_order: VarInt(0),
         };
 
-        target.send_editioned(&je_display, &be_display);
+        self.effects
+            .capture(|| target.send_editioned(&je_display, &be_display));
 
         if let Some(name) = objective_name {
             self.display_slots.insert(slot, name.to_string());
@@ -343,7 +347,8 @@ impl Scoreboard {
             objective_name: name.to_string(),
         };
 
-        target.send_editioned(&je_packet, &be_packet);
+        self.effects
+            .capture(|| target.send_editioned(&je_packet, &be_packet));
 
         self.objectives.remove(name);
         self.scores.remove(name);
@@ -379,7 +384,8 @@ impl Scoreboard {
             }],
         };
 
-        target.send_editioned(&je_packet, &be_packet);
+        self.effects
+            .capture(|| target.send_editioned(&je_packet, &be_packet));
 
         self.scores
             .entry(score.objective_name.clone())
@@ -443,7 +449,8 @@ impl Scoreboard {
             }],
         };
 
-        target.send_editioned(&je_packet, &be_packet);
+        self.effects
+            .capture(|| target.send_editioned(&je_packet, &be_packet));
 
         if let Some(objective_scores) = self.scores.get_mut(objective_name) {
             objective_scores.remove(entity_name);
@@ -472,7 +479,8 @@ impl Scoreboard {
             entries: be_entries,
         };
 
-        target.send_editioned(&je_packet, &be_packet);
+        self.effects
+            .capture(|| target.send_editioned(&je_packet, &be_packet));
 
         for obj_scores in self.scores.values_mut() {
             obj_scores.remove(entity_name);
@@ -495,11 +503,13 @@ impl Scoreboard {
             player_suffix: &team.player_suffix,
         };
 
-        target.send_je(&CSetPlayerTeam {
-            team_name: team.name.clone(),
-            method: TeamMethod::Create,
-            parameters: Some(parameters),
-            players: team.players.clone().into(),
+        self.effects.capture(|| {
+            target.send_je(&CSetPlayerTeam {
+                team_name: team.name.clone(),
+                method: TeamMethod::Create,
+                parameters: Some(parameters),
+                players: team.players.clone().into(),
+            });
         });
 
         self.teams.insert(team.name.clone(), team);
@@ -525,11 +535,13 @@ impl Scoreboard {
             player_suffix: &team.player_suffix,
         };
 
-        target.send_je(&CSetPlayerTeam {
-            team_name: team.name.clone(),
-            method: TeamMethod::Update,
-            parameters: Some(parameters),
-            players: Box::new([]),
+        self.effects.capture(|| {
+            target.send_je(&CSetPlayerTeam {
+                team_name: team.name.clone(),
+                method: TeamMethod::Update,
+                parameters: Some(parameters),
+                players: Box::new([]),
+            });
         });
 
         self.teams.insert(team.name.clone(), team);
@@ -541,11 +553,13 @@ impl Scoreboard {
             return;
         }
 
-        target.send_je(&CSetPlayerTeam {
-            team_name: name.to_string(),
-            method: TeamMethod::Remove,
-            parameters: None,
-            players: Box::new([]),
+        self.effects.capture(|| {
+            target.send_je(&CSetPlayerTeam {
+                team_name: name.to_string(),
+                method: TeamMethod::Remove,
+                parameters: None,
+                players: Box::new([]),
+            });
         });
 
         self.teams.remove(name);
@@ -569,11 +583,13 @@ impl Scoreboard {
             return;
         }
 
-        target.send_je(&CSetPlayerTeam {
-            team_name: team_name.to_string(),
-            method: TeamMethod::AddPlayers,
-            parameters: None,
-            players: vec![player.clone()].into(),
+        self.effects.capture(|| {
+            target.send_je(&CSetPlayerTeam {
+                team_name: team_name.to_string(),
+                method: TeamMethod::AddPlayers,
+                parameters: None,
+                players: vec![player.clone()].into(),
+            });
         });
 
         team.players.push(player);
@@ -597,11 +613,13 @@ impl Scoreboard {
             return;
         }
 
-        target.send_je(&CSetPlayerTeam {
-            team_name: team_name.to_string(),
-            method: TeamMethod::RemovePlayers,
-            parameters: None,
-            players: vec![player.to_string()].into(),
+        self.effects.capture(|| {
+            target.send_je(&CSetPlayerTeam {
+                team_name: team_name.to_string(),
+                method: TeamMethod::RemovePlayers,
+                parameters: None,
+                players: vec![player.to_string()].into(),
+            });
         });
 
         team.players.retain(|p| p != player);
@@ -621,11 +639,13 @@ impl Scoreboard {
         }
 
         let players_to_remove = team.players.clone();
-        target.send_je(&CSetPlayerTeam {
-            team_name: team_name.to_string(),
-            method: TeamMethod::RemovePlayers,
-            parameters: None,
-            players: players_to_remove.into(),
+        self.effects.capture(|| {
+            target.send_je(&CSetPlayerTeam {
+                team_name: team_name.to_string(),
+                method: TeamMethod::RemovePlayers,
+                parameters: None,
+                players: players_to_remove.into(),
+            });
         });
 
         team.players.clear();
@@ -647,7 +667,8 @@ impl Scoreboard {
                 criteria_name: "dummy".to_string(),
                 sort_order: VarInt(0),
             };
-            player.try_enqueue_packet_editioned(&je_update, &be_update);
+            self.effects
+                .capture(|| ScoreboardTarget::send_editioned(player, &je_update, &be_update));
         }
 
         for (slot, objective_name) in &self.display_slots {
@@ -668,7 +689,8 @@ impl Scoreboard {
                 criteria_name: "dummy".to_string(),
                 sort_order: VarInt(0),
             };
-            player.try_enqueue_packet_editioned(&je_display, &be_display);
+            self.effects
+                .capture(|| ScoreboardTarget::send_editioned(player, &je_display, &be_display));
         }
 
         for objective_scores in self.scores.values() {
@@ -691,7 +713,8 @@ impl Scoreboard {
                         custom_name: score.entity_name.clone(),
                     }],
                 };
-                player.try_enqueue_packet_editioned(&je_packet, &be_packet);
+                self.effects
+                    .capture(|| ScoreboardTarget::send_editioned(player, &je_packet, &be_packet));
             }
         }
 
@@ -711,7 +734,8 @@ impl Scoreboard {
                 parameters: Some(parameters),
                 players: team.players.clone().into(),
             };
-            player.try_send_client_packet(&je_packet);
+            self.effects
+                .capture(|| ScoreboardTarget::send_je(player, &je_packet));
         }
     }
 }

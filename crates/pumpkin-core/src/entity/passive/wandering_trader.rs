@@ -589,7 +589,7 @@ impl ScreenHandlerFactory for WanderingTraderEntity {
         }));
 
         let update_weak = self_weak.clone();
-        handler.on_trade_updated = Some(Box::new(move |has_result| {
+        handler.on_trade_updated = Some(Arc::new(move |has_result| {
             let Some(trader) = update_weak.upgrade() else {
                 return;
             };
@@ -607,7 +607,7 @@ impl ScreenHandlerFactory for WanderingTraderEntity {
         }));
 
         let close_weak = self_weak.clone();
-        handler.on_close = Some(Box::new(move || {
+        handler.on_close = Some(Arc::new(move || {
             if let Some(trader) = close_weak.upgrade() {
                 trader.is_trading.store(false, Ordering::Relaxed);
                 *trader
@@ -618,7 +618,7 @@ impl ScreenHandlerFactory for WanderingTraderEntity {
         }));
 
         let trade_weak = self_weak;
-        handler.on_trade = Some(Box::new(move |offer_index| {
+        handler.on_trade = Some(Arc::new(move |offer_index| {
             let trade_weak = trade_weak.clone();
             let world = world.clone();
             if let Some(trader) = trade_weak.upgrade() {

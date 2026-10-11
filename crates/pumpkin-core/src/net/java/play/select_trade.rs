@@ -14,6 +14,8 @@ impl JavaClient {
             return;
         }
 
+        // MerchantMenu.tryMoveItems finishes payment selection before notifying listeners.
+        let _effects = crate::world::guard_effects::GuardEffects::new();
         let screen_handler = player
             .current_screen_handler
             .lock()
@@ -29,7 +31,7 @@ impl JavaClient {
             .as_any_mut()
             .downcast_mut::<MerchantScreenHandler>()
         {
-            merchant.set_selected_offer(packet.selected_slot.0 as usize);
+            merchant.set_selected_offer(packet.selected_slot.0 as usize, player.as_ref());
         }
     }
 }

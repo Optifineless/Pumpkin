@@ -355,5 +355,12 @@ notifications delivered after unlocking menus, weather, scoreboards, borders and
 advancements. API 8 (same version); native plugins built against this fork must
 be rebuilt for the typed locks and advancement notification methods. No saved
 format changes.
+The final-review follow-up moves merchant rewards, trade sounds and Bedrock drops
+outside menu guards, covers deferred execute-score and mooshroom team updates,
+and preserves border, scoreboard and advancement notification order across
+concurrent mutations and callback re-entry. API 8 (same version): merchant
+callbacks use shared ownership, offer selection accepts the player, and
+`InventoryPlayer` gains a deferred menu callback hook. Native plugins must rebuild
+for these signatures and the added notification queues; Wasm WIT is unchanged.
 In-game verification: Not yet. This is fork audit work, not an upstream PR port;
 GitHub PR checks were unavailable through the configured proxy.

@@ -7,6 +7,8 @@ use pumpkin_protocol::java::server::play::SSetBeacon;
 
 impl JavaClient {
     pub fn handle_set_beacon(&self, player: &Arc<Player>, packet: &SSetBeacon) {
+        // BeaconMenu.updateEffects commits payment before broadcasting the menu state.
+        let _effects = crate::world::guard_effects::GuardEffects::new();
         let is_valid = {
             let screen_handler_lock = player
                 .current_screen_handler

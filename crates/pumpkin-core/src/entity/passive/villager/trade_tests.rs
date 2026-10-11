@@ -53,13 +53,15 @@ async fn prepare_trade() -> (DeathTestWorld, Arc<VillagerEntity>, Arc<Player>, S
         .create_screen_handler(1, inventory, player.as_ref())
         .unwrap();
     *player.current_screen_handler.lock().unwrap() = screen.clone();
+    let effects = crate::world::guard_effects::GuardEffects::new();
     screen
         .lock()
         .unwrap()
         .as_any_mut()
         .downcast_mut::<MerchantScreenHandler>()
         .unwrap()
-        .set_selected_offer(0);
+        .set_selected_offer(0, player.as_ref());
+    drop(effects);
     let revision = {
         let handler = screen.lock().unwrap();
         assert!(handler.can_use(player.as_ref()));

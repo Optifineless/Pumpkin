@@ -181,6 +181,7 @@ impl MooshroomEntity {
 
         // Vanilla `convertCommon` moves the team over to the cow.
         if let Some(team_name) = self.get_team_name() {
+            let _effects = crate::world::guard_effects::GuardEffects::new();
             let mut scoreboard = world
                 .scoreboard
                 .lock()

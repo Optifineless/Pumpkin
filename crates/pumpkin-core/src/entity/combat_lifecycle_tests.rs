@@ -347,7 +347,7 @@ async fn accepted_stat_events_update_statistics_and_all_matching_objectives() {
     let player = &fixture.player;
     for name in ["first", "second"] {
         world.scoreboard.lock().unwrap().add_objective(
-            world.as_ref(),
+            &crate::world::scoreboard::NoTarget,
             ScoreboardObjective::new(
                 name,
                 TextComponent::text(name),

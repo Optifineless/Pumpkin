@@ -164,7 +164,7 @@ async fn orchestration_team_gate_and_blocked_arrow_criterion_run_at_the_player_b
         .scoreboard
         .lock()
         .unwrap()
-        .add_team(world.as_ref(), team.clone());
+        .add_team(&crate::world::scoreboard::NoTarget, team.clone());
     assert!(!hit(&victim, 4.0, DamageType::FIREWORKS, victim.as_ref()));
     let mut team = team;
     team.options = 1;
@@ -172,7 +172,7 @@ async fn orchestration_team_gate_and_blocked_arrow_criterion_run_at_the_player_b
         .scoreboard
         .lock()
         .unwrap()
-        .update_team(world.as_ref(), team);
+        .update_team(&crate::world::scoreboard::NoTarget, team);
     assert!(hit(&victim, 4.0, DamageType::FIREWORKS, victim.as_ref()));
     victim.living_entity.hurt_cooldown.store(0, Relaxed);
     raise(&victim, 1.0);

@@ -91,9 +91,11 @@ impl BedrockClient {
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
         let mut inventory_updated = false;
+        let mut dropped_items = Vec::new();
         let mut updates = Vec::new();
         let result = 0u8;
 
+        let effects = crate::world::guard_effects::GuardEffects::new();
         if packet.actions.is_empty() && packet.legacy_request_id.0 != 0 {
             let mut player_screen_handler = player
                 .player_screen_handler
@@ -114,7 +116,8 @@ impl BedrockClient {
                             .get_slot(screen_slot)
                             .get_cloned_stack();
                         if !current_stack.is_empty() {
-                            player.drop_item(current_stack.clone());
+                            // ServerPlayer.drop awards statistics after slot removal commits.
+                            dropped_items.push(current_stack.clone());
 
                             player_screen_handler
                                 .get_slot(screen_slot)
@@ -143,6 +146,11 @@ impl BedrockClient {
             drop(player_screen_handler);
         }
 
+        drop(effects);
+        for item in dropped_items {
+            player.drop_item(item);
+        }
+
         for action in &packet.actions {
             use pumpkin_protocol::bedrock::server::inventory_transaction::InventoryActionSource;
             let source_type = InventoryActionSource::from(action.source_type);
@@ -158,6 +166,7 @@ impl BedrockClient {
                 {
                     let item_stack = descriptor_to_stack(&action.new_item);
 
+                    let _effects = crate::world::guard_effects::GuardEffects::new();
                     let mut player_screen_handler = player
                         .player_screen_handler
                         .lock()
@@ -184,7 +193,7 @@ impl BedrockClient {
                             let hotbar_slot = screen_slot - 36;
                             if player.inventory().get_selected_slot() == hotbar_slot as u8 {
                                 let equipment = &[(EquipmentSlot::MAIN_HAND, item_stack.clone())];
-                                player.living_entity.send_equipment_changes(equipment);
+                                player.send_menu_equipment(equipment);
                             }
                         }
                     }

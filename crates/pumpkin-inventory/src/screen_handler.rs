@@ -125,6 +125,11 @@ impl ScreenProperty {
 ///
 /// Implementors are typically player entities that can open containers.
 pub trait InventoryPlayer: Send + Sync {
+    /// Delivers a captured merchant callback after the current menu operation unlocks.
+    fn run_menu_callback(&self, callback: Box<dyn FnOnce() + Send>) {
+        callback();
+    }
+
     fn as_any(&self) -> &dyn std::any::Any;
     /// Returns the saved map's scale and lock state, or None for a missing map.
     fn map_crafting_state(&self, _stack: &ItemStack) -> Option<(i8, bool)> {

@@ -10,6 +10,29 @@ use crate::entity::EntityBase;
 use crate::world::guard_effects::{GuardEffects, defer};
 
 impl Player {
+    /// Sends captured equipment changes after the current menu operation unlocks.
+    pub(crate) fn send_menu_equipment(
+        &self,
+        equipment: &[(
+            pumpkin_data::data_component_impl::EquipmentSlot,
+            pumpkin_data::item_stack::ItemStack,
+        )],
+    ) {
+        // ServerGamePacketListenerImpl.handleContainerClick completes the slot change first.
+        let captured = equipment.to_vec();
+        if !self
+            .defer_menu_effect(move |player| player.living_entity.send_equipment_changes(&captured))
+        {
+            self.living_entity.send_equipment_changes(equipment);
+        }
+    }
+
+    pub(super) fn dispatch_menu_callback(callback: Box<dyn FnOnce() + Send>) {
+        if let Err(callback) = defer(callback) {
+            callback();
+        }
+    }
+
     pub(super) fn notify_experience_level(&self, old_level: i32, level: i32) {
         if old_level == level {
             return;

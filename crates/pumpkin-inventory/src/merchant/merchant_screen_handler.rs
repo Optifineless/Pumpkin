@@ -27,9 +27,9 @@ pub struct MerchantScreenHandler {
     selected_offer: usize,
     active_offer: Option<usize>,
     pub offers: Vec<pumpkin_protocol::java::client::play::MerchantOffer>,
-    pub on_trade: Option<Box<dyn Fn(usize) + Send + Sync>>,
-    pub on_trade_updated: Option<Box<dyn Fn(bool) + Send + Sync>>,
-    pub on_close: Option<Box<dyn Fn() + Send + Sync>>,
+    pub on_trade: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    pub on_trade_updated: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    pub on_close: Option<Arc<dyn Fn() + Send + Sync>>,
     pub validity_check: Option<MerchantValidityCheck>,
     result_taken: Arc<AtomicBool>,
 }
@@ -74,11 +74,11 @@ impl MerchantScreenHandler {
         handler
     }
 
-    pub fn set_selected_offer(&mut self, index: usize) {
+    pub fn set_selected_offer(&mut self, index: usize, player: &dyn InventoryPlayer) {
         self.selected_offer = index;
         self.try_move_items(index);
         self.update_result_slot();
-        self.notify_trade_updated();
+        self.notify_trade_updated(player);
         self.send_content_updates();
     }
 
@@ -208,7 +208,9 @@ impl MerchantScreenHandler {
         self.offers[offer_index].uses += 1;
 
         if let Some(on_trade) = &self.on_trade {
-            on_trade(offer_index);
+            // MerchantResultSlot.onTake: notify the merchant before awarding the trade statistic.
+            let callback = on_trade.clone();
+            player.run_menu_callback(Box::new(move || callback(offer_index)));
         }
         player.increment_stat(
             StatisticCategory::Custom,
@@ -228,7 +230,7 @@ impl MerchantScreenHandler {
             return false;
         }
         self.update_result_slot();
-        self.notify_trade_updated();
+        self.notify_trade_updated(player);
         self.send_content_updates();
         true
     }
@@ -305,12 +307,15 @@ impl MerchantScreenHandler {
         }
     }
 
-    fn notify_trade_updated(&self) {
+    fn notify_trade_updated(&self, player: &dyn InventoryPlayer) {
         if self.inventory.get_stack(0).is_empty() && self.inventory.get_stack(1).is_empty() {
             return;
         }
         if let Some(on_trade_updated) = &self.on_trade_updated {
-            on_trade_updated(self.active_offer.is_some());
+            // MerchantContainer.updateSellItem captures the result for notifyTradeUpdated.
+            let callback = on_trade_updated.clone();
+            let has_result = self.active_offer.is_some();
+            player.run_menu_callback(Box::new(move || callback(has_result)));
         }
     }
 }
@@ -340,7 +345,8 @@ impl ScreenHandler for MerchantScreenHandler {
 
     fn on_closed(&mut self, player: &dyn InventoryPlayer) {
         if let Some(on_close) = &self.on_close {
-            on_close();
+            let callback = on_close.clone();
+            player.run_menu_callback(Box::new(move || callback()));
         }
         self.default_on_closed(player);
         self.inventory.on_close();
@@ -434,7 +440,7 @@ impl ScreenHandler for MerchantScreenHandler {
             self.complete_trade(player);
         }
         self.update_result_slot();
-        self.notify_trade_updated();
+        self.notify_trade_updated(player);
         self.send_content_updates();
     }
 }
@@ -669,7 +675,8 @@ mod tests {
             vec![bookshelf_offer()],
         );
 
-        handler.set_selected_offer(0);
+        let player = TestPlayer::new(player_inventory.clone());
+        handler.set_selected_offer(0, &player);
 
         let payment = merchant_inventory.get_stack(0);
         assert_eq!(payment.item_count, 12);
@@ -690,7 +697,7 @@ mod tests {
             vec![bookshelf_offer()],
         );
         let trade_count = Arc::new(AtomicUsize::new(0));
-        handler.on_trade = Some(Box::new({
+        handler.on_trade = Some(Arc::new({
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
@@ -729,7 +736,7 @@ mod tests {
             vec![bookshelf_offer()],
         );
         let trade_count = Arc::new(AtomicUsize::new(0));
-        handler.on_trade = Some(Box::new({
+        handler.on_trade = Some(Arc::new({
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
@@ -761,7 +768,7 @@ mod tests {
             ],
         );
         let traded_offer = Arc::new(AtomicUsize::new(usize::MAX));
-        handler.on_trade = Some(Box::new({
+        handler.on_trade = Some(Arc::new({
             let traded_offer = traded_offer.clone();
             move |offer_index| {
                 traded_offer.store(offer_index, Ordering::Relaxed);
@@ -799,7 +806,7 @@ mod tests {
             vec![bookshelf_offer()],
         );
         let trade_count = Arc::new(AtomicUsize::new(0));
-        handler.on_trade = Some(Box::new({
+        handler.on_trade = Some(Arc::new({
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);

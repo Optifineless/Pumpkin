@@ -14,6 +14,7 @@ impl BedrockClient {
         };
         use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
 
+        let effects = crate::world::guard_effects::GuardEffects::new();
         let (responses, inventory_updated) = {
             let current_screen_handler = player
                 .current_screen_handler
@@ -253,7 +254,11 @@ impl BedrockClient {
                             let count = count.min(source_stack.item_count);
                             if count > 0 {
                                 let dropped_stack = source_stack.copy_with_count(count);
-                                player.drop_item(dropped_stack);
+                                // ServerPlayer.drop awards statistics after slot removal commits.
+                                let dropper = player.clone();
+                                player.run_menu_callback(Box::new(move || {
+                                    dropper.drop_item(dropped_stack);
+                                }));
 
                                 source_stack.decrement(count);
                                 let source_stack = if source_stack.is_empty() {
@@ -364,7 +369,7 @@ impl BedrockClient {
                                     result = 1;
                                     break;
                                 }
-                                handler.set_selected_offer(trade);
+                                handler.set_selected_offer(trade, player.as_ref());
                                 for (container_name, slot_id, screen_slot) in [
                                     (ContainerName::Trade2Ingredient1, 4, 0),
                                     (ContainerName::Trade2Ingredient2, 5, 1),
@@ -518,6 +523,8 @@ impl BedrockClient {
 
             (responses, inventory_updated)
         };
+
+        drop(effects);
 
         // Send Bedrock specific responses and updates
         self.try_enqueue_client_packet(&CItemStackResponse { responses });
@@ -907,7 +914,7 @@ fn update_slot_stack(
                     let hotbar_slot = screen_slot - 36;
                     if player.inventory().get_selected_slot() == hotbar_slot as u8 {
                         let equipment = &[(EquipmentSlot::MAIN_HAND, new_stack.clone())];
-                        player.living_entity.send_equipment_changes(equipment);
+                        player.send_menu_equipment(equipment);
                     }
                 }
             }

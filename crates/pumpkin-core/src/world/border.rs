@@ -3,12 +3,13 @@ use pumpkin_protocol::java::client::play::{
     CSetBorderWarningDelay, CSetBorderWarningDistance,
 };
 
-use crate::net::java::JavaClient;
+use crate::entity::player::Player;
 
 use super::World;
 
 #[derive(Clone)]
 pub struct Worldborder {
+    effects: super::guard_effects::OwnerEffects,
     pub center_x: f64,
     pub center_z: f64,
     pub old_diameter: f64,
@@ -23,7 +24,7 @@ pub struct Worldborder {
 
 impl Worldborder {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         x: f64,
         z: f64,
         diameter: f64,
@@ -32,6 +33,7 @@ impl Worldborder {
         warning_time: i32,
     ) -> Self {
         Self {
+            effects: super::guard_effects::OwnerEffects::default(),
             center_x: x,
             center_z: z,
             old_diameter: diameter,
@@ -45,19 +47,20 @@ impl Worldborder {
         }
     }
 
-    pub fn init_client(&self, client: &JavaClient) {
-        if let Ok(data) = client.serialize_packet(&CInitializeWorldBorder::new(
-            self.center_x,
-            self.center_z,
-            self.old_diameter,
-            self.new_diameter,
-            self.speed.into(),
-            self.portal_teleport_boundary.into(),
-            self.warning_blocks.into(),
-            self.warning_time.into(),
-        )) {
-            client.try_enqueue_packet(data);
-        }
+    fn init_client(&self, player: &Player) {
+        // ServerLevel's border listener and initial state share the same notification order.
+        self.effects.capture(|| {
+            player.try_send_client_packet(&CInitializeWorldBorder::new(
+                self.center_x,
+                self.center_z,
+                self.old_diameter,
+                self.new_diameter,
+                self.speed.into(),
+                self.portal_teleport_boundary.into(),
+                self.warning_blocks.into(),
+                self.warning_time.into(),
+            ));
+        });
     }
 
     // WorldBorder setters mutate state before notifying their listener snapshots.
@@ -65,10 +68,12 @@ impl Worldborder {
         self.center_x = x;
         self.center_z = z;
 
-        super::guard_effects::broadcast_je(
-            world,
-            &CSetBorderCenter::new(self.center_x, self.center_z),
-        );
+        self.effects.capture(|| {
+            super::guard_effects::broadcast_je(
+                world,
+                &CSetBorderCenter::new(self.center_x, self.center_z),
+            );
+        });
     }
 
     pub fn set_diameter(&mut self, world: &World, diameter: f64, speed: Option<i64>) {
@@ -77,13 +82,24 @@ impl Worldborder {
 
         match speed {
             Some(speed) => {
-                super::guard_effects::broadcast_je(
-                    world,
-                    &CSetBorderLerpSize::new(self.old_diameter, self.new_diameter, speed.into()),
-                );
+                self.effects.capture(|| {
+                    super::guard_effects::broadcast_je(
+                        world,
+                        &CSetBorderLerpSize::new(
+                            self.old_diameter,
+                            self.new_diameter,
+                            speed.into(),
+                        ),
+                    );
+                });
             }
             None => {
-                super::guard_effects::broadcast_je(world, &CSetBorderSize::new(self.new_diameter));
+                self.effects.capture(|| {
+                    super::guard_effects::broadcast_je(
+                        world,
+                        &CSetBorderSize::new(self.new_diameter),
+                    );
+                });
             }
         }
     }
@@ -95,19 +111,23 @@ impl Worldborder {
     pub fn set_warning_delay(&mut self, world: &World, delay: i32) {
         self.warning_time = delay;
 
-        super::guard_effects::broadcast_je(
-            world,
-            &CSetBorderWarningDelay::new(self.warning_time.into()),
-        );
+        self.effects.capture(|| {
+            super::guard_effects::broadcast_je(
+                world,
+                &CSetBorderWarningDelay::new(self.warning_time.into()),
+            );
+        });
     }
 
     pub fn set_warning_distance(&mut self, world: &World, distance: i32) {
         self.warning_blocks = distance;
 
-        super::guard_effects::broadcast_je(
-            world,
-            &CSetBorderWarningDistance::new(self.warning_blocks.into()),
-        );
+        self.effects.capture(|| {
+            super::guard_effects::broadcast_je(
+                world,
+                &CSetBorderWarningDistance::new(self.warning_blocks.into()),
+            );
+        });
     }
 
     pub const fn set_damage_buffer(&mut self, buffer: f32) {
@@ -130,19 +150,21 @@ impl Worldborder {
         self.damage_per_block = 0.2;
         self.buffer = 5.0;
 
-        super::guard_effects::broadcast_je(
-            world,
-            &CInitializeWorldBorder::new(
-                self.center_x,
-                self.center_z,
-                self.old_diameter,
-                self.new_diameter,
-                self.speed.into(),
-                self.portal_teleport_boundary.into(),
-                self.warning_blocks.into(),
-                self.warning_time.into(),
-            ),
-        );
+        self.effects.capture(|| {
+            super::guard_effects::broadcast_je(
+                world,
+                &CInitializeWorldBorder::new(
+                    self.center_x,
+                    self.center_z,
+                    self.old_diameter,
+                    self.new_diameter,
+                    self.speed.into(),
+                    self.portal_teleport_boundary.into(),
+                    self.warning_blocks.into(),
+                    self.warning_time.into(),
+                ),
+            );
+        });
     }
 
     #[must_use]
@@ -191,6 +213,20 @@ impl Worldborder {
         let min_z = (self.center_z - half).floor() as i32;
         let max_z = ((self.center_z + half).floor() as i32 - 1).max(min_z);
         (x.clamp(min_x, max_x), z.clamp(min_z, max_z))
+    }
+}
+
+impl World {
+    /// Queues the initial border snapshot under its owner guard and delivers it unlocked.
+    pub(crate) fn send_border_info(&self, player: &Player) {
+        if player.client.java().is_none() {
+            return;
+        }
+        let _effects = super::guard_effects::GuardEffects::new();
+        self.worldborder
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .init_client(player);
     }
 }
 
