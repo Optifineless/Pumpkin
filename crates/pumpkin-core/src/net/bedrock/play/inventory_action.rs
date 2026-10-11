@@ -3,7 +3,7 @@ use super::*;
 use crate::item::registry::should_try_block_placement;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_protocol::bedrock::server::inventory_transaction::{
-    HandSlot, InventoryAction, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
+    HandSlot, InventoryAction, UseItemTransactionData, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
 };
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer, java::client::play::CSetPlayerInventory,
@@ -182,9 +182,45 @@ impl BedrockClient {
         player.send_health();
     }
 
+    fn validated_use_item_stack(
+        player: &Player,
+        data: &UseItemTransactionData,
+    ) -> Option<ItemStack> {
+        let hand = match data.hand {
+            HandSlot::Mainhand => Hand::Right,
+            HandSlot::Offhand => Hand::Left,
+        };
+        // ServerGamePacketListenerImpl.handleUseItemOn/handleUseItem use the server's held stack.
+        // Validate before predicted actions can empty or transform the originating item.
+        let held = player.inventory().get_stack_in_hand(hand);
+        // Several Java items share a Bedrock ID, including sticks and debug sticks.
+        let authoritative_descriptor = NetworkItemDescriptor::from(&held);
+        let client_descriptor = &data.item_in_hand;
+        if client_descriptor.id.0 != 0
+            && client_descriptor.stack_size != 0
+            && client_descriptor.id != authoritative_descriptor.id
+        {
+            player.try_send_slot_set_packet(&CSetPlayerInventory::new(
+                (hand_inventory_slot(hand, player.inventory().get_selected_slot()) as i32).into(),
+                &ItemStackSerializer::from(held),
+            ));
+            return None;
+        }
+        Some(held)
+    }
+
     #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::unreachable)]
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
+        let use_item_stack = match &packet.transaction_data {
+            TransactionData::UseItem(data) if matches!(data.action_type.0, 0 | 1) => {
+                let Some(stack) = Self::validated_use_item_stack(player, data) else {
+                    return;
+                };
+                Some(stack)
+            }
+            _ => None,
+        };
         let mut inventory_updated = false;
         let mut dropped_items = Vec::new();
         let mut hand_updates: Vec<(EquipmentSlot, ItemStack)> = Vec::new();
@@ -332,7 +368,6 @@ impl BedrockClient {
 
                 if data.action_type.0 == 0 {
                     // Click block
-                    let client_stack = descriptor_to_stack(&data.item_in_hand);
                     // Bedrock UseItemTransactionData.hand serves as ServerboundUseItemOnPacket.hand.
                     let hand = match data.hand {
                         HandSlot::Mainhand => Hand::Right,
@@ -343,19 +378,18 @@ impl BedrockClient {
                         Hand::Left => EquipmentSlot::OFF_HAND,
                     };
 
-                    let mut held_item = player.inventory().get_stack_in_hand(hand);
-                    let authoritative_held_item = client_stack.is_empty()
-                        || (!held_item.is_empty() && held_item.item.id == client_stack.item.id);
-                    if !authoritative_held_item {
-                        held_item = client_stack;
-                    }
-                    let before_block_use = held_item.clone();
+                    let Some(mut held_item) = use_item_stack else {
+                        return;
+                    };
                     // Inventory transaction actions are applied before the Bedrock UseItem callback.
                     let held_slot_consumed_in_transaction = transaction_consumes_hand(
                         &packet.actions,
                         hand,
                         player.inventory().get_selected_slot(),
                     );
+                    let authoritative_held_item = true;
+                    // ServerPlayerGameMode.useItemOn receives the original item, including bucket exchanges.
+                    let before_block_use = held_item.clone();
 
                     let result = server.block_registry.use_with_item(
                         block,
@@ -384,7 +418,10 @@ impl BedrockClient {
                         return;
                     }
 
-                    if matches!(result, BlockActionResult::PassToDefaultBlockAction) {
+                    // ServerPlayerGameMode.useItemOn restricts useWithoutItem to the main hand.
+                    if matches!(result, BlockActionResult::PassToDefaultBlockAction)
+                        && hand == Hand::Right
+                    {
                         let result = server.block_registry.on_use(
                             block,
                             player,
@@ -436,13 +473,14 @@ impl BedrockClient {
                                         sequence: VarInt(0),
                                     };
 
-                                if let Ok(Some(_)) = server.block_registry.place_block(
+                                if let Ok(Some(_)) = server.block_registry.place_block_with_stack(
                                     player,
                                     placed_block,
                                     &server,
                                     &dummy_use_item_on,
                                     data.block_position,
                                     face,
+                                    &stack,
                                 ) && player.gamemode.load() != GameMode::Creative
                                 {
                                     stack.decrement(1);
@@ -474,17 +512,19 @@ impl BedrockClient {
                     }
                 } else if data.action_type.0 == 1 {
                     // Click air / Use item
-                    let client_stack = descriptor_to_stack(&data.item_in_hand);
-
                     let hand = match data.hand {
                         HandSlot::Mainhand => Hand::Right,
                         HandSlot::Offhand => Hand::Left,
                     };
+                    let Some(before_actions) = use_item_stack else {
+                        return;
+                    };
                     let mut held = player.inventory().get_stack_in_hand(hand);
-                    if !client_stack.is_empty()
-                        && (held.is_empty() || held.item.id != client_stack.item.id)
+                    if !before_actions.is_empty()
+                        && (held.is_empty() || held.item.id != before_actions.item.id)
                     {
-                        held = client_stack;
+                        // EggItem.use and other Item.use callbacks reread the originating hand.
+                        held = before_actions;
                         player.inventory().set_stack_in_hand(hand, held.clone());
                     }
                     // Consumable.onConsume and BucketItem/BottleItem.use count on success.

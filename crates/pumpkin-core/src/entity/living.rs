@@ -1,4 +1,5 @@
 mod armor;
+mod bedrock_equipment;
 #[path = "blocking.rs"]
 pub(super) mod blocking;
 pub(crate) mod blocking_response;
@@ -430,13 +431,14 @@ impl LivingEntity {
                     pumpkin_protocol::bedrock::server::inventory_transaction::WINDOW_ID_INVENTORY
                 };
 
+                let (inventory_slot, selected_slot) = self.bedrock_equipment_slots(slot);
                 let be_packet = pumpkin_protocol::bedrock::client::CMobEquipment {
                     target_runtime_id: (self.entity_id() as u64).into(),
                     item: pumpkin_protocol::bedrock::network_item::NetworkItemStackDescriptor::from(
                         stack,
                     ),
-                    slot: 0,
-                    selected_slot: 0,
+                    slot: inventory_slot,
+                    selected_slot,
                     container_id: window_id as u8,
                 };
                 self.entity.world.load().send_to_tracking_players_editioned(
