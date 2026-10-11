@@ -8,6 +8,21 @@ use std::{
 };
 
 pub trait Inventory: Send + Sync + Clearable {
+    /// Mutates a valid slot once under its storage lock, without dispatching side effects.
+    /// The callback only mutates the stack; it must not call inventories, events or networking.
+    /// Call `on_slot_changed` after releasing transfer ownership when the stack changed.
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack));
+
+    /// Returns ownership of the backing inventory; double chests route slots to their halves.
+    fn slot_transaction(&self, _slot: usize) -> Arc<std::sync::Mutex<()>> {
+        super::slot_transaction::owner(self.as_any())
+    }
+
+    /// Dispatches effects of a committed slot update after storage and transfer locks are gone.
+    fn on_slot_changed(&self, _slot: usize) {
+        self.mark_dirty();
+    }
+
     fn size(&self) -> usize;
 
     fn is_empty(&self) -> bool;
@@ -19,6 +34,32 @@ pub trait Inventory: Send + Sync + Clearable {
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack;
 
     fn set_stack(&self, slot: usize, stack: ItemStack);
+
+    /// Computes insertion capacity while transfer ownership is held, without mutating storage.
+    fn space_for_stack(&self, stack: &ItemStack) -> u8 {
+        let max = self
+            .get_max_count_per_stack()
+            .min(stack.get_max_stack_size());
+        let mut space = 0u8;
+        for slot in 0..self.size() {
+            if !self.is_valid_slot_for(slot, stack) {
+                continue;
+            }
+            let current = self.get_stack(slot);
+            let available = if current.is_empty() {
+                max
+            } else if current.are_items_and_components_equal(stack) {
+                max.saturating_sub(current.item_count)
+            } else {
+                0
+            };
+            space = space.saturating_add(available).min(stack.item_count);
+            if space == stack.item_count {
+                break;
+            }
+        }
+        space
+    }
 
     fn on_open(&self) {}
     fn on_close(&self) {}
@@ -54,10 +95,18 @@ pub trait Inventory: Send + Sync + Clearable {
     fn write_inventory_nbt(&self, nbt: &mut NbtCompound, include_empty: bool) {
         let mut slots = Vec::new();
         let size = self.size();
-
-        for i in 0..size {
-            let stack = self.get_stack(i);
-
+        let owners = super::slot_transaction::ordered_owners(&[self]);
+        let transfers = owners
+            .iter()
+            .map(|owner| {
+                owner
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            })
+            .collect::<Vec<_>>();
+        let snapshot = (0..size).map(|i| self.get_stack(i)).collect::<Vec<_>>();
+        drop(transfers);
+        for (i, stack) in snapshot.into_iter().enumerate() {
             if !stack.is_empty() {
                 let mut item_compound = NbtCompound::new();
                 item_compound.put_byte("Slot", i as i8);

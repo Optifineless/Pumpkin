@@ -7,7 +7,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{BlockId, BlockStateId};
-use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
+use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::boundingbox::BoundingBox;
@@ -156,9 +156,7 @@ impl BlockEntity for HopperBlockEntity {
             "TransferCooldown",
             NbtTag::Int(self.cooldown_time.load(Ordering::Relaxed)),
         );
-        if let Ok(items) = self.items.try_read() {
-            sync_write_items_to_nbt(items.as_slice(), &mut nbt);
-        }
+        self.write_inventory_nbt(&mut nbt, false);
         Some(nbt)
     }
 
@@ -429,22 +427,21 @@ impl HopperBlockEntity {
 
     /// Vanilla `addItem(Container, ItemEntity)`: moves as much of the entity's stack as fits, and
     /// only counts as a transfer once all of it is in.
-    fn add_item_entity(to: &dyn Inventory, item_entity: &ItemEntity) -> bool {
-        // Held across the insert so a player or another hopper can't take the same items meanwhile.
-        let mut stack = item_entity
-            .get_item_stack()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if stack.is_empty() {
-            return false;
+    pub(crate) fn add_item_entity(to: &dyn Inventory, item_entity: &ItemEntity) -> bool {
+        let mut changed_slots = Vec::new();
+        let (_, original_count, moved, empty) = item_entity.transfer_stack(to, |stack| {
+            let (remaining, changed) =
+                Self::add_item_from_face_deferred(None, to, stack.clone(), None);
+            *stack = remaining;
+            changed_slots = changed;
+        });
+        for slot in changed_slots {
+            to.on_slot_changed(slot);
         }
-        *stack = Self::add_item(None, to, stack.clone());
-        let changed = stack.is_empty();
-        drop(stack);
-        if changed {
-            item_entity.get_entity().remove();
+        if moved > 0 {
+            item_entity.finish_transfer(empty);
         }
-        changed
+        moved > 0 && moved == original_count
     }
 
     /// Vanilla `addItem(Container, Container, ItemStack, Direction)`: offers `stack` to each slot
@@ -456,9 +453,25 @@ impl HopperBlockEntity {
     fn add_item_from_face(
         from: Option<&dyn Inventory>,
         to: &dyn Inventory,
-        mut stack: ItemStack,
+        stack: ItemStack,
         face: Option<pumpkin_data::BlockDirection>,
     ) -> ItemStack {
+        let (remaining, changed) = Self::add_item_from_face_deferred(from, to, stack, face);
+        for slot in changed {
+            to.on_slot_changed(slot);
+        }
+        remaining
+    }
+
+    /// Inserts owned stock and returns the remainder and changed slots without dirtying.
+    /// Callers must publish `on_slot_changed` only after releasing transfer ownership.
+    pub(crate) fn add_item_from_face_deferred(
+        from: Option<&dyn Inventory>,
+        to: &dyn Inventory,
+        mut stack: ItemStack,
+        face: Option<pumpkin_data::BlockDirection>,
+    ) -> (ItemStack, Vec<usize>) {
+        let mut changed = Vec::new();
         // BrewingStandBlockEntity.getSlotsForFace.
         let slots: &[usize] = if to
             .as_any()
@@ -481,9 +494,13 @@ impl HopperBlockEntity {
             if stack.is_empty() {
                 break;
             }
-            stack = Self::try_move_in_item(from, to, stack, slot);
+            let (remaining, moved) = Self::try_move_in_item(from, to, stack, slot);
+            stack = remaining;
+            if moved {
+                changed.push(slot);
+            }
         }
-        stack
+        (stack, changed)
     }
 
     fn try_move_in_item(
@@ -491,9 +508,9 @@ impl HopperBlockEntity {
         to: &dyn Inventory,
         mut stack: ItemStack,
         slot: usize,
-    ) -> ItemStack {
+    ) -> (ItemStack, bool) {
         if !to.is_valid_slot_for(slot, &stack) {
-            return stack;
+            return (stack, false);
         }
         let to_empty = to.is_empty();
         // Vanilla `Container.getMaxStackSize(ItemStack)`, which `setItem` limits the slot to.
@@ -501,28 +518,24 @@ impl HopperBlockEntity {
         let success = with_inventory_slot(to, slot, |dst| {
             Self::merge_into_slot(dst, &mut stack, max_count)
         });
-        if success {
-            if to_empty
-                && let Some(hopper) = to.as_any().downcast_ref::<Self>()
-                && hopper.cooldown_time.load(Ordering::Relaxed) <= 8
-            {
-                if let Some(from_hopper) =
-                    from.and_then(|from| from.as_any().downcast_ref::<Self>())
+        if success
+            && to_empty
+            && let Some(hopper) = to.as_any().downcast_ref::<Self>()
+            && hopper.cooldown_time.load(Ordering::Relaxed) <= 8
+        {
+            if let Some(from_hopper) = from.and_then(|from| from.as_any().downcast_ref::<Self>()) {
+                if from_hopper.cooldown_time.load(Ordering::Relaxed)
+                    >= hopper.cooldown_time.load(Ordering::Relaxed)
                 {
-                    if from_hopper.cooldown_time.load(Ordering::Relaxed)
-                        >= hopper.cooldown_time.load(Ordering::Relaxed)
-                    {
-                        hopper.cooldown_time.store(7, Ordering::Relaxed);
-                    } else {
-                        hopper.cooldown_time.store(8, Ordering::Relaxed);
-                    }
+                    hopper.cooldown_time.store(7, Ordering::Relaxed);
                 } else {
                     hopper.cooldown_time.store(8, Ordering::Relaxed);
                 }
+            } else {
+                hopper.cooldown_time.store(8, Ordering::Relaxed);
             }
-            to.mark_dirty();
         }
-        stack
+        (stack, success)
     }
 
     /// The slot half of vanilla `tryMoveInItem`: fills an empty `dst` from `stack`, or tops `dst`
@@ -549,6 +562,17 @@ impl HopperBlockEntity {
 }
 
 impl Inventory for HopperBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        update(stack);
+    }
+
     fn size(&self) -> usize {
         Self::INVENTORY_SIZE
     }

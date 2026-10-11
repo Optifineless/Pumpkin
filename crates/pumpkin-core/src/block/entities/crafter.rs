@@ -3,7 +3,7 @@ use crate::world::World;
 use pumpkin_data::block_properties::CrafterLikeProperties;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::crafting::recipes::RecipeInputInventory;
-use pumpkin_inventory::{Clearable, Inventory, sync_read_items_from_nbt, sync_write_items_to_nbt};
+use pumpkin_inventory::{Clearable, Inventory, sync_read_items_from_nbt};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
@@ -26,11 +26,7 @@ pub struct CrafterBlockEntity {
 
 impl BlockEntity for CrafterBlockEntity {
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        let items = self
-            .items
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        sync_write_items_to_nbt(items.as_slice(), nbt);
+        self.write_inventory_nbt(nbt, false);
         nbt.put_int(
             "crafting_ticks_remaining",
             self.crafting_ticks_remaining.load(Ordering::Relaxed),
@@ -144,9 +140,7 @@ impl BlockEntity for CrafterBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        if let Ok(items) = self.items.try_read() {
-            sync_write_items_to_nbt(items.as_slice(), &mut nbt);
-        }
+        self.write_inventory_nbt(&mut nbt, false);
         nbt.put_int(
             "crafting_ticks_remaining",
             self.crafting_ticks_remaining.load(Ordering::Relaxed),
@@ -265,6 +259,24 @@ impl RecipeInputInventory for CrafterBlockEntity {
 }
 
 impl Inventory for CrafterBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        let before = stack.clone();
+        update(stack);
+        if !before.are_equal(stack) && before.is_empty() {
+            // CrafterBlockEntity.setItem re-enables an empty slot only after a write.
+            self.disabled_slots
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[slot] = false;
+        }
+    }
+
     fn size(&self) -> usize {
         Self::INVENTORY_SIZE
     }

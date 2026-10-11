@@ -135,6 +135,12 @@ pub struct GenericContainerScreenHandler {
     behaviour: ScreenHandlerBehaviour,
 }
 
+struct ItemMove {
+    slot: Arc<dyn crate::slot::Slot>,
+    expected: ItemStack,
+    count: u8,
+}
+
 impl GenericContainerScreenHandler {
     /// Creates a new generic container screen handler.
     ///
@@ -215,38 +221,162 @@ impl ScreenHandler for GenericContainerScreenHandler {
     ///
     /// - From container: Move to player inventory (end first)
     /// - From player inventory: Move to container (start first)
-    fn quick_move(&mut self, _player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
-        let mut stack_left = ItemStack::EMPTY.clone();
-        // Assuming bounds check passed for slot_index by caller or within quick_move spec
+    fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
+        if !slot.has_stack() {
+            return ItemStack::EMPTY.clone();
+        }
+        let expected = slot.get_stack();
+        let source = slot.get_inventory();
+        let index = slot.get_index();
+        let player_inventory = self.get_behaviour().slots[self.inventory.size()].get_inventory();
+        let owners = crate::inventory::slot_transaction::ordered_owners(&[
+            self.inventory.as_ref(),
+            player_inventory.as_ref(),
+        ]);
+        let transfers = owners
+            .iter()
+            .map(|owner| {
+                owner
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            })
+            .collect::<Vec<_>>();
+        // ChestMenu.quickMoveStack / AbstractContainerMenu.moveItemStackTo. Re-read after
+        // ownership admission: another viewer may have completed a partial transfer.
+        let current = source.get_stack(index);
+        let expected = if current.uid == expected.uid && current.are_equal(&expected) {
+            expected
+        } else {
+            current
+        };
+        let boundary = i32::from(self.rows * self.columns);
+        let (start, end, reverse) = if slot_index < boundary {
+            (boundary, self.get_behaviour().slots.len() as i32, true)
+        } else {
+            (0, boundary, false)
+        };
+        let moves = self.plan_item_moves(&expected, start, end, reverse);
+        let amount = moves.iter().map(|planned| planned.count).sum();
+        if amount == 0 {
+            return ItemStack::EMPTY.clone();
+        }
+        let mut remaining =
+            crate::inventory::slot_transaction::withdraw(source.as_ref(), index, &expected, amount);
+        if remaining.is_empty() {
+            return ItemStack::EMPTY.clone();
+        }
+        let offered = remaining.item_count;
+        let changed = Self::move_item_stack_to(&mut remaining, moves);
+        let moved = offered - remaining.item_count;
+        let leftover = crate::inventory::slot_transaction::refund(
+            source.as_ref(),
+            index,
+            &expected,
+            remaining,
+        );
+        let source_changed = !source.get_stack(index).are_equal(&expected);
+        drop(transfers);
+        if source_changed {
+            source.on_slot_changed(index);
+        }
+        for slot in changed {
+            slot.get_inventory().on_slot_changed(slot.get_index());
+        }
+        if !leftover.is_empty() {
+            player.drop_item(leftover, false);
+        }
+        if moved == 0 {
+            ItemStack::EMPTY.clone()
+        } else {
+            expected
+        }
+    }
+}
 
-        if slot.has_stack() {
-            let mut slot_stack = slot.get_stack();
-            stack_left = slot_stack.clone();
-
-            if slot_index < i32::from(self.rows * 9) {
-                // Move from inventory to player area (end)
-                if !self.insert_item(
-                    &mut slot_stack,
-                    (self.rows * 9).into(),
-                    self.get_behaviour().slots.len() as i32,
-                    true,
-                ) {
-                    return ItemStack::EMPTY.clone();
-                }
-            } else if !self.insert_item(&mut slot_stack, 0, (self.rows * 9).into(), false) {
-                // Move from player area to inventory (start)
-                return ItemStack::EMPTY.clone();
+impl GenericContainerScreenHandler {
+    // AbstractContainerMenu.moveItemStackTo: merge first, then fill one empty slot.
+    // Plan before withdrawing so a failed move leaves the source visible to other readers.
+    fn plan_item_moves(
+        &self,
+        stack: &ItemStack,
+        start: i32,
+        end: i32,
+        reverse: bool,
+    ) -> Vec<ItemMove> {
+        let mut moves = Vec::new();
+        let mut remaining = stack.item_count;
+        for empty_only in [false, true] {
+            if !empty_only && !stack.is_stackable() {
+                continue;
             }
-
-            // Check the resulting state of the slot stack after insert_item
-            if slot_stack.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone());
-            } else {
-                slot.set_stack(slot_stack);
+            for offset in 0..end - start {
+                if remaining == 0 {
+                    break;
+                }
+                let index = if reverse {
+                    end - 1 - offset
+                } else {
+                    start + offset
+                };
+                let slot = self.get_behaviour().slots[index as usize].clone();
+                let target = slot.get_stack();
+                let max = slot.get_max_item_count_for_stack(stack);
+                let capacity = if empty_only {
+                    if target.is_empty() && slot.can_insert(stack) {
+                        max
+                    } else {
+                        0
+                    }
+                } else if !target.is_empty() && target.are_items_and_components_equal(stack) {
+                    max.saturating_sub(target.item_count)
+                } else {
+                    0
+                };
+                let count = capacity.min(remaining);
+                if count > 0 {
+                    moves.push(ItemMove {
+                        slot,
+                        expected: target,
+                        count,
+                    });
+                    remaining -= count;
+                    if empty_only {
+                        break;
+                    }
+                }
             }
         }
+        moves
+    }
 
-        stack_left
+    fn move_item_stack_to(
+        stack: &mut ItemStack,
+        moves: Vec<ItemMove>,
+    ) -> Vec<Arc<dyn crate::slot::Slot>> {
+        let mut changed = Vec::new();
+        for planned in moves {
+            let mut moved = false;
+            planned
+                .slot
+                .get_inventory()
+                .update_slot(planned.slot.get_index(), &mut |target| {
+                    if target.uid != planned.expected.uid || !target.are_equal(&planned.expected) {
+                        return;
+                    }
+                    let count = planned.count.min(stack.item_count);
+                    if target.is_empty() {
+                        *target = stack.split(count);
+                    } else {
+                        target.increment(count);
+                        stack.decrement(count);
+                    }
+                    moved = count > 0;
+                });
+            if moved {
+                changed.push(planned.slot);
+            }
+        }
+        changed
     }
 }

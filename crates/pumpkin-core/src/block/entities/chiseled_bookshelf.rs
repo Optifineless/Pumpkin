@@ -18,7 +18,7 @@ use crate::{
     block::entities::BlockEntity,
     world::{BlockFlags, World},
 };
-use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
+use pumpkin_inventory::{Clearable, Inventory};
 
 pub struct ChiseledBookshelfBlockEntity {
     pub position: BlockPos,
@@ -67,11 +67,7 @@ impl BlockEntity for ChiseledBookshelfBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        let items = self
-            .items
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        sync_write_items_to_nbt(items.as_slice(), nbt);
+        self.write_inventory_nbt(nbt, false);
         nbt.put_int(
             LAST_INTERACTED_SLOT,
             i32::from(self.last_interacted_slot.load(Ordering::Relaxed)),
@@ -182,6 +178,17 @@ impl ChiseledBookshelfBlockEntity {
 }
 
 impl Inventory for ChiseledBookshelfBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        update(stack);
+    }
+
     fn size(&self) -> usize {
         Self::INVENTORY_SIZE
     }

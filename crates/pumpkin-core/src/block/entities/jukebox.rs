@@ -63,10 +63,7 @@ impl BlockEntity for JukeboxBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        let record = self
-            .record_stack
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let record = pumpkin_inventory::inventory::slot_transaction::snapshot_slot(self, 0);
         if !record.is_empty() {
             let mut record_nbt = NbtCompound::new();
             record.write_item_stack(&mut record_nbt);
@@ -109,9 +106,8 @@ impl BlockEntity for JukeboxBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        if let Ok(record) = self.record_stack.try_lock()
-            && !record.is_empty()
-        {
+        let record = pumpkin_inventory::inventory::slot_transaction::snapshot_slot(self, 0);
+        if !record.is_empty() {
             let mut record_nbt = NbtCompound::new();
             record.write_item_stack(&mut record_nbt);
             nbt.put("RecordItem", NbtTag::Compound(record_nbt));
@@ -249,6 +245,26 @@ impl JukeboxBlockEntity {
 
 /// Implements single-slot inventory for jukebox (matches vanilla's `SingleStackInventory`)
 impl Inventory for JukeboxBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot == 0 {
+            let mut record = self
+                .record_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            update(&mut record);
+        }
+    }
+
+    fn on_slot_changed(&self, _slot: usize) {
+        // JukeboxBlockEntity.notifyItemChangedInJukebox runs after the committed mutation.
+        self.mark_dirty();
+        let has_record = !self.get_record().is_empty();
+        if !has_record {
+            self.stop_playing();
+        }
+        self.notify_item_changed_in_jukebox(has_record);
+    }
+
     fn size(&self) -> usize {
         1
     }

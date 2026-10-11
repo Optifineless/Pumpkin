@@ -57,10 +57,7 @@ impl BlockEntity for LecternBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        let book = self
-            .book
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let book = pumpkin_inventory::inventory::slot_transaction::snapshot_slot(self, 0);
         if !book.is_empty() {
             let mut book_nbt = NbtCompound::default();
             book.write_item_stack(&mut book_nbt);
@@ -91,9 +88,8 @@ impl BlockEntity for LecternBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        if let Ok(book) = self.book.try_lock()
-            && !book.is_empty()
-        {
+        let book = pumpkin_inventory::inventory::slot_transaction::snapshot_slot(self, 0);
+        if !book.is_empty() {
             let mut book_nbt = NbtCompound::new();
             book.write_item_stack(&mut book_nbt);
             nbt.put("Book", NbtTag::Compound(book_nbt));
@@ -166,6 +162,21 @@ impl LecternBlockEntity {
 }
 
 impl Inventory for LecternBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot != 0 {
+            return;
+        }
+        let mut book = self
+            .book
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let before = book.clone();
+        update(&mut book);
+        if !book.are_equal(&before) {
+            self.page.store(0, Ordering::Relaxed);
+        }
+    }
+
     fn size(&self) -> usize {
         1
     }
