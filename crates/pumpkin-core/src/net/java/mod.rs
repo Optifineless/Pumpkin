@@ -333,10 +333,14 @@ impl JavaClient {
             return;
         };
 
+        let epoch = player.chunk_send_epoch.load(Ordering::Relaxed);
         let mut valid_chunks = Vec::with_capacity(chunks.len());
         for chunk in chunks {
             let mut event = ChunkSend::new(player.world(), chunk.clone());
             server.plugin_manager.fire(&server, &mut event).await;
+            if player.chunk_send_epoch.load(Ordering::Relaxed) != epoch || self.is_closed() {
+                return;
+            }
             if !event.cancelled {
                 valid_chunks.push(chunk.clone());
             }
@@ -370,6 +374,9 @@ impl JavaClient {
         let Ok(serialized) = rx.await else {
             return;
         };
+        if player.chunk_send_epoch.load(Ordering::Relaxed) != epoch || self.is_closed() {
+            return;
+        }
         let sent_count = serialized.len();
         if sent_count == 0 {
             return;

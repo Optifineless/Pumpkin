@@ -1,7 +1,3 @@
-use super::{
-    poi,
-    residency::{PortalChunkResidency, ResidentPortal},
-};
 use pumpkin_data::{
     Block, BlockDirection, BlockState,
     block_properties::{HorizontalAxis, NetherPortalLikeProperties},
@@ -16,8 +12,8 @@ use std::sync::Arc;
 
 use crate::world::World;
 
-const SEARCH_RADIUS_NETHER: i32 = 16;
-const SEARCH_RADIUS_OVERWORLD: i32 = 128;
+pub(super) const SEARCH_RADIUS_NETHER: i32 = 16;
+pub(super) const SEARCH_RADIUS_OVERWORLD: i32 = 128;
 // PortalForcer.createPortal: BlockPos.spiralAround(origin, 16, EAST, SOUTH).
 pub(super) const CREATE_RADIUS: i32 = 16;
 // PortalForcer.canHostFrame / createPortal share these frame width bounds.
@@ -232,7 +228,7 @@ pub struct NetherPortal {
 
 impl NetherPortal {
     const MIN_WIDTH: u32 = 2;
-    const MAX_WIDTH: u32 = 21;
+    pub(super) const MAX_WIDTH: u32 = 21;
     const MAX_HEIGHT: u32 = 21;
     const MIN_HEIGHT: u32 = 3;
     const FRAME_BLOCK: Block = Block::OBSIDIAN;
@@ -502,136 +498,6 @@ impl NetherPortal {
         Self::search_for_portal_resident(world, target_pos)
             .await
             .map(|resident| resident.portal)
-    }
-
-    pub(super) async fn search_for_portal_resident(
-        world: &Arc<World>,
-        target_pos: BlockPos,
-    ) -> Option<ResidentPortal> {
-        tracing::debug!(
-            "Searching for portal in {:?} around {:?}",
-            world.dimension.minecraft_name,
-            target_pos
-        );
-        let search_radius = if world.dimension.has_ceiling {
-            SEARCH_RADIUS_NETHER
-        } else {
-            SEARCH_RADIUS_OVERWORLD
-        };
-
-        // PortalForcer.findClosestPortalPosition: POI region loading is synchronous IO.
-        let poi_world = world.clone();
-        let portal_positions = tokio::task::spawn_blocking(move || {
-            #[cfg(test)]
-            poi_world.pause_portal_blocking_for_test();
-            let mut poi_storage = poi_world
-                .portal_poi
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            poi_storage.get_in_square(target_pos, search_radius, Some(poi::POI_TYPE_NETHER_PORTAL))
-        })
-        .await
-        .unwrap_or_else(|error| {
-            tracing::error!("Portal POI task failed: {error}");
-            Vec::new()
-        });
-
-        let mut residency = PortalChunkResidency::new(world.level.clone());
-        // NetherPortalBlock.getExitPortal inspects up to 21 portal blocks in either direction.
-        for pos in &portal_positions {
-            let radius = Self::MAX_WIDTH as i32;
-            for x in (pos.0.x - radius) >> 4..=(pos.0.x + radius) >> 4 {
-                for z in (pos.0.z - radius) >> 4..=(pos.0.z + radius) >> 4 {
-                    residency.add(Vector2::new(x, z));
-                }
-            }
-        }
-        residency.load().await?;
-        #[cfg(test)]
-        world.pause_portal_scan_for_test().await;
-
-        let world = world.clone();
-        tokio::task::spawn_blocking(move || {
-            // Keep terrain resident even if the awaiting trip is cancelled during validation.
-            #[cfg(test)]
-            world.pause_portal_blocking_for_test();
-            Self::find_portal_in_loaded_chunks(&world, target_pos, portal_positions).map(|portal| {
-                ResidentPortal {
-                    portal,
-                    _residency: residency,
-                }
-            })
-        })
-        .await
-        .unwrap_or_else(|error| {
-            tracing::error!("Portal search task failed: {error}");
-            None
-        })
-    }
-
-    // PortalForcer.findClosestPortalPosition validates loaded terrain before choosing a POI.
-    fn find_portal_in_loaded_chunks(
-        world: &Arc<World>,
-        target_pos: BlockPos,
-        portal_positions: Vec<BlockPos>,
-    ) -> Option<PortalSearchResult> {
-        let min_y = world.min_y;
-        let max_y = min_y + world.dimension.height - 1;
-
-        let worldborder = world
-            .worldborder
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        let mut best: Option<(PortalSearchResult, f64, i32)> = None;
-
-        for pos in portal_positions {
-            if pos.0.y < min_y || pos.0.y > max_y {
-                continue;
-            }
-
-            if !worldborder.contains_block(pos.0.x, pos.0.z) {
-                continue;
-            }
-
-            let (block, state) = world.get_block_and_state(&pos);
-            if block != &Block::NETHER_PORTAL {
-                continue;
-            }
-            let props = NetherPortalLikeProperties::from_state_id(state.id);
-            let axis = props.axis;
-
-            if let Some(portal) = Self::get_on_axis(world, &pos, axis)
-                && portal.was_already_valid()
-            {
-                // Use POI position for distance calculation (matches vanilla behavior)
-                let dist = f64::from(target_pos.0.squared_distance_to(pos.0.x, pos.0.y, pos.0.z));
-                let y = portal.lower_conor.0.y;
-
-                let is_better = match &best {
-                    None => true,
-                    Some((_, best_dist, best_y)) => {
-                        dist < *best_dist
-                            || ((dist - *best_dist).abs() < f64::EPSILON && y < *best_y)
-                    }
-                };
-
-                if is_better {
-                    best = Some((
-                        PortalSearchResult {
-                            lower_corner: portal.lower_conor,
-                            axis: portal.axis,
-                            width: portal.width,
-                            height: portal.height,
-                        },
-                        dist,
-                        y,
-                    ));
-                }
-            }
-        }
-
-        best.map(|(portal, _, _)| portal)
     }
 
     #[allow(clippy::too_many_lines)]

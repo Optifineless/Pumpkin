@@ -260,7 +260,6 @@ use pumpkin_inventory::screen_handler::{
     ScreenHandlerListener,
 };
 use pumpkin_inventory::sync_handler::SyncHandler;
-use pumpkin_macros::send_cancellable;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::IdOr;
@@ -3526,9 +3525,6 @@ impl Player {
             .await;
     }
 
-    /// Transfers the player, rechecking a captured portal trip after world-change callbacks.
-    /// Returns whether the world transfer was applied.
-    #[expect(clippy::too_many_lines)]
     pub(crate) async fn teleport_world_for_portal(
         self: &Arc<Self>,
         new_world: Arc<World>,
@@ -3536,143 +3532,9 @@ impl Player {
         yaw: Option<f32>,
         pitch: Option<f32>,
         portal: Option<&super::portal_travel::PortalTravel>,
-    ) -> bool {
-        if portal.is_some_and(|trip| !trip.is_valid()) {
-            return false;
-        }
-        let current_world = self.living_entity.entity.world.load_full();
-        let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
-        let pitch = pitch.unwrap_or(new_world.level_info.load().spawn_pitch);
-
-        let Some(server) = new_world.server.upgrade() else {
-            return false;
-        };
-
-        let mut transferred = false;
-        send_cancellable! {{
-            server;
-            PlayerChangeWorldEvent {
-                player: self.clone(),
-                previous_world: current_world.clone(),
-                new_world: new_world.clone(),
-                position,
-                yaw,
-                pitch,
-                cancelled: false,
-            };
-
-            'after: {
-                // Entity.teleport rejects an invalid entity; world-change callbacks can invalidate this trip.
-                if portal.is_some_and(|trip| !trip.is_valid()) {
-                    return false;
-                }
-                // TODO: this is duplicate code from world
-                let position = event.position;
-                let yaw = event.yaw;
-                let pitch = event.pitch;
-                let new_world = event.new_world;
-
-                let Some(admission) = self.prepare_world_transfer(&current_world, &new_world, portal).await else {
-                    return false;
-                };
-
-                self.set_client_loaded(false);
-                let last_pos = self.living_entity.entity.last_pos.load();
-                let death_dimension = ResourceLocation::from(new_world.dimension.minecraft_name);
-                let death_location = BlockPos(Vector3::new(
-                    last_pos.x.round() as i32,
-                    last_pos.y.round() as i32,
-                    last_pos.z.round() as i32,
-                ));
-                match self.client.as_ref() {
-                    ClientPlatform::Java(java) => {
-                        let packet = CRespawn::new(
-                            PlayerSpawnData::new(
-                                new_world.dimension.clone(),
-                                biome::hash_seed(new_world.level.seed.0), // seed
-                                self.gamemode.load() as u8,
-                                self.previous_gamemode.load().unwrap_or(self.gamemode.load()) as i8,
-                                false,
-                                false,
-                                Some((death_dimension, death_location)),
-                                VarInt(self.get_entity().portal_cooldown.load(Ordering::Relaxed) as i32),
-                                new_world.sea_level.into(),
-                            ),
-                            CRespawn::KEEP_ALL_DATA,
-                        );
-                        if let Ok(data) = java.serialize_packet(&packet) {
-                            java.send_packet_now(data).await;
-                        }
-                    }
-                    ClientPlatform::Bedrock(bedrock) => {
-                        let bedrock_dimension = if new_world.dimension == Dimension::OVERWORLD {
-                            0
-                        } else if new_world.dimension == Dimension::THE_NETHER {
-                            1
-                        } else if new_world.dimension == Dimension::THE_END {
-                            2
-                        } else {
-                            0
-                        };
-                        let pos_f32 = Vector3::new(position.x as f32, position.y as f32, position.z as f32);
-                        let change_dim_packet = pumpkin_protocol::bedrock::client::CChangeDimension {
-                            dimension_id: bedrock_dimension.into(),
-                            position: pos_f32,
-                            respawn: false,
-                            loading_screen_id: None
-                        };
-                        if let Ok(data) = bedrock.serialize_packet(&change_dim_packet) {
-                            bedrock.enqueue_packet(data).await;
-                        }
-                        self.bedrock_spawned.store(false, Ordering::Relaxed);
-                    }
-                }
-
-                self.send_permission_lvl_update();
-
-                if !self.commit_world_transfer(&current_world, &new_world, position, (yaw, pitch), portal).await {
-                    return false;
-                }
-                let player = self.clone();
-                drop(admission);
-                transferred = true;
-
-                if new_world.dimension == pumpkin_data::dimension::Dimension::THE_NETHER {
-                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
-                        dimension: "the_nether".to_string(),
-                    });
-                } else if new_world.dimension == pumpkin_data::dimension::Dimension::THE_END {
-                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
-                        dimension: "the_end".to_string(),
-                    });
-                }
-
-                self.send_abilities_update();
-
-                self.enqueue_set_held_item_packet(&CSetSelectedSlot::new(
-                    self.get_inventory().get_selected_slot() as i8,
-                ));
-
-                self.on_screen_handler_opened(&self.player_screen_handler);
-
-                self.send_health();
-
-                new_world.send_world_info(&player);
-                new_world.send_center_chunk(&player).await;
-
-                // cancellation leaves the current position untouched.
-                let _ = player.request_teleport(position, yaw, pitch);
-
-                let mut changed_world_event = crate::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent {
-                    player: player.clone(),
-                    from_world: current_world,
-                    to_world: new_world,
-                    cancelled: false,
-                };
-                server.plugin_manager.fire(&server, &mut changed_world_event).await;
-            }
-        }}
-        transferred
+    ) -> Option<crate::world::portal::TeleportTransition> {
+        self.perform_world_transfer(new_world, position, yaw, pitch, portal)
+            .await
     }
 
     /// `yaw` and `pitch` are in degrees.
@@ -3686,7 +3548,12 @@ impl Player {
     ) -> Option<Vector3<f64>> {
         self.get_entity().invalidate_portal_travel();
         let position = self.accept_teleport_destination(position)?;
+        self.send_teleport(position, yaw, pitch);
+        Some(position)
+    }
 
+    /// Applies an accepted teleport without invalidating the trip that owns it.
+    pub(super) fn send_teleport(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
         let i = self.teleport_id_count.fetch_add(1, Ordering::Relaxed);
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
         let teleport_id = i + 1;
@@ -3740,7 +3607,6 @@ impl Player {
         if let Some(player) = self.world().get_player_by_uuid(self.gameprofile.id) {
             crate::world::chunker::update_position(&player);
         }
-        Some(position)
     }
 
     pub fn block_interaction_range(&self) -> f64 {

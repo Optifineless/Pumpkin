@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use super::World;
 
@@ -21,7 +21,7 @@ struct AdmissionState {
     unloading: bool,
 }
 
-pub struct WorldAdmission<'a>(&'a TransferAdmission);
+pub struct WorldAdmission(Arc<World>);
 
 pub struct WorldUnloading<'a>(&'a World);
 
@@ -39,9 +39,10 @@ impl Drop for WorldUnloading<'_> {
     }
 }
 
-impl Drop for WorldAdmission<'_> {
+impl Drop for WorldAdmission {
     fn drop(&mut self) {
         self.0
+            .transfer_admission
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -51,7 +52,7 @@ impl Drop for WorldAdmission<'_> {
 
 impl World {
     /// Reserves a registered, running destination until transfer publication completes.
-    pub(crate) fn admit_transfer(&self) -> Option<WorldAdmission<'_>> {
+    pub(crate) fn admit_transfer(self: &Arc<Self>) -> Option<WorldAdmission> {
         let mut state = self
             .transfer_admission
             .state
@@ -64,13 +65,13 @@ impl World {
                 .worlds
                 .load()
                 .iter()
-                .any(|world| std::ptr::eq(world.as_ref(), self))
+                .any(|world| Arc::ptr_eq(world, self))
         {
             return None;
         }
         // Entity.teleportToPortalDestination / ServerPlayer.teleport use a live ServerLevel.
         state.transfers += 1;
-        Some(WorldAdmission(&self.transfer_admission))
+        Some(WorldAdmission(self.clone()))
     }
 
     /// Closes admission before checking membership; no callback runs under the state lock.

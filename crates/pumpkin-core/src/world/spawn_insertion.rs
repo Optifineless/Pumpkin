@@ -43,7 +43,7 @@ impl World {
     }
 
     // UUID admission and list publication occur in one ArcSwap compare-and-swap transaction.
-    fn insert_entity_batch(&self, members: &[Arc<dyn EntityBase>]) -> bool {
+    pub(crate) fn insert_entity_batch(&self, members: &[Arc<dyn EntityBase>]) -> bool {
         let Some(reservation) = self.reserve_spawn_uuids(members) else {
             return false;
         };

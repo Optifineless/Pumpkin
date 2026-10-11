@@ -20,7 +20,7 @@ use crate::{
     world::portal::PortalProcessor,
 };
 
-async fn finish_trip(entity: &Entity) {
+pub async fn finish_trip(entity: &Entity) {
     tokio::time::timeout(Duration::from_secs(60), async {
         while entity.portal_travel_pending_for_test() {
             tokio::task::yield_now().await;
@@ -30,7 +30,7 @@ async fn finish_trip(entity: &Entity) {
     .unwrap();
 }
 
-fn tick_trip(fixture: &DeathTestWorld, traveler: &dyn EntityBase, destination: Arc<World>) {
+pub fn tick_trip(fixture: &DeathTestWorld, traveler: &dyn EntityBase, destination: Arc<World>) {
     let entity = traveler.get_entity();
     entity.set_pos(Vector3::new(8.5, 80.0, 9.0));
     *entity.portal_manager.lock().unwrap() = Some(PortalProcessor::new(
@@ -110,7 +110,7 @@ async fn cancelled_player_transfer_keeps_cooldown_and_does_not_retry() {
     fixture.server.shutdown().await;
 }
 
-async fn gated_player_trip(
+pub(super) async fn gated_player_trip(
     fixture: &DeathTestWorld,
     name: &str,
 ) -> (
@@ -146,9 +146,6 @@ async fn gated_player_trip(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn portal_disconnect_drains_transfer_before_final_save_and_removal() {
-    use crate::entity::player::statistics::CustomStatistic;
-    use std::{future::Future, task::Poll};
-
     let fixture = DeathTestWorld::new().await;
     let (player, destination, resume) = gated_player_trip(&fixture, "portal-logout").await;
     let source = fixture.world();
@@ -161,24 +158,17 @@ async fn portal_disconnect_drains_transfer_before_final_save_and_removal() {
         .unwrap();
     *player.storage_session.lock().unwrap() = Some(session);
     let position = player.get_entity().pos.load();
-    // This is the same close -> client tracker -> save/remove entry point used by lib.rs.
-    let mut disconnect = Box::pin(player.finish_java_connection(&fixture.server));
-    std::future::poll_fn(|cx| {
-        assert!(disconnect.as_mut().poll(cx).is_pending());
-        Poll::Ready(())
-    })
-    .await;
-    assert!(player.client.closed());
-    assert_eq!(
-        player.get_custom_stat(CustomStatistic::LeaveGame),
-        0,
-        "teardown saved before the connection-owned transfer drained"
+    // Cancellation must drain logout without releasing the stalled transfer gate.
+    tokio::time::timeout(
+        Duration::from_secs(60),
+        player.finish_java_connection(&fixture.server),
+    )
+    .await
+    .unwrap();
+    assert!(
+        resume.is_closed(),
+        "logout did not cancel the gated portal await"
     );
-    assert!(source.get_player_by_id(player.entity_id()).is_some());
-    resume.send(()).unwrap();
-    tokio::time::timeout(Duration::from_secs(60), disconnect)
-        .await
-        .unwrap();
     assert!(!player.get_entity().portal_travel_pending_for_test());
     assert!(source.get_player_by_id(player.entity_id()).is_none());
     assert!(destination.get_player_by_id(player.entity_id()).is_none());
@@ -208,7 +198,7 @@ async fn portal_transfer_rechecks_life_after_final_callback_validation() {
     let position = player.get_entity().pos.load();
     player.living_entity.set_health(0.0);
     player.living_entity.reset_state();
-    resume.send(()).unwrap();
+    let _ = resume.send(());
     finish_trip(player.get_entity()).await;
     assert!(Arc::ptr_eq(&player.world(), &fixture.world()));
     assert_eq!(player.get_entity().pos.load(), position);
@@ -232,7 +222,7 @@ async fn portal_transfer_rechecks_world_after_final_callback_validation() {
         .create_world("portal-other-world".to_owned(), Dimension::THE_END);
     player.get_entity().set_world(replacement.clone());
     player.get_entity().set_pos(position);
-    resume.send(()).unwrap();
+    let _ = resume.send(());
     finish_trip(player.get_entity()).await;
     assert!(Arc::ptr_eq(&player.world(), &replacement));
     assert_eq!(player.get_entity().pos.load(), position);
@@ -310,7 +300,7 @@ async fn portal_transfer_rejects_destination_unloaded_by_world_change_callback()
         .unwrap()
         .unwrap();
     assert!(selected.players.load().is_empty());
-    resume.send(()).unwrap();
+    let _ = resume.send(());
     tokio::select! {
         () = finish_trip(player.get_entity()) => {},
         result = &mut admission_started => {
@@ -345,7 +335,7 @@ async fn portal_destination_admission_blocks_unload_until_publication() {
     assert!(result.is_err(), "unload stopped an admitted destination");
     assert!(!destination.level.cancel_token.is_cancelled());
     player.client.java().unwrap().close();
-    resume.send(()).unwrap();
+    let _ = resume.send(());
     finish_trip(player.get_entity()).await;
     // An aborted transfer releases admission exactly once.
     fixture

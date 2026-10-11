@@ -1,28 +1,29 @@
 use std::sync::Arc;
 
-use pumpkin_data::Block;
 use pumpkin_data::block_properties::HorizontalAxis;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_world::world::BlockFlags;
 
 use super::World;
 
 pub mod end;
 pub mod nether;
+mod platform;
 pub mod poi;
 mod residency;
 #[cfg(test)]
 mod residency_tests;
+mod search;
 
 #[cfg(test)]
 mod cooldown_storage_tests;
+#[cfg(test)]
+mod final_tests;
 
 #[cfg(test)]
 pub(crate) use residency::{PortalBlockingGate, PortalScanGate};
-use residency::{PortalChunkResidency, ResidentPortal};
+use residency::{PortalChunkResidency, ResidentPortal, run_portal_job};
 
 pub use nether::{NetherPortal, PortalSearchResult};
 pub use poi::PortalPoiStorage;
@@ -86,6 +87,7 @@ impl PortalType {
         caller: &dyn crate::entity::EntityBase,
         source_portal: Option<&SourcePortalInfo>,
     ) -> Option<TeleportTransition> {
+        let _admission = dest_world.admit_transfer()?;
         match self {
             Self::End => {
                 let is_end_portal = dest_world.dimension == Dimension::THE_END
@@ -101,37 +103,7 @@ impl PortalType {
 
                         let platform_pos = BlockPos::new(100, 49, 0);
 
-                        // EndPortalBlock.getPortalDestination loads the platform before building it.
-                        let center_chunk =
-                            Vector2::new(platform_pos.0.x >> 4, platform_pos.0.z >> 4);
-                        dest_world
-                            .level
-                            .get_or_fetch_chunk(center_chunk, |_| ())
-                            .await
-                            .ok()?;
-
-                        // Generate/regenerate the obsidian platform (5x5 obsidian at Y=48, and 5x5x3 air above it)
-                        for dx in -2..=2 {
-                            for dz in -2..=2 {
-                                for dy in -1..3 {
-                                    let block = if dy == -1 {
-                                        Block::OBSIDIAN
-                                    } else {
-                                        Block::AIR
-                                    };
-                                    let target_pos = BlockPos::new(
-                                        platform_pos.0.x + dx,
-                                        platform_pos.0.y + dy,
-                                        platform_pos.0.z + dz,
-                                    );
-                                    dest_world.set_block_state(
-                                        &target_pos,
-                                        block.default_state.id,
-                                        BlockFlags::NOTIFY_ALL,
-                                    );
-                                }
-                            }
-                        }
+                        Self::build_end_platform(&dest_world, platform_pos).await?;
 
                         Some(TeleportTransition {
                             new_world: dest_world,
@@ -209,7 +181,9 @@ impl PortalType {
                     BlockPos::new(clamped_x, pos.y.floor() as i32, clamped_z);
                 let source_portal_axis = source_portal.map_or(HorizontalAxis::X, |p| p.axis);
 
-                let resident_portal = if let Some(portal) =
+                // NetherPortalBlock.getExitPortal performs lookup/create serially.
+                let creation = dest_world.portal_creation.clone().lock_owned().await;
+                let mut resident_portal = if let Some(portal) =
                     NetherPortal::search_for_portal_resident(&dest_world, approximate_exit_pos)
                         .await
                 {
@@ -219,6 +193,7 @@ impl PortalType {
                         &dest_world,
                         approximate_exit_pos,
                         source_portal_axis,
+                        creation,
                     )
                     .await
                 }?;
@@ -227,7 +202,7 @@ impl PortalType {
                 let exit_portal = &resident_portal.portal;
 
                 // NetherPortalBlock.getExitPortal returns no transition if creation fails.
-                let (final_pos, yaw) = {
+                let (target_pos, yaw) = {
                     let relative_offset = source_portal.map_or_else(
                         || Vector3::new(0.5, 0.0, 0.0),
                         |source| {
@@ -242,12 +217,20 @@ impl PortalType {
                     );
                     let target_pos =
                         exit_portal.calculate_exit_position(relative_offset, &dimensions);
-                    let collision_free_pos =
-                        exit_portal.find_open_position(&dest_world, target_pos, &dimensions);
                     let yaw = exit_portal
                         .calculate_teleport_yaw(current_yaw, source_portal.map(|p| p.axis));
-                    (collision_free_pos, Some(yaw))
+                    (target_pos, Some(yaw))
                 };
+                if dimensions.width <= 4.0 && dimensions.height <= 4.0 {
+                    resident_portal
+                        .residency
+                        .add_exit_area(target_pos, dimensions.width);
+                    resident_portal.residency.load().await?;
+                }
+                let final_pos =
+                    resident_portal
+                        .portal
+                        .find_open_position(&dest_world, target_pos, &dimensions);
 
                 Some(TeleportTransition {
                     new_world: dest_world,
@@ -266,7 +249,8 @@ impl PortalType {
         approximate_exit_pos: BlockPos,
         axis: HorizontalAxis,
     ) -> Option<PortalSearchResult> {
-        Self::create_nether_portal_resident(world, approximate_exit_pos, axis)
+        let creation = world.portal_creation.clone().lock_owned().await;
+        Self::create_nether_portal_resident(world, approximate_exit_pos, axis, creation)
             .await
             .map(|resident| resident.portal)
     }
@@ -275,7 +259,9 @@ impl PortalType {
         world: &Arc<World>,
         approximate_exit_pos: BlockPos,
         axis: HorizontalAxis,
+        creation: tokio::sync::OwnedMutexGuard<()>,
     ) -> Option<ResidentPortal> {
+        let admission = world.admit_transfer()?;
         // PortalForcer.createPortal reads terrain before choosing and building the frame.
         let mut residency = PortalChunkResidency::new(world.level.clone());
         residency.add_creation_area(approximate_exit_pos);
@@ -283,12 +269,18 @@ impl PortalType {
         #[cfg(test)]
         world.pause_portal_scan_for_test().await;
         let world = world.clone();
+        let job_world = world.clone();
         // PortalForcer.createPortal: only synchronous, loaded-chunk reads and writes below.
         // Use Tokio's separate blocking pool: Rayon also runs the chunk decoding we awaited.
-        tokio::task::spawn_blocking(move || {
-            // A started blocking job outlives cancellation of the awaiting task.
+        run_portal_job(&job_world, move || {
+            // Started writes outlive cancellation; retain world lifetime and exclusive creation.
+            let _admission = admission;
+            let _creation = creation;
             #[cfg(test)]
             world.pause_portal_blocking_for_test();
+            if world.level.cancel_token.is_cancelled() {
+                return None;
+            }
             let (build_pos, axis, is_fallback) =
                 NetherPortal::find_safe_location(&world, approximate_exit_pos, axis)?;
             NetherPortal::build_portal_frame(&world, build_pos, axis, is_fallback);
@@ -299,14 +291,10 @@ impl PortalType {
                     width: 2,
                     height: 3,
                 },
-                _residency: residency,
+                residency,
             })
         })
         .await
-        .unwrap_or_else(|error| {
-            tracing::error!("Portal creation task failed: {error}");
-            None
-        })
     }
 }
 

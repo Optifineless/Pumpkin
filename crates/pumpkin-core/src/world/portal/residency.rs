@@ -1,7 +1,23 @@
 use std::sync::Arc;
 
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_world::{chunk_system::residency::ChunkResidency, level::Level};
+
+pub(super) async fn run_portal_job<T: Send + 'static>(
+    world: &Arc<super::World>,
+    job: impl FnOnce() -> Option<T> + Send + 'static,
+) -> Option<T> {
+    let server = world.server.upgrade()?;
+    // MinecraftServer.stopServer waits for started world work before saving. Cancelling
+    // its connection await must not detach a blocking portal writer from server drainage.
+    match server.spawn_task(tokio::task::spawn_blocking(job)).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) | Err(error) => {
+            tracing::error!("Portal blocking task failed: {error}");
+            None
+        }
+    }
+}
 
 /// Keeps loaded chunks available until the portal's synchronous work finishes.
 pub(super) struct PortalChunkResidency {
@@ -11,7 +27,7 @@ pub(super) struct PortalChunkResidency {
 
 pub(super) struct ResidentPortal {
     pub(super) portal: super::PortalSearchResult,
-    pub(super) _residency: PortalChunkResidency,
+    pub(super) residency: PortalChunkResidency,
 }
 
 impl PortalChunkResidency {
@@ -26,6 +42,10 @@ impl PortalChunkResidency {
         self.tickets.add(chunk);
     }
 
+    pub(super) fn add_all(&mut self, chunks: impl IntoIterator<Item = Vector2<i32>>) {
+        self.tickets.add_all(chunks);
+    }
+
     pub(super) fn add_creation_area(&mut self, origin: BlockPos) {
         // PortalForcer.createPortal scans 16 blocks; canHostFrame reads widths -1..3.
         let radius = super::nether::CREATE_RADIUS;
@@ -35,11 +55,21 @@ impl PortalChunkResidency {
         let max_x = (origin.0.x + radius + end) >> 4;
         let min_z = (origin.0.z - radius + start) >> 4;
         let max_z = (origin.0.z + radius + end) >> 4;
-        for x in min_x..=max_x {
-            for z in min_z..=max_z {
-                self.add(Vector2::new(x, z));
-            }
-        }
+        self.add_all(
+            (min_x..=max_x).flat_map(|x| (min_z..=max_z).map(move |z| Vector2::new(x, z))),
+        );
+    }
+
+    pub(super) fn add_exit_area(&mut self, center: Vector3<f64>, width: f32) {
+        // NetherPortalBlock.findCollisionFreePosition checks one block around the entity.
+        let radius = f64::from(width) / 2.0 + 1.0;
+        let min_x = (center.x - radius).floor() as i32 >> 4;
+        let max_x = (center.x + radius).floor() as i32 >> 4;
+        let min_z = (center.z - radius).floor() as i32 >> 4;
+        let max_z = (center.z + radius).floor() as i32 >> 4;
+        self.add_all(
+            (min_x..=max_x).flat_map(|x| (min_z..=max_z).map(move |z| Vector2::new(x, z))),
+        );
     }
 
     pub(super) async fn load(&self) -> Option<()> {

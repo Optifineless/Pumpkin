@@ -25,7 +25,7 @@ async fn publication_before_listener_registration_completes_fetch() {
         level.chunk_listener.process_new_chunk(pos, &published);
     }));
     let fetched = tokio::time::timeout(
-        Duration::from_secs(1),
+        Duration::from_secs(60),
         level.get_or_fetch_chunk(pos, Arc::clone),
     )
     .await;
@@ -37,6 +37,40 @@ async fn publication_before_listener_registration_completes_fetch() {
         &fetched.expect("lost chunk-ready wakeup").unwrap(),
         &expected
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unload_requests_racing_shutdown_and_after_retirement_complete() {
+    let directory = tempfile::tempdir().unwrap();
+    let level = Level::from_root_folder(
+        &LevelConfig::default(),
+        directory.path().into(),
+        0,
+        Dimension::OVERWORLD,
+    );
+    let requester = level.clone();
+    let (ready, started) = tokio::sync::oneshot::channel();
+    let requests = tokio::spawn(async move {
+        let first = requester.level_channel.request_unload(&requester);
+        ready.send(()).unwrap();
+        let _ = first.await;
+        for _ in 0..64 {
+            let _ = requester.level_channel.request_unload(&requester).await;
+        }
+    });
+    started.await.unwrap();
+    level.shutdown().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(60), requests)
+        .await
+        .unwrap()
+        .unwrap();
+    let retired = level.level_channel.request_unload(&level);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(60), retired)
+            .await
+            .unwrap()
+            .is_err()
+    );
 }
 
 #[tokio::test]

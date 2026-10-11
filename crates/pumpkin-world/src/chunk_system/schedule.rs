@@ -1303,6 +1303,7 @@ impl GenerationSchedule {
                 self.save_all_chunk(false);
             }
             if level.shut_down_chunk_system.load(Relaxed) {
+                self.send_level.close_unload_requests();
                 info!("Saving chunks before shutdown...");
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();

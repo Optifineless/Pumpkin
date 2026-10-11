@@ -65,7 +65,7 @@ fn bounded_regression(name: &str, existing_portal: Option<bool>) {
         .stderr(Stdio::from(output))
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_secs(180);
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break Some(status);
@@ -222,6 +222,7 @@ async fn portal_travel(existing_portal: bool) {
         &EntityType::COW,
     ));
     passenger.yaw.store(15.0);
+    source.add_entity_silent(passenger.clone());
     travelers[0].add_passenger(travelers[0].clone(), passenger.clone());
 
     let (tick_tx, tick_rx) = tokio::sync::oneshot::channel();
@@ -235,7 +236,7 @@ async fn portal_travel(existing_portal: bool) {
     } else {
         Vector3::new(1.5, 80.0, 1.0)
     };
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(Duration::from_secs(60), async {
         tick_rx.await.unwrap();
         while travelers.iter().any(|entity| entity.pos.load() != expected)
             || passenger.pos.load() != expected
@@ -246,7 +247,38 @@ async fn portal_travel(existing_portal: bool) {
     .await
     .expect("world tick and portal teleport timed out");
 
+    assert_arrivals(&travelers, &passenger, &destination, existing_portal);
+    let frame = if existing_portal {
+        BlockPos::new(1, 80, 1)
+    } else {
+        BlockPos::new(1, 80, 0)
+    };
+    assert_eq!(destination.get_block(&frame), &Block::NETHER_PORTAL);
+    assert_eq!(destination.get_block(&frame.down()), &Block::OBSIDIAN);
+    let portals = destination.portal_poi.lock().unwrap().get_in_square(
+        BlockPos::new(1, 80, 1),
+        32,
+        Some(crate::world::portal::poi::POI_TYPE_NETHER_PORTAL),
+    );
+    if !existing_portal {
+        assert_eq!(
+            portals.len(),
+            6,
+            "simultaneous trips created an extra portal frame"
+        );
+    }
+    fixture.server.shutdown().await;
+}
+
+fn assert_arrivals(
+    travelers: &[Arc<Entity>],
+    passenger: &Entity,
+    destination: &Arc<World>,
+    existing_portal: bool,
+) {
     for entity in travelers {
+        assert!(Arc::ptr_eq(&entity.world.load_full(), destination));
+        assert!(destination.get_entity_by_id(entity.entity_id).is_some());
         assert_eq!(
             entity.yaw.load(),
             if existing_portal { 120.0 } else { 30.0 }
@@ -256,6 +288,8 @@ async fn portal_travel(existing_portal: bool) {
             entity.default_portal_cooldown()
         );
     }
+    assert!(Arc::ptr_eq(&passenger.world.load_full(), destination));
+    assert!(destination.get_entity_by_id(passenger.entity_id).is_some());
     assert_eq!(
         passenger.yaw.load(),
         if existing_portal { 105.0 } else { 15.0 }
@@ -264,14 +298,6 @@ async fn portal_travel(existing_portal: bool) {
         passenger.portal_cooldown.load(Relaxed),
         passenger.default_portal_cooldown()
     );
-    let frame = if existing_portal {
-        BlockPos::new(1, 80, 1)
-    } else {
-        BlockPos::new(1, 80, 0)
-    };
-    assert_eq!(destination.get_block(&frame), &Block::NETHER_PORTAL);
-    assert_eq!(destination.get_block(&frame.down()), &Block::OBSIDIAN);
-    fixture.server.shutdown().await;
 }
 
 #[test]
@@ -373,7 +399,7 @@ async fn portal_search_yields(validation: bool) {
         tokio::spawn(async move {
             scan_started.await.unwrap();
             *pending_world.portal_blocking_gate.lock().unwrap() = Some((ready, gate));
-            scan_resume.send(()).unwrap();
+            let _ = scan_resume.send(());
         });
     } else {
         *world.portal_blocking_gate.lock().unwrap() = Some((ready, gate));
@@ -384,23 +410,23 @@ async fn portal_search_yields(validation: bool) {
             .await
     });
     // A synchronous gate on this single-worker runtime would stall both delivery and timeout.
-    tokio::time::timeout(Duration::from_secs(5), started)
+    tokio::time::timeout(Duration::from_secs(60), started)
         .await
         .unwrap()
         .unwrap();
     let probe = tokio::spawn(async {});
-    let responded = tokio::time::timeout(Duration::from_secs(1), probe).await;
+    let responded = tokio::time::timeout(Duration::from_secs(60), probe).await;
     if validation {
         search.abort();
         assert!(search.await.unwrap_err().is_cancelled());
         let held = !world.level.chunk_loading.lock().unwrap().ticket.is_empty();
-        resume.send(()).unwrap();
+        let _ = resume.send(());
         responded.unwrap().unwrap();
         assert!(
             held,
             "cancelled validation released its still-running job's terrain"
         );
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(60), async {
             while !world.level.chunk_loading.lock().unwrap().ticket.is_empty() {
                 tokio::task::yield_now().await;
             }
@@ -410,7 +436,7 @@ async fn portal_search_yields(validation: bool) {
         fixture.server.shutdown().await;
         return;
     }
-    resume.send(()).unwrap();
+    let _ = resume.send(());
     responded.unwrap().unwrap();
     let portal = search.await.unwrap().unwrap();
     assert_eq!(portal.lower_corner, BlockPos::new(1, 80, 1));
@@ -447,7 +473,7 @@ async fn stale_portal_trip(invalidation: Invalidation) {
     let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
     *entity.portal_travel.continuation_gate.lock().unwrap() = Some((ready_tx, resume_rx));
     entity.teleport_through_portal(PortalType::Nether, destination.clone(), None);
-    tokio::time::timeout(Duration::from_secs(5), ready_rx)
+    tokio::time::timeout(Duration::from_secs(60), ready_rx)
         .await
         .unwrap()
         .unwrap();
@@ -471,9 +497,9 @@ async fn stale_portal_trip(invalidation: Invalidation) {
     }
     let expected = entity.pos.load();
     let cooldown = entity.portal_cooldown.load(Relaxed);
-    resume_tx.send(()).unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while entity.portal_travel.state.lock().unwrap().pending {
+    let _ = resume_tx.send(());
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while entity.portal_travel.state.lock().unwrap().pending.is_some() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })

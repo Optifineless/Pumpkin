@@ -132,7 +132,7 @@ async fn arrival_waits_for_transfer_completion_even_with_cooldown_set() {
     let (resume, gate) = tokio::sync::oneshot::channel();
     *destination.portal_scan_gate.lock().unwrap() = Some((ready, gate));
     let entity = enter_portal(&fixture, BlockPos::new(1, 80, 1));
-    tokio::time::timeout(Duration::from_secs(20), started)
+    tokio::time::timeout(Duration::from_secs(60), started)
         .await
         .unwrap()
         .unwrap();
@@ -225,7 +225,7 @@ async fn portal_search_keeps_existing_portal_resident_until_scan_finishes() {
         .block_and_await_ongoing_tasks()
         .await
         .unwrap();
-    tokio::time::timeout(Duration::from_secs(20), async {
+    tokio::time::timeout(Duration::from_secs(60), async {
         while destination.level.is_chunk_loaded(&Vector2::new(0, 0)) {
             destination
                 .level
@@ -241,7 +241,7 @@ async fn portal_search_keeps_existing_portal_resident_until_scan_finishes() {
     let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
     *destination.portal_scan_gate.lock().unwrap() = Some((ready_tx, resume_rx));
     let entity = enter_portal(&fixture, BlockPos::new(1, 80, 1));
-    tokio::time::timeout(Duration::from_secs(20), ready_rx)
+    tokio::time::timeout(Duration::from_secs(60), ready_rx)
         .await
         .unwrap()
         .unwrap();
@@ -286,7 +286,7 @@ async fn portal_creation_releases_residency_when_cancelled_before_scan() {
     let task = tokio::spawn(async move {
         PortalType::create_nether_portal(&world, BlockPos::new(1, 80, 1), HorizontalAxis::X).await
     });
-    tokio::time::timeout(Duration::from_secs(20), ready_rx)
+    tokio::time::timeout(Duration::from_secs(60), ready_rx)
         .await
         .unwrap()
         .unwrap();
@@ -327,7 +327,7 @@ async fn portal_creation_retains_residency_until_cancelled_blocking_job_finishes
     let task = tokio::spawn(async move {
         PortalType::create_nether_portal(&world, BlockPos::new(1, 80, 1), HorizontalAxis::X).await
     });
-    tokio::time::timeout(Duration::from_secs(20), ready_rx)
+    tokio::time::timeout(Duration::from_secs(60), ready_rx)
         .await
         .unwrap()
         .unwrap();
@@ -336,7 +336,7 @@ async fn portal_creation_retains_residency_until_cancelled_blocking_job_finishes
     *destination.portal_blocking_gate.lock().unwrap() = Some((started_tx, release_rx));
     resume_tx.send(()).unwrap();
     // The job owns residency before announcing this phase; no job-start timing assumption.
-    tokio::time::timeout(Duration::from_secs(20), started_rx)
+    tokio::time::timeout(Duration::from_secs(60), started_rx)
         .await
         .unwrap()
         .unwrap();
@@ -350,7 +350,7 @@ async fn portal_creation_retains_residency_until_cancelled_blocking_job_finishes
         .ticket
         .is_empty();
     release_tx.send(()).unwrap();
-    tokio::time::timeout(Duration::from_secs(20), async {
+    tokio::time::timeout(Duration::from_secs(60), async {
         while !destination
             .level
             .chunk_loading

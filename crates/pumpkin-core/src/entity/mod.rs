@@ -102,7 +102,7 @@ mod pickability;
 pub mod player;
 pub(crate) mod player_skin;
 mod player_teleport;
-mod portal_travel;
+pub(crate) mod portal_travel;
 pub mod projectile;
 pub mod projectile_deflection;
 pub(crate) mod spawn_mount;
@@ -1218,11 +1218,7 @@ impl Entity {
     /// Called when the entity changes dimensions (e.g., through a nether portal).
     pub fn set_world(&self, world: Arc<World>) {
         self.invalidate_portal_travel();
-        let block_pos = self.block_pos.load();
-        let biome = world.level.get_rough_biome(&block_pos);
-        self.current_biome.store(Arc::new(biome));
-        self.last_biome_update_pos.store(block_pos);
-        self.world.store(world);
+        self.set_portal_world(world);
     }
 
     pub fn bedrock_metadata(&self) -> SyncedActorDataList {
@@ -2263,36 +2259,10 @@ impl Entity {
         entity: &Self,
         position: Vector3<f64>,
         yaw_delta: Option<f32>,
+        pitch_delta: Option<f32>,
         dest_world: &Arc<World>,
     ) {
-        let passengers = entity
-            .passengers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        for passenger in passengers {
-            let passenger_entity = passenger.get_entity();
-            let passenger_yaw = yaw_delta.map(|delta| passenger_entity.yaw.load() + delta);
-            passenger_entity.portal_cooldown.store(
-                passenger_entity.default_portal_cooldown(),
-                Ordering::Relaxed,
-            );
-
-            // Get nested passengers before teleporting
-            let nested_passengers = passenger_entity
-                .passengers
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-
-            passenger.teleport(position, passenger_yaw, None, dest_world.clone());
-
-            // Recursively teleport nested passengers
-            for nested in nested_passengers {
-                let nested_entity = nested.get_entity();
-                Self::teleport_passengers_recursive(nested_entity, position, yaw_delta, dest_world);
-            }
-        }
+        Self::teleport_portal_passengers(entity, position, yaw_delta, pitch_delta, dest_world);
     }
 
     pub fn try_use_portal(&self, portal_world: Arc<World>, pos: BlockPos) {
@@ -3240,39 +3210,7 @@ impl Entity {
         world: &World,
     ) {
         self.invalidate_portal_travel();
-        // Update server-side position and bounding box
-        self.set_pos(position);
-        if let Some(yaw) = yaw {
-            self.yaw.store(yaw);
-        }
-        if let Some(pitch) = pitch {
-            self.set_pitch(pitch);
-        }
-        // Update cache so we don't send rubberbanding deltas
-        self.last_sent_pos.store(position);
-        // TODO: use `pumpkin_util::math::pack_degrees`.
-        if let Some(yaw) = yaw {
-            self.last_sent_yaw
-                .store((yaw * 256.0 / 360.0).rem_euclid(256.0) as u8, Relaxed);
-            self.last_sent_head_yaw
-                .store((yaw * 256.0 / 360.0).rem_euclid(256.0) as u8, Relaxed);
-        }
-        if let Some(pitch) = pitch {
-            self.last_sent_pitch
-                .store((pitch * 256.0 / 360.0).rem_euclid(256.0) as u8, Relaxed);
-        }
-        let chunk_pos = self.chunk_pos.load();
-        world.broadcast_to_chunk(
-            chunk_pos,
-            &CEntityPositionSync::new(
-                self.entity_id.into(),
-                position,
-                self.velocity.load(),
-                yaw.unwrap_or(self.yaw.load()),
-                pitch.unwrap_or(self.pitch.load()),
-                self.on_ground.load(Ordering::SeqCst),
-            ),
-        );
+        self.apply_portal_teleport(position, yaw, pitch, world);
     }
 
     pub fn get_eye_pos(&self) -> Vector3<f64> {
@@ -3522,6 +3460,7 @@ impl Entity {
         }
 
         let passenger_entity = passenger.get_entity();
+        passenger_entity.invalidate_portal_travel();
         *passenger_entity
             .vehicle
             .lock()
@@ -3556,6 +3495,7 @@ impl Entity {
             .position(|passenger| passenger.get_entity().entity_id == passenger_id)
         {
             let passenger = passengers.remove(index);
+            passenger.get_entity().invalidate_portal_travel();
             *passenger
                 .get_entity()
                 .vehicle
@@ -3621,6 +3561,7 @@ impl Entity {
                 .position(|p| p.get_entity().entity_id == passenger_id)
                 .map(|idx| {
                     let passenger = passengers.remove(idx);
+                    passenger.get_entity().invalidate_portal_travel();
                     *passenger
                         .get_entity()
                         .vehicle
@@ -3914,6 +3855,7 @@ impl Entity {
     }
 
     pub fn reset_state(&self) {
+        self.invalidate_portal_travel();
         self.pose.store(EntityPose::Standing);
         self.fall_flying.store(false, Relaxed);
         self.extinguish();
