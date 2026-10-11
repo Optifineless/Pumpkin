@@ -95,6 +95,14 @@ impl Record {
         self.value.store(0, Ordering::Relaxed);
     }
 
+    pub(super) fn snapshot(&self) -> u64 {
+        self.value.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn restore(&self, value: u64) {
+        self.value.store(value, Ordering::Relaxed);
+    }
+
     pub fn describe(&self, now_ms: u64) -> Option<PhaseDescription> {
         let value = self.value.load(Ordering::Relaxed);
         if value == 0 {

@@ -58,6 +58,7 @@ pub(super) struct PreparedReport {
     pub(super) buffer: ReportBuffer,
     directory: std::path::PathBuf,
     path: std::path::PathBuf,
+    saved_len: usize,
 }
 
 impl PreparedReport {
@@ -75,15 +76,32 @@ impl PreparedReport {
             buffer: ReportBuffer::new(),
             directory,
             path,
+            saved_len: 0,
         }
     }
 
-    pub(super) fn save(&self) {
-        let result = std::fs::create_dir_all(&self.directory)
-            .and_then(|()| std::fs::write(&self.path, self.buffer.as_str()));
-        if let Err(error) = result {
+    pub(super) fn save(&mut self) {
+        if let Err(error) = self.save_with(std::io::Write::write_all) {
             tracing::error!("Unable to save watchdog crash report: {error}");
         }
+    }
+
+    fn save_with(
+        &mut self,
+        write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        std::fs::create_dir_all(&self.directory)?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        // The already-published phase report must survive a failed or interrupted enrichment.
+        write(
+            &mut file,
+            &self.buffer.as_str().as_bytes()[self.saved_len..],
+        )?;
+        self.saved_len = self.buffer.as_str().len();
+        Ok(())
     }
 
     pub(super) fn enrich(&mut self) {
@@ -158,3 +176,7 @@ const fn thread_dump() -> &'static str {
 fn thread_dump() -> String {
     super::debugger::thread_dump()
 }
+
+#[cfg(test)]
+#[path = "report_save_tests.rs"]
+mod report_save_tests;

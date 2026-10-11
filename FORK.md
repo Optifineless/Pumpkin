@@ -31,7 +31,8 @@ output, preserving both failure reasons, with an external timeout;
 Windows reports phase markers. Owner verification: Not yet.
 
 The watchdog and its parked halt helper are ready before gameplay ticking,
-including ticks awaited by plugin `on_load` hooks.
+including ticks awaited by plugin `on_load` hooks; this mirrors the lifecycle
+ordering in `DedicatedServer.initServer` and `MinecraftServer.runServer`.
 Failure detection arms the fallback without allocating; the bounded report
 retains world UUIDs and restores parent block positions after nested work.
 The phase report is saved before optional stack capture. If the halt helper
@@ -47,8 +48,10 @@ exception. `PR_SET_PTRACER_ANY` is never used. The separate launcher waits for
 stopped. Capture requires `/bin/sh`, GNU `timeout`, an executable debugger and
 normal same-user/dumpable permissions.
 Yama modes 2/3 and other security policies can still deny capture. Attachment,
-timeout and detachment under mode 1 require Linux validation; this follow-up
-was developed on Windows and has not verified them.
+A standalone Linux probe validated mode-1 attachment, a timed-out debugger's
+group stop and server resumption. Scratch boot and in-game verification remain
+separate checks. Temporary stack dumps are readable only by their owner, and
+enrichment appends without truncating the saved phase report.
 
 The synthetic slot benchmark measures warm, pre-registered workers, including
 per-batch scopes and per-subject markers. It excludes first-use registration,

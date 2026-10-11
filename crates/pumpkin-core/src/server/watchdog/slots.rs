@@ -151,6 +151,12 @@ impl Slots {
                     .flatten();
                 let worker = self.worker(current);
                 let previous_phase = std::mem::replace(&mut worker.phase, phase);
+                let previous_phase_value = previous_phase.as_ref().and_then(|parent| {
+                    worker
+                        .phase
+                        .as_ref()
+                        .and_then(|child| Arc::ptr_eq(parent, child).then(|| parent.snapshot()))
+                });
                 let previous_world = worker.slot.world.load(Ordering::Relaxed);
                 let previous_subject = worker.slot.subject.load(Ordering::Relaxed);
                 let previous_position = worker.slot.position.load(Ordering::Relaxed);
@@ -160,6 +166,7 @@ impl Slots {
                     slot: worker.slot.clone(),
                     previous_worker,
                     previous_phase,
+                    previous_phase_value,
                     previous_world,
                     previous_subject,
                     previous_position,
@@ -236,6 +243,7 @@ struct WorkerScope {
     slot: Arc<CachePadded<Slot>>,
     previous_worker: Option<Worker>,
     previous_phase: Option<Arc<Record>>,
+    previous_phase_value: Option<u64>,
     previous_world: usize,
     previous_subject: u64,
     previous_position: u64,
@@ -257,7 +265,11 @@ impl Drop for WorkerScope {
         CURRENT.with_borrow_mut(|current| {
             if let Some(worker) = current {
                 if let Some(record) = &worker.phase {
-                    record.finish();
+                    if let Some(value) = self.previous_phase_value {
+                        record.restore(value);
+                    } else {
+                        record.finish();
+                    }
                 }
                 worker.phase = self.previous_phase.take();
             }

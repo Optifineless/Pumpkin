@@ -164,6 +164,7 @@ fn capture_stacks(
     debugger: &std::path::Path,
 ) -> std::io::Result<String> {
     use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
     use std::process::Stdio;
 
     const MAX_STACK_BYTES: u64 = 4 * 1024 * 1024;
@@ -178,6 +179,7 @@ fn capture_stacks(
     let file = std::fs::OpenOptions::new()
         .create_new(true)
         .write(true)
+        .mode(0o600)
         .open(&path)?;
     let result = (|| {
         let mut command = capture_command(timeout, debugger);
@@ -327,6 +329,42 @@ mod tests {
             checked_output(true, "eu-stack exited", "PID 123\nTID 123:\n#0  0x123 tick")
         });
         assert!(result.contains("#0  0x123 tick"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn temporary_stack_dump_is_owner_only_with_permissive_umask() {
+        use std::os::unix::fs::PermissionsExt;
+        const CHILD: &str = "PUMPKIN_WATCHDOG_PERMISSIONS_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "temporary_stack_dump_is_owner_only_with_permissive_umask",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        // SAFETY: this isolated child runs one test; no concurrent tests create files.
+        unsafe { libc::umask(0) };
+        let directory = tempfile::tempdir().unwrap();
+        let debugger = directory.path().join("eu-stack");
+        std::fs::write(
+            &debugger,
+            "#!/bin/sh\nprintf 'MODE='\nstat -Lc '%a' /proc/self/fd/1\nprintf '#0 tick\\n'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&debugger, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = capture_stacks(&find_on_path("timeout").unwrap(), &debugger).unwrap();
+        assert!(output.contains("MODE=600\n"), "{output}");
     }
 
     #[cfg(target_os = "linux")]

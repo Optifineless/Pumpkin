@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn same_world_child_restores_live_parent_phase_and_age() {
+    let slots = Arc::new(Slots::new(Instant::now()));
+    let phase = Arc::new(Record::new());
+    let parent = slots.scope(0, Some(phase.clone()));
+    phase.enter(Phase::WorldTick, 100);
+    let child = slots.scope(0, Some(phase.clone()));
+    phase.enter(Phase::Packets, 200);
+    drop(child);
+    assert_eq!(
+        phase.describe(2100).unwrap().to_string(),
+        "world tick, entered 2000 ms ago"
+    );
+    drop(parent);
+    assert!(phase.describe(2100).is_none());
+}
+
+#[test]
 fn nested_servers_restore_registry_and_reuse_registered_slots() {
     let a = Arc::new(Slots::new(Instant::now()));
     let b = Arc::new(Slots::new(Instant::now()));
