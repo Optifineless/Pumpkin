@@ -1,6 +1,45 @@
 use super::*;
 use pumpkin_protocol::bedrock::server::inventory_transaction::NormalTransactionData;
 
+pub(super) fn assert_empty_offhand_packets(
+    fixture: &mut HandUseFixture,
+    java_packets: &[bytes::Bytes],
+) -> TestResult {
+    let owner_packets = fixture.owner.take_packets();
+    assert_owner_packet(fixture, &owner_packets, Hand::Left, ItemStack::EMPTY)?;
+    let entity_id = fixture.owner.player.entity_id();
+    let java = CSetEquipment::new(
+        entity_id.into(),
+        vec![(
+            EquipmentSlot::OFF_HAND.discriminant(),
+            ItemStackSerializer::from(ItemStack::EMPTY.clone()),
+        )],
+    );
+    let expected = fixture.java_observer.client().serialize_packet(&java)?;
+    assert_eq!(java_packets.iter().filter(|p| **p == expected).count(), 1);
+    let bedrock = CMobEquipment {
+        target_runtime_id: (entity_id as u64).into(),
+        item: NetworkItemStackDescriptor::default(),
+        slot: 0,
+        selected_slot: fixture.owner.player.inventory().get_selected_slot(),
+        container_id: WINDOW_ID_OFF_HAND as u8,
+    };
+    let expected = fixture
+        .bedrock_observer
+        .client()
+        .serialize_packet(&bedrock)?;
+    assert_eq!(
+        fixture
+            .bedrock_observer
+            .take_packets()
+            .iter()
+            .filter(|p| **p == expected)
+            .count(),
+        1
+    );
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn transaction_moves_a_shared_modifier_between_hands() -> TestResult {
     let mut fixture = HandUseFixture::new().await;

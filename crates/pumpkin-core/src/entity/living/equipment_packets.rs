@@ -32,11 +32,12 @@ pub(super) fn send_equipment_changes(
         } else {
             0
         };
+        let (inventory_slot, selected_slot) = living.bedrock_equipment_slots(slot);
         let bedrock_packet = CMobEquipment {
             target_runtime_id: VarULong(living.entity_id() as u64),
             item: NetworkItemStackDescriptor::from(stack),
-            slot: 0,
-            selected_slot: 0,
+            slot: inventory_slot,
+            selected_slot,
             container_id,
         };
         world.send_to_tracking_players_bedrock(&living.entity, &bedrock_packet);
