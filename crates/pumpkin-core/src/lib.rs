@@ -23,7 +23,7 @@ use crate::net::{ClientPlatform, DisconnectReason, PacketHandlerResult, PacketRa
 use crate::net::{lan_broadcast::LANBroadcast, management::ManagementServer, query};
 use crate::plugin::loader::PluginLoader;
 use crate::plugin::server::server_command::ServerCommandEvent;
-use crate::server::{Server, ticker::Ticker};
+use crate::server::Server;
 use plugin::server::server_load::{LoadType, ServerLoadEvent};
 use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use pumpkin_util::text::TextComponent;
@@ -264,6 +264,7 @@ impl PumpkinServer {
             plugin_loaders,
         )
         .await?;
+        server.watchdog_prepare_workers();
 
         #[cfg(target_family = "unix")]
         adjust_file_descriptor_limit();
@@ -331,15 +332,6 @@ impl PumpkinServer {
             None
         };
 
-        let ticker_server = server.clone();
-        let ticker = std::thread::Builder::new()
-            .name("Server-Ticker".into())
-            .spawn(move || Ticker::run(&ticker_server))
-            .unwrap_or_else(|err| {
-                error!("Failed to spawn Server-Ticker thread: {err}");
-                std::process::exit(1);
-            });
-
         let (bedrock_status, ice_socket) = match Self::bind_bedrock_status(&server).await {
             Some((status, ice)) => (Some(status), Some(ice)),
             None => (None, None),
@@ -351,7 +343,7 @@ impl PumpkinServer {
             tcp_listener,
             bedrock_status,
             nethernet_listener,
-            ticker: std::sync::Mutex::new(Some(ticker)),
+            ticker: std::sync::Mutex::new(None),
         })
     }
 
@@ -449,6 +441,10 @@ impl PumpkinServer {
     }
 
     pub async fn start(&self) {
+        let _watchdog = self.start_ticker().unwrap_or_else(|error| {
+            error!("Failed to start server ticker/watchdog: {error}");
+            std::process::exit(1);
+        });
         if self.server.advanced_config.commands.use_console
             && let Some((wrapper, _, _)) = LOGGER_IMPL.wait()
         {

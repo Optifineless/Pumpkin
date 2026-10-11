@@ -22,9 +22,13 @@ Vanilla 26.3's `ServerWatchdog` now has a dedicated thread that reports a stalle
 tick and exits without saving. `max_tick_time` in `pumpkin.toml` defaults to
 60000 milliseconds; non-positive values disable it. Startup, normal shutdown,
 frozen ticks and sprints are exempt. Reports include active phases, entity IDs
-and types, block entity positions, tick-start player/chunk counts and Tokio
+and types, block entity positions, dispatch-snapshot player/chunk counts and Tokio
 metrics. Linux stack capture uses `eu-stack` or `gdb` with an external timeout;
 Windows reports phase markers. Owner verification: Not yet.
+
+The watchdog and its parked halt helper are ready before gameplay ticking.
+Failure detection arms the fallback without allocating; the bounded report
+retains world UUIDs and restores parent block positions after nested work.
 
 Native plugin API stays at 8 under fork policy; the Wasm WIT is unchanged.
 

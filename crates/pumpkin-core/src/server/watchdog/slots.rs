@@ -33,20 +33,21 @@ pub(super) struct Slot {
 }
 
 impl Slot {
-    fn describe(&self) -> Option<String> {
+    fn append(&self, report: &mut impl Write) -> std::fmt::Result {
         let subject = self.subject.load(Ordering::Relaxed);
         if subject == 0 {
-            return None;
+            return Ok(());
         }
         let phase = Phase::name(subject as u8);
         let registry_id = (subject >> TYPE_SHIFT) as u16;
         let kind = (subject >> KIND_SHIFT) & PHASE_MASK;
-        let identity = match kind {
+        write!(report, ": {phase}, ")?;
+        match kind {
             ENTITY | PLAYER => {
                 let name =
                     EntityType::from_raw(registry_id).map_or("unknown", |kind| kind.resource_name);
                 let label = if kind == PLAYER { "player" } else { "entity" };
-                format!("{label} {} ({name})", (subject >> ID_SHIFT) as i32)
+                writeln!(report, "{label} {} ({name})", (subject >> ID_SHIFT) as i32)
             }
             BLOCK_ENTITY => {
                 let name = BLOCK_ENTITY_TYPES
@@ -57,17 +58,14 @@ impl Slot {
                     self.position.load(Ordering::Relaxed) as i64,
                     &JavaMinecraftVersion::V_1_14,
                 );
-                format!(
+                writeln!(
+                    report,
                     "block entity minecraft:{name} at ({}, {}, {})",
                     position.0.x, position.0.y, position.0.z
                 )
             }
-            _ => return None,
-        };
-        Some(format!(
-            "World #{}: {phase}, {identity}",
-            self.world.load(Ordering::Relaxed)
-        ))
+            _ => Ok(()),
+        }
     }
 }
 
@@ -77,6 +75,10 @@ pub(super) struct Slots {
 }
 
 impl Slots {
+    pub(super) fn warm_reader(&self) {
+        drop(self.registered.load());
+    }
+
     pub(super) fn new(epoch: Instant) -> Self {
         Self {
             registered: ArcSwap::from_pointee(Vec::new()),
@@ -124,6 +126,7 @@ impl Slots {
                 let previous_phase = std::mem::replace(&mut worker.phase, phase);
                 let previous_world = worker.slot.world.load(Ordering::Relaxed);
                 let previous_subject = worker.slot.subject.load(Ordering::Relaxed);
+                let previous_position = worker.slot.position.load(Ordering::Relaxed);
                 worker.slot.subject.store(0, Ordering::Relaxed);
                 worker.slot.world.store(world, Ordering::Relaxed);
                 Some(WorkerScope {
@@ -131,18 +134,28 @@ impl Slots {
                     previous_phase,
                     previous_world,
                     previous_subject,
+                    previous_position,
                     thread_bound: PhantomData,
                 })
             })
             .into()
     }
 
-    pub(super) fn append(&self, report: &mut String) {
+    pub(super) fn append(
+        &self,
+        report: &mut impl Write,
+        world_id: impl Fn(usize) -> Option<uuid::Uuid>,
+    ) {
         // Relaxed observations are deliberately best-effort during a crash. No
         // retry loop: a wedged writer must never prevent the fatal report.
         for (index, slot) in self.registered.load().iter().enumerate() {
-            if let Some(line) = slot.describe() {
-                let _ = writeln!(report, "Worker #{index}: {line}");
+            if slot.subject.load(Ordering::Relaxed) != 0 {
+                let world = slot.world.load(Ordering::Relaxed);
+                let _ = write!(report, "Worker #{index}: World #{world}");
+                if let Some(id) = world_id(world) {
+                    let _ = write!(report, " [{id}]");
+                }
+                let _ = slot.append(report);
             }
         }
     }
@@ -189,11 +202,16 @@ struct WorkerScope {
     previous_phase: Option<Arc<Record>>,
     previous_world: usize,
     previous_subject: u64,
+    previous_position: u64,
     thread_bound: PhantomData<Rc<()>>,
 }
 
 impl Drop for WorkerScope {
     fn drop(&mut self) {
+        // Restore coordinates before publishing the parent subject.
+        self.slot
+            .position
+            .store(self.previous_position, Ordering::Relaxed);
         self.slot
             .world
             .store(self.previous_world, Ordering::Relaxed);

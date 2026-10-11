@@ -1,10 +1,18 @@
 mod diagnostics;
+mod halt;
 pub(crate) mod markers;
 mod observations;
 pub(crate) mod slots;
+mod startup;
 
 #[cfg(test)]
+mod allocation_counter;
+#[cfg(test)]
+mod allocation_tests;
+#[cfg(test)]
 mod benchmark;
+#[cfg(test)]
+mod startup_tests;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -12,11 +20,11 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use diagnostics::PreparedReport;
+use halt::HaltGuard;
 use markers::{Phase, Record, elapsed_ms};
 use slots::Slots;
 use tokio::runtime::RuntimeMetrics;
-
-use super::tick_rate_manager::ServerTickRateManager;
 
 // ServerWatchdog.MAX_SHUTDOWN_TIME and SHUTDOWN_STATUS.
 const MAX_SHUTDOWN_TIME: Duration = Duration::from_secs(10);
@@ -62,7 +70,7 @@ impl Watchdog {
     }
 
     pub(crate) fn begin_tick(&self, suspended: bool) {
-        if self.enabled.load(Ordering::Relaxed) {
+        if self.max_tick_ms > 0 {
             let now = elapsed_ms(self.epoch);
             let exemption = if suspended { EXEMPT_TICK } else { 0 };
             self.tick_start.store(
@@ -88,45 +96,52 @@ impl Watchdog {
         self.end_tick();
     }
 
-    fn run(&self, manager: &ServerTickRateManager, metrics: &RuntimeMetrics) {
+    // Freeze/sprint exemption is fixed at the tick boundary: a command issued
+    // while a tick is stuck must not exempt that tick.
+    fn stalled_tick(&self) -> Option<u64> {
+        let start = self.tick_start.load(Ordering::Acquire);
+        stalled(self.max_tick_ms, start, || elapsed_ms(self.epoch)).then_some(start)
+    }
+
+    fn detect_and_arm(&self, halt: &HaltGuard) -> Option<u64> {
+        let start = self.stalled_tick()?;
+        (self.enabled.load(Ordering::Acquire) && self.tick_start.load(Ordering::Acquire) == start)
+            .then(|| {
+                // No allocation, logger, catalog read or thread creation before arming.
+                halt.arm();
+                start >> TICK_CLOCK_SHIFT
+            })
+    }
+
+    fn run(&self, metrics: &RuntimeMetrics, halt: &HaltGuard, report: &mut PreparedReport) {
         let poll = POLL_INTERVAL.min(Duration::from_millis(self.max_tick_ms as u64));
         while self.enabled.load(Ordering::Acquire) {
-            let start = self.tick_start.load(Ordering::Acquire);
-            if stalled(
-                self.max_tick_ms,
-                start,
-                manager.is_frozen() || manager.is_sprinting(),
-                || elapsed_ms(self.epoch),
-            ) && self.enabled.load(Ordering::Acquire)
-                && self.tick_start.load(Ordering::Acquire) == start
-            {
-                self.crash(metrics, start >> TICK_CLOCK_SHIFT);
+            if let Some(start) = self.detect_and_arm(halt) {
+                self.crash(metrics, start, report);
             }
             std::thread::park_timeout(poll);
         }
     }
 
     // ServerWatchdog.run / exit: bypass normal shutdown and all world saves.
-    fn crash(&self, metrics: &RuntimeMetrics, tick_start_ms: u64) -> ! {
-        // Arm before logging: even a stuck subscriber or debugger cannot stop the halt.
-        if std::thread::Builder::new()
-            .name("Watchdog-Halt".into())
-            .spawn(|| {
-                std::thread::sleep(MAX_SHUTDOWN_TIME);
-                hard_exit();
-            })
-            .is_err()
-        {
-            hard_exit();
-        }
-        let report = self.report(metrics, tick_start_ms);
+    fn crash(
+        &self,
+        metrics: &RuntimeMetrics,
+        tick_start_ms: u64,
+        report: &mut PreparedReport,
+    ) -> ! {
+        self.report(metrics, tick_start_ms, &mut report.buffer);
         // Persist diagnostics before touching a subscriber that might itself be stuck.
-        diagnostics::save_report(&report);
+        report.save();
+        // Debugger setup and filesystem/logging internals may allocate, after the
+        // independent fallback is armed and the bounded phase report is persisted.
+        report.enrich();
+        report.save();
         tracing::error!(
             "A single server tick exceeded {} ms; forcing shutdown without saving",
             self.max_tick_ms
         );
-        tracing::error!("Watchdog crash report:\n{report}");
+        tracing::error!("Watchdog crash report:\n{}", report.buffer.as_str());
         std::thread::sleep(LOG_FLUSH_DELAY);
         hard_exit();
     }
@@ -147,7 +162,6 @@ pub struct WatchdogGuard {
 impl WatchdogGuard {
     pub(crate) fn start(
         state: Arc<Watchdog>,
-        manager: Arc<ServerTickRateManager>,
         metrics: RuntimeMetrics,
     ) -> std::io::Result<Option<Self>> {
         // DedicatedServer.initServer starts the daemon only for positive max-tick-time.
@@ -163,16 +177,36 @@ impl WatchdogGuard {
                     "Watchdog is already running",
                 )
             })?;
-        rayon::broadcast(|_| state.slots.register());
+        let mut report = PreparedReport::new();
+        let halt = match HaltGuard::start() {
+            Ok(halt) => halt,
+            Err(error) => {
+                state.stop();
+                return Err(error);
+            }
+        };
+        let (ready, wait_ready) = std::sync::mpsc::sync_channel(0);
         let worker = state.clone();
         match std::thread::Builder::new()
             .name("Server-Watchdog".into())
-            .spawn(move || worker.run(&manager, &metrics))
-        {
-            Ok(thread) => Ok(Some(Self {
-                state,
-                thread: Some(thread),
-            })),
+            .spawn(move || {
+                // ArcSwap's reader bookkeeping is warmed on this OS thread.
+                drop(worker.worlds.load());
+                worker.slots.warm_reader();
+                std::thread::park_timeout(Duration::ZERO);
+                let _ = ready.send(());
+                worker.run(&metrics, &halt, &mut report);
+            }) {
+            Ok(thread) => {
+                let guard = Self {
+                    state,
+                    thread: Some(thread),
+                };
+                wait_ready
+                    .recv()
+                    .map_err(|_| std::io::Error::other("Watchdog failed during startup"))?;
+                Ok(Some(guard))
+            }
             Err(error) => {
                 state.stop();
                 Err(error)
@@ -194,11 +228,10 @@ impl Drop for WatchdogGuard {
 }
 
 // ServerWatchdog.run's strict > comparison, with a clock injected by the caller.
-fn stalled(max_tick_ms: i64, start: u64, suspended: bool, clock: impl FnOnce() -> u64) -> bool {
+fn stalled(max_tick_ms: i64, start: u64, clock: impl FnOnce() -> u64) -> bool {
     max_tick_ms > 0
         && start != 0
         && start & EXEMPT_TICK == 0
-        && !suspended
         && clock().saturating_sub(start >> TICK_CLOCK_SHIFT) > max_tick_ms as u64
 }
 
@@ -214,30 +247,22 @@ mod tests {
         assert!(!stalled(
             60_000,
             watchdog.tick_start.load(Ordering::Relaxed),
-            false,
             || u64::MAX
         ));
         watchdog.begin_tick(false);
         let start = watchdog.tick_start.load(Ordering::Relaxed);
-        assert!(!stalled(60_000, start, false, || (start
-            >> TICK_CLOCK_SHIFT)
-            + 60_000));
-        assert!(stalled(60_000, start, false, || (start
-            >> TICK_CLOCK_SHIFT)
-            + 60_001));
-        assert!(!stalled(60_000, start, true, || u64::MAX));
+        assert!(!stalled(60_000, start, || (start >> TICK_CLOCK_SHIFT) + 60_000));
+        assert!(stalled(60_000, start, || (start >> TICK_CLOCK_SHIFT) + 60_001));
         watchdog.end_tick();
         assert!(!stalled(
             60_000,
             watchdog.tick_start.load(Ordering::Relaxed),
-            false,
             || u64::MAX
         ));
         watchdog.begin_tick(true);
         assert!(!stalled(
             60_000,
             watchdog.tick_start.load(Ordering::Relaxed),
-            false,
             || u64::MAX
         ));
         watchdog.stop();
@@ -248,7 +273,7 @@ mod tests {
     #[test]
     fn disabled_configuration_never_fires() {
         for limit in [-1, 0, i64::MIN] {
-            assert!(!stalled(limit, 1, false, || u64::MAX));
+            assert!(!stalled(limit, 1, || u64::MAX));
         }
     }
 }

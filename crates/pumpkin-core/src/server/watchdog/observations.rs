@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::server::Server;
+use crate::world::World;
 
 use super::markers::{Phase, Record};
 use super::slots::WorkerMarker;
@@ -11,20 +12,21 @@ impl Server {
     /// Starts tick stall detection explicitly; constructing a server does not start it.
     /// Keep the returned guard until shutdown. Only one watchdog may run per server.
     pub fn start_watchdog(&self) -> std::io::Result<Option<WatchdogGuard>> {
-        self.watchdog_update_world_stats();
-        WatchdogGuard::start(
-            self.watchdog.clone(),
-            self.tick_rate_manager.clone(),
-            self.runtime.metrics(),
-        )
+        WatchdogGuard::start(self.watchdog.clone(), self.runtime.metrics())
     }
 
     pub(crate) fn watchdog_tick_start(&self) {
         self.watchdog.begin_tick(
             self.tick_rate_manager.is_frozen() || self.tick_rate_manager.is_sprinting(),
         );
-        if self.watchdog.enabled.load(Ordering::Relaxed) {
-            self.watchdog_update_world_stats();
+    }
+
+    /// Registers diagnostic workers before networking or gameplay can start.
+    pub(crate) fn watchdog_prepare_workers(&self) {
+        if self.watchdog.max_tick_ms > 0 {
+            self.watchdog_update_world_stats(&self.worlds.load());
+            // Registration precedes plugins and ticker startup, never queued behind gameplay.
+            rayon::broadcast(|_| self.watchdog.slots.register());
         }
     }
 
@@ -36,11 +38,11 @@ impl Server {
 
     // ServerLevel.getWatchdogStats: keep copied labels and atomic counts. The
     // catalog allocates at startup or world replacement, never on ordinary ticks.
-    fn watchdog_update_world_stats(&self) {
+    /// Samples the dispatch slice without reloading the live world list.
+    pub(crate) fn watchdog_update_world_stats(&self, worlds: &[Arc<World>]) {
         if self.watchdog.max_tick_ms <= 0 {
             return;
         }
-        let worlds = self.worlds.load();
         let previous = self.watchdog.worlds.load();
         if worlds.len() != previous.len()
             || worlds

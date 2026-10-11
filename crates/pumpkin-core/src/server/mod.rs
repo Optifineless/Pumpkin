@@ -1261,6 +1261,7 @@ impl Server {
     /// This includes player ticking (network, keep-alives) and flushing world updates to clients.
     pub fn tick_players_and_network(self: &Arc<Self>) {
         let worlds = self.worlds.load();
+        self.watchdog_update_world_stats(&worlds);
         let handle = self.runtime.clone();
 
         for (index, world) in worlds.iter().enumerate() {
@@ -1304,6 +1305,7 @@ impl Server {
         self.sync_game_time();
 
         let worlds = self.worlds.load();
+        self.watchdog_update_world_stats(&worlds);
         let handle = self.runtime.clone();
         self.watchdog.phase(watchdog::markers::Phase::WorldTick);
         worlds.par_iter().enumerate().for_each(|(index, world)| {

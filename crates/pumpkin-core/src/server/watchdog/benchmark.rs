@@ -1,5 +1,3 @@
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::cell::Cell;
 use std::hint::black_box;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -11,6 +9,7 @@ use pumpkin_data::{block_properties::BLOCK_ENTITY_TYPES, entity::EntityType};
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use rayon::prelude::*;
 
+use super::allocation_counter::{ALLOCATIONS, COUNT_ALLOCATIONS};
 use super::markers::{Phase, Record};
 use super::slots::Slots;
 
@@ -26,48 +25,6 @@ const TICKS: usize = 10_000;
 const SAMPLES: usize = 9;
 const BATCH: usize = 16;
 const ALLOCATION_TICKS: usize = 100;
-
-thread_local! {
-    static COUNT_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
-}
-static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
-
-struct Counter;
-
-#[global_allocator]
-static ALLOCATOR: Counter = Counter;
-
-fn count_allocation() {
-    if COUNT_ALLOCATIONS.try_with(Cell::get).unwrap_or(false) {
-        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-// SAFETY: forwards each unchanged layout/pointer to System, with diagnostic counting.
-unsafe impl GlobalAlloc for Counter {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        count_allocation();
-        // SAFETY: the caller supplies GlobalAlloc's valid layout.
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        count_allocation();
-        // SAFETY: the caller supplies GlobalAlloc's valid layout.
-        unsafe { System.alloc_zeroed(layout) }
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        // SAFETY: pointer and layout are passed through from the allocating caller.
-        unsafe { System.dealloc(pointer, layout) }
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        count_allocation();
-        // SAFETY: the caller supplies GlobalAlloc's valid allocation and size.
-        unsafe { System.realloc(pointer, layout, size) }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 enum Mode {

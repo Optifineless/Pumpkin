@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -94,14 +95,26 @@ impl Record {
         self.value.store(0, Ordering::Relaxed);
     }
 
-    pub fn describe(&self, now_ms: u64) -> Option<String> {
+    pub fn describe(&self, now_ms: u64) -> Option<PhaseDescription> {
         let value = self.value.load(Ordering::Relaxed);
         if value == 0 {
             return None;
         }
         let phase = Phase::name(value as u8);
         let age = now_ms.saturating_sub(value >> PHASE_BITS);
-        Some(format!("{phase}, entered {age} ms ago"))
+        Some(PhaseDescription { phase, age })
+    }
+}
+
+/// Formats a copied phase observation without allocating a string.
+pub struct PhaseDescription {
+    phase: &'static str,
+    age: u64,
+}
+
+impl fmt::Display for PhaseDescription {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}, entered {} ms ago", self.phase, self.age)
     }
 }
 
