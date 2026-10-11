@@ -3587,6 +3587,8 @@ impl Entity {
     }
 
     pub(crate) fn remove_passenger_on_disconnect(&self, passenger_id: i32) {
+        #[cfg(test)]
+        crate::server::scenario::riding_lock_probe::assert_unlocked(self);
         let mut passengers = self
             .passengers
             .lock()
@@ -3629,6 +3631,8 @@ impl Entity {
 
     #[allow(clippy::too_many_lines)]
     fn remove_passenger_internal(&self, passenger_id: i32, reposition: bool) {
+        #[cfg(test)]
+        crate::server::scenario::riding_lock_probe::assert_unlocked(self);
         let mut dismount_event =
             crate::plugin::api::events::entity::entity_dismount::EntityDismountEvent::new(
                 passenger_id,

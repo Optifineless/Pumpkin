@@ -2,6 +2,8 @@
 pub(crate) mod combat_test_support;
 mod map_storage;
 #[cfg(test)]
+pub(crate) mod scenario;
+#[cfg(test)]
 mod startup_tests;
 use crate::block::registry::BlockRegistry;
 use crate::command::commands::default_dispatcher;
