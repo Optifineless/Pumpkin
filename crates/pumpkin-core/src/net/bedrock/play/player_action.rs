@@ -32,7 +32,15 @@ impl BedrockClient {
                 let world = entity.world.load_full();
                 let (block, state) = world.get_block_and_state(&location);
 
-                if !player.may_attack_block(&world, &location) {
+                // Bedrock CONTINUE at a new target maps to ServerPlayerGameMode's START.
+                let starts_breaking =
+                    player.is_creative() || !player.is_destroying_block_at(&location);
+                let admitted = if starts_breaking {
+                    player.may_attack_block(&world, &location)
+                } else {
+                    player.may_break_block(&world, &location)
+                };
+                if !admitted {
                     let runtime_id = pumpkin_data::BlockState::to_be_network_id(state.id);
                     self.try_enqueue_client_packet(&CUpdateBlock::new(location, runtime_id));
                     return;
@@ -60,12 +68,7 @@ impl BedrockClient {
                             .broken(&world, block, player, &location, server, state);
                     }
                 } else if !state.is_air() {
-                    let starts_breaking = !player.mining.load(Ordering::Relaxed)
-                        || *player
-                            .mining_pos
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            != location;
+                    let starts_breaking = !player.is_destroying_block_at(&location);
                     if starts_breaking {
                         server
                             .block_registry
@@ -117,6 +120,9 @@ impl BedrockClient {
                                 player.tick_counter.load(Ordering::Relaxed),
                                 Ordering::Relaxed,
                             );
+                            player
+                                .mining_lifecycle
+                                .store(player.living_entity.damage_lifecycle(), Ordering::Relaxed);
                             player.mining.store(true, Ordering::Relaxed);
                             *mining_pos = location;
                             (speed * 10.0) as i32
@@ -162,18 +168,25 @@ impl BedrockClient {
                 let world = entity.world.load_full();
 
                 let (block, state) = world.get_block_and_state(&location);
+                // ServerPlayerGameMode.destroyBlock rechecks the live player's restrictions.
+                if !player.may_break_block(&world, &location)
+                    || !server
+                        .item_registry
+                        .can_mine(player.inventory().held_item().item, player)
+                {
+                    player.stop_mining();
+                    let runtime_id = pumpkin_data::BlockState::to_be_network_id(state.id);
+                    self.try_enqueue_client_packet(&CUpdateBlock::new(location, runtime_id));
+                    return;
+                }
                 if player.gamemode.load() != GameMode::Creative && !state.is_air() {
                     let speed = crate::block::calc_block_breaking(player, state, block);
-                    let elapsed = player.tick_counter.load(Ordering::Relaxed)
-                        - player.start_mining_time.load(Ordering::Relaxed)
-                        + 1;
-                    let same_block = *player
-                        .mining_pos
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        == location;
-                    if player.mining.load(Ordering::Relaxed)
-                        && same_block
+                    let elapsed = player
+                        .tick_counter
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(player.start_mining_time.load(Ordering::Relaxed))
+                        .saturating_add(1);
+                    if player.is_destroying_block_at(&location)
                         && speed * elapsed as f32 >= MIN_PREDICTED_BREAK_PROGRESS
                     {
                         player.stop_mining();

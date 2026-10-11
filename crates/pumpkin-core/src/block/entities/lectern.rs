@@ -166,6 +166,22 @@ impl LecternBlockEntity {
 }
 
 impl Inventory for LecternBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot != 0 {
+            return;
+        }
+        let mut book = self
+            .book
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let before = book.clone();
+        update(&mut book);
+        if !book.are_equal(&before) {
+            self.page.store(0, Ordering::Relaxed);
+            self.mark_dirty();
+        }
+    }
+
     fn size(&self) -> usize {
         1
     }

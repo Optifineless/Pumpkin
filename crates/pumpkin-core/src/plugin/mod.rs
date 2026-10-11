@@ -88,6 +88,11 @@ pub trait DynEventHandler: Send + Sync {
 /// A trait for handling specific events.
 ///
 /// This trait allows for handling events of a specific type that implements the `Event` trait.
+/// Handler futures retain their neighbour cascade. Workers spawned by a handler must carry
+/// `NeighborUpdateContext::capture()` through `scope` (tasks) or `with` (threads), captured
+/// before spawning. Recursive updates enqueue and return; unrelated callers wait up to two
+/// seconds, then warn once and enqueue immediately for the rest of that cascade. Do not hold
+/// locks that another cascade's callback needs.
 pub trait EventHandler<E: Payload>: Send + Sync {
     /// Asynchronously handles an event of type `E`.
     ///
@@ -1242,19 +1247,22 @@ impl PluginManager {
             return;
         }
 
-        // Process blocking handlers first
-        for handler in handlers {
-            if handler.is_blocking() {
-                handler.handle_blocking_dyn(server, event).await;
+        crate::world::neighbor_context::NeighborUpdateContext::scope_current(async {
+            // Process blocking handlers first
+            for handler in handlers {
+                if handler.is_blocking() {
+                    handler.handle_blocking_dyn(server, event).await;
+                }
             }
-        }
 
-        // Process non-blocking handlers
-        for handler in handlers {
-            if !handler.is_blocking() {
-                handler.handle_dyn(server, event).await;
+            // Process non-blocking handlers
+            for handler in handlers {
+                if !handler.is_blocking() {
+                    handler.handle_dyn(server, event).await;
+                }
             }
-        }
+        })
+        .await;
     }
 
     /// Fire an event to all registered handlers synchronously (blocking if handlers exist).

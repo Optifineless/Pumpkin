@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::block::entities::jukebox::JukeboxBlockEntity;
+use crate::block::entities::jukebox::{JukeboxBlockEntity, song_from_stack};
 use crate::block::registry::BlockActionResult;
 use crate::block::{
     BlockBehaviour, BrokenArgs, EmitsRedstonePowerArgs, GetComparatorOutputArgs,
@@ -11,14 +11,12 @@ use crate::entity::item::ItemEntity;
 use crate::world::World;
 use pumpkin_data::data_component_impl::JukeboxPlayableImpl;
 use pumpkin_data::entity::EntityType;
-use pumpkin_data::jukebox_song::JukeboxSong;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockStateId, block_properties::JukeboxLikeProperties};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use rand::{RngExt, rng};
-
 use tracing::error;
 
 #[pumpkin_block("minecraft:jukebox")]
@@ -52,16 +50,6 @@ impl JukeboxBlock {
             }
         }
     }
-
-    /// Stops the music and updates block state
-    fn stop_playing(_block: &Block, position: &BlockPos, world: &Arc<World>) {
-        world.sync_world_event(WorldEvent::SoundStopJukeboxSong, *position, 0);
-    }
-
-    /// Starts playing music
-    fn start_playing(position: &BlockPos, world: &Arc<World>, song_id: u32) {
-        world.sync_world_event(WorldEvent::SoundPlayJukeboxSong, *position, song_id as i32);
-    }
 }
 
 impl BlockBehaviour for JukeboxBlock {
@@ -80,8 +68,6 @@ impl BlockBehaviour for JukeboxBlock {
         if Self::has_record_state(args.block, state_id) {
             // Drop the record
             Self::drop_record(args.position, args.world);
-            // Stop the music and update block state
-            Self::stop_playing(args.block, args.position, args.world);
             return BlockActionResult::Success;
         }
 
@@ -101,24 +87,15 @@ impl BlockBehaviour for JukeboxBlock {
 
         let item_stack = &mut *args.item_stack;
 
-        // Vanilla: JukeboxPlayableComponent lv = stack.get(DataComponentTypes.JUKEBOX_PLAYABLE)
-        let jukebox_playable = item_stack
-            .get_data_component::<JukeboxPlayableImpl>()
-            .map(|i| i.song);
-
-        // Vanilla: if (lv == null) return PASS_TO_DEFAULT_BLOCK_ACTION
-        let Some(jukebox_playable) = jukebox_playable else {
+        // JukeboxPlayable.tryInsertIntoJukebox / JukeboxSong.fromStack.
+        if song_from_stack(item_stack).is_none() {
+            if let Some(playable) = item_stack.get_data_component::<JukeboxPlayableImpl>()
+                && let Some(song_name) = playable.song.split(':').nth(1)
+            {
+                error!("Jukebox playable song not registered: {song_name}");
+            }
             return BlockActionResult::PassToDefaultBlockAction;
-        };
-
-        let Some(song_name) = jukebox_playable.split(':').nth(1) else {
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
-
-        let Some(jukebox_song) = JukeboxSong::from_name(song_name) else {
-            error!("Jukebox playable song not registered: {song_name}");
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
+        }
 
         // Vanilla: ItemStack lv3 = stack.splitUnlessCreative(1, player)
         let record = item_stack.split_unless_creative(args.player.gamemode.load(), 1);
@@ -128,12 +105,7 @@ impl BlockBehaviour for JukeboxBlock {
             && let Some(jukebox_entity) = block_entity.as_any().downcast_ref::<JukeboxBlockEntity>()
         {
             jukebox_entity.set_record(record);
-            // Start tracking playback with song duration
-            jukebox_entity.start_playing(jukebox_song.length_in_ticks());
         }
-
-        // Start playing the music (client-side audio)
-        Self::start_playing(args.position, world, jukebox_song.get_id());
 
         args.player.increment_stat(
             pumpkin_data::statistic::StatisticCategory::Custom,
@@ -184,11 +156,7 @@ impl BlockBehaviour for JukeboxBlock {
             && let Some(jukebox_entity) = block_entity.as_any().downcast_ref::<JukeboxBlockEntity>()
         {
             let record = jukebox_entity.get_record();
-            // Get the song from the record's jukebox_playable component
-            if let Some(playable) = record.get_data_component::<JukeboxPlayableImpl>()
-                && let Some(song_name) = playable.song.rsplit(':').next()
-                && let Some(song) = JukeboxSong::from_name(song_name)
-            {
+            if let Some(song) = song_from_stack(&record) {
                 return Some(song.comparator_output());
             }
         }

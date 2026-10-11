@@ -141,3 +141,191 @@ async fn bedrock_border_rejected_note_attack_has_no_effect() {
 async fn bedrock_survival_egg_attack_teleports() {
     egg_attack(GameMode::Survival, false, false, true).await;
 }
+
+struct CountDamage(std::sync::atomic::AtomicUsize);
+impl EventHandler<BlockDamageEvent> for CountDamage {
+    fn handle_blocking<'a>(
+        &'a self,
+        _: &'a Arc<Server>,
+        _: &'a mut BlockDamageEvent,
+    ) -> BoxFuture<'a, ()> {
+        self.0.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async {})
+    }
+}
+fn dig(player: &TestBedrockPlayer, server: &Server, action: PlayerAction, position: BlockPos) {
+    player.client().handle_player_action(
+        &player.player,
+        server,
+        &SPlayerAction {
+            player_runtime_id: VarULong(player.player.entity_id() as u64),
+            action,
+            block_position: position,
+            result_pos: position,
+            face: VarInt(1),
+        },
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bedrock_continued_dig_fires_damage_once() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    let player = TestBedrockPlayer::new(&world).await;
+    player.player.permission_lvl.store(PermissionLvl::Four);
+    player
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(8.5, 64.0, 8.5));
+    let events = Arc::new(CountDamage(std::sync::atomic::AtomicUsize::new(0)));
+    fixture
+        .server
+        .plugin_manager
+        .register::<BlockDamageEvent, _>(events.clone(), EventPriority::Normal, true);
+    let position = BlockPos::new(8, 63, 8);
+    dig(
+        &player,
+        &fixture.server,
+        PlayerAction::StartDestroyBlock,
+        position,
+    );
+    for _ in 0..5 {
+        dig(
+            &player,
+            &fixture.server,
+            PlayerAction::ContinueDestroyBlock,
+            position,
+        );
+    }
+    assert_eq!(events.0.load(Ordering::Relaxed), 1);
+    assert!(player.player.mining.load(Ordering::Relaxed));
+    player.close().await;
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hf3_bedrock_continue_new_target_starts_once_and_creative_fires_once() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    let player = TestBedrockPlayer::new(&world).await;
+    player.player.permission_lvl.store(PermissionLvl::Four);
+    player
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(8.5, 64.0, 8.5));
+    let events = Arc::new(CountDamage(std::sync::atomic::AtomicUsize::new(0)));
+    fixture
+        .server
+        .plugin_manager
+        .register::<BlockDamageEvent, _>(events.clone(), EventPriority::Normal, true);
+    let position = BlockPos::new(8, 63, 8);
+    dig(
+        &player,
+        &fixture.server,
+        PlayerAction::StartDestroyBlock,
+        position,
+    );
+    let next = position.offset(Vector3::new(1, 0, 0));
+    dig(
+        &player,
+        &fixture.server,
+        PlayerAction::ContinueDestroyBlock,
+        next,
+    );
+    assert!(player.player.is_destroying_block_at(&next));
+    assert_eq!(events.0.load(Ordering::Relaxed), 2);
+    for action in [
+        PlayerAction::StartDestroyBlock,
+        PlayerAction::ContinueDestroyBlock,
+    ] {
+        dig(&player, &fixture.server, action, next);
+    }
+    assert_eq!(events.0.load(Ordering::Relaxed), 2);
+    player.player.set_gamemode(GameMode::Creative);
+    player.player.set_client_loaded(true);
+    dig(
+        &player,
+        &fixture.server,
+        PlayerAction::ContinueDestroyBlock,
+        next,
+    );
+    assert!(world.get_block_state(&next).is_air());
+    assert_eq!(events.0.load(Ordering::Relaxed), 3);
+    player.close().await;
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bedrock_finish_and_tick_recheck_mid_dig_permissions() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    let player = TestBedrockPlayer::new(&world).await;
+    player
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(8.5, 64.0, 8.5));
+    let position = BlockPos::new(8, 63, 8);
+    fixture.server.level_info.rcu(|info| {
+        let mut info = (**info).clone();
+        info.spawn_x = 8;
+        info.spawn_z = 8;
+        info
+    });
+    for finish in [
+        PlayerAction::PredictDestroyBlock,
+        PlayerAction::StopDestroyBlock,
+    ] {
+        for denial in 0..4 {
+            player.player.set_gamemode(GameMode::Survival);
+            player.player.set_client_loaded(true);
+            player.player.permission_lvl.store(PermissionLvl::Four);
+            world.worldborder.lock().unwrap().new_diameter = 1000.0;
+            dig(
+                &player,
+                &fixture.server,
+                PlayerAction::StartDestroyBlock,
+                position,
+            );
+            assert!(player.player.mining.load(Ordering::Relaxed));
+            player
+                .player
+                .tick_counter
+                .fetch_add(1000, Ordering::Relaxed);
+            match denial {
+                0 => {
+                    player.player.set_gamemode(GameMode::Spectator);
+                }
+                1 => {
+                    player.player.set_gamemode(GameMode::Adventure);
+                }
+                2 => world.worldborder.lock().unwrap().new_diameter = 2.0,
+                _ => player.player.permission_lvl.store(PermissionLvl::Zero),
+            }
+            player.player.set_client_loaded(true);
+            dig(&player, &fixture.server, finish, position);
+            assert_eq!(world.get_block(&position), &Block::STONE);
+        }
+    }
+    // Bedrock's automatic tick completion must use the same final gate.
+    player.player.permission_lvl.store(PermissionLvl::Four);
+    player.player.set_gamemode(GameMode::Survival);
+    player.player.set_client_loaded(true);
+    dig(
+        &player,
+        &fixture.server,
+        PlayerAction::StartDestroyBlock,
+        position,
+    );
+    player
+        .player
+        .tick_counter
+        .fetch_add(1000, Ordering::Relaxed);
+    player.player.set_gamemode(GameMode::Spectator);
+    player.player.tick_block_breaking();
+    assert_eq!(world.get_block(&position), &Block::STONE);
+    player.close().await;
+    fixture.server.shutdown().await;
+}

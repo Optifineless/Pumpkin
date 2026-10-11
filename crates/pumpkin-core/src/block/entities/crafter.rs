@@ -309,6 +309,30 @@ impl Inventory for CrafterBlockEntity {
         res
     }
 
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        let before = stack.clone();
+        update(stack);
+        let changed = !before.are_equal(stack);
+        if changed && before.is_empty() {
+            // CrafterBlockEntity.setItem re-enables an empty slot only after a write.
+            self.disabled_slots
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[slot] = false;
+        }
+        drop(items);
+        // HopperBlockEntity.tryMoveInItem calls setChanged only after a transfer.
+        if changed {
+            self.mark_dirty();
+        }
+    }
+
     fn set_stack(&self, slot: usize, stack: ItemStack) {
         if self.is_slot_disabled(slot) {
             self.set_slot_state(slot, true);

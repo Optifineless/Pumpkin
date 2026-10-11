@@ -361,6 +361,22 @@ impl BlockEntity for BeaconBlockEntity {
 }
 
 impl Inventory for BeaconBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot == 0 {
+            let mut payment = self
+                .payment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let before = payment.clone();
+            update(&mut payment);
+            let changed = !before.are_equal(&payment);
+            drop(payment);
+            if changed {
+                self.mark_dirty();
+            }
+        }
+    }
+
     fn size(&self) -> usize {
         1
     }

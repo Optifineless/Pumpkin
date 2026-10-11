@@ -49,6 +49,11 @@ impl DoubleInventory {
 }
 
 impl Inventory for DoubleInventory {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let (inventory, slot) = self.inventory_for_slot(slot);
+        inventory.update_slot(slot, update);
+    }
+
     fn size(&self) -> usize {
         self.first.size() + self.second.size()
     }

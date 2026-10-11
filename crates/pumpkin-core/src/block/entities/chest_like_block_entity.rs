@@ -205,6 +205,24 @@ macro_rules! impl_inventory_for_chest {
                 res
             }
 
+            fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+                let mut items = self
+                    .items
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let Some(stack) = items.get_mut(slot) else {
+                    return;
+                };
+                let before = stack.clone();
+                update(stack);
+                let changed = !before.are_equal(stack);
+                drop(items);
+                // HopperBlockEntity.tryMoveInItem calls setChanged only after a transfer.
+                if changed {
+                    self.mark_dirty();
+                }
+            }
+
             fn set_stack(&self, slot: usize, stack: ItemStack) {
                 let mut items = self
                     .items

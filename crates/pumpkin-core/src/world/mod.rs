@@ -35,6 +35,7 @@ pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
 pub mod map;
+pub mod neighbor_context;
 pub(crate) mod neighbor_updater;
 mod particle_senders;
 pub mod portal;

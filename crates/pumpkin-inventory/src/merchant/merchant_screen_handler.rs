@@ -19,6 +19,10 @@ use crate::{
     slot::{NormalSlot, Slot},
 };
 
+type TradeCallback = Box<
+    dyn Fn(usize) -> Option<Vec<pumpkin_protocol::java::client::play::MerchantOffer>> + Send + Sync,
+>;
+
 type MerchantValidityCheck = Box<dyn Fn(&dyn InventoryPlayer) -> bool + Send + Sync>;
 
 pub struct MerchantScreenHandler {
@@ -27,7 +31,8 @@ pub struct MerchantScreenHandler {
     selected_offer: usize,
     active_offer: Option<usize>,
     pub offers: Vec<pumpkin_protocol::java::client::play::MerchantOffer>,
-    pub on_trade: Option<Box<dyn Fn(usize) + Send + Sync>>,
+    /// Notifies the merchant and replaces this menu's offers when a live snapshot is returned.
+    pub on_trade: Option<TradeCallback>,
     pub on_trade_updated: Option<Box<dyn Fn(bool) + Send + Sync>>,
     pub on_close: Option<Box<dyn Fn() + Send + Sync>>,
     pub validity_check: Option<MerchantValidityCheck>,
@@ -208,7 +213,10 @@ impl MerchantScreenHandler {
         self.offers[offer_index].uses += 1;
 
         if let Some(on_trade) = &self.on_trade {
-            on_trade(offer_index);
+            // MerchantMenu.getOffers reads live offers, including newly unlocked trades.
+            if let Some(offers) = on_trade(offer_index) {
+                self.offers = offers;
+            }
         }
         player.increment_stat(
             StatisticCategory::Custom,
@@ -694,6 +702,7 @@ mod tests {
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
+                None
             }
         }));
         handler.update_result_slot();
@@ -733,6 +742,7 @@ mod tests {
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
+                None
             }
         }));
         handler.update_result_slot();
@@ -765,6 +775,7 @@ mod tests {
             let traded_offer = traded_offer.clone();
             move |offer_index| {
                 traded_offer.store(offer_index, Ordering::Relaxed);
+                None
             }
         }));
         handler.update_result_slot();
@@ -803,6 +814,7 @@ mod tests {
             let trade_count = trade_count.clone();
             move |_| {
                 trade_count.fetch_add(1, Ordering::Relaxed);
+                None
             }
         }));
 

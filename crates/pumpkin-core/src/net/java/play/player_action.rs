@@ -64,6 +64,9 @@ impl JavaClient {
                         self.update_sequence(player_action.sequence.0);
                         return;
                     }
+                    if player.mining.load(Ordering::Relaxed) {
+                        player.stop_mining();
+                    }
                     player.start_mining_time.store(
                         player.tick_counter.load(Ordering::Relaxed),
                         Ordering::Relaxed,
@@ -106,6 +109,9 @@ impl JavaClient {
                             }
                             self.sync_block_state_to_client(&world, position);
                         } else {
+                            player
+                                .mining_lifecycle
+                                .store(player.living_entity.damage_lifecycle(), Ordering::Relaxed);
                             player.mining.store(true, Ordering::Relaxed);
                             *player
                                 .mining_pos
@@ -153,7 +159,7 @@ impl JavaClient {
                             .fire_blocking(&server_arc, &mut abort_event);
                     }
 
-                    player.mining.store(false, Ordering::Relaxed);
+                    player.stop_mining();
                     world.set_block_breaking(
                         entity,
                         player_action.position,
@@ -162,54 +168,9 @@ impl JavaClient {
                     self.update_sequence(player_action.sequence.0);
                 }
                 Status::FinishedDigging => {
-                    // TODO: do validation
                     let location = player_action.position;
-                    if !player.can_interact_with_block_at(&location, 1.0) {
-                        warn!(
-                            "Player {0} tried to interact with block out of reach at {1}",
-                            player.gameprofile.name, player_action.position
-                        );
-                        self.update_sequence(player_action.sequence.0);
-                        return;
-                    }
-
-                    // Block break & play sound
-                    let entity = &player.get_entity();
-                    let world = entity.world.load_full();
-
-                    player.mining.store(false, Ordering::Relaxed);
-                    world.set_block_breaking(entity, location, BlockBreakingProgress::Stop);
-
-                    let (block, state) = world.get_block_and_state(&location);
-                    let block_drop = player.gamemode.load() != GameMode::Creative
-                        && player.can_harvest(state, block);
-
-                    let new_state = world.break_block(
-                        &location,
-                        Some(player),
-                        if block_drop {
-                            BlockFlags::NOTIFY_ALL
-                        } else {
-                            BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
-                        },
-                    );
-                    if new_state.is_some() {
-                        server
-                            .block_registry
-                            .broken(&world, block, player, &location, server, state);
-
-                        player.apply_tool_damage_for_block_break(state);
-                        if block_drop {
-                            player.add_exhaustion(MINE_BLOCK_EXHAUSTION);
-                        }
-                        let item_id = player.inventory().held_item().item.id;
-                        player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-                        player.increment_stat(
-                            StatisticCategory::Mined,
-                            block.id.as_u16() as i32,
-                            1,
-                        );
-                    }
+                    let world = player.world();
+                    player.finish_block_breaking(&location, server);
 
                     self.sync_block_state_to_client(&world, location);
 
@@ -279,3 +240,7 @@ impl JavaClient {
         ));
     }
 }
+
+#[cfg(test)]
+#[path = "player_action_finish_tests.rs"]
+mod tests;
