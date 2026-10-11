@@ -58,6 +58,8 @@ pub mod data;
 pub mod enchantment;
 pub mod entity;
 pub mod error;
+#[cfg(test)]
+mod inventory_transaction_tests;
 pub mod item;
 pub mod logging;
 pub mod net;

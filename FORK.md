@@ -190,6 +190,15 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 | Phoenixxo/fix/block-update-stack-overflow, `f8099507e` | Creative support removal still drops dependent blocks rather than carrying the original no-drop flag. In-game verification: Not yet. |
 | Phoenixxo/fix/block-update-stack-overflow, `7994c6f66` | Queued shape updates capture neighbor state, retain depth limits and clean up after callback panics. In-game verification: Not yet. |
 
+## Shared inventory duplication fixes
+
+The `inventory-transactions` branch addresses shared-state audit finding 3.1 and consolidated
+row 8: two viewers shift-clicking one chest slot, player pickup competing with a hopper minecart,
+and stale rollback after a failed cart transfer. Transfers claim the shared source, update
+storage atomically and dispatch effects after releasing ownership. Vanilla 26.3 `ChestMenu`,
+`AbstractContainerMenu`, `ItemEntity` and `HopperBlockEntity` define the resulting counts.
+In-game verification: Not yet. AI implementation: Codex (GPT-6).
+
 ## Upstream issues addressed here
 
 | Upstream issue | Fixed by | Checked in-game |

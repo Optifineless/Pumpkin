@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::block::entities::hopper::HopperBlockEntity;
 use crate::entity::{Entity, player::Player};
 use pumpkin_data::translation;
+use pumpkin_inventory::Inventory;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
@@ -16,6 +17,9 @@ use super::container::{self, MinecartInventory};
 pub(super) struct HopperMinecart {
     enabled: Arc<AtomicBool>,
     inventory: Arc<MinecartInventory>,
+    #[cfg(test)]
+    container_pause:
+        Arc<pumpkin_util::sync::Mutex<Option<ContainerPause>, pumpkin_util::sync::Cursor>>,
 }
 
 impl HopperMinecart {
@@ -23,6 +27,8 @@ impl HopperMinecart {
         Self {
             enabled: Arc::new(AtomicBool::new(true)),
             inventory: Arc::new(MinecartInventory::new(5)),
+            #[cfg(test)]
+            container_pause: Arc::new(pumpkin_util::sync::Mutex::new(None)),
         }
     }
 
@@ -53,12 +59,61 @@ impl HopperMinecart {
                 if stack.is_empty() || !source.can_transfer_to(inventory.as_ref(), slot, &stack) {
                     continue;
                 }
-                let backup = stack.clone();
-                let one = source.remove_stack_specific(slot, 1);
-                if HopperBlockEntity::add_one_item(source.as_ref(), inventory.as_ref(), &one) {
+                // HopperBlockEntity.tryTakeInItemFromSlot removes one item before the offer.
+                let owners = pumpkin_inventory::inventory::slot_transaction::ordered_owners(&[
+                    source.as_ref(),
+                    inventory.as_ref(),
+                ]);
+                let transfers = owners
+                    .iter()
+                    .map(|owner| {
+                        owner
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    })
+                    .collect::<Vec<_>>();
+                let expected = source.get_stack(slot);
+                if expected.is_empty()
+                    || !source.can_transfer_to(inventory.as_ref(), slot, &expected)
+                {
+                    continue;
+                }
+                let one = pumpkin_inventory::inventory::slot_transaction::withdraw(
+                    source.as_ref(),
+                    slot,
+                    &expected,
+                    inventory.space_for_stack(&expected).min(1),
+                );
+                #[cfg(test)]
+                self.pause_container_transfer();
+                let (remaining, changed) = HopperBlockEntity::add_item_from_face_deferred(
+                    Some(source.as_ref()),
+                    inventory.as_ref(),
+                    one.clone(),
+                    None,
+                );
+                let moved = one.item_count.saturating_sub(remaining.item_count);
+                let leftover = pumpkin_inventory::inventory::slot_transaction::refund(
+                    source.as_ref(),
+                    slot,
+                    &expected,
+                    remaining,
+                );
+                let source_changed =
+                    !one.is_empty() && !source.get_stack(slot).are_equal(&expected);
+                drop(transfers);
+                if source_changed {
+                    source.on_slot_changed(slot);
+                }
+                for slot in changed {
+                    inventory.on_slot_changed(slot);
+                }
+                if !leftover.is_empty() {
+                    world.scatter_stack(pos.x, pos.y, pos.z, leftover);
+                }
+                if moved > 0 {
                     return;
                 }
-                source.set_stack(slot, backup);
             }
             return;
         }
@@ -82,34 +137,10 @@ impl HopperMinecart {
             let Some(item) = entity.get_item_entity() else {
                 continue;
             };
-            let (backup, one) = {
-                let mut stack = item
-                    .get_item_stack()
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if stack.is_empty() {
-                    continue;
-                }
-                (stack.clone(), stack.split(1))
-            };
-            if HopperBlockEntity::add_one_item(inventory.as_ref(), inventory.as_ref(), &one) {
-                let is_empty = {
-                    let stack = item
-                        .get_item_stack()
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    stack.is_empty()
-                };
-                if is_empty {
-                    item.get_entity().remove();
-                }
+            // MinecartHopper.suckInItems delegates the whole stack to HopperBlockEntity.addItem.
+            if HopperBlockEntity::add_item_entity(inventory.as_ref(), item) {
                 return true;
             }
-            let mut stack = item
-                .get_item_stack()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *stack = backup;
         }
         false
     }
@@ -143,6 +174,29 @@ impl HopperMinecart {
         self.inventory.read_nbt(nbt);
         self.enabled
             .store(nbt.get_bool("Enabled").unwrap_or(true), Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+type ContainerPause = Box<dyn FnOnce() + Send>;
+
+#[cfg(test)]
+impl HopperMinecart {
+    fn pause_container_transfer(&self) {
+        let pause = self.container_pause.lock().unwrap().take();
+        if let Some(pause) = pause {
+            pause();
+        }
+    }
+}
+
+#[cfg(test)]
+impl super::MinecartEntity {
+    pub(crate) fn set_container_transfer_pause(&self, pause: ContainerPause) {
+        let super::MinecartKind::Hopper(hopper) = &self.kind else {
+            panic!("hopper required");
+        };
+        *hopper.container_pause.lock().unwrap() = Some(pause);
     }
 }
 

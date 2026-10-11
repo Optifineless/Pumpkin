@@ -278,6 +278,21 @@ macro_rules! impl_experience_container_for_cooking {
 macro_rules! impl_inventory_for_cooking {
     ($struct_name:ty) => {
         impl pumpkin_inventory::Inventory for $struct_name {
+            fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+                let mut items = self
+                    .items
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let Some(stack) = items.get_mut(slot) else {
+                    return;
+                };
+                let before = stack.clone();
+                update(stack);
+                if !before.are_equal(stack) {
+                    self.update_cooking_input(slot, &before, stack);
+                }
+            }
+
             fn size(&self) -> usize {
                 Self::INVENTORY_SIZE
             }
@@ -327,22 +342,8 @@ macro_rules! impl_inventory_for_cooking {
                     .items
                     .write()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let is_same_item = !stack.is_empty()
-                    && ItemStack::are_items_and_components_equal(&items[slot], &stack);
-
-                items[slot] = stack.clone();
-
-                if slot == 0 && !is_same_item {
-                    if let Some(recipe) = pumpkin_data::recipes::get_cooking_recipe_with_ingredient(
-                        stack.item,
-                        CookingRecipeKind::Smelting,
-                    ) {
-                        self.set_cooking_total_time(recipe.cookingtime as u16);
-                    } else {
-                        self.set_cooking_total_time(0);
-                    }
-                    self.set_cooking_time_spent(0);
-                }
+                self.update_cooking_input(slot, &items[slot], &stack);
+                items[slot] = stack;
 
                 // Always consider the inventory changed when setting a stack
                 self.mark_dirty();
@@ -355,6 +356,25 @@ macro_rules! impl_inventory_for_cooking {
 
             fn as_any(&self) -> &dyn std::any::Any {
                 self
+            }
+        }
+
+        impl $struct_name {
+            fn update_cooking_input(&self, slot: usize, previous: &ItemStack, stack: &ItemStack) {
+                // AbstractFurnaceBlockEntity.setItem resets progress when the input changes.
+                let is_same_item =
+                    !stack.is_empty() && previous.are_items_and_components_equal(stack);
+                if slot == 0 && !is_same_item {
+                    if let Some(recipe) = pumpkin_data::recipes::get_cooking_recipe_with_ingredient(
+                        stack.item,
+                        CookingRecipeKind::Smelting,
+                    ) {
+                        self.set_cooking_total_time(recipe.cookingtime as u16);
+                    } else {
+                        self.set_cooking_total_time(0);
+                    }
+                    self.set_cooking_time_spent(0);
+                }
             }
         }
     };
@@ -671,9 +691,7 @@ macro_rules! impl_block_entity_for_cooking {
                     }
                 }
 
-                if let Ok(guard) = self.items.try_read() {
-                    pumpkin_inventory::sync_write_items_to_nbt(&*guard, &mut nbt);
-                }
+                pumpkin_inventory::Inventory::write_inventory_nbt(self, &mut nbt, false);
                 Some(nbt)
             }
 

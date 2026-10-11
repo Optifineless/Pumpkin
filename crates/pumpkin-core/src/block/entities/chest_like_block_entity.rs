@@ -127,9 +127,7 @@ macro_rules! impl_block_entity_for_chest {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .is_some();
                 if !has_loot_table {
-                    if let Ok(items) = self.items.try_read() {
-                        pumpkin_inventory::sync_write_items_to_nbt(&*items, &mut nbt);
-                    }
+                    pumpkin_inventory::Inventory::write_inventory_nbt(self, &mut nbt, false);
                 }
                 Some(nbt)
             }
@@ -161,6 +159,17 @@ macro_rules! impl_block_entity_for_chest {
 macro_rules! impl_inventory_for_chest {
     ($struct_name:ty) => {
         impl pumpkin_inventory::Inventory for $struct_name {
+            fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+                let mut items = self
+                    .items
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let Some(stack) = items.get_mut(slot) else {
+                    return;
+                };
+                update(stack);
+            }
+
             fn size(&self) -> usize {
                 Self::INVENTORY_SIZE
             }

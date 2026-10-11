@@ -94,7 +94,7 @@ impl MinecartEntity {
         }
     }
 
-    const fn container(&self) -> Option<&Arc<MinecartInventory>> {
+    pub(crate) const fn container(&self) -> Option<&Arc<MinecartInventory>> {
         match &self.kind {
             MinecartKind::Chest(minecart) => Some(minecart.inventory()),
             MinecartKind::Hopper(minecart) => Some(minecart.inventory()),

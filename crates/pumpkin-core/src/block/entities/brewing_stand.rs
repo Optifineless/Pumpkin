@@ -12,7 +12,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::potion::Potion;
 use pumpkin_data::potion_brewing::BREWING_RECIPES;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_inventory::{Inventory, sync_read_items_from_nbt, sync_write_items_to_nbt};
+use pumpkin_inventory::{Inventory, sync_read_items_from_nbt};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::recipe::DynamicRecipe;
 use pumpkin_util::math::position::BlockPos;
@@ -336,6 +336,17 @@ impl BrewingStandBlockEntity {
 }
 
 impl pumpkin_inventory::Inventory for BrewingStandBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        update(stack);
+    }
+
     fn size(&self) -> usize {
         Self::INVENTORY_SIZE
     }
@@ -551,9 +562,7 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
         let mut nbt = NbtCompound::new();
         nbt.put_short("BrewTime", self.brew_time.load(Ordering::Relaxed) as i16);
         nbt.put_byte("Fuel", self.fuel.load(Ordering::Relaxed) as i8);
-        if let Ok(items) = self.items.try_read() {
-            sync_write_items_to_nbt(&*items, &mut nbt);
-        }
+        self.write_inventory_nbt(&mut nbt, false);
         Some(nbt)
     }
 

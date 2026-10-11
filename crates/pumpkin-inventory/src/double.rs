@@ -49,6 +49,21 @@ impl DoubleInventory {
 }
 
 impl Inventory for DoubleInventory {
+    fn slot_transaction(&self, slot: usize) -> Arc<std::sync::Mutex<()>> {
+        let (inventory, slot) = self.inventory_for_slot(slot);
+        inventory.slot_transaction(slot)
+    }
+
+    fn on_slot_changed(&self, slot: usize) {
+        let (inventory, slot) = self.inventory_for_slot(slot);
+        inventory.on_slot_changed(slot);
+    }
+
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let (inventory, slot) = self.inventory_for_slot(slot);
+        inventory.update_slot(slot, update);
+    }
+
     fn size(&self) -> usize {
         self.first.size() + self.second.size()
     }

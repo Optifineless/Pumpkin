@@ -1,6 +1,6 @@
 use crate::block::entities::BlockEntity;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
+use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use std::any::Any;
@@ -79,9 +79,7 @@ impl BlockEntity for ShelfBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        if let Ok(items) = self.items.try_read() {
-            sync_write_items_to_nbt(items.as_slice(), &mut nbt);
-        }
+        self.write_inventory_nbt(&mut nbt, false);
         if self.align_items_to_bottom.load(Ordering::Relaxed) {
             nbt.put_bool("align_items_to_bottom", true);
         }
@@ -110,6 +108,17 @@ impl ShelfBlockEntity {
 }
 
 impl Inventory for ShelfBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        update(stack);
+    }
+
     fn size(&self) -> usize {
         Self::INVENTORY_SIZE
     }
