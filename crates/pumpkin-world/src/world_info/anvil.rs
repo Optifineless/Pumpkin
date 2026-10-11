@@ -20,9 +20,9 @@ use crate::world_info::{
     data_files::{
         minecraft_data_dir, read_game_rules, read_wandering_trader, read_weather,
         read_world_clocks, read_world_gen_settings, write_custom_boss_events_stub,
-        write_game_rules, write_random_sequences_stub, write_scheduled_events_stub,
-        write_scoreboard_stub, write_stopwatches_stub, write_wandering_trader, write_weather,
-        write_world_clocks, write_world_gen_settings,
+        write_game_rules, write_scheduled_events_stub, write_scoreboard_stub,
+        write_stopwatches_stub, write_wandering_trader, write_weather, write_world_clocks,
+        write_world_gen_settings,
     },
     default_data_packs,
 };
@@ -279,6 +279,10 @@ fn level_data_from_nbt(data: &NbtCompound, seed: i64) -> LevelData {
     if let Some(map_id) = data.get_int("map_id") {
         level_data.map_id = map_id;
     }
+    // PrimaryLevelData.parse reads Time as game time, separate from the world clock.
+    if let Some(game_time) = data.get_long("Time") {
+        level_data.game_time = game_time;
+    }
     if let Some(day_time) = data.get_long("DayTime") {
         level_data.day_time = day_time;
     }
@@ -344,6 +348,8 @@ fn level_data_to_nbt(info: &LevelData, data: &mut NbtCompound) {
     data.put_compound("Version", world_version_to_nbt(&info.world_version));
     data.put_int("version", info.level_version);
     data.put_int("map_id", info.map_id);
+    // PrimaryLevelData.setTagData persists ServerLevel game time in Time.
+    data.put_long("Time", info.game_time);
     put_world_gen_settings_seed(data, info.world_gen_settings.seed);
 }
 
@@ -408,6 +414,9 @@ impl WorldInfoReader for AnvilLevelInfo {
             let clocks = read_world_clocks(level_folder);
             if let Some(overworld) = clocks.clocks.get("minecraft:overworld") {
                 level_data.day_time = overworld.total_ticks;
+                level_data.day_time_partial_tick = overworld.partial_tick;
+                level_data.day_time_rate = overworld.rate;
+                level_data.day_time_paused = overworld.paused;
             }
         }
 
@@ -475,16 +484,18 @@ impl WorldInfoWriter for AnvilLevelInfo {
             error!("Failed to write world_gen_settings.dat: {e}");
         }
 
-        // world_clocks.dat – persist the overworld day_time; preserve other
+        // ServerClockManager.packState persists ClockState; preserve other
         let mut clocks = read_world_clocks(level_folder);
         clocks.data_version = data_version;
-        clocks
-            .clocks
-            .entry("minecraft:overworld".to_string())
-            .and_modify(|c| c.total_ticks = info.day_time)
-            .or_insert(crate::world_info::data_files::DimensionClock {
+        clocks.clocks.insert(
+            "minecraft:overworld".to_string(),
+            crate::world_info::data_files::DimensionClock {
                 total_ticks: info.day_time,
-            });
+                partial_tick: info.day_time_partial_tick,
+                rate: info.day_time_rate,
+                paused: info.day_time_paused,
+            },
+        );
 
         if let Err(e) = write_world_clocks(level_folder, &clocks) {
             error!("Failed to write world_clocks.dat: {e}");
@@ -514,10 +525,8 @@ impl WorldInfoWriter for AnvilLevelInfo {
             error!("Failed to write scheduled_events.dat: {e}");
         }
 
-        // random_sequences.dat
-        if let Err(e) = write_random_sequences_stub(level_folder, data_version) {
-            error!("Failed to write random_sequences.dat: {e}");
-        }
+        // MinecraftServer loads RandomSequences.TYPE through SavedDataStorage; only that
+        // live writer owns random_sequences.dat. A stub can race its atomic replacement.
 
         // scoreboard.dat
         if let Err(e) = write_scoreboard_stub(level_folder, data_version) {
@@ -675,6 +684,20 @@ mod test {
     fn read_level_dat_without_series() {
         let temp_dir = TempDir::new().unwrap();
         write_level_dat(temp_dir.path(), converted_level_dat(Some(987_654_321)));
+        let clocks_dir = temp_dir.path().join("data/minecraft");
+        fs::create_dir_all(&clocks_dir).unwrap();
+        let mut clock = NbtCompound::new();
+        clock.put_long("total_ticks", 5000);
+        let mut clocks = NbtCompound::new();
+        clocks.put_compound("minecraft:overworld", clock);
+        clocks.put_int("DataVersion", MINIMUM_SUPPORTED_WORLD_DATA_VERSION);
+        let mut root = NbtCompound::new();
+        root.put_compound("data", clocks);
+        write_gzip_compound_tag(
+            root,
+            File::create(clocks_dir.join("world_clocks.dat")).unwrap(),
+        )
+        .unwrap();
 
         let data = AnvilLevelInfo.read_world_info(temp_dir.path()).unwrap();
 
@@ -686,7 +709,12 @@ mod test {
         assert!(data.allow_commands);
         assert_eq!(data.border_size, 1024.0);
         assert_eq!(data.border_safe_zone, 5.0);
+        // Older fork worlds have no Time tag and only persisted total_ticks.
+        assert_eq!(data.game_time, 0);
         assert_eq!(data.day_time, 5000);
+        assert_eq!(data.day_time_partial_tick, 0.0);
+        assert_eq!(data.day_time_rate, 1.0);
+        assert!(!data.day_time_paused);
         assert_eq!(data.data_version, MINIMUM_SUPPORTED_WORLD_DATA_VERSION);
         assert_eq!(data.level_version, MINIMUM_SUPPORTED_LEVEL_VERSION);
         assert_eq!(data.world_version.name, "1.21.9");
@@ -829,7 +857,11 @@ mod test {
         original.spawn_yaw = 45.0;
         original.border_size = 2048.0;
         original.border_center_x = 8.0;
+        original.game_time = 54321;
         original.day_time = 12_345;
+        original.day_time_partial_tick = 0.5;
+        original.day_time_rate = 2.5;
+        original.day_time_paused = true;
         original.map_id = 3;
 
         AnvilLevelInfo
@@ -857,7 +889,15 @@ mod test {
         assert_eq!(data.get_double("BorderSize"), Some(2048.0));
         assert_eq!(data.get_double("BorderCenterX"), Some(8.0));
         assert_eq!(data.get_int("map_id"), Some(3));
+        assert_eq!(data.get_long("Time"), Some(54321));
         assert!(data.get_long("LastPlayed").is_some_and(|played| played > 0));
+
+        let clocks = crate::world_info::data_files::read_world_clocks(temp_dir.path());
+        let overworld = clocks.clocks.get("minecraft:overworld").unwrap();
+        assert_eq!(overworld.total_ticks, 12_345);
+        assert_eq!(overworld.partial_tick, 0.5);
+        assert_eq!(overworld.rate, 2.5);
+        assert!(overworld.paused);
 
         let version = data.get_compound("Version").unwrap();
         assert_eq!(version.get_string("Name"), Some(CURRENT_MC_VERSION));
@@ -912,7 +952,11 @@ mod test {
                 enabled: vec!["vanilla".to_string()],
             },
             data_version: 4189,
+            game_time: 0,
             day_time: 1727,
+            day_time_partial_tick: 0.0,
+            day_time_rate: 1.0,
+            day_time_paused: false,
             difficulty: Difficulty::Normal,
             difficulty_locked: false,
             game_rules: GameRuleRegistry {
@@ -1124,7 +1168,6 @@ mod test {
         let data_dir = temp_dir.path().join("data").join("minecraft");
         let expected_files = [
             "game_rules.dat",
-            "random_sequences.dat",
             "scoreboard.dat",
             "stopwatches.dat",
             "wandering_trader.dat",

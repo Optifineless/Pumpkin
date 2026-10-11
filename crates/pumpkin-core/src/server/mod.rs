@@ -5,6 +5,8 @@ mod map_storage;
 pub(crate) mod scenario;
 #[cfg(test)]
 mod startup_tests;
+#[cfg(test)]
+mod world_info_tests;
 use crate::block::registry::BlockRegistry;
 use crate::command::commands::default_dispatcher;
 use crate::command::commands::defaultgamemode::DefaultGamemode;
@@ -164,6 +166,8 @@ pub struct Server {
     // world stuff which maybe should be put into a struct
     pub level_info: Arc<ArcSwap<LevelData>>,
     world_info_writer: Arc<dyn WorldInfoWriter>,
+    /// Serializes level.dat and saved-data writes from autosave and admin saves.
+    world_info_save_lock: std::sync::Mutex<()>,
 }
 
 impl Server {
@@ -368,6 +372,7 @@ impl Server {
             player_idle_timeout: AtomicI32::new(0),
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
+            world_info_save_lock: std::sync::Mutex::new(()),
             level_info,
             management_hub,
         };
@@ -575,14 +580,53 @@ impl Server {
         Ok(())
     }
 
-    pub fn save_world_info(&self) -> Result<(), WorldInfoError> {
+    fn level_data_for_save(&self) -> LevelData {
         let mut level_data = (**self.level_info.load()).clone();
+        // PrimaryLevelData.setTagData and ServerClockManager.packState save the live overworld
+        // game time and clock together with the world's other metadata.
+        if let Some(overworld) = self
+            .worlds
+            .load()
+            .iter()
+            .find(|world| world.dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name)
+        {
+            let time = overworld
+                .level_time
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            level_data.game_time = time.world_age;
+            level_data.day_time = time.time_of_day;
+            level_data.day_time_partial_tick = time.partial_tick;
+            level_data.day_time_rate = time.rate;
+            level_data.day_time_paused = time.paused;
+        }
         self.weather_data
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .apply_to_level_data(&mut level_data);
+        level_data
+    }
+
+    pub fn save_world_info(&self) -> Result<(), WorldInfoError> {
+        let _save = self
+            .world_info_save_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let level_data = self.level_data_for_save();
         self.world_info_writer
             .write_world_info(&level_data, &self.basic_config.get_world_path())
+    }
+
+    /// Saves live time metadata from the overworld autosave without blocking the tick worker.
+    pub(crate) fn schedule_world_info_save(self: &Arc<Self>) {
+        let server = self.clone();
+        self.spawn_task(async move {
+            match tokio::task::spawn_blocking(move || server.save_world_info()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => error!("Failed to save world info: {error}"),
+                Err(error) => error!("Failed to save world info: {error}"),
+            }
+        });
     }
 
     pub fn reload_datapacks(&self, _server: &Arc<Self>) {

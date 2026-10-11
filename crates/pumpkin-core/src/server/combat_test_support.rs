@@ -99,6 +99,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         player_idle_timeout: AtomicI32::new(0),
         mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
         world_info_writer: Arc::new(AnvilLevelInfo),
+        world_info_save_lock: std::sync::Mutex::new(()),
         level_info,
         management_hub,
     };

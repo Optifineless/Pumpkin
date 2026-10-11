@@ -204,6 +204,8 @@ pub(crate) mod spawn_test_support;
 #[cfg(test)]
 mod spawn_tests;
 pub mod spawn_view;
+#[cfg(test)]
+mod time_persistence_tests;
 pub mod weather;
 mod weather_environment;
 
@@ -466,7 +468,13 @@ impl World {
         block_registry: Arc<BlockRegistry>,
         server: Weak<Server>,
     ) -> Self {
-        let weather = Weather::from_world_data(&level_info.load(), &dimension, &server);
+        let (weather, level_time) = {
+            let data = level_info.load();
+            (
+                Weather::from_world_data(&data, &dimension, &server),
+                LevelTime::from_world_data(&data, &level.level_folder.root_folder, &dimension),
+            )
+        };
         // TODO
         let generation_settings = NoiseSettings::from_dimension(&dimension);
 
@@ -511,7 +519,7 @@ impl World {
                 5,
                 300,
             )),
-            level_time: std::sync::Mutex::new(LevelTime::new()),
+            level_time: std::sync::Mutex::new(level_time),
             dimension,
             weather: pumpkin_util::sync::Mutex::new(weather),
             block_registry,
@@ -2163,6 +2171,7 @@ impl World {
 
     pub fn tick_environment(self: &Arc<Self>) {
         self.tick_weather_and_sleep();
+        let mut save_world_info = false;
         {
             let mut level_time = self
                 .level_time
@@ -2205,11 +2214,16 @@ impl World {
                         && let Some(server) = self.server.upgrade()
                     {
                         server.schedule_random_sequence_save();
+                        // MinecraftServer.saveAllChunks also persists live level metadata on autosave.
+                        save_world_info = true;
                     }
                     self.level.should_save.store(true, Relaxed);
                     self.level.level_channel.notify();
                 }
             }
+        }
+        if save_world_info && let Some(server) = self.server.upgrade() {
+            server.schedule_world_info_save();
         }
         Phase::Environment.enter();
     }

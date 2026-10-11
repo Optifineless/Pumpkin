@@ -1,4 +1,7 @@
+use pumpkin_data::dimension::Dimension;
 use pumpkin_protocol::{bedrock::client::set_time::CSetTime, java::client::play::CUpdateTime};
+use pumpkin_world::world_info::{LevelData, data_files::read_world_clocks};
+use std::path::Path;
 
 use super::World;
 
@@ -99,6 +102,42 @@ impl LevelTime {
             rate: 1.0,
             paused: false,
         }
+    }
+
+    /// Restores `PrimaryLevelData` game time and `ServerClockManager` clock state.
+    #[must_use]
+    pub const fn from_level_data(level_data: &LevelData) -> Self {
+        let mut level_time = Self::new();
+        level_time.load_from(level_data.day_time, level_data.game_time);
+        level_time.partial_tick = level_data.day_time_partial_tick;
+        level_time.rate = level_data.day_time_rate;
+        level_time.paused = level_data.day_time_paused;
+        level_time
+    }
+
+    /// Restores global game time and this dimension's saved clock, defaulting absent clocks.
+    #[must_use]
+    pub(crate) fn from_world_data(
+        level_data: &LevelData,
+        root_folder: &Path,
+        dimension: &Dimension,
+    ) -> Self {
+        if dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name {
+            return Self::from_level_data(level_data);
+        }
+        // ServerClockManager.init creates defaults, then loads each keyed ClockState.
+        let mut time = Self::new();
+        time.world_age = level_data.game_time;
+        if let Some(clock) = read_world_clocks(root_folder)
+            .clocks
+            .get(dimension.minecraft_name)
+        {
+            time.time_of_day = clock.total_ticks;
+            time.partial_tick = clock.partial_tick;
+            time.rate = clock.rate;
+            time.paused = clock.paused;
+        }
+        time
     }
 
     pub const fn load_from(&mut self, time_of_day: i64, world_age: i64) {

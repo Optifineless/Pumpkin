@@ -11,6 +11,12 @@ use tracing::warn;
 
 use crate::world_info::{WorldGenSettings, WorldInfoError};
 
+mod atomic;
+pub use atomic::write_saved_data;
+
+#[cfg(test)]
+mod tests;
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct DataFileRoot<T> {
     #[serde(rename = "data")]
@@ -85,12 +91,27 @@ impl WorldGenSettingsData {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct DimensionClock {
     pub total_ticks: i64,
+    pub partial_tick: f32,
+    pub rate: f32,
+    pub paused: bool,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+impl Default for DimensionClock {
+    fn default() -> Self {
+        Self {
+            total_ticks: 0,
+            // ClockState.CODEC defaults for optional fields also cover earlier total-only saves.
+            partial_tick: 0.0,
+            rate: super::DEFAULT_CLOCK_RATE,
+            paused: false,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
 pub struct WorldClocksData {
     pub clocks: std::collections::HashMap<String, DimensionClock>,
     pub data_version: i32,
@@ -534,10 +555,30 @@ fn world_clocks_from_nbt(root: &NbtCompound) -> WorldClocksData {
             continue;
         }
         if let NbtTag::Compound(dim_compound) = tag {
-            let total_ticks = dim_compound.get_long("total_ticks").unwrap_or(0);
-            result
-                .clocks
-                .insert(key.to_string(), DimensionClock { total_ticks });
+            // ClockState.CODEC's LONG accepts numeric NBT, including Int-shaped saves.
+            let total_ticks = dim_compound
+                .get_long("total_ticks")
+                .or_else(|| dim_compound.get_int("total_ticks").map(i64::from))
+                .unwrap_or(0);
+            // ClockState defaults to zero; malformed fractions must not poison clock ticks.
+            let partial_tick = dim_compound
+                .get_float("partial_tick")
+                .filter(|fraction| fraction.is_finite() && (0.0..1.0).contains(fraction))
+                .unwrap_or(0.0);
+            let rate = dim_compound
+                .get_float("rate")
+                .filter(|rate| rate.is_finite() && *rate > 0.0)
+                .unwrap_or(1.0);
+            let paused = dim_compound.get_bool("paused").unwrap_or(false);
+            result.clocks.insert(
+                key.to_string(),
+                DimensionClock {
+                    total_ticks,
+                    partial_tick,
+                    rate,
+                    paused,
+                },
+            );
         }
     }
 
@@ -555,6 +596,9 @@ pub fn write_world_clocks(
     for (dim_name, clock) in &clocks.clocks {
         let mut dim_compound = NbtCompound::new();
         dim_compound.put_long("total_ticks", clock.total_ticks);
+        dim_compound.put_float("partial_tick", clock.partial_tick);
+        dim_compound.put_float("rate", clock.rate);
+        dim_compound.put_bool("paused", clock.paused);
         inner.put_compound(dim_name, dim_compound);
     }
     inner.put_int("DataVersion", clocks.data_version);
@@ -562,10 +606,8 @@ pub fn write_world_clocks(
     let mut root = NbtCompound::new();
     root.put_compound("data", inner);
 
-    let file = File::create(&path)?;
-
-    pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, file)
-        .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
+    write_saved_data(&path, root)?;
+    Ok(())
 }
 
 pub fn read_wandering_trader(level_folder: &Path) -> WanderingTraderData {
@@ -654,28 +696,6 @@ pub fn write_scheduled_events_stub(
 
     let mut inner = NbtCompound::new();
     inner.put("events", NbtTag::List(vec![]));
-    let mut root = NbtCompound::new();
-    root.put_int("DataVersion", data_version);
-    root.put_compound("data", inner);
-
-    let file = File::create(&path)?;
-    pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, file)
-        .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
-}
-
-pub fn write_random_sequences_stub(
-    level_folder: &Path,
-    data_version: i32,
-) -> Result<(), WorldInfoError> {
-    let dir = ensure_minecraft_data_dir(level_folder)?;
-    let path = dir.join("random_sequences.dat");
-    if path.exists() {
-        return Ok(());
-    }
-
-    let mut inner = NbtCompound::new();
-    inner.put_int("salt", 0);
-    inner.put_compound("sequences", NbtCompound::new());
     let mut root = NbtCompound::new();
     root.put_int("DataVersion", data_version);
     root.put_compound("data", inner);

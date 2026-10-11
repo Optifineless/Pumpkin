@@ -2,7 +2,7 @@ use super::{RandomSequence, RandomSequences, Xoroshiro};
 use pumpkin_nbt::{Nbt, compound::NbtCompound, deserializer::NbtReadHelperJava, tag::NbtTag};
 use std::{
     fs,
-    io::{self, Read, Write},
+    io::{self, Read},
     path::Path,
 };
 const MAX_SAVED_BYTES: u64 = 64 * 1024 * 1024;
@@ -92,12 +92,7 @@ impl RandomSequences {
         }
         let path = world.join(SAVED_PATH);
         fs::create_dir_all(world.join("data/minecraft"))?;
-        let temporary = path.with_extension("dat.tmp");
-        let file = fs::File::create(&temporary)?;
-        let mut encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
-        encoder.write_all(&Nbt::new(String::new(), self.to_nbt(data_version)).write())?;
-        encoder.finish()?.sync_all()?;
-        fs::rename(temporary, path)?;
+        pumpkin_world::world_info::data_files::write_saved_data(&path, self.to_nbt(data_version))?;
         self.dirty = false;
         Ok(())
     }

@@ -88,10 +88,24 @@ pub struct LevelData {
     #[serde(skip_serializing, default)]
     pub world_gen_settings: WorldGenSettings,
 
+    /// Game time, persisted in vanilla's `level.dat` `Time` tag.
+    #[serde(skip_serializing, default)]
+    pub game_time: i64,
+
     /// In-game time of day (overworld dimension clock).
     /// Persisted to `data/minecraft/world_clocks.dat`.
     #[serde(skip_serializing, default)]
     pub day_time: i64,
+
+    /// Fractional overworld clock tick, persisted as `partial_tick` in `world_clocks.dat`.
+    #[serde(skip_serializing, default)]
+    pub day_time_partial_tick: f32,
+    /// Overworld clock rate, persisted as `rate` in `world_clocks.dat`.
+    #[serde(skip_serializing, default = "default_clock_rate")]
+    pub day_time_rate: f32,
+    /// Whether the overworld clock is paused, persisted as `paused` in `world_clocks.dat`.
+    #[serde(skip_serializing, default)]
+    pub day_time_paused: bool,
 
     /// Remaining ticks of forced-clear weather.
     /// Persisted to `data/minecraft/weather.dat`.
@@ -112,6 +126,11 @@ const DEFAULT_BORDER_SIZE: f64 = 60_000_000.0;
 const DEFAULT_BORDER_SAFE_ZONE: f64 = 5.0;
 const DEFAULT_BORDER_WARNING_BLOCKS: f64 = 5.0;
 const DEFAULT_BORDER_WARNING_TIME: f64 = 15.0;
+// ClockState.CODEC's optional rate defaults to 1.0.
+const DEFAULT_CLOCK_RATE: f32 = 1.0;
+const fn default_clock_rate() -> f32 {
+    DEFAULT_CLOCK_RATE
+}
 const DEFAULT_DIFFICULTY: Difficulty = Difficulty::Normal;
 const DEFAULT_LEVEL_NAME: &str = "world";
 const DEFAULT_SPAWN_Y: i32 = 200;
@@ -562,7 +581,11 @@ impl LevelData {
             // fields now in data/minecraft/*.dat
             game_rules: GameRuleRegistry::default(),
             world_gen_settings: WorldGenSettings::new(seed),
+            game_time: 0,
             day_time: 0,
+            day_time_partial_tick: 0.0,
+            day_time_rate: DEFAULT_CLOCK_RATE,
+            day_time_paused: false,
             clear_weather_time: 0,
             rain_time: 0,
             raining: false,
