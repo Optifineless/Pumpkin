@@ -2,6 +2,7 @@ pub mod advancement;
 mod container_menu;
 mod container_menu_block_effects;
 mod death;
+mod equipment_updates;
 mod experience_orb;
 mod known_movement;
 mod mace;
@@ -416,6 +417,7 @@ pub struct Player {
     pub client: Arc<ClientPlatform>,
     /// The player's inventory.
     pub inventory: Arc<PlayerInventory>,
+    equipment_updates: Mutex<equipment_updates::EquipmentUpdates>,
     /// The player's `EnderChest` inventory.
     pub ender_chest_inventory: Arc<EnderChestInventory>,
     /// The player's configuration settings. Changes when the player changes their settings.
@@ -712,6 +714,7 @@ impl Player {
                     |op| AtomicCell::new(op.level),
                 ),
             inventory,
+            equipment_updates: Mutex::default(),
             ender_chest_inventory,
             experience_level: AtomicI32::new(0),
             experience_progress: AtomicCell::new(0.0),
@@ -2267,6 +2270,7 @@ impl Player {
         crate::server::watchdog::markers::Phase::Packets.enter();
         self.process_inbound_packets();
         crate::server::watchdog::markers::Phase::PlayerTicks.enter();
+        self.detect_equipment_updates();
 
         if self.is_spectator() {
             self.living_entity
@@ -7304,14 +7308,8 @@ impl InventoryPlayer for Player {
     }
 
     fn enqueue_equipment_change(&self, slot: &EquipmentSlot, stack: &ItemStack) {
-        let (slot_copy, stack_copy) = (slot.clone(), stack.clone());
-        if self.defer_menu_effect(move |player| {
-            InventoryPlayer::enqueue_equipment_change(player, &slot_copy, &stack_copy);
-        }) {
-            return;
-        }
-        self.living_entity
-            .send_equipment_changes(&[(slot.clone(), stack.clone())]);
+        // Screen handlers can notify before writing the slot; detect after the packet completes.
+        self.queue_equipment_updates(std::slice::from_ref(slot));
 
         if let Some(equippable) = stack.get_data_component::<EquippableImpl>() {
             self.world().play_sound_event(

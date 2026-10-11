@@ -389,6 +389,29 @@ impl LivingEntity {
     }
 
     pub fn send_equipment_changes(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
+        if self.entity.entity_type == &EntityType::PLAYER
+            && let Some(player) = self
+                .entity
+                .world
+                .load()
+                .get_player_by_uuid(self.entity.entity_uuid)
+            && std::ptr::eq(
+                std::ptr::from_ref(&player.living_entity),
+                std::ptr::from_ref(self),
+            )
+        {
+            // LivingEntity.detectEquipmentUpdates: player publications read live slots in order.
+            let slots: Vec<_> = equipment.iter().map(|(slot, _)| slot.clone()).collect();
+            player.queue_equipment_updates(&slots);
+            player.detect_equipment_updates();
+            return;
+        }
+        self.publish_equipment_changes(equipment);
+    }
+
+    /// Publishes a detected batch after storage guards have ended.
+    /// Player batches must be admitted by `Player::detect_equipment_updates`.
+    pub(crate) fn publish_equipment_changes(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
         crate::entity::mob::skeleton::weapon_goal::equipment_changed(self);
         if equipment.is_empty() {
             return;

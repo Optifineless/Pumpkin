@@ -341,7 +341,8 @@ pub fn send_attribute_updates_for_living(
     let je_packet = JePacket::new(living.entity.entity_id.into(), je_properties);
     let world = living.entity.world.load();
     if be_attributes.is_empty() {
-        world.broadcast_packet_all(&je_packet);
+        // ServerEntity.sendDirtyEntityData sends attribute updates to trackers and a player entity itself.
+        world.send_to_tracking_players_and_self(&living.entity, &je_packet);
         return;
     }
 
@@ -352,7 +353,8 @@ pub fn send_attribute_updates_for_living(
         tick: VarULong(0),
     };
 
-    world.broadcast_editioned(&je_packet, &be_packet);
+    // ServerEntity.sendDirtyEntityData sends attribute updates to trackers and a player entity itself.
+    world.send_to_tracking_players_and_self_editioned(&living.entity, &je_packet, &be_packet);
 }
 
 impl Clone for AttributeInstance {
