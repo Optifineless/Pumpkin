@@ -2,7 +2,16 @@
 use super::*;
 use std::sync::RwLock;
 
+fn make_player_data_storage(path: &std::path::Path, enabled: bool) -> ServerPlayerData {
+    ServerPlayerData::new(path.join("players"), Duration::from_secs(300), enabled)
+}
+
 pub fn server(path: &std::path::Path) -> Arc<Server> {
+    server_with_player_data(path, false)
+}
+
+/// Creates a test server with player save loading and writing controlled by `player_data_enabled`.
+pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool) -> Arc<Server> {
     let session_lock = pumpkin_world::session_lock::acquire(path).unwrap();
     let basic_config = BasicConfiguration {
         default_level_name: path.to_string_lossy().into_owned(),
@@ -43,8 +52,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
     let defaultgamemode = std::sync::Mutex::new(DefaultGamemode {
         gamemode: basic_config.default_gamemode,
     });
-    let player_data_storage =
-        ServerPlayerData::new(path.join("players"), Duration::from_secs(300), false);
+    let player_data_storage = make_player_data_storage(path, player_data_enabled);
     let advancement_manager = Arc::new(AdvancementManager::new(path.join("advancements"), false));
     let white_list = AtomicBool::new(false);
     let tick_rate_manager = Arc::new(ServerTickRateManager::new(basic_config.tps));
