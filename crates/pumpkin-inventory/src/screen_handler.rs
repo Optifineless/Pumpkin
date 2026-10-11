@@ -125,10 +125,9 @@ impl ScreenProperty {
 ///
 /// Implementors are typically player entities that can open containers.
 pub trait InventoryPlayer: Send + Sync {
-    /// Delivers a captured merchant callback after the current menu operation unlocks.
-    fn run_menu_callback(&self, callback: Box<dyn FnOnce() + Send>) {
-        callback();
-    }
+    /// Schedules a captured merchant callback after the current menu operation unlocks.
+    /// Implementations must queue it while a menu guard is held.
+    fn run_menu_callback(&self, callback: Box<dyn FnOnce() + Send>);
 
     fn as_any(&self) -> &dyn std::any::Any;
     /// Returns the saved map's scale and lock state, or None for a missing map.
@@ -430,17 +429,18 @@ pub trait ScreenHandler: Send + Sync {
     // AbstractContainerMenu.transferState snapshots tracking without nesting menu locks.
     fn shared_slot_state(&self) -> SharedSlotState {
         let behaviour = self.get_behaviour();
-        let mut table = HashMap::new();
+        let mut table = SharedSlotState::new();
         for (i, slot) in behaviour.slots.iter().enumerate() {
-            let mut indices = HashMap::new();
-            indices.insert(
-                slot.get_index(),
-                (
-                    behaviour.tracked_stacks[i].clone(),
-                    behaviour.previous_tracked_stacks[i].clone(),
-                ),
-            );
-            table.insert(ComparableInventory(slot.get_inventory()), indices);
+            table
+                .entry(ComparableInventory(slot.get_inventory()))
+                .or_default()
+                .insert(
+                    slot.get_index(),
+                    (
+                        behaviour.tracked_stacks[i].clone(),
+                        behaviour.previous_tracked_stacks[i].clone(),
+                    ),
+                );
         }
         table
     }

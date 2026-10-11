@@ -587,6 +587,11 @@ mod tests {
     }
 
     impl InventoryPlayer for DummyPlayer {
+        fn run_menu_callback(&self, callback: Box<dyn FnOnce() + Send>) {
+            pumpkin_util::sync::assert_no_guards_held("DummyPlayer::run_menu_callback");
+            callback();
+        }
+
         fn as_any(&self) -> &dyn Any {
             self
         }

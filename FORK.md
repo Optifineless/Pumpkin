@@ -2,6 +2,8 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+Close-event listeners can reopen a menu without closing its predecessor recursively. The closing-menu identity survives callbacks, and an outer close preserves a replacement menu and position. Native API 8 (same version): Player has runtime close ownership state; rebuild native plugins. In-game verification: **Not yet**.
+
 ## How the code here is written
 
 The changes in this fork are written by AI coding agents, not by hand. The fork owner tests them in-game but does not review the code line by line. Treat every commit that isn't from upstream accordingly.
@@ -362,5 +364,16 @@ concurrent mutations and callback re-entry. API 8 (same version): merchant
 callbacks use shared ownership, offer selection accepts the player, and
 `InventoryPlayer` gains a deferred menu callback hook. Native plugins must rebuild
 for these signatures and the added notification queues; Wasm WIT is unchanged.
+The delta-review follow-up gives each merchant opening a unique session token,
+serializes replacement and close cleanup, and resumes ready owner notifications
+when an earlier batch is abandoned. API 8 (same version): villager and wandering
+trader layouts gain private session ownership, world scoreboard/border locks
+start their own notification batches, and `InventoryPlayer::run_menu_callback`
+requires an implementation that schedules callbacks outside the menu guard.
+Native plugins must rebuild. Closing-menu events again expose the closing
+inventory, and slot tracking retains every shared player-inventory index using
+inventory allocation identity.
 In-game verification: Not yet. This is fork audit work, not an upstream PR port;
 GitHub PR checks were unavailable through the configured proxy.
+
+Ordered owner notifications recover an already committed ready successor after a native packet callback unwinds. Recovery retains the owner, releases queue ownership before dispatch, preserves one active drainer and never replays the failed effect. Actual border, scoreboard and advancement packet callbacks exercise commit-then-panic without a third mutation. In-game verification: **Not yet**.

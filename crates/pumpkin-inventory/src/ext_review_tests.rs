@@ -37,6 +37,7 @@ pub struct Player {
     pub(crate) levels: AtomicI32,
     pub(crate) map_state: Mutex<Option<(i8, bool)>>,
     pub(crate) properties: Mutex<Vec<(i16, i16)>>,
+    menu_callbacks: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
     cursor_probe:
         Mutex<Option<Arc<pumpkin_util::sync::Mutex<ItemStack, pumpkin_util::sync::Cursor>>>>,
 }
@@ -53,7 +54,15 @@ impl Player {
             levels: AtomicI32::new(10),
             map_state: Mutex::new(Some((0, false))),
             properties: Mutex::default(),
+            menu_callbacks: Mutex::default(),
             cursor_probe: Mutex::default(),
+        }
+    }
+
+    pub(crate) fn flush_menu_callbacks(&self) {
+        let callbacks = std::mem::take(&mut *self.menu_callbacks.lock().unwrap());
+        for callback in callbacks {
+            callback();
         }
     }
 
@@ -67,6 +76,9 @@ impl Player {
 }
 
 impl InventoryPlayer for Player {
+    fn run_menu_callback(&self, callback: Box<dyn FnOnce() + Send>) {
+        self.menu_callbacks.lock().unwrap().push(callback);
+    }
     fn map_crafting_state(&self, _stack: &ItemStack) -> Option<(i8, bool)> {
         *self.map_state.lock().unwrap()
     }

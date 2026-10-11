@@ -191,6 +191,7 @@ pub mod guard_effects;
 #[cfg(test)]
 mod minecart_stall_tests;
 pub mod natural_spawner;
+pub mod owner_mutex;
 pub mod scoreboard;
 #[cfg(test)]
 mod spawn_plugin_tests;
@@ -335,9 +336,9 @@ pub struct World {
     dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
     spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
     /// The world's scoreboard, used for tracking scores, objectives, and display information.
-    pub scoreboard: pumpkin_util::sync::Mutex<Scoreboard, pumpkin_util::sync::Scoreboard>,
+    pub scoreboard: owner_mutex::OwnerMutex<Scoreboard, pumpkin_util::sync::Scoreboard>,
     /// The world's worldborder, defining the playable area and controlling its expansion or contraction.
-    pub worldborder: pumpkin_util::sync::Mutex<Worldborder, pumpkin_util::sync::WorldBorder>,
+    pub worldborder: owner_mutex::OwnerMutex<Worldborder, pumpkin_util::sync::WorldBorder>,
     /// The world's time, including counting ticks for weather, time cycles, and statistics.
     pub level_time: std::sync::Mutex<LevelTime>,
     /// The type of dimension the world is in.
@@ -493,8 +494,8 @@ impl World {
             entities: ArcSwap::new(Arc::new(Vec::new())),
             dragon_parts: DashMap::new(),
             spawn_uuids: std::sync::Mutex::default(),
-            scoreboard: pumpkin_util::sync::Mutex::new(Scoreboard::default()),
-            worldborder: pumpkin_util::sync::Mutex::new(Worldborder::new(
+            scoreboard: owner_mutex::OwnerMutex::new(Scoreboard::default()),
+            worldborder: owner_mutex::OwnerMutex::new(Worldborder::new(
                 0.0,
                 0.0,
                 5.999_996_8E7,

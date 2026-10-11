@@ -547,19 +547,32 @@ mod tests {
         inventory: Arc<PlayerInventory>,
         experience: AtomicI32,
         traded: AtomicI32,
+        callbacks: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
     }
 
     impl TestPlayer {
+        fn flush_callbacks(&self) {
+            let callbacks = std::mem::take(&mut *self.callbacks.lock().unwrap());
+            for callback in callbacks {
+                callback();
+            }
+        }
+
         fn new(inventory: Arc<PlayerInventory>) -> Self {
             Self {
                 inventory,
                 experience: AtomicI32::new(0),
                 traded: AtomicI32::new(0),
+                callbacks: Mutex::default(),
             }
         }
     }
 
     impl InventoryPlayer for TestPlayer {
+        fn run_menu_callback(&self, callback: Box<dyn FnOnce() + Send>) {
+            self.callbacks.lock().unwrap().push(callback);
+        }
+
         fn as_any(&self) -> &dyn Any {
             self
         }
@@ -720,6 +733,7 @@ mod tests {
             Item::BOOKSHELF.id
         );
         assert_eq!(player.traded.load(Ordering::Relaxed), 1);
+        player.flush_callbacks();
         assert_eq!(trade_count.load(Ordering::Relaxed), 1);
         assert_eq!(player.experience.load(Ordering::Relaxed), 0);
     }
@@ -749,6 +763,7 @@ mod tests {
         assert_eq!(handler.offers[0].uses, 1);
         assert_eq!(merchant_inventory.get_stack(0).item_count, 3);
         assert_eq!(player.traded.load(Ordering::Relaxed), 1);
+        player.flush_callbacks();
         assert_eq!(trade_count.load(Ordering::Relaxed), 1);
         assert!(merchant_inventory.get_stack(2).is_empty());
     }
@@ -780,6 +795,7 @@ mod tests {
 
         assert_eq!(handler.offers[0].uses, 0);
         assert_eq!(handler.offers[1].uses, 1);
+        player.flush_callbacks();
         assert_eq!(traded_offer.load(Ordering::Relaxed), 1);
         assert_eq!(merchant_inventory.get_stack(0).item_count, 40);
         assert_eq!(
@@ -816,6 +832,7 @@ mod tests {
         handler.on_slot_click(2, 0, SlotActionType::Pickup, &player);
 
         assert_eq!(handler.offers[0].uses, 0);
+        player.flush_callbacks();
         assert_eq!(trade_count.load(Ordering::Relaxed), 0);
         assert_eq!(player.traded.load(Ordering::Relaxed), 0);
         assert_eq!(merchant_inventory.get_stack(0).item_count, 8);

@@ -6,6 +6,7 @@ mod experience_orb;
 mod known_movement;
 mod mace;
 mod melee;
+mod menu_close;
 use known_movement::KnownMovement;
 pub mod statistics;
 
@@ -519,6 +520,7 @@ pub struct Player {
         Arc<pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>>,
         pumpkin_util::sync::ScreenSelection,
     >,
+    menu_close_state: menu_close::MenuCloseState,
     pub screen_handler_sync_id: AtomicU8,
     pub screen_handler_listener: Arc<dyn ScreenHandlerListener>,
     pub inventory_changed: Arc<AtomicBool>,
@@ -731,6 +733,7 @@ impl Player {
             signature_cache: Mutex::new(MessageCache::default()),
             player_screen_handler: player_screen_handler.clone(),
             current_screen_handler: pumpkin_util::sync::Mutex::new(player_screen_handler),
+            menu_close_state: menu_close::MenuCloseState::default(),
             screen_handler_sync_id: AtomicU8::new(0),
             screen_handler_listener: Arc::new(ScreenListener(inventory_changed.clone())),
             inventory_changed,
@@ -4997,12 +5000,12 @@ impl Player {
 
     pub fn close_handled_screen(&self) {
         let _guard_effects = crate::world::guard_effects::GuardEffects::new();
+        let Some(closing) = self.begin_menu_close() else {
+            return;
+        };
         let (sync_id, bedrock_window_type) = {
-            let current_handler_guard = self
-                .current_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let handler = current_handler_guard
+            let handler = closing
+                .menu
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let sync_id = handler.sync_id();
@@ -5035,18 +5038,16 @@ impl Player {
                 server_initiated_close: true,
             },
         );
-        self.on_handled_screen_closed();
+        self.finish_handled_screen_closed(&closing.menu);
     }
 
-    pub fn on_handled_screen_closed(&self) {
-        let effects = crate::world::guard_effects::GuardEffects::new();
-        let current_screen_handler: Arc<
+    fn finish_handled_screen_closed(
+        &self,
+        current_screen_handler: &Arc<
             pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>,
-        > = self
-            .current_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        >,
+    ) {
+        let effects = crate::world::guard_effects::GuardEffects::new();
 
         let window_type = {
             let mut handler = current_screen_handler
@@ -5061,25 +5062,7 @@ impl Player {
             pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>,
         > = self.player_screen_handler.clone();
 
-        if !Arc::ptr_eq(&player_screen_handler, &current_screen_handler) {
-            let shared = current_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .shared_slot_state();
-            player_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .copy_shared_slots(shared);
-        }
-
-        // ServerPlayer.doCloseContainer transfers tracking and publishes inventoryMenu.
-        *self
-            .current_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            self.player_screen_handler.clone();
-        self.open_container_pos.store(None);
-        drop(effects);
+        // The close event exposes this menu through the player until listeners finish.
         let world = self.living_entity.entity.world.load();
         let server = world.server.upgrade();
         if let Some(server) = server
@@ -5092,6 +5075,24 @@ impl Player {
                 );
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
+
+        if !self.closing_menu_is_selected(current_screen_handler) {
+            return;
+        }
+        if !Arc::ptr_eq(&player_screen_handler, current_screen_handler) {
+            let shared = current_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .shared_slot_state();
+            player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .copy_shared_slots(shared);
+        }
+
+        // ServerPlayer.doCloseContainer transfers tracking and publishes inventoryMenu.
+        self.publish_closed_menu(current_screen_handler);
+        drop(effects);
     }
 
     pub fn on_screen_handler_opened<T: ScreenHandler + ?Sized>(

@@ -150,7 +150,7 @@ impl Eq for ComparableInventory {}
 
 impl Hash for ComparableInventory {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let ptr = Arc::as_ptr(&self.0);
-        ptr.hash(state);
+        // AbstractContainerMenu.transferState keys by container identity, not dyn vtable.
+        Arc::as_ptr(&self.0).cast::<()>().hash(state);
     }
 }

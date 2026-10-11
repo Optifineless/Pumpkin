@@ -127,6 +127,7 @@ pub struct WanderingTraderEntity {
     pub offers: std::sync::Mutex<Vec<pumpkin_protocol::java::client::play::MerchantOffer>>,
     pub merchant_inventory: Arc<SimpleInventory>,
     pub trading_player: std::sync::Mutex<Option<(Uuid, u8)>>,
+    merchant_session: crate::entity::passive::merchant_session::MerchantSession,
     pub is_trading: AtomicBool,
     pub trade_sound_cooldown: AtomicI32,
     pub ambient_sound_timer: AtomicI32,
@@ -146,6 +147,7 @@ impl WanderingTraderEntity {
             offers: std::sync::Mutex::new(Vec::new()),
             merchant_inventory: Arc::new(SimpleInventory::new(3)),
             trading_player: std::sync::Mutex::new(None),
+            merchant_session: super::merchant_session::MerchantSession::default(),
             is_trading: AtomicBool::new(false),
             trade_sound_cooldown: AtomicI32::new(0),
             ambient_sound_timer: AtomicI32::new(120),
@@ -560,27 +562,28 @@ impl ScreenHandlerFactory for WanderingTraderEntity {
         let server_player = player.as_any().downcast_ref::<Player>();
         let player_uuid =
             server_player.map_or_else(uuid::Uuid::nil, |p| p.get_entity().entity_uuid);
-
-        let offers = self
-            .offers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         let world = self.get_entity().world.load().clone();
+        let (mut handler, session) = self.merchant_session.open(|| {
+            let offers = self
+                .offers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
 
-        let mut handler = MerchantScreenHandler::new(
-            sync_id,
-            player_inventory,
-            self.merchant_inventory.clone(),
-            offers,
-        );
+            let handler = MerchantScreenHandler::new(
+                sync_id,
+                player_inventory,
+                self.merchant_inventory.clone(),
+                offers,
+            );
 
-        self.is_trading.store(true, Ordering::Relaxed);
-        *self
-            .trading_player
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((player_uuid, sync_id));
-
+            self.is_trading.store(true, Ordering::Relaxed);
+            *self
+                .trading_player
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((player_uuid, sync_id));
+            handler
+        });
         let validity_weak = self_weak.clone();
         handler.validity_check = Some(Box::new(move |inventory_player| {
             validity_weak.upgrade().is_some_and(|trader| {
@@ -609,11 +612,13 @@ impl ScreenHandlerFactory for WanderingTraderEntity {
         let close_weak = self_weak.clone();
         handler.on_close = Some(Arc::new(move || {
             if let Some(trader) = close_weak.upgrade() {
-                trader.is_trading.store(false, Ordering::Relaxed);
-                *trader
-                    .trading_player
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                trader.merchant_session.close(&session, || {
+                    trader.is_trading.store(false, Ordering::Relaxed);
+                    *trader
+                        .trading_player
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                });
             }
         }));
 

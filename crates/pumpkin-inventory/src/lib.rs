@@ -69,9 +69,13 @@ pub mod window_property;
 #[cfg(test)]
 mod ext_review_tests;
 #[cfg(test)]
+mod merchant_callback_tests;
+#[cfg(test)]
 mod quick_craft_tests;
 #[cfg(test)]
 mod result_container_tests;
+#[cfg(test)]
+mod shared_slot_tests;
 #[cfg(test)]
 mod smithing_routing_tests;
 #[cfg(test)]

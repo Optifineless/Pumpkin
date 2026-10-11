@@ -197,3 +197,186 @@ async fn guard_boundary_abandoned_batch_does_not_block_later_border_update() {
     );
     fixture.close().await;
 }
+
+struct CancellationDelivery {
+    change: Change,
+    delivered: std::sync::mpsc::Sender<()>,
+}
+
+impl EventHandler<PacketSentEvent> for CancellationDelivery {
+    fn handle_blocking<'a>(
+        &'a self,
+        _: &'a Arc<Server>,
+        event: &'a mut PacketSentEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.packet_id == self.change.id() {
+            assert!(!std::thread::panicking());
+            match self.change {
+                Change::Border => drop(event.player.world().worldborder.try_lock().unwrap()),
+                Change::Score => drop(event.player.world().scoreboard.try_lock().unwrap()),
+                Change::Advancement => drop(event.player.advancements.try_lock().unwrap()),
+            }
+            self.delivered.send(()).unwrap();
+        }
+        Box::pin(async {})
+    }
+}
+
+async fn cancel_with_ready_successor(change: Change) {
+    let mut fixture = Fixture::new();
+    change.prepare(&mut fixture);
+    fixture.translating();
+    let (send, receive) = std::sync::mpsc::channel();
+    fixture
+        .server
+        .plugin_manager
+        .register::<PacketSentEvent, _>(
+            Arc::new(CancellationDelivery {
+                change,
+                delivered: send,
+            }),
+            EventPriority::Normal,
+            true,
+        );
+    let committed = Arc::new(Barrier::new(2));
+    let successor_ready = Arc::new(Barrier::new(2));
+    let server = fixture.server.clone();
+    let player = fixture.player.player.clone();
+    let first_committed = committed.clone();
+    let second_ready = successor_ready.clone();
+    let worker = std::thread::spawn(move || {
+        let aborted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _effects = crate::world::guard_effects::GuardEffects::new();
+            change.mutate(&server, &player, true);
+            first_committed.wait();
+            second_ready.wait();
+            panic!("abort the unready queue head after its successor becomes ready");
+        }));
+        assert!(aborted.is_err());
+    });
+    committed.wait();
+    change.mutate(&fixture.server, &fixture.player.player, false);
+    assert!(
+        fixture
+            .player
+            .take_packets()
+            .into_iter()
+            .all(|packet| { packet.as_ref().get_var_int().unwrap().0 != change.id() })
+    );
+    successor_ready.wait();
+    worker.join().unwrap();
+    // Timeout only bounds a broken implementation; barriers establish the interleaving.
+    receive
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    let expected = *change.expected().last().unwrap();
+    let packet = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        fixture.player.receive_packet(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let packets = change.values(vec![packet]);
+    assert_eq!(packets, vec![expected]);
+    fixture.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_border_cancellation_delivers_already_ready_successor() {
+    cancel_with_ready_successor(Change::Border).await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_score_cancellation_delivers_already_ready_successor() {
+    cancel_with_ready_successor(Change::Score).await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_advancement_cancellation_delivers_already_ready_successor() {
+    cancel_with_ready_successor(Change::Advancement).await;
+}
+
+struct CommitThenPanic {
+    change: Change,
+    calls: AtomicUsize,
+    committed: AtomicUsize,
+}
+
+impl EventHandler<PacketSentEvent> for CommitThenPanic {
+    fn handle_blocking<'a>(
+        &'a self,
+        server: &'a Arc<Server>,
+        event: &'a mut PacketSentEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.packet_id == self.change.id() && self.calls.fetch_add(1, Ordering::Relaxed) == 0 {
+            self.change.mutate(server, &event.player, false);
+            self.committed.store(1, Ordering::Release);
+            panic!("one-shot native packet callback after successor commit");
+        }
+        Box::pin(async {})
+    }
+}
+
+async fn dispatch_unwind_preserves_ready_successor(change: Change) {
+    let mut fixture = Fixture::new();
+    change.prepare(&mut fixture);
+    fixture.translating();
+    let hook = Arc::new(CommitThenPanic {
+        change,
+        calls: AtomicUsize::new(0),
+        committed: AtomicUsize::new(0),
+    });
+    fixture
+        .server
+        .plugin_manager
+        .register::<PacketSentEvent, _>(hook.clone(), EventPriority::Normal, true);
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        change.mutate(&fixture.server, &fixture.player.player, true);
+    }));
+    assert!(
+        failed.is_err(),
+        "The actual native pairing callback did not unwind"
+    );
+    assert_eq!(
+        hook.committed.load(Ordering::Acquire),
+        1,
+        "The successor mutation did not complete before the callback unwound"
+    );
+    // No third mutation may be needed to deliver the already committed successor.
+    let received = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(packet) = fixture.player.receive_packet().await {
+            let values = change.values(vec![packet]);
+            if !values.is_empty() {
+                return values;
+            }
+        }
+        Vec::new()
+    })
+    .await;
+    let values = received.unwrap_or_default();
+    let calls = hook.calls.load(Ordering::Relaxed);
+    fixture.close().await;
+    assert_eq!(
+        values,
+        vec![*change.expected().last().unwrap()],
+        "Dispatch unwind stranded an already ready committed successor"
+    );
+    assert_eq!(
+        calls, 2,
+        "The failed first effect was replayed or its successor was omitted"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_border_dispatch_unwind_delivers_ready_successor() {
+    dispatch_unwind_preserves_ready_successor(Change::Border).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_score_dispatch_unwind_delivers_ready_successor() {
+    dispatch_unwind_preserves_ready_successor(Change::Score).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_advancement_dispatch_unwind_delivers_ready_successor() {
+    dispatch_unwind_preserves_ready_successor(Change::Advancement).await;
+}

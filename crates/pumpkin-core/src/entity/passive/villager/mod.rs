@@ -354,6 +354,7 @@ pub struct VillagerEntity {
     pub increase_profession_level_on_update: AtomicBool,
     pub last_traded_player: std::sync::Mutex<Option<Uuid>>,
     pub trading_player: std::sync::Mutex<Option<(Uuid, u8)>>,
+    merchant_session: crate::entity::passive::merchant_session::MerchantSession,
     pub is_trading: AtomicBool,
     pub job_site: std::sync::Mutex<Option<BlockPos>>,
     pub job_site_pending: AtomicBool,
@@ -431,6 +432,7 @@ impl VillagerEntity {
             increase_profession_level_on_update: AtomicBool::new(false),
             last_traded_player: std::sync::Mutex::new(None),
             trading_player: std::sync::Mutex::new(None),
+            merchant_session: super::merchant_session::MerchantSession::default(),
             is_trading: AtomicBool::new(false),
             job_site: std::sync::Mutex::new(None),
             job_site_pending: AtomicBool::new(false),
@@ -1497,28 +1499,31 @@ impl ScreenHandlerFactory for VillagerEntity {
         let server_player = player.as_any().downcast_ref::<Player>();
         let player_uuid =
             server_player.map_or_else(uuid::Uuid::nil, |p| p.get_entity().entity_uuid);
-        if let Some(player) = server_player {
-            self.update_special_prices(player);
-        }
-        let offers = self
-            .offers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         let world = self.get_entity().world.load().clone();
+        let (mut handler, session) = self.merchant_session.open(|| {
+            if let Some(player) = server_player {
+                self.update_special_prices(player);
+            }
+            let offers = self
+                .offers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
 
-        let mut handler = MerchantScreenHandler::new(
-            sync_id,
-            player_inventory,
-            self.merchant_inventory.clone(),
-            offers,
-        );
+            let handler = MerchantScreenHandler::new(
+                sync_id,
+                player_inventory,
+                self.merchant_inventory.clone(),
+                offers,
+            );
 
-        self.is_trading.store(true, Ordering::Relaxed);
-        *self
-            .trading_player
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((player_uuid, sync_id));
+            self.is_trading.store(true, Ordering::Relaxed);
+            *self
+                .trading_player
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((player_uuid, sync_id));
+            handler
+        });
         let validity_weak = self_weak.clone();
         handler.validity_check = Some(Box::new(move |inventory_player| {
             validity_weak.upgrade().is_some_and(|villager| {
@@ -1545,12 +1550,14 @@ impl ScreenHandlerFactory for VillagerEntity {
         let close_weak = self_weak.clone();
         handler.on_close = Some(Arc::new(move || {
             if let Some(villager) = close_weak.upgrade() {
-                villager.is_trading.store(false, Ordering::Relaxed);
-                *villager
-                    .trading_player
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-                villager.reset_special_prices();
+                villager.merchant_session.close(&session, || {
+                    villager.is_trading.store(false, Ordering::Relaxed);
+                    *villager
+                        .trading_player
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                    villager.reset_special_prices();
+                });
             }
         }));
 

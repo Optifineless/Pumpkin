@@ -22,6 +22,7 @@ pub mod happy_ghast;
 pub mod horse;
 pub mod iron_golem;
 pub mod llama;
+mod merchant_session;
 pub mod mooshroom;
 mod mooshroom_conversion;
 pub mod mule;

@@ -548,9 +548,12 @@ async fn guard_boundary_advancement_player_tick_preserves_reentrant_revoke_for_n
 }
 
 mod bedrock_packets;
+mod menu_close_tests;
 mod menu_level_tests;
 mod menu_revalidation_tests;
 mod menu_session_tests;
 mod merchant_packets;
+mod merchant_reopen;
 mod ordered_delivery;
 mod saved_login_tests;
+mod unbatched_owners;

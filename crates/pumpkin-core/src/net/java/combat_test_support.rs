@@ -99,6 +99,16 @@ impl TestPlayer {
         }
     }
 
+    /// Waits for the next data packet enqueued by a concurrent server operation.
+    pub async fn receive_packet(&mut self) -> Option<bytes::Bytes> {
+        while let Some(packet) = self.packets.recv().await {
+            if let OutgoingPacket::Data { data, .. } = packet {
+                return Some(data);
+            }
+        }
+        None
+    }
+
     pub fn take_packets(&mut self) -> Vec<bytes::Bytes> {
         let mut packets = Vec::new();
         while let Ok(packet) = self.packets.try_recv() {

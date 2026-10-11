@@ -101,11 +101,12 @@ impl OrderedEffects {
         };
         let effect = move || request.run();
         if let Err(effect) = defer(effect) {
-            effect();
+            // OwnerMutex batches attached owners; standalone delivery stays asynchronous.
+            std::thread::spawn(effect);
         }
     }
 
-    fn drain(&self) {
+    fn drain(self: &Arc<Self>) {
         assert_no_guards_held("OrderedEffects::dispatch");
         {
             let mut delivery = self
@@ -166,7 +167,7 @@ impl Drop for DispatchRequest {
             return;
         }
         // An unwinding batch discards its effects; do not retain an unready queue head.
-        let pending = {
+        let (pending, needs_drain) = {
             let mut delivery = self
                 .owner
                 .0
@@ -176,22 +177,49 @@ impl Drop for DispatchRequest {
                 .effects
                 .iter()
                 .position(|pending| Arc::ptr_eq(&pending.ready, &self.ready));
-            index.and_then(|index| delivery.effects.remove(index))
+            let pending = index.and_then(|index| delivery.effects.remove(index));
+            let needs_drain = !delivery.draining
+                && delivery.effects.front().is_some_and(|pending| {
+                    pending.ready.load(std::sync::atomic::Ordering::Acquire)
+                });
+            (pending, needs_drain)
         };
         drop(pending);
+        if needs_drain {
+            // WorldBorder.setSize, ServerScoreboard.onScoreChanged and PlayerAdvancements.flushDirty
+            // deliver every change; abandoning a batch must not strand later notifications.
+            // Ready successors have already unlocked. Dispatch away from the unwinding
+            // thread, where nested batches may still be releasing their guards.
+            let owner = self.owner.clone();
+            std::thread::spawn(move || owner.drain());
+        }
     }
 }
 
-struct DrainReset<'a>(&'a OrderedEffects);
+struct DrainReset<'a>(&'a Arc<OrderedEffects>);
 
 impl Drop for DrainReset<'_> {
     fn drop(&mut self) {
-        if std::thread::panicking() {
-            self.0
+        if !std::thread::panicking() {
+            return;
+        }
+        let needs_drain = {
+            let mut delivery = self
+                .0
                 .0
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .draining = false;
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            delivery.draining = false;
+            delivery
+                .effects
+                .front()
+                .is_some_and(|pending| pending.ready.load(std::sync::atomic::Ordering::Acquire))
+        };
+        if needs_drain {
+            // The failed effect was already removed. Recover ready successors without
+            // replaying it or invoking native callbacks on the unwinding thread.
+            let owner = self.0.clone();
+            std::thread::spawn(move || owner.drain());
         }
     }
 }
