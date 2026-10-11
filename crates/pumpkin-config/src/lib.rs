@@ -198,6 +198,10 @@ pub struct BasicConfiguration {
     pub hardcore: bool,
     /// The server's ticks per second.
     pub tps: f32,
+    /// Maximum duration of one server tick in milliseconds (vanilla `max-tick-time`).
+    /// Defaults to 60000; -1 or 0 disables stall detection. A stall writes a diagnostic
+    /// crash report and exits without saving. Startup, frozen ticks and sprints are exempt.
+    pub max_tick_time: i64,
     /// The default gamemode for players.
     pub default_gamemode: GameMode,
     /// If the server forces the gamemode on-join.
@@ -235,6 +239,8 @@ impl Default for BasicConfiguration {
             allow_end: true,
             hardcore: false,
             tps: 20.0,
+            // DedicatedServerProperties.maxTickTime defaults to one minute.
+            max_tick_time: 60_000,
             default_gamemode: GameMode::Survival,
             force_gamemode: false,
             scrub_ips: true,
@@ -439,7 +445,24 @@ pub trait LoadConfiguration {
 mod tests {
     use toml::from_str;
 
-    use super::BasicConfiguration;
+    use super::{BasicConfiguration, LoadConfiguration, PumpkinConfig};
+
+    #[test]
+    fn watchdog_reads_old_configs_and_disabled_limits() -> Result<(), toml::de::Error> {
+        let (old, changed) =
+            PumpkinConfig::merge_with_default_toml(from_str("tps = 10.0\nhardcore = true")?);
+        assert!(changed);
+        assert_eq!(old.basic.max_tick_time, 60_000);
+        assert_eq!(old.basic.tps, 10.0);
+        assert!(old.basic.hardcore);
+        for limit in [-1, 0, 1000] {
+            let (config, _) = PumpkinConfig::merge_with_default_toml(from_str(&format!(
+                "max_tick_time = {limit}"
+            ))?);
+            assert_eq!(config.basic.max_tick_time, limit);
+        }
+        Ok(())
+    }
 
     #[test]
     fn accepts_transfers_defaults_to_true() {

@@ -150,6 +150,14 @@ async fn main() {
         exit(1);
     });
     let plugin_wait_time = pumpkin_server.init_plugins().await;
+    // DedicatedServer.initServer: start explicitly, after world generation and plugins.
+    let _watchdog = pumpkin_server
+        .server
+        .start_watchdog()
+        .unwrap_or_else(|error| {
+            tracing::error!("Failed to start server watchdog: {error}");
+            exit(1);
+        });
 
     let time_elapsed = time.elapsed().saturating_sub(plugin_wait_time);
 

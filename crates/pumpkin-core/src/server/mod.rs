@@ -8,7 +8,7 @@ use crate::command::commands::default_dispatcher;
 use crate::command::commands::defaultgamemode::DefaultGamemode;
 use crate::data::VanillaData;
 use crate::data::player_server::ServerPlayerData;
-use crate::entity::NBTStorage;
+use crate::entity::{EntityBase, NBTStorage};
 use crate::item::registry::ItemRegistry;
 use crate::net::authentication::fetch_mojang_public_keys;
 use crate::net::{ClientPlatform, DisconnectReason, EncryptionError, GameProfile, PlayerConfig};
@@ -66,6 +66,7 @@ pub mod seasonal_events;
 pub mod server_test_manager;
 pub mod tick_rate_manager;
 pub mod ticker;
+pub mod watchdog;
 
 pub use recipe::RecipeManager;
 
@@ -146,6 +147,7 @@ pub struct Server {
     pub tick_count: AtomicI32,
     /// Owns the server-wide tick profiling session used by `/debug`.
     pub(crate) debug_profiler: debug_profiler::DebugProfiler,
+    pub(crate) watchdog: Arc<watchdog::Watchdog>,
     /// Random unique Server ID used by Bedrock Edition
     pub server_guid: u64,
     /// Player idle timeout in minutes (0 = disabled)
@@ -313,6 +315,7 @@ impl Server {
         ));
 
         map_manager.reconcile_counter(level_info.load().map_id);
+        let watchdog = Arc::new(watchdog::Watchdog::new(basic_config.max_tick_time));
         let server = Self {
             _session_lock: session_lock,
             admission_reservations: Arc::default(),
@@ -355,6 +358,7 @@ impl Server {
             aggregated_tick_times_nanos: AtomicI64::new(0),
             tick_count: AtomicI32::new(0),
             debug_profiler: debug_profiler::DebugProfiler::new(),
+            watchdog,
             tasks: TaskTracker::new(),
             runtime: tokio::runtime::Handle::current(),
             scheduled_functions: Arc::new(crate::server::scheduler::ScheduledFunctionQueue::new()),
@@ -845,6 +849,7 @@ impl Server {
     }
 
     pub async fn shutdown(&self) {
+        self.watchdog.stop();
         self.management_hub.broadcast_server_stopping();
 
         self.tasks.close();
@@ -1231,6 +1236,7 @@ impl Server {
     /// Main server tick method. This now handles both player/network ticking (which always runs)
     /// and world/game logic ticking (which is affected by freeze state).
     pub fn tick(self: &Arc<Self>) {
+        self.watchdog.phase(watchdog::markers::Phase::BlockUpdates);
         // Do not flush mid-tick; `Flush` is `flushChannel`.
         let suspended = self.suspend_player_flushes();
         if self.tick_rate_manager.runs_normally() || self.tick_rate_manager.is_sprinting() {
@@ -1240,6 +1246,7 @@ impl Server {
             self.sync_game_time();
             self.tick_players_and_network();
         }
+        self.watchdog.phase(watchdog::markers::Phase::BlockUpdates);
         self.flush_pending_block_updates();
         Self::resume_player_flushes(&suspended);
     }
@@ -1256,21 +1263,33 @@ impl Server {
         let worlds = self.worlds.load();
         let handle = self.runtime.clone();
 
-        for world in worlds.iter() {
+        for (index, world) in worlds.iter().enumerate() {
+            let _phase = self.watchdog_world(index, watchdog::markers::Phase::PlayerTicks);
             world.flush_block_updates();
             world.flush_synced_block_events();
 
             let players = world.players.load();
             let player_handle = handle.clone();
-            players.par_iter().for_each(|player| {
-                let _guard = player_handle.enter();
-                player.tick(self);
-            });
+            players.par_iter().for_each_init(
+                || self.watchdog_worker(index),
+                |marker, player| {
+                    let _guard = player_handle.enter();
+                    let entity = player.get_entity();
+                    let _phase = marker.entity(
+                        entity.entity_id,
+                        entity.entity_type.id,
+                        watchdog::markers::Phase::PlayerTicks,
+                    );
+                    player.tick(self);
+                },
+            );
         }
     }
 
     /// Ticks the game logic for all worlds. This is the part that is affected by `/tick freeze`.
     pub fn tick_worlds(self: &Arc<Self>) {
+        self.watchdog
+            .phase(watchdog::markers::Phase::FunctionsAndPlugins);
         let source = crate::command::CommandSender::Console
             .into_source(self)
             .with_silent();
@@ -1286,12 +1305,15 @@ impl Server {
 
         let worlds = self.worlds.load();
         let handle = self.runtime.clone();
-        worlds.par_iter().for_each(|world| {
+        self.watchdog.phase(watchdog::markers::Phase::WorldTick);
+        worlds.par_iter().enumerate().for_each(|(index, world)| {
             let _guard = handle.enter();
+            let _phase = self.watchdog_world(index, watchdog::markers::Phase::WorldTick);
             world.tick(self);
         });
 
         // Global tasks
+        self.watchdog.phase(watchdog::markers::Phase::Autosave);
         self.player_data_storage.tick(self);
     }
 

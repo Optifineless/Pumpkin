@@ -16,6 +16,18 @@ None of this is sent upstream as pull requests. Upstream maintainers are welcome
 
 Upstream is merged in regularly. When upstream fixes something this fork also fixed, the fork drops its own version and keeps upstream's.
 
+## Tick stall watchdog
+
+Vanilla 26.3's `ServerWatchdog` now has a dedicated thread that reports a stalled
+tick and exits without saving. `max_tick_time` in `pumpkin.toml` defaults to
+60000 milliseconds; non-positive values disable it. Startup, normal shutdown,
+frozen ticks and sprints are exempt. Reports include active phases, entity IDs
+and types, block entity positions, tick-start player/chunk counts and Tokio
+metrics. Linux stack capture uses `eu-stack` or `gdb` with an external timeout;
+Windows reports phase markers. Owner verification: Not yet.
+
+Native plugin API stays at 8 under fork policy; the Wasm WIT is unchanged.
+
 ## Upstream pull requests included early
 
 These are open upstream PRs merged here before upstream merges them. Each is dropped from the fork once upstream merges its own version. Fork candidates are listed by source branch and commit.

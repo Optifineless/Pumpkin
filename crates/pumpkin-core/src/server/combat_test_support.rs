@@ -25,7 +25,6 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
     let management_hub = Arc::new(crate::net::management::hub::ManagementHub::new(
         management_settings,
     ));
-    let plugin_loaders = Vec::new();
     let permission_manager = Arc::new(PermissionManager::new());
     let command_dispatcher = ArcSwap::from_pointee(default_dispatcher(
         &permission_manager,
@@ -57,7 +56,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         advanced_config,
         telemetry_config,
         data: vanilla_data,
-        plugin_manager: Arc::new(PluginManager::new(plugin_loaders)),
+        plugin_manager: Arc::new(PluginManager::new(Vec::new())),
         permission_manager,
         container_id: 0.into(),
         recipe_manager: Arc::new(recipe::RecipeManager::new()),
@@ -92,6 +91,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
         aggregated_tick_times_nanos: AtomicI64::new(0),
         tick_count: AtomicI32::new(0),
         debug_profiler: debug_profiler::DebugProfiler::new(),
+        watchdog: Arc::new(super::watchdog::Watchdog::new(0)),
         tasks: TaskTracker::new(),
         runtime: tokio::runtime::Handle::current(),
         scheduled_functions: Arc::new(crate::server::scheduler::ScheduledFunctionQueue::new()),

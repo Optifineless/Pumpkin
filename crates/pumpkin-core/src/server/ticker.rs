@@ -1,4 +1,5 @@
 use super::server_test_manager::drain_game_test_queue;
+use super::watchdog::markers::Phase;
 
 use crate::{
     STOP_INTERRUPT,
@@ -49,6 +50,7 @@ impl Ticker {
     /// Runs the main server tick loop on a dedicated thread.
     pub fn run(server: &Arc<Server>) {
         let _guard = server.runtime.enter();
+        server.watchdog_register_ticker();
         // Single monotonic base, the schedule is plain nanosecond arithmetic.
         let base = Instant::now();
         let mut schedule = TickSchedule::new();
@@ -64,6 +66,7 @@ impl Ticker {
         'ticker: loop {
             // Doubles as the tick-duration start, so the loop reads the clock twice.
             let tick_start_nanos = elapsed_nanos(base);
+            server.watchdog_tick_start();
             let manager = &server.tick_rate_manager;
             let sprinting = manager.is_sprinting();
             let this_tick_nanos = if sprinting {
@@ -88,10 +91,12 @@ impl Ticker {
             schedule.next_tick_nanos += this_tick_nanos;
 
             // PlayerList.remove is serialized with the entire tick, including plugin callbacks.
+            server.watchdog.phase(Phase::TickGate);
             let tick = server.tick_gate.blocking_lock();
             manager.tick();
 
             let tick_number = server.tick_count.load(Ordering::Relaxed);
+            server.watchdog.phase(Phase::TickStartEvent);
             if server.plugin_manager.has_handlers::<ServerTickStartEvent>() {
                 server.runtime.block_on(
                     server
@@ -114,6 +119,7 @@ impl Ticker {
             }
 
             if should_tick_game_tests {
+                server.watchdog.phase(Phase::GameTests);
                 server.runtime.block_on(async {
                     drain_game_test_queue(server, &mut game_test_runner).await;
                     game_test_runner.tick().await;
@@ -123,6 +129,7 @@ impl Ticker {
             let tick_duration_nanos = elapsed_nanos(base) - tick_start_nanos;
 
             let tick_number = server.tick_count.load(Ordering::Relaxed);
+            server.watchdog.phase(Phase::TickEndEvent);
             if server.plugin_manager.has_handlers::<ServerTickEndEvent>() {
                 server.runtime.block_on(server.plugin_manager.fire(
                     server,
@@ -130,8 +137,10 @@ impl Ticker {
                 ));
             }
 
+            server.watchdog.phase(Phase::TickStatistics);
             server.update_tick_times(tick_duration_nanos);
             drop(tick);
+            server.watchdog.end_tick();
 
             if STOP_INTERRUPT.is_cancelled() {
                 break 'ticker;

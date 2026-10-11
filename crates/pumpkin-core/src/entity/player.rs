@@ -2264,7 +2264,9 @@ impl Player {
 
     #[expect(clippy::too_many_lines)]
     pub fn tick<'a>(&'a self, server: &'a Server) {
+        crate::server::watchdog::markers::Phase::Packets.enter();
         self.process_inbound_packets();
+        crate::server::watchdog::markers::Phase::PlayerTicks.enter();
 
         if self.is_spectator() {
             self.living_entity

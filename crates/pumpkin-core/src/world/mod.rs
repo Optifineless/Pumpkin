@@ -3,6 +3,7 @@ mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
 };
+use crate::server::watchdog::markers::Phase;
 use dashmap::DashMap;
 use pumpkin_data::chunk::Biome;
 use pumpkin_data::item::{BedrockItem, BedrockItemVersion};
@@ -1757,6 +1758,7 @@ impl World {
         self.handling_tick.store(true, Ordering::Relaxed);
         self.flush_block_updates();
         self.update_active_chunks();
+        Phase::Environment.enter();
         self.tick_environment();
         let mut raids = {
             let mut guard = self
@@ -1779,11 +1781,13 @@ impl World {
         };
 
         let t_chunks = std::time::Instant::now();
+        Phase::ChunkTicks.enter();
         self.tick_chunks(server);
         let chunk_elapsed = t_chunks.elapsed();
 
         // Vanilla runs block events after scheduled and chunk ticks, then stops handling the tick
         // before entities and block entities.
+        Phase::BlockEvents.enter();
         self.flush_synced_block_events();
         self.handling_tick.store(false, Ordering::Relaxed);
 
@@ -1807,12 +1811,21 @@ impl World {
 
         let t_players = std::time::Instant::now();
         let player_handle = handle.clone();
-        players.par_iter().for_each(|player| {
-            let _guard = player_handle.enter();
-            player.tick(server);
-        });
+        Phase::PlayerTicks.enter();
+        let watchdog_world = crate::server::watchdog::slots::current_world();
+        players.par_iter().for_each_init(
+            || server.watchdog_worker(watchdog_world),
+            |marker, player| {
+                let _guard = player_handle.enter();
+                let entity = player.get_entity();
+                let _phase =
+                    marker.entity(entity.entity_id, entity.entity_type.id, Phase::PlayerTicks);
+                player.tick(server);
+            },
+        );
         let player_elapsed = t_players.elapsed();
 
+        Phase::EntityPreparation.enter();
         let entities_to_tick = self.entities.load();
         let experience_orbs = self.begin_experience_orb_tick(&entities_to_tick);
         let entity_count = entities_to_tick.len();
@@ -1843,12 +1856,16 @@ impl World {
             .collect();
 
         let server_ref = server.as_ref();
-        tickable
-            .par_chunks(ENTITY_TICK_BATCH_SIZE)
-            .for_each(|batch| {
+        Phase::EntityTicks.enter();
+        tickable.par_chunks(ENTITY_TICK_BATCH_SIZE).for_each_init(
+            || server.watchdog_worker(watchdog_world),
+            |marker, batch| {
                 let _guard = entity_handle.enter();
 
                 for (entity, entity_chunk) in batch {
+                    let inner = entity.get_entity();
+                    let _phase =
+                        marker.entity(inner.entity_id, inner.entity_type.id, Phase::EntityTicks);
                     entity.get_entity().age.fetch_add(1, Relaxed);
                     entity.tick(entity.as_ref(), server_ref);
 
@@ -1874,13 +1891,16 @@ impl World {
                         }
                     }
                 }
-            });
+            },
+        );
         crate::entity::experience_orb::collect_nearby_orbs(&players, &experience_orbs);
         self.ticking_experience_orbs.store(None);
         let entity_elapsed = t_entities.elapsed();
 
+        Phase::EntityTracking.enter();
         self.entity_tracker.update_all(self);
 
+        Phase::BlockEntityPreparation.enter();
         let mut block_entities: Vec<Arc<dyn BlockEntity>> = Vec::new();
         if self.block_entities.len() < active_chunks.len() {
             for chunk_block_entities in &self.block_entities {
@@ -1899,27 +1919,35 @@ impl World {
 
         let t_be = std::time::Instant::now();
         let be_handle = handle;
-        block_entities.par_chunks(16).for_each(|batch| {
-            let _guard = be_handle.enter();
-            for be in batch {
-                // Vanilla's ticking wrapper skips a block entity whose block no longer owns
-                // it. Without this, a leftover (say, a daylight detector under a `fill` of
-                // air) reads the new block through its own property type and panics.
-                if !block_owns_block_entity(
-                    self.get_block(&be.get_position()),
-                    be.resource_location(),
-                ) {
-                    continue;
+        Phase::BlockEntityTicks.enter();
+        block_entities.par_chunks(16).for_each_init(
+            || server.watchdog_worker(watchdog_world),
+            |marker, batch| {
+                let _guard = be_handle.enter();
+                for be in batch {
+                    let position = be.get_position();
+                    let block = self.get_block(&position);
+                    // Reuse the ownership check's generated registry ID; no type lookup
+                    // or game-state read is added for watchdog instrumentation.
+                    let _phase =
+                        marker.block_entity(position, block.default_state.block_entity_type);
+                    // Vanilla's ticking wrapper skips a block entity whose block no longer owns
+                    // it. Without this, a leftover (say, a daylight detector under a `fill` of
+                    // air) reads the new block through its own property type and panics.
+                    if !block_owns_block_entity(block, be.resource_location()) {
+                        continue;
+                    }
+                    be.tick(self);
                 }
-                be.tick(self);
-            }
-        });
+            },
+        );
         // Drained after all ticks, so changes (hopper -> chest) land in the same tick.
         let guard = be_handle.enter();
         self.flush_comparator_updates(&block_entities);
         drop(guard);
         let block_entity_elapsed = t_be.elapsed();
 
+        Phase::ChunkNotifications.enter();
         self.level
             .chunk_loading
             .lock()
@@ -1927,6 +1955,7 @@ impl World {
             .send_change();
 
         if let Some(ref fight_mutex) = self.dragon_fight {
+            Phase::DragonFight.enter();
             dragon_fight::DragonFight::tick(fight_mutex, self);
         }
 
@@ -2137,6 +2166,7 @@ impl World {
             level_time.tick(advance_time);
 
             // Auto-save logic
+            Phase::Autosave.enter();
             if level_time.world_age % 100 == 0 {
                 self.level.should_unload.store(true, Relaxed);
                 let cleaned_chunks = self.level.clean_memory();
@@ -2172,6 +2202,7 @@ impl World {
                 }
             }
         }
+        Phase::Environment.enter();
     }
 
     #[expect(clippy::too_many_lines)]
@@ -2189,6 +2220,7 @@ impl World {
         let handle = server.runtime.clone();
 
         // 1. Parallel Block Ticks via Rayon
+        Phase::ScheduledBlocks.enter();
         let world = self.clone();
         let block_handle = handle.clone();
         tick_data
@@ -2215,6 +2247,7 @@ impl World {
             });
 
         // 2. Parallel Fluid Ticks via Rayon
+        Phase::ScheduledFluids.enter();
         let world = self.clone();
         let fluid_handle = handle.clone();
         tick_data
@@ -2238,6 +2271,7 @@ impl World {
             });
 
         // 3. Parallel Random Ticks via Rayon
+        Phase::RandomTicks.enter();
         let world = self.clone();
         let random_handle = handle.clone();
         tick_data

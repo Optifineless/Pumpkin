@@ -486,6 +486,7 @@ impl PumpkinServer {
         }
 
         SERVER_IS_STOPPING.store(true, Ordering::Release);
+        self.server.watchdog.stop();
 
         if let Some(crash_report) = CRASH_REPORT.get() {
             crash_report.print_to_console();
