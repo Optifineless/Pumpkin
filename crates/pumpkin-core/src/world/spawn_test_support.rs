@@ -44,6 +44,14 @@ impl Fixture {
         self.world.shutdown().await;
         Self::from_dir(self.dir)
     }
+    pub fn reopen_storage(&self) -> Arc<Level> {
+        Level::from_root_folder(
+            &pumpkin_config::world::LevelConfig::default(),
+            self.dir.path().to_path_buf(),
+            0,
+            Dimension::OVERWORLD,
+        )
+    }
     pub async fn finish(self) {
         self.world.level.shutdown().await.unwrap();
     }

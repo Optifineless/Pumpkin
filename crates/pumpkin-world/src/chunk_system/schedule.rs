@@ -1,6 +1,10 @@
 #[path = "storage_failure.rs"]
 mod storage_failure;
 
+#[cfg(feature = "test-hooks")]
+#[path = "schedule_test_hooks.rs"]
+pub mod test_hooks;
+
 use super::channel::LevelChange;
 use super::chunk_holder::ChunkHolder;
 use super::chunk_state::{Chunk, StagedChunkEnum};
@@ -21,7 +25,7 @@ use std::cmp::{Ordering, max};
 use std::collections::{BinaryHeap, HashMap};
 use std::mem::swap;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
@@ -51,6 +55,7 @@ impl Ord for TaskHeapNode {
 }
 
 pub struct GenerationSchedule {
+    level: Weak<Level>,
     failed_loads: HashMap<ChunkPos, std::time::Instant>,
     queue: BinaryHeap<TaskHeapNode>,
     graph: DAG,
@@ -148,11 +153,15 @@ impl GenerationSchedule {
         let max_in_flight = (gen_threads * 2) as u16;
 
         let level_sched = level;
+        let runtime = tokio::runtime::Handle::current();
         let lighting_config = level_sched.lighting_config;
         let handle = thread::Builder::new()
             .name("Schedule".to_string())
             .spawn(move || {
+                // Unload publication is awaited on the level's runtime, never this scheduler thread.
+                let _runtime = runtime.enter();
                 let scheduler = Self {
+                    level: Arc::downgrade(&level_sched),
                     failed_loads: HashMap::new(),
                     queue: BinaryHeap::new(),
                     graph: DAG::default(),
@@ -875,6 +884,18 @@ impl GenerationSchedule {
             }
 
             self.listener.clear_failure(pos);
+            // ChunkMap.scheduleUnload: await the retained object's snapshot and save first.
+            if holder.public
+                && let Some(Chunk::Level(chunk)) = &holder.chunk
+                && !self
+                    .level
+                    .upgrade()
+                    .is_some_and(|level| level.poll_chunk_unload(chunk))
+            {
+                self.chunk_map.insert(pos, holder);
+                self.unload_chunks.insert(pos);
+                continue;
+            }
             for task in holder.tasks {
                 if !task.is_null() {
                     let is_in_flight = self.graph.nodes.get(task).is_some_and(|n| n.in_flight);
@@ -889,8 +910,14 @@ impl GenerationSchedule {
             holder.occupied_by = EdgeKey::null();
 
             if holder.public {
-                self.unpublish_chunk(pos);
+                // The lifecycle already detached Level chunks at a tick boundary.
+                if !matches!(holder.chunk, Some(Chunk::Level(_))) {
+                    self.unpublish_chunk(pos);
+                }
                 holder.public = false;
+            }
+            if let Some(level) = self.level.upgrade() {
+                level.chunk_lifecycles.retire(pos);
             }
 
             if let Some(tmp) = holder.chunk {
@@ -1298,6 +1325,7 @@ impl GenerationSchedule {
             // This must run even when the queue is empty: `garbage_collect_dependencies`
             // is what puts stale dependency holders into the queue in the first place.
             if self.last_unload.elapsed() >= std::time::Duration::from_secs(1) {
+                level.chunk_lifecycles.prune_absent_admissions();
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();
                 self.last_unload = std::time::Instant::now();

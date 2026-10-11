@@ -12,6 +12,8 @@ use wasmtime::component::{HasSelf, InstancePre, Linker};
 use wasmtime::{Engine, Store};
 
 mod bindings;
+#[cfg(test)]
+mod removed_entity_tests;
 
 pub mod advancement;
 pub mod block_entity;

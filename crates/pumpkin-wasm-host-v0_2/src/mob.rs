@@ -1,3 +1,4 @@
+// PersistentEntitySectionManager.unloadEntity: removed handles cannot mutate the saved life.
 use std::sync::Arc;
 use wasmtime::component::{Access, HasSelf, Resource};
 
@@ -304,6 +305,9 @@ impl HostMob for PluginHostState {
         goal: crate::pumpkin::plugin::world::BuiltinAiGoal,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(mob) = entity.get_mob() {
             let mob_entity = mob.get_mob_entity();
             match goal {
@@ -370,6 +374,9 @@ impl HostMob for PluginHostState {
             return Err(wasmtime::Error::msg("Plugin not active"));
         };
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(mob) = entity.get_mob() {
             let mob_entity = mob.get_mob_entity();
             mob_entity.add_goal(priority, CustomWasmGoal { plugin, goal_id });
@@ -379,6 +386,9 @@ impl HostMob for PluginHostState {
 
     fn set_ai_disabled(&mut self, this: Resource<WitMob>, disabled: bool) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(mob) = entity.get_mob() {
             mob.get_mob_entity().set_no_ai(disabled);
         }
@@ -398,6 +408,9 @@ impl HostMob for PluginHostState {
         target: Option<Resource<Entity>>,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?.clone();
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         let target_entity = target.map(|t| self.take(t)).transpose()?;
         if let Some(mob) = entity.get_mob() {
             mob.get_mob_entity().set_target(target_entity);
@@ -502,6 +515,9 @@ impl HostMob for PluginHostState {
 
     fn set_navigation_speed(&mut self, this: Resource<WitMob>, speed: f64) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(mob) = entity.get_mob() {
             mob.get_mob_entity()
                 .navigator
@@ -537,6 +553,9 @@ impl HostMob for PluginHostState {
         malus: f32,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         if let Some(mob) = entity.get_mob() {
             let internal_type = from_wit_path_node_type(node_type);
             mob.get_mob_entity()
@@ -722,6 +741,9 @@ impl HostMob for PluginHostState {
     #[allow(clippy::too_many_lines)]
     fn set_mob_data(&mut self, this: Resource<WitMob>, data: WitMobData) -> wasmtime::Result<bool> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(false);
+        };
         let any = entity.cast_any();
 
         match data {
@@ -872,6 +894,9 @@ impl HostMob for PluginHostState {
 
     fn set_freeze_ticks(&mut self, this: Resource<WitMob>, ticks: i32) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let Some(_mutation) = entity.get_entity().try_begin_mutation() else {
+            return Ok(());
+        };
         entity.get_entity().set_frozen_ticks(ticks);
         Ok(())
     }
@@ -901,9 +926,13 @@ impl crate::pumpkin::plugin::world::HostMobWithStore<PluginHostState> for HasSel
                 .ok_or_else(|| wasmtime::Error::msg("Plugin instance not available"))?;
             (entity, plugin)
         };
+        let Some(mutation) = entity.get_entity().try_begin_owned_mutation() else {
+            return Ok(());
+        };
         plugin
             .store
             .pump_blocking(&mut host, move || {
+                let _mutation = mutation;
                 if let Some(mob) = entity.get_mob() {
                     mob.get_mob_entity().clear_ai_goals(mob);
                 }

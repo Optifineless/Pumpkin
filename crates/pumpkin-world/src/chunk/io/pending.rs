@@ -80,12 +80,16 @@ impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
             hook();
         }
         let publication_path = path.clone();
-        #[cfg(test)]
-        let pause = self.publication_pause.lock().unwrap().take();
+        #[cfg(any(test, feature = "test-hooks"))]
+        let pause = self
+            .publication_pause
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         // A queued filesystem operation cannot be cancelled. Keep its region lock until
         // publication finishes even if the reader/unload caller is cancelled (IOWorker.close).
         let (_writer, publication) = tokio::spawn(async move {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-hooks"))]
             if let Some((started, resume)) = pause {
                 let _ = started.send(());
                 let _ = resume.await;

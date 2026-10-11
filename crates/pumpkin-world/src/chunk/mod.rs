@@ -1,3 +1,4 @@
+mod entity_snapshot;
 mod random_tick_membership;
 use crate::chunk::format::LightContainer;
 use crate::tick::scheduler::ChunkTickScheduler;
@@ -94,6 +95,8 @@ pub struct ChunkEntityData {
     /// Chunk Z
     pub z: i32,
     pub data: std::sync::Mutex<Vec<NbtCompound>>,
+    /// Untouched storage records, separate from replaceable snapshots of live entities.
+    pub dormant_records: std::sync::Mutex<Option<Vec<NbtCompound>>>,
     /// Set once the serialized entities have been copied for spawning. From then on the
     /// live entity list is the source of truth and `data` is rebuilt from it on every save.
     pub live: AtomicBool,
@@ -112,7 +115,11 @@ impl ChunkEntityData {
         if self.live.swap(true, std::sync::atomic::Ordering::AcqRel) {
             Vec::new()
         } else {
-            data.clone()
+            self.dormant_records
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take()
+                .unwrap_or_else(|| data.clone())
         }
     }
 }

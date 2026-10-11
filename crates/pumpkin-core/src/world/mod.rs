@@ -26,7 +26,20 @@ use tracing::{debug, error, info, trace, warn};
 
 mod active_chunks;
 mod block_entity_context;
+mod block_entity_lifecycle;
 pub mod brightness;
+#[cfg(test)]
+mod chunk_admission_bench;
+mod chunk_lifecycle;
+#[cfg(test)]
+mod chunk_lifecycle_tests;
+#[cfg(test)]
+mod chunk_unload_boundary_tests;
+mod chunk_unload_drain;
+#[cfg(test)]
+mod chunk_unload_followup_tests;
+#[cfg(test)]
+mod chunk_unload_review_tests;
 pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
@@ -372,6 +385,9 @@ pub struct World {
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
     pub block_entities: DashMap<Vector2<i32>, FxHashMap<BlockPos, Arc<dyn BlockEntity>>>,
+    chunk_lifecycle_tick: RwLock<()>,
+    chunk_unload_requests: chunk_lifecycle::ChunkUnloadRequests,
+    unloading_entities: DashMap<Vector2<i32>, chunk_lifecycle::EntityUnloadSnapshot>,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
@@ -521,6 +537,9 @@ impl World {
             force_change_task: std::sync::Mutex::new(None),
             server,
             block_entities: DashMap::new(),
+            chunk_lifecycle_tick: RwLock::new(()),
+            chunk_unload_requests: chunk_lifecycle::ChunkUnloadRequests::default(),
+            unloading_entities: DashMap::new(),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
@@ -827,45 +846,14 @@ impl World {
                     }
                 }
             };
-            let live = chunk.live.load(Relaxed);
-            if !live && records.is_empty() {
-                continue;
-            }
             let mut data = chunk
                 .data
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let live = chunk.prepare_snapshot(&mut data, &records);
             merge_entity_records(&mut data, live, records);
             drop(data);
             chunk.mark_dirty(true);
-        }
-    }
-
-    /// Serializes the live block entities of a chunk back into that chunk's block
-    /// entity data. The live map is the source of truth while a chunk is loaded -
-    /// `get_block_entity` takes the saved NBT out of the chunk when it wakes an
-    /// entity up - so this has to run before the chunk is dropped, or everything
-    /// the entity did since it was loaded is lost.
-    fn save_block_entities(&self, chunk_pos: Vector2<i32>) {
-        let Some(block_entities) = self
-            .block_entities
-            .get(&chunk_pos)
-            .map(|chunk_block_entities| chunk_block_entities.values().cloned().collect::<Vec<_>>())
-        else {
-            return;
-        };
-
-        for block_entity in block_entities {
-            let mut nbt = NbtCompound::new();
-            block_entity.write_internal(&mut nbt);
-            if let Some(custom_data) = self
-                .custom_block_entity_data
-                .get(&block_entity.get_position())
-                && !custom_data.is_empty()
-            {
-                nbt.put_compound("PumpkinCustomData", custom_data.clone());
-            }
-            self.add_block_entity_nbt(block_entity.get_position(), &nbt);
         }
     }
 
@@ -1749,6 +1737,9 @@ impl World {
 
         let start = std::time::Instant::now();
 
+        self.drain_chunk_unloads();
+        let _chunk_mutations = self.hold_tick_chunks();
+        let _tick_admission = self.level.enter_tick_mutations();
         self.handling_tick.store(true, Ordering::Relaxed);
         self.flush_block_updates();
         self.update_active_chunks();
@@ -1803,6 +1794,7 @@ impl World {
         let t_players = std::time::Instant::now();
         let player_handle = handle.clone();
         players.par_iter().for_each(|player| {
+            let _tick_admission = self.level.enter_tick_mutations();
             let _guard = player_handle.enter();
             player.tick(server);
         });
@@ -1842,6 +1834,7 @@ impl World {
             .par_chunks(ENTITY_TICK_BATCH_SIZE)
             .for_each(|batch| {
                 let _guard = entity_handle.enter();
+                let _tick_admission = self.level.enter_tick_mutations();
 
                 for (entity, entity_chunk) in batch {
                     entity.get_entity().age.fetch_add(1, Relaxed);
@@ -1895,6 +1888,7 @@ impl World {
         let t_be = std::time::Instant::now();
         let be_handle = handle;
         block_entities.par_chunks(16).for_each(|batch| {
+            let _tick_admission = self.level.enter_tick_mutations();
             let _guard = be_handle.enter();
             for be in batch {
                 // Vanilla's ticking wrapper skips a block entity whose block no longer owns
@@ -2181,6 +2175,7 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let tick_data = self.level.get_tick_data(&active_chunks, random_tick_speed);
+        let tick_admission = self.level.has_tick_mutation_scope();
         let handle = server.runtime.clone();
 
         // 1. Parallel Block Ticks via Rayon
@@ -2191,6 +2186,7 @@ impl World {
             .par_chunks(BATCH_SIZE)
             .for_each(|batch| {
                 let _guard = block_handle.enter();
+                let _tick_admission = tick_admission.then(|| self.level.enter_tick_mutations());
                 let world = world.clone();
                 for scheduled_tick in batch {
                     let pos = scheduled_tick.position;
@@ -2217,6 +2213,7 @@ impl World {
             .par_chunks(BATCH_SIZE)
             .for_each(|batch| {
                 let _guard = fluid_handle.enter();
+                let _tick_admission = tick_admission.then(|| self.level.enter_tick_mutations());
                 let world = world.clone();
                 for scheduled_tick in batch {
                     let pos = scheduled_tick.position;
@@ -2240,6 +2237,7 @@ impl World {
             .par_chunks(BATCH_SIZE)
             .for_each(|batch| {
                 let _guard = random_handle.enter();
+                let _tick_admission = tick_admission.then(|| self.level.enter_tick_mutations());
                 let world = world.clone();
                 for scheduled_tick in batch {
                     let pos = scheduled_tick.position;
@@ -4426,7 +4424,7 @@ impl World {
                     }
                 };
 
-                let Some((chunk_weak, first_load)) = recv_result else {
+                let Some((chunk_weak, _first_load)) = recv_result else {
                     break;
                 };
 
@@ -4447,9 +4445,8 @@ impl World {
                     continue 'main;
                 }
 
-                if first_load {
-                    world.make_chunk_entities_live(&chunk, Some(&player));
-                } else {
+                world.activate_chunk_entities(&chunk, Some(&player));
+                {
                     // Already live for other watchers: pair this player now so
                     // spawn packets and vehicle restore do not wait on a tracker tick.
                     world
@@ -4474,7 +4471,7 @@ impl World {
         let world = self.clone();
 
         server.spawn_task(async move {
-            while let Some((chunk_weak, first_load)) = entity_receiver.recv().await {
+            while let Some((chunk_weak, _first_load)) = entity_receiver.recv().await {
                 let Some(chunk) = chunk_weak.upgrade() else {
                     continue;
                 };
@@ -4492,9 +4489,7 @@ impl World {
                     continue;
                 }
 
-                if first_load {
-                    world.make_chunk_entities_live(&chunk, None);
-                }
+                world.activate_chunk_entities(&chunk, None);
             }
         });
     }
@@ -5002,6 +4997,9 @@ impl World {
 
     pub fn remove_entity(&self, entity: &dyn EntityBase) {
         let base_entity = entity.get_entity();
+        let Some(_mutation) = base_entity.try_begin_mutation() else {
+            return;
+        };
         if base_entity
             .removal_reason
             .swap(Some(RemovalReason::Discarded))
@@ -5019,47 +5017,6 @@ impl World {
             new_entities.retain(|e| e.get_entity().entity_uuid != base_entity.entity_uuid);
             new_entities
         });
-    }
-
-    pub async fn remove_entities_in_chunks(
-        &self,
-        chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
-    ) {
-        let chunks_set: FxHashSet<_> = chunks.into_iter().map(|c| *c.borrow()).collect();
-        if chunks_set.is_empty() {
-            return;
-        }
-        let mut entities_to_remove = Vec::new();
-
-        self.entities.rcu(|current_entities| {
-            entities_to_remove.clear();
-            let mut new_entities = (**current_entities).clone();
-            new_entities.retain(|entity| {
-                let pos = entity_persistence::root_chunk(entity);
-                if chunks_set.contains(&pos) {
-                    entities_to_remove.push(entity.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            new_entities
-        });
-
-        self.save_entities_by_chunk(&entities_to_remove, chunks_set.iter().copied())
-            .await;
-
-        for entity in &entities_to_remove {
-            self.entity_tracker.remove_entity(entity.as_ref(), self);
-            self.spawn_state.load().remove_entity(self, entity.as_ref());
-        }
-
-        // Serialized trees own the unload result; release the old strong riding links.
-        entity_persistence::detach_unloaded_trees(&entities_to_remove);
-        for chunk_pos in &chunks_set {
-            self.save_block_entities(*chunk_pos);
-            self.block_entities.remove(chunk_pos);
-        }
     }
 
     pub(crate) fn set_block_breaking(
@@ -5125,6 +5082,12 @@ impl World {
         block_state_id: BlockStateId,
         flags: BlockFlags,
     ) -> BlockStateId {
+        let Some(_mutation) = self
+            .level
+            .begin_existing_chunk_mutation(position.chunk_position())
+        else {
+            return Block::AIR.default_state.id;
+        };
         if !self.is_in_build_limit(*position) {
             return Block::AIR.default_state.id;
         }
@@ -5150,6 +5113,9 @@ impl World {
         flags: BlockFlags,
         condition: impl Fn(BlockStateId) -> bool,
     ) -> Option<BlockStateId> {
+        let _mutation = self
+            .level
+            .begin_existing_chunk_mutation(position.chunk_position())?;
         if !self.is_in_build_limit(*position) {
             return None;
         }
@@ -5181,8 +5147,7 @@ impl World {
                     block_state_id,
                     &condition,
                 )?;
-                // Mark chunk dirty if it isn't already
-                if replaced_block_state_id != block_state_id && !chunk.is_dirty() {
+                if replaced_block_state_id != block_state_id {
                     chunk.mark_dirty(true);
                 }
                 Some(replaced_block_state_id)
@@ -5602,6 +5567,13 @@ impl World {
     }
 
     pub fn set_block_light_level(&self, position: &BlockPos, light_level: u8) {
+        // ServerChunkCache.getChunk serializes explicit writes with ChunkMap.scheduleUnload.
+        let Some(_mutation) = self
+            .level
+            .begin_existing_chunk_mutation(position.chunk_position())
+        else {
+            return;
+        };
         let _ = self
             .level
             .light_engine
@@ -5609,6 +5581,12 @@ impl World {
     }
 
     pub fn set_sky_light_level(&self, position: &BlockPos, light_level: u8) {
+        let Some(_mutation) = self
+            .level
+            .begin_existing_chunk_mutation(position.chunk_position())
+        else {
+            return;
+        };
         let _ = self
             .level
             .light_engine
@@ -6179,44 +6157,6 @@ impl World {
             && level_data.difficulty != Difficulty::Peaceful
     }
 
-    pub fn get_block_entity(&self, block_pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
-        let chunk_pos = block_pos.chunk_position();
-        if let Some(entity) = self
-            .block_entities
-            .get(&chunk_pos)
-            .and_then(|m| m.get(block_pos).cloned())
-        {
-            self.bind_block_entity_context(entity.as_ref());
-            return Some(entity);
-        }
-
-        let nbt = self
-            .level
-            .read_chunk_sync(&chunk_pos, |chunk| {
-                chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .get(block_pos)
-                    .cloned()
-            })
-            .flatten()?;
-        if let Some(custom_data) = nbt
-            .get_compound("PumpkinCustomData")
-            .or_else(|| nbt.get_compound("BukkitValues"))
-        {
-            self.custom_block_entity_data
-                .insert(*block_pos, custom_data.clone());
-        }
-        let entity = block_entity_from_nbt(&nbt)?;
-        self.bind_block_entity_context(entity.as_ref());
-        self.block_entities
-            .entry(chunk_pos)
-            .or_default()
-            .insert(*block_pos, entity.clone());
-        Some(entity)
-    }
-
     fn bedrock_block_entity_data(
         &self,
         state_id: BlockStateId,
@@ -6275,89 +6215,10 @@ impl World {
             .collect()
     }
 
-    pub fn add_block_entity(&self, block_entity: Arc<dyn BlockEntity>) {
-        self.bind_block_entity_context(block_entity.as_ref());
-        let block_pos = block_entity.get_position();
-        let chunk_pos = block_pos.chunk_position();
-        let block_entity_nbt = block_entity.chunk_data_nbt();
-        let entity_id = block_entity.resource_location().to_string();
-
-        if let Some(nbt) = &block_entity_nbt {
-            let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
-            self.broadcast_to_chunk(
-                chunk_pos,
-                &CBlockEntityData::new(
-                    block_entity.get_position(),
-                    VarInt(block_entity.get_id() as i32),
-                    bytes.as_ref().into(),
-                ),
-            );
-        }
-
-        self.block_entities
-            .entry(chunk_pos)
-            .or_default()
-            .insert(block_pos, block_entity);
-
-        if let Some(nbt) = block_entity_nbt {
-            let mut full_nbt = nbt;
-            full_nbt.put_string("id", entity_id);
-            full_nbt.put_int("x", block_pos.0.x);
-            full_nbt.put_int("y", block_pos.0.y);
-            full_nbt.put_int("z", block_pos.0.z);
-            self.add_block_entity_nbt(block_pos, &full_nbt);
-        }
-
-        self.level.read_chunk_sync(&chunk_pos, |chunk| {
-            chunk.mark_dirty(true);
-        });
-    }
-
-    pub fn add_block_entity_nbt(&self, block_pos: BlockPos, nbt: &NbtCompound) {
-        if self
-            .level
-            .read_chunk_sync(&block_pos.chunk_position(), |chunk| {
-                chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(block_pos, nbt.clone());
-                chunk.mark_dirty(true);
-            })
-            .is_some()
-        {
-            self.pending_block_entity_migrations
-                .push(block_pos.chunk_position());
-        }
-    }
-
-    pub fn remove_block_entity(&self, block_pos: &BlockPos) {
-        let chunk_pos = block_pos.chunk_position();
-        let removed_live =
-            self.block_entities
-                .get_mut(&chunk_pos)
-                .is_some_and(|mut chunk_block_entities| {
-                    chunk_block_entities.remove(block_pos).is_some()
-                });
-        let removed_pending = self
-            .level
-            .read_chunk_sync(&chunk_pos, |chunk| {
-                let removed_pending = remove_pending_block_entity(chunk, block_pos);
-                if removed_live {
-                    chunk.mark_dirty(true);
-                }
-                removed_pending
-            })
-            .unwrap_or(false);
-        self.custom_block_entity_data.remove(block_pos);
-        if removed_live || removed_pending {
-            // Drop the chunk's map once its last block entity is gone.
-            self.block_entities
-                .remove_if(&chunk_pos, |_, entities| entities.is_empty());
-        }
-    }
-
     fn migrate_pending_block_entities(&self, chunk_pos: Vector2<i32>) {
+        let Some(_mutation) = self.level.try_chunk_mutation(chunk_pos) else {
+            return;
+        };
         let positions: Vec<BlockPos> = self
             .level
             .read_chunk_sync(&chunk_pos, |chunk| {
@@ -6373,34 +6234,6 @@ impl World {
                 self.update_block_entity(&entity);
             }
         }
-    }
-
-    pub fn update_block_entity(&self, block_entity: &Arc<dyn BlockEntity>) {
-        let block_pos = block_entity.get_position();
-        let chunk_pos = block_pos.chunk_position();
-        let block_entity_nbt = block_entity.chunk_data_nbt();
-
-        if let Some(nbt) = &block_entity_nbt {
-            let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
-            self.broadcast_to_chunk(
-                chunk_pos,
-                &CBlockEntityData::new(
-                    block_entity.get_position(),
-                    VarInt(block_entity.get_id() as i32),
-                    bytes.as_ref().into(),
-                ),
-            );
-            let mut full_nbt = nbt.clone();
-            full_nbt.put_string("id", block_entity.resource_location().to_string());
-            let pos = block_entity.get_position();
-            full_nbt.put_int("x", pos.0.x);
-            full_nbt.put_int("y", pos.0.y);
-            full_nbt.put_int("z", pos.0.z);
-            self.add_block_entity_nbt(block_pos, &full_nbt);
-        }
-        self.level.read_chunk_sync(&chunk_pos, |chunk| {
-            chunk.mark_dirty(true);
-        });
     }
 
     #[must_use]
@@ -7097,6 +6930,9 @@ impl World {
         key: &str,
         value: pumpkin_nbt::tag::NbtTag,
     ) {
+        let Some(_mutation) = self.begin_custom_data_mutation(pos) else {
+            return;
+        };
         let mut entry = self.custom_block_entity_data.entry(*pos).or_default();
         let mut namespace_data = entry
             .child_tags
@@ -7129,6 +6965,9 @@ impl World {
     }
 
     pub fn remove_block_entity_custom_data(&self, pos: &BlockPos, namespace: &str, key: &str) {
+        let Some(_mutation) = self.begin_custom_data_mutation(pos) else {
+            return;
+        };
         if let Some(mut entry) = self.custom_block_entity_data.get_mut(pos) {
             let Some(pumpkin_nbt::tag::NbtTag::Compound(mut namespace_data)) =
                 entry.child_tags.remove(namespace)
@@ -7334,6 +7173,30 @@ pub struct WorldPortal(pub Arc<World>);
 
 // Pure Beauty :cap:
 impl WorldPortalExt for WorldPortal {
+    fn queue_chunk_unload(&self, chunk: &pumpkin_world::level::SyncChunk) {
+        self.0.queue_chunk_unload(chunk);
+    }
+
+    fn prepare_chunk_unload(
+        &self,
+        chunk: &pumpkin_world::level::SyncChunk,
+        generation: u64,
+    ) -> bool {
+        self.0.prepare_block_entity_unload(chunk, generation)
+    }
+
+    fn finish_chunk_unload(
+        &self,
+        chunk: &pumpkin_world::level::SyncChunk,
+        generation: u64,
+    ) -> bool {
+        self.0.finish_block_entity_unload(chunk, generation)
+    }
+
+    fn cancel_chunk_unload(&self, pos: Vector2<i32>, generation: u64) {
+        self.0.cancel_entity_unload(pos, generation);
+    }
+
     fn can_place_at(
         &self,
         block: &pumpkin_data::Block,

@@ -592,7 +592,12 @@ impl ChunkData {
         nbt.write()
     }
 
-    pub fn set_custom_data(&self, namespace: &str, key: &str, value: pumpkin_nbt::tag::NbtTag) {
+    pub(crate) fn set_custom_data(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: pumpkin_nbt::tag::NbtTag,
+    ) {
         let mut custom_data = self
             .custom_data
             .lock()
@@ -627,7 +632,7 @@ impl ChunkData {
             .cloned()
     }
 
-    pub fn remove_custom_data(&self, namespace: &str, key: &str) {
+    pub(crate) fn remove_custom_data(&self, namespace: &str, key: &str) {
         let mut custom_data = self
             .custom_data
             .lock()
@@ -673,6 +678,7 @@ impl Dirtiable for ChunkEntityData {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .clone(),
             ),
+            dormant_records: std::sync::Mutex::new(None),
             live: std::sync::atomic::AtomicBool::new(false),
             dirty: crate::chunk::io::DirtyFlag::new(false),
         })
@@ -770,6 +776,7 @@ impl ChunkEntityData {
             x: position.x,
             z: position.y,
             data: std::sync::Mutex::new(entities),
+            dormant_records: std::sync::Mutex::new(None),
             live: AtomicBool::new(false),
             dirty: crate::chunk::io::DirtyFlag::new(false),
         })

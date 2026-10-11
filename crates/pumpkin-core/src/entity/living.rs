@@ -606,6 +606,9 @@ impl LivingEntity {
     }
 
     pub fn heal(&self, additional_health: f32) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         // LivingEntity.heal permits negative amounts from HealOrHarmMobEffect's Java shifts.
         let mut event =
             crate::plugin::api::events::entity::entity_regain_health::EntityRegainHealthEvent::new(
@@ -622,6 +625,9 @@ impl LivingEntity {
     }
 
     pub fn set_health(&self, health: f32) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         let _owner = self.damage_owner.enter();
         // Clamp to [0, max_health]
         let max_health = self.get_max_health();
@@ -640,6 +646,9 @@ impl LivingEntity {
 
     /// Sets the maximum health for this entity
     pub fn set_max_health(&self, max_health: f32) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         let _owner = self.damage_owner.enter();
         // Update base attribute
         self.set_attribute_base(&Attributes::MAX_HEALTH, max_health as f64);
@@ -664,6 +673,9 @@ impl LivingEntity {
 
     /// Sets the current absorption amount for this entity (yellow hearts)
     pub fn set_absorption(&self, new_abs: f32) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         let _owner = self.damage_owner.enter();
         // Must be at least 0
         let new_abs = new_abs.max(0.0);
@@ -693,6 +705,9 @@ impl LivingEntity {
         attribute: &Attributes,
         f: F,
     ) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         let mut map = self
             .attributes
             .write()
@@ -758,6 +773,9 @@ impl LivingEntity {
     /// Update or insert the base value for an attribute on this entity.
     /// If the attribute doesn't exist locally yet, it will be inserted.
     pub fn set_attribute_base(&self, attribute: &Attributes, new_base: f64) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         let mut map = self
             .attributes
             .write()
@@ -773,6 +791,9 @@ impl LivingEntity {
     }
 
     pub fn reset_effects_and_attributes(&self) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         let _owner = self.damage_owner.enter();
         // Clear active effects and reset modified attributes
         let effects_to_remove: Vec<_> = {
@@ -793,6 +814,9 @@ impl LivingEntity {
     }
 
     pub fn add_effect(&self, effect: Effect) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         self.add_effect_impl(effect);
     }
 
@@ -867,6 +891,9 @@ impl LivingEntity {
     }
 
     pub fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return false;
+        };
         let _owner = self.damage_owner.enter();
         // LivingEntity.removeEffect only invokes removal hooks when an effect existed.
         {
@@ -1924,6 +1951,9 @@ impl LivingEntity {
     }
 
     pub fn read_living_nbt_non_mut(&self, nbt: &NbtCompound) {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return;
+        };
         self.waypoint_icon.read_nbt(nbt);
         let _owner = self.damage_owner.enter();
         self.damage_owner.reset();
@@ -2035,6 +2065,9 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
+        let Some(_mutation) = self.entity.try_begin_mutation() else {
+            return false;
+        };
         self.hurt_server(caller, amount, damage_type, position, source, cause)
     }
 

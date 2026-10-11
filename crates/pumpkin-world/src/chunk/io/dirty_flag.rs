@@ -33,6 +33,11 @@ impl DirtyFlag {
             .0
             .compare_exchange(version, version & !1, Ordering::AcqRel, Ordering::Relaxed);
     }
+
+    /// Tests acknowledgement of exactly this revision, excluding any later mutation.
+    pub fn is_published(&self, version: u64) -> bool {
+        self.0.load(Ordering::Acquire) == version & !1
+    }
 }
 
 #[cfg(test)]

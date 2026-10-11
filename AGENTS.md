@@ -30,6 +30,7 @@ Test transitions through the real entry points (the actual command, packet handl
 - Don't add `#[allow(clippy::too_many_lines)]`; the 100-line function limit stands for new code.
 - `python .fork/check-sizes.py` reports violations against `upstream/master`; it runs before anything lands on `murgicraft`.
 - Don't split or reformat upstream's existing big files. That refactor waits until the fork stops tracking upstream daily, because every split is a merge conflict until then.
+- Unload is quiesce → snapshot the retained object → durable save → detach. Rewatch invalidates stale cleanup; publish one canonical live block entity per position and lifecycle generation.
 
 **Branches and upstream.**
 

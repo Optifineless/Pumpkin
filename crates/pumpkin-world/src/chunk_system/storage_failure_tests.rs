@@ -10,6 +10,7 @@ fn scheduler() -> (
     let (io_write, _) = tokio::sync::mpsc::channel(8);
     (
         GenerationSchedule {
+            level: Weak::new(),
             failed_loads: HashMap::new(),
             queue: BinaryHeap::new(),
             graph: DAG::default(),
