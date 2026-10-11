@@ -618,7 +618,6 @@ impl BlockRegistry {
         })
     }
 
-    #[expect(clippy::too_many_lines)]
     pub fn place_block(
         &self,
         player: &Arc<Player>,
@@ -627,6 +626,36 @@ impl BlockRegistry {
         use_item_on: &SUseItemOn,
         location: BlockPos,
         face: BlockDirection,
+    ) -> Result<Option<(BlockPos, BlockStateId)>, BlockPlacingError> {
+        let stack = pumpkin_util::Hand::from_packet_id(use_item_on.hand.0).map_or_else(
+            |_| ItemStack::EMPTY.clone(),
+            |hand| player.inventory().get_stack_in_hand(hand),
+        );
+        self.place_block_with_stack(
+            player,
+            placed_block,
+            server,
+            use_item_on,
+            location,
+            face,
+            &stack,
+        )
+    }
+
+    #[expect(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Carries BlockItem.place's retained UseOnContext item through placement."
+    )]
+    pub(crate) fn place_block_with_stack(
+        &self,
+        player: &Arc<Player>,
+        placed_block: &'static Block,
+        server: &Arc<Server>,
+        use_item_on: &SUseItemOn,
+        location: BlockPos,
+        face: BlockDirection,
+        stack: &ItemStack,
     ) -> Result<Option<(BlockPos, BlockStateId)>, BlockPlacingError> {
         let entity = &player.get_entity();
 
@@ -812,15 +841,16 @@ impl BlockRegistry {
             BlockState::to_be_network_id(new_state) as i32,
         );
 
-        if let Ok(hand) = pumpkin_util::Hand::from_packet_id(use_item_on.hand.0)
+        if pumpkin_util::Hand::from_packet_id(use_item_on.hand.0).is_ok()
             && placed_block.default_state.block_entity_type != u16::MAX
             && let Some(block_entity) = world.get_block_entity(&final_block_pos)
         {
-            let stack = player.inventory().get_stack_in_hand(hand);
-            block_entity.apply_item_components(&stack);
+            // BlockItem.updateBlockEntityComponents uses the retained UseOnContext item,
+            // even when prediction or a placement callback changed the actual inventory hand.
+            block_entity.apply_item_components(stack);
             crate::block::entities::sign::apply_trusted_item_data(
                 &block_entity,
-                &stack,
+                stack,
                 player,
                 &world,
             );

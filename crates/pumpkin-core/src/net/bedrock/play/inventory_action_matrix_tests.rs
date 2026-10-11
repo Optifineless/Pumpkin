@@ -16,6 +16,12 @@ use std::borrow::Cow;
 #[path = "inventory_action_equipment_tests.rs"]
 mod equipment;
 
+#[path = "inventory_action_owner_review_tests.rs"]
+mod owner_review;
+
+#[path = "inventory_action_placement_snapshot_tests.rs"]
+mod placement_snapshot;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]
@@ -130,13 +136,15 @@ fn assert_hands(player: &Player, hand: Hand, count: u8) {
         Hand::Left => (2, count - 1),
     };
     assert_eq!((main.item_count, off.item_count), expected);
-    assert_eq!(
-        player.inventory().count_item(&Item::GLOWSTONE) + u32::from(off.item_count) + 1,
-        u32::from(count) + 2
-    );
-    for stack in [&main, &off] {
-        assert!(stack.is_empty() || stack.item.id == Item::GLOWSTONE.id);
-    }
+    let (used, unused) = if hand == Hand::Right {
+        (&main, &off)
+    } else {
+        (&off, &main)
+    };
+    assert!(used.is_empty() || used.item.id == Item::GLOWSTONE.id);
+    assert_eq!(unused.item.id, Item::DIAMOND.id);
+    assert_eq!(u32::from(used.item_count) + 1, u32::from(count));
+    assert_eq!(unused.item_count, 2);
 }
 
 fn assert_owner_packet(
@@ -215,8 +223,8 @@ fn assert_packets(
     let bedrock_packet = CMobEquipment {
         target_runtime_id: (entity_id as u64).into(),
         item: NetworkItemStackDescriptor::from(expected),
-        slot: 0,
-        selected_slot: 0,
+        slot: if hand == Hand::Right { 4 } else { 0 },
+        selected_slot: 4,
         container_id: container_id as u8,
     };
     let encoded = fixture
@@ -322,10 +330,10 @@ fn prepare_hand_use(
     player.inventory().set_selected_slot(4);
     player
         .inventory()
-        .set_stack_in_hand(Hand::Right, ItemStack::new(2, &Item::GLOWSTONE));
+        .set_stack_in_hand(Hand::Right, ItemStack::new(2, &Item::DIAMOND));
     player
         .inventory()
-        .set_stack_in_hand(Hand::Left, ItemStack::new(2, &Item::GLOWSTONE));
+        .set_stack_in_hand(Hand::Left, ItemStack::new(2, &Item::DIAMOND));
     let before = glowstone_with_modifier(count, hand);
     player.inventory().set_stack_in_hand(hand, before.clone());
     player
@@ -393,7 +401,7 @@ async fn run_hand_use(kind: BlockUse, hand: Hand, actions: bool, count: u8) -> T
                     1
                 ),
                 BlockUse::Placement => {
-                    assert_eq!(world.get_block(&BlockPos::new(8, 65, 8)), &Block::GLOWSTONE)
+                    assert_eq!(world.get_block(&BlockPos::new(8, 65, 8)), &Block::GLOWSTONE);
                 }
             }
             let player = &fixture.owner.player;
@@ -458,6 +466,12 @@ async fn offhand_item_break_status_uses_offhand() -> TestResult {
     let mut tool = ItemStack::new(1, &Item::FLINT_AND_STEEL);
     let max_damage = tool.get_max_damage().ok_or("tool must be damageable")?;
     tool.set_damage(max_damage - 1);
+    let main = ItemStack::new(2, &Item::DIAMOND);
+    fixture
+        .owner
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Right, main.clone());
     fixture
         .owner
         .player
@@ -475,16 +489,22 @@ async fn offhand_item_break_status_uses_offhand() -> TestResult {
         .verify_and_close(|fixture| {
             assert_eq!(world.get_block(&BlockPos::new(8, 65, 8)), &Block::FIRE);
             assert!(fixture.owner.player.inventory().off_hand_item().is_empty());
+            assert!(
+                fixture
+                    .owner
+                    .player
+                    .inventory()
+                    .held_item()
+                    .are_equal(&main)
+            );
             let packet = pumpkin_protocol::java::client::play::CEntityStatus::new(
                 fixture.owner.player.entity_id(),
                 crate::entity::equipment_break_status(&EquipmentSlot::OFF_HAND) as i8,
             );
             let expected = fixture.java_observer.client().serialize_packet(&packet)?;
-            assert!(
-                fixture.java_observer.take_packets().contains(&expected),
-                "off-hand break status"
-            );
-            Ok(())
+            let java_packets = fixture.java_observer.take_packets();
+            assert!(java_packets.contains(&expected), "off-hand break status");
+            equipment::assert_empty_offhand_packets(fixture, &java_packets)
         })
         .await
 }
@@ -492,7 +512,7 @@ async fn offhand_item_break_status_uses_offhand() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn offhand_placement_keeps_the_originating_box_contents() -> TestResult {
     use pumpkin_data::data_component_impl::ContainerImpl;
-    let fixture = HandUseFixture::new().await;
+    let mut fixture = HandUseFixture::new().await;
     let world = fixture.world.world();
     let position = BlockPos::new(8, 64, 8);
     world.set_block_state(
@@ -519,6 +539,7 @@ async fn offhand_placement_keeps_the_originating_box_contents() -> TestResult {
         .inventory()
         .set_stack_in_hand(Hand::Left, off.clone());
     let packet = click_block_packet(HandSlot::Offhand, position, &off, Vec::new());
+    fixture.drain_packets();
 
     fixture
         .owner
@@ -540,7 +561,7 @@ async fn offhand_placement_keeps_the_originating_box_contents() -> TestResult {
             assert_eq!(world.get_block(&placed), &Block::SHULKER_BOX);
             let inventory = world
                 .get_block_entity(&placed)
-                .and_then(|entity| entity.get_inventory())
+                .and_then(crate::block::entities::BlockEntity::get_inventory)
                 .ok_or("placed shulker inventory")?;
             // BlockItem.updateBlockEntityComponents uses the stack from the placement hand.
             assert!(
@@ -548,7 +569,8 @@ async fn offhand_placement_keeps_the_originating_box_contents() -> TestResult {
                     .get_stack(0)
                     .are_equal(&ItemStack::new(13, &Item::DIAMOND))
             );
-            Ok(())
+            let java_packets = fixture.java_observer.take_packets();
+            equipment::assert_empty_offhand_packets(fixture, &java_packets)
         })
         .await
 }
