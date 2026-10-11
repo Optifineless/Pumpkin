@@ -3,6 +3,9 @@ use super::*;
 use crate::entity::EntityBase;
 use crate::net::ClientPlatform;
 use crate::world::World;
+use std::sync::atomic::AtomicU64;
+
+static NEXT_CLIENT_ID: AtomicU64 = AtomicU64::new(1);
 
 pub struct TestPlayer {
     pub player: Arc<Player>,
@@ -98,7 +101,7 @@ pub fn captured_client(profile: GameProfile) -> (JavaClient, UnboundedReceiver<O
     let config = PlayerConfig::default();
     let (send, recv) = tokio::sync::mpsc::unbounded_channel();
     let client = JavaClient {
-        id: 1,
+        id: NEXT_CLIENT_ID.fetch_add(1, Ordering::Relaxed),
         gameprofile: profile,
         config: ArcSwap::from_pointee(config),
         server_address: String::new(),

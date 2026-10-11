@@ -357,27 +357,13 @@ impl Scenario {
         .await;
         session
     }
-    /// Matches connection-owner cleanup in lib.rs, including UUID storage/admission release.
+    /// Runs production connection-owner cleanup, including UUID storage/admission release.
     pub async fn leave(&self, session: &Session) {
-        session.client().close();
-        self.drive("disconnect packet tasks", session.client().await_tasks())
-            .await;
         self.drive(
-            "disconnect save",
-            self.server
-                .player_data_storage
-                .handle_player_leave(&session.player, &self.server),
+            "connection-owner disconnect",
+            crate::net::java::connection_owner::finish_disconnect(&session.player, &self.server),
         )
-        .await
-        .unwrap();
-        session.player.storage_session.lock().unwrap().take();
-        self.drive(
-            "disconnect advancements",
-            self.server.advancement_manager.save_player(&session.player),
-        )
-        .await
-        .unwrap();
-        session.player.client.release_admission();
+        .await;
     }
     pub fn command(&self, input: &str) -> i32 {
         let source = crate::command::CommandSender::Console

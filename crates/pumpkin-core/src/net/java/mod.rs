@@ -56,6 +56,7 @@ use tracing::{debug, error, warn};
 mod chat_order;
 pub mod chunk_data;
 mod config;
+pub(crate) mod connection_owner;
 pub mod handshake;
 mod idle;
 pub mod login;

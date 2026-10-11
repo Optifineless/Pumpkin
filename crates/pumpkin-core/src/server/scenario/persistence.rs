@@ -1,4 +1,5 @@
 use super::*;
+use crate::world::chunker::test_support::{self as watcher_steps, Phase, Step};
 use crate::{
     block::entities::chest::ChestBlockEntity,
     entity::{Entity, item::ItemEntity},
@@ -8,6 +9,22 @@ use pumpkin_inventory::Inventory;
 use pumpkin_world::world::BlockFlags;
 
 const CHEST: BlockPos = BlockPos::new(8, 64, 8);
+
+async fn watcher_step(
+    scenario: &Scenario,
+    steps: &mut UnboundedReceiver<Step>,
+    expected: Phase,
+) -> Step {
+    let step = scenario
+        .drive("teleport watcher barrier", steps.recv())
+        .await
+        .unwrap();
+    assert_eq!(
+        step.phase, expected,
+        "teleport watcher scheduling order changed"
+    );
+    step
+}
 
 pub(super) fn contents(world: &Arc<World>) -> Vec<Uuid> {
     // ChestBlockEntity.saveAdditional/loadAdditional, Entity.saveWithoutId and ItemEntity's item codec.
@@ -180,32 +197,50 @@ async fn s5_rewatch_while_unload_pending_preserves_live_records() {
         let ids = contents(&world);
         scenario.ticks(2).await;
         let pos = Vector2::new(0, 0);
-        // Explicitly replay chunker::update_position's task interleaving: last unwatch,
-        // new watch, consume the stale unload list, then snapshot the still-live chunk.
-        let pending = scenario
-            .drive(
-                "last unwatch",
-                world.level.mark_chunks_as_not_watched([pos]),
-            )
-            .await;
-        assert_eq!(pending, vec![pos]);
+        scenario.prepare_area(&world, Vector2::new(10, 0)).await;
+        // ChunkMap.move: /tp schedules update_position; pause its last unwatch before retirement.
+        let mut away = watcher_steps::capture(|| {
+            scenario.command("tp Rewatch 163.5 64 3.5");
+        });
+        player.loaded(&scenario.server);
+        watcher_step(&scenario, &mut away, Phase::Watched)
+            .await
+            .release
+            .send(())
+            .unwrap();
+        let pending = watcher_step(&scenario, &mut away, Phase::Unwatched).await;
+        assert!(
+            pending.chunks.contains(&pos),
+            "teleport did not unwatch origin"
+        );
+        assert!(!world.level.is_chunk_watched(&pos));
+        let mut back = watcher_steps::capture(|| {
+            scenario.command("tp Rewatch 3.5 64 3.5");
+        });
+        player.loaded(&scenario.server);
+        let rewatched = watcher_step(&scenario, &mut back, Phase::Watched).await;
+        assert!(
+            rewatched.chunks.contains(&pos),
+            "return teleport did not rewatch origin"
+        );
+        assert!(world.level.is_chunk_watched(&pos));
+        rewatched.release.send(()).unwrap();
+        watcher_step(&scenario, &mut back, Phase::Unwatched)
+            .await
+            .release
+            .send(())
+            .unwrap();
         scenario
-            .drive(
-                "rewatch before retirement",
-                world.level.mark_chunks_as_newly_watched(&[pos]),
-            )
+            .until("teleport entity activation", || player.is_idle())
             .await;
+        assert!(Scenario::entities_live(&world, pos));
+        pending.release.send(()).unwrap();
         scenario
-            .drive(
-                "stale entity unload",
-                world.remove_entities_in_chunks(&pending),
-            )
+            .until("teleport watcher retirement", || {
+                scenario.server.tasks.is_empty()
+            })
             .await;
-        world.level.clean_entity_chunks(&pending);
-        let entity_chunk = world.level.get_entity_chunk_sync(&pos).unwrap();
-        world.make_chunk_entities_live(&entity_chunk, Some(&player.player));
         // Use the real shutdown snapshot and real login activation to expose a saved empty live copy.
-        drop(entity_chunk);
         let scenario = scenario.restart().await;
         let world = scenario.world(&Dimension::OVERWORLD);
         scenario.join(Uuid::new_v4(), "ReloadRewatch").await;
@@ -276,13 +311,18 @@ async fn s6_stop_restart_preserves_world_clock() {
         let id = Uuid::new_v4();
         scenario.join(id, "ClockSave").await;
         scenario.command("time set 6000");
-        scenario.ticks(3).await;
         let world = scenario.world(&Dimension::OVERWORLD);
+        let age_before_ticks = world.level_time.lock().unwrap().world_age;
+        scenario.ticks(3).await;
         let before = {
             let time = world.level_time.lock().unwrap();
             (time.world_age, time.time_of_day)
         };
-        assert_eq!(before, (3, 6003), "clock setup did not run real ticks");
+        assert_eq!(
+            before,
+            (age_before_ticks + 3, 6003),
+            "clock setup did not run real ticks"
+        );
         let scenario = scenario.restart().await;
         scenario.join(id, "ClockSave").await;
         let world = scenario.world(&Dimension::OVERWORLD);

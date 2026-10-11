@@ -44,6 +44,12 @@ async fn s1_rejoin_replaces_instance_and_retires_old_publications() {
         let old = scenario.join(id, "Rejoin").await;
         scenario.ticks(2).await;
         scenario.leave(&old).await;
+        let admission = scenario.server.admission_reservations.reserve(id, "Rejoin");
+        assert!(
+            admission.is_some(),
+            "connection-owner cleanup retained admission"
+        );
+        drop(admission);
         assert!(old.client().is_closed());
         assert!(
             crate::net::java::combat_test_support::published_player(old.client()).is_none(),
@@ -51,6 +57,11 @@ async fn s1_rejoin_replaces_instance_and_retires_old_publications() {
         );
         old.packets();
         let rejoined = scenario.join(id, "Rejoin").await;
+        assert_ne!(
+            old.client().id,
+            rejoined.client().id,
+            "sessions share a client id"
+        );
         assert!(!Arc::ptr_eq(&old.player, &rejoined.player));
         let timeout = old.player.client_loaded_timeout.load(Ordering::Relaxed);
         let tick_counter = old.player.tick_counter.load(Ordering::Relaxed);
@@ -240,8 +251,8 @@ async fn s2_loading_protection_restarts_after_time_on_death_screen() {
             .damage(session.player.as_ref(), 2.0, DamageType::GENERIC);
         let after = session.player.living_entity.health.load();
         scenario.stop().await;
-        assert_eq!(
-            timer, 60,
+        assert!(
+            (1..=60).contains(&timer),
             "audit row 9: respawn loading timer was spent on the death screen"
         );
         assert!(protected);

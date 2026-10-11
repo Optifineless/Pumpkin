@@ -12,6 +12,9 @@ use crate::{
     net::ClientPlatform,
 };
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub fn get_view_distance(player: &Player) -> NonZero<u8> {
     let fallback = NonZero::new(2).unwrap_or(NonZero::<u8>::MIN);
     let Some(server) = player.world().server.upgrade() else {
@@ -156,13 +159,29 @@ pub fn update_position(player: &Arc<Player>) {
         let unloading_chunks_clone = unloading_chunks;
 
         if let Some(server) = world.server.upgrade() {
+            #[cfg(test)]
+            let steps = test_support::current();
             server.spawn_task(async move {
                 level
                     .mark_chunks_as_newly_watched(&loading_chunks_clone)
                     .await;
+                #[cfg(test)]
+                test_support::pause(
+                    steps.as_ref(),
+                    test_support::Phase::Watched,
+                    &loading_chunks_clone,
+                )
+                .await;
                 let chunks_to_clean = level
                     .mark_chunks_as_not_watched(&unloading_chunks_clone)
                     .await;
+                #[cfg(test)]
+                test_support::pause(
+                    steps.as_ref(),
+                    test_support::Phase::Unwatched,
+                    &chunks_to_clean,
+                )
+                .await;
 
                 if !chunks_to_clean.is_empty() {
                     world_clone

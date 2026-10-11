@@ -612,24 +612,8 @@ impl PumpkinServer {
 
                                      if let ClientPlatform::Java(client) = player.client.as_ref() {
                                          client.progress_player_packets(&player, &server_clone).await;
-
-                                         // Close when done
-                                         client.close();
-                                         client.await_tasks().await;
                                      }
-                                    if let Err(e) = server_clone
-                                        .player_data_storage
-                                        .handle_player_leave(&player, &server_clone).await
-                                    {
-                                        error!("Failed to save player data on disconnect: {e}");
-                                    }
-                                    player.storage_session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
-                                    if let Err(e) = server_clone.advancement_manager
-                                        .save_player(&player)
-                                        .await {
-                                            error!("Failed to save player advancement on disconnect: {e}");
-                                        }
-                                    player.client.release_admission();
+                                    net::java::connection_owner::finish_disconnect(&player, &server_clone).await;
                                     }
                                 },
                             }

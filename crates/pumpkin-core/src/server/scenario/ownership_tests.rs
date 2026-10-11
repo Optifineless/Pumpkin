@@ -52,7 +52,7 @@ async fn fail_on_purpose(resources: &mut Option<Resources>, kind: usize) {
         .await;
     }
     if kind == 2 {
-        // Force leave() to panic during cleanup, after its real storage/disconnect work.
+        // Exercise production cleanup's recovery from a poisoned storage-session lock.
         let poison = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let _guard = session.player.storage_session.lock().unwrap();
             panic!("intentional cleanup lock poison");
