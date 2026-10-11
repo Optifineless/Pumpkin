@@ -13,12 +13,18 @@ pub(super) struct DragonSpawn {
 }
 
 impl DragonSpawn {
-    pub(super) fn new(fight: &DragonFight) -> Self {
-        Self {
+    // EnderDragonFight.createNewDragon is synchronous; reserve its deferred equivalent.
+    pub(super) fn reserve(fight: &mut DragonFight) -> Option<Self> {
+        if fight.pending_dragon_spawn.is_some() {
+            return None;
+        }
+        let spawn = Self {
             uuid: Uuid::new_v4(),
             origin: fight.origin,
             fight_origin: fight.exit_portal_location.unwrap_or(fight.origin),
-        }
+        };
+        fight.pending_dragon_spawn = Some(spawn.uuid);
+        Some(spawn)
     }
 
     // EnderDragonFight.createNewDragon: callbacks precede publication and UUID assignment.
@@ -57,7 +63,6 @@ pub(super) enum FightAction {
     PlaceEgg(BlockPos),
     RemoveEntity(Arc<dyn EntityBase>),
     ReconcileState(bool),
-    FinishDragonKill,
     TryRespawn,
     SpawnDragon(DragonSpawn),
     CompleteRespawn {
@@ -73,7 +78,7 @@ impl FightAction {
     // EnderDragonFight world effects retain their order and tick, without the fight guard.
     pub(super) fn execute(self, world: &Arc<World>) {
         match self {
-            Self::AddBossbar(player, bossbar) => player.send_bossbar(&bossbar),
+            Self::AddBossbar(player, bossbar) => Self::add_bossbar(world, &player, &bossbar),
             Self::RemoveBossbar(player, uuid) => player.remove_bossbar(uuid),
             Self::BossbarHealth(player, uuid, health) => {
                 player.update_bossbar_health(&uuid, health);
@@ -99,16 +104,6 @@ impl FightAction {
                     });
                 }
             }
-            Self::FinishDragonKill => {
-                // EnderDragonFight.setDragonKilled sets these after portal, gateway and egg placement.
-                if let Some(fight_mutex) = &world.dragon_fight {
-                    DragonFight::with_fight(fight_mutex, world, |fight| {
-                        fight.previously_killed = true;
-                        fight.dragon_killed = true;
-                        fight.dragon_uuid = None;
-                    });
-                }
-            }
             Self::TryRespawn => {
                 if let Some(fight_mutex) = &world.dragon_fight {
                     DragonFight::with_fight(fight_mutex, world, |fight| {
@@ -116,16 +111,7 @@ impl FightAction {
                     });
                 }
             }
-            Self::SpawnDragon(spawn) => {
-                if spawn.spawn(world, || true)
-                    && let Some(fight_mutex) = &world.dragon_fight
-                {
-                    DragonFight::with_fight(fight_mutex, world, |fight| {
-                        fight.dragon_uuid = Some(spawn.uuid);
-                        fight.dragon_killed = false;
-                    });
-                }
-            }
+            Self::SpawnDragon(spawn) => Self::spawn_dragon(world, &spawn),
             Self::CompleteRespawn {
                 spawn,
                 crystals,
@@ -136,6 +122,45 @@ impl FightAction {
             }
             Self::Respawn(action) => action.execute(world),
         }
+    }
+
+    // ServerBossEvent.addPlayer only sends while visible; a deferred kill may have hidden it.
+    fn add_bossbar(
+        world: &Arc<World>,
+        player: &Arc<crate::entity::player::Player>,
+        bossbar: &super::Bossbar,
+    ) {
+        if let Some(fight_mutex) = &world.dragon_fight
+            && DragonFight::with_fight(fight_mutex, world, |fight| {
+                !fight.dragon_killed && fight.bossbar_players.contains(&player.gameprofile.id)
+            })
+        {
+            player.send_bossbar(bossbar);
+        }
+    }
+
+    fn spawn_dragon(world: &Arc<World>, spawn: &DragonSpawn) {
+        let Some(fight_mutex) = &world.dragon_fight else {
+            return;
+        };
+        if !DragonFight::with_fight(fight_mutex, world, |fight| {
+            fight.pending_dragon_spawn == Some(spawn.uuid)
+        }) {
+            return;
+        }
+        spawn.spawn(world, || {
+            DragonFight::with_fight(fight_mutex, world, |fight| {
+                fight.pending_dragon_spawn == Some(spawn.uuid)
+            })
+        });
+        DragonFight::with_fight(fight_mutex, world, |fight| {
+            if fight.pending_dragon_spawn == Some(spawn.uuid) {
+                fight.pending_dragon_spawn = None;
+                // EnderDragonFight.createNewDragon records the UUID even if addFreshEntity fails.
+                fight.dragon_uuid = Some(spawn.uuid);
+                fight.dragon_killed = false;
+            }
+        });
     }
 
     // EnderDragonFight.respawnDragon clears the old podium before placing the inactive one.
@@ -192,31 +217,75 @@ impl FightAction {
         let Some(fight_mutex) = &world.dragon_fight else {
             return;
         };
-        if !DragonFight::with_fight(fight_mutex, world, |fight| {
-            Self::can_complete(fight, world, &crystals, respawn_stage, respawn_crystals)
-        }) {
-            return;
-        }
-        // Keep the sequence active through EntitySpawnEvent. Reconcile again before publication.
-        if !spawn.spawn(world, || {
-            DragonFight::with_fight(fight_mutex, world, |fight| {
-                if !Self::can_complete(fight, world, &crystals, respawn_stage, respawn_crystals) {
-                    return false;
-                }
-                #[cfg(test)]
-                super::removal_lock_tests::observe_completion();
-                fight.respawn_stage = None;
-                fight.respawn_time = 0;
-                fight.dragon_killed = false;
-                fight.dragon_uuid = Some(spawn.uuid);
-                true
-            })
-        }) {
-            return;
-        }
-        DragonFight::with_fight(fight_mutex, world, |fight| {
-            fight.reset_spike_crystals(world);
+        let ready = DragonFight::with_fight(fight_mutex, world, |fight| {
+            fight.pending_dragon_spawn == Some(spawn.uuid)
+                && Self::can_complete(fight, world, &crystals, respawn_stage, respawn_crystals)
         });
-        RespawnAction::DestroyRespawnCrystals(crystals).execute(world);
+        let mut completed = false;
+        if ready {
+            // Keep the sequence active through EntitySpawnEvent; validate before publication.
+            spawn.spawn(world, || {
+                completed = DragonFight::with_fight(fight_mutex, world, |fight| {
+                    Self::commit_respawn(
+                        fight,
+                        world,
+                        spawn,
+                        &crystals,
+                        respawn_stage,
+                        respawn_crystals,
+                    )
+                });
+                completed
+            });
+        }
+        let finished = DragonFight::with_fight(fight_mutex, world, |fight| {
+            // DragonRespawnStage.SUMMONING_DRAGON.tick consumes crystals after publication callbacks.
+            if fight.pending_dragon_spawn != Some(spawn.uuid) && !completed {
+                return false;
+            }
+            // setRespawnStage(END) and SUMMONING_DRAGON finish even if addFreshEntity fails.
+            if ready && !completed {
+                completed = Self::commit_respawn(
+                    fight,
+                    world,
+                    spawn,
+                    &crystals,
+                    respawn_stage,
+                    respawn_crystals,
+                );
+            }
+            if fight.pending_dragon_spawn == Some(spawn.uuid) {
+                fight.pending_dragon_spawn = None;
+            }
+            if completed {
+                fight.reset_spike_crystals(world);
+            }
+            completed
+        });
+        if finished {
+            RespawnAction::DestroyRespawnCrystals(crystals).execute(world);
+        }
+    }
+
+    fn commit_respawn(
+        fight: &mut DragonFight,
+        world: &Arc<World>,
+        spawn: &DragonSpawn,
+        crystals: &[Arc<dyn EntityBase>],
+        respawn_stage: DragonRespawnStage,
+        respawn_crystals: &[Uuid],
+    ) -> bool {
+        if fight.pending_dragon_spawn != Some(spawn.uuid)
+            || !Self::can_complete(fight, world, crystals, respawn_stage, respawn_crystals)
+        {
+            return false;
+        }
+        #[cfg(test)]
+        super::removal_lock_tests::observe_completion();
+        fight.respawn_stage = None;
+        fight.respawn_time = 0;
+        fight.dragon_killed = false;
+        fight.dragon_uuid = Some(spawn.uuid);
+        true
     }
 }

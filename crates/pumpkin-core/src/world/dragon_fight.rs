@@ -41,6 +41,9 @@ mod removal_lock_tests;
 #[cfg(test)]
 mod packet_callback_tests;
 
+#[cfg(test)]
+mod reentrancy_tests;
+
 // ── Constants (match vanilla exactly) ────────────────────────────────────────
 
 pub const MAX_TICKS_BEFORE_DRAGON_RESPAWN: i32 = 1200;
@@ -99,6 +102,7 @@ pub struct DragonFight {
     bossbar_players: Vec<Uuid>,
     actions: Vec<FightAction>,
     executing_actions: bool,
+    pending_dragon_spawn: Option<Uuid>,
 }
 
 impl Default for DragonFight {
@@ -149,6 +153,7 @@ impl DragonFight {
             bossbar_players: Vec::new(),
             actions: Vec::new(),
             executing_actions: false,
+            pending_dragon_spawn: None,
         }
     }
 
@@ -201,6 +206,7 @@ impl DragonFight {
 
     // EnderDragonFight.scanState reconciles live dragons after placing the podium.
     fn reconcile_state(&mut self, world: &Arc<World>, active_portal_exists: bool) {
+        self.pending_dragon_spawn = None;
         let existing = {
             let entities = world.entities.load();
             entities
@@ -378,6 +384,9 @@ impl DragonFight {
     // ── Dragon lifecycle ──────────────────────────────────────────────────────
 
     pub fn find_or_create_dragon(&mut self, world: &Arc<World>) {
+        if self.pending_dragon_spawn.is_some() {
+            return;
+        }
         let uuid = {
             let entities = world.entities.load();
             entities
@@ -397,12 +406,16 @@ impl DragonFight {
     }
 
     /// Records a dragon spawn and returns its planned UUID; dispatch through `with_fight`.
+    /// Returns `None` while another dragon creation is pending.
     pub fn create_new_dragon(&mut self, world: &Arc<World>) -> Option<Uuid> {
+        if self.pending_dragon_spawn.is_some() {
+            return None;
+        }
         if !self.previously_killed && self.find_exit_portal(world).is_none() {
             self.spawn_exit_portal(world, false);
         }
 
-        let spawn = DragonSpawn::new(self);
+        let spawn = DragonSpawn::reserve(self)?;
         let uuid = spawn.uuid;
         self.actions.push(FightAction::SpawnDragon(spawn));
         Some(uuid)
@@ -449,9 +462,18 @@ impl DragonFight {
     }
 
     pub fn set_dragon_killed(&mut self, world: &Arc<World>, killed_uuid: Uuid) {
-        if self.dragon_uuid.is_some() && Some(killed_uuid) != self.dragon_uuid {
+        if self.dragon_killed
+            || (self.dragon_uuid.is_some() && Some(killed_uuid) != self.dragon_uuid)
+        {
             return;
         }
+
+        // EnderDragonFight.setDragonKilled is synchronous; publish death before deferred callbacks.
+        let previously_killed = self.previously_killed;
+        self.dragon_killed = true;
+        self.previously_killed = true;
+        self.dragon_uuid = None;
+        self.pending_dragon_spawn = None;
 
         self.update_bossbar_health(world, 0.0);
         self.remove_all_bossbar(world);
@@ -463,13 +485,11 @@ impl DragonFight {
         self.spawn_new_gateway(world);
 
         // Place the dragon egg on the first kill.
-        if !self.previously_killed {
+        if !previously_killed {
             let podium_pos = self.exit_portal_location.unwrap_or(self.origin);
             let egg_pos = BlockPos::new(podium_pos.0.x, podium_pos.0.y + 4, podium_pos.0.z);
             self.actions.push(FightAction::PlaceEgg(egg_pos));
         }
-
-        self.actions.push(FightAction::FinishDragonKill);
     }
 
     pub fn update_crystal_count(&mut self, world: &Arc<World>) {
@@ -512,6 +532,7 @@ impl DragonFight {
 
     pub fn abort_respawn_sequence(&mut self, world: &Arc<World>) {
         debug!("Aborting dragon respawn sequence.");
+        self.pending_dragon_spawn = None;
         self.respawn_stage = None;
         self.respawn_time = 0;
         self.reset_spike_crystals(world);
@@ -600,6 +621,9 @@ impl DragonFight {
         };
 
         if stage == DragonRespawnStage::End {
+            if self.pending_dragon_spawn.is_some() {
+                return;
+            }
             // EnderDragonFight.setRespawnStage: commit only after spawn callbacks are reconciled.
             if !self.previously_killed && self.find_exit_portal(world).is_none() {
                 self.spawn_exit_portal(world, false);
@@ -615,8 +639,11 @@ impl DragonFight {
                         .cloned()
                 })
                 .collect();
+            let Some(spawn) = DragonSpawn::reserve(self) else {
+                return;
+            };
             self.actions.push(FightAction::CompleteRespawn {
-                spawn: DragonSpawn::new(self),
+                spawn,
                 crystals,
                 respawn_stage,
                 respawn_crystals: self.respawn_crystals.clone(),

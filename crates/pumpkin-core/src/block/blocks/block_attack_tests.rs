@@ -63,8 +63,15 @@ async fn dragon_egg_attack_moves_without_drop_and_within_bounds() {
     player.take_packets();
     attack(&player, position, &fixture.server);
     assert!(world.get_block_state(&position).is_air());
+    // DragonEggBlock.teleport may use the original egg as support for a Y=65 target.
+    let vertical = DragonEggBlock::VERTICAL_TELEPORT_RADIUS;
     let eggs: Vec<_> = (0..16)
-        .flat_map(|x| (0..16).map(move |z| BlockPos::new(x, 64, z)))
+        .flat_map(|x| {
+            (0..16).flat_map(move |z| {
+                (position.0.y - vertical + 1..position.0.y + vertical)
+                    .map(move |y| BlockPos::new(x, y, z))
+            })
+        })
         .filter(|pos| world.get_block(pos) == &Block::DRAGON_EGG)
         .collect();
     assert_eq!(eggs.len(), 1);
