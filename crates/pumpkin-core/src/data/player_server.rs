@@ -303,6 +303,7 @@ mod test {
                 .get_score_value("Disconnect", "quits"),
             Some(3),
         );
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]

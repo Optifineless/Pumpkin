@@ -334,16 +334,19 @@ mod tests {
                 &source,
             )
             .map_err(|error| format!("{error:?}"))?;
-        let storage = server
-            .command_storage
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert_eq!(
-            storage
-                .get("repro:state")
-                .and_then(|nbt| nbt.get_int("value")),
-            Some(0)
-        );
+        {
+            let storage = server
+                .command_storage
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            assert_eq!(
+                storage
+                    .get("repro:state")
+                    .and_then(|nbt| nbt.get_int("value")),
+                Some(0)
+            );
+        };
+        crate::server::fixture_lifecycle::finish().await;
         Ok(())
     }
 }

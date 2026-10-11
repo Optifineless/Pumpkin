@@ -87,6 +87,7 @@ async fn ownership_review_immunity_stops_after_first_matching_enchantment() {
         (20.0, 4.0)
     );
     assert_random_calls(seed, 1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -151,6 +152,7 @@ async fn ownership_review_random_immunity_rolls_only_before_absorption() {
         (20.0, 4.0)
     );
     assert_random_calls(seed, 1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -185,4 +187,5 @@ async fn ownership_review_player_immunity_preserves_all_four_vanilla_checkpoints
         assert!(victim.get_entity().hurt_marked.load(Relaxed));
         assert_random_calls(seed, 4);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

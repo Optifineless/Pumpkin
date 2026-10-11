@@ -235,6 +235,7 @@ mod tests {
         assert_eq!(entity_damage_amount(6.0, 0.0, 1.0), 85.0);
         assert!((entity_damage_amount(3.0, 1.0 / 6.0, 1.0) - 33.083_332).abs() < 0.0001);
         assert!((entity_damage_amount(6.0, 1.0 / 12.0, 1.0) - 74.791_664).abs() < 0.0001);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]

@@ -93,6 +93,7 @@ async fn orchestration_excess_has_no_feedback_and_ten_ticks_admits_a_full_hit() 
     assert!(hit(&player, 2.0, DamageType::PLAYER_ATTACK, &attacker));
     assert_eq!(player.living_entity.health.load(), 8.0);
     assert!(packet_ids(&mut fixture).contains(&DAMAGE_EVENT.0));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -152,6 +153,7 @@ async fn orchestration_player_difficulty_gamerules_and_ability_tags_are_centrali
             .living_entity
             .damage(player.as_ref(), 1.0, DamageType::GENERIC_KILL)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -178,6 +180,7 @@ async fn orchestration_pvp_gate_includes_projectiles_and_self_owned_fireworks() 
     }
     let zombie = LivingEntity::new(Entity::new(world, Vector3::default(), &EntityType::ZOMBIE));
     assert!(hit(&player, 4.0, DamageType::MOB_ATTACK, &zombie));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -217,6 +220,7 @@ async fn orchestration_blocked_hits_suppress_damage_feedback_but_partial_blocks_
                 .any(|id| *id == DAMAGE_EVENT.0 || *id == HURT_ANIMATION.0)
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -267,6 +271,7 @@ async fn orchestration_projectile_direction_lethal_knockback_and_resistance() {
     assert!(hit(&victim, 2.0, DamageType::ARROW, &arrow));
     assert_eq!(living.health.load(), 0.0);
     assert!(living.entity.velocity.load().z > 0.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -287,6 +292,7 @@ async fn orchestration_frost_walker_immunity_reads_the_enchantment_requirements(
     victim.inventory.set_slot(36, boots);
     assert!(!victim.damage(victim.as_ref(), 1.0, DamageType::HOT_FLOOR));
     assert!(victim.damage(victim.as_ref(), 1.0, DamageType::ON_FIRE));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -343,6 +349,7 @@ async fn orchestration_two_attackers_and_healing_conserve_health_and_absorption(
     victim.heal(2.0);
     assert_eq!(victim.living_entity.health.load(), 0.0);
     check_synchronous_armor_callback();
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -387,6 +394,7 @@ async fn orchestration_melee_sends_one_combined_impulse_then_restores_player_mot
     assert!(!victim.get_entity().hurt_marked.load(Relaxed));
     assert!(!victim.get_entity().velocity_dirty.load(Relaxed));
     assert!(!attacker.living_entity.entity.is_sprinting());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -410,23 +418,26 @@ async fn orchestration_helmet_scaling_precedes_cooldown_and_damage_stats_exclude
     assert_eq!(victim.inventory.get_slot(39).get_damage(), 3);
     // Helmet scales to 6, armor 2 leaves 5.904, absorption leaves 3.904 health damage.
     assert!((victim.living_entity.health.load() - 16.096).abs() < 0.00001);
-    let stats = victim.stats.lock().unwrap();
-    assert_eq!(
-        stats.get(
-            StatisticCategory::Custom,
-            CustomStatistic::DamageTaken as i32
-        ),
-        39
-    );
-    assert_eq!(
-        stats.get(
-            StatisticCategory::Custom,
-            CustomStatistic::DamageAbsorbed as i32
-        ),
-        20
-    );
-    drop(stats);
-    assert!(!victim.damage(victim.as_ref(), 6.0, DamageType::FALLING_ANVIL));
+    {
+        let stats = victim.stats.lock().unwrap();
+        assert_eq!(
+            stats.get(
+                StatisticCategory::Custom,
+                CustomStatistic::DamageTaken as i32
+            ),
+            39
+        );
+        assert_eq!(
+            stats.get(
+                StatisticCategory::Custom,
+                CustomStatistic::DamageAbsorbed as i32
+            ),
+            20
+        );
+        drop(stats);
+        assert!(!victim.damage(victim.as_ref(), 6.0, DamageType::FALLING_ANVIL));
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[expect(

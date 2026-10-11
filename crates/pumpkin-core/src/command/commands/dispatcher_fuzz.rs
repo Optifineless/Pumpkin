@@ -91,5 +91,6 @@ async fn every_registered_command_accepts_seeded_parser_fuzz_without_panicking()
             }
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }

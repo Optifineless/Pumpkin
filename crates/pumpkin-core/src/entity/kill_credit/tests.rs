@@ -41,6 +41,7 @@ async fn death_accepted_absorbed_hit_records_credit_on_entity_ticks() {
     assert!(living.get_kill_credit().is_some());
     living.tick(&*victim, &fixture.server);
     assert!(living.get_kill_credit().is_none());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -87,6 +88,7 @@ async fn death_wolf_hit_resolves_its_owner_across_dimensions() {
         wolf.get_entity().entity_uuid
     );
     assert_eq!(living.hurt_by.lock().unwrap().player_memory_time, 0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -139,6 +141,7 @@ async fn death_uuid_reload_restores_cross_dimension_attacker_for_goals() {
     // Model an old world snapshot still awaiting removed-entity cleanup.
     nether.entities.store(Arc::new(vec![attacker.clone()]));
     assert!(reloaded_living.get_kill_credit().is_none());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -170,6 +173,7 @@ async fn death_player_reference_rejects_removed_players() {
             .get_kill_credit()
             .is_none()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -191,6 +195,7 @@ async fn death_outgoing_melee_memory_uses_living_ticks() {
         living.last_attacking_id.load(Relaxed),
         victim.get_entity().entity_id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -206,6 +211,7 @@ async fn death_outgoing_player_attack_memory_uses_living_ticks() {
         player.living_entity.last_attacking_id.load(Relaxed),
         target.get_entity().entity_id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -228,6 +234,7 @@ async fn death_respawn_resets_credit_attacks_and_consumed_experience() {
     assert_eq!(victim.living_entity.last_attacker_id.load(Relaxed), 0);
     assert_eq!(victim.living_entity.last_attacking_id.load(Relaxed), 0);
     assert!(!victim.living_entity.experience_consumed.load(Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[test]

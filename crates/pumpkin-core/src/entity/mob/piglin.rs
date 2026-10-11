@@ -1353,5 +1353,6 @@ mod armor_conversion_tests {
             Item::IRON_CHESTPLATE.id
         );
         assert_eq!(living.get_attribute_value(&Attributes::ARMOR), 8.0);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

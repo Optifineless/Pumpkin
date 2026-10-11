@@ -62,6 +62,7 @@ async fn killed_creeper_at_fuse_twenty_five_never_explodes_and_drops_death_loot(
             .tick(creeper.as_ref(), &fixture.server);
     }
     assert!(creeper.get_entity().is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -89,6 +90,7 @@ async fn swell_goal_rejects_and_defuses_a_dying_target() {
     creeper.fuse_speed.store(1, Ordering::Relaxed);
     goal.tick(creeper.as_ref());
     assert_eq!(creeper.fuse_speed.load(Ordering::Relaxed), -1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -119,6 +121,7 @@ async fn swell_goal_rejects_and_defuses_dead_target_with_positive_health() {
     assert!(goal.can_start(creeper.as_ref()));
     goal.tick(creeper.as_ref());
     assert_eq!(creeper.fuse_speed.load(Ordering::Relaxed), -1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -168,4 +171,5 @@ async fn creeper_blast_damage_and_knockback_stop_at_six_or_twelve_blocks() {
         assert_eq!(victims[2].entity.velocity.load(), Vector3::default());
         fixture.finish().await;
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

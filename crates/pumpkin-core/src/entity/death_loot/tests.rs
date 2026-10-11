@@ -78,6 +78,7 @@ async fn death_assisted_fall_uses_the_real_landing_path() {
     let mut saved = pumpkin_nbt::compound::NbtCompound::new();
     living.write_living_nbt(&mut saved);
     assert_eq!(saved.get_float("FallDistance"), Some(0.0));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -113,4 +114,5 @@ async fn death_ordinary_message_does_not_use_expired_combat_credit() {
     let message = LivingEntity::get_death_message(&*victim, DamageType::GENERIC_KILL, None, None);
     assert!(!format!("{message:?}").contains("ExpiredAttacker"));
     assert!(!format!("{message:?}").contains(".player"));
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -127,6 +127,7 @@ async fn offhand_shear_respects_damage_event_and_claims_once() {
     );
     check_last_shear_break(&fixture, &mut player, &control);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 fn check_last_shear_break(
@@ -228,12 +229,15 @@ async fn independent_damage_contract(cancelled: bool, amount: i32, breaking: boo
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelled_shear_durability_keeps_tool_undamaged() {
     independent_damage_contract(true, 5, false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn adjusted_shear_durability_uses_event_amount() {
     independent_damage_contract(false, 5, false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn final_shear_sends_exactly_one_break_event_stat_and_status() {
     independent_damage_contract(false, 1, true).await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -39,6 +39,7 @@ async fn dragon_parts_follow_tracking() {
     world.remove_entity(entity.as_ref());
     assert!(world.get_entity_or_part(id + 1).is_none());
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -74,4 +75,5 @@ async fn dragon_parts_forward_damage_with_head_and_neck_exemptions() {
         );
     }
     world.level.shutdown().await.unwrap();
+    crate::server::fixture_lifecycle::finish().await;
 }

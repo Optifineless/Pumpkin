@@ -62,6 +62,9 @@ impl LivingEntity {
         cause: Option<&dyn EntityBase>,
     ) -> bool {
         let _owner = self.damage_owner.enter();
+        if self.is_respawning() {
+            return false;
+        }
         let _pending = self.damage_owner.pending_hurt();
         // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
         let context = HurtContext {
@@ -165,7 +168,8 @@ impl LivingEntity {
         caller: &dyn EntityBase,
         context: HurtContext<'_>,
     ) -> bool {
-        self.damage_owner.lifecycle() == context.lifecycle
+        !self.is_respawning()
+            && self.damage_owner.lifecycle() == context.lifecycle
             && self.damage_owner.admits_health(self.health.load())
             && !self.rejects_damage(context.damage_type, context.cause)
             && caller.get_player().is_none_or(|player| {

@@ -156,6 +156,7 @@ async fn spawn_plugins_cancel_live_chicken_and_fresh_structure_births() {
     for world in fixture.server.worlds.load().iter() {
         world.shutdown().await;
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -232,4 +233,5 @@ async fn trial_tick_callbacks_read_nbt_and_reject_changed_spawner_state() {
     for world in fixture.server.worlds.load().iter() {
         world.shutdown().await;
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

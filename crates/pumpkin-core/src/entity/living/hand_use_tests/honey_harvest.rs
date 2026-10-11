@@ -87,4 +87,5 @@ async fn hand_use_honey_releases_angry_bee_without_smoke() {
         2
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }

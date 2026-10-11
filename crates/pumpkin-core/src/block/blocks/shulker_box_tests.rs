@@ -87,6 +87,7 @@ async fn deep_review_mining_open_shulker_rejects_stale_clicks_and_preserves_one_
     world.add_block_entity(Arc::new(ShulkerBoxBlockEntity::new(pos)));
     assert!(!menu.lock().unwrap().can_use(viewer.as_ref()));
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 fn open_box(

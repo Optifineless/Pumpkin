@@ -59,4 +59,5 @@ async fn review3_name_tag_entity_save_load_keeps_numeric_translation_and_fallbac
         assert_eq!(name.clone().get_text(), rendered);
     }
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }

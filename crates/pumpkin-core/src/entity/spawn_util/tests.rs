@@ -61,6 +61,7 @@ async fn adjacent_moving_piston_blocks_spawn_on_every_axis() {
         assert!(spawn_at(&fixture, BlockPos::new(8, 64, 8), 0).is_none());
         fixture.finish().await;
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -91,6 +92,7 @@ async fn upside_down_stairs_union_accepts_both_collider_strategies() {
         Block::AIR.default_state,
     ));
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -107,6 +109,7 @@ async fn spawn_search_above_build_height_reaches_platform_below() {
         Vector3::new(8.5, f64::from(platform_y + 1), 8.5)
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -116,4 +119,5 @@ async fn spawn_collision_padding_still_rejects_unloaded_terrain() {
     // The body fits in chunk zero, but its neighboring collision cells are in an unloaded chunk.
     assert!(spawn_at(&fixture, BlockPos::new(14, 64, 8), 0).is_none());
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

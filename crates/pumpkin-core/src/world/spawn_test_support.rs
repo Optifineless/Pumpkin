@@ -38,6 +38,7 @@ impl Fixture {
             crate::block::registry::default_registry(),
             Weak::new(),
         ));
+        crate::server::fixture_lifecycle::track_world(&world);
         Self { world, dir }
     }
     pub async fn restart(self) -> Self {

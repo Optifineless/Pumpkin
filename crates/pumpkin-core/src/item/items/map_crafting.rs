@@ -177,6 +177,7 @@ mod tests {
         };
         assert_eq!(locked, (-64, 192, 231));
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]
@@ -246,5 +247,6 @@ mod tests {
         assert_eq!(locked.lock().unwrap().colors[0], 37);
         assert!(!original.lock().unwrap().locked);
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

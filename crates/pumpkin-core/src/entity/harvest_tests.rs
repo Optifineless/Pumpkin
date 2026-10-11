@@ -96,6 +96,7 @@ async fn released_bucket_keeps_name_health_age_variant_and_persistence() {
     let mut saved = NbtCompound::new();
     mob.write_custom_nbt(&mut saved);
     assert_eq!(saved.get_bool("FromBucket"), Some(true));
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bucket_replaces_plants_and_returns_the_waterlogged_destination() {
@@ -163,6 +164,7 @@ async fn bucket_replaces_plants_and_returns_the_waterlogged_destination() {
         .map(|entity| entity.get_entity().pos.load().y)
         .collect();
     assert_eq!(heights, vec![64.5]);
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelling_falling_block_placement_removes_it_without_a_drop() {
@@ -198,6 +200,7 @@ async fn cancelling_falling_block_placement_removes_it_without_a_drop() {
             .iter()
             .all(|entity| entity.get_entity().entity_type != &EntityType::ITEM)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn brewing_completion_waits_for_the_next_start_event() {
@@ -245,6 +248,7 @@ async fn brewing_completion_waits_for_the_next_start_event() {
     assert_eq!(stand.fuel.load(Relaxed), 2);
     assert!(stand.is_valid_slot_for(3, &ItemStack::new(1, &Item::BLAZE_POWDER)));
     assert!(!stand.is_valid_slot_for(3, &ItemStack::new(1, &Item::DIAMOND_PICKAXE)));
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[expect(clippy::unwrap_used, reason = "Recorded real teleport packet bytes")]
@@ -304,6 +308,7 @@ async fn teleport_cancellation_and_modified_destination_control_the_chunk_view()
     assert!(witness.take_packets().is_empty());
     assert_eq!(player.position(), destination);
     assert_eq!(player.chunk_send_epoch.load(Relaxed), 1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[expect(
@@ -332,6 +337,7 @@ async fn wither_death_drops_one_extended_lifetime_star_at_its_position() {
     let mut saved = NbtCompound::new();
     stars[0].write_custom_nbt(&mut saved);
     assert_eq!(saved.get_short("Age"), Some(-6000));
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelled_bucket_emptying_keeps_the_block_and_full_bucket() {
@@ -364,6 +370,7 @@ async fn cancelled_bucket_emptying_keeps_the_block_and_full_bucket() {
     assert_eq!(calls.load(Relaxed), 1);
     assert_eq!(world.get_block(&BlockPos::new(4, 65, 3)), &Block::AIR);
     assert_eq!(player.inventory.held_item().item, &Item::WATER_BUCKET);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -386,6 +393,7 @@ async fn wither_mob_tick_respects_disabled_mob_drops() {
             .downcast_ref::<super::item::ItemEntity>()
             .is_none_or(|item| item.get_item_stack().lock().unwrap().item != &Item::NETHER_STAR)
     }));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -414,4 +422,5 @@ async fn occupied_brewing_slots_allow_swaps_and_keep_failed_quick_moves_in_place
     assert!(menu.quick_move(player.as_ref(), 5).is_empty());
     assert_eq!(player.inventory.get_stack(9).item, &Item::SPLASH_POTION);
     assert!(player.inventory.get_stack(0).is_empty());
+    crate::server::fixture_lifecycle::finish().await;
 }

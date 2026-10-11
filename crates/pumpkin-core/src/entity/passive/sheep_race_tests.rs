@@ -27,4 +27,5 @@ async fn concurrent_dye_does_not_restore_sheared_state() {
     assert!(sheep.is_sheared());
     assert!(!sheep.shear(SoundCategory::Blocks, &ItemStack::new(1, &Item::SHEARS)));
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

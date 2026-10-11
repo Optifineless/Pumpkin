@@ -41,4 +41,5 @@ async fn verification_breaking_unstable_tnt_primes_without_owner() {
         .find_map(|entity| entity.cast_any().downcast_ref::<TNTEntity>())
         .unwrap();
     assert!(tnt.owner().is_none());
+    crate::server::fixture_lifecycle::finish().await;
 }

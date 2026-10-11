@@ -698,5 +698,6 @@ mod tests {
         );
         assert!(fish.get_mob().unwrap().spawned_from_bucket());
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

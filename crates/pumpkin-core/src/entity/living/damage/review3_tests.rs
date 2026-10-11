@@ -91,6 +91,7 @@ async fn verification3_shield_damage_callback_reset_stops_mob_response() {
     assert_eq!(victim.inventory.held_item().get_damage(), 0);
     assert!(victim.living_entity.active_hand.lock().unwrap().is_some());
     assert_new_life(&victim);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -121,6 +122,7 @@ async fn verification3_first_armor_callback_reset_stops_remaining_slots() {
         assert_eq!(victim.inventory.get_slot(index).get_damage(), 0);
     }
     assert_new_life(&victim);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -137,6 +139,7 @@ async fn verification3_helmet_callback_reset_stops_pre_cooldown_hit() {
     assert!(!victim.damage(victim.as_ref(), 8.0, DamageType::FALLING_ANVIL));
     assert_eq!(victim.inventory.get_slot(39).get_damage(), 0);
     assert_new_life(&victim);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -163,6 +166,7 @@ async fn verification3_wake_callback_reset_stops_blocking_and_armor() {
     assert_eq!(victim.inventory.get_slot(39).get_damage(), 0);
     assert_eq!(victim.living_entity.no_action_time.load(Relaxed), 777);
     assert_new_life(&victim);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -208,6 +212,7 @@ async fn verification3_sweep_callback_reset_aborts_primary_weapon_effects() {
         "the stale primary attack still ran its item hook"
     );
     assert_new_life(&primary);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -253,6 +258,7 @@ async fn verification3_first_drop_callback_reset_preserves_second_stack() {
         2,
         "the second stack disappeared"
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -304,6 +310,7 @@ async fn verification3_first_loot_callback_reset_preserves_generated_batch() {
         2
     );
     assert_eq!(victim.health.load(), 20.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -331,4 +338,5 @@ async fn verification3_healed_death_can_die_again_in_the_same_life() {
         assert!(victim.living_entity.dead.load(Relaxed));
         assert_eq!(victim.living_entity.health.load(), 0.0);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

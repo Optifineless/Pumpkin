@@ -59,4 +59,5 @@ async fn server_ai_step_timing() {
         }
     }
     world.entities.store(Arc::new(Vec::new()));
+    crate::server::fixture_lifecycle::finish().await;
 }

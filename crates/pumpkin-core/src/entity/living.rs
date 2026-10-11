@@ -2,15 +2,24 @@ mod armor;
 #[path = "blocking.rs"]
 pub(super) mod blocking;
 pub(crate) mod blocking_response;
+mod check_fall_damage;
 #[cfg(test)]
 #[path = "combat_lifecycle_tests.rs"]
 mod combat_lifecycle_tests;
+#[cfg(test)]
+mod combat_playtest_tests;
+#[cfg(test)]
+mod completed_respawn_tests;
+mod cramming;
 mod damage;
 mod damage_criteria;
 mod damage_feedback;
 mod damage_immunity;
 mod damage_player;
 pub(crate) mod damage_transaction;
+#[cfg(test)]
+mod movement_review_tests;
+pub use damage_transaction::{SuspendedDamage, suspend_damage};
 #[path = "death_protection.rs"]
 mod death_protection;
 mod death_statistics;
@@ -21,6 +30,8 @@ pub(crate) mod effects;
 mod equipment_modifiers;
 #[cfg(test)]
 mod ext_review_tests;
+#[cfg(test)]
+mod external_review_tests;
 mod fall_damage;
 #[cfg(test)]
 mod hand_use_tests;
@@ -30,8 +41,13 @@ mod impulse;
 mod item_use;
 #[path = "living_movement.rs"]
 mod movement;
+mod player_travel;
 #[path = "random_teleport.rs"]
 mod random_teleport;
+mod respawn;
+#[cfg(test)]
+mod verification_tests;
+pub(crate) use respawn::PlayerTickLife;
 #[cfg(test)]
 pub(crate) mod test_support;
 pub(crate) mod waypoint_icon;
@@ -62,7 +78,6 @@ use std::sync::atomic::{
 use tracing::warn;
 
 use super::{Entity, EntityBase, NBTStorageInit};
-use crate::block::OnLandedUponArgs;
 use crate::entity::NBTStorage;
 use crate::entity::ageable::AgeableMob;
 use crate::entity::attributes::AttributeInstance;
@@ -112,6 +127,8 @@ pub struct LivingEntity {
     /// LivingEntity.noActionTime, incremented by Mob.serverAiStep and never saved.
     pub no_action_time: AtomicI32,
     damage_owner: damage_transaction::DamageOwner,
+    respawning: AtomicBool,
+    world_transfer: respawn::WorldTransferState,
     pub hurt_time: AtomicU8,
     /// Stores the amount of damage the entity last received.
     pub last_damage_taken: AtomicCell<f32>,
@@ -320,6 +337,8 @@ impl LivingEntity {
             hurt_cooldown: AtomicI32::new(0),
             no_action_time: AtomicI32::new(0),
             damage_owner: damage_transaction::DamageOwner::default(),
+            respawning: AtomicBool::new(false),
+            world_transfer: respawn::WorldTransferState::default(),
             hurt_time: AtomicU8::new(0),
             last_damage_taken: AtomicCell::new(0.0),
             absorption: AtomicCell::new(0.0),
@@ -1213,10 +1232,7 @@ impl LivingEntity {
             GameRuleValue::Int(value) => value,
             GameRuleValue::Bool(_) => 0,
         };
-        if max_cramming > 0
-            && pushable.len() as i64 > max_cramming - 1
-            && rand::random::<u32>().is_multiple_of(4)
-        {
+        if max_cramming > 0 && pushable.len() as i64 > max_cramming - 1 && cramming::damage_roll() {
             let count = pushable
                 .iter()
                 .filter(|entity| !entity.is_passenger())
@@ -1229,31 +1245,6 @@ impl LivingEntity {
         for entity in pushable {
             entity.push(dyn_self);
         }
-    }
-
-    /// Decays player velocity like vanilla `travelInAir` friction.
-    fn apply_travel_friction(&self) {
-        let mut velo = self.entity.velocity.load();
-        if velo.x == 0.0 && velo.z == 0.0 {
-            return;
-        }
-
-        let friction = if self.entity.on_ground.load(Relaxed) {
-            f64::from(
-                self.entity
-                    .get_block_with_y_offset(0.500_001)
-                    .1
-                    .slipperiness,
-            ) * 0.91
-        } else {
-            0.91
-        };
-
-        velo.x *= friction;
-
-        velo.z *= friction;
-
-        self.entity.velocity.store(velo);
     }
 
     fn travel_in_air(&self, caller: &dyn EntityBase) {
@@ -1438,7 +1429,11 @@ impl LivingEntity {
     }
 
     fn make_move(&self, caller: &dyn EntityBase) {
-        self.entity.move_entity(caller, self.entity.velocity.load());
+        if caller.get_player().is_some() {
+            self.clip_player_motion(caller);
+        } else {
+            self.entity.move_entity(caller, self.entity.velocity.load());
+        }
 
         self.check_climbing(caller);
     }
@@ -1569,75 +1564,16 @@ impl LivingEntity {
         strength
     }
 
-    pub fn fall(
-        &self,
-        caller: &dyn EntityBase,
-        height_difference: f64,
-        ground: bool,
-        dont_damage: bool,
-    ) {
-        if caller
-            .get_mob()
-            .is_some_and(super::mob::Mob::check_fall_damage)
-        {
-            return;
-        }
-        if ground {
-            let fall_distance = self.fall_distance.load();
-            if let Some(player) = caller.get_player() {
-                player.check_mace_landing_particles(fall_distance);
-            }
-            if fall_distance > 0.0 {
-                self.on_changed_block(caller, self.entity.block_pos.load());
-            }
-            if fall_distance <= 0.0
-                || dont_damage
-                || self.should_prevent_fall_damage()
-                || self.should_prevent_fall_damage_in_area()
-                || self.is_immune_to_fall_damage()
-            {
-                self.fall_distance.store(0.0);
-                return;
-            }
-            let world = self.entity.world.load();
-            let landing_pos = self.entity.get_pos_with_y_offset(0.2).0;
-            let block = world.get_block(&landing_pos);
-            let pumpkin_block = world.block_registry.get_pumpkin_block(block.id);
-            if let Some(pumpkin_block) = pumpkin_block {
-                pumpkin_block.on_landed_upon(OnLandedUponArgs {
-                    world: &world,
-                    position: &landing_pos,
-                    fall_distance,
-                    entity: caller,
-                });
-            } else {
-                self.handle_fall_damage(caller, fall_distance, 1.0);
-            }
-            // Entity.checkFallDamage resets only after the landing callback records damage.
-            self.fall_distance.store(0.0);
-        } else if height_difference < 0.0 {
-            let new_fall_distance = if !self.should_prevent_fall_damage()
-                && !self.should_prevent_fall_damage_in_area()
-            {
-                let distance = self.fall_distance.load();
-                distance - (height_difference as f32)
-            } else {
-                0f32
-            };
-            self.fall_distance.store(new_fall_distance);
-            crate::block::blocks::honey::HoneyBlock::reset_player_fall_distance(
-                caller,
-                height_difference,
-            );
-        }
-    }
-
     pub fn handle_fall_damage(
         &self,
         caller: &dyn EntityBase,
         fall_distance: f32,
         damage_per_distance: f32,
     ) {
+        let _owner = self.own_damage();
+        if self.is_respawning() || !self.fall_callback_life_is_current() {
+            return;
+        }
         self.handle_fall_damage_from(caller, fall_distance, damage_per_distance, DamageType::FALL);
     }
 
@@ -1819,12 +1755,6 @@ impl LivingEntity {
         self.entity.velocity_dirty.store(true, SeqCst);
         self.movement_input.store(Vector3::default());
         self.jumping.store(false, Relaxed);
-
-        // If this LivingEntity corresponds to a Player, reset their hunger manager
-        let world = self.entity.world.load();
-        if let Some(player) = world.get_player_by_id(self.entity.entity_id) {
-            player.hunger_manager.restart();
-        }
 
         self.dead.store(false, Relaxed);
     }
@@ -2071,12 +2001,16 @@ impl EntityBase for LivingEntity {
     #[allow(clippy::too_many_lines)]
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         let _owner = self.damage_owner.enter();
-        if self.damage_owner.has_pending_hurt() {
+        if self.is_respawning() || self.damage_owner.has_pending_hurt() {
             return;
         }
+        let life = PlayerTickLife::capture(caller);
         self.impulse.tick();
         self.combat_ticks.fetch_add(1, Relaxed);
         self.entity.tick(caller, server);
+        if !life.is_current() {
+            return;
+        }
         self.tick_combat_memory();
         if let Some(mob) = caller.get_mob() {
             mob.after_base_tick();
@@ -2093,24 +2027,30 @@ impl EntityBase for LivingEntity {
             // Vanilla-like order: freeze logic runs after movement/collisions.
             self.entity.tick_frozen(caller);
         } else if is_alive {
-            // Client-authoritative players skip `travel`, so decay pushed velocity like
-            // vanilla to prevent it accumulating and launching the player.
-            self.apply_travel_friction();
+            self.travel_player_motion(caller);
 
             let suffocating = self.entity.tick_block_collisions(caller);
+            if !life.is_current() {
+                return;
+            }
             if suffocating {
                 caller.damage(caller, 1.0, DamageType::IN_WALL);
+                if !life.is_current() {
+                    return;
+                }
             }
 
             // Players push other entities like any living entity.
             self.push_entities(caller);
+            if !life.is_current() {
+                return;
+            }
 
             self.entity.tick_frozen(caller);
         }
 
-        // Non-player motion (including needsSync) belongs to ServerEntity.sendChanges.
-        if is_player {
-            self.entity.flush_player_motion_owned();
+        if !life.is_current() {
+            return;
         }
 
         // Fetch supporting blocks for players or other entities
@@ -2129,6 +2069,9 @@ impl EntityBase for LivingEntity {
             world
                 .block_registry
                 .on_entity_step(block, &world, caller, &supporting, state, false);
+            if !life.is_current() {
+                return;
+            }
 
             // Check slightly below supporting_pos for additional supporting blocks (blocks under carpets and the like)
             if !block.is_solid() {
@@ -2147,15 +2090,29 @@ impl EntityBase for LivingEntity {
             }
         }
 
+        if !life.is_current() {
+            return;
+        }
+
         let current_block_pos = self.entity.block_pos.load();
         if is_alive && self.last_block_pos.load() != Some(current_block_pos) {
             self.last_block_pos.store(Some(current_block_pos));
             self.on_changed_block(caller, current_block_pos);
         }
 
+        if !life.is_current() {
+            return;
+        }
+
         self.tick_effects();
+        if !life.is_current() {
+            return;
+        }
 
         self.updating_using_item(caller, server);
+        if !life.is_current() {
+            return;
+        }
 
         let _damage_owner = self.tick_damage_timers();
         if self.health.load() <= 0.0 && !self.damage_owner.has_pending_hurt() {

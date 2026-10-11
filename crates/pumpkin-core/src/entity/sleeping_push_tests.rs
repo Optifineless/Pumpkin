@@ -33,4 +33,5 @@ async fn sleeping_entity_push_leaves_velocity_unchanged() {
         Vector3::new(0.0, 0.0, 0.0)
     );
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

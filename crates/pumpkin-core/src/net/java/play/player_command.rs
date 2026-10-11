@@ -8,6 +8,12 @@ impl JavaClient {
         command: &SPlayerCommand,
         server: &Arc<Server>,
     ) {
+        let _owner = player.living_entity.own_damage();
+        // PlayerList.respawn replaces the player used by handlePlayerCommand.
+        let life = crate::entity::living::PlayerTickLife::capture(player.as_ref());
+        if !life.is_current() {
+            return;
+        }
         if command.entity_id != player.entity_id().into() {
             return;
         }
@@ -24,6 +30,7 @@ impl JavaClient {
                         server;
                         PlayerToggleSprintEvent::new(player.clone(), true);
                         'after: {
+                            if !life.is_current() { return; }
                             player.set_sprinting(event.is_sprinting);
                             player.update_player_pose();
                         }
@@ -36,6 +43,7 @@ impl JavaClient {
                         server;
                         PlayerToggleSprintEvent::new(player.clone(), false);
                         'after: {
+                            if !life.is_current() { return; }
                             player.set_sprinting(event.is_sprinting);
                             player.update_player_pose();
                         }
@@ -55,7 +63,7 @@ impl JavaClient {
                         fall_flying,
                     );
                     server.plugin_manager.fire_blocking(server, &mut event);
-                    if !event.cancelled {
+                    if !event.cancelled && life.is_current() {
                         entity.set_fall_flying(event.is_gliding);
                     }
                 }

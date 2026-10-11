@@ -65,6 +65,7 @@ async fn function_return_fail_stops_before_later_mutation() -> Result<(), Box<dy
                 .contains_key("review:guard")
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -136,6 +137,7 @@ async fn inner_return_fail_preserves_outer_tail_and_return_run_replaces_result()
         .execute_function(&server, &source, "review:run")
         .map_err(|error| error.to_string())?;
     assert_eq!(*capture.0.lock().unwrap(), vec![ReturnValue::Success(1)]);
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -187,6 +189,7 @@ async fn top_level_returned_function_tag_stops_at_first_explicit_result()
             .unwrap()
             .contains_key("test:wrong")
     );
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -225,5 +228,6 @@ async fn disabled_command_in_function_body_and_multiple_run_chains_stays_rejecte
             .contains_key("test:wrong")
     );
     assert_eq!(*capture.0.lock().unwrap(), vec![ReturnValue::Success(7)]);
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }

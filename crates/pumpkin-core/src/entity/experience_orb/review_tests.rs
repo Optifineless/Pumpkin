@@ -42,6 +42,7 @@ async fn single_rewards_preserve_raw_value_and_do_not_merge_on_spawn() {
         assert!(orb.entity.velocity.load().length_squared() > 0.0);
         assert_eq!(orb.state.lock().unwrap().count, 1);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct CollisionProbe {
@@ -99,6 +100,7 @@ async fn world_tick_collects_expanded_orbs_and_skips_generic_orb_collisions() {
     assert!(orb.entity.is_removed());
     assert_eq!(probe.touches.load(Ordering::Relaxed), 0);
     world.level.shutdown().await.unwrap();
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -117,6 +119,7 @@ async fn seven_xp_repairs_three_damage_spends_one_and_gives_six() {
     assert_eq!(player.player.experience_points.load(Ordering::Relaxed), 6);
     assert_eq!(player.player.experience_level.load(Ordering::Relaxed), 0);
     assert!(orb.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -142,6 +145,7 @@ async fn summon_factory_defaults_to_zero_value_and_no_motion() {
     let player = TestPlayer::new(&world);
     orb.on_player_collision(&player.player);
     assert_eq!(player.player.experience_points.load(Ordering::Relaxed), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -194,6 +198,7 @@ async fn death_loot_award_merges_through_the_real_death_spawn_site() {
             .count(),
         1
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -213,6 +218,7 @@ async fn collection_ignores_a_player_who_changed_world_after_the_snapshot() {
     );
     assert!(!orb.entity.is_removed());
     assert_eq!(player.player.experience_points.load(Ordering::Relaxed), 0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -239,6 +245,7 @@ async fn tiny_nonzero_directions_normalize_for_launch_and_following() {
     ));
     assert!(orb.follow_nearby_player());
     assert!(orb.entity.velocity.load().x > 0.099);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -248,6 +255,7 @@ async fn unsticking_nan_position_does_not_panic() {
     let world = world(&server, dir.path());
     let orb = stationary_orb(&world, Vector3::new(f64::NAN, 100.0, 0.0), 1);
     orb.unstuck_if_possible(0.5);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -268,26 +276,29 @@ async fn furnace_output_awards_each_recipe_separately() {
     // AbstractFurnaceBlockEntity.getRecipesToAwardAndPopExperience awards each recipe on its
     // own: two 0.7 XP recipes smelted ten times give two awards of 7, never one award of 14
     // (which would split into an 11 and a 3).
-    let mut recipes = furnace.recipes_used.lock().unwrap();
-    recipes.insert("minecraft:iron_ingot_from_smelting_iron_ore".into(), 10);
-    recipes.insert("minecraft:copper_ingot_from_smelting_copper_ore".into(), 10);
-    drop(recipes);
-    let slot = FurnaceOutputSlot::new(furnace.clone(), furnace);
-    slot.on_take_item(
-        player.player.as_ref(),
-        &ItemStack::new(10, &Item::IRON_INGOT),
-    );
-    let orbs = world.entities.load_full();
-    let mut total = 0;
-    for entity in orbs.iter() {
-        let orb = entity
-            .cast_any()
-            .downcast_ref::<ExperienceOrbEntity>()
-            .unwrap();
-        assert_eq!(orb.get_value(), 7);
-        total += orb.get_value() * orb.state.lock().unwrap().count;
-    }
-    assert_eq!(total, 14);
+    {
+        let mut recipes = furnace.recipes_used.lock().unwrap();
+        recipes.insert("minecraft:iron_ingot_from_smelting_iron_ore".into(), 10);
+        recipes.insert("minecraft:copper_ingot_from_smelting_copper_ore".into(), 10);
+        drop(recipes);
+        let slot = FurnaceOutputSlot::new(furnace.clone(), furnace);
+        slot.on_take_item(
+            player.player.as_ref(),
+            &ItemStack::new(10, &Item::IRON_INGOT),
+        );
+        let orbs = world.entities.load_full();
+        let mut total = 0;
+        for entity in orbs.iter() {
+            let orb = entity
+                .cast_any()
+                .downcast_ref::<ExperienceOrbEntity>()
+                .unwrap();
+            assert_eq!(orb.get_value(), 7);
+            total += orb.get_value() * orb.state.lock().unwrap().count;
+        }
+        assert_eq!(total, 14);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -331,6 +342,7 @@ async fn furnace_output_spawns_orbs_at_player_and_allows_mending() {
     orb.on_player_collision(&player.player);
     assert_eq!(player.player.inventory.get_slot(0).get_damage(), 0);
     assert_eq!(player.player.experience_points.load(Ordering::Relaxed), 6);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -370,6 +382,7 @@ async fn breaking_furnaces_and_xp_blocks_awards_at_block_centers() {
     for orb in orbs {
         assert_eq!(orb.get_entity().pos.load(), pos.to_centered_f64());
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct TypeProbe {
@@ -414,6 +427,7 @@ async fn world_tick_filters_non_orbs_once_for_all_merge_scans() {
     assert_eq!(probe.casts.load(Ordering::Relaxed), 1);
     assert!(world.ticking_experience_orbs.load().is_none());
     world.level.shutdown().await.unwrap();
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -464,4 +478,5 @@ async fn debug_world_tick_2000_entities_200_orbs_100_ticks() {
             .all(|orb| orb.entity.age.load(Ordering::Relaxed) == 100)
     );
     world.level.shutdown().await.unwrap();
+    crate::server::fixture_lifecycle::finish().await;
 }

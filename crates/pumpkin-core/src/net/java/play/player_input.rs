@@ -8,6 +8,12 @@ impl JavaClient {
         input: &SPlayerInput,
         server: &Arc<Server>,
     ) {
+        let _owner = player.living_entity.own_damage();
+        // PlayerList.respawn replaces the player used by handlePlayerInput.
+        let life = crate::entity::living::PlayerTickLife::capture(player.as_ref());
+        if !life.is_current() {
+            return;
+        }
         let mut input_event =
             crate::plugin::api::events::player::player_input::PlayerInputEvent::new(
                 player.clone(),
@@ -16,7 +22,7 @@ impl JavaClient {
         server
             .plugin_manager
             .fire_blocking(server, &mut input_event);
-        if input_event.cancelled {
+        if input_event.cancelled || !life.is_current() {
             return;
         }
 
@@ -36,6 +42,7 @@ impl JavaClient {
                 server;
                 PlayerToggleSneakEvent::new(player.clone(), sneak);
                 'after: {
+                    if !life.is_current() { return; }
                     player.get_entity().set_sneaking(event.is_sneaking);
                     if event.is_sneaking {
                         let vehicle = player

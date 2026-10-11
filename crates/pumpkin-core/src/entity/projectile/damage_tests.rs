@@ -1,3 +1,5 @@
+mod piercing_tests;
+
 use super::*;
 use crate::entity::living::test_support::armor_test_world;
 use pumpkin_data::{damage::DamageType, effect::StatusEffect};
@@ -65,10 +67,13 @@ async fn arrow_and_trident_hit_entry_points_deliver_owner_and_direct_without_raw
     let mut saved = pumpkin_nbt::compound::NbtCompound::new();
     EntityBase::write_nbt(&trident, &mut saved);
     assert_eq!(saved.get_bool("DealtDamage"), Some(true));
-    let hits = target.hits.lock().unwrap();
-    assert_eq!(hits[1].direct, Some(trident.entity.entity_id));
-    assert_eq!(hits[1].cause, Some(owner.entity.entity_id));
-    assert_eq!(hits[1].raw_position, None);
+    {
+        let hits = target.hits.lock().unwrap();
+        assert_eq!(hits[1].direct, Some(trident.entity.entity_id));
+        assert_eq!(hits[1].cause, Some(owner.entity.entity_id));
+        assert_eq!(hits[1].raw_position, None);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -168,6 +173,7 @@ async fn ownerless_and_nonliving_projectile_branches_match_vanilla_sources() {
             raw_position: None
         }
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -216,6 +222,7 @@ async fn real_arrow_damage_serializes_the_victim_owner_and_projectile_in_order()
         }
     }
     assert!(found);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -257,6 +264,7 @@ async fn piercing_arrows_bypass_a_raised_shield_through_the_hit_entry_point() {
             if piercing == 0 { 5 } else { 0 }
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -308,6 +316,7 @@ async fn mob_damage_hooks_distinguish_projectiles_from_their_causing_entity() {
         Some(&direct),
         Some(&cow)
     ));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -349,12 +358,15 @@ async fn wind_charge_and_shulker_bullet_filter_nonliving_owners_at_their_entry_p
     );
     bullet.get_entity().set_pos(target.get_entity().pos.load());
     bullet.tick(&bullet, &server);
-    let hits = target.hits.lock().unwrap();
-    assert_eq!(hits.len(), 2);
-    assert_eq!(hits[1].kind, DamageType::MOB_PROJECTILE.id);
-    assert_eq!(hits[1].direct, Some(bullet.get_entity().entity_id));
-    assert_eq!(hits[1].cause, None);
-    assert_eq!(hits[1].raw_position, None);
+    {
+        let hits = target.hits.lock().unwrap();
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[1].kind, DamageType::MOB_PROJECTILE.id);
+        assert_eq!(hits[1].direct, Some(bullet.get_entity().entity_id));
+        assert_eq!(hits[1].cause, None);
+        assert_eq!(hits[1].raw_position, None);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -396,6 +408,7 @@ async fn living_skull_owners_receive_eight_damage_context_and_only_success_appli
         );
         assert_eq!(target.living.has_effect(&StatusEffect::WITHER), accepted);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -447,6 +460,7 @@ async fn creative_projectile_owners_break_vehicles_and_fixed_item_frames() {
             assert_eq!(target.get_entity().is_removed(), creative);
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -483,6 +497,7 @@ async fn tnt_minecart_ignition_uses_the_direct_arrows_fire_state() {
         );
         assert_eq!(minecart.get_entity().is_removed(), arrow_burning);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -539,56 +554,5 @@ async fn attached_firework_uses_saved_component_damage_and_projectile_context() 
         }]
     );
     assert!(rocket.get_entity().is_removed());
-}
-
-#[tokio::test]
-async fn piercing_arrow_hits_two_targets_in_one_tick_and_advances_to_the_end() {
-    let dir = tempfile::tempdir().unwrap();
-    let world = armor_test_world(dir.path());
-    world.level.loaded_chunks.insert(
-        pumpkin_util::math::vector2::Vector2::new(0, 0),
-        pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
-    );
-    let first = Arc::new(Receiver {
-        living: LivingEntity::new(Entity::new(
-            world.clone(),
-            Vector3::new(3.0, 65.0, 8.0),
-            &EntityType::COW,
-        )),
-        hits: Mutex::default(),
-        accepted: true,
-    });
-    let second = Arc::new(Receiver {
-        living: LivingEntity::new(Entity::new(
-            world.clone(),
-            Vector3::new(5.0, 65.0, 8.0),
-            &EntityType::COW,
-        )),
-        hits: Mutex::default(),
-        accepted: true,
-    });
-    world
-        .entities
-        .store(Arc::new(vec![first.clone(), second.clone()]));
-    let start = Vector3::new(1.0, 65.5, 8.0);
-    let movement = Vector3::new(8.0, 0.0, 0.0);
-    let arrow = arrow::ArrowEntity::new(Entity::new(world, start, &EntityType::ARROW), None);
-    arrow.entity.velocity.store(movement);
-    arrow.set_pierce_level(2);
-    arrow.step_move_and_hit(&arrow, start, start + movement, movement);
-    for target in [first, second] {
-        assert_eq!(
-            *target.hits.lock().unwrap(),
-            vec![Hit {
-                amount: 16.0,
-                kind: DamageType::ARROW.id,
-                direct: Some(arrow.entity.entity_id),
-                cause: Some(arrow.entity.entity_id),
-                raw_position: None,
-            }]
-        );
-    }
-    assert_eq!(arrow.pierced_entities.read().unwrap().len(), 2);
-    assert_eq!(arrow.entity.pos.load(), start + movement);
-    assert!(!arrow.entity.is_removed());
+    crate::server::fixture_lifecycle::finish().await;
 }

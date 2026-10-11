@@ -65,6 +65,7 @@ async fn function_feedback_reports_scheduling_before_execution_and_explicit_resu
         "{}",
         output_text()
     );
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -141,6 +142,7 @@ async fn queue_regression_capped_recursive_fanout_stops_execution()
     assert_eq!(executed, 2);
     assert!(overflowed);
     assert!(!is_nested_function_call());
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -187,6 +189,7 @@ async fn queue_regression_fork_limit_is_captured_for_the_whole_context()
             .map(|score| score.value.0),
         Some(4)
     );
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -205,6 +208,7 @@ async fn queue_regression_worldless_dispatch_uses_the_default_quota()
         Ok(0)
     );
     assert!(!is_nested_function_call());
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -249,6 +253,7 @@ async fn recursive_execute_as_fanout_keeps_one_continuation_per_depth()
     assert_eq!(max_depth, 49);
     assert_eq!(max_entries, 99);
     assert!(!is_nested_function_call());
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -278,19 +283,22 @@ async fn top_level_execute_as_functions_share_one_quota() -> Result<(), Box<dyn 
     dispatcher
         .execute_input("execute as @e run function test:add", &source)
         .map_err(|error| format!("{error:?}"))?;
-    let scoreboard = source
-        .world()
-        .scoreboard
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // One redirect plus three CallFunctions plus six ordinary commands consume ten units.
-    assert_eq!(
-        scoreboard
-            .get_score("count", "quota")
-            .map(|score| score.value.0),
-        Some(6)
-    );
-    assert!(!is_nested_function_call());
+    {
+        let scoreboard = source
+            .world()
+            .scoreboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // One redirect plus three CallFunctions plus six ordinary commands consume ten units.
+        assert_eq!(
+            scoreboard
+                .get_score("count", "quota")
+                .map(|score| score.value.0),
+            Some(6)
+        );
+        assert!(!is_nested_function_call());
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -318,17 +326,20 @@ async fn return_run_does_not_consume_a_quota_unit() -> Result<(), Box<dyn std::e
     dispatcher
         .execute_input("function test:return", &source)
         .map_err(|error| format!("{error:?}"))?;
-    let scoreboard = source
-        .world()
-        .scoreboard
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert_eq!(
-        scoreboard
-            .get_score("result", "quota")
-            .map(|score| score.value.0),
-        Some(7)
-    );
-    assert!(scoreboard.get_score("tail", "quota").is_none());
+    {
+        let scoreboard = source
+            .world()
+            .scoreboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(
+            scoreboard
+                .get_score("result", "quota")
+                .map(|score| score.value.0),
+            Some(7)
+        );
+        assert!(scoreboard.get_score("tail", "quota").is_none());
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }

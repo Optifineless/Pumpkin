@@ -33,6 +33,7 @@ impl DeathTestWorld {
         let basic = BasicConfiguration {
             default_level_name: directory.path().to_string_lossy().into_owned(),
             allow_end: false,
+            allow_chat_reports: false,
             ..BasicConfiguration::default()
         };
         let mut advanced = AdvancedConfiguration::default();
@@ -55,6 +56,7 @@ impl DeathTestWorld {
         )
         .await
         .unwrap();
+        crate::server::fixture_lifecycle::track_server(&server);
         Self {
             server,
             _directory: directory,
@@ -83,6 +85,7 @@ impl DeathTestWorld {
             &world,
             GameMode::Survival,
         ));
+        crate::server::fixture_lifecycle::track_player(&player);
         player.set_client_loaded(true);
         world.players.rcu(|players| {
             let mut players = (**players).clone();

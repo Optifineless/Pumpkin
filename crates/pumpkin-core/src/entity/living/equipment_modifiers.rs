@@ -278,6 +278,7 @@ mod tests {
             ItemStack::EMPTY.clone(),
         )]);
         assert_eq!(loaded.get_attribute_value(&Attributes::ARMOR), 2.0);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]
@@ -323,15 +324,18 @@ mod tests {
                 });
             }
         });
-        let attributes = living.attributes.read().unwrap();
-        let instance = &attributes[&Attributes::ARMOR.id];
-        assert_eq!(instance.modifiers.len(), 1);
-        assert_eq!(instance.value(), 8.0);
-        let tracked = living.equipment_attribute_modifier_ids.lock().unwrap();
-        assert_eq!(
-            tracked[&EquipmentSlot::CHEST],
-            vec![(Attributes::ARMOR.id, instance.modifiers[0].id.clone())]
-        );
+        {
+            let attributes = living.attributes.read().unwrap();
+            let instance = &attributes[&Attributes::ARMOR.id];
+            assert_eq!(instance.modifiers.len(), 1);
+            assert_eq!(instance.value(), 8.0);
+            let tracked = living.equipment_attribute_modifier_ids.lock().unwrap();
+            assert_eq!(
+                tracked[&EquipmentSlot::CHEST],
+                vec![(Attributes::ARMOR.id, instance.modifiers[0].id.clone())]
+            );
+        };
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]
@@ -374,6 +378,7 @@ mod tests {
             (EquipmentSlot::OFF_HAND, ItemStack::EMPTY.clone()),
         ]);
         assert_eq!(living.get_attribute_value(&Attributes::ATTACK_DAMAGE), 12.0);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]
@@ -413,6 +418,7 @@ mod tests {
         armor.set_damage(armor.get_max_damage().unwrap());
         living.apply_and_send_equipment_attribute_modifiers(&[(EquipmentSlot::BODY, armor)]);
         assert_eq!(living.get_attribute_value(&Attributes::ARMOR), 12.0);
+        crate::server::fixture_lifecycle::finish().await;
     }
     #[tokio::test]
     async fn melee_equipment_installs_replaces_restores_and_removes_sweeping_edge() {
@@ -496,6 +502,7 @@ mod tests {
             living.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
             0.0
         );
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[tokio::test]
@@ -524,5 +531,6 @@ mod tests {
             living.get_attribute_value(&Attributes::SWEEPING_DAMAGE_RATIO),
             0.0
         );
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

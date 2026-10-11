@@ -79,6 +79,7 @@ async fn rain_hydrates_exposed_farmland_but_not_roofed_or_snowy() {
         assert_eq!(moisture(&world, &pos), expected);
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -102,6 +103,7 @@ async fn maintains_farmland_tag_controls_survival() {
         );
     }
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -133,6 +135,7 @@ async fn farmland_survives_replacement_before_scheduled_tick() {
     });
     assert_eq!(world.get_block(&pos), &Block::DIRT);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct MoistureHandler {
@@ -182,4 +185,5 @@ async fn fully_hydrated_farmland_skips_events_and_cancelled_updates_keep_moistur
     tick(&world, &pos);
     assert_eq!(calls.load(Relaxed), 2);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

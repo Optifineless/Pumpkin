@@ -74,4 +74,5 @@ async fn command_silent_and_restored_insertions_keep_the_first_uuid() {
         assert!(warning.contains("chicken"));
     }
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -60,6 +60,7 @@ async fn zombie_nautilus_loaded_variant_keeps_water_travel() {
     let mut saved = NbtCompound::new();
     mob.mob_write_nbt(&mut saved);
     assert_eq!(saved.get_string("variant"), Some("minecraft:warm"));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -86,6 +87,7 @@ async fn navigation_ray_uses_scaffold_entity_context() {
     assert!(ray(&living, 60.95));
     living.entity.set_pos(Vector3::new(4.5, 59.99, 4.5));
     assert!(ray(&living, 60.05));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -105,6 +107,7 @@ async fn navigation_powder_snow_uses_sneaking_and_above_tolerance() {
     fox.fall_distance.store(3.0);
     assert!(!ray(&fox, 60.5));
     assert!(ray(&fox, 60.95));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -138,6 +141,7 @@ async fn navigation_ray_reads_moving_piston_progress() {
     assert!(ray(&living, 60.75));
     piston.current_progress.store(1.0);
     assert!(!ray(&living, 60.75));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -203,6 +207,7 @@ async fn strider_source_support_reaches_movement_before_fall_damage() {
             .0
             .is_empty()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -231,6 +236,7 @@ async fn axolotl_death_refills_air_and_publishes_metadata() {
             .as_ref(),
         &[1, 1, 0xf0, 0x2e, 0xff]
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -259,6 +265,7 @@ async fn axolotl_air_reads_numeric_nbt() {
     axolotl.mob_read_nbt(&nbt);
     axolotl.after_base_tick();
     assert_eq!(axolotl.air_supply.load(Relaxed), i32::MAX);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -301,6 +308,7 @@ async fn aquatic_rain_reaches_head_above_sheltered_feet() {
     dolphin.moistness_level.store(1, Relaxed);
     dolphin.post_tick();
     assert_eq!(dolphin.moistness_level.load(Relaxed), 2400);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -320,6 +328,7 @@ async fn strider_lava_fall_exception_does_not_suppress_land_damage() {
     living.fall_distance.store(8.0);
     living.fall(strider.as_ref(), -1.0, true, false);
     assert!(living.health.load() < health);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -365,6 +374,7 @@ async fn guardian_moving_with_zero_speed_does_not_sink() {
         assert!(guardian.custom_travel(guardian.as_ref()));
         assert_eq!(entity.velocity.load().y, -0.005);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -383,6 +393,7 @@ async fn dolphin_initial_air_is_in_spawn_metadata() {
             .as_ref(),
         &[1, 1, 0xc0, 0x25, 0xff]
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -417,4 +428,5 @@ async fn spider_fallback_waits_until_the_tick_after_path_completion() {
     assert!(navigation.inner.inner.current_goal.is_some());
     navigation.tick(&mob, &mob.living_entity);
     assert!(navigation.inner.inner.current_goal.is_none());
+    crate::server::fixture_lifecycle::finish().await;
 }

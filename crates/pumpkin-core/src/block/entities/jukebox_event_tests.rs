@@ -100,6 +100,7 @@ async fn jukebox_record_mutations_emit_one_block_change() {
     jukebox.clear();
     assert_record(&world, &position, &changes, false, 8);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -136,4 +137,5 @@ async fn jukebox_player_actions_emit_one_block_change() {
     });
     assert_record(&world, &position, &changes, false, 2);
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -55,6 +55,7 @@ async fn orchestration_review_spear_accounts_damage_and_restores_player_motion()
             .count(),
         1
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -91,4 +92,5 @@ async fn death_outgoing_spear_attack_memory_uses_living_ticks() {
             .load(Ordering::Relaxed),
         target.get_entity().entity_id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

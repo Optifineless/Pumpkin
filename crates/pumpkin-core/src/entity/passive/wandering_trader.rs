@@ -1335,6 +1335,7 @@ mod tests {
             assert!((3..=6).contains(&orb.get_value()));
             assert_eq!(orb.get_entity().pos.load(), pos.add_raw(0.0, 0.5, 0.0));
         }
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]
@@ -1351,6 +1352,7 @@ mod tests {
         add_offers_from_trade_set(&mut offers, TRADES_WANDERING_TRADER_COMMON, 5, &mut rng);
 
         assert_eq!(offers.len(), 9);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]

@@ -49,4 +49,5 @@ async fn deep_review_crafter_cake_then_planks_does_not_dispense_free_buckets() {
     }
     assert_eq!(count_buckets(), 3);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }

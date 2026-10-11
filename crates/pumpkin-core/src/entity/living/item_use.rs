@@ -280,5 +280,6 @@ mod tests {
         assert!(player.living_entity.has_effect(&StatusEffect::NIGHT_VISION));
         assert_eq!(player.inventory().off_hand_item().item, &Item::BOWL);
         assert!(world.level.shutdown().await.is_ok());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

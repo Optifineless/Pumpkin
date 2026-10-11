@@ -106,6 +106,7 @@ async fn ownership_review_death_loot_inserts_into_the_tracker_iteration_shard() 
     });
     assert!(handler.inserted.load(SeqCst));
     assert!(tracker.has_entity_with_id(collision));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -126,6 +127,7 @@ async fn ownership_review_tracking_reuses_the_tracked_owner_without_nested_scope
         tracked.send_changes(&world);
     }
     assert_eq!(living.damage_entry_count() - baseline, 100);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -152,6 +154,7 @@ async fn verification4_tracking_reuses_snapshot_without_retaining_entities() {
         assert!(buffer.is_empty());
         assert_eq!(address, buffer.as_ptr());
     });
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -194,4 +197,5 @@ async fn ownership_review_tracking_and_hits_benchmark() {
         "debug benchmark: tracking_1000x100={tracking:?} hits_10000={:?}",
         start.elapsed()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

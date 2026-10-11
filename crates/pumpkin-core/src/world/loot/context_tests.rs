@@ -10,7 +10,7 @@ fn test_world(path: &std::path::Path) -> Arc<crate::world::World> {
     use pumpkin_data::dimension::Dimension;
     use pumpkin_util::world_seed::Seed;
     use pumpkin_world::level::Level;
-    Arc::new(crate::world::World::load(
+    let world = Arc::new(crate::world::World::load(
         Level::from_root_folder(
             &LevelConfig::default(),
             path.to_path_buf(),
@@ -23,7 +23,9 @@ fn test_world(path: &std::path::Path) -> Arc<crate::world::World> {
         Dimension::OVERWORLD,
         Arc::new(crate::block::registry::BlockRegistry::default()),
         std::sync::Weak::new(),
-    ))
+    ));
+    crate::server::fixture_lifecycle::track_world(&world);
+    world
 }
 #[tokio::test]
 async fn live_death_context_retains_jockey_mount_and_sheared_sheep() {
@@ -106,6 +108,7 @@ async fn live_death_context_retains_jockey_mount_and_sheared_sheep() {
         ),
         0
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 #[tokio::test]
 async fn command_kill_context_never_inherits_remembered_player_credit() {
@@ -134,6 +137,7 @@ async fn command_kill_context_never_inherits_remembered_player_credit() {
     assert!(context.attacking_entity_state.is_some());
     assert!(context.direct_attacking_entity_state.is_some());
     assert!(context.last_damage_player_state.is_none());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -169,6 +173,7 @@ async fn block_context_supplies_banner_patterns_and_preserves_modifier_order() {
             .get_text(),
         "After"
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -217,6 +222,7 @@ async fn shulker_components_remain_typed_and_modifiers_can_remove_them() {
             assert_eq!(explosion.fade_colors, [255]);
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -242,4 +248,5 @@ async fn seed_zero_without_a_sequence_continues_the_world_source() {
             expected
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -86,11 +86,13 @@ async fn concurrent_swaps(insert: bool) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_empty_hand_removals_conserve_one_helmet() {
     concurrent_swaps(false).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_insertions_conserve_both_helmets() {
     concurrent_swaps(true).await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -110,4 +112,5 @@ async fn destruction_closes_equipment_before_late_insertion() {
     assert_eq!(hand.item_count, 1);
     assert!(stand.item_in_slot(&EquipmentSlot::HEAD).is_empty());
     fixture.server.shutdown().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

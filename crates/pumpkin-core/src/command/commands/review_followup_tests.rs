@@ -101,15 +101,18 @@ async fn local_coordinates_use_context_position_and_numeric_positioned_resets_an
             &source,
         )
         .map_err(|error| format!("{error:?}"))?;
-    let seen = seen.lock().unwrap();
-    // Vec3Argument centers integer X/Z before numeric positioned resets the anchor.
-    assert_eq!(seen[0].position, Vector3::new(100.5, 80.0, 100.5));
-    assert_eq!(seen[0].entity_anchor, feet);
+    {
+        let seen = seen.lock().unwrap();
+        // Vec3Argument centers integer X/Z before numeric positioned resets the anchor.
+        assert_eq!(seen[0].position, Vector3::new(100.5, 80.0, 100.5));
+        assert_eq!(seen[0].entity_anchor, feet);
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
 fn dimension_world(fixture: &Fixture, dimension: pumpkin_data::dimension::Dimension) -> Arc<World> {
-    Arc::new(World::load(
+    let world = Arc::new(World::load(
         pumpkin_world::level::Level::from_root_folder(
             &pumpkin_config::world::LevelConfig::default(),
             fixture.directory.path().to_path_buf(),
@@ -120,7 +123,9 @@ fn dimension_world(fixture: &Fixture, dimension: pumpkin_data::dimension::Dimens
         dimension,
         fixture.server.block_registry.clone(),
         Arc::downgrade(&fixture.server),
-    ))
+    ));
+    crate::server::fixture_lifecycle::track_world(&world);
+    world
 }
 
 #[tokio::test]
@@ -144,22 +149,25 @@ async fn execute_in_scales_both_directions_and_preserves_source_state() -> TestR
             .execute_input(input, &source)
             .map_err(|error| format!("{error:?}"))?;
     }
-    let seen = seen.lock().unwrap();
-    assert_eq!(seen[0].position, Vector3::new(100.0, 80.0, -100.0));
-    assert_eq!(seen[1].position, source.position);
-    assert!(Arc::ptr_eq(seen[0].world(), &nether));
-    for captured in seen.iter() {
-        assert!(Arc::ptr_eq(
-            captured.entity.as_ref().unwrap(),
-            source.entity.as_ref().unwrap()
-        ));
-        assert!(captured.silent);
-        assert!(captured.has_permission("minecraft:command.gamemode"));
-        assert!(Arc::ptr_eq(
-            &captured.as_player().unwrap(),
-            &fixture.alice.player
-        ));
+    {
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].position, Vector3::new(100.0, 80.0, -100.0));
+        assert_eq!(seen[1].position, source.position);
+        assert!(Arc::ptr_eq(seen[0].world(), &nether));
+        for captured in seen.iter() {
+            assert!(Arc::ptr_eq(
+                captured.entity.as_ref().unwrap(),
+                source.entity.as_ref().unwrap()
+            ));
+            assert!(captured.silent);
+            assert!(captured.has_permission("minecraft:command.gamemode"));
+            assert!(Arc::ptr_eq(
+                &captured.as_player().unwrap(),
+                &fixture.alice.player
+            ));
+        }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -185,14 +193,17 @@ async fn execute_rotation_modifiers_use_pitch_then_yaw_and_anchored_facing() -> 
             .execute_input(input, &source)
             .map_err(|error| format!("{error:?}"))?;
     }
-    let seen = seen.lock().unwrap();
-    for captured in &seen[..3] {
-        assert_eq!(captured.rotation, Vector2::new(30.0, 60.0));
-    }
-    assert!((seen[3].rotation.x - 32.311535).abs() < 0.0001);
-    assert!((seen[3].rotation.y - 71.56505).abs() < 0.0001);
-    assert!((seen[4].rotation.x + 32.311535).abs() < 0.0001);
-    assert!((seen[4].rotation.y + 18.434948).abs() < 0.0001);
+    {
+        let seen = seen.lock().unwrap();
+        for captured in &seen[..3] {
+            assert_eq!(captured.rotation, Vector2::new(30.0, 60.0));
+        }
+        assert!((seen[3].rotation.x - 32.311535).abs() < 0.0001);
+        assert!((seen[3].rotation.y - 71.56505).abs() < 0.0001);
+        assert!((seen[4].rotation.x + 32.311535).abs() < 0.0001);
+        assert!((seen[4].rotation.y + 18.434948).abs() < 0.0001);
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -211,6 +222,7 @@ async fn top_level_return_run_executes_only_first_of_two_players() -> TestResult
         .map_err(|error| format!("{error:?}"))?;
     assert_eq!(seen.lock().unwrap().len(), 1);
     assert_eq!(dispatcher.execute_input("return 4", &source), Ok(4));
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -242,16 +254,19 @@ async fn entity_uuid_selectors_resolve_players_and_mobs_without_relaxing_player_
                 .is_err()
         );
     }
-    let seen = seen.lock().unwrap();
-    assert_eq!(seen.len(), 2);
-    assert_eq!(
-        seen[0].entity.as_ref().unwrap().get_entity().entity_uuid,
-        fixture.bob.player.get_entity().entity_uuid
-    );
-    assert_eq!(
-        seen[1].entity.as_ref().unwrap().get_entity().entity_uuid,
-        mob.get_entity().entity_uuid
-    );
+    {
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(
+            seen[0].entity.as_ref().unwrap().get_entity().entity_uuid,
+            fixture.bob.player.get_entity().entity_uuid
+        );
+        assert_eq!(
+            seen[1].entity.as_ref().unwrap().get_entity().entity_uuid,
+            mob.get_entity().entity_uuid
+        );
+    };
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -322,6 +337,7 @@ async fn waypoint_console_persists_icons_without_tracking_unmanaged_viewers() ->
         .map_err(|error| format!("{error:?}"))?;
     assert!(waypoint_packets(&mut fixture.alice).is_empty());
     assert!(waypoint_packets(&mut fixture.bob).is_empty());
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -398,6 +414,7 @@ async fn review3_waypoint_color_refreshes_connected_sender_with_untrack_then_tra
         .map_err(|error| format!("{error:?}"))?;
     assert!(waypoint_packets(&mut fixture.alice).is_empty());
     assert!(waypoint_packets(&mut fixture.bob).is_empty());
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }
 
@@ -463,5 +480,6 @@ async fn signed_and_unsigned_msg_route_to_executing_player_and_honor_silence() -
             }
         }
     }
+    crate::server::fixture_lifecycle::finish().await;
     Ok(())
 }

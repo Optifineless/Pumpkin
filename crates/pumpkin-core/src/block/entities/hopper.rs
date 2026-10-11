@@ -651,6 +651,7 @@ mod tests {
             10
         );
         fixture.finish().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]

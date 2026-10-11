@@ -117,6 +117,7 @@ async fn cooldown_and_hand_changes_use_the_real_packet_and_swap_handlers() {
         .set_slot(0, ItemStack::new(1, &Item::DIAMOND));
     player.living_entity.tick(player.as_ref(), &server);
     assert!(player.living_entity.active_hand.lock().unwrap().is_none());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -195,6 +196,7 @@ async fn shield_callbacks_preserve_identical_replacements_and_publish_the_live_b
             .iter()
             .any(|(slot, count, _)| *slot == 0 && *count == 0)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -235,6 +237,7 @@ async fn resurrection_revalidates_the_original_slot_and_stack_after_plugins() {
         );
         assert_eq!(player.inventory.get_slot(1).item, &Item::DIAMOND);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -261,6 +264,7 @@ async fn boss_effect_rejection_and_absorption_removal_run_the_shared_lifecycle()
     living.set_absorption(0.0);
     living.tick_effects();
     assert!(!living.has_effect(&StatusEffect::ABSORPTION));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -299,6 +303,7 @@ async fn periodic_damage_resurrection_cannot_publish_a_removed_hidden_effect() {
         }
     }
     assert!(absorption_sent);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -333,6 +338,7 @@ async fn periodic_damage_callback_refreshes_the_live_effect_before_decrement() {
             if replace { 100 } else { 99 }
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -400,6 +406,7 @@ async fn accepted_stat_events_update_statistics_and_all_matching_objectives() {
             Some(3)
         );
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -480,4 +487,5 @@ async fn resurrection_keeps_combat_credit_and_skips_death_events_and_drops() {
             .iter()
             .any(|entity| entity.get_item_entity().is_some())
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

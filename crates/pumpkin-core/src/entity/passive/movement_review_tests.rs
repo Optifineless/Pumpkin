@@ -66,6 +66,7 @@ async fn brain_species_swim_goal_requests_jumps_in_water() {
         }
         assert!(jumped, "{} never requested a swim jump", kind.resource_name);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -97,6 +98,7 @@ async fn goat_stays_afloat_over_full_ticks() {
         "goat sank: {:?}",
         goat.get_entity().pos.load()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -119,6 +121,7 @@ async fn immobile_creaking_cannot_swim() {
     creaking.set_can_move(false);
     assert!(!goal.should_continue(creaking.as_ref()));
     assert!(!goal.can_start(creaking.as_ref()));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -156,6 +159,7 @@ async fn vex_charges_target_over_full_ticks() {
         closest < 4.0,
         "vex never approached its target: distance squared {closest}"
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -181,6 +185,7 @@ async fn airborne_blaze_approaches_using_its_live_follow_range() {
         tick(&fixture, blaze.as_ref());
     }
     assert!(blaze.get_entity().pos.load().x > 5.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 struct TickOrderMob {
@@ -224,6 +229,7 @@ async fn ai_reads_current_fluids_and_travel_reads_undecayed_control_input() {
     assert!(mob.observed_water.load(Relaxed));
     // The water probe forces MoveControl's forward-only input to exactly 1.0.
     assert_eq!(mob.observed_input.load(), 1.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -268,6 +274,7 @@ async fn melee_goal_reaches_target_around_a_wall_over_full_ticks() {
         "zombie stopped at {:?}",
         zombie.get_entity().pos.load()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -298,6 +305,7 @@ async fn turtle_spawn_home_and_egg_keys_survive_save() {
         assert_eq!(saved.get_bool("has_egg"), Some(true));
         assert!(saved.get_bool("HasEgg").is_none());
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -313,6 +321,7 @@ async fn bat_flight_does_not_accumulate_fall_distance() {
     living.fall_distance.store(5.0);
     living.fall(bat.as_ref(), -1.0, false, false);
     assert_eq!(living.fall_distance.load(), 0.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -323,6 +332,7 @@ async fn wall_climber_stop_keeps_fallback_but_reports_path_done() {
     navigation.stop();
     assert_eq!(navigation.path_to_position, Some(BlockPos::new(12, 60, 4)));
     assert!(navigation.is_done());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -352,6 +362,7 @@ async fn queued_coordinate_path_does_not_reuse_previous_reach_range() {
     navigation.tick(mob, goat.as_ref());
     let path = navigation.get_path().unwrap();
     assert_eq!(path.get_end_node().unwrap().pos, BlockPos::new(11, 60, 4));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -372,6 +383,7 @@ async fn flying_destination_tests_its_own_collision_face() {
     assert!(navigation.is_stable_destination(&world, &pos, allay.as_ref()));
     chunk.set_block_absolute_y(4, 60, 4, Block::OAK_SLAB.default_state.id);
     assert!(!navigation.is_stable_destination(&world, &pos, allay.as_ref()));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -395,4 +407,5 @@ async fn phantom_spawn_anchor_drives_idle_flight_above_the_spawn() {
     tick(&fixture, phantom.as_ref());
     assert_eq!(phantom.anchor_point.load(), Some(BlockPos::new(5, 75, 4)));
     assert!(phantom.move_target_point.load().y >= 67.0);
+    crate::server::fixture_lifecycle::finish().await;
 }

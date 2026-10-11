@@ -52,5 +52,6 @@ mod tests {
             assert_eq!(player.hunger_manager.level.load(), expected_food);
             assert_eq!(player.hunger_manager.saturation.load(), expected_saturation);
         }
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

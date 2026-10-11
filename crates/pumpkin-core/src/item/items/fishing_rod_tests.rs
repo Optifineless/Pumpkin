@@ -100,29 +100,32 @@ async fn fishing_packet_events_preserve_cancellation_real_hook_identity_and_retr
         .cast_any()
         .downcast_ref::<FishingBobberEntity>()
         .unwrap();
-    let states = handler.states.lock().unwrap();
-    assert!(states.last().unwrap().0 == PlayerFishState::Fishing);
-    assert_eq!(states.last().unwrap().1, bobber.entity.entity_uuid);
-    drop(states);
-    bobber.bite_countdown.store(20, Relaxed);
-    handler.cancel_fish.store(Some(PlayerFishState::CaughtFish));
-    fixture
-        .client()
-        .handle_use_item(&fixture.player, &packet, &server);
-    assert_eq!(
-        fixture.player.fishing_bobber.load(Relaxed),
-        bobber.entity.entity_id
-    );
-    assert_eq!(fixture.player.inventory().held_item().get_damage(), 0);
-    assert_eq!(world.entities.load().len(), 1);
-    assert!(handler.states.lock().unwrap().last().unwrap().0 == PlayerFishState::CaughtFish);
-    bobber.bite_countdown.store(0, Relaxed);
-    handler.cancel_fish.store(None);
-    fixture
-        .client()
-        .handle_use_item(&fixture.player, &packet, &server);
-    assert_eq!(fixture.player.fishing_bobber.load(Relaxed), -1);
-    assert!(handler.states.lock().unwrap().last().unwrap().0 == PlayerFishState::ReelIn);
+    {
+        let states = handler.states.lock().unwrap();
+        assert!(states.last().unwrap().0 == PlayerFishState::Fishing);
+        assert_eq!(states.last().unwrap().1, bobber.entity.entity_uuid);
+        drop(states);
+        bobber.bite_countdown.store(20, Relaxed);
+        handler.cancel_fish.store(Some(PlayerFishState::CaughtFish));
+        fixture
+            .client()
+            .handle_use_item(&fixture.player, &packet, &server);
+        assert_eq!(
+            fixture.player.fishing_bobber.load(Relaxed),
+            bobber.entity.entity_id
+        );
+        assert_eq!(fixture.player.inventory().held_item().get_damage(), 0);
+        assert_eq!(world.entities.load().len(), 1);
+        assert!(handler.states.lock().unwrap().last().unwrap().0 == PlayerFishState::CaughtFish);
+        bobber.bite_countdown.store(0, Relaxed);
+        handler.cancel_fish.store(None);
+        fixture
+            .client()
+            .handle_use_item(&fixture.player, &packet, &server);
+        assert_eq!(fixture.player.fishing_bobber.load(Relaxed), -1);
+        assert!(handler.states.lock().unwrap().last().unwrap().0 == PlayerFishState::ReelIn);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -167,6 +170,7 @@ async fn fishing_use_packet_spawns_a_client_visible_owned_bobber_and_throw_sound
     );
     let velocity = entity.get_entity().velocity.load();
     assert!(velocity.x < -0.9 && velocity.y > 0.5 && velocity.z.abs() < 0.001);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -242,25 +246,28 @@ async fn fishing_retrieve_packet_uses_offhand_rod_rolls_loot_launches_catches_an
             Vector3::new(0.0, 0.32, -1.6)
         );
     }
-    let stats = fixture.player.stats.lock().unwrap();
-    assert_eq!(
-        stats.get(
-            StatisticCategory::Custom,
-            CustomStatistic::FishCaught as i32
-        ),
-        1
-    );
-    assert_eq!(
-        stats.get(StatisticCategory::Used, i32::from(Item::FISHING_ROD.id)),
-        1
-    );
-    drop(stats);
-    assert!(
-        fixture
-            .player
-            .has_advancement(pumpkin_data::advancement::Advancement::HUSBANDRY_FISHY_BUSINESS)
-    );
-    assert_catch_experience(&entities, &fixture.player);
+    {
+        let stats = fixture.player.stats.lock().unwrap();
+        assert_eq!(
+            stats.get(
+                StatisticCategory::Custom,
+                CustomStatistic::FishCaught as i32
+            ),
+            1
+        );
+        assert_eq!(
+            stats.get(StatisticCategory::Used, i32::from(Item::FISHING_ROD.id)),
+            1
+        );
+        drop(stats);
+        assert!(
+            fixture
+                .player
+                .has_advancement(pumpkin_data::advancement::Advancement::HUSBANDRY_FISHY_BUSINESS)
+        );
+        assert_catch_experience(&entities, &fixture.player);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 fn assert_catch_experience(

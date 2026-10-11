@@ -420,5 +420,6 @@ mod tests {
         assert!(!rocket.get_entity().is_removed());
         assert!(rocket.get_entity().pos.load().x < 2.0);
         assert_eq!(rocket.get_entity().velocity.load(), motion);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

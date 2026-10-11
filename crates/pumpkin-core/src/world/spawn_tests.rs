@@ -12,6 +12,7 @@ async fn generation_births_use_region_at_night_through_publication() {
         (&EntityType::GOAT, &Biome::JAGGED_PEAKS, &Block::STONE, None),
     ])
     .await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -49,6 +50,7 @@ async fn generation_variants_are_selected_before_retention_and_restore() {
         ),
     ])
     .await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 async fn check_generation_births(
@@ -151,6 +153,7 @@ async fn trial_spawner_rejects_custom_light_and_applies_stock_equipment() {
         Some(&0.0)
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -212,6 +215,7 @@ async fn structure_generation_feeds_runtime_spawn_overrides() {
             .any(|b| b.structure == StructureKeys::Monument)
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -261,6 +265,7 @@ async fn species_persistence_and_chicken_jockey_state_survive_entity_loading() {
     assert!(restored.get_mob().unwrap().remove_when_far_away(20000.0));
     assert!(fixture.world.entities.load().is_empty());
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -304,6 +309,7 @@ async fn zombified_piglin_inherits_baby_group_and_zero_reinforcement_base() {
         speed
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -331,4 +337,5 @@ async fn cat_finalize_uses_unpublished_structure_context() {
         Some("minecraft:all_black")
     );
     fixture.finish().await;
+    crate::server::fixture_lifecycle::finish().await;
 }

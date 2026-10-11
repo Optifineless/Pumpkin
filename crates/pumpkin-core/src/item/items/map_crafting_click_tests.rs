@@ -54,6 +54,7 @@ async fn cartography_drag_allocates_nothing_and_creative_clone_processes_owned_r
     assert_eq!(map.lock().unwrap().colors[5], 73);
     assert_eq!(menu.input_inventory.get_stack(0).item_count, 1);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -94,4 +95,5 @@ async fn cartography_shift_click_repeats_across_map_ids_and_stops_when_full() {
         );
     }
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }

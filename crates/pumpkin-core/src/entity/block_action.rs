@@ -147,5 +147,6 @@ mod tests {
             )
         );
         fixture.server.shutdown().await;
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

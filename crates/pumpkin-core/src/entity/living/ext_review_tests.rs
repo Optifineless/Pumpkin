@@ -65,6 +65,7 @@ async fn ext_review_r10_zero_heal_is_a_noop() {
     living.heal(0.0);
     assert_eq!(living.health.load(), 3.0);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[ignore = "external-review reproduction R10; passes once combat task 1 lands"]
@@ -84,6 +85,7 @@ async fn ext_review_r10_healing_splash_at_four_blocks_does_not_panic() {
     splash(&world, Vector3::new(0.0, 64.0, 0.0), &Potion::HEALING);
     assert_eq!(fixture.player.living_entity.health.load(), 5.0);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[ignore = "external-review reproduction R10; passes once combat task 1 lands"]
@@ -122,6 +124,7 @@ async fn ext_review_r10_dead_entity_cannot_be_healed_out_of_death() {
     );
     assert!(victim.get_entity().is_removed());
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[ignore = "external-review reproduction R11; passes once combat task 1 lands"]
@@ -164,6 +167,7 @@ async fn ext_review_r11_harming_splash_uses_offhand_totem() {
         (1.0, false, true)
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[ignore = "external-review reproduction R14; passes once combat task 1 lands"]
@@ -191,6 +195,7 @@ async fn ext_review_r14_resistance_six_clamps_damage_to_zero() {
     assert!(living.damage(&living, 1.0, DamageType::GENERIC));
     assert_eq!(living.health.load(), before);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -234,6 +239,7 @@ async fn ext_review_r12_offhand_bucket_replaces_only_offhand() {
         (&Item::DIAMOND_SWORD, &Item::BUCKET)
     );
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -271,4 +277,5 @@ async fn ext_review_r13_fish_capture_keeps_filled_bucket_after_packet_writeback(
     );
     assert_eq!(player.inventory().held_item().item, &Item::COD_BUCKET);
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }

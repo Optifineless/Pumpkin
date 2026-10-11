@@ -55,4 +55,5 @@ async fn verification3_arrow_reset_before_punch_aborts_motion_and_effects() {
             .living_entity
             .has_effect(&pumpkin_data::effect::StatusEffect::GLOWING)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

@@ -17,6 +17,10 @@ use pumpkin_util::math::vector3::Vector3;
 use std::{sync::Arc, sync::atomic::Ordering};
 
 #[cfg(test)]
+mod followup_tests;
+#[cfg(test)]
+mod playtest_tests;
+#[cfg(test)]
 mod review3_tests;
 
 impl ArrowEntity {
@@ -175,9 +179,8 @@ impl ArrowEntity {
             let impulse = Vector3::new(velocity.x, 0.0, velocity.z).normalize()
                 * (f64::from(punch) * 0.6 * resistance);
             if impulse.length_squared() > 0.0 {
-                target
-                    .get_entity()
-                    .add_velocity(impulse + Vector3::new(0.0, 0.1, 0.0));
+                // Entity.push defers delivery until ServerEntity.sendChanges, after all hurt effects.
+                living.push_hurt(impulse + Vector3::new(0.0, 0.1, 0.0));
             }
         }
         super::damage::post_attack_with_item(

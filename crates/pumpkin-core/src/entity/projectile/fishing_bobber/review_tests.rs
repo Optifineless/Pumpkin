@@ -24,6 +24,7 @@ async fn fishing_seeded_bite_kick_matches_vanilla_float_bits() {
     bobber.catching_fish(&world, &BlockPos::new(0, 64, 0), &mut velocity);
     assert_eq!((velocity.y as f32).to_bits(), 0xbeb6_c4aa);
     assert_eq!(velocity.y, -0.356_969_177_722_930_9);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -41,6 +42,7 @@ async fn fishing_seeded_biting_pull_uses_two_vanilla_float_draws() {
     bobber.bite_countdown.store(20, Relaxed);
     let velocity = bobber.bob_tick(&world, &BlockPos::new(0, 64, 0), 0.5, Vector3::default());
     assert_eq!(velocity.y.to_bits(), 0xbfa5_0d10_b00f_c633);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -65,6 +67,7 @@ async fn fishing_process_tick_moves_before_applying_inertia() {
     assert_eq!(bobber.entity.pos.load().y, 70.470_000_000_670_55);
     assert_eq!(bobber.entity.velocity.load().x, 0.92);
     assert_eq!(bobber.entity.velocity.load().y, 0.432_400_000_616_908_1);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -99,6 +102,7 @@ async fn fishing_external_removal_clears_owner_immediately_with_a_retained_arc()
         owner.player.fishing_bobber.load(Relaxed),
         new_hook.entity.entity_id
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -158,4 +162,5 @@ async fn fishing_offhand_packet_uses_its_enchantments_and_durability_with_two_ro
             .are_items_and_components_equal(&main_rod)
     );
     assert_eq!(owner.player.inventory().off_hand_item().get_damage(), 13);
+    crate::server::fixture_lifecycle::finish().await;
 }

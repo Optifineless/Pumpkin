@@ -84,6 +84,7 @@ async fn verification3_spear_enchantment_knockback_sends_then_restores() {
         victim.player.get_entity().velocity.load(),
         Vector3::new(0.05, 0.4, 0.6)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -122,4 +123,5 @@ async fn verification4_spear_first_motion_reset_aborts_enchantment_impulse() {
         old,
         "a stale first send must abort before enchantment knockback"
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

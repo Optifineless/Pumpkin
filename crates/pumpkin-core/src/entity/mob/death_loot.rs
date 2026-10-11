@@ -166,6 +166,7 @@ mod death_loot_tests {
             assert!(mob.should_drop_loot());
             assert_eq!(mob.should_drop_experience(), kind != &EntityType::TADPOLE);
         }
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]

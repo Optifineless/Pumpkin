@@ -37,6 +37,7 @@ async fn loaded_invisibility_restores_flag() {
     let (_temp, loaded) = round_trip_effects(&[&StatusEffect::INVISIBILITY]);
     assert!(loaded.has_effect(&StatusEffect::INVISIBILITY));
     assert!(loaded.entity.invisible.load(Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -44,6 +45,7 @@ async fn loaded_glowing_restores_flag() {
     let (_temp, loaded) = round_trip_effects(&[&StatusEffect::GLOWING]);
     assert!(loaded.has_effect(&StatusEffect::GLOWING));
     assert!(loaded.entity.glowing.load(Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -55,6 +57,7 @@ async fn loaded_visible_effect_restores_particle_metadata() {
         tracked_data::living_entity::EFFECT_PARTICLES,
         EffectParticles(vec![EffectParticle::from_effect(&effect)]),
     ));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -65,6 +68,7 @@ async fn loaded_ambient_effect_restores_ambient_metadata() {
             .entity
             .set_synced_data(tracked_data::living_entity::EFFECT_AMBIENCE_ID, true,)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -72,13 +76,16 @@ async fn loaded_effects_preserve_saved_attributes_and_absorption() {
     let (_temp, loaded) = round_trip_effects(&[&StatusEffect::SPEED, &StatusEffect::ABSORPTION]);
     assert!(loaded.has_effect(&StatusEffect::SPEED));
     assert!(loaded.has_effect(&StatusEffect::ABSORPTION));
-    let speed = loaded.attributes.read().unwrap();
-    let speed = &speed[&Attributes::MOVEMENT_SPEED.id];
-    assert_eq!(speed.modifiers.len(), 1);
-    assert!(speed.modifiers[0].permanent);
-    assert!((speed.modifiers[0].amount - 0.2).abs() < 0.000_001);
-    assert_eq!(loaded.get_attribute_value(&Attributes::MAX_ABSORPTION), 4.0);
-    assert_eq!(loaded.absorption.load(), 1.0);
+    {
+        let speed = loaded.attributes.read().unwrap();
+        let speed = &speed[&Attributes::MOVEMENT_SPEED.id];
+        assert_eq!(speed.modifiers.len(), 1);
+        assert!(speed.modifiers[0].permanent);
+        assert!((speed.modifiers[0].amount - 0.2).abs() < 0.000_001);
+        assert_eq!(loaded.get_attribute_value(&Attributes::MAX_ABSORPTION), 4.0);
+        assert_eq!(loaded.absorption.load(), 1.0);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -100,8 +107,11 @@ async fn loaded_effect_metadata_does_not_replay_attribute_modifiers() {
     ));
     loaded.read_living_nbt_non_mut(&saved);
     assert!(loaded.has_effect(&StatusEffect::SPEED));
-    let attributes = loaded.attributes.read().unwrap();
-    let speed = &attributes[&Attributes::MOVEMENT_SPEED.id];
-    assert_eq!(speed.modifiers.len(), 1);
-    assert_eq!(speed.modifiers[0].amount, 0.125);
+    {
+        let attributes = loaded.attributes.read().unwrap();
+        let speed = &attributes[&Attributes::MOVEMENT_SPEED.id];
+        assert_eq!(speed.modifiers.len(), 1);
+        assert_eq!(speed.modifiers[0].amount, 0.125);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }

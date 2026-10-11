@@ -300,6 +300,7 @@ mod tests {
         assert!(player.damage_item_in_slot(&EquipmentSlot::MAIN_HAND, 1));
         assert_eq!(player.inventory.get_slot(0).get_damage(), 1);
         assert_eq!(player.living_entity.damage_entry_count(), before);
+        crate::server::fixture_lifecycle::finish().await;
     }
 
     #[test]
@@ -427,5 +428,6 @@ mod tests {
             .get(&EquipmentSlot::MAIN_HAND);
         assert_eq!(remaining.uid, replacement.uid);
         assert_eq!(remaining.get_damage(), 0);
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

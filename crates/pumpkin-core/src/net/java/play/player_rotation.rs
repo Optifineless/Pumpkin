@@ -3,7 +3,8 @@ use super::*;
 
 impl JavaClient {
     pub fn handle_rotation(&self, player: &Player, rotation: &SPlayerRotation) {
-        if !player.has_client_loaded() {
+        let _life = player.living_entity.own_damage();
+        if player.living_entity.is_respawning() || !player.has_client_loaded() {
             return;
         }
         if !rotation.yaw.is_finite() || !rotation.pitch.is_finite() {

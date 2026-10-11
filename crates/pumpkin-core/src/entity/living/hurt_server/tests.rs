@@ -80,6 +80,7 @@ async fn death_integration_shield_credit_obeys_cooldown_acceptance() {
             .get_killer_entry()
             .is_none()
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -146,6 +147,7 @@ async fn death_integration_armored_excess_wears_once_and_drops_the_worn_stack() 
         .collect();
     assert_eq!(dropped_armor.len(), 1);
     assert_eq!(dropped_armor[0].get_damage(), 19);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -172,4 +174,5 @@ async fn damage_pipeline_wears_the_actual_victims_armor_without_a_world_lookup()
             .get_damage(),
         1
     );
+    crate::server::fixture_lifecycle::finish().await;
 }

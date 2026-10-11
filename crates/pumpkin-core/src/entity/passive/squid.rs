@@ -307,5 +307,6 @@ mod death_memory_tests {
             .touching_water
             .store(true, Ordering::Relaxed);
         assert!(SquidFleeGoal::attacker(living).is_some());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

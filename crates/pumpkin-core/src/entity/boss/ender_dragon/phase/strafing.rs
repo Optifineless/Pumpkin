@@ -273,5 +273,6 @@ mod review_tests {
             .unwrap();
         assert_eq!(cloud.get_entity().pos.load(), hit);
         assert!(fireball.get_entity().is_removed());
+        crate::server::fixture_lifecycle::finish().await;
     }
 }

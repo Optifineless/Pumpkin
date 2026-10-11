@@ -62,6 +62,7 @@ async fn projectile_ticks_refresh_water_and_advance_portal_lifecycle() {
         server.block_registry.clone(),
         Arc::downgrade(&server),
     ));
+    crate::server::fixture_lifecycle::track_world(&end);
     let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
     chunk.set_block_absolute_y(2, 64, 2, Block::END_PORTAL.default_state.id);
     end.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
@@ -100,6 +101,7 @@ async fn projectile_ticks_refresh_water_and_advance_portal_lifecycle() {
             .load(Ordering::Relaxed)
             > 0
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -128,6 +130,7 @@ async fn trident_reaches_contact_and_sweeps_fire_before_breeze_deflection() {
     assert_eq!(outgoing.z, 0.0);
     assert!(trident.entity.fire_ticks.load(Ordering::Relaxed) > 0);
     assert!(!trident.in_ground.load(Ordering::Relaxed));
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -169,6 +172,7 @@ async fn llama_spit_moves_with_original_velocity_and_continues_after_entity_hit(
     );
     spit.tick(&spit, &server);
     assert!(spit.get_entity().pos.load().x > 8.0);
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -206,6 +210,7 @@ async fn arrow_collision_resolves_owner_once_for_sixty_four_candidates() {
         ),
         (1, 1)
     );
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -239,4 +244,5 @@ async fn resolved_projectile_owner_is_cached_until_removal() {
         replacement.entity.entity_id
     );
     assert_eq!(arrow.projectile.owner_lookups.load(Ordering::Relaxed), 2);
+    crate::server::fixture_lifecycle::finish().await;
 }

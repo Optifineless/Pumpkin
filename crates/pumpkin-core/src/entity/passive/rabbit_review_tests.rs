@@ -57,42 +57,45 @@ async fn rabbit_review_path_node_jump_height() {
     world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
     let rabbit = rabbit(&world);
     let node = BlockPos::new(10, 65, 8);
-    let mut navigation = rabbit.mob_entity.navigator.lock().unwrap();
-    assert!(navigation.move_to_path(
-        Some(Path::new(vec![Node::new(node)], node, true)),
-        0.6,
-        &rabbit.mob_entity.living_entity,
-    ));
-    navigation.tick(&rabbit.mob_entity, rabbit.as_ref());
-    assert_eq!(navigation.next_move_target().unwrap().0.y, 64.5);
-    drop(navigation);
-    rabbit
-        .mob_entity
-        .move_control
-        .lock()
-        .unwrap()
-        .set_wanted_position(10.5, 64.0, 8.5, 0.6);
-    assert!(!rabbit.mob_entity.living_entity.jumping.load(Relaxed));
-    assert!((rabbit.rabbit_jump_power_scale() - 1.190_476_2).abs() < 1e-7);
+    {
+        let mut navigation = rabbit.mob_entity.navigator.lock().unwrap();
+        assert!(navigation.move_to_path(
+            Some(Path::new(vec![Node::new(node)], node, true)),
+            0.6,
+            &rabbit.mob_entity.living_entity,
+        ));
+        navigation.tick(&rabbit.mob_entity, rabbit.as_ref());
+        assert_eq!(navigation.next_move_target().unwrap().0.y, 64.5);
+        drop(navigation);
+        rabbit
+            .mob_entity
+            .move_control
+            .lock()
+            .unwrap()
+            .set_wanted_position(10.5, 64.0, 8.5, 0.6);
+        assert!(!rabbit.mob_entity.living_entity.jumping.load(Relaxed));
+        assert!((rabbit.rabbit_jump_power_scale() - 1.190_476_2).abs() < 1e-7);
 
-    // A finished path cannot request height; wanted Y remains an independent condition.
-    rabbit
-        .mob_entity
-        .navigator
-        .lock()
-        .unwrap()
-        .get_path_mut()
-        .unwrap()
-        .advance();
-    assert!((rabbit.rabbit_jump_power_scale() - 0.476_190_5).abs() < 1e-7);
-    rabbit
-        .mob_entity
-        .move_control
-        .lock()
-        .unwrap()
-        .set_wanted_position(10.5, 65.0, 8.5, 0.6);
-    rabbit.mob_entity.living_entity.jumping.store(true, Relaxed);
-    assert!((rabbit.rabbit_jump_power_scale() - 1.190_476_2).abs() < 1e-7);
+        // A finished path cannot request height; wanted Y remains an independent condition.
+        rabbit
+            .mob_entity
+            .navigator
+            .lock()
+            .unwrap()
+            .get_path_mut()
+            .unwrap()
+            .advance();
+        assert!((rabbit.rabbit_jump_power_scale() - 0.476_190_5).abs() < 1e-7);
+        rabbit
+            .mob_entity
+            .move_control
+            .lock()
+            .unwrap()
+            .set_wanted_position(10.5, 65.0, 8.5, 0.6);
+        rabbit.mob_entity.living_entity.jumping.store(true, Relaxed);
+        assert!((rabbit.rabbit_jump_power_scale() - 1.190_476_2).abs() < 1e-7);
+    };
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test]
@@ -143,6 +146,7 @@ async fn rabbit_review_killer_target_order() {
         );
         assert_eq!(sounds(&mut witness, Sound::EntityRabbitJump).len(), 2);
     }
+    crate::server::fixture_lifecycle::finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -176,4 +180,5 @@ async fn rabbit_review_successful_hit_sound() {
     rabbit.set_variant(RabbitVariant::Brown);
     rabbit.play_attack_sound();
     assert!(sounds(&mut witness, Sound::EntityRabbitAttack).is_empty());
+    crate::server::fixture_lifecycle::finish().await;
 }

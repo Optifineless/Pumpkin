@@ -80,4 +80,5 @@ async fn silk_touch_hive_drop_bundle_persistence_placement_keeps_occupants() {
     placed.apply_item_components(&ItemStack::new(1, &Item::BEEHIVE));
     assert!(placed.bees.lock().unwrap().as_ref().unwrap().is_empty());
     assert!(world.level.shutdown().await.is_ok());
+    crate::server::fixture_lifecycle::finish().await;
 }
