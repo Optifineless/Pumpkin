@@ -64,10 +64,10 @@ impl ItemBehaviour for EndCrystalItem {
         end_crystal.set_show_bottom(false);
         item.decrement_unless_creative(player.gamemode.load(), 1);
 
-        if let Some(ref fight_mutex) = world.dragon_fight
-            && let Ok(mut fight) = fight_mutex.lock()
-        {
-            fight.try_respawn(&world);
+        if let Some(ref fight_mutex) = world.dragon_fight {
+            crate::world::dragon_fight::DragonFight::with_fight(fight_mutex, &world, |fight| {
+                fight.try_respawn(&world);
+            });
         }
 
         BlockActionResult::Success

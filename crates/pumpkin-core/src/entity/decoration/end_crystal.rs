@@ -113,20 +113,10 @@ impl EntityBase for EndCrystalEntity {
             world.run_explosion(&explosion);
         }
 
-        if let Some(ref fight_mutex) = world.dragon_fight {
-            // EndCrystal.onDestroyedBy: spawn callbacks can re-enter a locked fight.
-            match fight_mutex.try_lock() {
-                Ok(mut fight) => fight.on_crystal_destroyed(&world, self.entity.entity_uuid),
-                Err(std::sync::TryLockError::Poisoned(error)) => error
-                    .into_inner()
-                    .on_crystal_destroyed(&world, self.entity.entity_uuid),
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    world
-                        .pending_destroyed_crystals
-                        .push(self.entity.entity_uuid);
-                }
-            }
-        }
+        crate::world::dragon_fight::DragonFight::notify_crystal_destroyed(
+            &world,
+            self.entity.entity_uuid,
+        );
 
         true
     }

@@ -4,7 +4,7 @@
 //! Matches vanilla `net.minecraft.world.level.dimension.end.EnderDragonFight` behaviour
 //! and `DragonRespawnStage`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -21,11 +21,25 @@ use super::{
 };
 use crate::entity::{Entity, EntityBase, decoration::end_crystal::EndCrystalEntity};
 
+mod fight_actions;
+use fight_actions::{DragonSpawn, FightAction};
+
+mod fight_tick;
+
 mod respawn_actions;
 use respawn_actions::RespawnAction;
 
 #[cfg(test)]
 mod respawn_tests;
+
+#[cfg(test)]
+mod callback_tests;
+
+#[cfg(test)]
+mod removal_lock_tests;
+
+#[cfg(test)]
+mod packet_callback_tests;
 
 // ── Constants (match vanilla exactly) ────────────────────────────────────────
 
@@ -59,6 +73,7 @@ pub enum DragonRespawnStage {
 
 // ── DragonFight ───────────────────────────────────────────────────────────────
 
+/// `EnderDragonFight` state; use `with_fight` to dispatch recorded world effects.
 pub struct DragonFight {
     // ── Persistent state (SavedData in vanilla) ───────────────────────────────
     pub needs_state_scanning: bool,
@@ -82,6 +97,8 @@ pub struct DragonFight {
     // ── Boss bar ──────────────────────────────────────────────────────────────
     bossbar_uuid: Uuid,
     bossbar_players: Vec<Uuid>,
+    actions: Vec<FightAction>,
+    executing_actions: bool,
 }
 
 impl Default for DragonFight {
@@ -130,6 +147,8 @@ impl DragonFight {
             ticks_since_last_player_scan: TIME_BETWEEN_PLAYER_SCANS + 1,
             bossbar_uuid: Uuid::new_v4(),
             bossbar_players: Vec::new(),
+            actions: Vec::new(),
+            executing_actions: false,
         }
     }
 
@@ -157,68 +176,6 @@ impl DragonFight {
 
     // ── Main tick ─────────────────────────────────────────────────────────────
 
-    pub fn tick(fight_mutex: &Mutex<Self>, world: &Arc<World>) {
-        let mut fight = fight_mutex
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        fight.drain_crystal_notifications(world);
-
-        // 1. Update boss-bar recipients every 20 ticks
-        fight.ticks_since_last_player_scan += 1;
-        if fight.ticks_since_last_player_scan >= TIME_BETWEEN_PLAYER_SCANS {
-            fight.update_players(world);
-            fight.ticks_since_last_player_scan = 0;
-        }
-
-        // Nothing to do without nearby players
-        if fight.bossbar_players.is_empty() {
-            return;
-        }
-
-        if !fight.is_arena_loaded(world) {
-            return;
-        }
-
-        // 2. One-time state scan on the first populated tick
-        if fight.needs_state_scanning {
-            fight.scan_state(world);
-            fight.needs_state_scanning = false;
-            fight.drain_crystal_notifications(world);
-        }
-
-        // 3. Respawn sequence
-        if let Some(stage) = fight.respawn_stage {
-            let action = fight.tick_respawn_stage(world, stage);
-            fight.respawn_time += 1;
-            fight.drain_crystal_notifications(world);
-            // DragonRespawnStage.tick: explosions notify the fight synchronously.
-            drop(fight);
-            if let Some(action) = action {
-                action.execute(world);
-            }
-            return;
-        }
-
-        // 4. Normal fight ticking
-        if !fight.dragon_killed {
-            fight.ticks_since_dragon_seen += 1;
-            if fight.dragon_uuid.is_none()
-                || fight.ticks_since_dragon_seen >= MAX_TICKS_BEFORE_DRAGON_RESPAWN
-            {
-                fight.find_or_create_dragon(world);
-                fight.ticks_since_dragon_seen = 0;
-            }
-
-            fight.ticks_since_crystals_scanned += 1;
-            if fight.ticks_since_crystals_scanned >= TIME_BETWEEN_CRYSTAL_SCANS {
-                fight.update_crystal_count(world);
-                fight.ticks_since_crystals_scanned = 0;
-            }
-        }
-        fight.drain_crystal_notifications(world);
-    }
-
     // ── State scanning ────────────────────────────────────────────────────────
 
     pub fn scan_state(&mut self, world: &Arc<World>) {
@@ -238,7 +195,12 @@ impl DragonFight {
             self.spawn_crystals(world);
         }
 
-        // Reconcile any live dragon entity.
+        self.actions
+            .push(FightAction::ReconcileState(active_portal_exists));
+    }
+
+    // EnderDragonFight.scanState reconciles live dragons after placing the podium.
+    fn reconcile_state(&mut self, world: &Arc<World>, active_portal_exists: bool) {
         let existing = {
             let entities = world.entities.load();
             entities
@@ -258,7 +220,7 @@ impl DragonFight {
                     "Found that there's a dragon still alive ({:?}), but we have an active portal. Removing it.",
                     uuid
                 );
-                entity.get_entity().remove();
+                self.actions.push(FightAction::RemoveEntity(entity));
                 self.dragon_uuid = None;
                 self.dragon_killed = true;
             }
@@ -434,35 +396,19 @@ impl DragonFight {
         }
     }
 
+    /// Records a dragon spawn and returns its planned UUID; dispatch through `with_fight`.
     pub fn create_new_dragon(&mut self, world: &Arc<World>) -> Option<Uuid> {
         if !self.previously_killed && self.find_exit_portal(world).is_none() {
             self.spawn_exit_portal(world, false);
         }
 
-        let uuid = Uuid::new_v4();
-        let spawn_y = self.origin.0.y + DRAGON_SPAWN_Y;
-        let position = Vector3::new(
-            self.origin.0.x as f64 + 0.5,
-            spawn_y as f64,
-            self.origin.0.z as f64 + 0.5,
-        );
-        let dragon =
-            crate::entity::r#type::from_type(&EntityType::ENDER_DRAGON, position, world, uuid);
-
-        if let Some(dragon_entity) = dragon
-            .cast_any()
-            .downcast_ref::<crate::entity::boss::ender_dragon::EnderDragonEntity>(
-        ) {
-            dragon_entity.set_fight_origin(self.exit_portal_location.unwrap_or(self.origin));
-        }
-
-        world.spawn_entity_non_save(dragon);
-        self.dragon_uuid = Some(uuid);
-        self.dragon_killed = false;
-        info!("Spawned ender dragon {:?}.", uuid);
+        let spawn = DragonSpawn::new(self);
+        let uuid = spawn.uuid;
+        self.actions.push(FightAction::SpawnDragon(spawn));
         Some(uuid)
     }
 
+    /// Updates dragon state and records boss-bar packets; dispatch through `with_fight`.
     pub fn update_dragon(
         &mut self,
         world: &Arc<World>,
@@ -520,16 +466,10 @@ impl DragonFight {
         if !self.previously_killed {
             let podium_pos = self.exit_portal_location.unwrap_or(self.origin);
             let egg_pos = BlockPos::new(podium_pos.0.x, podium_pos.0.y + 4, podium_pos.0.z);
-            world.set_block_state(
-                &egg_pos,
-                Block::DRAGON_EGG.default_state.id,
-                BlockFlags::NOTIFY_LISTENERS,
-            );
+            self.actions.push(FightAction::PlaceEgg(egg_pos));
         }
 
-        self.previously_killed = true;
-        self.dragon_killed = true;
-        self.dragon_uuid = None;
+        self.actions.push(FightAction::FinishDragonKill);
     }
 
     pub fn update_crystal_count(&mut self, world: &Arc<World>) {
@@ -561,13 +501,6 @@ impl DragonFight {
     }
 
     // ── Crystal destruction ───────────────────────────────────────────────────
-
-    fn drain_crystal_notifications(&mut self, world: &Arc<World>) {
-        // EnderDragonFight.onCrystalDestroyed must abort before the next animation step.
-        while let Some(uuid) = world.pending_destroyed_crystals.pop() {
-            self.on_crystal_destroyed(world, uuid);
-        }
-    }
 
     pub fn on_crystal_destroyed(&mut self, world: &Arc<World>, crystal_uuid: Uuid) {
         if self.respawn_stage.is_some() && self.respawn_crystals.contains(&crystal_uuid) {
@@ -601,7 +534,9 @@ impl DragonFight {
             } else {
                 debug!("Couldn't find a portal, so we made one.");
                 self.spawn_exit_portal(world, true);
-                location = self.exit_portal_location;
+                // EnderDragonFight.tryRespawn scans crystals after portal placement callbacks.
+                self.actions.push(FightAction::TryRespawn);
+                return;
             }
         }
 
@@ -649,21 +584,7 @@ impl DragonFight {
         }
 
         if let Some(loc) = self.find_exit_portal(world).or(self.exit_portal_location) {
-            for dy in -1i32..=4 {
-                for dx in -3i32..=3 {
-                    for dz in -3i32..=3 {
-                        let p = BlockPos::new(loc.0.x + dx, loc.0.y + dy, loc.0.z + dz);
-                        let b = world.get_block(&p);
-                        if b == &Block::BEDROCK || b == &Block::END_PORTAL {
-                            world.set_block_state(
-                                &p,
-                                Block::END_STONE.default_state.id,
-                                BlockFlags::NOTIFY_ALL,
-                            );
-                        }
-                    }
-                }
-            }
+            self.actions.push(FightAction::ClearPortal(loc));
         }
 
         self.respawn_stage = Some(DragonRespawnStage::Start);
@@ -673,19 +594,46 @@ impl DragonFight {
     }
 
     pub fn set_respawn_stage(&mut self, world: &Arc<World>, stage: DragonRespawnStage) {
-        if self.respawn_stage.is_none() {
+        let Some(respawn_stage) = self.respawn_stage else {
             tracing::warn!("Dragon respawn isn't in progress, can't skip ahead in the animation.");
             return;
-        }
+        };
 
-        self.respawn_time = 0;
         if stage == DragonRespawnStage::End {
-            self.respawn_stage = None;
-            self.dragon_killed = false;
-            self.create_new_dragon(world);
+            // EnderDragonFight.setRespawnStage: commit only after spawn callbacks are reconciled.
+            if !self.previously_killed && self.find_exit_portal(world).is_none() {
+                self.spawn_exit_portal(world, false);
+            }
+            let entities = world.entities.load();
+            let crystals = self
+                .respawn_crystals
+                .iter()
+                .filter_map(|uuid| {
+                    entities
+                        .iter()
+                        .find(|e| e.get_entity().entity_uuid == *uuid)
+                        .cloned()
+                })
+                .collect();
+            self.actions.push(FightAction::CompleteRespawn {
+                spawn: DragonSpawn::new(self),
+                crystals,
+                respawn_stage,
+                respawn_crystals: self.respawn_crystals.clone(),
+            });
         } else {
+            self.respawn_time = 0;
             self.respawn_stage = Some(stage);
         }
+    }
+
+    // DragonRespawnStage.tick uses the same roar event at each animation cue.
+    fn respawn_roar(&mut self, pos: BlockPos) {
+        self.actions.push(FightAction::WorldEvent(
+            WorldEvent::AnimationDragonSummonRoar,
+            pos,
+            0,
+        ));
     }
 
     fn tick_respawn_stage(
@@ -724,11 +672,7 @@ impl DragonFight {
             DragonRespawnStage::PreparingToSummonPillars => {
                 if time < 100 {
                     if time == 0 || time == 50 || time == 51 || time == 52 || time >= 95 {
-                        world.sync_world_event(
-                            WorldEvent::AnimationDragonSummonRoar,
-                            origin_target,
-                            0,
-                        );
+                        self.respawn_roar(origin_target);
                     }
                 } else {
                     self.set_respawn_stage(world, DragonRespawnStage::SummoningPillars);
@@ -759,15 +703,8 @@ impl DragonFight {
             DragonRespawnStage::SummoningDragon => {
                 if time >= 100 {
                     self.set_respawn_stage(world, DragonRespawnStage::End);
-                    self.reset_spike_crystals(world);
-                    return Some(RespawnAction::DestroyRespawnCrystals(
-                        live_crystals
-                            .into_iter()
-                            .map(|(entity, _)| entity)
-                            .collect(),
-                    ));
                 } else if time >= 80 {
-                    world.sync_world_event(WorldEvent::AnimationDragonSummonRoar, origin_target, 0);
+                    self.respawn_roar(origin_target);
                 } else if time == 0 {
                     let spikes = Self::get_spikes();
                     for spike in &spikes {
@@ -790,7 +727,7 @@ impl DragonFight {
                         }
                     }
                 } else if time < 5 {
-                    world.sync_world_event(WorldEvent::AnimationDragonSummonRoar, origin_target, 0);
+                    self.respawn_roar(origin_target);
                 }
             }
             DragonRespawnStage::End => {}
@@ -896,7 +833,7 @@ impl DragonFight {
         self.gateways.clear();
     }
 
-    pub fn spawn_new_gateway(&mut self, world: &Arc<World>) {
+    pub fn spawn_new_gateway(&mut self, _world: &Arc<World>) {
         use rand::seq::SliceRandom;
 
         if self.gateways.is_empty() {
@@ -913,7 +850,7 @@ impl DragonFight {
             let z = (GATEWAY_DISTANCE * angle.sin()).floor() as i32;
             let pos = BlockPos::new(x, GATEWAY_Y, z);
             info!("Spawning new end gateway at pos {:?}", pos);
-            Self::spawn_new_gateway_at(world, pos);
+            self.actions.push(FightAction::SpawnGateway(pos));
         }
     }
 
@@ -961,7 +898,11 @@ impl DragonFight {
 
     // ── Crystal spawning ──────────────────────────────────────────────────────
 
-    pub fn spawn_crystals(&mut self, world: &Arc<World>) {
+    pub fn spawn_crystals(&mut self, _world: &Arc<World>) {
+        self.actions.push(FightAction::SpawnCrystals);
+    }
+
+    fn spawn_initial_crystals(world: &Arc<World>) {
         let spikes = Self::get_spikes();
         let entities = world.entities.load();
         for spike in &spikes {
@@ -1018,7 +959,7 @@ impl DragonFight {
         }
 
         if let Some(loc) = self.exit_portal_location {
-            super::end_podium::place(world, loc, active);
+            self.actions.push(FightAction::PlacePortal(loc, active));
         }
     }
 
@@ -1038,18 +979,27 @@ impl DragonFight {
         }
     }
 
-    fn update_bossbar_health(&self, world: &Arc<World>, health: f32) {
+    // ServerBossEvent.broadcast: packet translation can re-enter the fight.
+    fn update_bossbar_health(&mut self, world: &Arc<World>, health: f32) {
         for player in world.players.load().iter() {
             if self.bossbar_players.contains(&player.gameprofile.id) {
-                player.update_bossbar_health(&self.bossbar_uuid, health);
+                self.actions.push(FightAction::BossbarHealth(
+                    player.clone(),
+                    self.bossbar_uuid,
+                    health,
+                ));
             }
         }
     }
 
-    fn update_bossbar_title(&self, world: &Arc<World>, title: &TextComponent) {
+    fn update_bossbar_title(&mut self, world: &Arc<World>, title: &TextComponent) {
         for player in world.players.load().iter() {
             if self.bossbar_players.contains(&player.gameprofile.id) {
-                player.update_bossbar_title(&self.bossbar_uuid, title.clone());
+                self.actions.push(FightAction::BossbarTitle(
+                    player.clone(),
+                    self.bossbar_uuid,
+                    title.clone(),
+                ));
             }
         }
     }
@@ -1057,7 +1007,10 @@ impl DragonFight {
     fn remove_all_bossbar(&mut self, world: &Arc<World>) {
         for player in world.players.load().iter() {
             if self.bossbar_players.contains(&player.gameprofile.id) {
-                player.remove_bossbar(self.bossbar_uuid);
+                self.actions.push(FightAction::RemoveBossbar(
+                    player.clone(),
+                    self.bossbar_uuid,
+                ));
             }
         }
         self.bossbar_players.clear();
@@ -1087,7 +1040,8 @@ impl DragonFight {
                 if !self.dragon_killed
                     && let Some(p) = players.iter().find(|p| p.gameprofile.id == uid)
                 {
-                    p.send_bossbar(&self.make_bossbar());
+                    self.actions
+                        .push(FightAction::AddBossbar(p.clone(), self.make_bossbar()));
                 }
                 self.bossbar_players.push(uid);
             }
@@ -1103,7 +1057,10 @@ impl DragonFight {
 
         for uid in &to_remove {
             if let Some(player) = players.iter().find(|player| &player.gameprofile.id == uid) {
-                player.remove_bossbar(self.bossbar_uuid);
+                self.actions.push(FightAction::RemoveBossbar(
+                    player.clone(),
+                    self.bossbar_uuid,
+                ));
             }
             self.bossbar_players.retain(|u| u != uid);
         }

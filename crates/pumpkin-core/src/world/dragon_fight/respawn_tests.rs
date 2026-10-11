@@ -10,17 +10,17 @@ use futures::future::BoxFuture;
 use pumpkin_config::world::LevelConfig;
 use pumpkin_data::{damage::DamageType, dimension::Dimension};
 use pumpkin_world::level::Level;
-use std::{sync::mpsc, thread, time::Duration};
+use std::sync::Mutex;
 
-struct Fixture {
-    world: Arc<World>,
-    server: Arc<Server>,
+pub(super) struct Fixture {
+    pub(super) world: Arc<World>,
+    pub(super) server: Arc<Server>,
     _player: TestPlayer,
     _dir: tempfile::TempDir,
 }
 
 impl Fixture {
-    fn new(stage: DragonRespawnStage, time: i32) -> Self {
+    pub(super) fn new(stage: DragonRespawnStage, time: i32) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let server = combat_test_support::server(dir.path());
         let world = Arc::new(World::load(
@@ -60,7 +60,7 @@ impl Fixture {
         fixture
     }
 
-    fn publish_area(&self, x: i32, z: i32) {
+    pub(super) fn publish_area(&self, x: i32, z: i32) {
         for cx in (x - 12) >> 4..=(x + 12) >> 4 {
             for cz in (z - 12) >> 4..=(z + 12) >> 4 {
                 let pos = Vector2::new(cx, cz);
@@ -71,7 +71,7 @@ impl Fixture {
         }
     }
 
-    fn crystal(&self, pos: Vector3<f64>, respawn: bool) -> Arc<EndCrystalEntity> {
+    pub(super) fn crystal(&self, pos: Vector3<f64>, respawn: bool) -> Arc<EndCrystalEntity> {
         let crystal = Arc::new(EndCrystalEntity::new(Entity::new(
             self.world.clone(),
             pos,
@@ -90,23 +90,6 @@ impl Fixture {
         }
         crystal
     }
-}
-
-fn completes_within_timeout(operation: impl FnOnce() + Send + 'static) {
-    let (send, recv) = mpsc::channel();
-    let runtime = tokio::runtime::Handle::current();
-    let worker = thread::spawn(move || {
-        let _runtime = runtime.enter();
-        operation();
-        send.send(()).unwrap();
-    });
-    // A stuck worker is detached on timeout; never join a deadlocked thread.
-    assert_eq!(
-        recv.recv_timeout(Duration::from_secs(5)),
-        Ok(()),
-        "dragon fight operation timed out"
-    );
-    worker.join().unwrap();
 }
 
 struct Observation {
@@ -130,6 +113,10 @@ impl EventHandler<EntityExplodeEvent> for ExplosionObserver {
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let fight = self.world.dragon_fight.as_ref().unwrap().try_lock();
+            assert!(
+                fight.is_ok(),
+                "explosion callback would block on dragon_fight"
+            );
             self.observed.lock().unwrap().push(Observation {
                 source_id: event.entity_id,
                 unlocked: fight.is_ok(),
@@ -166,10 +153,7 @@ async fn summoning_pillars_explosion_completes_without_deadlock() {
         .server
         .plugin_manager
         .register::<EntityExplodeEvent, _>(observer.clone(), EventPriority::Normal, true);
-    let world = fixture.world.clone();
-    completes_within_timeout(move || {
-        DragonFight::tick(world.dragon_fight.as_ref().unwrap(), &world);
-    });
+    DragonFight::tick(fixture.world.dragon_fight.as_ref().unwrap(), &fixture.world);
     assert!(observer.observed.lock().unwrap()[0].unlocked);
     assert!(old_crystal.get_entity().is_removed());
     assert!(!respawn.get_entity().is_removed());
@@ -219,10 +203,7 @@ async fn summoning_dragon_explodes_and_removes_crystals_without_deadlock() {
         .server
         .plugin_manager
         .register::<EntityExplodeEvent, _>(observer.clone(), EventPriority::Normal, true);
-    let world = fixture.world.clone();
-    completes_within_timeout(move || {
-        DragonFight::tick(world.dragon_fight.as_ref().unwrap(), &world);
-    });
+    DragonFight::tick(fixture.world.dragon_fight.as_ref().unwrap(), &fixture.world);
     assert!(
         crystals
             .iter()
@@ -259,8 +240,8 @@ async fn destroying_respawn_crystal_aborts_before_animation() {
         let fixture = Fixture::new(DragonRespawnStage::SummoningPillars, 39);
         let crystal = fixture.crystal(Vector3::new(0.5, 65.0, 3.5), true);
         let world = fixture.world.clone();
-        completes_within_timeout(move || {
-            // Spawn callbacks run under this guard during DragonFight::scan_state.
+        {
+            // Simulate a notification contending with a fight state update.
             let guard =
                 locked_callback.then(|| world.dragon_fight.as_ref().unwrap().lock().unwrap());
             assert!(crystal.damage_with_context(
@@ -273,7 +254,7 @@ async fn destroying_respawn_crystal_aborts_before_animation() {
             ));
             drop(guard);
             DragonFight::tick(world.dragon_fight.as_ref().unwrap(), &world);
-        });
+        };
         {
             let fight = fixture.world.dragon_fight.as_ref().unwrap().lock().unwrap();
             assert!(fight.respawn_stage.is_none());

@@ -56,7 +56,7 @@ use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
     block::{OnScheduledTickArgs, registry::BlockRegistry},
     command::client_suggestions,
-    entity::{Entity, EntityBase, RemovalReason, player::Player},
+    entity::{Entity, EntityBase, player::Player},
     error::PumpkinError,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
     plugin::{
@@ -375,8 +375,8 @@ pub struct World {
     pub raids: std::sync::Mutex<raid::Raids>,
     /// End Dragon fight manager (only present in `THE_END` dimension).
     pub dragon_fight: Option<std::sync::Mutex<dragon_fight::DragonFight>>,
-    /// Crystal notifications deferred by callbacks that re-enter the fight mutex.
-    pub(crate) pending_destroyed_crystals: crossbeam::queue::SegQueue<Uuid>,
+    /// Serializes crystal removal marks and queued notifications with respawn completion.
+    pub(crate) pending_destroyed_crystals: std::sync::Mutex<Vec<Uuid>>,
     pub spawn_state: ArcSwap<SpawnState>,
     pub active_chunks: RwLock<FxHashSet<Vector2<i32>>>,
     active_chunk_tick_snapshot: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
@@ -550,7 +550,7 @@ impl World {
             villager_poi: std::sync::Mutex::new(villager_poi::VillagerPoiStorage::default()),
             raids: std::sync::Mutex::new(raid::Raids::default()),
             dragon_fight,
-            pending_destroyed_crystals: crossbeam::queue::SegQueue::new(),
+            pending_destroyed_crystals: std::sync::Mutex::new(Vec::new()),
             spawn_state: ArcSwap::new(Arc::new(SpawnState::empty())),
             ticking_experience_orbs: arc_swap::ArcSwapOption::empty(),
             active_chunks: RwLock::new(FxHashSet::default()),
@@ -5080,11 +5080,7 @@ impl World {
 
     pub fn remove_entity(&self, entity: &dyn EntityBase) {
         let base_entity = entity.get_entity();
-        if base_entity
-            .removal_reason
-            .swap(Some(RemovalReason::Discarded))
-            .is_some()
-        {
+        if !self.begin_entity_removal(base_entity) {
             return;
         }
         self.clear_fishing_hook_owner(base_entity);

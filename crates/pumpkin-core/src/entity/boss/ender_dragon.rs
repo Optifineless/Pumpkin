@@ -799,7 +799,7 @@ impl EnderDragonEntity {
             let world = self.mob_entity.living_entity.entity.world.load();
             if let Some(ref fight_mutex) = world.dragon_fight {
                 let living = &self.mob_entity.living_entity;
-                if let Ok(mut fight) = fight_mutex.lock() {
+                crate::world::dragon_fight::DragonFight::with_fight(fight_mutex, &world, |fight| {
                     let custom_name = living.entity.custom_name.load();
                     fight.update_dragon(
                         &world,
@@ -808,7 +808,7 @@ impl EnderDragonEntity {
                         living.get_max_health(),
                         custom_name.as_ref().as_ref(),
                     );
-                }
+                });
             }
         }
 

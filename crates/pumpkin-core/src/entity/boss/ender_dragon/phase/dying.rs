@@ -129,10 +129,9 @@ impl super::Phase for DyingPhase {
             ExperienceOrbEntity::spawn(&world, pos, (xp_count as f32 * 0.2) as u32);
 
             if let Some(ref fight_mutex) = world.dragon_fight {
-                fight_mutex
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .set_dragon_killed(&world, entity.entity_uuid);
+                crate::world::dragon_fight::DragonFight::with_fight(fight_mutex, &world, |fight| {
+                    fight.set_dragon_killed(&world, entity.entity_uuid);
+                });
             }
             for part in &dragon.parts {
                 part.entity.remove();
