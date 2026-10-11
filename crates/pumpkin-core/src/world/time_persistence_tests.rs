@@ -213,6 +213,19 @@ async fn dimension_clocks_restart_independently_of_global_game_time() {
             worlds[0].tick_environment();
         }
         dispatcher.execute_input("time pause", &source).unwrap();
+        let nether_source = source.with_world(worlds[1].clone());
+        dispatcher
+            .execute_input("time set 21000", &nether_source)
+            .unwrap();
+        dispatcher
+            .execute_input("time rate 1.5", &nether_source)
+            .unwrap();
+        for _ in 0..3 {
+            worlds[1].tick_environment();
+        }
+        dispatcher
+            .execute_input("time pause", &nether_source)
+            .unwrap();
         let nether = worlds[1].level_time.lock().unwrap();
         assert_eq!(
             (
@@ -221,7 +234,7 @@ async fn dimension_clocks_restart_independently_of_global_game_time() {
                 nether.rate,
                 nether.paused
             ),
-            (19000, 0.25, 0.5, false)
+            (21004, 0.5, 1.5, true)
         );
         let end = worlds[2].level_time.lock().unwrap();
         assert_eq!(
@@ -234,7 +247,7 @@ async fn dimension_clocks_restart_independently_of_global_game_time() {
     with_worlds(directory.path(), &dimensions, |_, worlds| {
         for (world, expected) in worlds.iter().zip([
             (6007, 0.5, 2.5, true),
-            (19000, 0.25, 0.5, false),
+            (21004, 0.5, 1.5, true),
             (0, 0.0, 1.0, false),
         ]) {
             let time = world.level_time.lock().unwrap();

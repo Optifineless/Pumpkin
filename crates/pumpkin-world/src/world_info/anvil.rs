@@ -473,18 +473,12 @@ impl WorldInfoWriter for AnvilLevelInfo {
         // ── Write data/minecraft/*.dat files ─────────────────────────────────
 
         // game_rules.dat
-        if let Err(e) = write_game_rules(level_folder, &info.game_rules, data_version) {
-            error!("Failed to write game_rules.dat: {e}");
-        }
+        write_game_rules(level_folder, &info.game_rules, data_version)?;
 
         // world_gen_settings.dat
-        if let Err(e) =
-            write_world_gen_settings(level_folder, &info.world_gen_settings, data_version)
-        {
-            error!("Failed to write world_gen_settings.dat: {e}");
-        }
+        write_world_gen_settings(level_folder, &info.world_gen_settings, data_version)?;
 
-        // ServerClockManager.packState persists ClockState; preserve other
+        // ServerClockManager.packState persists live ClockStates; retain unloaded records.
         let mut clocks = read_world_clocks(level_folder);
         clocks.data_version = data_version;
         clocks.clocks.insert(
@@ -497,23 +491,19 @@ impl WorldInfoWriter for AnvilLevelInfo {
             },
         );
 
-        if let Err(e) = write_world_clocks(level_folder, &clocks) {
-            error!("Failed to write world_clocks.dat: {e}");
-        }
+        clocks.clocks.extend(info.dimension_clocks.clone());
+        // An authoritative saved-data failure must reach save-all, rather than report success.
+        write_world_clocks(level_folder, &clocks)?;
 
         // weather.dat
         // WeatherData.CODEC persists all five live fields, not the previous file contents.
         let weather = super::data_files::WeatherData::from_level_data(&level_data);
-        if let Err(e) = write_weather(level_folder, &weather) {
-            error!("Failed to write weather.dat: {e}");
-        }
+        write_weather(level_folder, &weather)?;
 
         // wandering_trader.dat (stub / load-save)
         let mut wandering_trader = read_wandering_trader(level_folder);
         wandering_trader.data_version = data_version;
-        if let Err(e) = write_wandering_trader(level_folder, &wandering_trader) {
-            error!("Failed to write wandering_trader.dat: {e}");
-        }
+        write_wandering_trader(level_folder, &wandering_trader)?;
 
         // custom_boss_events.dat
         if let Err(e) = write_custom_boss_events_stub(level_folder, data_version) {
@@ -957,6 +947,7 @@ mod test {
             day_time_partial_tick: 0.0,
             day_time_rate: 1.0,
             day_time_paused: false,
+            dimension_clocks: std::collections::HashMap::new(),
             difficulty: Difficulty::Normal,
             difficulty_locked: false,
             game_rules: GameRuleRegistry {
@@ -1212,3 +1203,6 @@ mod test {
         assert_eq!(loaded_wt.spawn_chance, 25);
     }
 }
+
+#[cfg(test)]
+mod save_tests;

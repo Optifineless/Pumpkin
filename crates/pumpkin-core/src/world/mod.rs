@@ -349,6 +349,8 @@ pub struct World {
     pub level_time: std::sync::Mutex<LevelTime>,
     /// The type of dimension the world is in.
     pub dimension: Dimension,
+    /// Owns the canonical dimension clock in the server's default save root.
+    pub(crate) saves_default_clock: bool,
     pub sea_level: i32,
     pub min_y: i32,
     /// The world's weather, including rain and thunder levels.
@@ -521,6 +523,7 @@ impl World {
             )),
             level_time: std::sync::Mutex::new(level_time),
             dimension,
+            saves_default_clock: true,
             weather: pumpkin_util::sync::Mutex::new(weather),
             block_registry,
             neighbor_updates: std::sync::Mutex::default(),

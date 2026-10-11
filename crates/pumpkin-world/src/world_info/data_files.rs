@@ -1,6 +1,5 @@
 use std::{
     fs::{self, File},
-    io::BufWriter,
     path::{Path, PathBuf},
 };
 
@@ -12,6 +11,8 @@ use tracing::warn;
 use crate::world_info::{WorldGenSettings, WorldInfoError};
 
 mod atomic;
+#[cfg(test)]
+pub(crate) use atomic::interrupt_file;
 pub use atomic::write_saved_data;
 
 #[cfg(test)]
@@ -190,7 +191,6 @@ pub fn read_weather(level_folder: &Path) -> WeatherData {
 pub fn write_weather(level_folder: &Path, data: &WeatherData) -> Result<(), WorldInfoError> {
     let dir = ensure_minecraft_data_dir(level_folder)?;
     let path = dir.join("weather.dat");
-    let file = File::create(&path)?;
     let mut data_comp = NbtCompound::new();
     data_comp.put_int("clear_weather_time", data.clear_weather_time);
     data_comp.put_int("rain_time", data.rain_time);
@@ -200,8 +200,9 @@ pub fn write_weather(level_folder: &Path, data: &WeatherData) -> Result<(), Worl
     let mut root = NbtCompound::new();
     root.put_int("DataVersion", data.data_version);
     root.put_compound("data", data_comp);
-    pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, BufWriter::new(file))
-        .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
+    // SavedDataStorage.tryWrite owns this document; force a complete atomic replacement.
+    write_saved_data(&path, root)?;
+    Ok(())
 }
 
 #[must_use]
@@ -388,7 +389,6 @@ pub fn write_world_gen_settings(
 ) -> Result<(), WorldInfoError> {
     let dir = ensure_minecraft_data_dir(level_folder)?;
     let path = dir.join("world_gen_settings.dat");
-    let file = File::create(&path)?;
     let mut inner = NbtCompound::new();
     inner.put_int("DataVersion", data_version);
     inner.put_long("seed", settings.seed);
@@ -436,8 +436,9 @@ pub fn write_world_gen_settings(
 
     let mut root = NbtCompound::new();
     root.put_compound("data", inner);
-    pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, BufWriter::new(file))
-        .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
+    // SavedDataStorage.tryWrite owns this document; force a complete atomic replacement.
+    write_saved_data(&path, root)?;
+    Ok(())
 }
 
 #[must_use]
@@ -514,10 +515,10 @@ pub fn write_game_rules(
     let path = dir.join("game_rules.dat");
 
     let compound = game_rules_to_nbt(rules, data_version);
-    let file = File::create(&path)?;
 
-    pumpkin_nbt::nbt_compress::write_gzip_compound_tag(compound, file)
-        .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
+    // SavedDataStorage.tryWrite owns this document; force a complete atomic replacement.
+    write_saved_data(&path, compound)?;
+    Ok(())
 }
 
 pub fn read_world_clocks(level_folder: &Path) -> WorldClocksData {
@@ -654,15 +655,15 @@ pub fn write_wandering_trader(
 ) -> Result<(), WorldInfoError> {
     let dir = ensure_minecraft_data_dir(level_folder)?;
     let path = dir.join("wandering_trader.dat");
-    let file = File::create(&path)?;
     let mut data_comp = NbtCompound::new();
     data_comp.put_int("spawn_delay", data.spawn_delay);
     data_comp.put_int("spawn_chance", data.spawn_chance);
     let mut root = NbtCompound::new();
     root.put_int("DataVersion", data.data_version);
     root.put_compound("data", data_comp);
-    pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, BufWriter::new(file))
-        .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
+    // SavedDataStorage.tryWrite owns this document; force a complete atomic replacement.
+    write_saved_data(&path, root)?;
+    Ok(())
 }
 
 pub fn write_custom_boss_events_stub(

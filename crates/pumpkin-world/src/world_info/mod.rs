@@ -107,6 +107,10 @@ pub struct LevelData {
     #[serde(skip_serializing, default)]
     pub day_time_paused: bool,
 
+    /// Live loaded-dimension snapshots for the clock saved-data owner, never level.dat.
+    #[serde(skip)]
+    pub dimension_clocks: HashMap<String, data_files::DimensionClock>,
+
     /// Remaining ticks of forced-clear weather.
     /// Persisted to `data/minecraft/weather.dat`.
     #[serde(rename = "clearWeatherTime", skip_serializing, default)]
@@ -586,6 +590,7 @@ impl LevelData {
             day_time_partial_tick: 0.0,
             day_time_rate: DEFAULT_CLOCK_RATE,
             day_time_paused: false,
+            dimension_clocks: HashMap::new(),
             clear_weather_time: 0,
             rain_time: 0,
             raining: false,

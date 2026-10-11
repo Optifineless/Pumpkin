@@ -6,6 +6,7 @@ use std::{cell::Cell, io::Write};
 
 thread_local! {
     static FAIL_AFTER_BYTES: Cell<Option<usize>> = const { Cell::new(None) };
+    static TARGET_FILE: Cell<Option<&'static str>> = const { Cell::new(None) };
 }
 
 pub(super) struct InterruptibleWriter<'a> {
@@ -14,10 +15,17 @@ pub(super) struct InterruptibleWriter<'a> {
 }
 
 impl<'a> InterruptibleWriter<'a> {
-    pub(super) fn new(file: &'a mut fs::File) -> Self {
+    pub(super) fn new(file: &'a mut fs::File, path: &Path) -> Self {
         Self {
             file,
-            remaining: FAIL_AFTER_BYTES.get(),
+            remaining: if TARGET_FILE
+                .get()
+                .is_none_or(|target| path.file_name().is_some_and(|name| name == target))
+            {
+                FAIL_AFTER_BYTES.get()
+            } else {
+                None
+            },
         }
     }
 }
@@ -84,4 +92,19 @@ fn interrupted_clock_save_preserves_previous_document_and_recovers() {
     write_world_clocks(directory.path(), &changed).unwrap();
     assert_eq!(read_world_clocks(directory.path()), changed);
     assert_eq!(fs::read(abandoned).unwrap(), [0x1f, 0x8b, 0x08]);
+}
+
+/// Faults only the named production saved-data write on this test's thread.
+pub fn interrupt_file<T>(filename: &'static str, check: impl FnOnce() -> T) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            FAIL_AFTER_BYTES.set(None);
+            TARGET_FILE.set(None);
+        }
+    }
+    FAIL_AFTER_BYTES.set(Some(12));
+    TARGET_FILE.set(Some(filename));
+    let _reset = Reset;
+    check()
 }

@@ -3,6 +3,8 @@ use std::{fs, io, path::Path};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub use tests::interrupt_file;
 
 /// Publishes gzip saved data only after the complete temporary file has been forced to disk.
 /// The parent directory must exist, and callers must serialize saves of the same state.
@@ -16,7 +18,7 @@ pub fn write_saved_data(path: &Path, root: NbtCompound) -> io::Result<()> {
             .create_new(true)
             .open(&temporary)?;
         #[cfg(test)]
-        let output = tests::InterruptibleWriter::new(&mut file);
+        let output = tests::InterruptibleWriter::new(&mut file, path);
         #[cfg(not(test))]
         let output = &mut file;
         write_gzip_compound_tag(root, output).map_err(io::Error::other)?;

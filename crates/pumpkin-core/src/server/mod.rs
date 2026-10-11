@@ -6,6 +6,8 @@ pub(crate) mod scenario;
 #[cfg(test)]
 mod startup_tests;
 #[cfg(test)]
+mod world_info_save_tests;
+#[cfg(test)]
 mod world_info_tests;
 use crate::block::registry::BlockRegistry;
 use crate::command::commands::default_dispatcher;
@@ -532,7 +534,8 @@ impl Server {
 
         let level =
             pumpkin_world::dimension::into_level(dimension.clone(), &config, world_path, seed);
-        let world: World = World::load(level.clone(), l_info, dimension, registry, weak);
+        let mut world: World = World::load(level.clone(), l_info, dimension, registry, weak);
+        world.saves_default_clock = false;
         let world = Arc::new(world);
         let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
         level.world_portal.store(Arc::new(Some(portal)));
@@ -582,23 +585,35 @@ impl Server {
 
     fn level_data_for_save(&self) -> LevelData {
         let mut level_data = (**self.level_info.load()).clone();
-        // PrimaryLevelData.setTagData and ServerClockManager.packState save the live overworld
-        // game time and clock together with the world's other metadata.
-        if let Some(overworld) = self
-            .worlds
-            .load()
-            .iter()
-            .find(|world| world.dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name)
-        {
-            let time = overworld
+        // ServerClockManager.packState snapshots every live clock; PrimaryLevelData uses
+        // the overworld for global game time. The writer retains unloaded clock records.
+        level_data.dimension_clocks.clear();
+        let world_path = self.basic_config.get_world_path();
+        for world in self.worlds.load().iter().filter(|world| {
+            // Plugin-created worlds can reuse dimension identifiers and even this root.
+            // Their clocks must not replace this saved-data owner's canonical clocks.
+            world.saves_default_clock && world.level.level_folder.root_folder == world_path
+        }) {
+            let time = world
                 .level_time
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            level_data.game_time = time.world_age;
-            level_data.day_time = time.time_of_day;
-            level_data.day_time_partial_tick = time.partial_tick;
-            level_data.day_time_rate = time.rate;
-            level_data.day_time_paused = time.paused;
+            level_data.dimension_clocks.insert(
+                world.dimension.minecraft_name.to_string(),
+                pumpkin_world::world_info::data_files::DimensionClock {
+                    total_ticks: time.time_of_day,
+                    partial_tick: time.partial_tick,
+                    rate: time.rate,
+                    paused: time.paused,
+                },
+            );
+            if world.dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name {
+                level_data.game_time = time.world_age;
+                level_data.day_time = time.time_of_day;
+                level_data.day_time_partial_tick = time.partial_tick;
+                level_data.day_time_rate = time.rate;
+                level_data.day_time_paused = time.paused;
+            }
         }
         self.weather_data
             .lock()
