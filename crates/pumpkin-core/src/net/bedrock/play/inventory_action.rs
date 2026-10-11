@@ -5,8 +5,15 @@ use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_protocol::bedrock::server::inventory_transaction::{
     HandSlot, InventoryAction, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
 };
+use pumpkin_protocol::{
+    codec::item_stack_seralizer::ItemStackSerializer, java::client::play::CSetPlayerInventory,
+};
 
-// ServerboundUseItemOnPacket.getHand selects the stack passed to ServerPlayerGameMode.useItemOn.
+// InventoryMenu.USE_ROW_SLOT_START and SHIELD_SLOT delimit the hand screen slots.
+const USE_ROW_SLOT_START: usize = 36;
+const SHIELD_SLOT: usize = 45;
+
+// ServerGamePacketListenerImpl.handleUseItemOn selects the hand passed to useItemOn.
 fn hand_screen_handler_slot(hand: Hand, selected_slot: u8) -> Option<usize> {
     match hand {
         Hand::Right => {
@@ -53,6 +60,68 @@ fn should_write_back_consumed_stack(
 }
 
 impl BedrockClient {
+    fn apply_inventory_action(
+        player: &Player,
+        screen_slot: usize,
+        item_stack: ItemStack,
+    ) -> Option<(EquipmentSlot, ItemStack)> {
+        let _effects = crate::world::guard_effects::GuardEffects::new();
+        let changed = {
+            let mut screen_handler = player
+                .player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let changed = !screen_handler
+                .get_slot(screen_slot)
+                .get_cloned_stack()
+                .are_equal(&item_stack);
+            screen_handler
+                .get_slot(screen_slot)
+                .set_stack(item_stack.clone());
+            screen_handler.set_received_stack(screen_slot, item_stack.clone());
+            changed
+        };
+
+        // Release the screen guard before synchronization or equipment callbacks.
+        let mut equipment_change = None;
+        if changed {
+            match screen_slot {
+                5..=8 => player.enqueue_equipment_change(
+                    &match screen_slot {
+                        5 => EquipmentSlot::HEAD,
+                        6 => EquipmentSlot::CHEST,
+                        7 => EquipmentSlot::LEGS,
+                        _ => EquipmentSlot::FEET,
+                    },
+                    &item_stack,
+                ),
+                USE_ROW_SLOT_START..=SHIELD_SLOT => {
+                    let inventory_slot = if screen_slot == SHIELD_SLOT {
+                        PlayerInventory::OFF_HAND_SLOT
+                    } else {
+                        screen_slot - USE_ROW_SLOT_START
+                    };
+                    player.try_send_slot_set_packet(&CSetPlayerInventory::new(
+                        (inventory_slot as i32).into(),
+                        &ItemStackSerializer::from(item_stack.clone()),
+                    ));
+                    let equipment_slot = if inventory_slot == PlayerInventory::OFF_HAND_SLOT {
+                        Some(EquipmentSlot::OFF_HAND)
+                    } else if inventory_slot == usize::from(player.inventory().get_selected_slot())
+                    {
+                        Some(EquipmentSlot::MAIN_HAND)
+                    } else {
+                        None
+                    };
+                    equipment_change = equipment_slot.map(|slot| (slot, item_stack));
+                }
+                _ => {}
+            }
+        }
+        player.sync_inventory_to_client();
+        equipment_change
+    }
+
     fn send_player_inventory_content(&self, player: &Player) {
         let slots = player
             .inventory()
@@ -84,7 +153,7 @@ impl BedrockClient {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             screen_handler.set_received_stack(screen_slot, stack.clone());
         }
-        // Mirrors ServerPlayerGameMode.useItemOn hand writeback and LivingEntity.setItemInHand
+        // Mirrors ServerPlayerGameMode.useItemOn hand writeback and LivingEntity.detectEquipmentUpdates
         // equipment updates for tracking clients.
         player.sync_hand_slot(inventory_slot, stack);
     }
@@ -118,6 +187,7 @@ impl BedrockClient {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
         let mut inventory_updated = false;
         let mut dropped_items = Vec::new();
+        let mut hand_updates: Vec<(EquipmentSlot, ItemStack)> = Vec::new();
         let mut updates = Vec::new();
         let result = 0u8;
 
@@ -190,52 +260,37 @@ impl BedrockClient {
                 if let Some(screen_slot) =
                     map_bedrock_slot_to_screen_handler(window_id, action.inventory_slot)
                 {
-                    let item_stack = descriptor_to_stack(&action.new_item);
-
-                    let _effects = crate::world::guard_effects::GuardEffects::new();
-                    let mut player_screen_handler = player
-                        .player_screen_handler
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-                    let is_armor_equipped = player_screen_handler
-                        .get_slot(screen_slot)
-                        .get_stack()
-                        .are_equal(&item_stack);
-
-                    if !is_armor_equipped {
-                        if (5..9).contains(&screen_slot) {
-                            player.enqueue_equipment_change(
-                                &match screen_slot {
-                                    5 => EquipmentSlot::HEAD,
-                                    6 => EquipmentSlot::CHEST,
-                                    7 => EquipmentSlot::LEGS,
-                                    8 => EquipmentSlot::FEET,
-                                    _ => unreachable!(),
-                                },
-                                &item_stack,
-                            );
-                        } else if (36..45).contains(&screen_slot) {
-                            let hotbar_slot = screen_slot - 36;
-                            if player.inventory().get_selected_slot() == hotbar_slot as u8 {
-                                let equipment = &[(EquipmentSlot::MAIN_HAND, item_stack.clone())];
-                                player.send_menu_equipment(equipment);
-                            }
+                    if let Some((slot, stack)) = Self::apply_inventory_action(
+                        player,
+                        screen_slot,
+                        descriptor_to_stack(&action.new_item),
+                    ) {
+                        if let Some((_, previous)) =
+                            hand_updates.iter_mut().find(|(s, _)| *s == slot)
+                        {
+                            *previous = stack;
+                        } else {
+                            hand_updates.push((slot, stack));
                         }
                     }
-
-                    player_screen_handler
-                        .get_slot(screen_slot)
-                        .set_stack(item_stack.clone());
-                    player_screen_handler.set_received_stack(screen_slot, item_stack);
-                    player_screen_handler.send_content_updates();
-                    drop(player_screen_handler);
-
                     inventory_updated = true;
                 }
             }
         }
 
+        // LivingEntity.collectEquipmentChanges removes all old modifiers before adding new ones.
+        if !hand_updates.is_empty() {
+            for (slot, stack) in &mut hand_updates {
+                let hand = if *slot == EquipmentSlot::MAIN_HAND {
+                    Hand::Right
+                } else {
+                    Hand::Left
+                };
+                *stack = player.inventory().get_stack_in_hand(hand);
+            }
+            hand_updates.sort_unstable_by_key(|(slot, _)| slot.discriminant());
+            player.send_menu_equipment(&hand_updates);
+        }
         if inventory_updated {
             self.send_player_inventory_content(player);
         }
@@ -278,7 +333,7 @@ impl BedrockClient {
                 if data.action_type.0 == 0 {
                     // Click block
                     let client_stack = descriptor_to_stack(&data.item_in_hand);
-                    // Bedrock UseItemTransactionData.hand serves as ServerboundUseItemOnPacket.getHand.
+                    // Bedrock UseItemTransactionData.hand serves as ServerboundUseItemOnPacket.hand.
                     let hand = match data.hand {
                         HandSlot::Mainhand => Hand::Right,
                         HandSlot::Offhand => Hand::Left,
@@ -371,7 +426,8 @@ impl BedrockClient {
                             if let Some(placed_block) = pumpkin_data::Block::from_item_id(item_id) {
                                 let dummy_use_item_on =
                                     pumpkin_protocol::java::server::play::SUseItemOn {
-                                        hand: VarInt(0),
+                                        // UseOnContext retains ServerboundUseItemOnPacket.hand.
+                                        hand: VarInt(i32::from(hand == Hand::Left)),
                                         position: data.block_position,
                                         face: VarInt(i32::from(data.block_face)),
                                         cursor_pos: data.click_position,
@@ -394,6 +450,7 @@ impl BedrockClient {
                             }
                         }
                         if before.is_damageable() && stack.is_empty() {
+                            // ItemStack.hurtAndBreak reports the originating hand's equipment slot.
                             player.increment_stat(
                                 pumpkin_data::statistic::StatisticCategory::Broken,
                                 item_id as i32,
@@ -401,11 +458,19 @@ impl BedrockClient {
                             );
                             player.world().send_entity_status(
                                 player.get_entity(),
-                                crate::entity::equipment_break_status(&EquipmentSlot::MAIN_HAND),
+                                crate::entity::equipment_break_status(&equipment_slot),
                                 None,
                             );
                         }
-                        player.inventory().set_held_item(stack);
+                        if should_write_back_consumed_stack(
+                            &before,
+                            &stack,
+                            authoritative_held_item,
+                            held_slot_consumed_in_transaction,
+                        ) {
+                            // BlockItem.place consumes the UseOnContext's originating hand.
+                            Self::sync_consumed_hand_item(player, hand, stack);
+                        }
                     }
                 } else if data.action_type.0 == 1 {
                     // Click air / Use item

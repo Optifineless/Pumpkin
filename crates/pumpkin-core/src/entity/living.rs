@@ -425,9 +425,9 @@ impl LivingEntity {
         for (slot, stack) in equipment {
             if *slot == EquipmentSlot::MAIN_HAND || *slot == EquipmentSlot::OFF_HAND {
                 let window_id = if *slot == EquipmentSlot::OFF_HAND {
-                    120
+                    pumpkin_protocol::bedrock::server::inventory_transaction::WINDOW_ID_OFF_HAND
                 } else {
-                    0
+                    pumpkin_protocol::bedrock::server::inventory_transaction::WINDOW_ID_INVENTORY
                 };
 
                 let be_packet = pumpkin_protocol::bedrock::client::CMobEquipment {
@@ -437,7 +437,7 @@ impl LivingEntity {
                     ),
                     slot: 0,
                     selected_slot: 0,
-                    container_id: window_id,
+                    container_id: window_id as u8,
                 };
                 self.entity.world.load().send_to_tracking_players_editioned(
                     &self.entity,

@@ -20,6 +20,9 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::{Hand, math::position::BlockPos, math::vector3::Vector3};
 
+#[path = "inventory_action_matrix_tests.rs"]
+mod matrix;
+
 fn descriptor(id: i32, stack_size: u16) -> NetworkItemDescriptor {
     NetworkItemDescriptor {
         id: VarInt(id),
