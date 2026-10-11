@@ -45,6 +45,8 @@ fn callback<E: Payload + Send + Sync + 'static>(
 fn fixture(path: &std::path::Path) -> PumpkinServer {
     let mut server = combat_test_support::server(path);
     Arc::get_mut(&mut server).unwrap().watchdog = Arc::new(Watchdog::new(i64::MAX));
+    let world = combat_test_support::world(&server, path);
+    server.worlds.store(Arc::new(vec![world]));
     server.watchdog_prepare_workers();
     PumpkinServer {
         server,
@@ -179,46 +181,140 @@ async fn tick_start_world_removal_keeps_dispatch_catalog_identity() {
     drop(watchdog);
 }
 
-// `/tick freeze` or `/tick sprint` from the console while an ordinary tick is
-// stuck must not exempt that tick; the next tick boundary picks it up.
+fn command(server: &Arc<Server>, input: &str) {
+    let source = crate::command::CommandSender::Console
+        .into_source(server)
+        .with_silent();
+    server
+        .command_dispatcher
+        .load()
+        .execute_input(input, &source)
+        .unwrap();
+}
+
+// Block the real ticker callback, then observe detection with a synthetic clock.
+fn stalled_mode_tick(commands: &[&str], runs_normally: bool) {
+    let directory = tempfile::tempdir().unwrap();
+    let server = fixture(directory.path());
+    for input in commands {
+        command(&server.server, input);
+    }
+    let (seen, observed) = mpsc::channel();
+    let (release, wait) = mpsc::channel();
+    let wait = Mutex::new(wait);
+    callback::<ServerTickStartEvent>(&server.server, move |server| {
+        seen.send(server.tick_rate_manager.runs_normally()).unwrap();
+        wait.lock().unwrap().recv().unwrap();
+        std::panic::resume_unwind(Box::new("end mode test"));
+    });
+    let watchdog = server.start_ticker().unwrap();
+    let runs_game = observed.recv_timeout(Duration::from_secs(30)).unwrap();
+    let start = server.server.watchdog.tick_start.load(Ordering::Acquire);
+    let detected = server.server.watchdog.stalled_tick(|| u64::MAX);
+    release.send(()).unwrap();
+    join_ticker(&server);
+    assert_eq!(runs_game, runs_normally);
+    assert_ne!(start, 0);
+    assert_eq!(
+        detected,
+        Some(start),
+        "Executing tick was exempt: {commands:?}"
+    );
+    drop(watchdog);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn frozen_tick_callback_stall_is_monitored() {
+    stalled_mode_tick(&["tick freeze"], false);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stepped_tick_stall_is_monitored() {
+    stalled_mode_tick(&["tick freeze", "tick step 1"], true);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn freeze_or_sprint_during_a_stuck_tick_keeps_it_eligible() {
     let directory = tempfile::tempdir().unwrap();
-    let mut server = combat_test_support::server(directory.path());
-    Arc::get_mut(&mut server).unwrap().watchdog = Arc::new(Watchdog::new(1));
-    let watchdog = &server.watchdog;
-    let past_limit = |start: u64| {
-        while elapsed_ms(watchdog.epoch) <= (start >> TICK_CLOCK_SHIFT) + 1 {
-            std::thread::yield_now();
+    let server = fixture(directory.path());
+    let (seen, observed) = mpsc::channel();
+    let (release, wait) = mpsc::channel();
+    let wait = Mutex::new(wait);
+    let ticks = AtomicUsize::new(0);
+    callback::<ServerTickStartEvent>(&server.server, move |_| {
+        let tick = ticks.fetch_add(1, Ordering::Relaxed);
+        seen.send(tick).unwrap();
+        wait.lock().unwrap().recv().unwrap();
+        if tick == 1 {
+            std::panic::resume_unwind(Box::new("end live mode test"));
         }
-    };
+    });
+    let watchdog = server.start_ticker().unwrap();
+    assert_eq!(observed.recv_timeout(Duration::from_secs(30)).unwrap(), 0);
+    let start = server.server.watchdog.tick_start.load(Ordering::Acquire);
+    command(&server.server, "tick freeze");
+    let frozen = server.server.watchdog.stalled_tick(|| u64::MAX);
+    command(&server.server, "tick sprint 100");
+    let sprinting = server.server.watchdog.stalled_tick(|| u64::MAX);
+    release.send(()).unwrap();
+    assert_eq!(observed.recv_timeout(Duration::from_secs(30)).unwrap(), 1);
+    let next = server.server.watchdog.tick_start.load(Ordering::Acquire);
+    let sprint_tick = server.server.watchdog.stalled_tick(|| u64::MAX);
+    let is_sprinting = server.server.tick_rate_manager.is_sprinting();
+    release.send(()).unwrap();
+    join_ticker(&server);
+    assert_eq!(frozen, Some(start), "Freezing exempted a stuck tick");
+    assert_eq!(sprinting, Some(start), "Sprinting exempted a stuck tick");
+    assert!(is_sprinting);
+    assert_eq!(sprint_tick, Some(next), "A sprint tick was exempt");
+    drop(watchdog);
+}
 
-    server.watchdog_tick_start();
-    let start = watchdog.tick_start.load(Ordering::Acquire);
-    server.tick_rate_manager.set_frozen(&server, true);
-    past_limit(start);
-    assert_eq!(
-        watchdog.stalled_tick(),
-        Some(start),
-        "Freezing during a stuck tick exempted it"
-    );
-    server
-        .tick_rate_manager
-        .request_game_to_sprint(&server, 100);
-    assert!(server.tick_rate_manager.is_sprinting());
-    assert_eq!(
-        watchdog.stalled_tick(),
-        Some(start),
-        "Sprinting during a stuck tick exempted it"
-    );
-    watchdog.end_tick();
-
-    server.watchdog_tick_start();
-    let start = watchdog.tick_start.load(Ordering::Acquire);
-    past_limit(start);
-    assert_eq!(
-        watchdog.stalled_tick(),
-        None,
-        "A sprint tick was not exempt"
-    );
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shutdown_keeps_a_hung_tick_monitored_until_join() {
+    const CHILD: &str = "PUMPKIN_WATCHDOG_SHUTDOWN_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "shutdown_keeps_a_hung_tick_monitored_until_join",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        return;
+    }
+    // Cancellation is process-wide, so exercise the production stop/join in a child.
+    let directory = tempfile::tempdir().unwrap();
+    let server = Arc::new(fixture(directory.path()));
+    let (seen, observed) = mpsc::channel();
+    let (release, wait) = mpsc::channel();
+    let wait = Mutex::new(wait);
+    callback::<ServerTickStartEvent>(&server.server, move |_| {
+        seen.send(()).unwrap();
+        wait.lock().unwrap().recv().unwrap();
+    });
+    let watchdog = server.start_ticker().unwrap();
+    observed.recv_timeout(Duration::from_secs(30)).unwrap();
+    let stopping = server.clone();
+    let join = tokio::spawn(async move { stopping.stop_ticker().await });
+    crate::STOP_INTERRUPT.cancelled().await;
+    let start = server.server.watchdog.tick_start.load(Ordering::Acquire);
+    let enabled = server.server.watchdog.enabled.load(Ordering::Acquire);
+    let detected = server.server.watchdog.stalled_tick(|| u64::MAX);
+    release.send(()).unwrap();
+    join.await.unwrap();
+    assert!(enabled, "Shutdown disabled detection before ticker exit");
+    assert_ne!(start, 0);
+    assert_eq!(detected, Some(start));
+    assert!(!server.server.watchdog.enabled.load(Ordering::Acquire));
+    assert_eq!(server.server.watchdog.tick_start.load(Ordering::Acquire), 0);
+    drop(watchdog);
+    server.server.shutdown().await;
 }

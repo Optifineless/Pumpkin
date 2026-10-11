@@ -1,3 +1,5 @@
+#[cfg(any(target_os = "linux", test))]
+mod debugger;
 mod diagnostics;
 mod halt;
 pub(crate) mod markers;
@@ -31,9 +33,8 @@ const MAX_SHUTDOWN_TIME: Duration = Duration::from_secs(10);
 const SHUTDOWN_STATUS: i32 = 1;
 const LOG_FLUSH_DELAY: Duration = Duration::from_secs(2);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
-const TICK_CLOCK_SHIFT: u32 = 2;
+const TICK_CLOCK_SHIFT: u32 = 1;
 const ACTIVE_TICK: u64 = 1;
-const EXEMPT_TICK: u64 = 2;
 
 pub(crate) struct WorldStats {
     pub(crate) id: uuid::Uuid,
@@ -48,7 +49,7 @@ pub(crate) struct Watchdog {
     epoch: Instant,
     max_tick_ms: i64,
     enabled: AtomicBool,
-    // Low bits: active and exempt; upper bits: tick start in monotonic milliseconds.
+    // Low bit: active; upper bits: tick start in monotonic milliseconds.
     tick_start: AtomicU64,
     main_phase: Record,
     slots: Arc<Slots>,
@@ -69,14 +70,11 @@ impl Watchdog {
         }
     }
 
-    pub(crate) fn begin_tick(&self, suspended: bool) {
+    pub(crate) fn begin_tick(&self) {
         if self.max_tick_ms > 0 {
             let now = elapsed_ms(self.epoch);
-            let exemption = if suspended { EXEMPT_TICK } else { 0 };
-            self.tick_start.store(
-                (now << TICK_CLOCK_SHIFT) | ACTIVE_TICK | exemption,
-                Ordering::Release,
-            );
+            self.tick_start
+                .store((now << TICK_CLOCK_SHIFT) | ACTIVE_TICK, Ordering::Release);
             self.phase(Phase::ServerTick);
         }
     }
@@ -96,15 +94,14 @@ impl Watchdog {
         self.end_tick();
     }
 
-    // Freeze/sprint exemption is fixed at the tick boundary: a command issued
-    // while a tick is stuck must not exempt that tick.
-    fn stalled_tick(&self) -> Option<u64> {
+    // ServerWatchdog.run monitors executing ticks regardless of freeze/step/sprint.
+    fn stalled_tick(&self, clock: impl FnOnce() -> u64) -> Option<u64> {
         let start = self.tick_start.load(Ordering::Acquire);
-        stalled(self.max_tick_ms, start, || elapsed_ms(self.epoch)).then_some(start)
+        stalled(self.max_tick_ms, start, clock).then_some(start)
     }
 
     fn detect_and_arm(&self, halt: &HaltGuard) -> Option<u64> {
-        let start = self.stalled_tick()?;
+        let start = self.stalled_tick(|| elapsed_ms(self.epoch))?;
         (self.enabled.load(Ordering::Acquire) && self.tick_start.load(Ordering::Acquire) == start)
             .then(|| {
                 // No allocation, logger, catalog read or thread creation before arming.
@@ -231,7 +228,6 @@ impl Drop for WatchdogGuard {
 fn stalled(max_tick_ms: i64, start: u64, clock: impl FnOnce() -> u64) -> bool {
     max_tick_ms > 0
         && start != 0
-        && start & EXEMPT_TICK == 0
         && clock().saturating_sub(start >> TICK_CLOCK_SHIFT) > max_tick_ms as u64
 }
 
@@ -249,17 +245,11 @@ mod tests {
             watchdog.tick_start.load(Ordering::Relaxed),
             || u64::MAX
         ));
-        watchdog.begin_tick(false);
+        watchdog.begin_tick();
         let start = watchdog.tick_start.load(Ordering::Relaxed);
         assert!(!stalled(60_000, start, || (start >> TICK_CLOCK_SHIFT) + 60_000));
         assert!(stalled(60_000, start, || (start >> TICK_CLOCK_SHIFT) + 60_001));
         watchdog.end_tick();
-        assert!(!stalled(
-            60_000,
-            watchdog.tick_start.load(Ordering::Relaxed),
-            || u64::MAX
-        ));
-        watchdog.begin_tick(true);
         assert!(!stalled(
             60_000,
             watchdog.tick_start.load(Ordering::Relaxed),

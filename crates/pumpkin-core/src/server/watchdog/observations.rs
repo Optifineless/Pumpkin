@@ -16,9 +16,7 @@ impl Server {
     }
 
     pub(crate) fn watchdog_tick_start(&self) {
-        self.watchdog.begin_tick(
-            self.tick_rate_manager.is_frozen() || self.tick_rate_manager.is_sprinting(),
-        );
+        self.watchdog.begin_tick();
     }
 
     /// Registers diagnostic workers before networking or gameplay can start.

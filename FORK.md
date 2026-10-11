@@ -20,17 +20,33 @@ Upstream is merged in regularly. When upstream fixes something this fork also fi
 
 Vanilla 26.3's `ServerWatchdog` now has a dedicated thread that reports a stalled
 tick and exits without saving. `max_tick_time` in `pumpkin.toml` defaults to
-60000 milliseconds; non-positive values disable it. Startup, normal shutdown,
-frozen ticks and sprints are exempt. Reports include active phases, entity IDs
-and types, block entity positions, dispatch-snapshot player/chunk counts and Tokio
-metrics. Linux stack capture uses `eu-stack` or `gdb` with an external timeout;
+60000 milliseconds; non-positive values disable it. Every executing tick is
+monitored, including frozen player/packet work, `/tick step` and sprints. Startup
+generation and intentional waits between ticks are unarmed. Shutdown remains
+monitored until the ticker exits, then disarms before saving. Reports include
+active phases, entity IDs and types, block entity positions, dispatch-snapshot
+player/chunk counts and Tokio
+metrics. Linux stack capture tries `eu-stack`, then `gdb` on failed or unusable
+output, preserving both failure reasons, with an external timeout;
 Windows reports phase markers. Owner verification: Not yet.
 
 The watchdog and its parked halt helper are ready before gameplay ticking.
 Failure detection arms the fallback without allocating; the bounded report
 retains world UUIDs and restores parent block positions after nested work.
+The phase report is saved before optional stack capture. If the halt helper
+cannot start, startup fails before the ticker is spawned; gameplay never runs
+without its configured fallback.
 
-Native plugin API stays at 8 under fork policy; the Wasm WIT is unchanged.
+Linux Yama `ptrace_scope=1` capture authorizes only a gated launcher PID with
+`PR_SET_PTRACER` and revokes it after capture; its debugger descendants are
+allowed. `PR_SET_PTRACER_ANY` is never used. Capture requires `/bin/sh`, GNU
+`timeout`, an executable debugger and normal same-user/dumpable permissions.
+Yama modes 2/3 and other security policies can still deny capture. Attachment,
+timeout and detachment under mode 1 require Linux validation; this follow-up
+was developed on Windows and has not verified them.
+
+Native plugin API remains API 8 (same version) under fork policy; the Wasm WIT
+is unchanged.
 
 ## Upstream pull requests included early
 

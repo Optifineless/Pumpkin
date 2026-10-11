@@ -849,7 +849,7 @@ impl Server {
     }
 
     pub async fn shutdown(&self) {
-        self.watchdog.stop();
+        // Only the ticker owner disarms the watchdog, after joining its OS thread.
         self.management_hub.broadcast_server_stopping();
 
         self.tasks.close();

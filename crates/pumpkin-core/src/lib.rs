@@ -482,7 +482,6 @@ impl PumpkinServer {
         }
 
         SERVER_IS_STOPPING.store(true, Ordering::Release);
-        self.server.watchdog.stop();
 
         if let Some(crash_report) = CRASH_REPORT.get() {
             crash_report.print_to_console();
@@ -500,20 +499,7 @@ impl PumpkinServer {
 
         info!("Stopped accepting incoming connections");
 
-        // MinecraftServer.stopServer finishes tick mutations before final storage drains.
-        STOP_INTERRUPT.cancel();
-        let ticker = self
-            .ticker
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(ticker) = ticker {
-            let joined = tokio::task::spawn_blocking(move || ticker.join()).await;
-            if !matches!(joined, Ok(Ok(()))) {
-                error!("Server ticker failed during shutdown");
-                SERVER_EXIT_CODE.store(1, Ordering::Release);
-            }
-        }
+        self.stop_ticker().await;
 
         // Fence the final player list against a login that completed during cancellation.
         let shutdown_players = self.server.tick_gate.lock().await;

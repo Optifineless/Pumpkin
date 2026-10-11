@@ -4,6 +4,29 @@ use super::WatchdogGuard;
 use crate::server::ticker::Ticker;
 
 impl PumpkinServer {
+    // MinecraftServer.halt / stopServer finish tick mutations before final storage drains.
+    pub(crate) async fn stop_ticker(&self) {
+        crate::STOP_INTERRUPT.cancel();
+        let ticker = self
+            .ticker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(ticker) = ticker {
+            let joined = tokio::task::spawn_blocking(move || ticker.join()).await;
+            if !matches!(joined, Ok(Ok(()))) {
+                tracing::error!("Server ticker failed during shutdown");
+                crate::SERVER_EXIT_CODE.store(1, std::sync::atomic::Ordering::Release);
+            }
+            if joined.is_err() {
+                // Without a completed OS-thread join, saving would race tick mutations.
+                super::hard_exit();
+            }
+        }
+        // The ticker has exited; final saves are intentionally unarmed.
+        self.server.watchdog.stop();
+    }
+
     // DedicatedServer.initServer / MinecraftServer.runServer: detection is ready
     // before the first gameplay tick, after world generation and plugin setup.
     pub(crate) fn start_ticker(&self) -> std::io::Result<Option<WatchdogGuard>> {
