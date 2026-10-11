@@ -40,6 +40,17 @@ impl Clearable for PluginInventory {
 }
 
 impl Inventory for PluginInventory {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .slots
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        update(stack);
+    }
+
     fn size(&self) -> usize {
         self.slots
             .read()

@@ -12,7 +12,7 @@ use std::{array::from_fn, sync::Arc};
 use crate::block::entities::BlockEntity;
 use crate::block::viewer::{ViewerCountListener, ViewerCountTracker, ViewerCountTrackerExt};
 use crate::world::World;
-use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
+use pumpkin_inventory::{Clearable, Inventory};
 
 pub struct ShulkerBoxBlockEntity {
     pub position: BlockPos,
@@ -139,9 +139,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        if let Ok(items) = self.items.try_read() {
-            sync_write_items_to_nbt(items.as_slice(), &mut nbt);
-        }
+        self.write_inventory_nbt(&mut nbt, false);
         Some(nbt)
     }
 
@@ -200,6 +198,17 @@ impl ShulkerBoxBlockEntity {
 }
 
 impl Inventory for ShulkerBoxBlockEntity {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        update(stack);
+    }
+
     fn size(&self) -> usize {
         Self::INVENTORY_SIZE
     }

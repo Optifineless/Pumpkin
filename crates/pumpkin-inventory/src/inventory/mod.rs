@@ -3,6 +3,7 @@ use pumpkin_data::item_stack::ItemStack;
 #[expect(clippy::module_inception)]
 mod inventory;
 mod simple_inventory;
+pub mod slot_transaction;
 
 pub use inventory::*;
 pub use simple_inventory::*;

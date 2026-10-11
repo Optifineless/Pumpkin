@@ -16,7 +16,7 @@ use pumpkin_util::text::TextComponent;
 
 use crate::entity::{Entity, player::Player};
 
-pub(super) struct MinecartInventory {
+pub(crate) struct MinecartInventory {
     items: RwLock<Vec<ItemStack>>,
     size: usize,
     loot_table: Mutex<Option<(String, i64)>>,
@@ -66,17 +66,8 @@ impl MinecartInventory {
             if seed != 0 {
                 nbt.put_long("LootTableSeed", seed);
             }
-        } else if let Ok(items) = self.items.try_read() {
-            let mut list: Vec<pumpkin_nbt::tag::NbtTag> = Vec::new();
-            for (slot, stack) in items.iter().enumerate() {
-                if !stack.is_empty() {
-                    let mut compound = NbtCompound::new();
-                    compound.put_byte("Slot", slot as i8);
-                    stack.write_item_stack(&mut compound);
-                    list.push(pumpkin_nbt::tag::NbtTag::Compound(compound));
-                }
-            }
-            nbt.put("Items", pumpkin_nbt::tag::NbtTag::List(list));
+        } else {
+            self.write_inventory_nbt(nbt, true);
         }
     }
 
@@ -116,6 +107,17 @@ impl MinecartInventory {
 }
 
 impl Inventory for MinecartInventory {
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let mut items = self
+            .items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(stack) = items.get_mut(slot) else {
+            return;
+        };
+        update(stack);
+    }
+
     fn size(&self) -> usize {
         self.size
     }

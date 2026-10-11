@@ -490,6 +490,45 @@ impl Clearable for PlayerInventory {
 }
 
 impl Inventory for PlayerInventory {
+    fn space_for_stack(&self, stack: &ItemStack) -> u8 {
+        // Inventory.addResource fills main slots; an empty offhand is not a free slot.
+        let mut space = 0u8;
+        for slot in (0..Self::MAIN_SIZE).chain(std::iter::once(Self::OFF_HAND_SLOT)) {
+            let current = self.get_stack(slot);
+            let max = stack.get_max_stack_size();
+            let available = if current.is_empty() && slot < Self::MAIN_SIZE {
+                max
+            } else if !current.is_empty() && current.are_items_and_components_equal(stack) {
+                max.saturating_sub(current.item_count)
+            } else {
+                0
+            };
+            space = space.saturating_add(available).min(stack.item_count);
+            if space == stack.item_count {
+                break;
+            }
+        }
+        space
+    }
+
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot < Self::MAIN_SIZE {
+            let mut inventory = self
+                .main_inventory
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            update(&mut inventory[slot]);
+        } else if let Some(slot) = self.equipment_slots.get(&slot) {
+            let mut equipment = self
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut stack = equipment.get(slot);
+            update(&mut stack);
+            equipment.put(slot, stack);
+        }
+    }
+
     fn size(&self) -> usize {
         Self::MAIN_SIZE + self.equipment_slots.len()
     }

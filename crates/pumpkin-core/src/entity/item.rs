@@ -32,6 +32,8 @@ use std::sync::{
 
 use super::{Entity, EntityBase, living::LivingEntity, player::Player};
 
+mod transfer;
+
 pub struct ItemEntity {
     entity: Entity,
     // ItemEntity.age must retain negative extended lifetimes.
@@ -39,6 +41,9 @@ pub struct ItemEntity {
     // These cannot be atomic values because we mutate their state based on what they are; we run
     // into the ABA problem
     item_stack: Mutex<ItemStack>,
+    #[cfg(test)]
+    transfer_pause:
+        pumpkin_util::sync::Mutex<Option<transfer::TransferPause>, pumpkin_util::sync::Cursor>,
     pickup_delay: AtomicU8,
     health: AtomicF32,
     never_despawn: AtomicBool,
@@ -105,6 +110,8 @@ impl ItemEntity {
         Self {
             entity,
             item_stack: Mutex::new(item_stack),
+            #[cfg(test)]
+            transfer_pause: pumpkin_util::sync::Mutex::new(None),
             item_age: AtomicI32::new(0),
             pickup_delay: AtomicU8::new(Self::DEFAULT_PICKUP_DELAY),
             health: AtomicF32::new(5.0),
@@ -127,6 +134,8 @@ impl ItemEntity {
         Self {
             entity,
             item_stack: Mutex::new(item_stack),
+            #[cfg(test)]
+            transfer_pause: pumpkin_util::sync::Mutex::new(None),
             item_age: AtomicI32::new(0),
             pickup_delay: AtomicU8::new(pickup_delay), // Vanilla pickup delay is 10 ticks
             health: AtomicF32::new(5.0),
@@ -142,6 +151,8 @@ impl ItemEntity {
         Self {
             entity,
             item_stack: Mutex::new(ItemStack::new(1, &pumpkin_data::item::Item::AIR)),
+            #[cfg(test)]
+            transfer_pause: pumpkin_util::sync::Mutex::new(None),
             item_age: AtomicI32::new(0),
             pickup_delay: AtomicU8::new(0),
             health: AtomicF32::new(5.0),
@@ -363,6 +374,10 @@ impl ItemEntity {
     /// spill their contents where the item died, whatever the damage type was).
     fn on_destroyed(&self, world: &Arc<World>) {
         let contents = {
+            let owner = pumpkin_inventory::inventory::slot_transaction::owner(self);
+            let _transfer = owner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let mut stack = self
                 .item_stack
                 .lock()
@@ -563,12 +578,7 @@ impl ItemEntity {
 impl EntityBase for ItemEntity {
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         let entity = &self.entity;
-        if self
-            .item_stack
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
-        {
+        if self.stack_is_empty_between_transfers() {
             entity.remove();
             return;
         }
@@ -600,14 +610,10 @@ impl EntityBase for ItemEntity {
     }
 
     fn init_data_tracker(&self) {
+        let stack = self.stack_snapshot();
         self.entity.set_synced_data(
             pumpkin_data::tracked_data::item::ITEM,
-            ItemStackSerializer::from(
-                self.item_stack
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone(),
-            ),
+            ItemStackSerializer::from(stack),
         );
     }
 
@@ -687,35 +693,23 @@ impl EntityBase for ItemEntity {
             return;
         }
 
-        let (item_id, count_before) = {
-            let stack = self
-                .item_stack
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            (stack.item.id, stack.item_count)
+        let mut inserted = false;
+        let (item_id, count_before, transferred, is_empty) =
+            self.transfer_stack(player.inventory.as_ref(), |stack| {
+                inserted = player.inventory.insert_stack_anywhere(stack);
+            });
+        if count_before == 0 {
+            return;
+        }
+        // Inventory.add returns false when it fills only part of the original stack.
+        inserted &= transferred == count_before;
+        let amount_picked_up = if player.is_creative() {
+            count_before
+        } else {
+            transferred
         };
-
-        let mut local_stack = self
-            .item_stack
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let inserted = player.inventory.insert_stack_anywhere(&mut local_stack);
-        let count_after = local_stack.item_count;
-        let is_empty = local_stack.is_empty();
-        *self
-            .item_stack
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = local_stack;
-
         if inserted || player.is_creative() {
             player.inventory_changed.store(true, Ordering::Relaxed);
-
-            let amount_picked_up = if player.is_creative() {
-                count_before
-            } else {
-                count_before - count_after
-            };
 
             if amount_picked_up > 0 {
                 player.increment_stat(
@@ -735,12 +729,10 @@ impl EntityBase for ItemEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
             crate::entity::player::Player::send_menu_updates(screen.as_ref());
-
-            if is_empty {
-                self.entity.remove();
-            } else {
-                self.on_count_changed();
-            }
+        }
+        if transferred > 0 {
+            player.inventory_changed.store(true, Ordering::Relaxed);
+            self.finish_transfer(is_empty);
         }
     }
 
@@ -765,10 +757,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
-        let item = self
-            .item_stack
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let item = self.stack_snapshot();
         let mut item_compound = NbtCompound::new();
         item.write_item_stack(&mut item_compound);
         nbt.put_compound("Item", item_compound);
