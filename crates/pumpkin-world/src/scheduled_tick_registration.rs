@@ -2,6 +2,8 @@ use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use rustc_hash::FxHashSet;
 
 use crate::level::{Level, TickData};
+use crate::tick::drain_containers;
+use std::sync::atomic::Ordering;
 
 impl Level {
     pub(crate) fn collect_scheduled_ticks(
@@ -23,14 +25,17 @@ impl Level {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         positions.extend(registered.iter().copied());
         drop(registered);
+        let current_tick = self.game_time.load(Ordering::Relaxed);
+        let mut blocks = Vec::new();
+        let mut fluids = Vec::new();
         for &pos in &positions {
             let empty = self.loaded_chunks.get(&pos).is_none_or(|chunk| {
                 // LevelTicks.tickCheck leaves inactive containers pending.
                 if !active.contains(&pos) {
                     return false;
                 }
-                ticks.block_ticks.append(&mut chunk.block_ticks.step_tick());
-                ticks.fluid_ticks.append(&mut chunk.fluid_ticks.step_tick());
+                blocks.push(chunk.block_ticks.step_tick(current_tick));
+                fluids.push(chunk.fluid_ticks.step_tick(current_tick));
                 !chunk.block_ticks.has_ticks() && !chunk.fluid_ticks.has_ticks()
             });
             // Release the chunk guard before taking the registration lock again.
@@ -38,6 +43,8 @@ impl Level {
                 self.unregister_empty_tick_container(pos, active);
             }
         }
+        ticks.block_ticks = drain_containers(blocks);
+        ticks.fluid_ticks = drain_containers(fluids);
         positions.clear();
         let mut buffer = self
             .scheduled_tick_collect_positions

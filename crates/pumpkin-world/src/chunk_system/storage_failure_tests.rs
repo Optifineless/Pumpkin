@@ -17,6 +17,8 @@ fn scheduler() -> (
             last_high_priority: Vec::new(),
             send_level: Arc::new(LevelChannel::new()),
             public_chunk_map: Arc::new(DashMap::new()),
+            game_time: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
             loaded_chunk_changes: Arc::new(crossbeam::queue::SegQueue::new()),
             chunk_map: HashMap::new(),
             unload_chunks: HashSetType::default(),

@@ -22,7 +22,7 @@ use crate::{
     },
     generation::section_coords,
     level::LevelFolder,
-    tick::{ScheduledTick, scheduler::ChunkTickScheduler},
+    tick::{SavedTick, scheduler::ChunkTickScheduler},
 };
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector2::Vector2;
@@ -162,12 +162,12 @@ fn extract_u8_array(tag: &pumpkin_nbt::tag::NbtTag) -> Option<Box<[u8]>> {
     }
 }
 
-fn parse_scheduled_tick<T>(nbt: &pumpkin_nbt::compound::NbtCompound) -> Option<ScheduledTick<T>>
+fn parse_scheduled_tick<T>(nbt: &pumpkin_nbt::compound::NbtCompound) -> Option<SavedTick<T>>
 where
     T: FromResourceLocation,
 {
     // SavedTick.codec/unpack preserve long delays and schedule overdue ticks on the next tick.
-    ScheduledTick::from_nbt_compound(nbt)
+    SavedTick::from_nbt_compound(nbt)
 }
 
 impl ChunkData {
@@ -1026,13 +1026,13 @@ mod tests {
             parse_scheduled_tick::<&'static Block>(&nbt).map(|tick| tick.delay)
         };
         // Vanilla saves a tick that was already due with a delay of 0 or less.
-        assert_eq!(saved(-1), Some(0));
+        assert_eq!(saved(-1), Some(-1));
         assert_eq!(saved(5000), Some(5000));
     }
 
     #[test]
     fn chunk_writer_bounds_tick_delays_without_immediate_reload() {
-        use crate::tick::{MAX_SAVED_TICK_DELAY, TickPriority};
+        use crate::tick::{MAX_SAVED_TICK_DELAY, ScheduledTick, TickPriority};
         let dimension = &pumpkin_data::dimension::Dimension::OVERWORLD;
         let chunk = ChunkData::internal_from_bytes(
             &test_chunk(Vec::new()).write(),
@@ -1056,7 +1056,7 @@ mod tests {
                 priority: TickPriority::Normal,
                 value: &Block::STONE,
             };
-            let saved = tick.to_nbt_compound();
+            let saved = SavedTick::from(tick.clone()).to_nbt_compound();
             assert_eq!(saved.get_int("t"), Some(expected));
             chunk.block_ticks.schedule_tick(&tick, index as i64);
             chunk.fluid_ticks.schedule_tick(
@@ -1076,12 +1076,7 @@ mod tests {
             dimension,
         )
         .unwrap();
-        let expected = [
-            5000,
-            MAX_SAVED_TICK_DELAY,
-            MAX_SAVED_TICK_DELAY,
-            MAX_SAVED_TICK_DELAY,
-        ];
+        let expected = [5000, i32::MAX, i32::MAX, i32::MAX];
         assert_eq!(
             reloaded
                 .block_ticks
@@ -1109,8 +1104,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected
         );
-        assert!(reloaded.block_ticks.step_tick().is_empty());
-        assert!(reloaded.fluid_ticks.step_tick().is_empty());
+        assert!(reloaded.block_ticks.step_tick(1).is_empty());
+        assert!(reloaded.fluid_ticks.step_tick(1).is_empty());
     }
 
     #[test]

@@ -222,6 +222,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 
 | Change | Checked in-game |
 |:--|:--|
+| Scheduled block and fluid ticks use elapsed game time while chunks are outside simulation distance; overdue ticks run when simulation resumes and save signed remaining delays (PR #136 review) | Not yet |
 | [#110] Charged respawn anchors set a Nether spawn or explode in unsafe dimensions when used without glowstone | Not yet; positional `RESPAWN_ANCHOR_WORKS` environment-attribute overrides are not evaluated |
 | [#109] Firework Stars craft with colors, shapes and effects, can receive fade colors, and can be used in rockets | Not yet |
 | Powered activator rails eject rideable minecart passengers without freezing the tick; normal dismount events, cooldown and repositioning apply; mirrors `Minecart.activateMinecart` -> `Entity.ejectPassengers` ([fork #38](https://github.com/Optifineless/Pumpkin/issues/38); regression audit item 1) | Not yet |
@@ -301,6 +302,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 - API 8 (same version): the clock changes add saved fields and the serde-skipped `dimension_clocks` snapshot map to `LevelData`, a metadata-save mutex and per-root clock retention to `Server`, and fixed default-root clock ownership plus cached physical root identity to `World`, and the generated optional `Dimension::default_clock` field. The obsolete `write_random_sequences_stub` helper is removed; use the live `RandomSequences::save` path. The synchronous `data_files::write_saved_data` helper requires an existing parent and serialized callers. Rebuild native plugins against this checkout. Wasm WIT is unchanged.
 - API 8 (same version): dragon-fight callback dispatch, crystal notifications and pending dragon creation change the `DragonFight` and `World` layouts. Native plugins must be rebuilt against this checkout; Wasm WIT is unchanged.
 
+- API 8 (same version): scheduled ticks now use world game time. `ChunkTickScheduler::step_tick` takes the current game tick; `to_vec` returns signed `SavedTick` delays, and tick NBT codecs live on `SavedTick`. `Level::set_game_time` publishes the clock after time advances; `Level::remove_empty_tick_chunk` safely refreshes empty chunk markers. `Level` and `ChunkTickScheduler` layouts changed. Rebuild native plugins; Wasm WIT is unchanged. In-game verification **Not yet**.
 - API 8 (same version), [#7](https://github.com/Optifineless/Pumpkin/issues/7): candle stacks now use ordinary item placement, consuming one candle in survival while preserving the lit state and four-candle limit. In-game verification **Not yet**.
 - API 8 (same version), [#8](https://github.com/Optifineless/Pumpkin/issues/8): sugar cane accepts tagged adjacent water fluids, including waterlogged blocks, or tagged frosted-ice support. In-game verification **Not yet**.
 - API 8 (same version), [#9](https://github.com/Optifineless/Pumpkin/issues/9): newly grown sugar-cane segments start at age zero instead of inheriting the mature source age. In-game verification **Not yet**.
