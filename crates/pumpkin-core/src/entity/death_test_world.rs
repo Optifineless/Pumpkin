@@ -66,6 +66,14 @@ impl DeathTestWorld {
     }
 
     pub(crate) fn player(&self, name: &str) -> Arc<Player> {
+        self.player_fixture(name, false)
+    }
+
+    pub(crate) fn player_with_packet_sink(&self, name: &str) -> Arc<Player> {
+        self.player_fixture(name, true)
+    }
+
+    fn player_fixture(&self, name: &str, packet_sink: bool) -> Arc<Player> {
         let world = self.world();
         let profile = GameProfile {
             id: Uuid::new_v4(),
@@ -73,9 +81,12 @@ impl DeathTestWorld {
             properties: arc_swap::ArcSwap::from_pointee(Vec::new()),
             profile_actions: None,
         };
-        let client = Arc::new(ClientPlatform::Java(JavaClient::without_connection(
-            profile.clone(),
-        )));
+        let client = if packet_sink {
+            JavaClient::with_packet_sink(profile.clone())
+        } else {
+            JavaClient::without_connection(profile.clone())
+        };
+        let client = Arc::new(ClientPlatform::Java(client));
         let player = Arc::new(Player::new(
             client,
             profile,

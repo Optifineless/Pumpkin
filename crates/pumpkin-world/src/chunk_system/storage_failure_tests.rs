@@ -16,6 +16,7 @@ fn scheduler() -> (
             last_level: ChunkLevel::default(),
             last_high_priority: Vec::new(),
             send_level: Arc::new(LevelChannel::new()),
+            chunk_loading: Arc::new(Mutex::new(ChunkLoading::new(Arc::new(LevelChannel::new())))),
             public_chunk_map: Arc::new(DashMap::new()),
             loaded_chunk_changes: Arc::new(crossbeam::queue::SegQueue::new()),
             chunk_map: HashMap::new(),
@@ -148,6 +149,39 @@ fn failed_read_can_unload_and_accept_a_fresh_load() {
         waiter.try_recv(),
         Err(tokio::sync::oneshot::error::TryRecvError::Empty)
     ));
+}
+
+#[test]
+fn queued_unload_preserves_a_new_residency_ticket() {
+    let (mut schedule, _) = scheduler();
+    let pos = ChunkPos::new(0, 0);
+    let chunk = ChunkData::empty_sync(0, 0);
+    schedule.publish_chunk(pos, chunk.clone());
+    schedule.chunk_map.insert(
+        pos,
+        ChunkHolder {
+            public: true,
+            current_stage: StagedChunkEnum::Full,
+            chunk: Some(Chunk::Level(chunk)),
+            ..Default::default()
+        },
+    );
+    schedule.unload_chunks.insert(pos);
+    schedule
+        .chunk_loading
+        .lock()
+        .unwrap()
+        .add_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
+    // The schedule has not consumed the new ticket's channel notification yet.
+    schedule.process_unload_queue();
+    assert!(schedule.public_chunk_map.contains_key(&pos));
+    schedule
+        .chunk_loading
+        .lock()
+        .unwrap()
+        .remove_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
+    schedule.process_unload_queue();
+    assert!(!schedule.public_chunk_map.contains_key(&pos));
 }
 
 #[test]

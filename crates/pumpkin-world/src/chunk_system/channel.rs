@@ -14,6 +14,7 @@ pub type LevelChange = (
 pub struct LevelChannel {
     pub value: Mutex<(Option<LevelChange>, Option<Vec<ChunkPos>>)>,
     pub notify: Condvar,
+    unload_requests: Mutex<Option<Vec<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 impl Default for LevelChannel {
@@ -28,6 +29,7 @@ impl LevelChannel {
         Self {
             value: Mutex::new((None, None)),
             notify: Condvar::new(),
+            unload_requests: Mutex::new(Some(Vec::new())),
         }
     }
     pub fn set_both(
@@ -131,6 +133,12 @@ impl LevelChannel {
             && !level.should_unload.load(SeqCst)
             && !level.should_save.load(SeqCst)
             && !level.shut_down_chunk_system.load(SeqCst)
+            && self
+                .unload_requests
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref()
+                .is_none_or(Vec::is_empty)
         {
             let (new_lock, timeout_res) = self
                 .notify
@@ -152,5 +160,39 @@ impl LevelChannel {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         drop(val);
         self.notify.notify_one();
+    }
+
+    /// Requests an unload pass and acknowledges it after pending ticket changes are consumed.
+    pub fn request_unload(&self, level: &Level) -> tokio::sync::oneshot::Receiver<()> {
+        let (completed, completion) = tokio::sync::oneshot::channel();
+        let mut pending = self
+            .unload_requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(requests) = pending.as_mut() else {
+            return completion;
+        };
+        requests.push(completed);
+        drop(pending);
+        level.should_unload.store(true, SeqCst);
+        self.notify();
+        completion
+    }
+
+    pub(crate) fn take_unload_requests(&self) -> Vec<tokio::sync::oneshot::Sender<()>> {
+        self.unload_requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn close_unload_requests(&self) {
+        // Admission and retirement share this mutex: racing requests either drain or reject.
+        self.unload_requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
     }
 }

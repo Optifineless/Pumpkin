@@ -87,6 +87,8 @@ pub fn update_position(player: &Arc<Player>) {
         .held_chunk_tickets
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    #[cfg(test)]
+    ticket_tests::pause_movement(player);
 
     let is_spectator = player.is_spectator();
     let spectators_generate_chunks = world
@@ -178,3 +180,6 @@ pub fn update_position(player: &Arc<Player>) {
         world.spawn_world_entity_chunks(player.clone(), loading_chunks);
     }
 }
+
+#[cfg(test)]
+pub(crate) mod ticket_tests;

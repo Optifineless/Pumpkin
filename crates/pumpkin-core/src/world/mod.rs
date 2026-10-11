@@ -1,5 +1,6 @@
 pub(crate) use explosion::ExplosionDamageSource;
 mod storage_failure;
+pub(crate) mod transfer_admission;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
 };
@@ -38,6 +39,7 @@ pub mod loot;
 pub mod map;
 pub(crate) mod neighbor_updater;
 mod particle_senders;
+mod player_transfer;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -357,6 +359,12 @@ pub struct World {
     unsent_block_changes: std::sync::Mutex<HashMap<BlockPos, BlockStateId>>,
     /// Persisted vanilla POI storage for portal and villager lookups.
     pub portal_poi: std::sync::Mutex<portal::PortalPoiStorage>,
+    pub(crate) transfer_admission: transfer_admission::TransferAdmission,
+    pub(crate) portal_creation: Arc<tokio::sync::Mutex<()>>,
+    #[cfg(test)]
+    pub(crate) portal_scan_gate: std::sync::Mutex<Option<portal::PortalScanGate>>,
+    #[cfg(test)]
+    pub(crate) portal_blocking_gate: std::sync::Mutex<Option<portal::PortalBlockingGate>>,
     /// Villager job sites and their current owners.
     pub villager_poi: std::sync::Mutex<villager_poi::VillagerPoiStorage>,
     /// Active raids in this world.
@@ -512,6 +520,12 @@ impl World {
             handling_tick: std::sync::atomic::AtomicBool::new(false),
             unsent_block_changes: std::sync::Mutex::new(HashMap::new()),
             portal_poi: std::sync::Mutex::new(portal_poi),
+            transfer_admission: transfer_admission::TransferAdmission::default(),
+            portal_creation: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(test)]
+            portal_scan_gate: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            portal_blocking_gate: std::sync::Mutex::new(None),
             villager_poi: std::sync::Mutex::new(villager_poi::VillagerPoiStorage::default()),
             raids: std::sync::Mutex::new(raid::Raids::default()),
             dragon_fight,
@@ -4076,6 +4090,7 @@ impl World {
 
     #[allow(clippy::too_many_lines)]
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        player.get_entity().invalidate_portal_travel();
         let last_pos = player.get_entity().last_pos.load();
         let death_dimension = ResourceLocation::from(player.world().dimension.minecraft_name);
         let death_location = BlockPos(Vector3::new(
@@ -4894,11 +4909,18 @@ impl World {
         let ClientPlatform::Java(java_client) = player.client.as_ref() else {
             return;
         };
+        let epoch = player.chunk_send_epoch.load(Ordering::Relaxed);
         let center_chunk = player.get_entity().chunk_pos.load();
         let Some(chunk) = self.load_player_chunk(center_chunk, player).await else {
             return;
         };
+        if player.chunk_send_epoch.load(Ordering::Relaxed) != epoch {
+            return;
+        }
         java_client.send_chunks(&[chunk]).await;
+        if player.chunk_send_epoch.load(Ordering::Relaxed) != epoch {
+            return;
+        }
         player
             .chunk_sender
             .lock()
@@ -4936,67 +4958,26 @@ impl World {
         player: &Arc<Player>,
         fire_event: bool,
     ) -> Option<Arc<Player>> {
-        let mut removed_player: Option<Arc<Player>> = None;
+        let removed_player = self.detach_transferring_player(player);
+        if let Some(ref player) = removed_player
+            && fire_event
+        {
+            let msg_comp = TextComponent::translate_cross(
+                translation::java::MULTIPLAYER_PLAYER_LEFT,
+                translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
+                [TextComponent::text(player.gameprofile.name.clone())],
+            )
+            .color_named(NamedColor::Yellow);
+            let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
 
-        self.players.rcu(|current_list| {
-            let mut new_list = (**current_list).clone();
-            // Find the player before we filter them out
-            let pos = new_list
-                .iter()
-                .position(|p| p.gameprofile.id == player.gameprofile.id);
-            if let Some(pos) = pos {
-                removed_player = Some(new_list.remove(pos));
-            }
-            new_list
-        });
-        if let Some(ref player) = removed_player {
-            self.entity_tracker
-                .remove_entity(player.as_ref() as &dyn EntityBase, self);
-            let uuid = player.gameprofile.id;
-            let entity_id = player.entity_id();
+            if let Some(server) = self.server.upgrade() {
+                server.plugin_manager.fire(&server, &mut event).await;
 
-            let bedrock_remove_player = CPlayerList {
-                action: CPlayerList::ACTION_REMOVE,
-                entries: vec![PlayerListEntry {
-                    uuid,
-                    entity_unique_id: VarLong(entity_id as i64),
-                    username: player.gameprofile.name.clone(),
-                    xuid: String::new(),
-                    platform_chat_id: String::new(),
-                    build_platform: BuildPlatform::Unknown,
-                    skin: Skin::steve(),
-                    is_teacher: false,
-                    is_host: false,
-                    is_sub_client: false,
-                    player_color: [0, 0, 0, 0],
-                }],
-            };
-
-            self.broadcast_editioned(&CRemovePlayerInfo::new(&[uuid]), &bedrock_remove_player);
-
-            self.broadcast_editioned(
-                &CRemoveEntities::new(&[entity_id.into()]),
-                &CRemoveActor::new(VarLong(entity_id as i64)),
-            );
-
-            if fire_event {
-                let msg_comp = TextComponent::translate_cross(
-                    translation::java::MULTIPLAYER_PLAYER_LEFT,
-                    translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
-                    [TextComponent::text(player.gameprofile.name.clone())],
-                )
-                .color_named(NamedColor::Yellow);
-                let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
-
-                if let Some(server) = self.server.upgrade() {
-                    server.plugin_manager.fire(&server, &mut event).await;
-
-                    if !event.cancelled {
-                        for player in self.players.load().iter() {
-                            player.send_system_message(&event.leave_message);
-                        }
-                        info!("{}", event.leave_message.to_pretty_console());
+                if !event.cancelled {
+                    for player in self.players.load().iter() {
+                        player.send_system_message(&event.leave_message);
                     }
+                    info!("{}", event.leave_message.to_pretty_console());
                 }
             }
         }
@@ -5013,6 +4994,7 @@ impl World {
             return;
         }
         self.clear_fishing_hook_owner(base_entity);
+        base_entity.invalidate_portal_travel();
         base_entity.removed.store(true, Ordering::Release);
 
         self.spawn_state.load().remove_entity(self, entity);

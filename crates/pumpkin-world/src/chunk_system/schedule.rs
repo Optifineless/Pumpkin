@@ -58,6 +58,7 @@ pub struct GenerationSchedule {
     last_level: ChunkLevel,
     last_high_priority: Vec<ChunkPos>,
     send_level: Arc<LevelChannel>,
+    chunk_loading: Arc<Mutex<ChunkLoading>>,
 
     public_chunk_map: Arc<DashMap<Vector2<i32>, SyncChunk>>,
     loaded_chunk_changes: Arc<crossbeam::queue::SegQueue<LoadedChunkChange>>,
@@ -159,6 +160,7 @@ impl GenerationSchedule {
                     last_level: ChunkLevel::default(),
                     last_high_priority: Vec::new(),
                     send_level: level_channel,
+                    chunk_loading: level_sched.chunk_loading.clone(),
                     public_chunk_map: level_sched.loaded_chunks.clone(),
                     loaded_chunk_changes: level_sched.loaded_chunk_changes.clone(),
                     unload_chunks: HashSetType::default(),
@@ -853,6 +855,7 @@ impl GenerationSchedule {
         let mut unload_chunks = HashSetType::default();
         swap(&mut unload_chunks, &mut self.unload_chunks);
         let mut chunks = Vec::with_capacity(unload_chunks.len());
+        let chunk_loading = self.chunk_loading.clone();
         for pos in unload_chunks {
             let Some(mut holder) = self.chunk_map.remove(&pos) else {
                 continue;
@@ -869,6 +872,17 @@ impl GenerationSchedule {
                 self.listener.clear_failure(pos);
             }
             if !holder.occupied.is_null() {
+                self.chunk_map.insert(pos, holder);
+                self.unload_chunks.insert(pos);
+                continue;
+            }
+
+            // ChunkMap.updateChunkScheduling rescinds queued unloads when a new ticket arrives.
+            // Keep ticket acquisition and unpublishing mutually exclusive.
+            let loading = chunk_loading
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if loading.pos_level.contains_key(&pos) {
                 self.chunk_map.insert(pos, holder);
                 self.unload_chunks.insert(pos);
                 continue;
@@ -908,6 +922,7 @@ impl GenerationSchedule {
                     }
                 }
             }
+            drop(loading);
         }
         if chunks.is_empty() {
             return;
@@ -1274,13 +1289,21 @@ impl GenerationSchedule {
         );
         loop {
             if level.should_unload.swap(false, Relaxed) {
+                let completed = self.send_level.take_unload_requests();
+                if !completed.is_empty() {
+                    self.resort_work(self.send_level.get());
+                }
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();
+                for completion in completed {
+                    let _ = completion.send(());
+                }
             }
             if level.should_save.swap(false, Relaxed) {
                 self.save_all_chunk(false);
             }
             if level.shut_down_chunk_system.load(Relaxed) {
+                self.send_level.close_unload_requests();
                 info!("Saving chunks before shutdown...");
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();

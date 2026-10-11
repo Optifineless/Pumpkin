@@ -628,6 +628,9 @@ impl LivingEntity {
         let clamped = health.max(0.0).min(max_health);
         self.damage_owner.changed(self.health.load() - clamped);
         self.health.store(clamped);
+        if clamped <= 0.0 {
+            self.entity.invalidate_portal_travel();
+        }
         // tell everyone entities health changed
         self.entity
             .set_synced_data(tracked_data::living_entity::DATA_HEALTH_ID, clamped);

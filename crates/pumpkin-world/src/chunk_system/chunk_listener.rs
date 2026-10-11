@@ -12,6 +12,22 @@ pub struct ChunkListener {
     global: Mutex<Vec<Sender<(ChunkPos, Weak<crate::chunk::ChunkData>)>>>,
 }
 
+pub(crate) struct SingleChunkListener {
+    listener: Arc<ChunkListener>,
+    pub(crate) receiver: oneshot::Receiver<Result<SyncChunk, String>>,
+}
+
+impl Drop for SingleChunkListener {
+    fn drop(&mut self) {
+        self.receiver.close();
+        self.listener
+            .single
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|(_, sender)| !sender.is_closed());
+    }
+}
+
 impl Default for ChunkListener {
     fn default() -> Self {
         Self::new()
@@ -19,6 +35,18 @@ impl Default for ChunkListener {
 }
 
 impl ChunkListener {
+    pub(crate) fn listen(self: &Arc<Self>, pos: ChunkPos) -> SingleChunkListener {
+        SingleChunkListener {
+            listener: self.clone(),
+            receiver: self.add_single_chunk_listener(pos),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn single_listener_count(&self) -> usize {
+        self.single.lock().unwrap().len()
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self {
