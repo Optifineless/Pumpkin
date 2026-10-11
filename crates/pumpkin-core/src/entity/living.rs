@@ -1698,8 +1698,8 @@ impl LivingEntity {
         }
     }
 
-    fn tick_effects(&self) {
-        self.tick_effects_impl();
+    fn tick_effects(&self, caller: &dyn EntityBase) {
+        self.tick_effects_impl(caller);
     }
 
     pub fn held_item(&self, caller: &dyn EntityBase) -> ItemStack {
@@ -2153,7 +2153,7 @@ impl EntityBase for LivingEntity {
             self.on_changed_block(caller, current_block_pos);
         }
 
-        self.tick_effects();
+        self.tick_effects(caller);
 
         self.updating_using_item(caller, server);
 

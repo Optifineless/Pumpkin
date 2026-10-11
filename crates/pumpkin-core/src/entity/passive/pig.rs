@@ -10,6 +10,7 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::{entity::EntityType, item::Item};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
+use pumpkin_util::Hand;
 
 use crate::entity::EntityBase;
 use crate::entity::custom_sound::CustomSound;
@@ -141,6 +142,10 @@ impl Animal for PigEntity {
 }
 
 impl Mob for PigEntity {
+    fn mob_tick(&self, _caller: &dyn EntityBase) {
+        self.ageable_ai_step();
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }
@@ -228,6 +233,25 @@ impl Mob for PigEntity {
 
     fn set_saddled(&self, saddled: bool) {
         self.saddled.store(saddled, Ordering::Relaxed);
+    }
+
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Hand,
+    ) -> bool {
+        if !self.is_food(item_stack) {
+            return self.mob_interact(player, item_stack);
+        }
+        let sound_variant = PigSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
+            .unwrap_or_default();
+        self.animal_interact_with_hand(
+            player,
+            item_stack,
+            sound_variant.ambient_sound(self.is_baby()),
+            hand,
+        )
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {

@@ -10,6 +10,7 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::{entity::EntityType, item::Item};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
+use pumpkin_util::Hand;
 use rand::RngExt;
 
 use crate::entity::custom_sound::CustomSound;
@@ -241,6 +242,7 @@ impl Mob for ChickenEntity {
         if self.mob_entity.living_entity.dead.load(Relaxed) {
             return;
         }
+        self.ageable_ai_step();
         let entity = &self.mob_entity.living_entity.entity;
         let current_velocity = entity.velocity.load();
         let on_ground = entity.on_ground.load(Ordering::Relaxed);
@@ -274,6 +276,26 @@ impl Mob for ChickenEntity {
             }
             self.egg_lay_time.store(next_time, Ordering::Relaxed);
         }
+    }
+
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Hand,
+    ) -> bool {
+        if !self.is_food(item_stack) {
+            return self.mob_interact(player, item_stack);
+        }
+        let sound_variant =
+            ChickenSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
+                .unwrap_or_default();
+        self.animal_interact_with_hand(
+            player,
+            item_stack,
+            sound_variant.ambient_sound(self.is_baby()),
+            hand,
+        )
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {

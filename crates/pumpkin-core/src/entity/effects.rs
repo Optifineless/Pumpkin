@@ -1,6 +1,6 @@
 use super::LivingEntity;
 use crate::entity::{
-    NBTStorage, NBTStorageInit,
+    EntityBase, NBTStorage, NBTStorageInit,
     attributes::{Modifier, ModifierOperation},
 };
 use pumpkin_data::tag::{self, Taggable};
@@ -9,7 +9,6 @@ use pumpkin_data::{
     entity::EntityType, potion::Effect,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use std::sync::atomic::Ordering::Relaxed;
 
 #[derive(Clone)]
 pub(super) struct HiddenEffect {
@@ -289,7 +288,7 @@ impl LivingEntity {
         self.sync_effect_particles();
     }
 
-    pub(super) fn tick_effects_impl(&self) {
+    pub(super) fn tick_effects_impl(&self, caller: &dyn EntityBase) {
         let _owner = self.own_damage();
         // MobEffectInstance.tickServer executes the periodic callback before duration/promotion.
         let snapshots: Vec<_> = {
@@ -325,7 +324,7 @@ impl LivingEntity {
                 continue;
             }
             let duration = if snapshot.duration == -1 {
-                self.entity.age.load(Relaxed)
+                crate::entity::tick_clock::elapsed_ticks(&self.entity, caller)
             } else {
                 snapshot.duration
             };

@@ -110,6 +110,7 @@ mod leash_shearing;
 pub mod shearable;
 pub mod spawn_util;
 pub mod synched_entity_data;
+mod tick_clock;
 pub mod tnt;
 pub mod r#type;
 pub mod vehicle;
@@ -2507,9 +2508,10 @@ impl Entity {
         }
 
         // Vanilla parity: full-freeze damage is tick-phase based.
+        let tick_count = tick_clock::elapsed_ticks(self, caller);
         if can_freeze
             && new_frozen_ticks >= Self::MAX_FROZEN_TICKS
-            && self.age.load(Ordering::Relaxed) % Self::FREEZE_DAMAGE_INTERVAL == 0
+            && tick_count % Self::FREEZE_DAMAGE_INTERVAL == 0
         {
             let world = self.world.load_full();
             if world.level_info.load().game_rules.freeze_damage

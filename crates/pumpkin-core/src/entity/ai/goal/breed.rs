@@ -6,9 +6,14 @@ use pumpkin_data::entity::EntityStatus;
 use rand::RngExt;
 
 use crate::entity::experience_orb::ExperienceOrbEntity;
+use crate::entity::passive::{cat::CatEntity, tamable::TamableAnimal};
 use crate::entity::{EntityBase, ai::pathfinder::NavigatorGoal, mob::Mob, r#type::from_type};
 
 use super::{Controls, Goal};
+
+#[cfg(test)]
+#[path = "cat_breeding_review_tests.rs"]
+mod cat_breeding_review_tests;
 
 pub struct BreedGoal {
     speed: f64,
@@ -37,6 +42,10 @@ impl BreedGoal {
         let world = entity.world.load();
         let my_type = entity.entity_type;
         let my_uuid = entity.entity_uuid;
+        let parent_cat = mob.cast_any().downcast_ref::<CatEntity>();
+        if parent_cat.is_some_and(|cat| !cat.is_tame()) {
+            return None;
+        }
 
         let nearby = world.get_nearby_entities(pos, 8.0);
         let mut closest: Option<(f64, Arc<dyn EntityBase>)> = None;
@@ -47,6 +56,14 @@ impl BreedGoal {
                 continue;
             }
             if c_entity.entity_type != my_type {
+                continue;
+            }
+            if parent_cat.is_some()
+                && !candidate
+                    .cast_any()
+                    .downcast_ref::<CatEntity>()
+                    .is_some_and(TamableAnimal::is_tame)
+            {
                 continue;
             }
             if !candidate.is_in_love() || !candidate.is_breeding_ready() || candidate.is_panicking()
@@ -102,6 +119,13 @@ impl BreedGoal {
         let parent_pos = entity.pos.load();
         let baby = from_type(entity.entity_type, parent_pos, &world, Uuid::new_v4());
         crate::entity::mob::spawn::inherit_breeding_variant(mob, mate, baby.as_ref());
+        if let (Some(parent), Some(partner), Some(offspring)) = (
+            mob.cast_any().downcast_ref::<CatEntity>(),
+            mate.cast_any().downcast_ref::<CatEntity>(),
+            baby.cast_any().downcast_ref::<CatEntity>(),
+        ) {
+            parent.inherit_breeding_data(partner, offspring);
+        }
         baby.get_entity().set_age(-24000);
         let world_full = entity.world.load_full();
         world_full.spawn_entity(baby);
