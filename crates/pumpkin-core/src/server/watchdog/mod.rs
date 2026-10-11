@@ -14,6 +14,8 @@ mod allocation_tests;
 #[cfg(test)]
 mod benchmark;
 #[cfg(test)]
+mod startup_plugin_tests;
+#[cfg(test)]
 mod startup_tests;
 
 use std::sync::Arc;

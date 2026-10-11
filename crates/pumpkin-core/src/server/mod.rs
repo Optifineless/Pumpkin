@@ -1244,6 +1244,7 @@ impl Server {
             // Always run player and network ticking, even when game is frozen
         } else {
             self.sync_game_time();
+            self.watchdog.phase(watchdog::markers::Phase::PlayerTicks);
             self.tick_players_and_network();
         }
         self.watchdog.phase(watchdog::markers::Phase::BlockUpdates);

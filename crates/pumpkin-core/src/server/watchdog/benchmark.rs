@@ -208,11 +208,10 @@ impl Fixture {
                 black_box(index);
             }
             Mode::StoreFloor => {
-                if let Some(worker) = worker {
-                    self.floor[worker].store(index as u64 + 1, Ordering::Relaxed);
-                    black_box(index);
-                    self.floor[worker].store(0, Ordering::Relaxed);
-                }
+                let worker = worker.expect("The benchmark must run on a Rayon worker");
+                self.floor[worker].store(index as u64 + 1, Ordering::Relaxed);
+                black_box(index);
+                self.floor[worker].store(0, Ordering::Relaxed);
             }
         }
     }

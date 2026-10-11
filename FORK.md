@@ -30,7 +30,8 @@ metrics. Linux stack capture tries `eu-stack`, then `gdb` on failed or unusable
 output, preserving both failure reasons, with an external timeout;
 Windows reports phase markers. Owner verification: Not yet.
 
-The watchdog and its parked halt helper are ready before gameplay ticking.
+The watchdog and its parked halt helper are ready before gameplay ticking,
+including ticks awaited by plugin `on_load` hooks.
 Failure detection arms the fallback without allocating; the bounded report
 retains world UUIDs and restores parent block positions after nested work.
 The phase report is saved before optional stack capture. If the halt helper
@@ -39,14 +40,19 @@ without its configured fallback.
 
 Linux Yama `ptrace_scope=1` capture authorizes only a gated launcher PID with
 `PR_SET_PTRACER` and revokes it after capture; its debugger descendants are
-allowed. `PR_SET_PTRACER_ANY` is never used. Capture requires `/bin/sh`, GNU
-`timeout`, an executable debugger and normal same-user/dumpable permissions.
+allowed. Absent Yama and scope 0 use ordinary ptrace permissions without the
+exception. `PR_SET_PTRACER_ANY` is never used. The separate launcher waits for
+`timeout --foreground` to reap the debugger, then resumes the server with
+`SIGCONT` before returning; it remains runnable if the tracer left the server
+stopped. Capture requires `/bin/sh`, GNU `timeout`, an executable debugger and
+normal same-user/dumpable permissions.
 Yama modes 2/3 and other security policies can still deny capture. Attachment,
 timeout and detachment under mode 1 require Linux validation; this follow-up
 was developed on Windows and has not verified them.
 
-Native plugin API remains API 8 (same version) under fork policy; the Wasm WIT
-is unchanged.
+The synthetic slot benchmark measures warm, pre-registered workers, including
+per-batch scopes and per-subject markers. It excludes first-use registration,
+catalog replacement, chunk-stat sampling and the tick clock.
 
 ## Upstream pull requests included early
 
@@ -264,6 +270,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 
 ## Native plugin API 8
 
+- API 8 (same version): the tick watchdog changes `Server` layout through its crate-private `watchdog` field and adds `Server::start_watchdog`. Rebuild native plugins; Wasm WIT is unchanged. In-game verification **Not yet**.
 - API 8 (same version), [#7](https://github.com/Optifineless/Pumpkin/issues/7): candle stacks now use ordinary item placement, consuming one candle in survival while preserving the lit state and four-candle limit. In-game verification **Not yet**.
 - API 8 (same version), [#8](https://github.com/Optifineless/Pumpkin/issues/8): sugar cane accepts tagged adjacent water fluids, including waterlogged blocks, or tagged frosted-ice support. In-game verification **Not yet**.
 - API 8 (same version), [#9](https://github.com/Optifineless/Pumpkin/issues/9): newly grown sugar-cane segments start at age zero instead of inheriting the mature source age. In-game verification **Not yet**.

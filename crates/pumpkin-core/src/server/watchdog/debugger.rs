@@ -1,6 +1,8 @@
 // Optional native enrichment of ServerWatchdog.createWatchdogCrashReport.
 // Called only after the independent halt is armed and the phase report is saved.
 
+mod permission;
+
 fn capture_with_fallback(mut capture: impl FnMut(&str) -> Result<String, String>) -> String {
     let first = match capture("eu-stack") {
         Ok(output) => return output,
@@ -72,17 +74,46 @@ fn find_on_path(name: &str) -> Option<std::path::PathBuf> {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 fn gated_command(program: &std::path::Path) -> std::process::Command {
     let mut command = std::process::Command::new("/bin/sh");
-    // exec preserves the declared launcher PID; timeout's debugger is its descendant.
-    // Paths and debugger arguments are positional parameters, never shell source.
+    // The supervisor remains outside the traced server's thread group. timeout's
+    // --foreground keeps its SIGKILL from killing itself before reaping the tracer.
+    // Resume only after timeout has reaped it, before returning.
     command.args([
         "-c",
-        "IFS= read -r ready || exit 1; exec \"$@\"",
+        "IFS= read -r ready || exit 1; server=$1; shift; \"$@\"; status=$?; kill -CONT \"$server\" || exit 1; exit \"$status\"",
         "watchdog",
     ]);
+    // Paths, PIDs and debugger arguments are positional, never shell source.
+    command.arg(std::process::id().to_string());
     command.arg(program);
+    command
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn capture_command(timeout: &std::path::Path, debugger: &std::path::Path) -> std::process::Command {
+    let mut command = gated_command(timeout);
+    command
+        .args(["--foreground", "--kill-after=1s", "2s"])
+        .arg(debugger);
+    let pid = std::process::id().to_string();
+    if debugger.file_name().is_some_and(|name| name == "eu-stack") {
+        command.args(["-p", &pid]);
+    } else {
+        command.args([
+            "--batch",
+            "--nx",
+            "-p",
+            &pid,
+            "-ex",
+            "set pagination off",
+            "-ex",
+            "thread apply all bt",
+            "-ex",
+            "detach",
+        ]);
+    }
     command
 }
 
@@ -94,40 +125,35 @@ fn authorized_status(
     use std::process::Stdio;
 
     let mut child = command.stdin(Stdio::piped()).spawn()?;
-    let unused: libc::c_ulong = 0;
-    // Yama mode 1 permits only this launcher and its descendants, never every PID.
-    // SAFETY: PR_SET_PTRACER takes an integer PID, not a pointer. child is alive and
-    // blocked on stdin until permission is established, preventing an attach race.
-    let allowed = unsafe {
-        libc::prctl(
-            libc::PR_SET_PTRACER,
-            child.id() as libc::c_ulong,
-            unused,
-            unused,
-            unused,
+    let pid = child.id();
+    let status = permission::yama_scope().and_then(|scope| {
+        permission::with_permission(
+            scope,
+            |allow| {
+                let unused: libc::c_ulong = 0;
+                let tracer = if allow { pid as libc::c_ulong } else { unused };
+                // SAFETY: PR_SET_PTRACER takes an integer PID. The gated launcher
+                // is alive; zero revokes the declaration after it exits.
+                if unsafe { libc::prctl(libc::PR_SET_PTRACER, tracer, unused, unused, unused) } == 0
+                {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::last_os_error())
+                }
+            },
+            || {
+                child
+                    .stdin
+                    .take()
+                    .ok_or_else(|| std::io::Error::other("Debugger launcher has no input"))?
+                    .write_all(b"go\n")?;
+                child.wait()
+            },
         )
-    };
-    let release = if allowed == 0 {
-        child
-            .stdin
-            .take()
-            .ok_or_else(|| std::io::Error::other("Debugger launcher has no input"))
-            .and_then(|mut stdin| stdin.write_all(b"go\n"))
-    } else {
-        Err(std::io::Error::last_os_error())
-    };
-    let status = match release {
-        Ok(()) => child.wait(),
-        Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            Err(error)
-        }
-    };
-    // SAFETY: zero revokes this process's temporary tracer declaration.
-    let revoked = unsafe { libc::prctl(libc::PR_SET_PTRACER, unused, unused, unused, unused) };
-    if revoked != 0 {
-        return Err(std::io::Error::last_os_error());
+    });
+    if status.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
     }
     status
 }
@@ -154,25 +180,7 @@ fn capture_stacks(
         .write(true)
         .open(&path)?;
     let result = (|| {
-        let mut command = gated_command(timeout);
-        command.args(["--kill-after=1s", "2s"]).arg(debugger);
-        let pid = std::process::id().to_string();
-        if debugger.file_name().is_some_and(|name| name == "eu-stack") {
-            command.args(["-p", &pid]);
-        } else {
-            command.args([
-                "--batch",
-                "--nx",
-                "-p",
-                &pid,
-                "-ex",
-                "set pagination off",
-                "-ex",
-                "thread apply all bt",
-                "-ex",
-                "detach",
-            ]);
-        }
+        let mut command = capture_command(timeout, debugger);
         command
             .stdout(Stdio::from(file.try_clone()?))
             .stderr(Stdio::from(file));
@@ -199,6 +207,84 @@ fn capture_stacks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debugger_supervisor_waits_then_resumes_before_returning() {
+        let timeout = std::path::Path::new("/usr/bin/timeout");
+        let debugger = std::path::Path::new("/usr/bin/gdb");
+        let command = capture_command(timeout, debugger);
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(command.get_program(), "/bin/sh");
+        assert_eq!(args[0], "-c");
+        assert_eq!(args[3], std::process::id().to_string().as_str());
+        assert_eq!(args[4], timeout.as_os_str());
+        assert_eq!(args[5], "--foreground");
+        assert_eq!(args[6], "--kill-after=1s");
+        assert_eq!(args[7], "2s");
+        assert_eq!(args[8], debugger.as_os_str());
+        // Check the executed command sequence, including the saved child status.
+        // A synchronous shell invocation returns only after its child is reaped.
+        let steps: Vec<_> = args[1]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .map(str::trim)
+            .collect();
+        let wait = steps.iter().position(|step| *step == "\"$@\"").unwrap();
+        let status = steps.iter().position(|step| *step == "status=$?").unwrap();
+        let resume = steps
+            .iter()
+            .position(|step| step.starts_with("kill -CONT "))
+            .unwrap();
+        let exit = steps
+            .iter()
+            .position(|step| *step == "exit \"$status\"")
+            .unwrap();
+        assert!(wait < status && status < resume && resume < exit);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn debugger_supervisor_resumes_after_exit_before_returning() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = std::path::PathBuf::from("/bin/sh");
+        let template = gated_command(&shell);
+        let args: Vec<_> = template.get_args().map(ToOwned::to_owned).collect();
+        // Inject the signal syscall, while executing the real gate/capture/wait/return.
+        let script = format!(
+            "kill() {{ printf 'resume\\n'; }}; {}",
+            args[1].to_str().unwrap()
+        );
+        for status in [0, 1, 124, 137] {
+            let mut child = Command::new(&shell)
+                .args(["-c", &script])
+                .args(&args[2..])
+                .args(["-c", "printf 'capture\\n'; exit \"$1\"", "debugger"])
+                .arg(status.to_string())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(b"go\n").unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert_eq!(output.status.code(), Some(status));
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                "capture\nresume\n"
+            );
+        }
+        let output = Command::new(&shell)
+            .args(["-c", &script])
+            .args(&args[2..])
+            .args(["-c", "printf 'capture\\n'"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty(), "An unreleased debugger ran");
+    }
 
     #[test]
     fn failed_or_empty_eu_stack_retries_gdb_and_preserves_reasons() {
@@ -254,11 +340,11 @@ mod tests {
                 let unused = std::ptr::null_mut::<libc::c_void>();
                 assert_eq!(libc::ptrace(libc::PTRACE_ATTACH, pid, unused, unused), 0);
                 let mut status = 0;
-                let waited = libc::waitpid(pid, &mut status, 0);
+                let waited = libc::waitpid(pid, &raw mut status, 0);
                 let detached = libc::ptrace(libc::PTRACE_DETACH, pid, unused, unused);
                 assert_eq!(waited, pid);
                 assert_eq!(detached, 0);
-            }
+            };
             return;
         }
         // Stricter Yama modes intentionally forbid this unprivileged attachment.

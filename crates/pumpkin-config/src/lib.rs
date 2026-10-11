@@ -200,7 +200,8 @@ pub struct BasicConfiguration {
     pub tps: f32,
     /// Maximum duration of one server tick in milliseconds (vanilla `max-tick-time`).
     /// Defaults to 60000; -1 or 0 disables stall detection. A stall writes a diagnostic
-    /// crash report and exits without saving. Startup, frozen ticks and sprints are exempt.
+    /// crash report and exits without saving. Every executing tick is monitored, including
+    /// frozen, stepped and sprinting ticks. Startup generation and waits between ticks are unarmed.
     pub max_tick_time: i64,
     /// The default gamemode for players.
     pub default_gamemode: GameMode,

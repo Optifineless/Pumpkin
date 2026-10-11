@@ -407,6 +407,10 @@ impl PumpkinServer {
     }
 
     pub async fn init_plugins(&self) -> std::time::Duration {
+        self.start_ticker().unwrap_or_else(|error| {
+            error!("Failed to start server ticker/watchdog: {error}");
+            std::process::exit(1);
+        });
         if !self.server.advanced_config.plugins.enabled {
             info!("Plugin system is disabled in configuration.");
             return std::time::Duration::ZERO;
@@ -441,7 +445,7 @@ impl PumpkinServer {
     }
 
     pub async fn start(&self) {
-        let _watchdog = self.start_ticker().unwrap_or_else(|error| {
+        self.start_ticker().unwrap_or_else(|error| {
             error!("Failed to start server ticker/watchdog: {error}");
             std::process::exit(1);
         });

@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn nested_servers_restore_registry_and_reuse_registered_slots() {
+    let a = Arc::new(Slots::new(Instant::now()));
+    let b = Arc::new(Slots::new(Instant::now()));
+    let a_phase = Arc::new(Record::new());
+    let b_phase = Arc::new(Record::new());
+    for _ in 0..3 {
+        let a_scope = a.scope(2, Some(a_phase.clone()));
+        Phase::WorldTick.enter();
+        b.register();
+        let b_scope = b.scope(3, Some(b_phase.clone()));
+        Phase::PlayerTicks.enter();
+        drop(b_scope);
+        assert!(b_phase.describe(0).is_none());
+        assert_eq!(current_world(), 2);
+        Phase::BlockEvents.enter();
+        assert!(
+            a_phase
+                .describe(0)
+                .unwrap()
+                .to_string()
+                .starts_with("block events")
+        );
+        assert!(b_phase.describe(0).is_none());
+        drop(a_scope);
+        assert!(a_phase.describe(0).is_none());
+        assert_eq!(current_world(), 0);
+    }
+    assert_eq!(a.registered.load().len(), 1);
+    assert_eq!(b.registered.load().len(), 1);
+    // Cache entries may hold idle slots, but never own an unloaded registry.
+    let weak = Arc::downgrade(&b);
+    drop(b);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
 fn formats_active_subjects_with_elapsed_time() {
     let phase = Record::new();
     phase.enter(Phase::EntityTicks, 100);

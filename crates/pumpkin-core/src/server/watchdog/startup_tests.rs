@@ -33,7 +33,7 @@ impl<E: Payload, F: Fn(&Arc<Server>) + Send + Sync> EventHandler<E> for Callback
     }
 }
 
-fn callback<E: Payload + Send + Sync + 'static>(
+pub(super) fn callback<E: Payload + Send + Sync + 'static>(
     server: &Server,
     action: impl Fn(&Arc<Server>) + Send + Sync + 'static,
 ) {
@@ -42,7 +42,7 @@ fn callback<E: Payload + Send + Sync + 'static>(
         .register::<E, _>(Arc::new(Callback(action)), EventPriority::Normal, true);
 }
 
-fn fixture(path: &std::path::Path) -> PumpkinServer {
+pub(super) fn fixture(path: &std::path::Path) -> PumpkinServer {
     let mut server = combat_test_support::server(path);
     Arc::get_mut(&mut server).unwrap().watchdog = Arc::new(Watchdog::new(i64::MAX));
     let world = combat_test_support::world(&server, path);
@@ -78,12 +78,11 @@ async fn startup_readies_watchdog_before_first_ticker_callback() {
         std::panic::resume_unwind(Box::new("end startup test"));
     });
     assert_eq!(server.server.watchdog.tick_start.load(Ordering::Relaxed), 0);
-    let watchdog = server.start_ticker().unwrap();
+    server.start_ticker().unwrap();
     let (enabled, start) = observed.recv_timeout(Duration::from_secs(30)).unwrap();
     join_ticker(&server);
     assert!(enabled);
     assert_ne!(start & ACTIVE_TICK, 0);
-    drop(watchdog);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -172,13 +171,12 @@ async fn tick_start_world_removal_keeps_dispatch_catalog_identity() {
         .unwrap();
         std::panic::resume_unwind(Box::new("end world removal test"));
     });
-    let watchdog = server.start_ticker().unwrap();
+    server.start_ticker().unwrap();
     let (ids, report) = observed.recv_timeout(Duration::from_secs(30)).unwrap();
     join_ticker(&server);
     assert_eq!(ids.len(), 2);
     assert_eq!(ids[1], retained_id);
     assert!(report.contains(&format!("World #1 [{retained_id}]: end")));
-    drop(watchdog);
 }
 
 fn command(server: &Arc<Server>, input: &str) {
@@ -207,7 +205,7 @@ fn stalled_mode_tick(commands: &[&str], runs_normally: bool) {
         wait.lock().unwrap().recv().unwrap();
         std::panic::resume_unwind(Box::new("end mode test"));
     });
-    let watchdog = server.start_ticker().unwrap();
+    server.start_ticker().unwrap();
     let runs_game = observed.recv_timeout(Duration::from_secs(30)).unwrap();
     let start = server.server.watchdog.tick_start.load(Ordering::Acquire);
     let detected = server.server.watchdog.stalled_tick(|| u64::MAX);
@@ -220,12 +218,59 @@ fn stalled_mode_tick(commands: &[&str], runs_normally: bool) {
         Some(start),
         "Executing tick was exempt: {commands:?}"
     );
-    drop(watchdog);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn frozen_tick_callback_stall_is_monitored() {
     stalled_mode_tick(&["tick freeze"], false);
+}
+
+struct FrozenPacketPhase(mpsc::Sender<String>);
+
+impl EventHandler<crate::plugin::server::packet::PacketReceivedEvent> for FrozenPacketPhase {
+    fn handle_blocking<'a>(
+        &'a self,
+        server: &'a Arc<Server>,
+        event: &'a mut crate::plugin::server::packet::PacketReceivedEvent,
+    ) -> BoxFuture<'a, ()> {
+        event.cancelled = true;
+        self.0
+            .send(server.watchdog.main_phase.describe(0).unwrap().to_string())
+            .unwrap();
+        Box::pin(async {})
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn frozen_packet_dispatch_reports_server_player_phase() {
+    let directory = tempfile::tempdir().unwrap();
+    let server = fixture(directory.path());
+    let world = server.server.worlds.load()[0].clone();
+    let player = crate::net::java::combat_test_support::TestPlayer::new(&world);
+    player
+        .player
+        .inbound_packets
+        .push(pumpkin_protocol::RawPacket {
+            id: -1,
+            payload: bytes::Bytes::new(),
+        });
+    command(&server.server, "tick freeze");
+    let (seen, observed) = mpsc::channel();
+    server.server.plugin_manager.register(
+        Arc::new(FrozenPacketPhase(seen)),
+        EventPriority::Normal,
+        true,
+    );
+    callback::<ServerTickEndEvent>(&server.server, |_| {
+        std::panic::resume_unwind(Box::new("end frozen packet phase test"));
+    });
+    server.start_ticker().unwrap();
+    let phase = observed.recv_timeout(Duration::from_secs(30)).unwrap();
+    join_ticker(&server);
+    assert!(
+        phase.starts_with("player ticks"),
+        "Wrong frozen packet phase: {phase}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -249,7 +294,7 @@ async fn freeze_or_sprint_during_a_stuck_tick_keeps_it_eligible() {
             std::panic::resume_unwind(Box::new("end live mode test"));
         }
     });
-    let watchdog = server.start_ticker().unwrap();
+    server.start_ticker().unwrap();
     assert_eq!(observed.recv_timeout(Duration::from_secs(30)).unwrap(), 0);
     let start = server.server.watchdog.tick_start.load(Ordering::Acquire);
     command(&server.server, "tick freeze");
@@ -267,7 +312,6 @@ async fn freeze_or_sprint_during_a_stuck_tick_keeps_it_eligible() {
     assert_eq!(sprinting, Some(start), "Sprinting exempted a stuck tick");
     assert!(is_sprinting);
     assert_eq!(sprint_tick, Some(next), "A sprint tick was exempt");
-    drop(watchdog);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -300,7 +344,7 @@ async fn shutdown_keeps_a_hung_tick_monitored_until_join() {
         seen.send(()).unwrap();
         wait.lock().unwrap().recv().unwrap();
     });
-    let watchdog = server.start_ticker().unwrap();
+    server.start_ticker().unwrap();
     observed.recv_timeout(Duration::from_secs(30)).unwrap();
     let stopping = server.clone();
     let join = tokio::spawn(async move { stopping.stop_ticker().await });
@@ -315,6 +359,5 @@ async fn shutdown_keeps_a_hung_tick_monitored_until_join() {
     assert_eq!(detected, Some(start));
     assert!(!server.server.watchdog.enabled.load(Ordering::Acquire));
     assert_eq!(server.server.watchdog.tick_start.load(Ordering::Acquire), 0);
-    drop(watchdog);
     server.server.shutdown().await;
 }
