@@ -1,9 +1,11 @@
 pub mod advancement;
+mod connection;
 mod death;
 mod experience_orb;
 mod known_movement;
 mod mace;
 mod melee;
+mod world_transfer;
 use known_movement::KnownMovement;
 pub mod statistics;
 
@@ -3570,33 +3572,13 @@ impl Player {
                 let pitch = event.pitch;
                 let new_world = event.new_world;
 
-                self.set_client_loaded(false);
-                let Some(player) = current_world.remove_player(self, false).await else {
+                let Some(admission) = self.prepare_world_transfer(&current_world, &new_world, portal).await else {
                     return false;
                 };
-               new_world.players.rcu(|current_list| {
-                    let mut new_list = (**current_list).clone();
-                    new_list.push(player.clone());
-                    new_list
-                });
-                self.unload_watched_chunks(&current_world).await;
 
-                self.change_world_chunks(&current_world.level, &new_world);
-                self.living_entity.entity.set_world(new_world.clone());
-                transferred = true;
-
-                if new_world.dimension == pumpkin_data::dimension::Dimension::THE_NETHER {
-                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
-                        dimension: "the_nether".to_string(),
-                    });
-                } else if new_world.dimension == pumpkin_data::dimension::Dimension::THE_END {
-                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
-                        dimension: "the_end".to_string(),
-                    });
-                }
-
+                self.set_client_loaded(false);
                 let last_pos = self.living_entity.entity.last_pos.load();
-                let death_dimension = ResourceLocation::from(self.world().dimension.minecraft_name);
+                let death_dimension = ResourceLocation::from(new_world.dimension.minecraft_name);
                 let death_location = BlockPos(Vector3::new(
                     last_pos.x.round() as i32,
                     last_pos.y.round() as i32,
@@ -3648,12 +3630,22 @@ impl Player {
 
                 self.send_permission_lvl_update();
 
-                player.get_entity().set_pos(position);
-                player.get_entity().set_rotation(yaw, pitch);
-                player.get_entity().last_pos.store(position);
+                if !self.commit_world_transfer(&current_world, &new_world, position, (yaw, pitch), portal).await {
+                    return false;
+                }
+                let player = self.clone();
+                drop(admission);
+                transferred = true;
 
-                // Registered after positioning, so spawns carry the new position.
-                new_world.add_arriving_player(&player);
+                if new_world.dimension == pumpkin_data::dimension::Dimension::THE_NETHER {
+                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
+                        dimension: "the_nether".to_string(),
+                    });
+                } else if new_world.dimension == pumpkin_data::dimension::Dimension::THE_END {
+                    self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
+                        dimension: "the_end".to_string(),
+                    });
+                }
 
                 self.send_abilities_update();
 

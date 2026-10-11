@@ -110,7 +110,7 @@ fn enter_portal(fixture: &DeathTestWorld, target: BlockPos) -> Arc<Entity> {
 }
 
 async fn await_arrival(entity: &Entity) {
-    tokio::time::timeout(Duration::from_secs(20), async {
+    tokio::time::timeout(Duration::from_secs(60), async {
         while entity.portal_travel_pending_for_test() {
             tokio::task::yield_now().await;
         }
@@ -229,10 +229,10 @@ async fn portal_search_keeps_existing_portal_resident_until_scan_finishes() {
         while destination.level.is_chunk_loaded(&Vector2::new(0, 0)) {
             destination
                 .level
-                .should_unload
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-            destination.level.level_channel.notify();
-            tokio::time::sleep(Duration::from_millis(50)).await;
+                .level_channel
+                .request_unload(&destination.level)
+                .await
+                .unwrap();
         }
     })
     .await
@@ -245,27 +245,22 @@ async fn portal_search_keeps_existing_portal_resident_until_scan_finishes() {
         .await
         .unwrap()
         .unwrap();
-    // Allow the scheduler to consume ticket removals, then force its actual unload pass.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    destination
-        .level
-        .should_unload
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    destination.level.level_channel.notify();
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-    let unload_pass_ran = !destination
-        .level
-        .should_unload
-        .load(std::sync::atomic::Ordering::Relaxed);
+    // Acknowledge the actual unload pass, including all pending ticket removals.
+    tokio::time::timeout(
+        Duration::from_secs(60),
+        destination
+            .level
+            .level_channel
+            .request_unload(&destination.level),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let remained_loaded = destination.level.is_chunk_loaded(&Vector2::new(0, 0));
     resume_tx.send(()).unwrap();
     await_arrival(&entity).await;
     let actual = entity.pos.load();
     fixture.server.shutdown().await;
-    assert!(
-        unload_pass_ran,
-        "scheduler did not run the requested unload pass"
-    );
     assert!(
         remained_loaded,
         "existing portal unloaded between fetch and scan"

@@ -302,31 +302,24 @@ async fn portal_creation_yields() {
                 .unwrap();
         }
     }
-    let (locked_tx, locked_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = std::sync::mpsc::channel();
-    let held_world = destination.clone();
-    let blocker = std::thread::spawn(move || {
-        let _border = held_world.worldborder.lock().unwrap();
-        locked_tx.send(()).unwrap();
-        // A slow synchronous scan is emulated without making a failed test hang forever.
-        let _ = release_rx.recv_timeout(Duration::from_secs(2));
-    });
-    locked_rx.await.unwrap();
-    let start = Instant::now();
+    let (started, running) = tokio::sync::oneshot::channel();
+    let (release, gate) = std::sync::mpsc::channel();
+    *destination.portal_blocking_gate.lock().unwrap() = Some((started, gate));
     let world = destination.clone();
     let creation = tokio::spawn(async move {
         PortalType::create_nether_portal(&world, BlockPos::new(1, 80, 1), HorizontalAxis::Z).await
     });
-    // On the one-worker runtime this timer cannot run if creation occupies the worker.
-    tokio::time::sleep(Duration::from_millis(20)).await;
-    let elapsed = start.elapsed();
-    let _ = release_tx.send(());
-    blocker.join().unwrap();
+    // The probe must run on the sole worker, not runtime.block_on's calling thread.
+    // A synchronous scan prevents it acknowledging the start gate; the watchdog catches that.
+    let responsive = tokio::spawn(async move {
+        running.await.unwrap();
+        release.send(()).unwrap();
+    });
+    tokio::time::timeout(Duration::from_secs(30), responsive)
+        .await
+        .unwrap()
+        .unwrap();
     let portal = creation.await.unwrap().unwrap();
-    assert!(
-        elapsed < Duration::from_secs(1),
-        "Tokio worker stalled for {elapsed:?}"
-    );
     assert_eq!(portal.lower_corner, BlockPos::new(1, 80, 0));
     assert_eq!(
         destination.get_block(&portal.lower_corner),

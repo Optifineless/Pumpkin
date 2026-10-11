@@ -11,6 +11,8 @@ pub struct PortalTravelState {
     state: Mutex<PendingTravel>,
     #[cfg(test)]
     continuation_gate: Mutex<Option<ContinuationGate>>,
+    #[cfg(test)]
+    pub(crate) transfer_gate: Mutex<Option<ContinuationGate>>,
 }
 
 #[derive(Default)]
@@ -35,6 +37,15 @@ pub struct PortalTravel {
 impl PortalTravel {
     /// Checks the captured trip after an await, before any arrival effects are applied.
     pub(crate) fn is_valid(&self) -> bool {
+        self.is_current()
+            && self
+                .source
+                .get_entity_by_id(self.entity.get_entity().entity_id)
+                .is_some_and(|current| Arc::ptr_eq(&current, &self.entity))
+    }
+
+    /// Checks the initiating life/session even after source membership has been removed.
+    pub(crate) fn is_current(&self) -> bool {
         let entity = self.entity.get_entity();
         let generation = entity
             .portal_travel
@@ -52,9 +63,9 @@ impl PortalTravel {
             })
             && Arc::ptr_eq(&entity.world.load_full(), &self.source)
             && self
-                .source
-                .get_entity_by_id(entity.entity_id)
-                .is_some_and(|current| Arc::ptr_eq(&current, &self.entity))
+                .entity
+                .get_player()
+                .is_none_or(|player| !player.client.closed())
     }
 
     async fn teleport(
@@ -197,7 +208,17 @@ impl Entity {
 
         // Entity.handlePortal / teleport: resolve the exit before moving the entity and passengers.
         // Chunk decoding uses the tick's Rayon pool, so chunk waits must yield on Tokio.
-        server.spawn_task(trip.teleport(portal_type, destination_world, source_portal, yaw));
+        // Logout drains the connection tracker before saving and removing this session.
+        if let Some(player) = trip.source.get_player_by_id(self.entity_id) {
+            player.client.spawn_task(trip.teleport(
+                portal_type,
+                destination_world,
+                source_portal,
+                yaw,
+            ));
+        } else {
+            server.spawn_task(trip.teleport(portal_type, destination_world, source_portal, yaw));
+        }
     }
 }
 

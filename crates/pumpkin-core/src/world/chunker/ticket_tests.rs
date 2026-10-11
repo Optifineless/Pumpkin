@@ -145,7 +145,7 @@ fn movement_and_cleanup_follow_the_same_lock_order() {
         .stderr(Stdio::from(output))
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break Some(status);

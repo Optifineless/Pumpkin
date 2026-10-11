@@ -1289,8 +1289,15 @@ impl GenerationSchedule {
         );
         loop {
             if level.should_unload.swap(false, Relaxed) {
+                let completed = self.send_level.take_unload_requests();
+                if !completed.is_empty() {
+                    self.resort_work(self.send_level.get());
+                }
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();
+                for completion in completed {
+                    let _ = completion.send(());
+                }
             }
             if level.should_save.swap(false, Relaxed) {
                 self.save_all_chunk(false);

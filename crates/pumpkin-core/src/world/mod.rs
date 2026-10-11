@@ -1,5 +1,6 @@
 pub(crate) use explosion::ExplosionDamageSource;
 mod storage_failure;
+pub(crate) mod transfer_admission;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
 };
@@ -354,6 +355,7 @@ pub struct World {
     unsent_block_changes: std::sync::Mutex<HashMap<BlockPos, BlockStateId>>,
     /// Persisted vanilla POI storage for portal and villager lookups.
     pub portal_poi: std::sync::Mutex<portal::PortalPoiStorage>,
+    pub(crate) transfer_admission: transfer_admission::TransferAdmission,
     #[cfg(test)]
     pub(crate) portal_scan_gate: std::sync::Mutex<Option<portal::PortalScanGate>>,
     #[cfg(test)]
@@ -513,6 +515,7 @@ impl World {
             handling_tick: std::sync::atomic::AtomicBool::new(false),
             unsent_block_changes: std::sync::Mutex::new(HashMap::new()),
             portal_poi: std::sync::Mutex::new(portal_poi),
+            transfer_admission: transfer_admission::TransferAdmission::default(),
             #[cfg(test)]
             portal_scan_gate: std::sync::Mutex::new(None),
             #[cfg(test)]

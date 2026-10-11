@@ -1,6 +1,34 @@
 use super::*;
 
 impl JavaClient {
+    /// Acknowledges outgoing packets so lifecycle tests can exercise awaited transfer delivery.
+    pub(crate) fn with_packet_sink(gameprofile: GameProfile) -> Self {
+        let mut client = Self::without_connection(gameprofile);
+        let mut packets = client.outgoing_packet_queue_recv.take().unwrap();
+        let closed = client.close_token.clone();
+        let pending = client.pending_bytes.clone();
+        // The sink only substitutes transport writes, not connection task ownership.
+        tokio::spawn(async move {
+            loop {
+                let packet = tokio::select! {
+                    packet = packets.recv() => packet,
+                    () = closed.cancelled() => break,
+                };
+                let Some(packet) = packet else { break };
+                if let OutgoingPacket::Data { data, completion } = packet {
+                    decrement_pending_bytes(&pending, data.len());
+                    if let Some(
+                        outgoing::Completion::Framed(done) | outgoing::Completion::Flushed(done),
+                    ) = completion
+                    {
+                        let _ = done.send(());
+                    }
+                }
+            }
+        });
+        client
+    }
+
     pub(crate) fn without_connection(gameprofile: GameProfile) -> Self {
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
         Self {
