@@ -398,7 +398,7 @@ async fn run_hand_use(kind: BlockUse, hand: Hand, actions: bool, count: u8) -> T
             }
             let player = &fixture.owner.player;
             assert_hands(player, hand, count);
-            let expected = if supplied_by_actions {
+            let mut expected = if supplied_by_actions {
                 after_action
             } else {
                 let mut after = before;
@@ -407,6 +407,10 @@ async fn run_hand_use(kind: BlockUse, hand: Hand, actions: bool, count: u8) -> T
             };
             let actual = player.inventory().get_stack_in_hand(hand);
             assert!((actual.is_empty() && expected.is_empty()) || actual.are_equal(&expected));
+            if supplied_by_actions {
+                // Action descriptors omit stack IDs; decoding allocates a new server ID.
+                expected.uid = actual.uid;
+            }
             let expected_luck = if supplied_by_actions || count == 1 {
                 2.0
             } else {
