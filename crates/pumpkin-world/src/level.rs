@@ -1,3 +1,7 @@
+#[path = "entity_unload.rs"]
+mod entity_unload;
+pub use entity_unload::EntityUnload;
+
 use crate::chunk::format::linear::LinearV2File;
 use crate::chunk::format::pump::PumpFile;
 use crate::chunk_system::{ChunkListener, ChunkLoading, GenerationSchedule, LevelChannel};
@@ -19,7 +23,7 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use crossbeam::queue::SegQueue;
-use dashmap::{DashMap, Entry};
+use dashmap::DashMap;
 use futures::{FutureExt, StreamExt, future::BoxFuture, future::Shared, stream};
 use pumpkin_config::{chunk::ChunkConfig, lighting::LightingEngineConfig, world::LevelConfig};
 use pumpkin_data::biome::Biome;
@@ -132,6 +136,7 @@ pub struct Level {
     pub chunk_loading: Mutex<ChunkLoading>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
+    entity_unloads: Mutex<entity_unload::EntityUnloads>,
 
     pub chunk_saver: Arc<ChunkSaver>,
     entity_saver: Arc<EntitySaver>,
@@ -342,6 +347,7 @@ impl Level {
             chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
             chunk_watchers: Arc::new(DashMap::new()),
+            entity_unloads: Mutex::default(),
             tasks: TaskTracker::new(),
             chunk_system_tasks: TaskTracker::new(),
             cancel_token: CancellationToken::new(),
@@ -482,16 +488,8 @@ impl Level {
     /// it is removed from memory. Should only be called on chunks the player was not watching
     /// before
     pub async fn mark_chunks_as_newly_watched(&self, chunks: &[Vector2<i32>]) {
-        for chunk in chunks {
-            self.chunk_watchers
-                .entry(*chunk)
-                .and_modify(|count| *count = count.saturating_add(1))
-                .or_insert(1);
-        }
-
-        self.entity_saver
-            .watch_chunks(&self.level_folder, chunks)
-            .await;
+        self.watch_entity_chunks(chunks);
+        self.update_entity_storage_watchers(chunks, &[]).await;
     }
 
     /// Marks chunks no longer "watched" by a unique player. When no players are watching a chunk,
@@ -500,22 +498,9 @@ impl Level {
         &self,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
     ) -> Vec<Vector2<i32>> {
-        let mut chunks_to_clean = Vec::new();
-        let chunks_vec: Vec<Vector2<i32>> = chunks.into_iter().map(|c| *c.borrow()).collect();
-
-        for chunk in &chunks_vec {
-            if let Entry::Occupied(mut entry) = self.chunk_watchers.entry(*chunk) {
-                *entry.get_mut() = entry.get().saturating_sub(1);
-                if *entry.get() == 0 {
-                    entry.remove();
-                    chunks_to_clean.push(*chunk);
-                }
-            }
-        }
-
-        self.entity_saver
-            .unwatch_chunks(&self.level_folder, &chunks_vec)
-            .await;
+        let chunks_vec: Vec<_> = chunks.into_iter().map(|c| *c.borrow()).collect();
+        let chunks_to_clean = self.unwatch_entity_chunks(&chunks_vec);
+        self.update_entity_storage_watchers(&[], &chunks_vec).await;
         chunks_to_clean
     }
 
@@ -530,6 +515,10 @@ impl Level {
         self: &Arc<Self>,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
     ) {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut loads = self
             .entity_loads
             .lock()
@@ -544,19 +533,28 @@ impl Level {
                     .get(pos)
                     .is_some_and(|count| *count != 0);
 
-                if has_watchers {
+                if has_watchers
+                    || unloads.is_pending(*pos)
+                    || self
+                        .get_entity_chunk_sync(pos)
+                        .is_some_and(|chunk| chunk.live.load(Ordering::Acquire))
+                {
                     return None;
                 }
 
                 // IOWorker.store/loadAsync: register before removal lets a reload see pending data.
-                self.loaded_entity_chunks.remove_if(pos, |_, chunk| {
+                let removed = self.loaded_entity_chunks.remove_if(pos, |_, chunk| {
                     self.entity_saver
                         .queue_chunks(&self.level_folder, vec![(*pos, chunk.clone())]);
                     if let Some(load) = loads.get_mut(pos) {
                         load.epoch = load.epoch.wrapping_add(1);
                     }
                     true
-                })
+                });
+                if removed.is_some() {
+                    unloads.forget(*pos);
+                }
+                removed
             })
             .collect();
 
@@ -564,6 +562,7 @@ impl Level {
             return;
         }
         drop(loads);
+        drop(unloads);
 
         let level = self.clone();
         self.spawn_task(async move {
@@ -707,6 +706,7 @@ impl Level {
         if self.loaded_entity_chunks.capacity() - self.loaded_entity_chunks.len() >= 4096 {
             self.loaded_entity_chunks.shrink_to_fit();
         }
+        self.request_entity_unloads(&entity_chunks_to_remove);
         entity_chunks_to_remove
     }
 

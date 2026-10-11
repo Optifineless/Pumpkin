@@ -88,6 +88,11 @@ pub fn update_position(player: &Arc<Player>) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
+    // Publish visibility before ticket removal, like ChunkMap.move.
+    level.watch_entity_chunks(&loading_chunks);
+    level.unwatch_entity_chunks(&unloading_chunks);
+    player.watched_section.store(new_cylindrical);
+
     let is_spectator = player.is_spectator();
     let spectators_generate_chunks = world
         .level_info
@@ -145,31 +150,16 @@ pub fn update_position(player: &Arc<Player>) {
             sender.enqueue_chunk(*pos);
         }
     }
-    player.watched_section.store(new_cylindrical);
-
-    // Make sure the watched section and the chunk watcher updates are async atomic. We want to
-    // ensure what we unload when the player disconnects is correct.
     if !loading_chunks.is_empty() || !unloading_chunks.is_empty() {
         let level = world.level.clone();
-        let world_clone = world.clone();
-        let loading_chunks_clone = loading_chunks.clone();
-        let unloading_chunks_clone = unloading_chunks;
-
+        let loading = loading_chunks.clone();
+        let world = world.clone();
         if let Some(server) = world.server.upgrade() {
             server.spawn_task(async move {
                 level
-                    .mark_chunks_as_newly_watched(&loading_chunks_clone)
+                    .update_entity_storage_watchers(&loading, &unloading_chunks)
                     .await;
-                let chunks_to_clean = level
-                    .mark_chunks_as_not_watched(&unloading_chunks_clone)
-                    .await;
-
-                if !chunks_to_clean.is_empty() {
-                    world_clone
-                        .remove_entities_in_chunks(&chunks_to_clean)
-                        .await;
-                    world_clone.level.clean_entity_chunks(&chunks_to_clean);
-                }
+                world.remove_entities_in_chunks(&unloading_chunks).await;
             });
         }
     }

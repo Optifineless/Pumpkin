@@ -31,6 +31,9 @@ pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
 mod entity_persistence;
+mod entity_unload;
+#[cfg(test)]
+mod entity_unload_tests;
 pub mod explosion;
 pub(crate) mod fluid_lookup;
 pub mod generation_cache;
@@ -382,6 +385,11 @@ pub struct World {
     pub custom_block_entity_data: DashMap<BlockPos, NbtCompound>,
     /// Entity tracker responsible for tracking entity visibility and sending delta/status packets to watchers.
     pub entity_tracker: entity_tracker::EntityTracker,
+    pending_entity_activations: crossbeam::queue::SegQueue<entity_unload::EntityActivation>,
+    #[cfg(test)]
+    before_entity_unload_commit: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    #[cfg(test)]
+    after_entity_activation_queued: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -528,6 +536,11 @@ impl World {
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
             entity_tracker: entity_tracker::EntityTracker::new(),
+            pending_entity_activations: crossbeam::queue::SegQueue::new(),
+            #[cfg(test)]
+            before_entity_unload_commit: std::sync::Mutex::default(),
+            #[cfg(test)]
+            after_entity_activation_queued: std::sync::Mutex::default(),
         }
     }
 
@@ -655,6 +668,11 @@ impl World {
                     changed.push(chunk);
                 }
             }
+            if forced {
+                self.level.watch_entity_chunks(&changed);
+            } else {
+                self.level.unwatch_entity_chunks(&changed);
+            }
             changed
         };
         if changed.is_empty() {
@@ -693,14 +711,11 @@ impl World {
                     let _ = previous.await;
                 }
                 if forced {
-                    level.mark_chunks_as_newly_watched(&watched).await;
+                    level.update_entity_storage_watchers(&watched, &[]).await;
                     world.spawn_forced_entity_chunks(watched);
                 } else {
-                    let chunks_to_clean = level.mark_chunks_as_not_watched(watched).await;
-                    if !chunks_to_clean.is_empty() {
-                        world.remove_entities_in_chunks(&chunks_to_clean).await;
-                        world.level.clean_entity_chunks(&chunks_to_clean);
-                    }
+                    level.update_entity_storage_watchers(&[], &watched).await;
+                    world.remove_entities_in_chunks(&watched).await;
                 }
             }));
         }
@@ -1751,6 +1766,7 @@ impl World {
         const ENTITY_TICK_BATCH_SIZE: usize = 16;
 
         let start = std::time::Instant::now();
+        self.process_entity_chunk_lifecycle();
 
         self.handling_tick.store(true, Ordering::Relaxed);
         self.flush_block_updates();
@@ -4451,7 +4467,7 @@ impl World {
                 }
 
                 if first_load {
-                    world.make_chunk_entities_live(&chunk, Some(&player));
+                    world.queue_entity_activation(&chunk, Some(&player));
                 } else {
                     // Already live for other watchers: pair this player now so
                     // spawn packets and vehicle restore do not wait on a tracker tick.
@@ -4496,7 +4512,7 @@ impl World {
                 }
 
                 if first_load {
-                    world.make_chunk_entities_live(&chunk, None);
+                    world.queue_entity_activation(&chunk, None);
                 }
             }
         });
@@ -4508,7 +4524,9 @@ impl World {
         chunk: &Arc<ChunkEntityData>,
         player: Option<&Arc<Player>>,
     ) {
-        let entity_nbts = chunk.entities_for_activation();
+        let Some(entity_nbts) = self.level.activate_entity_chunk(chunk) else {
+            return;
+        };
         for entity_nbt in &entity_nbts {
             self.restore_entity_tree(entity_nbt, player);
         }
@@ -5022,47 +5040,6 @@ impl World {
             new_entities.retain(|e| e.get_entity().entity_uuid != base_entity.entity_uuid);
             new_entities
         });
-    }
-
-    pub async fn remove_entities_in_chunks(
-        &self,
-        chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
-    ) {
-        let chunks_set: FxHashSet<_> = chunks.into_iter().map(|c| *c.borrow()).collect();
-        if chunks_set.is_empty() {
-            return;
-        }
-        let mut entities_to_remove = Vec::new();
-
-        self.entities.rcu(|current_entities| {
-            entities_to_remove.clear();
-            let mut new_entities = (**current_entities).clone();
-            new_entities.retain(|entity| {
-                let pos = entity_persistence::root_chunk(entity);
-                if chunks_set.contains(&pos) {
-                    entities_to_remove.push(entity.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            new_entities
-        });
-
-        self.save_entities_by_chunk(&entities_to_remove, chunks_set.iter().copied())
-            .await;
-
-        for entity in &entities_to_remove {
-            self.entity_tracker.remove_entity(entity.as_ref(), self);
-            self.spawn_state.load().remove_entity(self, entity.as_ref());
-        }
-
-        // Serialized trees own the unload result; release the old strong riding links.
-        entity_persistence::detach_unloaded_trees(&entities_to_remove);
-        for chunk_pos in &chunks_set {
-            self.save_block_entities(*chunk_pos);
-            self.block_entities.remove(chunk_pos);
-        }
     }
 
     pub(crate) fn set_block_breaking(
