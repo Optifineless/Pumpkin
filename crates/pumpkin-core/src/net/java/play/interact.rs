@@ -146,3 +146,6 @@ impl JavaClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

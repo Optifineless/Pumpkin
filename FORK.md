@@ -442,3 +442,6 @@ In-game verification: Not yet. This is fork audit work, not an upstream PR port;
 GitHub PR checks were unavailable through the configured proxy.
 
 Ordered owner notifications recover an already committed ready successor after a native packet callback unwinds. Recovery retains the owner, releases queue ownership before dispatch, preserves one active drainer and never replays the failed effect. Actual border, scoreboard and advancement packet callbacks exercise commit-then-panic without a third mutation. In-game verification: **Not yet**.
+## Baseline scenario fixes
+
+- A zero interaction location consumes only its one-byte vector encoding, leaving the next packet field intact. Mirrors vanilla 26.3 `LpVec3.read`. In-game verification: **Not yet**.

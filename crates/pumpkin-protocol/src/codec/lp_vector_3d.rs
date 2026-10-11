@@ -59,22 +59,28 @@ impl LpVector3d {
     }
 
     pub fn read<R: std::io::Read>(reader: &mut R) -> Result<Self, ReadingError> {
-        let mut low_16 = [0u8; 2];
+        let mut first_byte = [0u8; 1];
         reader
-            .read_exact(&mut low_16)
+            .read_exact(&mut first_byte)
             .map_err(|e| ReadingError::Message(e.to_string()))?;
 
-        if low_16[0] == 0 && low_16[1] == 0 {
+        // Vanilla LpVec3.read returns after this byte for a zero vector.
+        if first_byte[0] == 0 {
             return Ok(Self(Vector3::new(0.0, 0.0, 0.0)));
         }
 
-        let mut mid_32 = [0u8; 4];
+        let mut remaining_bytes = [0u8; 5];
         reader
-            .read_exact(&mut mid_32)
+            .read_exact(&mut remaining_bytes)
             .map_err(|e| ReadingError::Message(e.to_string()))?;
 
-        let low = u16::from_le_bytes(low_16) as i64;
-        let mid = i32::from_be_bytes(mid_32) as i64;
+        let low = u16::from_le_bytes([first_byte[0], remaining_bytes[0]]) as i64;
+        let mid = i32::from_be_bytes([
+            remaining_bytes[1],
+            remaining_bytes[2],
+            remaining_bytes[3],
+            remaining_bytes[4],
+        ]) as i64;
         let packed_data = low | (mid << 16);
 
         let header = packed_data & 0x07;
@@ -150,6 +156,30 @@ fn from_long(quantized: i64, scale: f64) -> f64 {
 mod tests {
     use super::{LpVector3d, encode_legacy_velocity_component};
     use pumpkin_util::math::vector3::Vector3;
+
+    #[test]
+    fn read_zero_vector_preserves_following_field() {
+        let mut reader = &[0x00, 0x2A][..];
+
+        assert_eq!(
+            LpVector3d::read(&mut reader).unwrap().0,
+            Vector3::new(0.0, 0.0, 0.0)
+        );
+        assert_eq!(reader, &[0x2A]);
+    }
+
+    #[test]
+    fn read_nonzero_vanilla_bytes_and_round_trip() {
+        // LpVec3.write(Vec3(1, 0, 0)) in vanilla 26.3.
+        let vanilla_bytes = [0xF1, 0xFF, 0x7F, 0xFE, 0xFF, 0xFF];
+        let decoded = LpVector3d::read(&mut &vanilla_bytes[..]).unwrap();
+        assert_eq!(decoded.0, Vector3::new(1.0, 0.0, 0.0));
+
+        let mut encoded = Vec::new();
+        decoded.write(&mut encoded).unwrap();
+        assert_eq!(encoded, vanilla_bytes);
+        assert_eq!(LpVector3d::read(&mut &encoded[..]).unwrap(), decoded);
+    }
 
     #[test]
     fn legacy_component_is_clamped_and_scaled() {
