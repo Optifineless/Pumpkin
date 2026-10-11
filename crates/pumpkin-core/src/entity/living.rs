@@ -20,6 +20,7 @@ mod effect_load_tests;
 pub(crate) mod effects;
 mod equipment_modifiers;
 mod equipment_packets;
+mod bedrock_equipment;
 #[cfg(test)]
 mod ext_review_tests;
 mod fall_damage;
