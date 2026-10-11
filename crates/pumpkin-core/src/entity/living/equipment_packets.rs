@@ -4,6 +4,7 @@ use pumpkin_protocol::{
     bedrock::{
         client::{CMobArmorEquipment, CMobEquipment},
         network_item::NetworkItemStackDescriptor,
+        server::inventory_transaction::WINDOW_ID_OFF_HAND,
     },
     codec::var_ulong::VarULong,
     java::client::play::CSetEquipment,
@@ -26,7 +27,7 @@ pub(super) fn send_equipment_changes(
         }
 
         let container_id = if *slot == EquipmentSlot::OFF_HAND {
-            120
+            WINDOW_ID_OFF_HAND as u8
         } else {
             0
         };

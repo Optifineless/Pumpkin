@@ -388,6 +388,8 @@ impl LivingEntity {
         }
     }
 
+    /// Queues registered-player slots for tick detection; publishes other entities immediately.
+    /// Player stack snapshots are ignored in favor of the inventory at detection time.
     pub fn send_equipment_changes(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
         if self.entity.entity_type == &EntityType::PLAYER
             && let Some(player) = self
@@ -400,10 +402,9 @@ impl LivingEntity {
                 std::ptr::from_ref(self),
             )
         {
-            // LivingEntity.detectEquipmentUpdates: player publications read live slots in order.
+            // LivingEntity.detectEquipmentUpdates runs after packet writes on the player tick.
             let slots: Vec<_> = equipment.iter().map(|(slot, _)| slot.clone()).collect();
             player.queue_equipment_updates(&slots);
-            player.detect_equipment_updates();
             return;
         }
         self.publish_equipment_changes(equipment);

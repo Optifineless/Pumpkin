@@ -52,6 +52,25 @@ fn set_hook(point: HookPoint, hook: impl FnOnce(&Player) + 'static) {
     CLEAR_HOOK.with(|slot| *slot.borrow_mut() = Some((point, Box::new(hook))));
 }
 
+fn replacement_attribute(fixture: &ClearFixture, command: &str, attribute: &Attributes) -> f64 {
+    let control = &fixture.observer.player;
+    control
+        .permission_lvl
+        .store(pumpkin_util::PermissionLvl::Four);
+    let source = control.get_command_source(&fixture.server);
+    assert_eq!(
+        fixture
+            .server
+            .command_dispatcher
+            .load()
+            .execute_input(command, &source)
+            .unwrap(),
+        1
+    );
+    control.tick(&fixture.server);
+    control.living_entity.get_attribute_value(attribute)
+}
+
 #[tokio::test]
 async fn clear_detects_selected_slot_switched_during_command() {
     let mut fixture = ClearFixture::new();
@@ -114,18 +133,16 @@ async fn clear_detects_selected_slot_switched_after_scan() {
     let server = fixture.server.clone();
     let player = fixture.target.player.clone();
     let client = player.client.clone();
-    let expected = Arc::new(crossbeam::atomic::AtomicCell::new(0.0));
-    let expected_for_hook = expected.clone();
+    let expected = replacement_attribute(
+        &fixture,
+        "item replace entity @s weapon.mainhand with minecraft:iron_sword",
+        &Attributes::ATTACK_DAMAGE,
+    );
     set_hook(HookPoint::BeforeEquipmentUpdates, move |_| {
         if let crate::net::ClientPlatform::Java(client) = client.as_ref() {
             client.handle_set_held_item(&server, &player, &SSetHeldItem { slot: 1 });
         }
         assert_eq!(player.inventory.get_selected_slot(), 1);
-        expected_for_hook.store(
-            player
-                .living_entity
-                .get_attribute_value(&Attributes::ATTACK_DAMAGE),
-        );
     });
 
     assert_eq!(
@@ -144,7 +161,7 @@ async fn clear_detects_selected_slot_switched_after_scan() {
             .player
             .living_entity
             .get_attribute_value(&Attributes::ATTACK_DAMAGE),
-        expected.load()
+        expected
     );
     let updates = fixture.take_observer_equipment_updates();
     let last_hand = updates
@@ -166,8 +183,11 @@ async fn clear_detects_armor_replaced_before_publication() {
     fixture.observer.take_packets();
     let server = fixture.server.clone();
     let player = fixture.target.player.clone();
-    let expected = Arc::new(crossbeam::atomic::AtomicCell::new(0.0));
-    let expected_for_hook = expected.clone();
+    let expected = replacement_attribute(
+        &fixture,
+        "item replace entity @s armor.chest with minecraft:iron_chestplate",
+        &Attributes::ARMOR,
+    );
     set_hook(HookPoint::BeforeEquipmentUpdates, move |target| {
         // The competing command can enter only after both storage guards have ended.
         assert!(target.inventory.main_inventory.try_write().is_ok());
@@ -184,7 +204,6 @@ async fn clear_detects_armor_replaced_before_publication() {
                 .unwrap(),
             1
         );
-        expected_for_hook.store(target.living_entity.get_attribute_value(&Attributes::ARMOR));
     });
 
     assert_eq!(
@@ -198,7 +217,7 @@ async fn clear_detects_armor_replaced_before_publication() {
         &Item::IRON_CHESTPLATE
     );
     assert!(
-        expected.load()
+        expected
             > fixture
                 .target
                 .player
@@ -211,7 +230,7 @@ async fn clear_detects_armor_replaced_before_publication() {
             .player
             .living_entity
             .get_attribute_value(&Attributes::ARMOR),
-        expected.load()
+        expected
     );
     let updates = fixture.take_observer_equipment_updates();
     let chest_updates: Vec<_> = updates

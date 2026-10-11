@@ -1,10 +1,29 @@
 use super::Player;
 use pumpkin_data::{data_component_impl::EquipmentSlot, item_stack::ItemStack};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Default)]
 pub(super) struct EquipmentUpdates {
     pending: Vec<EquipmentSlot>,
     publishing: bool,
+}
+
+struct EquipmentPublisher<'a> {
+    updates: &'a std::sync::Mutex<EquipmentUpdates>,
+    active: bool,
+}
+
+impl Drop for EquipmentPublisher<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            self.updates
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .publishing = false;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -42,6 +61,10 @@ impl Player {
             updates.publishing = true;
             std::mem::take(&mut updates.pending)
         };
+        let mut publisher = EquipmentPublisher {
+            updates: &self.equipment_updates,
+            active: true,
+        };
         loop {
             let equipment = self.collect_equipment_changes(slots);
             #[cfg(test)]
@@ -50,12 +73,15 @@ impl Player {
             }
             // Callbacks may queue another batch; only this publisher applies modifiers and sends.
             self.living_entity.publish_equipment_changes(&equipment);
+            self.sync_bedrock_equipment_to_owner(&equipment);
             let mut updates = self
                 .equipment_updates
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if updates.pending.is_empty() {
                 updates.publishing = false;
+                // Release under the queue lock; Drop must not reset a subsequent publisher.
+                publisher.active = false;
                 return;
             }
             slots = std::mem::take(&mut updates.pending);
@@ -89,6 +115,45 @@ impl Player {
                 (slot, stack)
             })
             .collect()
+    }
+
+    fn sync_bedrock_equipment_to_owner(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
+        use crate::net::ClientPlatform;
+        use pumpkin_protocol::bedrock::{
+            client::inventory_slot::CInventorySlot,
+            network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
+            server::inventory_transaction::{WINDOW_ID_ARMOUR, WINDOW_ID_OFF_HAND},
+        };
+        use pumpkin_protocol::codec::var_uint::VarUInt;
+
+        let ClientPlatform::Bedrock(client) = self.client.as_ref() else {
+            return;
+        };
+        // ClearInventoryCommands.clearInventory -> AbstractContainerMenu.broadcastChanges
+        // corrects the owner too; Bedrock keeps armor/offhand outside container 0.
+        for (slot, stack) in equipment {
+            let (container_id, container_name, slot) = match slot {
+                EquipmentSlot::Head(_) => (WINDOW_ID_ARMOUR, ContainerName::Armor, 0),
+                EquipmentSlot::Chest(_) => (WINDOW_ID_ARMOUR, ContainerName::Armor, 1),
+                EquipmentSlot::Legs(_) => (WINDOW_ID_ARMOUR, ContainerName::Armor, 2),
+                EquipmentSlot::Feet(_) => (WINDOW_ID_ARMOUR, ContainerName::Armor, 3),
+                EquipmentSlot::OffHand(_) => (WINDOW_ID_OFF_HAND, ContainerName::Offhand, 0),
+                _ => continue,
+            };
+            let packet = CInventorySlot {
+                container_id: VarUInt(container_id as u32),
+                slot: VarUInt(slot),
+                full_container_name: Some(FullContainerName {
+                    container_name,
+                    dynamic_id: None,
+                }),
+                storage_item: None,
+                item: NetworkItemStackDescriptor::from(stack),
+            };
+            if let Ok(data) = client.serialize_packet(&packet) {
+                client.try_enqueue_packet(data);
+            }
+        }
     }
 
     #[cfg(test)]

@@ -1,5 +1,11 @@
 //! Combat fixtures with real server services, without listeners, world ticking or startup tasks.
-use super::*;
+use super::{
+    AdvancedConfiguration, AdvancementManager, AnvilLevelInfo, Arc, ArcSwap, AtomicBool, AtomicI32,
+    AtomicI64, BasicConfiguration, CachedBranding, CachedStatus, CustomBossbars, DefaultGamemode,
+    Dimension, Duration, LevelData, MapManager, OnceCell, PermissionManager, PluginManager, Server,
+    ServerPlayerData, ServerTickRateManager, TaskTracker, TelemetryConfig, VanillaData, World,
+    WorldInfoReader, debug_profiler, default_dispatcher, enchantment, recipe,
+};
 use std::sync::RwLock;
 
 fn make_player_data_storage(path: &std::path::Path, enabled: bool) -> ServerPlayerData {
@@ -16,6 +22,7 @@ fn vanilla_data() -> VanillaData {
     }
 }
 
+#[must_use]
 pub fn server(path: &std::path::Path) -> Arc<Server> {
     server_with_player_data(path, false)
 }
@@ -119,6 +126,7 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
     Arc::new(server)
 }
 
+#[must_use]
 pub fn world(server: &Arc<Server>, path: &std::path::Path) -> Arc<World> {
     use pumpkin_config::world::LevelConfig;
     Arc::new(World::load(

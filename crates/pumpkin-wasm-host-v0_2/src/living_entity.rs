@@ -370,11 +370,18 @@ impl HostLivingEntity for PluginHostState {
         let entity = self.get(&this)?.clone();
         if let Some(living) = entity.get_living_entity() {
             let slot = from_wit_equipment_slot(slot);
-            let equipment = living
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let stack = equipment.get(&slot);
+            // PlayerEquipment.get: MAINHAND is the selected inventory item.
+            let stack = if slot == pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND
+                && let Some(player) = entity.get_player()
+            {
+                player.inventory.held_item()
+            } else {
+                living
+                    .entity_equipment
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get(&slot)
+            };
             if !stack.is_empty() {
                 return Ok(Some(self.add(Arc::new(tokio::sync::Mutex::new(stack)))?));
             }
@@ -397,13 +404,18 @@ impl HostLivingEntity for PluginHostState {
         let entity = self.get(&this)?;
         if let Some(living) = entity.get_living_entity() {
             let slot = from_wit_equipment_slot(slot);
+            // PlayerEquipment.set: MAINHAND writes the selected inventory item.
+            if slot == pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND
+                && let Some(player) = entity.get_player()
             {
-                let mut equipment = living
+                player.inventory.set_held_item(item_stack.clone());
+            } else {
+                living
                     .entity_equipment
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                equipment.put(&slot, item_stack.clone());
-            };
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .put(&slot, item_stack.clone());
+            }
 
             living.send_equipment_changes(&[(slot, item_stack)]);
         }
@@ -417,7 +429,7 @@ impl HostLivingEntity for PluginHostState {
                 .entity_equipment
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let slots_to_clear: Vec<(
+            let mut slots_to_clear: Vec<(
                 pumpkin_data::data_component_impl::EquipmentSlot,
                 pumpkin_data::item_stack::ItemStack,
             )> = equipment
@@ -426,6 +438,16 @@ impl HostLivingEntity for PluginHostState {
                 .map(|(slot, _)| (slot, pumpkin_data::item_stack::ItemStack::EMPTY.clone()))
                 .collect();
             drop(equipment);
+            if let Some(player) = entity.get_player() {
+                // PlayerEquipment.set: clearing includes MAINHAND outside the equipment map.
+                let slot = pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND;
+                player
+                    .inventory
+                    .set_held_item(pumpkin_data::item_stack::ItemStack::EMPTY.clone());
+                if !slots_to_clear.iter().any(|(cleared, _)| *cleared == slot) {
+                    slots_to_clear.push((slot, pumpkin_data::item_stack::ItemStack::EMPTY.clone()));
+                }
+            }
 
             living.send_equipment_changes(&slots_to_clear);
         }
@@ -489,3 +511,7 @@ impl crate::pumpkin::plugin::world::HostLivingEntityWithStore<PluginHostState>
             .await
     }
 }
+
+#[cfg(test)]
+#[path = "../../pumpkin-wasm-host-common/src/equipment_tests.rs"]
+mod equipment_tests;

@@ -1,6 +1,12 @@
 mod clock_storage;
-#[cfg(test)]
-pub(crate) mod combat_test_support;
+/// Server and world fixtures without listeners or startup tasks, for host regression tests.
+#[cfg(any(test, feature = "test"))]
+#[doc(hidden)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "Regression fixtures require successful setup"
+)]
+pub mod combat_test_support;
 mod map_storage;
 pub(crate) mod named_clock_storage;
 #[cfg(test)]

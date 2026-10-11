@@ -12,6 +12,7 @@ use pumpkin_data::{
     item::Item,
     item_stack::ItemStack,
 };
+use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_protocol::ser::NetworkReadExt;
 use pumpkin_util::{Difficulty, Hand};
 use std::sync::{Arc, Barrier};
@@ -404,6 +405,16 @@ async fn orchestration_helmet_scaling_precedes_cooldown_and_damage_stats_exclude
     victim
         .inventory
         .set_slot(39, ItemStack::new(1, &Item::IRON_HELMET));
+    // LivingEntity.detectEquipmentUpdates installs the equipped helmet before combat.
+    victim.enqueue_equipment_change(
+        &pumpkin_data::data_component_impl::EquipmentSlot::HEAD,
+        &victim.inventory.get_slot(39),
+    );
+    victim.tick(&server);
+    assert_eq!(
+        victim.living_entity.get_attribute_value(&Attributes::ARMOR),
+        2.0
+    );
     victim.living_entity.set_absorption(2.0);
     assert!(victim.damage(victim.as_ref(), 8.0, DamageType::FALLING_ANVIL));
     assert_eq!(victim.living_entity.last_damage_taken.load(), 6.0);

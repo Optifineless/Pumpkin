@@ -298,6 +298,11 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
 }
 
 #[cfg(test)]
+mod bedrock_owner_tests;
+#[cfg(test)]
 mod review_tests;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod bedrock_observer_tests;

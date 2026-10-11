@@ -1,5 +1,12 @@
-#[cfg(test)]
-pub(crate) mod combat_test_support;
+/// In-memory Java clients for packet and host regression tests.
+#[cfg(any(test, feature = "test"))]
+#[doc(hidden)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "Regression fixtures require successful setup"
+)]
+pub mod combat_test_support;
 #[cfg(test)]
 pub(crate) mod sound_test_support;
 use pumpkin_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CPlayDisconnect};

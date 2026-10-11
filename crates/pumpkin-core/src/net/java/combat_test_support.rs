@@ -13,6 +13,7 @@ pub struct TestPlayer {
 }
 
 impl TestPlayer {
+    #[must_use]
     pub fn new(world: &Arc<World>) -> Self {
         let gameprofile = GameProfile {
             id: uuid::Uuid::new_v4(),
@@ -47,6 +48,7 @@ impl TestPlayer {
         }
     }
 
+    #[must_use]
     pub fn client(&self) -> &JavaClient {
         match self.player.client.as_ref() {
             ClientPlatform::Java(client) => client,
