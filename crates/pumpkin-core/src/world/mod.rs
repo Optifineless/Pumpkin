@@ -30,13 +30,17 @@ pub mod brightness;
 pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
+#[cfg(test)]
+mod entity_lifecycle_tests;
 mod entity_persistence;
+mod entity_removal;
 pub mod explosion;
 pub mod generation_cache;
 pub mod loot;
 pub mod map;
 pub(crate) mod neighbor_updater;
 mod particle_senders;
+mod player_respawn;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -4073,6 +4077,9 @@ impl World {
 
     #[allow(clippy::too_many_lines)]
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        if !self.can_respawn_player(player) {
+            return;
+        }
         let last_pos = player.get_entity().last_pos.load();
         let death_dimension = ResourceLocation::from(player.world().dimension.minecraft_name);
         let death_location = BlockPos(Vector3::new(
@@ -4172,6 +4179,10 @@ impl World {
         }
         let position = spawn_loc_event.spawn_pos;
 
+        if !self.can_respawn_player(player) {
+            return;
+        }
+
         // PlayerList.respawn removes the old player's menus before transferring worlds.
         player.remove_respawn_menus(alive);
 
@@ -4226,15 +4237,9 @@ impl World {
 
                         // Detach from the old world before publishing into the new one, so no
                         // observer sees the player in a world whose chunk manager doesn't match.
-                        self.remove_player(player, false).await;
-                        player.unload_watched_chunks(self).await;
-                        player.change_world_chunks(&self.level, &destination);
-                        player.living_entity.entity.set_world(destination.clone());
-                        destination.players.rcu(|current_list| {
-                            let mut new_list = (**current_list).clone();
-                            new_list.push(player.clone());
-                            new_list
-                        });
+                        if !self.transfer_respawning_player(player, &destination).await {
+                            return;
+                        }
                     }
 
                     (Some(destination), position, yaw, pitch)
@@ -4260,6 +4265,10 @@ impl World {
             |new_world| (new_world.clone(), position, yaw, pitch),
         );
 
+        if !target_world.can_respawn_player(player) {
+            return;
+        }
+
         // Notify plugins that the player has respawned (non-cancellable).
         if let Some(server) = self.server.upgrade() {
             server
@@ -4277,6 +4286,10 @@ impl World {
                     ),
                 )
                 .await;
+        }
+
+        if !target_world.can_respawn_player(player) {
+            return;
         }
 
         // Send respawn packet with target dimension (using send_packet_now to ensure proper order)
@@ -4342,6 +4355,10 @@ impl World {
         player.get_entity().last_pos.store(position);
 
         // TODO: difficulty, exp bar, status effect
+
+        if !target_world.can_respawn_player(player) {
+            return;
+        }
 
         // Registered after positioning; a same-dimension respawn keeps its client entities.
         if target_world.uuid == self.uuid {
@@ -4914,7 +4931,7 @@ impl World {
     /// This function removes a player from the world based on their `Player` reference.
     /// It performs the following actions:
     ///
-    /// 1. Removes the player from the `current_players` map using their UUID.
+    /// 1. Removes only this player instance from the world's player list.
     /// 2. Broadcasts a `CRemovePlayerInfo` packet to all connected players to inform them about the player leaving.
     /// 3. Removes the player's entity from the world using its entity ID.
     /// 4. Optionally sends a disconnect message to all other players notifying them about the player leaving.
@@ -4936,11 +4953,10 @@ impl World {
         let mut removed_player: Option<Arc<Player>> = None;
 
         self.players.rcu(|current_list| {
+            removed_player = None;
             let mut new_list = (**current_list).clone();
             // Find the player before we filter them out
-            let pos = new_list
-                .iter()
-                .position(|p| p.gameprofile.id == player.gameprofile.id);
+            let pos = new_list.iter().position(|p| Arc::ptr_eq(p, player));
             if let Some(pos) = pos {
                 removed_player = Some(new_list.remove(pos));
             }
@@ -5001,24 +5017,7 @@ impl World {
     }
 
     pub fn remove_entity(&self, entity: &dyn EntityBase) {
-        let base_entity = entity.get_entity();
-        if base_entity
-            .removal_reason
-            .swap(Some(RemovalReason::Discarded))
-            .is_some()
-        {
-            return;
-        }
-        self.clear_fishing_hook_owner(base_entity);
-        base_entity.removed.store(true, Ordering::Release);
-
-        self.spawn_state.load().remove_entity(self, entity);
-        self.entity_tracker.remove_entity(entity, self);
-        self.entities.rcu(|current_entities| {
-            let mut new_entities = (**current_entities).clone();
-            new_entities.retain(|e| e.get_entity().entity_uuid != base_entity.entity_uuid);
-            new_entities
-        });
+        self.remove_entity_with_reason(entity, RemovalReason::Discarded);
     }
 
     pub async fn remove_entities_in_chunks(

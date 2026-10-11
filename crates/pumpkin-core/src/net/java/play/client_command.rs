@@ -49,8 +49,14 @@ impl JavaClient {
                 };
                 let player_c = player.clone();
                 let is_hardcore = server.basic_config.hardcore;
-                server.spawn_task(async move {
+                // ServerGamePacketListenerImpl.handleClientCommand is serial with
+                // onDisconnect: the connection joins this task before logout removal.
+                self.spawn_task(async move {
                     respawn_after_death(&player_c, is_hardcore).await;
+
+                    if !player_c.world().can_respawn_player(&player_c) {
+                        return;
+                    }
 
                     {
                         let screen_handler = player_c
@@ -190,7 +196,7 @@ mod tests {
 // ServerGamePacketListenerImpl.handleClientCommand uses normal saved-spawn validation first.
 async fn respawn_after_death(player: &Arc<Player>, hardcore: bool) {
     player.world().respawn_player(player, false).await;
-    if hardcore {
+    if hardcore && player.world().can_respawn_player(player) {
         player.set_gamemode(GameMode::Spectator);
     }
 }

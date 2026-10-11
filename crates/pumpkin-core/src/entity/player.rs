@@ -1120,6 +1120,9 @@ impl Player {
         }
 
         let world = self.world();
+        // PlayerList.remove retires logout instances, not world transfers or respawns.
+        self.get_entity()
+            .set_removed(super::RemovalReason::UnloadedWithPlayer);
         world.remove_player(self, true).await;
 
         let cylindrical = self.watched_section.load();
@@ -4347,6 +4350,11 @@ impl Player {
         // Stop elytra flight and reset sneaking when switching to spectator mode
         if gamemode == GameMode::Spectator {
             let entity = self.get_entity();
+            // ServerPlayer.setGameMode stops riding before spectator movement begins.
+            self.root_vehicle_uuid.store(None);
+            if let Some(vehicle) = entity.get_vehicle() {
+                vehicle.get_entity().remove_passenger(self.entity_id());
+            }
             if entity.is_fall_flying() {
                 entity.set_fall_flying(false);
             }

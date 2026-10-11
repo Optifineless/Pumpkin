@@ -171,6 +171,10 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 
 | Change | Checked in-game |
 |:--|:--|
+| Destroyed mounts release surviving riders before removal, so chicken jockeys and other passengers survive chunk saves and reloads (audit row 5) | Not yet |
+| Logout marks only the departing player instance removed, so skeletons and other mobs drop the stale target (R31, audit row 7) | Not yet |
+| Disconnect joins its respawn task; respawn publication and player removal check the session instance, preserving rejoined players (audit row 15) | Not yet |
+| Death and respawn clear old riding links, and entering Spectator dismounts the player so normal movement resumes (audit row 16) | Not yet |
 | [#110] Charged respawn anchors set a Nether spawn or explode in unsafe dimensions when used without glowstone | Not yet; positional `RESPAWN_ANCHOR_WORKS` environment-attribute overrides are not evaluated |
 | [#109] Firework Stars craft with colors, shapes and effects, can receive fade colors, and can be used in rockets | Not yet |
 | Powered activator rails eject rideable minecart passengers without freezing the tick; normal dismount events, cooldown and repositioning apply; mirrors `Minecart.activateMinecart` -> `Entity.ejectPassengers` ([fork #38](https://github.com/Optifineless/Pumpkin/issues/38); regression audit item 1) | Not yet |

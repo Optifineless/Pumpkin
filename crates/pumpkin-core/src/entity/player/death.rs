@@ -5,6 +5,13 @@ use super::{
 use pumpkin_inventory::Clearable;
 
 impl Player {
+    /// Clears riding links and a pending saved mount when ending the old player life.
+    pub(crate) fn unride_for_respawn(&self) {
+        // PlayerList.respawn constructs a new player without a pending RootVehicle attachment.
+        self.root_vehicle_uuid.store(None);
+        self.get_entity().unride_on_lifecycle_end();
+    }
+
     pub(crate) fn drop_equipment_on_death(&self, lifecycle: u64) {
         // Player.dropEquipment / Inventory.dropAll; the vanishing sweep excludes menus.
         if self.gamemode.load() == GameMode::Spectator
@@ -47,6 +54,7 @@ impl Player {
     /// Removes temporary menu contents in the old world, before a respawn world transfer.
     /// Living transfers return them to inventory; deaths drop them regardless of retention.
     pub(crate) fn remove_respawn_menus(&self, restore_all: bool) {
+        self.unride_for_respawn();
         // Player.remove / PlayerList.respawn remove menus before copying inventory and XP.
         // A living dimension transfer returns temporary items; KILLED drops them even with retention.
         let reason = if restore_all {
@@ -88,6 +96,7 @@ impl Player {
         if !self.living_entity.death_lifecycle_current(lifecycle) {
             return;
         }
+        self.unride_for_respawn();
         crate::entity::mob::neutral::tell_neutral_mobs_player_died(self, &self.world());
         // Reset air supply & drowning ticks on death
         self.breath_manager.reset(self);

@@ -52,6 +52,19 @@ impl ServerPlayerData {
         // tick (including collisions/combat) through capture and simulation removal.
         // The connection owner has already joined this player's packet tasks.
         let tick = server.tick_gate.lock().await;
+        // PlayerList.remove only retires its own session, never a rejoined UUID.
+        if server
+            .get_player_by_uuid(player.gameprofile.id)
+            .is_some_and(|current| !Arc::ptr_eq(&current, player))
+        {
+            // PlayerList.remove retires the old entity before checking playersByUUID.
+            player.unride_for_respawn();
+            player
+                .living_entity
+                .entity
+                .set_removed(crate::entity::RemovalReason::UnloadedWithPlayer);
+            return Ok(());
+        }
         // PlayerList.remove awards LEAVE_GAME before capturing the final save.
         player.increment_custom_stat(
             crate::entity::player::statistics::CustomStatistic::LeaveGame,
