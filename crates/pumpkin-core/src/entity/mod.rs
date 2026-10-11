@@ -108,6 +108,7 @@ pub mod projectile_deflection;
 pub(crate) mod spawn_mount;
 
 mod leash_shearing;
+mod server_entity;
 pub mod shearable;
 pub mod spawn_util;
 pub mod synched_entity_data;
@@ -3061,47 +3062,7 @@ impl Entity {
     /// Sends the synced values that changed since the last call to this entity's
     /// viewers, and does nothing when none did.
     pub fn send_dirty_entity_data(&self) {
-        if !self.synched_data.is_dirty() {
-            return;
-        }
-
-        let world = self.world.load();
-        let players = world.players.load();
-
-        // Unwatched, skip the player scan.
-        if self.entity_type != &EntityType::PLAYER
-            && world
-                .entity_tracker
-                .get_tracked_entity(self.entity_id)
-                .is_some_and(|tracked| tracked.seen_by.is_empty())
-        {
-            self.synched_data.clear_dirty();
-            return;
-        }
-
-        let java_recipients = self.java_metadata_recipients(&world, &players);
-
-        if java_recipients.is_empty() {
-            // Vanilla `packDirty` clears even without recipients.
-            self.synched_data.clear_dirty();
-            return;
-        }
-
-        let recipients_by_version =
-            World::collect_java_recipients_by_version(java_recipients.into_iter());
-
-        for (version, recipients) in recipients_by_version {
-            if let Some(buf) = self.synched_data.pack_dirty_for_version(&version) {
-                let packet = CSetEntityMetadata::new(self.entity_id.into(), buf);
-                if let Ok(packet_data) = JavaClient::serialize_packet_for_version(&packet, version)
-                {
-                    for recipient in recipients {
-                        recipient.try_enqueue_packet(packet_data.clone());
-                    }
-                }
-            }
-        }
-        self.synched_data.clear_dirty();
+        self.flush_dirty_entity_data();
     }
 
     /// Resends every non-default synced value of this entity to its viewers, the entity
@@ -3112,33 +3073,7 @@ impl Entity {
     /// spawn packet resets the entity for everyone else), so the values have to be pushed
     /// again even though nothing became dirty on our side.
     pub fn refresh_synced_data(&self) {
-        let world = self.world.load();
-        let players = world.players.load();
-
-        let java_recipients = self.java_metadata_recipients(&world, &players);
-
-        if java_recipients.is_empty() {
-            return;
-        }
-
-        let recipients_by_version =
-            World::collect_java_recipients_by_version(java_recipients.into_iter());
-
-        for (version, recipients) in recipients_by_version {
-            if let Some(buf) = self
-                .synched_data
-                .get_non_default_values_for_version(&version)
-            {
-                let packet = CSetEntityMetadata::new(self.entity_id.into(), buf);
-                if let Ok(packet_data) = JavaClient::serialize_packet_for_version(&packet, version)
-                {
-                    for recipient in recipients {
-                        recipient.try_enqueue_packet(packet_data.clone());
-                    }
-                }
-            }
-        }
-        self.synched_data.clear_dirty();
+        self.resend_synced_entity_data();
     }
 
     pub fn set_pose(&self, pose: EntityPose) {

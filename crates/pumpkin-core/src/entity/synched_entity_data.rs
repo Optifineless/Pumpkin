@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use bytes::BufMut;
 use pumpkin_data::meta_data_type::MetaDataType;
@@ -49,7 +49,7 @@ impl<T: MetadataSerializer + Clone + Send + Sync + 'static> ErasedSerializer
 
 pub struct DataItem {
     pub tracked: TrackedData,
-    pub serializer: Box<dyn ErasedSerializer>,
+    pub serializer: Arc<dyn ErasedSerializer>,
     pub canonical_bytes: Vec<u8>,
     pub dirty: bool,
     pub is_default: bool,
@@ -58,6 +58,33 @@ pub struct DataItem {
 pub struct SynchedEntityData {
     items: Mutex<HashMap<TrackedData, DataItem>>,
     is_dirty: AtomicBool,
+    #[cfg(test)]
+    pub(super) before_dirty_clear: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+/// Immutable metadata revisions shared by every recipient of one tracker flush.
+pub struct DirtyBatch(Vec<(TrackedData, Arc<dyn ErasedSerializer>)>);
+
+impl DirtyBatch {
+    /// Serializes the captured values without reading or locking the entity again.
+    #[must_use]
+    pub fn pack_for_version(&self, version: &JavaMinecraftVersion) -> Option<Box<[u8]>> {
+        let mut buf = Vec::new();
+        for (tracked, serializer) in &self.0 {
+            let before_len = buf.len();
+            if serializer
+                .write(tracked.id, tracked.r#type, &mut buf, version)
+                .is_err()
+            {
+                buf.truncate(before_len);
+            }
+        }
+        if buf.is_empty() {
+            return None;
+        }
+        buf.put_u8(255);
+        Some(buf.into_boxed_slice())
+    }
 }
 
 impl Default for SynchedEntityData {
@@ -73,6 +100,8 @@ impl SynchedEntityData {
         Self {
             items: Mutex::new(HashMap::new()),
             is_dirty: AtomicBool::new(false),
+            #[cfg(test)]
+            before_dirty_clear: Mutex::new(None),
         }
     }
 
@@ -93,7 +122,7 @@ impl SynchedEntityData {
             tracked,
             DataItem {
                 tracked,
-                serializer: Box::new(holder),
+                serializer: Arc::new(holder),
                 canonical_bytes,
                 dirty: false,
                 is_default: true,
@@ -120,7 +149,7 @@ impl SynchedEntityData {
                 return false;
             }
             item.canonical_bytes = new_canonical;
-            item.serializer = Box::new(holder);
+            item.serializer = Arc::new(holder);
             item.dirty = true;
             item.is_default = false;
         } else {
@@ -128,7 +157,7 @@ impl SynchedEntityData {
                 tracked,
                 DataItem {
                     tracked,
-                    serializer: Box::new(holder),
+                    serializer: Arc::new(holder),
                     canonical_bytes: new_canonical,
                     dirty: true,
                     is_default: false,
@@ -139,15 +168,14 @@ impl SynchedEntityData {
         true
     }
 
-    /// Whether any value changed since the last [`Self::clear_dirty`].
+    /// Whether an unsent revision remains.
     #[must_use]
     pub fn is_dirty(&self) -> bool {
         self.is_dirty.load(Ordering::Acquire)
     }
 
-    /// Serializes the values that changed since the last [`Self::clear_dirty`], or
-    /// `None` when nothing changed.
-    pub fn pack_dirty_for_version(&self, version: &JavaMinecraftVersion) -> Option<Box<[u8]>> {
+    /// Captures the dirty revisions once, before serialization for any recipient.
+    pub fn pack_dirty(&self) -> Option<DirtyBatch> {
         if !self.is_dirty.load(Ordering::Acquire) {
             return None;
         }
@@ -156,76 +184,75 @@ impl SynchedEntityData {
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut buf = Vec::new();
-        let mut has_any = false;
-
-        for item in items.values() {
-            if item.dirty {
-                let before_len = buf.len();
-                if item
-                    .serializer
-                    .write(item.tracked.id, item.tracked.r#type, &mut buf, version)
-                    .is_ok()
-                    && buf.len() > before_len
-                {
-                    has_any = true;
-                }
-            }
-        }
-
-        if !has_any {
-            return None;
-        }
-
-        buf.put_u8(255);
-        Some(buf.into_boxed_slice())
+        Some(DirtyBatch(
+            items
+                .values()
+                .filter(|item| item.dirty)
+                .map(|item| (item.tracked, item.serializer.clone()))
+                .collect(),
+        ))
     }
 
-    /// Marks every value as sent.
-    pub fn clear_dirty(&self) {
+    /// Serializes a dirty snapshot without acknowledging it.
+    pub fn pack_dirty_for_version(&self, version: &JavaMinecraftVersion) -> Option<Box<[u8]>> {
+        self.pack_dirty()?.pack_for_version(version)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clear_dirty_for_test(&self) {
+        if let Some(batch) = self.pack_dirty() {
+            self.clear_dirty(&batch);
+        }
+    }
+
+    /// Acknowledges only the captured revisions, retaining writes made during the flush.
+    pub fn clear_dirty(&self, batch: &DirtyBatch) {
+        #[cfg(test)]
+        {
+            let hook = self.before_dirty_clear.lock().unwrap().take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
         let mut items = self
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for item in items.values_mut() {
-            item.dirty = false;
+        // SynchedEntityData.packDirty clears the values it copies. Arc identity is the revision:
+        // a changed value installs a new serializer, while the batch pins the old allocation.
+        for (tracked, revision) in &batch.0 {
+            if let Some(item) = items.get_mut(tracked)
+                && Arc::ptr_eq(&item.serializer, revision)
+            {
+                item.dirty = false;
+            }
         }
-        self.is_dirty.store(false, Ordering::Release);
+        self.is_dirty
+            .store(items.values().any(|item| item.dirty), Ordering::Release);
     }
 
-    /// Serializes every value that differs from the default the client assumes, or
-    /// `None` when they are all still at their default.
-    pub fn get_non_default_values_for_version(
-        &self,
-        version: &JavaMinecraftVersion,
-    ) -> Option<Box<[u8]>> {
+    /// Captures the non-default revisions for spawning or refreshing an entity.
+    pub fn get_non_default_values(&self) -> DirtyBatch {
+        // SynchedEntityData.getNonDefaultValues copies the values before building a packet.
         let items = self
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut buf = Vec::new();
-        let mut has_any = false;
+        DirtyBatch(
+            items
+                .values()
+                .filter(|item| !item.is_default)
+                .map(|item| (item.tracked, item.serializer.clone()))
+                .collect(),
+        )
+    }
 
-        for item in items.values() {
-            if !item.is_default {
-                let before_len = buf.len();
-                if item
-                    .serializer
-                    .write(item.tracked.id, item.tracked.r#type, &mut buf, version)
-                    .is_ok()
-                    && buf.len() > before_len
-                {
-                    has_any = true;
-                }
-            }
-        }
-
-        if !has_any {
-            return None;
-        }
-
-        buf.put_u8(255);
-        Some(buf.into_boxed_slice())
+    /// Serializes every value that differs from the default the client assumes.
+    pub fn get_non_default_values_for_version(
+        &self,
+        version: &JavaMinecraftVersion,
+    ) -> Option<Box<[u8]>> {
+        self.get_non_default_values().pack_for_version(version)
     }
 }
 
@@ -234,6 +261,24 @@ mod test {
     use pumpkin_data::tracked_data::player::PLAYER_MODE_CUSTOMISATION;
 
     use super::*;
+
+    #[test]
+    fn captured_revision_stays_immutable_and_cannot_clear_a_later_revision() {
+        let data = SynchedEntityData::new();
+        data.set(PLAYER_MODE_CUSTOMISATION, 1u8);
+        let batch = data.pack_dirty().unwrap();
+        let old = batch.pack_for_version(&JavaMinecraftVersion::V_26_3);
+        data.set(PLAYER_MODE_CUSTOMISATION, 2u8);
+        assert_eq!(batch.pack_for_version(&JavaMinecraftVersion::V_1_20_5), old);
+        data.clear_dirty(&batch);
+        assert!(data.is_dirty());
+        let newer = data.pack_dirty().unwrap();
+        assert_ne!(newer.pack_for_version(&JavaMinecraftVersion::V_26_3), old);
+        // Even changing back to the captured bytes is a new revision, rather than an ABA match.
+        data.set(PLAYER_MODE_CUSTOMISATION, 1u8);
+        data.clear_dirty(&batch);
+        assert!(data.is_dirty());
+    }
 
     /// Metadata ids no longer vary per version: core serializes the current format for
     /// every client and `pumpkin-java-multiversion` translates. So the senders need no
@@ -249,7 +294,9 @@ mod test {
         assert!(current.is_some());
         assert_eq!(current, legacy);
         assert_eq!(
-            data.pack_dirty_for_version(&JavaMinecraftVersion::V_1_20_5),
+            data.pack_dirty()
+                .unwrap()
+                .pack_for_version(&JavaMinecraftVersion::V_1_20_5),
             current
         );
     }

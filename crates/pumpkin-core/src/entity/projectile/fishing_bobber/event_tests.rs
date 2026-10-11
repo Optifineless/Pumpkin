@@ -60,7 +60,7 @@ async fn fishing_cancelled_failed_attempt_preserves_nibble_timers_and_biting() {
     bobber
         .entity
         .set_synced_data(tracked_data::fishing_bobber::DATA_BITING, true);
-    bobber.entity.synched_data.clear_dirty();
+    bobber.entity.synched_data.clear_dirty_for_test();
     bobber.catching_fish(&world, &BlockPos::new(0, 64, 0), &mut Vector3::default());
     assert_eq!(handler.calls.load(Relaxed), 1);
     assert_eq!(bobber.bite_countdown.load(Relaxed), 1);
@@ -88,7 +88,7 @@ async fn fishing_cancelled_bite_skips_nibble_metadata_kick_sound_and_particles()
     bobber
         .entity
         .set_synced_data(tracked_data::fishing_bobber::DATA_BITING, false);
-    bobber.entity.synched_data.clear_dirty();
+    bobber.entity.synched_data.clear_dirty_for_test();
     owner.take_packets();
     let mut velocity = Vector3::new(0.1, 0.2, 0.3);
     bobber.catching_fish(&world, &BlockPos::new(0, 64, 0), &mut velocity);

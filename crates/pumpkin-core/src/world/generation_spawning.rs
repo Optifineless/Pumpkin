@@ -114,16 +114,7 @@ impl World {
     }
 
     pub(super) fn register_loaded_chunk_ticks(&self, pos: Vector2<i32>) {
-        // ServerChunkCache publication makes the chunk's saved ticks available for ticking.
-        if self
-            .level
-            .read_chunk_sync(&pos, |chunk| {
-                chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks()
-            })
-            .unwrap_or(false)
-        {
-            self.level.chunks_with_scheduled_ticks.insert(pos);
-        }
+        self.level.register_loaded_chunk_ticks(pos);
     }
 
     pub(super) fn publish_generated_entities(self: &Arc<Self>, pos: Vector2<i32>) {

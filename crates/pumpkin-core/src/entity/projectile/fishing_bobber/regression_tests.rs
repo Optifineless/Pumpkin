@@ -225,7 +225,7 @@ async fn fishing_full_tick_sequence_reads_rod_enchantments_bites_and_retrieves_r
     bobber.process_tick(bobber);
     assert!((20..=80).contains(&bobber.hook_countdown.load(Relaxed)));
     bobber.hook_countdown.store(1, Relaxed);
-    bobber.entity.synched_data.clear_dirty();
+    bobber.entity.synched_data.clear_dirty_for_test();
     bobber.process_tick(bobber);
     assert!((20..=40).contains(&bobber.bite_countdown.load(Relaxed)));
     assert_eq!(
@@ -264,7 +264,7 @@ async fn fishing_hook_tracks_entity_id_and_follows_at_eighty_percent_height() {
         .players
         .store(Arc::new(vec![owner.player.clone(), target.player.clone()]));
     let bobber = hook(&world, &owner.player);
-    bobber.entity.synched_data.clear_dirty();
+    bobber.entity.synched_data.clear_dirty_for_test();
     let id = target.player.get_entity().entity_id;
     bobber.set_hooked_entity(Some(id));
     let bytes = tracked_value(&bobber.entity, tracked_data::fishing_bobber::HOOKED_ENTITY);
@@ -279,7 +279,7 @@ async fn fishing_hook_tracks_entity_id_and_follows_at_eighty_percent_height() {
     assert_eq!(pos.x, 4.0);
     assert!((pos.y - 71.44).abs() < 1e-6);
     assert_eq!(pos.z, 7.0);
-    bobber.entity.synched_data.clear_dirty();
+    bobber.entity.synched_data.clear_dirty_for_test();
     bobber.set_hooked_entity(None);
     assert_eq!(
         tracked_value(&bobber.entity, tracked_data::fishing_bobber::HOOKED_ENTITY),

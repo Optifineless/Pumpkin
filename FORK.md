@@ -279,9 +279,20 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 - Unicode context divergence: when Java's ten-unit UTF-16 window starts inside a surrogate pair, Pumpkin omits that entire character to preserve valid UTF-8 (`abcdefghi😀123456789` shows `...123456789`), instead of Java's isolated low surrogate.
 - Deferred function gap: `execute if|unless function`, `/function ... with`, macro instantiation not implemented.
 
+## Small world shared-state fixes
+
+| Issue | In-game verification |
+|:--|:--|
+| Concurrent lazy chest opens share one inventory, so deposits survive unload and reload (shared-state finding 2). | Not yet |
+| Scheduling and loaded-container registration cannot lose block or fluid ticks during collector removal (audit row 11). | Not yet |
+| Entity tick callbacks can force chunks without deadlocking active-chunk membership (audit row 22). | Not yet |
+| Metadata writes during a tracker flush remain dirty for the next flush (shared-state finding 3). | Not yet |
+
 ## Native plugin API 8
 
 - API 8 (same version): the tick watchdog changes `Server` layout through its crate-private `watchdog` field and adds `Server::start_watchdog`. Rebuild native plugins; Wasm WIT is unchanged. In-game verification **Not yet**.
+- API 8 (same version): raw scheduled-tick index mutation is replaced by `Level` registration/clearing methods, and metadata clearing acknowledges a captured `DirtyBatch`; native plugins built against this fork must be rebuilt. In-game verification **Not yet**.
+
 - API 8 (same version), [#7](https://github.com/Optifineless/Pumpkin/issues/7): candle stacks now use ordinary item placement, consuming one candle in survival while preserving the lit state and four-candle limit. In-game verification **Not yet**.
 - API 8 (same version), [#8](https://github.com/Optifineless/Pumpkin/issues/8): sugar cane accepts tagged adjacent water fluids, including waterlogged blocks, or tagged frosted-ice support. In-game verification **Not yet**.
 - API 8 (same version), [#9](https://github.com/Optifineless/Pumpkin/issues/9): newly grown sugar-cane segments start at age zero instead of inheriting the mature source age. In-game verification **Not yet**.

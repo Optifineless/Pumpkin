@@ -219,7 +219,7 @@ async fn axolotl_death_refills_air_and_publishes_metadata() {
     assert_eq!(axolotl.air_supply.load(Relaxed), 0);
     axolotl.mob_entity.living_entity.health.store(0.0);
     assert!(axolotl.get_entity().is_alive()); // Still present during death animation.
-    axolotl.get_entity().synched_data.clear_dirty();
+    axolotl.get_entity().synched_data.clear_dirty_for_test();
     axolotl.after_base_tick();
     assert_eq!(axolotl.air_supply.load(Relaxed), 6000);
     assert_eq!(

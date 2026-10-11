@@ -47,6 +47,9 @@ use tokio::{
 };
 use tokio_util::task::TaskTracker;
 
+#[path = "scheduled_tick_registration.rs"]
+mod scheduled_tick_registration;
+
 pub type SyncChunk = Arc<ChunkData>;
 pub type SyncEntityChunk = Arc<ChunkEntityData>;
 
@@ -128,7 +131,11 @@ pub struct Level {
     before_entity_read: Mutex<Option<oneshot::Receiver<()>>>,
     #[cfg(test)]
     entity_read_count: std::sync::atomic::AtomicUsize,
-    pub chunks_with_scheduled_ticks: Arc<dashmap::DashSet<Vector2<i32>>>,
+    // LevelTicks owns both its container index and scheduling/draining transitions.
+    // Lock order: index -> loaded_chunks -> TickScheduler; no gameplay callbacks under this lock.
+    chunks_with_scheduled_ticks: Mutex<FxHashSet<Vector2<i32>>>,
+    #[cfg(test)]
+    before_tick_unregister: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     pub chunk_loading: Mutex<ChunkLoading>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
@@ -339,7 +346,9 @@ impl Level {
             before_entity_read: Mutex::new(None),
             #[cfg(test)]
             entity_read_count: std::sync::atomic::AtomicUsize::new(0),
-            chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
+            chunks_with_scheduled_ticks: Mutex::default(),
+            #[cfg(test)]
+            before_tick_unregister: Mutex::new(None),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
             chunk_watchers: Arc::new(DashMap::new()),
             tasks: TaskTracker::new(),
@@ -642,31 +651,7 @@ impl Level {
             }
         }
 
-        // 2. Process chunks with scheduled ticks
-        // We collect keys first to avoid holding DashSet shard lock while accessing loaded_chunks (deadlock risk)
-        let scheduled_chunk_pos: Vec<_> = self
-            .chunks_with_scheduled_ticks
-            .iter()
-            .map(|p| *p)
-            .collect();
-        for pos in scheduled_chunk_pos {
-            if let Some(chunk) = self.loaded_chunks.get(&pos) {
-                // Vanilla keeps ticks pending until the chunk is simulated (`LevelTicks.tickCheck`).
-                if !active_chunks.contains(&pos) {
-                    continue;
-                }
-                let chunk = chunk.value();
-                ticks.block_ticks.append(&mut chunk.block_ticks.step_tick());
-                ticks.fluid_ticks.append(&mut chunk.fluid_ticks.step_tick());
-
-                // Remove from set if it no longer has ticks
-                if !chunk.block_ticks.has_ticks() && !chunk.fluid_ticks.has_ticks() {
-                    self.chunks_with_scheduled_ticks.remove(&pos);
-                }
-            } else {
-                self.chunks_with_scheduled_ticks.remove(&pos); // Chunk unloaded
-            }
-        }
+        self.collect_scheduled_ticks(active_chunks, &mut ticks);
 
         ticks.block_ticks.sort_unstable();
         ticks.fluid_ticks.sort_unstable();
@@ -1104,13 +1089,17 @@ impl Level {
         };
 
         let chunk_pos = block_pos.chunk_position();
+        let mut registered = self
+            .chunks_with_scheduled_ticks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
                 chunk.block_ticks.schedule_tick(&scheduled_tick, tick_order);
             })
             .is_some()
         {
-            self.chunks_with_scheduled_ticks.insert(chunk_pos);
+            registered.insert(chunk_pos);
         }
     }
 
@@ -1131,13 +1120,17 @@ impl Level {
         };
 
         let chunk_pos = block_pos.chunk_position();
+        let mut registered = self
+            .chunks_with_scheduled_ticks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
                 chunk.fluid_ticks.schedule_tick(&scheduled_tick, tick_order);
             })
             .is_some()
         {
-            self.chunks_with_scheduled_ticks.insert(chunk_pos);
+            registered.insert(chunk_pos);
         }
     }
 
@@ -1239,7 +1232,13 @@ mod tests {
 
         let inactive = FxHashSet::default();
         assert!(level.get_tick_data(&inactive, 0).block_ticks.is_empty());
-        assert!(level.chunks_with_scheduled_ticks.contains(&pos));
+        assert!(
+            level
+                .chunks_with_scheduled_ticks
+                .lock()
+                .unwrap()
+                .contains(&pos)
+        );
 
         let active = FxHashSet::from_iter([pos]);
         assert_eq!(level.get_tick_data(&active, 0).block_ticks.len(), 1);
@@ -1253,7 +1252,13 @@ mod tests {
         );
         level.loaded_chunks.remove(&pos);
         level.get_tick_data(&inactive, 0);
-        assert!(!level.chunks_with_scheduled_ticks.contains(&pos));
+        assert!(
+            !level
+                .chunks_with_scheduled_ticks
+                .lock()
+                .unwrap()
+                .contains(&pos)
+        );
     }
 }
 

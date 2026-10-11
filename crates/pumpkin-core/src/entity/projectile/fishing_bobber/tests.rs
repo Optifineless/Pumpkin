@@ -162,7 +162,7 @@ async fn fishing_timers_start_in_water_apply_lure_and_approach_before_a_bite() {
     assert!((20..=80).contains(&bobber.hook_countdown.load(Relaxed)));
     assert_eq!(bobber.bite_countdown.load(Relaxed), 0);
     bobber.hook_countdown.store(1, Relaxed);
-    bobber.entity.synched_data.clear_dirty();
+    bobber.entity.synched_data.clear_dirty_for_test();
     bobber.catching_fish(&world, &BlockPos::new(0, 64, 0), &mut velocity);
     assert!((20..=40).contains(&bobber.bite_countdown.load(Relaxed)));
     assert_eq!(
@@ -172,7 +172,7 @@ async fn fishing_timers_start_in_water_apply_lure_and_approach_before_a_bite() {
     assert!((f64::from(-0.4f32)..=-0.24).contains(&velocity.y));
     bobber.bite_countdown.store(1, Relaxed);
     bobber.wait_countdown.store(88, Relaxed);
-    bobber.entity.synched_data.clear_dirty();
+    bobber.entity.synched_data.clear_dirty_for_test();
     bobber.catching_fish(&world, &BlockPos::new(0, 64, 0), &mut velocity);
     assert_eq!(
         regression_tests::tracked_value(&bobber.entity, tracked_data::fishing_bobber::DATA_BITING),

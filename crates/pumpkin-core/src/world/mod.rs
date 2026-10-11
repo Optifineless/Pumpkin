@@ -39,9 +39,12 @@ pub mod loot;
 pub mod map;
 pub(crate) mod neighbor_updater;
 mod particle_senders;
+mod pending_block_entity;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
+#[cfg(test)]
+mod shared_state_tests;
 mod spawn_insertion;
 pub mod stopwatches;
 pub mod time;
@@ -378,6 +381,8 @@ pub struct World {
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
     pub block_entities: DashMap<Vector2<i32>, FxHashMap<BlockPos, Arc<dyn BlockEntity>>>,
+    #[cfg(test)]
+    lazy_block_entity_hook: std::sync::Mutex<Option<pending_block_entity::PublicationHook>>,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
@@ -527,6 +532,8 @@ impl World {
             force_change_task: std::sync::Mutex::new(None),
             server,
             block_entities: DashMap::new(),
+            #[cfg(test)]
+            lazy_block_entity_hook: std::sync::Mutex::new(None),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
@@ -1832,7 +1839,9 @@ impl World {
         let active_chunks = self
             .active_chunks
             .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            // ServerLevel.tick invokes entity/block-entity callbacks without owning chunk membership.
+            .clone();
         let level_for_entities = self.level.clone();
         let entity_handle = handle.clone();
 
@@ -1909,7 +1918,7 @@ impl World {
                 }
             }
         } else {
-            for chunk_pos in active_chunks.iter() {
+            for chunk_pos in &active_chunks {
                 if let Some(chunk_block_entities) = self.block_entities.get(chunk_pos) {
                     block_entities.extend(chunk_block_entities.values().cloned());
                 }
@@ -6204,31 +6213,7 @@ impl World {
             return Some(entity);
         }
 
-        let nbt = self
-            .level
-            .read_chunk_sync(&chunk_pos, |chunk| {
-                chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .get(block_pos)
-                    .cloned()
-            })
-            .flatten()?;
-        if let Some(custom_data) = nbt
-            .get_compound("PumpkinCustomData")
-            .or_else(|| nbt.get_compound("BukkitValues"))
-        {
-            self.custom_block_entity_data
-                .insert(*block_pos, custom_data.clone());
-        }
-        let entity = block_entity_from_nbt(&nbt)?;
-        self.bind_block_entity_context(entity.as_ref());
-        self.block_entities
-            .entry(chunk_pos)
-            .or_default()
-            .insert(*block_pos, entity.clone());
-        Some(entity)
+        self.load_pending_block_entity(block_pos)
     }
 
     fn bedrock_block_entity_data(

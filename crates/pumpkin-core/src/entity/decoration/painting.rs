@@ -305,14 +305,12 @@ mod tests {
                 painting.java_spawn_metadata(JavaMinecraftVersion::V_26_3),
                 Some(expected.clone())
             );
+            let batch = painting.entity.synched_data.pack_dirty().unwrap();
             assert_eq!(
-                painting
-                    .entity
-                    .synched_data
-                    .pack_dirty_for_version(&JavaMinecraftVersion::V_26_3),
+                batch.pack_for_version(&JavaMinecraftVersion::V_26_3),
                 Some(expected)
             );
-            painting.entity.synched_data.clear_dirty();
+            painting.entity.synched_data.clear_dirty(&batch);
         }
     }
 
