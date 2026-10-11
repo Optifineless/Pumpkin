@@ -57,6 +57,7 @@ struct ObjectivesAddExecutor {
 
 impl CommandExecutor for ObjectivesAddExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let objective_name = StringArgumentType::get(context, ARG_OBJECTIVE)?;
         let criterion = StringArgumentType::get(context, ARG_CRITERION)?;
 
@@ -110,6 +111,7 @@ struct PlayersEnableExecutor;
 
 impl CommandExecutor for PlayersEnableExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let holders = ScoreHolderArgumentType::get_score_holders(context, ARG_TARGETS)?;
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?;
 
@@ -200,6 +202,7 @@ struct ObjectivesRemoveExecutor;
 
 impl CommandExecutor for ObjectivesRemoveExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?;
 
         let world = context.world().clone();
@@ -243,6 +246,7 @@ struct PlayersSetExecutor;
 
 impl CommandExecutor for PlayersSetExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let holders = ScoreHolderArgumentType::get_score_holders(context, ARG_TARGETS)?;
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?.to_string();
         let value = IntegerArgumentType::get(context, ARG_SCORE)?;
@@ -290,6 +294,7 @@ struct PlayersGetExecutor;
 
 impl CommandExecutor for PlayersGetExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let holder = ScoreHolderArgumentType::get_score_holder(context, ARG_TARGETS)?;
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?.to_string();
 
@@ -342,6 +347,7 @@ struct PlayersAddRemoveExecutor {
 
 impl CommandExecutor for PlayersAddRemoveExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let holders = ScoreHolderArgumentType::get_score_holders(context, ARG_TARGETS)?;
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?.to_string();
         let value = IntegerArgumentType::get(context, ARG_SCORE)?;
@@ -418,6 +424,7 @@ struct PlayersResetExecutor {
 
 impl CommandExecutor for PlayersResetExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let holders = ScoreHolderArgumentType::get_score_holders(context, ARG_TARGETS)?;
         let world = context.world().clone();
         let mut scoreboard = world
@@ -484,6 +491,7 @@ struct PlayersOperationExecutor;
 
 impl CommandExecutor for PlayersOperationExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let holders = ScoreHolderArgumentType::get_score_holders(context, ARG_TARGETS)?;
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?.to_string();
         let operation = *context.get_argument::<ScoreboardOperation>(ARG_OPERATION)?;

@@ -7,13 +7,13 @@ use pumpkin_data::translation;
 use pumpkin_data::{BlockStateId, FacingExt};
 use pumpkin_inventory::loom_screen_handler::LoomScreenHandler;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::text::TextComponent;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 #[pumpkin_block("minecraft:loom")]
 pub struct LoomBlock;
@@ -70,7 +70,7 @@ impl ScreenHandlerFactory for LoomScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let handler: SharedScreenHandler = Arc::new(Mutex::new(LoomScreenHandler::new(
+        let handler: SharedScreenHandler = Arc::new(ScreenMutex::new(LoomScreenHandler::new(
             sync_id,
             player_inventory,
         )));

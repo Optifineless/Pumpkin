@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::block::entities::enchanting_table::EnchantingTableBlockEntity;
 use crate::block::registry::BlockActionResult;
@@ -128,7 +128,7 @@ impl ScreenHandlerFactory for EnchantingTableScreenFactory {
             self.seed,
             self.bookshelf_count,
         );
-        let screen_handler_arc = Arc::new(Mutex::new(handler));
+        let screen_handler_arc = Arc::new(ScreenMutex::new(handler));
         Some(screen_handler_arc as SharedScreenHandler)
     }
 

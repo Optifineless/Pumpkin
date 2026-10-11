@@ -31,6 +31,7 @@ struct SimpleTriggerExecutor;
 
 impl CommandExecutor for SimpleTriggerExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let player = context.source.player_or_err()?;
         let player_name = player.gameprofile.name.clone();
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?.to_string();
@@ -98,6 +99,7 @@ struct AddTriggerExecutor;
 
 impl CommandExecutor for AddTriggerExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let player = context.source.player_or_err()?;
         let player_name = player.gameprofile.name.clone();
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?.to_string();
@@ -169,6 +171,7 @@ struct SetTriggerExecutor;
 
 impl CommandExecutor for SetTriggerExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let player = context.source.player_or_err()?;
         let player_name = player.gameprofile.name.clone();
         let objective_name = ObjectiveArgumentType::get(context, ARG_OBJECTIVE)?.to_string();

@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::block::{
     GetComparatorOutputArgs, GetScreenHandlerFactoryArgs, OnPlaceArgs, OnSyncedBlockEventArgs,
@@ -60,7 +60,7 @@ impl ScreenHandlerFactory for ShulkerBoxScreenFactory {
                 && player
                     .can_interact_with_block_at(&entity.get_position(), DEFAULT_DISTANCE_BUFFER)
         }));
-        let screen_handler_arc = Arc::new(Mutex::new(handler));
+        let screen_handler_arc = Arc::new(ScreenMutex::new(handler));
 
         Some(screen_handler_arc as SharedScreenHandler)
     }

@@ -47,6 +47,7 @@ impl Player {
     /// Removes temporary menu contents in the old world, before a respawn world transfer.
     /// Living transfers return them to inventory; deaths drop them regardless of retention.
     pub(crate) fn remove_respawn_menus(&self, restore_all: bool) {
+        let effects = crate::world::guard_effects::GuardEffects::new();
         // Player.remove / PlayerList.respawn remove menus before copying inventory and XP.
         // A living dimension transfer returns temporary items; KILLED drops them even with retention.
         let reason = if restore_all {
@@ -72,6 +73,7 @@ impl Player {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_closed(self);
         }
+        drop(effects);
         self.get_entity().removal_reason.store(None);
     }
 
@@ -236,18 +238,21 @@ mod tests {
         use pumpkin_inventory::crafting::crafting_screen_handler::CraftingTableScreenHandler;
         let fixture = DeathTestWorld::new().await;
         let player = fixture.player("Crafter");
-        let table = Arc::new(Mutex::new(CraftingTableScreenHandler::new(
-            1,
-            &player.inventory,
-            None,
-        )));
+        let table = Arc::new(pumpkin_inventory::screen_handler::ScreenMutex::new(
+            CraftingTableScreenHandler::new(1, &player.inventory, None),
+        ));
         *player.current_screen_handler.lock().unwrap() = table.clone();
         for (handler, width) in [
             (
-                player.player_screen_handler.clone() as Arc<Mutex<dyn ScreenHandler>>,
+                player.player_screen_handler.clone()
+                    as Arc<pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>>,
                 2,
             ),
-            (table.clone() as Arc<Mutex<dyn ScreenHandler>>, 3),
+            (
+                table.clone()
+                    as Arc<pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>>,
+                3,
+            ),
         ] {
             let handler = handler.lock().unwrap();
             let slots = &handler.get_behaviour().slots;
@@ -263,7 +268,8 @@ mod tests {
         player.remove_respawn_menus(false);
         player.restore_inventory_after_respawn(false);
         for handler in [
-            player.player_screen_handler.clone() as Arc<Mutex<dyn ScreenHandler>>,
+            player.player_screen_handler.clone()
+                as Arc<pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>>,
             table,
         ] {
             let handler = handler.lock().unwrap();
@@ -288,11 +294,9 @@ mod tests {
         let fixture = DeathTestWorld::new().await;
         fixture.keep_inventory(true);
         let player = fixture.player("Retained");
-        let table = Arc::new(Mutex::new(CraftingTableScreenHandler::new(
-            1,
-            &player.inventory,
-            None,
-        )));
+        let table = Arc::new(pumpkin_inventory::screen_handler::ScreenMutex::new(
+            CraftingTableScreenHandler::new(1, &player.inventory, None),
+        ));
         let mut cursed = ItemStack::new(1, &Item::IRON_SWORD);
         cursed.add_enchantment(&pumpkin_data::Enchantment::VANISHING_CURSE, 1);
         player.inventory.set_slot(0, cursed.clone());

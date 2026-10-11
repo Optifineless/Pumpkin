@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::{
@@ -36,7 +36,7 @@ impl ScreenHandlerFactory for HopperBlockScreenFactory {
         player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
         let concrete_handler = create_hopper(sync_id, player_inventory, self.0.clone(), player);
-        let concrete_arc = Arc::new(Mutex::new(concrete_handler));
+        let concrete_arc = Arc::new(ScreenMutex::new(concrete_handler));
 
         Some(concrete_arc as SharedScreenHandler)
     }

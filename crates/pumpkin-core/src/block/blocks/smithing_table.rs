@@ -3,6 +3,7 @@ use crate::block::{BlockBehaviour, GetScreenHandlerFactoryArgs, NormalUseArgs};
 
 use pumpkin_data::translation;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
@@ -10,7 +11,6 @@ use pumpkin_inventory::smithing_table_screen_handler::SmithingTableScreenHandler
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::text::TextComponent;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 #[pumpkin_block("minecraft:smithing_table")]
 pub struct SmithingTableBlock;
@@ -53,10 +53,9 @@ impl ScreenHandlerFactory for SmithingTableScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let handler: SharedScreenHandler = Arc::new(Mutex::new(SmithingTableScreenHandler::new(
-            sync_id,
-            player_inventory,
-        )));
+        let handler: SharedScreenHandler = Arc::new(ScreenMutex::new(
+            SmithingTableScreenHandler::new(sync_id, player_inventory),
+        ));
         Some(handler)
     }
 

@@ -450,6 +450,7 @@ impl JavaClient {
         };
         let payload = packet_data.slice(packet_data.len() - reader.len()..);
         let mut event = PacketSentEvent::new_raw(player.clone(), packet_id.0, payload);
+        pumpkin_util::sync::assert_no_guards_held("JavaClient::translate_outgoing");
         server.plugin_manager.fire_blocking(&server, &mut event);
         if event.cancelled {
             return None;

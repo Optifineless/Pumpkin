@@ -1,6 +1,6 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use rand::{Rng, RngExt, rng};
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::entities::crafter::CrafterBlockEntity;
@@ -43,7 +43,7 @@ impl ScreenHandlerFactory for CrafterScreenFactory {
         player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
         let handler = create_crafter_3x3(sync_id, player_inventory, self.0.clone(), player);
-        let screen_handler_arc = Arc::new(Mutex::new(handler));
+        let screen_handler_arc = Arc::new(ScreenMutex::new(handler));
 
         Some(screen_handler_arc as SharedScreenHandler)
     }

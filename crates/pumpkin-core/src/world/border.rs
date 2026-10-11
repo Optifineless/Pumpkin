@@ -7,6 +7,7 @@ use crate::net::java::JavaClient;
 
 use super::World;
 
+#[derive(Clone)]
 pub struct Worldborder {
     pub center_x: f64,
     pub center_z: f64,
@@ -59,11 +60,15 @@ impl Worldborder {
         }
     }
 
+    // WorldBorder setters mutate state before notifying their listener snapshots.
     pub fn set_center(&mut self, world: &World, x: f64, z: f64) {
         self.center_x = x;
         self.center_z = z;
 
-        world.broadcast_packet_all(&CSetBorderCenter::new(self.center_x, self.center_z));
+        super::guard_effects::broadcast_je(
+            world,
+            &CSetBorderCenter::new(self.center_x, self.center_z),
+        );
     }
 
     pub fn set_diameter(&mut self, world: &World, diameter: f64, speed: Option<i64>) {
@@ -72,14 +77,13 @@ impl Worldborder {
 
         match speed {
             Some(speed) => {
-                world.broadcast_packet_all(&CSetBorderLerpSize::new(
-                    self.old_diameter,
-                    self.new_diameter,
-                    speed.into(),
-                ));
+                super::guard_effects::broadcast_je(
+                    world,
+                    &CSetBorderLerpSize::new(self.old_diameter, self.new_diameter, speed.into()),
+                );
             }
             None => {
-                world.broadcast_packet_all(&CSetBorderSize::new(self.new_diameter));
+                super::guard_effects::broadcast_je(world, &CSetBorderSize::new(self.new_diameter));
             }
         }
     }
@@ -91,13 +95,19 @@ impl Worldborder {
     pub fn set_warning_delay(&mut self, world: &World, delay: i32) {
         self.warning_time = delay;
 
-        world.broadcast_packet_all(&CSetBorderWarningDelay::new(self.warning_time.into()));
+        super::guard_effects::broadcast_je(
+            world,
+            &CSetBorderWarningDelay::new(self.warning_time.into()),
+        );
     }
 
     pub fn set_warning_distance(&mut self, world: &World, distance: i32) {
         self.warning_blocks = distance;
 
-        world.broadcast_packet_all(&CSetBorderWarningDistance::new(self.warning_blocks.into()));
+        super::guard_effects::broadcast_je(
+            world,
+            &CSetBorderWarningDistance::new(self.warning_blocks.into()),
+        );
     }
 
     pub const fn set_damage_buffer(&mut self, buffer: f32) {
@@ -120,16 +130,19 @@ impl Worldborder {
         self.damage_per_block = 0.2;
         self.buffer = 5.0;
 
-        world.broadcast_packet_all(&CInitializeWorldBorder::new(
-            self.center_x,
-            self.center_z,
-            self.old_diameter,
-            self.new_diameter,
-            self.speed.into(),
-            self.portal_teleport_boundary.into(),
-            self.warning_blocks.into(),
-            self.warning_time.into(),
-        ));
+        super::guard_effects::broadcast_je(
+            world,
+            &CInitializeWorldBorder::new(
+                self.center_x,
+                self.center_z,
+                self.old_diameter,
+                self.new_diameter,
+                self.speed.into(),
+                self.portal_teleport_boundary.into(),
+                self.warning_blocks.into(),
+                self.warning_time.into(),
+            ),
+        );
     }
 
     #[must_use]

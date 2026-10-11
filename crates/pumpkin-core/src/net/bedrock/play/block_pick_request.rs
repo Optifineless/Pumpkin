@@ -70,11 +70,7 @@ impl BedrockClient {
         );
 
         // Send screen handler / Java inventory updates
-        player
-            .player_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .send_content_updates();
+        crate::entity::player::Player::send_menu_updates(&player.player_screen_handler);
 
         // Sync main hand equipment to other players
         let stack_in_hand = player.inventory().held_item();

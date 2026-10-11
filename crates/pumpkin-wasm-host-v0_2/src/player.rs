@@ -2719,8 +2719,9 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let revoked = guard.revoke(advancement, &criterion);
+        drop(guard);
         if revoked {
-            guard.flush_dirty(player, true);
+            player.flush_advancements(true);
         }
         Ok(revoked)
     }
@@ -2749,8 +2750,9 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
                 any_revoked = true;
             }
         }
+        drop(guard);
         if any_revoked {
-            guard.flush_dirty(player, true);
+            player.flush_advancements(true);
         }
         Ok(any_revoked)
     }
@@ -2815,11 +2817,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         let target_adv = tab_id
             .as_deref()
             .and_then(crate::advancement::find_advancement);
-        let mut guard = player
-            .advancements
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.set_selected_tab(target_adv);
+        player.select_advancement_tab(target_adv);
         Ok(())
     }
 
@@ -3113,14 +3111,18 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
                 player.increment_screen_handler_sync_id();
                 let sync_id = player.screen_handler_sync_id.load(Ordering::Relaxed);
                 let screen_handler: Arc<
-                    std::sync::Mutex<dyn pumpkin_inventory::screen_handler::ScreenHandler>,
-                > = Arc::new(std::sync::Mutex::new(PluginScreenHandler::new(
-                    sync_id,
-                    window_type,
-                    &inventory,
-                    allow_grab_items,
-                    allow_put_items,
-                )));
+                    pumpkin_inventory::screen_handler::ScreenMutex<
+                        dyn pumpkin_inventory::screen_handler::ScreenHandler,
+                    >,
+                > = Arc::new(pumpkin_inventory::screen_handler::ScreenMutex::new(
+                    PluginScreenHandler::new(
+                        sync_id,
+                        window_type,
+                        &inventory,
+                        allow_grab_items,
+                        allow_put_items,
+                    ),
+                ));
                 player.open_handled_screen_direct(screen_handler, &title);
             })
             .await
@@ -3339,11 +3341,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
 
                 PlayerAdvancement::finish_award(&player, advancement, result);
                 if result.awarded() {
-                    let mut guard = player
-                        .advancements
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    guard.flush_dirty(&player, true);
+                    player.flush_advancements(true);
                 }
                 result.awarded()
             })
@@ -3385,11 +3383,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
 
                 PlayerAdvancement::finish_award(&player, advancement, result);
                 if result.awarded() {
-                    let mut guard = player
-                        .advancements
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    guard.flush_dirty(&player, true);
+                    player.flush_advancements(true);
                 }
                 result.awarded()
             })

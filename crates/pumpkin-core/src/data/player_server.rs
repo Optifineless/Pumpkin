@@ -3,7 +3,6 @@ use crate::{
     server::Server,
 };
 use crossbeam::atomic::AtomicCell;
-use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_world::data::player_data::{PlayerDataError, PlayerDataStorage};
 use std::sync::Arc;
@@ -57,11 +56,7 @@ impl ServerPlayerData {
             crate::entity::player::statistics::CustomStatistic::LeaveGame,
             1,
         );
-        player
-            .player_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .on_closed(player.as_ref());
+        player.remove_inventory_menu();
         player.on_handled_screen_closed();
         let snapshot = {
             let mut session = player

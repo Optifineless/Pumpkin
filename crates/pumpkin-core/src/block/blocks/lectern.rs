@@ -17,6 +17,7 @@ use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, tag, transla
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::lectern_screen_handler::{LecternController, LecternScreenHandler};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
@@ -25,7 +26,6 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::text::TextComponent;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
-use std::sync::Mutex;
 
 /// Bridges the screen handler back into the world: page changes emit the
 /// vanilla redstone pulse and taking the book clears `has_book`.
@@ -83,7 +83,7 @@ impl ScreenHandlerFactory for LecternScreenFactory {
     ) -> Option<SharedScreenHandler> {
         let handler =
             LecternScreenHandler::new(sync_id, self.inventory.clone(), self.controller.clone());
-        Some(Arc::new(Mutex::new(handler)) as SharedScreenHandler)
+        Some(Arc::new(ScreenMutex::new(handler)) as SharedScreenHandler)
     }
 
     fn get_display_name(&self) -> TextComponent {

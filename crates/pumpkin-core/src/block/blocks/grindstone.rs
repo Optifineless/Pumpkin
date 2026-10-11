@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use pumpkin_data::translation;
 use pumpkin_data::{
@@ -117,7 +117,7 @@ impl ScreenHandlerFactory for GrindstoneScreenFactory {
     ) -> Option<SharedScreenHandler> {
         let inventory = Arc::new(SimpleInventory::new(3));
         let handler = GrindstoneScreenHandler::new(sync_id, player_inventory, inventory);
-        let concrete_arc = Arc::new(Mutex::new(handler));
+        let concrete_arc = Arc::new(ScreenMutex::new(handler));
 
         Some(concrete_arc as SharedScreenHandler)
     }

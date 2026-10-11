@@ -729,13 +729,12 @@ impl EntityBase for ItemEntity {
                 .living_entity
                 .pickup(&self.entity, amount_picked_up.into());
 
-            player
+            let screen = player
                 .current_screen_handler
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .send_content_updates();
+                .clone();
+            crate::entity::player::Player::send_menu_updates(screen.as_ref());
 
             if is_empty {
                 self.entity.remove();

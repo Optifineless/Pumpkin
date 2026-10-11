@@ -29,17 +29,18 @@ pub trait ScoreboardTarget: Send + Sync {
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J);
 }
 
+// ServerScoreboard notifications leave the owner guard before reaching packet plugins.
 impl ScoreboardTarget for World {
     fn send_editioned<J: ClientPacket + Sync, B: BClientPacket + Sync>(
         &self,
         je_packet: &J,
         be_packet: &B,
     ) {
-        self.broadcast_editioned(je_packet, be_packet);
+        super::guard_effects::broadcast_editioned(self, je_packet, be_packet);
     }
 
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J) {
-        self.broadcast_packet_all(je_packet);
+        super::guard_effects::broadcast_je(self, je_packet);
     }
 }
 
@@ -63,11 +64,11 @@ impl ScoreboardTarget for std::sync::Arc<World> {
         je_packet: &J,
         be_packet: &B,
     ) {
-        self.broadcast_editioned(je_packet, be_packet);
+        super::guard_effects::broadcast_editioned(self, je_packet, be_packet);
     }
 
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J) {
-        self.broadcast_packet_all(je_packet);
+        super::guard_effects::broadcast_je(self, je_packet);
     }
 }
 

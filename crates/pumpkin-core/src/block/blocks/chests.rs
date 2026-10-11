@@ -10,6 +10,7 @@ use pumpkin_inventory::Inventory;
 use pumpkin_inventory::double::DoubleInventory;
 use pumpkin_inventory::generic_container_screen_handler::{create_generic_9x3, create_generic_9x6};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
@@ -18,7 +19,6 @@ use pumpkin_util::GameMode;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::text::TextComponent;
 use pumpkin_world::world::BlockFlags;
-use std::sync::Mutex;
 
 use crate::block::{
     BlockBehaviour, BrokenArgs, EmitsRedstonePowerArgs, GetComparatorOutputArgs,
@@ -47,7 +47,7 @@ impl ScreenHandlerFactory for ChestScreenFactory {
             create_generic_9x3(sync_id, player_inventory, self.0.clone(), player)
         };
 
-        let concrete_arc = Arc::new(Mutex::new(concrete_handler));
+        let concrete_arc = Arc::new(ScreenMutex::new(concrete_handler));
 
         Some(concrete_arc as SharedScreenHandler)
     }

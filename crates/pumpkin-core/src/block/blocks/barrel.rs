@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::block::{GetComparatorOutputArgs, GetScreenHandlerFactoryArgs, OnPlaceArgs, PlacedArgs};
 use crate::block::{
@@ -31,7 +31,7 @@ impl ScreenHandlerFactory for BarrelScreenFactory {
         player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
         let handler = create_generic_9x3(sync_id, player_inventory, self.0.clone(), player);
-        let concrete_arc = Arc::new(Mutex::new(handler));
+        let concrete_arc = Arc::new(ScreenMutex::new(handler));
 
         Some(concrete_arc as SharedScreenHandler)
     }

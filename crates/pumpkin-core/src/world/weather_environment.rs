@@ -4,17 +4,25 @@ use std::sync::Arc;
 impl World {
     pub(super) fn tick_weather_and_sleep(self: &Arc<Self>) {
         // ServerLevel.tick: advance weather, handle sleep/reset, then tickTime.
-        let (should_reset, cycle_enabled) = {
+        let (should_reset, cycle_enabled, effects) = {
             let mut weather = self
                 .weather
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            weather.tick_weather(self);
+            let effects = weather.tick_weather(self);
             (
                 weather.is_raining(self),
                 self.level_info.load().game_rules.advance_weather,
+                effects,
             )
         };
+        for (all_worlds, packet) in effects {
+            if all_worlds {
+                self.broadcast_weather_transition(&packet);
+            } else {
+                self.broadcast_packet_all(&packet);
+            }
+        }
         if !self.should_skip_night() {
             return;
         }

@@ -375,7 +375,9 @@ impl PlayerAdvancement {
     }
 
     /// Flushes any pending advancement state down to the client.
-    pub fn flush_dirty(&mut self, player: &Player, show_advancement: bool) {
+    pub fn flush_dirty(&mut self, show_advancement: bool) -> Option<CUpdateAdvancements> {
+        // PlayerAdvancements.flushDirty clears only the changes captured in this packet.
+        let mut packet = None;
         if self.is_first_packet
             || !self.roots_to_update.is_empty()
             || !self.progress_changed.is_empty()
@@ -411,7 +413,7 @@ impl PlayerAdvancement {
                             .collect(),
                     })
                     .collect();
-                player.try_send_client_packet(&CUpdateAdvancements::new(
+                packet = Some(CUpdateAdvancements::new(
                     self.is_first_packet,
                     added,
                     parsed_progress,
@@ -421,6 +423,7 @@ impl PlayerAdvancement {
             }
         }
         self.is_first_packet = false;
+        packet
     }
 
     /// Grants the rewards (like experience) associated with completing an advancement.
@@ -520,7 +523,10 @@ impl PlayerAdvancement {
     }
 
     /// set the selected advancement tab of the player
-    pub fn set_selected_tab(&mut self, advancement: Option<&'static Advancement>) {
+    pub fn set_selected_tab(
+        &mut self,
+        advancement: Option<&'static Advancement>,
+    ) -> Option<CSelectAdvancementsTab> {
         let old = self.last_selected_tab;
         if let Some(value) = advancement
             && value.is_root()
@@ -530,12 +536,9 @@ impl PlayerAdvancement {
         } else {
             self.last_selected_tab = None;
         }
-        if old != self.last_selected_tab
-            && let Some(player) = self.player.upgrade()
-        {
-            let tab_id = self.last_selected_tab.map(|adv| adv.id.clone());
-            player.try_send_client_packet(&CSelectAdvancementsTab::new(tab_id));
-        }
+        // PlayerAdvancements.setSelectedTab mutates selection before notifying the client.
+        (old != self.last_selected_tab)
+            .then(|| CSelectAdvancementsTab::new(self.last_selected_tab.map(|adv| adv.id.clone())))
     }
 }
 
@@ -557,6 +560,45 @@ impl Serialize for PlayerAdvancement {
             map.serialize_entry(&advancement.id, &progress.criteria)?;
         }
         map.end()
+    }
+}
+
+impl Player {
+    /// Captures advancement changes and sends them after releasing their owner guard.
+    pub fn flush_advancements(&self, show: bool) {
+        let packet = self
+            .advancements
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .flush_dirty(show);
+        if let Some(packet) = packet {
+            self.try_send_client_packet(&packet);
+        }
+    }
+
+    pub(super) fn try_flush_advancements(&self, show: bool) {
+        let packet = self
+            .advancements
+            .try_lock()
+            .ok()
+            .and_then(|mut state| state.flush_dirty(show));
+        if let Some(packet) = packet {
+            self.try_send_client_packet(&packet);
+        }
+    }
+}
+
+impl Player {
+    /// Changes the advancement tab and sends its notification after releasing the state guard.
+    pub fn select_advancement_tab(&self, advancement: Option<&'static Advancement>) {
+        let packet = self
+            .advancements
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .set_selected_tab(advancement);
+        if let Some(packet) = packet {
+            self.try_send_client_packet(&packet);
+        }
     }
 }
 

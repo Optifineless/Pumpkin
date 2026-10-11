@@ -106,11 +106,13 @@ impl Weather {
         data.thundering = thundering;
     }
 
-    pub fn tick_weather(&mut self, world: &World) {
+    pub fn tick_weather(&mut self, world: &World) -> Vec<(bool, CGameEvent)> {
+        // ServerLevel.advanceWeatherCycle: mutate first, then notify in this order.
+        let mut effects = Vec::new();
         let was_raining = self.is_raining(world);
         // ServerLevel.advanceWeatherCycle gates timers AND interpolation on canHaveWeather.
         if !Self::can_have_weather(&world.dimension) {
-            return;
+            return effects;
         }
         self.weather_cycle_enabled = world.level_info.load().game_rules.advance_weather;
         let data = {
@@ -142,16 +144,16 @@ impl Weather {
 
         // Broadcast level changes if needed
         if self.old_rain_level != self.rain_level {
-            world.broadcast_packet_all(&CGameEvent::new(
-                GameEvent::RainLevelChange,
-                self.rain_level,
+            effects.push((
+                false,
+                CGameEvent::new(GameEvent::RainLevelChange, self.rain_level),
             ));
         }
 
         if self.old_thunder_level != self.thunder_level {
-            world.broadcast_packet_all(&CGameEvent::new(
-                GameEvent::ThunderLevelChange,
-                self.thunder_level,
+            effects.push((
+                false,
+                CGameEvent::new(GameEvent::ThunderLevelChange, self.thunder_level),
             ));
         }
 
@@ -162,16 +164,17 @@ impl Weather {
             } else {
                 GameEvent::BeginRaining
             };
-            world.broadcast_weather_transition(&CGameEvent::new(event, 0.0));
-            world.broadcast_weather_transition(&CGameEvent::new(
-                GameEvent::RainLevelChange,
-                self.rain_level,
+            effects.push((true, CGameEvent::new(event, 0.0)));
+            effects.push((
+                true,
+                CGameEvent::new(GameEvent::RainLevelChange, self.rain_level),
             ));
-            world.broadcast_weather_transition(&CGameEvent::new(
-                GameEvent::ThunderLevelChange,
-                self.thunder_level,
+            effects.push((
+                true,
+                CGameEvent::new(GameEvent::ThunderLevelChange, self.thunder_level),
             ));
         }
+        effects
     }
 
     fn can_have_weather(dimension: &pumpkin_data::dimension::Dimension) -> bool {
@@ -240,7 +243,7 @@ impl Weather {
 }
 
 impl World {
-    fn broadcast_weather_transition(&self, packet: &CGameEvent) {
+    pub(super) fn broadcast_weather_transition(&self, packet: &CGameEvent) {
         if let Some(server) = self.server.upgrade() {
             for world in server.worlds.load().iter() {
                 world.broadcast_packet_all(packet);

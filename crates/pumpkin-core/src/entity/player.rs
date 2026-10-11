@@ -1,4 +1,6 @@
 pub mod advancement;
+mod container_menu;
+mod container_menu_block_effects;
 mod death;
 mod experience_orb;
 mod known_movement;
@@ -511,8 +513,12 @@ pub struct Player {
     root_vehicle_uuid: AtomicCell<Option<Uuid>>,
     pub chat_session: Arc<Mutex<ChatSession>>,
     pub signature_cache: Mutex<MessageCache>,
-    pub player_screen_handler: Arc<std::sync::Mutex<PlayerScreenHandler>>,
-    pub current_screen_handler: std::sync::Mutex<Arc<std::sync::Mutex<dyn ScreenHandler>>>,
+    pub player_screen_handler:
+        Arc<pumpkin_inventory::screen_handler::ScreenMutex<PlayerScreenHandler>>,
+    pub current_screen_handler: pumpkin_util::sync::Mutex<
+        Arc<pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>>,
+        pumpkin_util::sync::ScreenSelection,
+    >,
     pub screen_handler_sync_id: AtomicU8,
     pub screen_handler_listener: Arc<dyn ScreenHandlerListener>,
     pub inventory_changed: Arc<AtomicBool>,
@@ -530,7 +536,8 @@ pub struct Player {
     pub compass_target: AtomicCell<Option<pumpkin_util::math::position::BlockPos>>,
     pub respawn_location: AtomicCell<Option<pumpkin_util::math::position::BlockPos>>,
     pub hidden_players: Mutex<std::collections::HashSet<uuid::Uuid>>,
-    pub advancements: Arc<Mutex<PlayerAdvancement>>,
+    pub advancements:
+        Arc<pumpkin_util::sync::Mutex<PlayerAdvancement, pumpkin_util::sync::Advancements>>,
     pub enchantment_seed: AtomicI32,
     pub fishing_bobber: AtomicI32,
     pub bedrock_skin: arc_swap::ArcSwap<pumpkin_protocol::bedrock::client::Skin>,
@@ -605,12 +612,9 @@ impl Player {
 
         let ender_chest_inventory = Arc::new(EnderChestInventory::new());
 
-        let player_screen_handler = Arc::new(std::sync::Mutex::new(PlayerScreenHandler::new(
-            &inventory,
-            None,
-            0,
-            Some(server.recipe_manager.clone()),
-        )));
+        let player_screen_handler = Arc::new(pumpkin_inventory::screen_handler::ScreenMutex::new(
+            PlayerScreenHandler::new(&inventory, None, 0, Some(server.recipe_manager.clone())),
+        ));
 
         // GameType.updatePlayerAbilities keeps game-mode immunity in abilities.
         let mut abilities = Abilities::default();
@@ -637,7 +641,7 @@ impl Player {
             living_entity,
             known_movement: KnownMovement::default(),
             config: ArcSwap::new(Arc::new(config)),
-            advancements: Arc::new(Mutex::new(
+            advancements: Arc::new(pumpkin_util::sync::Mutex::new(
                 server
                     .advancement_manager
                     .clone()
@@ -726,7 +730,7 @@ impl Player {
             chat_session: Arc::new(Mutex::new(ChatSession::default())), // Placeholder value until the player actually sets their session id
             signature_cache: Mutex::new(MessageCache::default()),
             player_screen_handler: player_screen_handler.clone(),
-            current_screen_handler: std::sync::Mutex::new(player_screen_handler),
+            current_screen_handler: pumpkin_util::sync::Mutex::new(player_screen_handler),
             screen_handler_sync_id: AtomicU8::new(0),
             screen_handler_listener: Arc::new(ScreenListener(inventory_changed.clone())),
             inventory_changed,
@@ -1229,6 +1233,7 @@ impl Player {
     /// applied to the local hotbar on later 1.21.x clients. Screen-handler slot
     /// updates are the vanilla path and (should) work on every supported version.
     pub fn sync_inventory_to_client(&self) {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         if let Ok(mut handler) = self.player_screen_handler.try_lock() {
             handler.send_content_updates();
         }
@@ -1254,7 +1259,7 @@ impl Player {
         match self.client.as_ref() {
             ClientPlatform::Java(java) => {
                 if let Ok(data) = java.serialize_packet(packet) {
-                    java.try_enqueue_packet(data);
+                    crate::world::guard_effects::send(self.client.clone(), data);
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
@@ -1277,7 +1282,7 @@ impl Player {
                     item: item_desc,
                 };
                 if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                    bedrock.try_enqueue_packet(data);
+                    crate::world::guard_effects::send(self.client.clone(), data);
                 }
             }
         }
@@ -2302,9 +2307,14 @@ impl Player {
                 if let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id) {
                     p.close_handled_screen();
                 }
-            } else if let Ok(mut screen_handler) = current_screen_handler.try_lock() {
-                screen_handler.tick(self);
-                screen_handler.send_content_updates();
+            } else {
+                let effects = crate::world::guard_effects::GuardEffects::new();
+                if let Ok(mut screen_handler) = current_screen_handler.try_lock() {
+                    screen_handler.tick(self);
+                    screen_handler.send_content_updates();
+                }
+                drop(effects);
+                self.finish_menu_preparation(&current_screen_handler);
             }
         }
 
@@ -2519,9 +2529,7 @@ impl Player {
         // Vanilla updates pose in PlayerEntity#tick after super.tick().
         self.update_player_pose();
         self.check_inventory_advancements();
-        if let Ok(mut adv) = self.advancements.try_lock() {
-            adv.flush_dirty(self, true);
-        }
+        self.try_flush_advancements(true);
 
         // experience handling
         self.tick_experience();
@@ -3231,8 +3239,7 @@ impl Player {
         je_packet: &J,
         be_packet: &B,
     ) {
-        self.client
-            .try_enqueue_packet_editioned(je_packet, be_packet);
+        crate::world::guard_effects::send_editioned(self.client.clone(), je_packet, be_packet);
     }
 
     pub async fn send_packet_now_editioned<
@@ -3252,7 +3259,7 @@ impl Player {
         if let ClientPlatform::Java(client) = self.client.as_ref()
             && let Ok(data) = client.serialize_packet(packet)
         {
-            client.try_enqueue_packet(data);
+            crate::world::guard_effects::send(self.client.clone(), data);
         }
     }
 
@@ -3283,6 +3290,7 @@ impl Player {
     }
 
     pub fn send_scoreboard(&self) {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let guard = self
             .custom_scoreboard
             .lock()
@@ -4546,6 +4554,7 @@ impl Player {
     }
 
     pub fn drop_held_item(&self, drop_stack: bool) {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let mut item_stack = self.inventory().held_item();
 
         if item_stack.is_empty() {
@@ -4770,17 +4779,7 @@ impl Player {
     /// Sets the player's experience level and notifies the client.
     pub fn set_experience(&self, level: i32, progress: f32, points: i32) {
         let old_level = self.experience_level.load(Ordering::Relaxed);
-        if old_level != level
-            && let Some(server) = self.world().server.upgrade()
-            && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
-        {
-            let mut event = crate::plugin::api::events::player::player_level_change::PlayerLevelChangeEvent::new(
-                player_arc,
-                old_level,
-                level,
-            );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
+        self.notify_experience_level(old_level, level);
         // TODO: These should be atomic together, not isolated; make a struct containing these. can cause ABA issues
         self.experience_level.store(level, Ordering::Relaxed);
         self.experience_progress.store(progress.clamp(0.0, 1.0));
@@ -4997,6 +4996,7 @@ impl Player {
     }
 
     pub fn close_handled_screen(&self) {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let (sync_id, bedrock_window_type) = {
             let current_handler_guard = self
                 .current_screen_handler
@@ -5039,7 +5039,10 @@ impl Player {
     }
 
     pub fn on_handled_screen_closed(&self) {
-        let current_screen_handler: Arc<std::sync::Mutex<dyn ScreenHandler>> = self
+        let effects = crate::world::guard_effects::GuardEffects::new();
+        let current_screen_handler: Arc<
+            pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>,
+        > = self
             .current_screen_handler
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -5054,6 +5057,29 @@ impl Player {
             wt
         };
 
+        let player_screen_handler: Arc<
+            pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>,
+        > = self.player_screen_handler.clone();
+
+        if !Arc::ptr_eq(&player_screen_handler, &current_screen_handler) {
+            let shared = current_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .shared_slot_state();
+            player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .copy_shared_slots(shared);
+        }
+
+        // ServerPlayer.doCloseContainer transfers tracking and publishes inventoryMenu.
+        *self
+            .current_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            self.player_screen_handler.clone();
+        self.open_container_pos.store(None);
+        drop(effects);
         let world = self.living_entity.entity.world.load();
         let server = world.server.upgrade();
         if let Some(server) = server
@@ -5066,29 +5092,13 @@ impl Player {
                 );
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
-
-        let player_screen_handler: Arc<std::sync::Mutex<dyn ScreenHandler>> =
-            self.player_screen_handler.clone();
-
-        if !Arc::ptr_eq(&player_screen_handler, &current_screen_handler) {
-            player_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .copy_shared_slots(current_screen_handler);
-        }
-
-        *self
-            .current_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            self.player_screen_handler.clone();
-        self.open_container_pos.store(None);
     }
 
     pub fn on_screen_handler_opened<T: ScreenHandler + ?Sized>(
         &self,
-        screen_handler: &std::sync::Mutex<T>,
+        screen_handler: &pumpkin_inventory::screen_handler::ScreenMutex<T>,
     ) {
+        let _effects = crate::world::guard_effects::GuardEffects::new();
         let mut screen_handler = screen_handler
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -5098,6 +5108,7 @@ impl Player {
     }
 
     pub fn on_rename_item(self: &Arc<Self>, packet: &SRenameItem<'_>) {
+        let _effects = crate::world::guard_effects::GuardEffects::new();
         self.update_last_action_time();
 
         let mut prepare_event =
@@ -5134,6 +5145,7 @@ impl Player {
         screen_handler_factory: &dyn ScreenHandlerFactory,
         block_pos: Option<BlockPos>,
     ) -> Option<u8> {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         if !self
             .current_screen_handler
             .lock()
@@ -5203,9 +5215,8 @@ impl Player {
                 target_entity_id: VarLong(-1),
             };
 
-            self.try_enqueue_packet_editioned(&java_packet, &bedrock_packet);
-
             drop(screen_handler_temp);
+            self.try_enqueue_packet_editioned(&java_packet, &bedrock_packet);
             self.on_screen_handler_opened(&screen_handler);
             *self
                 .current_screen_handler
@@ -5222,9 +5233,10 @@ impl Player {
 
     pub fn open_handled_screen_direct(
         &self,
-        screen_handler: Arc<std::sync::Mutex<dyn ScreenHandler>>,
+        screen_handler: Arc<pumpkin_inventory::screen_handler::ScreenMutex<dyn ScreenHandler>>,
         title: &TextComponent,
     ) {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         if !self
             .current_screen_handler
             .lock()
@@ -5272,9 +5284,8 @@ impl Player {
             target_entity_id: VarLong(-1),
         };
 
-        self.try_enqueue_packet_editioned(&java_packet, &bedrock_packet);
-
         drop(screen_handler_temp);
+        self.try_enqueue_packet_editioned(&java_packet, &bedrock_packet);
         self.on_screen_handler_opened(&screen_handler);
         *self
             .current_screen_handler
@@ -5298,6 +5309,7 @@ impl Player {
             clicked_item,
             cursor_item,
             window_type,
+            original_screen,
         ) = {
             let screen_handler_arc = self
                 .current_screen_handler
@@ -5340,6 +5352,7 @@ impl Player {
                 clicked_item,
                 cursor_item,
                 window_type,
+                screen_handler_arc.clone(),
             )
         };
 
@@ -5348,6 +5361,7 @@ impl Player {
         }
 
         if self.gamemode.load() == GameMode::Spectator {
+            let _effects = crate::world::guard_effects::GuardEffects::new();
             let screen_handler_arc = self
                 .current_screen_handler
                 .lock()
@@ -5377,6 +5391,7 @@ impl Player {
         }
 
         let cancel_screen = || {
+            let _effects = crate::world::guard_effects::GuardEffects::new();
             let screen_handler_arc = self
                 .current_screen_handler
                 .lock()
@@ -5587,11 +5602,16 @@ impl Player {
             }
         }
 
-        let screen_handler_arc = self
+        let effects = crate::world::guard_effects::GuardEffects::new();
+        let current = self
             .current_screen_handler
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // ServerGamePacketListenerImpl.handleContainerClick only acts on the current menu.
+        if !Arc::ptr_eq(&original_screen, &current) || !self.menu_player_is_current() {
+            return;
+        }
+        let screen_handler_arc = current.clone();
         let mut screen_handler = screen_handler_arc
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -5683,24 +5703,15 @@ impl Player {
         } else {
             screen_handler.send_content_updates();
         }
+        drop(screen_handler);
+        drop(current);
+        drop(effects);
+        self.finish_menu_preparation(&screen_handler_arc);
     }
 
     /// Handles when the player clicks a button in a container (e.g. Enchantment Table)
     pub fn on_container_button_click(&self, packet: &SContainerButtonClick) {
-        let screen_handler = self
-            .current_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let mut screen_handler = screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        if i32::from(screen_handler.sync_id()) != packet.window_id.0 {
-            return;
-        }
-
-        screen_handler.on_button_click(self, packet.button_id.0);
+        self.click_menu_button(packet);
     }
 
     pub fn has_permission(self: &Arc<Self>, server: &Server, node: &str) -> bool {
@@ -7001,6 +7012,9 @@ impl MessageCache {
 
 impl InventoryPlayer for Player {
     fn play_bundle_sound(&self, sound: Sound) {
+        if self.defer_menu_effect(move |player| InventoryPlayer::play_bundle_sound(player, sound)) {
+            return;
+        }
         crate::item::items::bundle::play_bundle_sound(self, sound);
     }
     fn sync_recipe_properties(&self) {
@@ -7018,12 +7032,7 @@ impl InventoryPlayer for Player {
     }
 
     fn drop_item(&self, item: ItemStack, _retain_ownership: bool) {
-        if self.get_entity().is_removed() {
-            self.world()
-                .drop_stack(&self.position().to_block_pos(), item);
-        } else {
-            self.drop_item(item);
-        }
+        self.drop_menu_item(item);
     }
 
     fn has_infinite_materials(&self) -> bool {
@@ -7074,7 +7083,7 @@ impl InventoryPlayer for Player {
         match self.client.as_ref() {
             ClientPlatform::Java(java) => {
                 if let Ok(data) = java.serialize_packet(packet) {
-                    java.try_enqueue_packet(data);
+                    crate::world::guard_effects::send(self.client.clone(), data);
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
@@ -7107,7 +7116,7 @@ impl InventoryPlayer for Player {
                         storage_item: NetworkItemStackDescriptor::default(),
                     };
                     if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                        bedrock.try_enqueue_packet(data);
+                        crate::world::guard_effects::send(self.client.clone(), data);
                     }
                 } else if matches!(
                     window_type,
@@ -7142,7 +7151,7 @@ impl InventoryPlayer for Player {
                         storage_item: NetworkItemStackDescriptor::default(),
                     };
                     if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                        bedrock.try_enqueue_packet(data);
+                        crate::world::guard_effects::send(self.client.clone(), data);
                     }
                 }
             }
@@ -7158,7 +7167,7 @@ impl InventoryPlayer for Player {
         match self.client.as_ref() {
             ClientPlatform::Java(java) => {
                 if let Ok(data) = java.serialize_packet(packet) {
-                    java.try_enqueue_packet(data);
+                    crate::world::guard_effects::send(self.client.clone(), data);
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
@@ -7183,7 +7192,7 @@ impl InventoryPlayer for Player {
                             item: item_desc,
                         };
                         if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                            bedrock.try_enqueue_packet(data);
+                            crate::world::guard_effects::send(self.client.clone(), data);
                         }
                     }
                 } else {
@@ -7226,7 +7235,7 @@ impl InventoryPlayer for Player {
                             item: item_desc,
                         };
                         if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                            bedrock.try_enqueue_packet(data);
+                            crate::world::guard_effects::send(self.client.clone(), data);
                         }
                     }
                 }
@@ -7238,7 +7247,7 @@ impl InventoryPlayer for Player {
         match self.client.as_ref() {
             ClientPlatform::Java(java) => {
                 if let Ok(data) = java.serialize_packet(packet) {
-                    java.try_enqueue_packet(data);
+                    crate::world::guard_effects::send(self.client.clone(), data);
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
@@ -7259,19 +7268,21 @@ impl InventoryPlayer for Player {
                     storage_item: NetworkItemStackDescriptor::default(),
                 };
                 if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                    bedrock.try_enqueue_packet(data);
+                    crate::world::guard_effects::send(self.client.clone(), data);
                 }
             }
         }
     }
 
     fn enqueue_property_packet(&self, packet: &CSetContainerProperty) {
-        self.try_send_client_packet(packet);
+        self.send_menu_packet(packet);
     }
 
     fn enqueue_slot_set_packet(&self, packet: &CSetPlayerInventory) {
         self.try_send_slot_set_packet(packet);
-        self.sync_inventory_to_client();
+        if !self.defer_menu_effect(Self::sync_inventory_to_client) {
+            self.sync_inventory_to_client();
+        }
     }
 
     fn enqueue_set_held_item_packet(&self, packet: &CSetSelectedSlot) {
@@ -7286,6 +7297,12 @@ impl InventoryPlayer for Player {
     }
 
     fn enqueue_equipment_change(&self, slot: &EquipmentSlot, stack: &ItemStack) {
+        let (slot_copy, stack_copy) = (slot.clone(), stack.clone());
+        if self.defer_menu_effect(move |player| {
+            InventoryPlayer::enqueue_equipment_change(player, &slot_copy, &stack_copy);
+        }) {
+            return;
+        }
         self.living_entity
             .send_equipment_changes(&[(slot.clone(), stack.clone())]);
 
@@ -7299,6 +7316,9 @@ impl InventoryPlayer for Player {
     }
 
     fn award_experience(&self, amount: i32) {
+        if self.defer_menu_effect(move |player| InventoryPlayer::award_experience(player, amount)) {
+            return;
+        }
         if amount > 0 {
             // AbstractFurnaceBlockEntity.createExperience awards collectible orbs at the player.
             crate::entity::experience_orb::ExperienceOrbEntity::award(
@@ -7310,19 +7330,16 @@ impl InventoryPlayer for Player {
     }
 
     fn increment_stat(&self, category: StatisticCategory, stat_id: i32, amount: i32) {
+        if self.defer_menu_effect(move |player| {
+            InventoryPlayer::increment_stat(player, category, stat_id, amount);
+        }) {
+            return;
+        }
         self.increment_stat(category, stat_id, amount);
     }
 
     fn play_block_sound(&self, sound: Sound, pitch: f32) {
-        if let Some(pos) = self.open_container_pos.load() {
-            self.world().play_sound_fine(
-                sound,
-                SoundCategory::Blocks,
-                &pos.to_centered_f64(),
-                1.0,
-                pitch,
-            );
-        }
+        self.play_menu_block_sound(sound, pitch);
     }
 
     fn fire_prepare_item_enchant_event(
@@ -7386,62 +7403,18 @@ impl InventoryPlayer for Player {
     }
 
     fn close_screen_handler(&self) {
+        if self.defer_menu_effect(InventoryPlayer::close_screen_handler) {
+            return;
+        }
         self.close_handled_screen();
     }
 
     fn use_anvil(&self) {
-        if let Some(pos) = self.open_container_pos.load() {
-            let world = self.world();
-            let state = world.get_block_state(&pos);
-            let block = pumpkin_data::Block::from_state_id(state.id);
-            if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_ANVIL) {
-                if !self.has_infinite_materials() && rand::random::<f32>() < 0.12 {
-                    if let Some(new_state) =
-                        crate::block::blocks::anvil::AnvilBlock::damage(state.id)
-                    {
-                        world.set_block_state(
-                            &pos,
-                            new_state,
-                            pumpkin_world::world::BlockFlags::NOTIFY_ALL,
-                        );
-                        world.sync_world_event(
-                            pumpkin_data::world::WorldEvent::SoundAnvilUsed,
-                            pos,
-                            0,
-                        );
-                    } else {
-                        world.set_block_state(
-                            &pos,
-                            pumpkin_data::BlockStateId::AIR,
-                            pumpkin_world::world::BlockFlags::NOTIFY_ALL,
-                        );
-                        world.sync_world_event(
-                            pumpkin_data::world::WorldEvent::SoundAnvilBroken,
-                            pos,
-                            0,
-                        );
-                    }
-                } else {
-                    world.sync_world_event(pumpkin_data::world::WorldEvent::SoundAnvilUsed, pos, 0);
-                }
-            } else {
-                world.sync_world_event(pumpkin_data::world::WorldEvent::SoundAnvilUsed, pos, 0);
-            }
-        }
+        self.use_menu_anvil();
     }
 
     fn use_grindstone(&self, xp_amount: i32) {
-        if let Some(pos) = self.open_container_pos.load() {
-            let world = self.world();
-            if xp_amount > 0 {
-                crate::entity::experience_orb::ExperienceOrbEntity::spawn(
-                    &world,
-                    pos.to_centered_f64(),
-                    xp_amount as u32,
-                );
-            }
-            world.sync_world_event(pumpkin_data::world::WorldEvent::SoundGrindstoneUsed, pos, 0);
-        }
+        self.use_menu_grindstone(xp_amount);
     }
 }
 

@@ -37,6 +37,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         render_type: RenderType,
         number_format: Option<scoreboard::NumberFormat>,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let display_name = self.take(display_name)?;
         let nf = map_number_format(number_format, self)?;
@@ -87,6 +88,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         render_type: RenderType,
         number_format: Option<scoreboard::NumberFormat>,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let display_name = self.take(display_name)?;
         let nf = map_number_format(number_format, self)?;
@@ -134,6 +136,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         match provider {
             ScoreboardProvider::World(world) => {
@@ -164,6 +167,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         slot: DisplaySlot,
         objective_name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let slot = map_display_slot(slot);
 
@@ -203,6 +207,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         slot: DisplaySlot,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let slot = map_display_slot(slot);
 
@@ -237,6 +242,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         value: i32,
         number_format: Option<scoreboard::NumberFormat>,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let nf = map_number_format(number_format, self)?;
         let score = ScoreboardScore::new(entity_name, objective_name, VarInt(value), None, nf);
@@ -278,6 +284,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         objective_name: String,
         delta: i32,
     ) -> wasmtime::Result<i32> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let new_val = match provider {
             ScoreboardProvider::World(world) => world
@@ -315,6 +322,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         entity_name: String,
         objective_name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         match provider {
             ScoreboardProvider::World(world) => {
@@ -344,6 +352,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         entity_name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         match provider {
             ScoreboardProvider::World(world) => {
@@ -374,6 +383,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         name: String,
         settings: TeamSettings,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let team = map_team_settings(name, settings, self)?;
         match provider {
@@ -412,6 +422,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         match provider {
             ScoreboardProvider::World(world) => {
@@ -442,6 +453,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         name: String,
         settings: TeamSettings,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let team = map_team_settings(name, settings, self)?;
         match provider {
@@ -473,6 +485,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         team_name: String,
         player_name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         match provider {
             ScoreboardProvider::World(world) => {
@@ -503,6 +516,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         team_name: String,
         player_name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         match provider {
             ScoreboardProvider::World(world) => {
@@ -532,6 +546,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         team_name: String,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         match provider {
             ScoreboardProvider::World(world) => {
@@ -560,6 +575,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         &mut self,
         res: Resource<scoreboard::Scoreboard>,
     ) -> wasmtime::Result<Vec<String>> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let teams = match provider {
             ScoreboardProvider::World(world) => world
@@ -592,6 +608,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         name: String,
     ) -> wasmtime::Result<Option<TeamSettings>> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let team_opt = match provider {
             ScoreboardProvider::World(world) => world
@@ -627,6 +644,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         team_name: String,
     ) -> wasmtime::Result<Vec<String>> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let players = match provider {
             ScoreboardProvider::World(world) => world
@@ -660,6 +678,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
         res: Resource<scoreboard::Scoreboard>,
         player_name: String,
     ) -> wasmtime::Result<Option<String>> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let team_name = match provider {
             ScoreboardProvider::World(world) => world

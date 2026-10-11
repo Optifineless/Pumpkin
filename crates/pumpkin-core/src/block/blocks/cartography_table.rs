@@ -4,13 +4,13 @@ use crate::block::{BlockBehaviour, GetScreenHandlerFactoryArgs, NormalUseArgs};
 use pumpkin_data::translation;
 use pumpkin_inventory::cartography_table_screen_handler::CartographyTableScreenHandler;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::text::TextComponent;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 #[pumpkin_block("minecraft:cartography_table")]
 pub struct CartographyTableBlock;
@@ -53,7 +53,7 @@ impl ScreenHandlerFactory for CartographyTableScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let handler: SharedScreenHandler = Arc::new(Mutex::new(
+        let handler: SharedScreenHandler = Arc::new(ScreenMutex::new(
             CartographyTableScreenHandler::new(sync_id, player_inventory),
         ));
         Some(handler)

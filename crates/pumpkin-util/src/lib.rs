@@ -25,6 +25,7 @@ pub mod random;
 pub mod registry;
 pub mod resource_location;
 pub mod serde_enum_as_integer;
+pub mod sync;
 pub mod text;
 pub mod translation;
 pub mod version;

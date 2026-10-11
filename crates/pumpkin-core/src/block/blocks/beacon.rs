@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use pumpkin_data::translation;
 use pumpkin_inventory::Inventory;
@@ -25,7 +25,7 @@ impl ScreenHandlerFactory for BeaconScreenFactory {
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
         let concrete_handler = create_beacon_handler(sync_id, player_inventory, self.0.clone());
-        let concrete_arc = Arc::new(Mutex::new(concrete_handler));
+        let concrete_arc = Arc::new(ScreenMutex::new(concrete_handler));
 
         Some(concrete_arc as SharedScreenHandler)
     }

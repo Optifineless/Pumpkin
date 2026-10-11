@@ -53,8 +53,11 @@ use pumpkin_protocol::{
         server::play::SlotActionType,
     },
 };
+use pumpkin_util::sync::{self, Cursor};
 use pumpkin_util::text::TextComponent;
-use std::sync::Mutex;
+
+/// Synchronous menu state; never hold a guard across a callback or await.
+pub type ScreenMutex<T> = sync::Mutex<T, sync::Screen>;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::{
     any::Any,
@@ -419,35 +422,32 @@ pub trait ScreenHandler: Send + Sync {
     /// Copies tracked slot state from another screen handler.
     ///
     /// Used when reopening a container to restore previous state.
-    fn copy_shared_slots(&mut self, other: Arc<Mutex<dyn ScreenHandler>>) {
-        let mut table: HashMap<ComparableInventory, HashMap<usize, usize>> = HashMap::new();
-        let other_binding = other
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let other_behaviour = other_binding.get_behaviour();
-
-        for i in 0..other_behaviour.slots.len() {
-            let other_slot = other_behaviour.slots[i].clone();
-            let mut hash_map = HashMap::new();
-            hash_map.insert(other_slot.get_index(), i);
-            table.insert(
-                ComparableInventory(other_slot.get_inventory().clone()),
-                hash_map,
+    // AbstractContainerMenu.transferState snapshots tracking without nesting menu locks.
+    fn shared_slot_state(&self) -> SharedSlotState {
+        let behaviour = self.get_behaviour();
+        let mut table = HashMap::new();
+        for (i, slot) in behaviour.slots.iter().enumerate() {
+            let mut indices = HashMap::new();
+            indices.insert(
+                slot.get_index(),
+                (
+                    behaviour.tracked_stacks[i].clone(),
+                    behaviour.previous_tracked_stacks[i].clone(),
+                ),
             );
+            table.insert(ComparableInventory(slot.get_inventory()), indices);
         }
+        table
+    }
 
+    fn copy_shared_slots(&mut self, other: SharedSlotState) {
         for i in 0..self.get_behaviour().slots.len() {
             let slot = self.get_behaviour().slots[i].clone();
-            let inventory = slot.get_inventory();
-            let index = slot.get_index();
-
-            if let Some(hash_map) = table.get(&ComparableInventory(inventory.clone()))
-                && let Some(other_index) = hash_map.get(&index)
+            if let Some(indices) = other.get(&ComparableInventory(slot.get_inventory()))
+                && let Some((tracked, previous)) = indices.get(&slot.get_index())
             {
-                self.get_behaviour_mut().tracked_stacks[i] =
-                    other_behaviour.tracked_stacks[*other_index].clone();
-                self.get_behaviour_mut().previous_tracked_stacks[i] =
-                    other_behaviour.previous_tracked_stacks[*other_index].clone();
+                self.get_behaviour_mut().tracked_stacks[i] = tracked.clone();
+                self.get_behaviour_mut().previous_tracked_stacks[i] = previous.clone();
             }
         }
     }
@@ -906,20 +906,22 @@ pub trait ScreenHandler: Send + Sync {
                 MouseClick::Right
             };
 
-            // Drop item if outside inventory
+            // AbstractContainerMenu.doClick: detach carried items so callbacks cannot drop them twice.
             if slot_index == SLOT_INDEX_OUTSIDE {
-                let mut cursor_stack = self
-                    .get_behaviour()
-                    .cursor_stack
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !cursor_stack.is_empty() {
+                let stack = {
+                    let mut cursor = self
+                        .get_behaviour()
+                        .cursor_stack
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if click_type == MouseClick::Left {
-                        player.drop_item(cursor_stack.clone(), true);
-                        *cursor_stack = ItemStack::EMPTY.clone();
+                        std::mem::replace(&mut *cursor, ItemStack::EMPTY.clone())
                     } else {
-                        player.drop_item(cursor_stack.split(1), true);
+                        cursor.split(1)
                     }
+                };
+                if !stack.is_empty() {
+                    player.drop_item(stack, true);
                 }
             } else if action_type == SlotActionType::QuickMove {
                 if slot_index < 0 {
@@ -953,6 +955,7 @@ pub trait ScreenHandler: Send + Sync {
                 }
 
                 let slot_stack = slot.get_cloned_stack();
+                let mut taken_for_callback = None;
                 let mut cursor_stack = self
                     .get_behaviour()
                     .cursor_stack
@@ -1009,7 +1012,7 @@ pub trait ScreenHandler: Send + Sync {
                         if let Some(taken) = taken {
                             // Reverse order of operations, shouldn't affect anything
                             *cursor_stack = taken.clone();
-                            slot.on_take_item(player, &taken);
+                            taken_for_callback = Some(taken);
 
                             if (5..9).contains(&slot_index) {
                                 let equipment_slot = cursor_stack
@@ -1054,11 +1057,16 @@ pub trait ScreenHandler: Send + Sync {
 
                         if let Some(taken) = taken {
                             cursor_stack.increment(taken.item_count);
-                            slot.on_take_item(player, &taken);
+                            taken_for_callback = Some(taken);
                         }
                     }
                 }
 
+                // Result-slot callbacks can reenter the menu after the cursor is published.
+                drop(cursor_stack);
+                if let Some(taken) = taken_for_callback {
+                    slot.on_take_item(player, &taken);
+                }
                 slot.mark_dirty();
             }
         } else if action_type == SlotActionType::Swap && ((0..9).contains(&button) || button == 40)
@@ -1131,7 +1139,9 @@ pub trait ScreenHandlerListener: Send + Sync {
     }
 }
 
-pub type SharedScreenHandler = Arc<Mutex<dyn ScreenHandler>>;
+pub type SharedSlotState = HashMap<ComparableInventory, HashMap<usize, (ItemStack, TrackedStack)>>;
+
+pub type SharedScreenHandler = Arc<ScreenMutex<dyn ScreenHandler>>;
 
 pub trait ScreenHandlerFactory: Send + Sync {
     fn create_screen_handler(
@@ -1156,7 +1166,7 @@ pub struct ScreenHandlerBehaviour {
     //TODO: Check if this is needed
     pub tracked_stacks: Vec<ItemStack>,
     /// The item currently held by the player's cursor (held item).
-    pub cursor_stack: Arc<Mutex<ItemStack>>,
+    pub cursor_stack: Arc<sync::Mutex<ItemStack, Cursor>>,
     /// Previous tracked stacks for detecting changes that need syncing.
     pub previous_tracked_stacks: Vec<TrackedStack>,
     /// Previous cursor stack for detecting cursor changes.
@@ -1208,7 +1218,7 @@ impl ScreenHandlerBehaviour {
             listeners: Vec::new(),
             sync_handler: None,
             tracked_stacks: Vec::new(),
-            cursor_stack: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
+            cursor_stack: Arc::new(sync::Mutex::new(ItemStack::EMPTY.clone())),
             previous_tracked_stacks: Vec::new(),
             previous_cursor_stack: TrackedStack::EMPTY,
             revision: AtomicU32::new(0),

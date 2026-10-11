@@ -346,3 +346,14 @@ Creeper power remains 3, or 6 when charged; `ServerExplosion.hurtEntities` (line
 - Wither roses give Creative players the 40-tick Wither effect without damaging them, while permanent entity invulnerability and equipped-enchantment damage immunity still block the effect. Mirrors `WitherRoseBlock.entityInside`, `LivingEntity.isInvulnerableTo`, `Entity.isInvulnerableToBase`, and `Player.hurtServer`; mob-specific effect immunity comes from effect admission. Player NBT saves game-mode abilities separately; legacy player `Invulnerable:true` tags are cleared on load by the #130 hotfix above. Non-player tags remain permanent. In-game verification: **Not yet**.
 
 Living fall damage applies the `fall_damage_multiplier` attribute, including stalagmite landings. Mirrors `LivingEntity.calculateFallDamage`. In-game verification: **Not yet**.
+
+## Guard boundaries (2026-10-11)
+
+The shared-state audit findings 6-11 are addressed by debug lock-order and callback
+boundary checks, split enchantment callbacks with input revalidation, and owner
+notifications delivered after unlocking menus, weather, scoreboards, borders and
+advancements. API 8 (same version); native plugins built against this fork must
+be rebuilt for the typed locks and advancement notification methods. No saved
+format changes.
+In-game verification: Not yet. This is fork audit work, not an upstream PR port;
+GitHub PR checks were unavailable through the configured proxy.

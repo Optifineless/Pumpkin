@@ -11,13 +11,13 @@ use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_inventory::SimpleInventory;
 use pumpkin_inventory::anvil::AnvilScreenHandler;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::text::TextComponent;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 #[pumpkin_block_from_tag("minecraft:anvil")]
 pub struct AnvilBlock;
@@ -118,7 +118,7 @@ impl ScreenHandlerFactory for AnvilScreenFactory {
     ) -> Option<SharedScreenHandler> {
         let inventory = Arc::new(SimpleInventory::new(3));
         let handler = AnvilScreenHandler::new(sync_id, player_inventory, inventory);
-        let concrete_arc = Arc::new(Mutex::new(handler));
+        let concrete_arc = Arc::new(ScreenMutex::new(handler));
 
         Some(concrete_arc as SharedScreenHandler)
     }

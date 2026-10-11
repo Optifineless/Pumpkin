@@ -62,6 +62,7 @@ fn set_size(
     distance: f64,
     time_in_ticks: i64,
 ) -> Result<i32, CommandSyntaxError> {
+    let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
     let (current, diff) = {
         let mut border = world
@@ -129,6 +130,7 @@ fn set_size(
 }
 
 fn set_center(source: &CommandSource, center: Vector2<f64>) -> Result<i32, CommandSyntaxError> {
+    let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
     let mut border = world
         .worldborder
@@ -146,6 +148,7 @@ fn set_center(source: &CommandSource, center: Vector2<f64>) -> Result<i32, Comma
     }
 
     border.set_center(&world, center.x, center.y);
+    drop(border);
 
     source.send_feedback(
         TextComponent::translate_cross(
@@ -164,6 +167,7 @@ fn set_center(source: &CommandSource, center: Vector2<f64>) -> Result<i32, Comma
 
 #[allow(clippy::unnecessary_wraps)]
 fn get_size(source: &CommandSource) -> Result<i32, CommandSyntaxError> {
+    let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
     let size = world
         .worldborder
@@ -187,6 +191,7 @@ fn set_damage_amount(
     source: &CommandSource,
     damage_per_block: f32,
 ) -> Result<i32, CommandSyntaxError> {
+    let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
     let mut border = world
         .worldborder
@@ -198,6 +203,7 @@ fn set_damage_amount(
     }
 
     border.set_damage_per_block(damage_per_block);
+    drop(border);
 
     source.send_feedback(
         TextComponent::translate_cross(
@@ -212,6 +218,7 @@ fn set_damage_amount(
 }
 
 fn set_damage_buffer(source: &CommandSource, distance: f32) -> Result<i32, CommandSyntaxError> {
+    let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
     let mut border = world
         .worldborder
@@ -223,6 +230,7 @@ fn set_damage_buffer(source: &CommandSource, distance: f32) -> Result<i32, Comma
     }
 
     border.set_damage_buffer(distance);
+    drop(border);
 
     source.send_feedback(
         TextComponent::translate_cross(
@@ -237,6 +245,7 @@ fn set_damage_buffer(source: &CommandSource, distance: f32) -> Result<i32, Comma
 }
 
 fn set_warning_distance(source: &CommandSource, distance: i32) -> Result<i32, CommandSyntaxError> {
+    let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
     let mut border = world
         .worldborder
@@ -248,6 +257,7 @@ fn set_warning_distance(source: &CommandSource, distance: i32) -> Result<i32, Co
     }
 
     border.set_warning_distance(&world, distance);
+    drop(border);
 
     source.send_feedback(
         TextComponent::translate_cross(
@@ -262,6 +272,7 @@ fn set_warning_distance(source: &CommandSource, distance: i32) -> Result<i32, Co
 }
 
 fn set_warning_time(source: &CommandSource, ticks: i32) -> Result<i32, CommandSyntaxError> {
+    let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
     let mut border = world
         .worldborder
@@ -273,6 +284,7 @@ fn set_warning_time(source: &CommandSource, ticks: i32) -> Result<i32, CommandSy
     }
 
     border.set_warning_delay(&world, ticks);
+    drop(border);
 
     source.send_feedback(
         TextComponent::translate_cross(

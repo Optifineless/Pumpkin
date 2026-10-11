@@ -41,11 +41,7 @@ impl JavaClient {
         player.try_send_client_packet(&CSetSelectedSlot::new(
             player.inventory.get_selected_slot() as i8
         ));
-        player
-            .player_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .send_content_updates();
+        crate::entity::player::Player::send_menu_updates(&player.player_screen_handler);
     }
 
     pub fn handle_pick_item_from_entity(
@@ -100,11 +96,7 @@ impl JavaClient {
             player.try_send_client_packet(&CSetSelectedSlot::new(
                 player.inventory.get_selected_slot() as i8,
             ));
-            player
-                .player_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .send_content_updates();
+            crate::entity::player::Player::send_menu_updates(&player.player_screen_handler);
         }
     }
 }

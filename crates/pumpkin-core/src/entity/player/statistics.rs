@@ -56,6 +56,8 @@ impl super::Player {
     pub fn award_stat(&self, category: StatisticCategory, stat: i32, amount: i32) {
         let final_amount = if let Some(player_arc) =
             self.world().get_player_by_uuid(self.gameprofile.id)
+            // A preceding menu callback may have replaced this UUID's live session.
+            && std::ptr::eq(self, player_arc.as_ref())
             && let Some(server) = self.world().server.upgrade()
         {
             let mut event = crate::plugin::api::events::player::player_statistic_increment::PlayerStatisticIncrementEvent {
@@ -79,6 +81,7 @@ impl super::Player {
         // ServerPlayer.awardStat updates statistic-backed objectives by the accepted count.
         if let Some(criterion) = statistic_criterion(category, stat) {
             let world = self.world();
+            let _effects = crate::world::guard_effects::GuardEffects::new();
             let mut scoreboard = world
                 .scoreboard
                 .lock()

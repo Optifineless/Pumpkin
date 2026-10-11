@@ -187,6 +187,7 @@ mod experience_orbs;
 mod fishing_hook;
 mod game_events;
 pub(crate) mod generation_spawning;
+pub mod guard_effects;
 #[cfg(test)]
 mod minecart_stall_tests;
 pub mod natural_spawner;
@@ -334,9 +335,9 @@ pub struct World {
     dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
     spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
     /// The world's scoreboard, used for tracking scores, objectives, and display information.
-    pub scoreboard: std::sync::Mutex<Scoreboard>,
+    pub scoreboard: pumpkin_util::sync::Mutex<Scoreboard, pumpkin_util::sync::Scoreboard>,
     /// The world's worldborder, defining the playable area and controlling its expansion or contraction.
-    pub worldborder: std::sync::Mutex<Worldborder>,
+    pub worldborder: pumpkin_util::sync::Mutex<Worldborder, pumpkin_util::sync::WorldBorder>,
     /// The world's time, including counting ticks for weather, time cycles, and statistics.
     pub level_time: std::sync::Mutex<LevelTime>,
     /// The type of dimension the world is in.
@@ -344,7 +345,7 @@ pub struct World {
     pub sea_level: i32,
     pub min_y: i32,
     /// The world's weather, including rain and thunder levels.
-    pub weather: std::sync::Mutex<Weather>,
+    pub weather: pumpkin_util::sync::Mutex<Weather, pumpkin_util::sync::Weather>,
     /// Block Behaviour
     pub block_registry: Arc<BlockRegistry>,
     neighbor_updates: std::sync::Mutex<neighbor_updater::UpdateStack>,
@@ -492,8 +493,8 @@ impl World {
             entities: ArcSwap::new(Arc::new(Vec::new())),
             dragon_parts: DashMap::new(),
             spawn_uuids: std::sync::Mutex::default(),
-            scoreboard: std::sync::Mutex::new(Scoreboard::default()),
-            worldborder: std::sync::Mutex::new(Worldborder::new(
+            scoreboard: pumpkin_util::sync::Mutex::new(Scoreboard::default()),
+            worldborder: pumpkin_util::sync::Mutex::new(Worldborder::new(
                 0.0,
                 0.0,
                 5.999_996_8E7,
@@ -503,7 +504,7 @@ impl World {
             )),
             level_time: std::sync::Mutex::new(LevelTime::new()),
             dimension,
-            weather: std::sync::Mutex::new(weather),
+            weather: pumpkin_util::sync::Mutex::new(weather),
             block_registry,
             neighbor_updates: std::sync::Mutex::default(),
             sea_level: generation_settings.sea_level,
@@ -3920,10 +3921,12 @@ impl World {
 
     pub fn send_world_info(&self, player: &Arc<Player>) {
         if let ClientPlatform::Java(client) = player.client.as_ref() {
-            self.worldborder
+            let border = self
+                .worldborder
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .init_client(client);
+                .clone();
+            border.init_client(client);
         }
 
         // TODO: World spawn (compass stuff)

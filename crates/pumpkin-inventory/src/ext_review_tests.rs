@@ -37,6 +37,8 @@ pub struct Player {
     pub(crate) levels: AtomicI32,
     pub(crate) map_state: Mutex<Option<(i8, bool)>>,
     pub(crate) properties: Mutex<Vec<(i16, i16)>>,
+    cursor_probe:
+        Mutex<Option<Arc<pumpkin_util::sync::Mutex<ItemStack, pumpkin_util::sync::Cursor>>>>,
 }
 
 impl Player {
@@ -51,6 +53,7 @@ impl Player {
             levels: AtomicI32::new(10),
             map_state: Mutex::new(Some((0, false))),
             properties: Mutex::default(),
+            cursor_probe: Mutex::default(),
         }
     }
 
@@ -72,6 +75,13 @@ impl InventoryPlayer for Player {
         self
     }
     fn drop_item(&self, stack: ItemStack, _retain_ownership: bool) {
+        let probe = self.cursor_probe.lock().unwrap().clone();
+        if let Some(cursor) = probe {
+            assert!(
+                cursor.try_lock().is_ok(),
+                "drop callback retained the cursor guard"
+            );
+        }
         let mut drops = self.drops.lock().unwrap();
         drops.push(stack);
         // Bound a broken synchronous THROW loop without leaving a spinning worker behind.
@@ -311,4 +321,26 @@ fn ext_review_r06_anvil_partial_shift_click_matches_vanilla_on_take() {
     assert!(handler.inventory.get_stack(2).is_empty());
     assert_eq!(player.experience_level(), 9);
     assert!(player.drops.lock().unwrap().is_empty());
+}
+
+#[test]
+fn outside_window_drop_releases_cursor_before_callback() {
+    // AbstractContainerMenu.doClick transfers the carried items into the drop callback.
+    let player = Player::new(2);
+    let mut menu = CraftingTableScreenHandler::new(1, &player.inventory, None);
+    let cursor = menu.get_behaviour().cursor_stack.clone();
+    *player.cursor_probe.lock().unwrap() = Some(cursor.clone());
+    *cursor.lock().unwrap() = ItemStack::new(3, &Item::DIRT);
+    menu.on_slot_click(-999, 1, SlotActionType::Pickup, &player);
+    assert_eq!(cursor.lock().unwrap().item_count, 2);
+    menu.on_slot_click(-999, 0, SlotActionType::Pickup, &player);
+    assert!(cursor.lock().unwrap().is_empty());
+    let drops = player.drops.lock().unwrap();
+    assert_eq!(
+        drops
+            .iter()
+            .map(|stack| stack.item_count)
+            .collect::<Vec<_>>(),
+        [1, 2]
+    );
 }

@@ -90,6 +90,7 @@ struct TeamAddExecutor {
 
 impl CommandExecutor for TeamAddExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = StringArgumentType::get(context, ARG_TEAM_NAME)?;
         let display_name = if self.has_display_name {
             TextComponent::text(StringArgumentType::get(context, ARG_DISPLAY_NAME)?.to_string())
@@ -141,6 +142,7 @@ struct TeamRemoveExecutor;
 
 impl CommandExecutor for TeamRemoveExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
 
         let world = context.world().clone();
@@ -178,6 +180,7 @@ struct TeamEmptyExecutor;
 
 impl CommandExecutor for TeamEmptyExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
 
         let world = context.world().clone();
@@ -227,6 +230,7 @@ struct TeamJoinExecutor {
 
 impl CommandExecutor for TeamJoinExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
 
         let entity_names = if self.has_members {
@@ -296,6 +300,7 @@ struct TeamLeaveExecutor {
 
 impl CommandExecutor for TeamLeaveExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let entity_names = if self.has_members {
             let targets = EntityArgumentType::get_optional_entities(context, ARG_MEMBERS)?;
             if targets.is_empty() {
@@ -362,6 +367,7 @@ struct TeamListExecutor {
 
 impl CommandExecutor for TeamListExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let world = context.world().clone();
         let has_team = self.has_team;
         let team_name = if has_team {
@@ -452,6 +458,7 @@ struct TeamModifyColorResetExecutor;
 
 impl CommandExecutor for TeamModifyColorResetExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
 
         let world = context.world().clone();
@@ -494,6 +501,7 @@ struct TeamModifyColorExecutor;
 
 impl CommandExecutor for TeamModifyColorExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let new_color = TeamColorArgumentType::get(context, ARG_VALUE)?;
 
@@ -537,6 +545,7 @@ struct TeamModifyDisplayNameExecutor;
 
 impl CommandExecutor for TeamModifyDisplayNameExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let new_name_str = StringArgumentType::get(context, ARG_DISPLAY_NAME)?;
 
@@ -582,6 +591,7 @@ struct TeamModifyPrefixExecutor;
 
 impl CommandExecutor for TeamModifyPrefixExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let new_prefix_str = StringArgumentType::get(context, ARG_PREFIX)?;
 
@@ -623,6 +633,7 @@ struct TeamModifySuffixExecutor;
 
 impl CommandExecutor for TeamModifySuffixExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let new_suffix_str = StringArgumentType::get(context, ARG_SUFFIX)?;
 
@@ -664,6 +675,7 @@ struct TeamModifyFriendlyFireExecutor;
 
 impl CommandExecutor for TeamModifyFriendlyFireExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let value = BoolArgumentType::get(context, ARG_ALLOWED)?;
 
@@ -718,6 +730,7 @@ struct TeamModifySeeFriendlyInvisiblesExecutor;
 
 impl CommandExecutor for TeamModifySeeFriendlyInvisiblesExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let value = BoolArgumentType::get(context, ARG_ALLOWED)?;
 
@@ -774,6 +787,7 @@ struct TeamModifyNametagVisibilityExecutor {
 
 impl CommandExecutor for TeamModifyNametagVisibilityExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let value = self.value;
 
@@ -842,6 +856,7 @@ struct TeamModifyDeathMessageVisibilityExecutor {
 
 impl CommandExecutor for TeamModifyDeathMessageVisibilityExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let world = context.world().clone();
         let team_name_owned = team_name.to_string();
@@ -879,6 +894,7 @@ struct TeamModifyCollisionRuleExecutor {
 
 impl CommandExecutor for TeamModifyCollisionRuleExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
         let team_name = TeamArgumentType::get(context, ARG_TEAM)?;
         let value = self.value;
 

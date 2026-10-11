@@ -36,11 +36,13 @@ impl JavaClient {
             item_stack.is_empty() || item_stack.item_count <= item_stack.get_max_stack_size();
 
         if valid_slot && is_legal {
+            let _effects = crate::world::guard_effects::GuardEffects::new();
             let mut player_screen_handler = player
                 .player_screen_handler
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
+            let mut main_hand_change = None;
             let is_armor_equipped = player_screen_handler
                 .get_slot(packet.slot as usize)
                 .get_stack()
@@ -63,8 +65,7 @@ impl JavaClient {
                 } else if (36..45).contains(&packet.slot) {
                     let slot = packet.slot - 36;
                     if player.inventory().get_selected_slot() == slot as u8 {
-                        let equipment = &[(EquipmentSlot::MAIN_HAND, item_stack.clone())];
-                        player.living_entity.send_equipment_changes(equipment);
+                        main_hand_change = Some(item_stack.clone());
                     }
                 }
             }
@@ -75,6 +76,11 @@ impl JavaClient {
             player_screen_handler.set_received_stack(packet.slot as usize, item_stack);
             player_screen_handler.send_content_updates();
             drop(player_screen_handler);
+            if let Some(stack) = main_hand_change {
+                player
+                    .living_entity
+                    .send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, stack)]);
+            }
         } else if is_negative && is_legal {
             // Item drop
             player.drop_item(item_stack);

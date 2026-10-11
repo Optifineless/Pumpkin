@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::block::{
     GetComparatorOutputArgs, GetScreenHandlerFactoryArgs, PathComputationType, PlacedArgs,
@@ -34,7 +34,7 @@ impl ScreenHandlerFactory for BrewingScreenFactory {
     ) -> Option<SharedScreenHandler> {
         let inventory = self.0.clone();
         pumpkin_inventory::brewing::create_brewing(sync_id, player_inventory, inventory, &self.1)
-            .map(|handler| Arc::new(Mutex::new(handler)) as SharedScreenHandler)
+            .map(|handler| Arc::new(ScreenMutex::new(handler)) as SharedScreenHandler)
     }
 
     fn get_display_name(&self) -> TextComponent {

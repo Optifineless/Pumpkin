@@ -32,6 +32,7 @@ impl JavaClient {
             return;
         }
 
+        let _effects = crate::world::guard_effects::GuardEffects::new();
         // Count crafting display IDs.
         let crafting_display_count = pumpkin_data::crafting_displays().count();
         let cooking_display_count = RECIPES_COOKING.len();

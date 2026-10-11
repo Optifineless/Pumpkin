@@ -162,22 +162,14 @@ impl Action {
         show_advancement: bool,
     ) -> i32 {
         if !show_advancement {
-            let mut guard = player
-                .advancements
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            guard.flush_dirty(player, true);
+            player.flush_advancements(true);
         }
         let count = advancements
             .iter()
             .filter(|advancement| self.perform_single(player, advancement))
             .count() as i32;
         if !show_advancement {
-            let mut guard = player
-                .advancements
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            guard.flush_dirty(player, false);
+            player.flush_advancements(false);
         }
         count
     }

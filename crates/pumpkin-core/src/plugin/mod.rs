@@ -20,6 +20,8 @@ use tracing::{debug, error, info, warn};
 
 pub mod api;
 pub mod cache;
+#[cfg(test)]
+mod guard_boundary_tests;
 pub mod loader;
 /// Constants for plugin permissions.
 ///
@@ -1220,6 +1222,7 @@ impl PluginManager {
         server: &Arc<Server>,
         event: &mut E,
     ) {
+        pumpkin_util::sync::assert_no_guards_held("PluginManager::fire");
         self.fire_dyn(server, E::get_name_static(), event).await;
     }
 
@@ -1229,6 +1232,7 @@ impl PluginManager {
         event_name: &'static str,
         event: &mut (dyn Payload + Send + Sync),
     ) {
+        pumpkin_util::sync::assert_no_guards_held("PluginManager::fire_dyn");
         let handlers_map = self.handlers.load();
         if handlers_map.is_empty() {
             return;
@@ -1264,6 +1268,7 @@ impl PluginManager {
         server: &Arc<Server>,
         event: &mut E,
     ) {
+        pumpkin_util::sync::assert_no_guards_held("PluginManager::fire_blocking");
         self.fire_blocking_dyn(server, E::get_name_static(), event);
     }
 
@@ -1273,6 +1278,7 @@ impl PluginManager {
         event_name: &'static str,
         event: &mut (dyn Payload + Send + Sync),
     ) {
+        pumpkin_util::sync::assert_no_guards_held("PluginManager::fire_blocking_dyn");
         let handlers_map = self.handlers.load();
         if handlers_map.is_empty() {
             return;

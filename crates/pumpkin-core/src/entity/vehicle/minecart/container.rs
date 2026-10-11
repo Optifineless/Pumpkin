@@ -194,7 +194,10 @@ impl ScreenHandlerFactory for MinecartScreenFactory {
         } else {
             create_generic_9x3(sync_id, player_inventory, inventory, player)
         };
-        Some(Arc::new(Mutex::new(handler)) as SharedScreenHandler)
+        Some(
+            Arc::new(pumpkin_inventory::screen_handler::ScreenMutex::new(handler))
+                as SharedScreenHandler,
+        )
     }
 
     fn get_display_name(&self) -> TextComponent {

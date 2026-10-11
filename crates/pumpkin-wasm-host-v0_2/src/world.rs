@@ -1647,6 +1647,7 @@ impl pumpkin::plugin::world::HostWorldBorder for PluginHostState {
         x: f64,
         z: f64,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let border_res = self.get(&border)?;
         let world = border_res.clone();
         world
@@ -1676,6 +1677,7 @@ impl pumpkin::plugin::world::HostWorldBorder for PluginHostState {
         diameter: f64,
         speed: Option<u64>,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let border_res = self.get(&border)?;
         let world = border_res.clone();
         world
@@ -1732,6 +1734,7 @@ impl pumpkin::plugin::world::HostWorldBorder for PluginHostState {
         border: Resource<WitWorldBorder>,
         distance: i32,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let border_res = self.get(&border)?;
         let world = border_res.clone();
         world
@@ -1756,6 +1759,7 @@ impl pumpkin::plugin::world::HostWorldBorder for PluginHostState {
         border: Resource<WitWorldBorder>,
         delay: i32,
     ) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let border_res = self.get(&border)?;
         let world = border_res.clone();
         world
@@ -1856,6 +1860,7 @@ impl pumpkin::plugin::world::HostWorldBorder for PluginHostState {
     }
 
     fn reset(&mut self, border: Resource<WitWorldBorder>) -> wasmtime::Result<()> {
+        let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let border_res = self.get(&border)?;
         let world = border_res.clone();
         world

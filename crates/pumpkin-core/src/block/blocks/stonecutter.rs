@@ -6,13 +6,13 @@ use crate::block::{
 use pumpkin_data::block_properties::WallTorchLikeProperties;
 use pumpkin_data::{BlockState, BlockStateId, translation};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::text::TextComponent;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use pumpkin_inventory::stonecutter_screen_handler::StonecutterScreenHandler;
 
@@ -72,10 +72,9 @@ impl ScreenHandlerFactory for StonecutterScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let handler: SharedScreenHandler = Arc::new(Mutex::new(StonecutterScreenHandler::new(
-            sync_id,
-            player_inventory,
-        )));
+        let handler: SharedScreenHandler = Arc::new(ScreenMutex::new(
+            StonecutterScreenHandler::new(sync_id, player_inventory),
+        ));
         Some(handler)
     }
 

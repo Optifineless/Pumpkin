@@ -1,5 +1,5 @@
+use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::block::entities::{
     PropertyDelegate, furnace::FurnaceBlockEntity, furnace_like_block_entity::ExperienceContainer,
@@ -56,7 +56,7 @@ impl ScreenHandlerFactory for FurnaceScreenFactory {
             WindowType::Furnace,
         );
 
-        let concrete_arc = Arc::new(Mutex::new(concrete_handler));
+        let concrete_arc = Arc::new(ScreenMutex::new(concrete_handler));
 
         Some(concrete_arc as SharedScreenHandler)
     }

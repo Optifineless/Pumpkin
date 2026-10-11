@@ -77,6 +77,7 @@ impl<T: CommandExecutor> pumpkin_command::node::CommandExecutor<CommandSource>
         context: &CommandContext,
         sources: &[std::sync::Arc<CommandSource>],
     ) -> Option<pumpkin_command::node::CommandExecutorResult> {
+        pumpkin_util::sync::assert_no_guards_held("CommandExecutor::execute_batch");
         self.0.execute_batch(context, sources)
     }
 
@@ -88,6 +89,7 @@ impl<T: CommandExecutor> pumpkin_command::node::CommandExecutor<CommandSource>
         &self,
         context: &pumpkin_command::context::command_context::CommandContext<'_, CommandSource>,
     ) -> pumpkin_command::node::CommandExecutorResult {
+        pumpkin_util::sync::assert_no_guards_held("CommandExecutor::execute");
         self.0.execute(context)
     }
 }
@@ -100,6 +102,7 @@ impl pumpkin_command::node::CommandExecutor<CommandSource> for ArcCommandExecuto
         context: &CommandContext,
         sources: &[std::sync::Arc<CommandSource>],
     ) -> Option<pumpkin_command::node::CommandExecutorResult> {
+        pumpkin_util::sync::assert_no_guards_held("CommandExecutor::execute_batch");
         self.0.execute_batch(context, sources)
     }
 
@@ -111,6 +114,7 @@ impl pumpkin_command::node::CommandExecutor<CommandSource> for ArcCommandExecuto
         &self,
         context: &pumpkin_command::context::command_context::CommandContext<'_, CommandSource>,
     ) -> pumpkin_command::node::CommandExecutorResult {
+        pumpkin_util::sync::assert_no_guards_held("CommandExecutor::execute");
         self.0.execute(context)
     }
 }
