@@ -291,9 +291,9 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Change | Checked in-game |
 |:--|:--|
 | [#110] Charged respawn anchors set a Nether spawn or explode in unsafe dimensions when used without glowstone | Not yet; positional `RESPAWN_ANCHOR_WORKS` environment-attribute overrides are not evaluated |
-| Bedrock block use and placement consume from the packet's hand once, with off-hand owner slots, observer equipment and modifiers synchronized after transaction actions | Not yet |
-| Bedrock default block interactions use only the main hand, preserving distinct held items and off-hand placement components | Not yet |
-| Bedrock block and air use reject forged held-item types before transaction actions or gameplay callbacks, correcting the originating hand | Not yet |
+| Bedrock block use and placement consume from the packet's hand once, with off-hand owner slots, observer equipment and modifiers synchronized after transaction actions; mirrors `ServerPlayerGameMode.useItemOn` and `LivingEntity.detectEquipmentUpdates` | Not yet |
+| Bedrock default block interactions use only the main hand, preserving distinct held items and off-hand placement components; mirrors `ServerPlayerGameMode.useItemOn` | Not yet |
+| Bedrock block and air use reject forged held-item types before transaction actions or gameplay callbacks, correcting the originating hand; mirrors `ServerGamePacketListenerImpl.handleUseItemOn/handleUseItem` | Not yet |
 | [#109] Firework Stars craft with colors, shapes and effects, can receive fade colors, and can be used in rockets | Not yet |
 | Powered activator rails eject rideable minecart passengers without freezing the tick; normal dismount events, cooldown and repositioning apply; mirrors `Minecart.activateMinecart` -> `Entity.ejectPassengers` ([fork #38](https://github.com/Optifineless/Pumpkin/issues/38); regression audit item 1) | Not yet |
 | Creative inventory packets arriving after a switch to Survival are ignored instead of disconnecting the player; mirrors `ServerGamePacketListenerImpl.handleSetCreativeModeSlot` (regression audit item 6) | Not yet |
@@ -366,6 +366,8 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Overlapping metadata flushes and refreshes enqueue older changes before newer changes, and an unwound sender retains queued refreshes for an ordinary tracker retry (PR #148 review). | Not yet |
 
 ## Native plugin API 8
+
+- API 8 (same version): #141 adds `PlayerInventory::replace_stack_if_unchanged` for identity-checked hand writeback. Rebuild native plugins against this checkout; layouts, saved data and Wasm WIT are unchanged. In-game verification **Not yet**.
 
 - API 8 (same version): the tick watchdog changes `Server` layout through its crate-private `watchdog` field and adds `Server::start_watchdog`. Rebuild native plugins; Wasm WIT is unchanged. In-game verification **Not yet**.
 - API 8 (same version): raw scheduled-tick index mutation is replaced by `Level` registration/clearing methods, and metadata clearing acknowledges a captured `DirtyBatch`; native plugins built against this fork must be rebuilt. In-game verification **Not yet**.
@@ -569,4 +571,10 @@ PR #145 Java conservation follow-up: eating and drinking claim the live hand bef
 
 Bedrock predicted placement retains the validated originating item through block-entity component application, including a last offhand shulker or a nonempty container remainder. Placement hooks keep their cancellation point and may replace the live hand or selection without restoring a stale stack. The public placement entry retains its current hand before placement hooks, matching BlockItem.place / UseOnContext; the internal Bedrock entry receives the validated snapshot. Hand equipment updates to Bedrock observers now encode the current player's selected hotbar index (main hand uses that index; offhand uses container-local slot zero). Non-player defaults and owner offhand container119/slot0 remain unchanged. API 8 (same version); native plugins must rebuild under the fork owner's policy, with no WIT or persistent-format change. Real handler tests cover original-byte contents/lock/observer failures, callback replacement and cancellation. In-game verification: Not yet.
 
-Bedrock block-use writeback now keeps the originating hotbar slot across placement callbacks and atomically checks stack identity and contents before saving the consumed clone. Callback replacements take precedence, including equal stacks with a new identity. Adds `PlayerInventory::replace_stack_if_unchanged`; API 8 (same version), with no layout, WIT or saved-format change. PR #141 callback slot-switch and offhand replacement verification in-game: Not yet.
+## Bedrock hand transactions (#141)
+
+Bedrock predicted placement retains the validated originating item through block-entity component application, including a last offhand shulker or a nonempty container remainder. Placement hooks keep their cancellation point and may replace the live hand or selection without restoring a stale stack. The public placement entry retains its current hand before placement hooks, matching BlockItem.place / UseOnContext; the internal Bedrock entry receives the validated snapshot. Hand equipment updates to Bedrock observers now encode the current player's selected hotbar index (main hand uses that index; offhand uses container-local slot zero). Non-player defaults and owner offhand container119/slot0 remain unchanged. Real handler tests cover original-byte contents/lock/observer failures, callback replacement and cancellation. In-game verification: Not yet.
+
+Bedrock block-use writeback now keeps the originating hotbar slot across placement callbacks and atomically checks stack identity and contents before saving the consumed clone. Callback replacements take precedence, including equal stacks with a new identity. Mirrors `ServerPlayerGameMode.useItemOn`. PR #141 callback slot-switch and offhand replacement verification in-game: Not yet.
+
+No-op Bedrock actions retain the originating stack UID, so a later pinned block-use writeback can consume it. Click-air predicted decrements are reconciled before authoritative use, consuming one egg per throw and preserving item components. Mirrors `ServerPlayerGameMode.useItem/useItemOn`, `EggItem.use` and `ItemStack.consume`. In-game verification: **Not yet**.
