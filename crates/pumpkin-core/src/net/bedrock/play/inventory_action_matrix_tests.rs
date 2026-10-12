@@ -22,6 +22,9 @@ mod owner_review;
 #[path = "inventory_action_placement_snapshot_tests.rs"]
 mod placement_snapshot;
 
+#[path = "inventory_action_rebase_tests.rs"]
+mod rebase;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]
