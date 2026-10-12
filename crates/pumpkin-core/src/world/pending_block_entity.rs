@@ -5,6 +5,7 @@ use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::chunk::{ChunkData, io::Dirtiable};
 use rustc_hash::FxHashMap;
 
+use super::portal::frame_effects::RetiredBlockEntity;
 use super::{World, remove_pending_block_entity};
 use crate::block::entities::{BlockEntity, block_entity_from_nbt};
 
@@ -215,8 +216,8 @@ impl World {
         drop(retired);
     }
 
-    pub(super) fn remove_loaded_block_entity(&self, pos: &BlockPos) {
-        let retired = {
+    pub(super) fn remove_loaded_block_entity(&self, pos: &BlockPos) -> RetiredBlockEntity {
+        {
             // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
             let _loads = self.invalidate_pending_block_entity_load(pos);
             let chunk_pos = pos.chunk_position();
@@ -233,14 +234,16 @@ impl World {
                     }
                     removed
                 })
-                .unwrap_or(false);
+                .flatten();
             self.custom_block_entity_data.remove(pos);
-            if retired.is_some() || removed_pending {
+            if retired.is_some() || removed_pending.is_some() {
                 self.block_entities
                     .remove_if(&chunk_pos, |_, entities| entities.is_empty());
             }
-            retired
-        };
-        drop(retired);
+            RetiredBlockEntity {
+                live: retired,
+                pending: removed_pending,
+            }
+        }
     }
 }

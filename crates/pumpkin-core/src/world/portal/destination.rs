@@ -8,7 +8,10 @@ use super::{
     nether::CREATE_RADIUS,
     residency::{PortalChunkResidency, ResidentPortal, run_portal_job},
 };
-use crate::{entity::EntityBase, world::World};
+use crate::{
+    entity::EntityBase,
+    world::{World, guard_effects::GuardEffects},
+};
 
 impl PortalType {
     pub(super) async fn nether_destination(
@@ -99,10 +102,13 @@ impl PortalType {
         residency.load().await?;
         let build_world = world.clone();
         run_portal_job(world, move || {
-            let _creation = creation;
+            let effects = GuardEffects::new();
             let (build_pos, axis, fallback) =
                 NetherPortal::find_safe_location(&build_world, origin, axis)?;
             NetherPortal::build_portal_frame(&build_world, build_pos, axis, fallback);
+            // Publish all portal POIs before reentrant physics callbacks can search again.
+            drop(creation);
+            drop(effects);
             Some(ResidentPortal {
                 portal: PortalSearchResult {
                     lower_corner: build_pos,

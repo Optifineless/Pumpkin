@@ -781,7 +781,12 @@ impl NetherPortal {
                         } else {
                             air_state
                         };
-                        world.set_block_state(&pos, state, BlockFlags::NOTIFY_ALL);
+                        super::frame_effects::set_frame_block(
+                            world,
+                            &pos,
+                            state,
+                            BlockFlags::NOTIFY_ALL,
+                        );
                     }
                 }
             }
@@ -793,7 +798,12 @@ impl NetherPortal {
                     let pos = lower_corner
                         .offset_dir(direction.to_offset(), portal_dir)
                         .offset_dir(BlockDirection::Up.to_offset(), height);
-                    world.set_block_state(&pos, obsidian_state, BlockFlags::NOTIFY_ALL);
+                    super::frame_effects::set_frame_block(
+                        world,
+                        &pos,
+                        obsidian_state,
+                        BlockFlags::NOTIFY_ALL,
+                    );
                 }
             }
         }
@@ -807,7 +817,8 @@ impl NetherPortal {
                 let pos = lower_corner
                     .offset_dir(direction.to_offset(), x)
                     .offset_dir(BlockDirection::Up.to_offset(), y);
-                world.set_block_state(
+                super::frame_effects::set_frame_block(
+                    world,
                     &pos,
                     portal_state,
                     BlockFlags::NOTIFY_LISTENERS | BlockFlags::UPDATE_KNOWN_SHAPE,

@@ -257,14 +257,13 @@ fn bedrock_chest_block_actor(state_id: BlockStateId, position: BlockPos) -> Opti
     Some(nbt)
 }
 
-fn remove_pending_block_entity(chunk: &ChunkData, position: &BlockPos) -> bool {
+fn remove_pending_block_entity(chunk: &ChunkData, position: &BlockPos) -> Option<NbtCompound> {
     let removed = chunk
         .pending_block_entities
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .remove(position)
-        .is_some();
-    if removed {
+        .remove(position);
+    if removed.is_some() {
         chunk.mark_dirty(true);
     }
     removed
@@ -5231,7 +5230,6 @@ impl World {
 
     /// Everything `set_block_state` does after the chunk write: callbacks, neighbour updates,
     /// client sync, POI and lighting.
-    #[expect(clippy::too_many_lines)]
     fn on_block_state_set(
         self: &Arc<Self>,
         position: &BlockPos,
@@ -5239,6 +5237,26 @@ impl World {
         block_state_id: BlockStateId,
         flags: BlockFlags,
         update_limit: u32,
+    ) -> BlockStateId {
+        self.on_block_state_set_with_block_entity(
+            position,
+            replaced_block_state_id,
+            block_state_id,
+            flags,
+            update_limit,
+            true,
+        )
+    }
+
+    #[expect(clippy::too_many_lines)]
+    fn on_block_state_set_with_block_entity(
+        self: &Arc<Self>,
+        position: &BlockPos,
+        replaced_block_state_id: BlockStateId,
+        block_state_id: BlockStateId,
+        flags: BlockFlags,
+        update_limit: u32,
+        replace_block_entity: bool,
     ) -> BlockStateId {
         if !flags.contains(BlockFlags::FORCE_STATE) && replaced_block_state_id == block_state_id {
             return block_state_id;
@@ -5249,7 +5267,7 @@ impl World {
         let is_new_block = old_block != new_block;
         let block_moved = flags.contains(BlockFlags::MOVED);
 
-        if is_new_block && block_entity_name(old_block).is_some() {
+        if replace_block_entity && is_new_block && block_entity_name(old_block).is_some() {
             if let Some(entity) = self.get_block_entity(position)
                 && !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK)
             {
@@ -7602,7 +7620,7 @@ mod tests {
         chunk
             .section
             .set_block_absolute_y(1, 64, 1, Block::STONE.default_state.id);
-        assert!(remove_pending_block_entity(&chunk, &position));
+        assert!(remove_pending_block_entity(&chunk, &position).is_some());
         assert!(chunk.pending_block_entities.lock().unwrap().is_empty());
         assert!(chunk.is_dirty());
     }

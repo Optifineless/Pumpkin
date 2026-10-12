@@ -1,0 +1,74 @@
+use std::sync::Arc;
+
+use pumpkin_data::{Block, BlockStateId};
+use pumpkin_nbt::NbtCompound;
+use pumpkin_util::math::position::BlockPos;
+use pumpkin_world::world::BlockFlags;
+
+use crate::block::entities::{BlockEntity, block_entity_from_nbt, block_entity_name};
+use crate::world::{World, guard_effects, neighbor_updater::UPDATE_LIMIT};
+
+/// Retains removed block-entity state for callbacks without republishing its cache entry.
+pub(in crate::world) struct RetiredBlockEntity {
+    pub(in crate::world) live: Option<Arc<dyn BlockEntity>>,
+    pub(in crate::world) pending: Option<NbtCompound>,
+}
+
+impl RetiredBlockEntity {
+    fn on_block_replaced(self, world: &Arc<World>, position: &BlockPos) {
+        // LevelChunk.setBlockState/preRemoveSideEffects: use the retired instance,
+        // never a replacement installed by an earlier callback in this batch.
+        if let Some(entity) = self
+            .live
+            .or_else(|| self.pending.as_ref().and_then(block_entity_from_nbt))
+        {
+            world.bind_block_entity_context(entity.as_ref());
+            entity.on_block_replaced(world, position);
+        }
+    }
+}
+
+// PortalForcer.createPortal writes the complete frame before creation ownership is
+// released. Retain Level.setBlock's post-write effects, but dispatch outside that owner.
+pub(super) fn set_frame_block(
+    world: &Arc<World>,
+    position: &BlockPos,
+    state: BlockStateId,
+    flags: BlockFlags,
+) {
+    if !guard_effects::is_active() {
+        world.set_block_state(position, state, flags);
+        return;
+    }
+    if !world.is_in_build_limit(*position) {
+        return;
+    }
+    let old = world
+        .write_block_state_if(position, state, |_| true)
+        .unwrap_or(Block::AIR.default_state.id);
+    // Retire live and saved caches under their existing publication gate. Constructing
+    // pending entities or binding native context must wait until creation unlocks.
+    let retired = (Block::from_state_id(old) != Block::from_state_id(state)
+        && block_entity_name(Block::from_state_id(old)).is_some())
+    .then(|| world.remove_loaded_block_entity(position));
+    let world = world.clone();
+    let position = *position;
+    let effect = move || {
+        if let Some(retired) = retired
+            && !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK)
+        {
+            retired.on_block_replaced(&world, &position);
+        }
+        world.on_block_state_set_with_block_entity(
+            &position,
+            old,
+            state,
+            flags,
+            UPDATE_LIMIT,
+            false,
+        );
+    };
+    if let Err(effect) = guard_effects::defer(effect) {
+        effect();
+    }
+}

@@ -11,9 +11,12 @@ use super::World;
 
 mod destination;
 pub mod end;
+pub(in crate::world) mod frame_effects;
 pub(crate) mod residency;
 mod search;
 
+#[cfg(test)]
+mod callback_tests;
 pub mod nether;
 pub mod poi;
 #[cfg(test)]
