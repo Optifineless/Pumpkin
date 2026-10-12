@@ -49,6 +49,7 @@ use tokio_util::task::TaskTracker;
 
 #[path = "scheduled_tick_registration.rs"]
 mod scheduled_tick_registration;
+pub(crate) use scheduled_tick_registration::TickRegistry;
 
 pub type SyncChunk = Arc<ChunkData>;
 pub type SyncEntityChunk = Arc<ChunkEntityData>;
@@ -120,7 +121,10 @@ pub struct Level {
     schedule_tick_counts: AtomicI64,
     pub(crate) game_time: Arc<AtomicI64>,
     #[cfg(test)]
-    before_tick_chunk_remove: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    before_tick_chunk_remove: pumpkin_util::sync::Mutex<
+        Option<Box<dyn FnOnce() + Send>>,
+        scheduled_tick_registration::TickCollectBuffer,
+    >,
 
     // Chunks that are paired with chunk watchers. When a chunk is no longer watched, it is removed
     // from the loaded chunks map and sent to the underlying ChunkIO
@@ -136,8 +140,12 @@ pub struct Level {
     entity_read_count: std::sync::atomic::AtomicUsize,
     // LevelTicks owns both its container index and scheduling/draining transitions.
     // Lock order: index -> loaded_chunks -> TickScheduler; no gameplay callbacks under this lock.
-    chunks_with_scheduled_ticks: Mutex<FxHashSet<Vector2<i32>>>,
-    scheduled_tick_collect_positions: Mutex<Vec<Vector2<i32>>>,
+    pub(crate) chunks_with_scheduled_ticks:
+        Arc<pumpkin_util::sync::Mutex<FxHashSet<Vector2<i32>>, TickRegistry>>,
+    scheduled_tick_collect_positions: pumpkin_util::sync::Mutex<
+        Vec<Vector2<i32>>,
+        scheduled_tick_registration::TickCollectBuffer,
+    >,
     #[cfg(test)]
     before_tick_unregister: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     pub chunk_loading: Mutex<ChunkLoading>,
@@ -342,7 +350,7 @@ impl Level {
             schedule_tick_counts: AtomicI64::new(0),
             game_time: Arc::new(AtomicI64::new(0)),
             #[cfg(test)]
-            before_tick_chunk_remove: Mutex::new(None),
+            before_tick_chunk_remove: pumpkin_util::sync::Mutex::new(None),
             loaded_chunks: Arc::new(DashMap::new()),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
             loaded_entity_chunks: Arc::new(DashMap::new()),
@@ -353,8 +361,8 @@ impl Level {
             before_entity_read: Mutex::new(None),
             #[cfg(test)]
             entity_read_count: std::sync::atomic::AtomicUsize::new(0),
-            chunks_with_scheduled_ticks: Mutex::default(),
-            scheduled_tick_collect_positions: Mutex::default(),
+            chunks_with_scheduled_ticks: Arc::new(pumpkin_util::sync::Mutex::default()),
+            scheduled_tick_collect_positions: pumpkin_util::sync::Mutex::default(),
             #[cfg(test)]
             before_tick_unregister: Mutex::new(None),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
@@ -725,7 +733,7 @@ impl Level {
                 .push(LoadedChunkChange::Loaded(pos));
         }
         if chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks() {
-            self.chunks_with_scheduled_ticks.insert(pos);
+            self.register_loaded_chunk_ticks(pos);
         }
         Ok(f(&chunk))
     }

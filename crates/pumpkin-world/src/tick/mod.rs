@@ -7,7 +7,6 @@ use pumpkin_util::{
 };
 
 pub mod scheduler;
-mod scheduler_lock;
 
 const MAX_TICK_DELAY: usize = 1 << 8;
 /// Largest positive delay representable by vanilla's `SavedTick.codec`.

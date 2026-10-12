@@ -61,7 +61,9 @@ pub struct GenerationSchedule {
 
     public_chunk_map: Arc<DashMap<Vector2<i32>, SyncChunk>>,
     game_time: Arc<std::sync::atomic::AtomicI64>,
-    chunks_with_scheduled_ticks: Arc<dashmap::DashSet<Vector2<i32>>>,
+    chunks_with_scheduled_ticks: Arc<
+        pumpkin_util::sync::Mutex<rustc_hash::FxHashSet<Vector2<i32>>, crate::level::TickRegistry>,
+    >,
     loaded_chunk_changes: Arc<crossbeam::queue::SegQueue<LoadedChunkChange>>,
     chunk_map: HashMap<ChunkPos, ChunkHolder>,
     unload_chunks: HashSetType<ChunkPos>,
@@ -90,11 +92,16 @@ impl GenerationSchedule {
         // Full publication precedes ServerLevel.startTickingChunk; saved delays stay pending.
         chunk.block_ticks.bind_clock(self.game_time.clone());
         chunk.fluid_ticks.bind_clock(self.game_time.clone());
+        let mut registered = self
+            .chunks_with_scheduled_ticks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let has_ticks = chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks();
         let previous = self.public_chunk_map.insert(pos, chunk);
         if has_ticks {
-            self.chunks_with_scheduled_ticks.insert(pos);
+            registered.insert(pos);
         }
+        drop(registered);
         if previous.is_none() {
             self.loaded_chunk_changes
                 .push(LoadedChunkChange::Loaded(pos));
