@@ -142,10 +142,21 @@ impl BedrockClient {
         });
     }
 
-    fn sync_consumed_hand_item(player: &Player, hand: Hand, stack: ItemStack) {
-        let selected_slot = player.inventory().get_selected_slot();
+    fn sync_consumed_hand_item(
+        player: &Player,
+        hand: Hand,
+        selected_slot: u8,
+        before: &ItemStack,
+        stack: ItemStack,
+    ) {
         let inventory_slot = hand_inventory_slot(hand, selected_slot);
-        player.inventory().set_stack(inventory_slot, stack.clone());
+        // ServerPlayerGameMode.useItemOn retains the originating stack across callbacks.
+        if !player
+            .inventory()
+            .replace_stack_if_unchanged(inventory_slot, before, stack.clone())
+        {
+            return;
+        }
         if let Some(screen_slot) = hand_screen_handler_slot(hand, selected_slot) {
             let mut screen_handler = player
                 .player_screen_handler
@@ -212,6 +223,7 @@ impl BedrockClient {
     #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::unreachable)]
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
+        let source_selected_slot = player.inventory().get_selected_slot();
         let use_item_stack = match &packet.transaction_data {
             TransactionData::UseItem(data) if matches!(data.action_type.0, 0 | 1) => {
                 let Some(stack) = Self::validated_use_item_stack(player, data) else {
@@ -382,11 +394,8 @@ impl BedrockClient {
                         return;
                     };
                     // Inventory transaction actions are applied before the Bedrock UseItem callback.
-                    let held_slot_consumed_in_transaction = transaction_consumes_hand(
-                        &packet.actions,
-                        hand,
-                        player.inventory().get_selected_slot(),
-                    );
+                    let held_slot_consumed_in_transaction =
+                        transaction_consumes_hand(&packet.actions, hand, source_selected_slot);
                     let authoritative_held_item = true;
                     // ServerPlayerGameMode.useItemOn receives the original item, including bucket exchanges.
                     let before_block_use = held_item.clone();
@@ -413,7 +422,13 @@ impl BedrockClient {
                             held_slot_consumed_in_transaction,
                         ) {
                             // ServerPlayerGameMode.useItemOn persists the item after the block callback consumes it.
-                            Self::sync_consumed_hand_item(player, hand, held_item);
+                            Self::sync_consumed_hand_item(
+                                player,
+                                hand,
+                                source_selected_slot,
+                                &before_block_use,
+                                held_item,
+                            );
                         }
                         return;
                     }
@@ -507,7 +522,13 @@ impl BedrockClient {
                             held_slot_consumed_in_transaction,
                         ) {
                             // BlockItem.place consumes the UseOnContext's originating hand.
-                            Self::sync_consumed_hand_item(player, hand, stack);
+                            Self::sync_consumed_hand_item(
+                                player,
+                                hand,
+                                source_selected_slot,
+                                &before_block_use,
+                                stack,
+                            );
                         }
                     }
                 } else if data.action_type.0 == 1 {
