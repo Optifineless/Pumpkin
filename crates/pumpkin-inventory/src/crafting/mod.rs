@@ -12,3 +12,7 @@ pub mod recipes;
 
 mod recipe_matching;
 mod special_recipes;
+
+mod result_slot_transaction;
+
+pub use result_slot_transaction::CraftingCommit;

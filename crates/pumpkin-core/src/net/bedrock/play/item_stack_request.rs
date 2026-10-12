@@ -15,7 +15,7 @@ impl BedrockClient {
         use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
 
         let effects = crate::world::guard_effects::GuardEffects::new();
-        let (responses, inventory_updated) = {
+        let (responses, mut inventory_updated, unclaimed_outputs, crafting_effects) = {
             let current_screen_handler = player
                 .current_screen_handler
                 .lock()
@@ -26,10 +26,13 @@ impl BedrockClient {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             let mut responses = Vec::with_capacity(packet.requests.len());
+            let mut unclaimed_outputs = Vec::new();
+            let mut crafting_effects = Vec::new();
 
             for request in packet.requests {
                 let mut created_item: Option<ItemStack> = None;
                 let mut crafting_inputs_consumed = false;
+                let mut pending_craft: Option<(ItemStack, u8)> = None;
                 let mut updates = Vec::new();
                 let mut result = 0u8; // 0 = Success, 1 = Error
 
@@ -39,6 +42,11 @@ impl BedrockClient {
                             creative_item_id,
                             repetitions,
                         } => {
+                            // ResultSlot.onTake pays one generated batch; a later recipe cannot inherit payment.
+                            if created_item.is_some() || crafting_inputs_consumed {
+                                result = 1;
+                                break;
+                            }
                             let index = (creative_item_id.0.saturating_sub(1)) as usize;
                             if index < pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.len() {
                                 let entry = pumpkin_data::bedrock_creative::CREATIVE_ENTRIES[index];
@@ -85,6 +93,29 @@ impl BedrockClient {
                             source,
                             destination,
                         } => {
+                            // AbstractContainerMenu.doClick resolves a destination before taking stock.
+                            if destination.container_name.container_name != ContainerName::Cursor
+                                && map_bedrock_container_slot(
+                                    &*screen_handler,
+                                    destination.container_name.container_name,
+                                    destination.slot_id,
+                                )
+                                .and_then(|index| screen_handler.get_behaviour().slots.get(index))
+                                .is_none()
+                            {
+                                result = 1;
+                                break;
+                            }
+                            // ResultSlot.onTake: a pending recipe can leave only through its virtual output.
+                            if destination.container_name.container_name
+                                == ContainerName::CreatedOutput
+                                || ((crafting_inputs_consumed || pending_craft.is_some())
+                                    && source.container_name.container_name
+                                        == ContainerName::CraftingOutputPreview)
+                            {
+                                result = 1;
+                                break;
+                            }
                             let mut source_stack =
                                 get_slot_stack(&*screen_handler, &source, created_item.as_ref());
                             if source_stack.is_empty() && created_item.is_none() {
@@ -101,11 +132,33 @@ impl BedrockClient {
                                     created_item.as_ref(),
                                 );
                                 let expected_destination = dest_stack.clone();
-                                if dest_stack.is_empty() {
+                                let virtual_source = source.container_name.container_name
+                                    == ContainerName::CreatedOutput
+                                    && created_item.is_some();
+                                if virtual_source {
+                                    let Some(replacement) =
+                                        super::inventory_commit::virtual_destination(
+                                            &*screen_handler,
+                                            &destination,
+                                            &source_stack,
+                                            &expected_destination,
+                                            count,
+                                        )
+                                    else {
+                                        result = 1;
+                                        break;
+                                    };
+                                    dest_stack = replacement;
+                                } else if dest_stack.is_empty() {
                                     dest_stack = source_stack.copy_with_count(count);
                                 } else if dest_stack.are_items_and_components_equal(&source_stack) {
-                                    dest_stack.item_count =
-                                        dest_stack.item_count.saturating_add(count);
+                                    // Slot.safeInsert retains input when the destination cannot grow.
+                                    let Some(total) = dest_stack.item_count.checked_add(count)
+                                    else {
+                                        result = 1;
+                                        break;
+                                    };
+                                    dest_stack.item_count = total;
                                 } else {
                                     tracing::debug!(
                                         "Destination stack is not compatible with source stack"
@@ -189,37 +242,89 @@ impl BedrockClient {
                                 }
 
                                 source_stack.decrement(count);
-                                if source.container_name.container_name
-                                    == ContainerName::CreatedOutput
-                                    && let Some(ref mut stack) = created_item
-                                {
-                                    stack.decrement(count);
-                                    if stack.is_empty() {
-                                        created_item = None;
-                                    }
-                                }
                                 let source_stack = if source_stack.is_empty() {
                                     ItemStack::EMPTY.clone()
                                 } else {
                                     source_stack
                                 };
-
-                                if !super::inventory_commit::commit(
-                                    &*screen_handler,
-                                    &[
-                                        (&source, &expected_source, &source_stack),
-                                        (&destination, &expected_destination, &dest_stack),
-                                    ],
-                                ) {
+                                let committed = if virtual_source {
+                                    if let Some((output, repetitions)) = &pending_craft {
+                                        let destination_slot =
+                                            if destination.container_name.container_name
+                                                == ContainerName::Cursor
+                                            {
+                                                // The menu guard owns the cursor until update_slot_stack publishes this staged replacement.
+                                                let inventory = Arc::new(
+                                                    pumpkin_inventory::SimpleInventory::new(1),
+                                                );
+                                                pumpkin_inventory::Inventory::set_stack(
+                                                    inventory.as_ref(),
+                                                    0,
+                                                    expected_destination.clone(),
+                                                );
+                                                Some(Arc::new(
+                                                    pumpkin_inventory::slot::NormalSlot::new(
+                                                        inventory, 0,
+                                                    ),
+                                                )
+                                                    as Arc<dyn pumpkin_inventory::slot::Slot>)
+                                            } else {
+                                                map_bedrock_container_slot(
+                                                    &*screen_handler,
+                                                    destination.container_name.container_name,
+                                                    destination.slot_id,
+                                                )
+                                                .map(|index| {
+                                                    screen_handler.get_behaviour().slots[index]
+                                                        .clone()
+                                                })
+                                            };
+                                        destination_slot.is_some_and(|slot| {
+                                            let commit = screen_handler.get_behaviour().slots[0]
+                                                .craft_into(
+                                                    output,
+                                                    *repetitions,
+                                                    slot.as_ref(),
+                                                    &expected_destination,
+                                                    &dest_stack,
+                                                );
+                                            commit.is_some_and(|commit| {
+                                                crafting_effects.push(commit);
+                                                true
+                                            })
+                                        })
+                                    } else {
+                                        super::inventory_commit::commit(
+                                            &*screen_handler,
+                                            &[(&destination, &expected_destination, &dest_stack)],
+                                        )
+                                    }
+                                } else {
+                                    super::inventory_commit::commit(
+                                        &*screen_handler,
+                                        &[
+                                            (&source, &expected_source, &source_stack),
+                                            (&destination, &expected_destination, &dest_stack),
+                                        ],
+                                    )
+                                };
+                                if !committed {
                                     result = 1;
                                     break;
                                 }
-                                update_slot_stack(
-                                    player,
-                                    &mut *screen_handler,
-                                    &source,
-                                    source_stack.clone(),
-                                );
+                                if virtual_source {
+                                    // Bedrock CreatedOutput is request-owned stock, never a physical result slot.
+                                    created_item =
+                                        (!source_stack.is_empty()).then(|| source_stack.clone());
+                                    crafting_inputs_consumed |= pending_craft.take().is_some();
+                                } else {
+                                    update_slot_stack(
+                                        player,
+                                        &mut *screen_handler,
+                                        &source,
+                                        source_stack.clone(),
+                                    );
+                                }
                                 update_slot_stack(
                                     player,
                                     &mut *screen_handler,
@@ -242,6 +347,21 @@ impl BedrockClient {
                             }
                         }
                         ItemStackRequestAction::Swap { slot1, slot2 } => {
+                            if [
+                                slot1.container_name.container_name,
+                                slot2.container_name.container_name,
+                            ]
+                            .contains(&ContainerName::CreatedOutput)
+                                || ((crafting_inputs_consumed || pending_craft.is_some())
+                                    && [
+                                        slot1.container_name.container_name,
+                                        slot2.container_name.container_name,
+                                    ]
+                                    .contains(&ContainerName::CraftingOutputPreview))
+                            {
+                                result = 1;
+                                break;
+                            }
                             let stack1 =
                                 get_slot_stack(&*screen_handler, &slot1, created_item.as_ref());
                             let stack2 =
@@ -275,6 +395,14 @@ impl BedrockClient {
                             source,
                             randomly: _,
                         } => {
+                            if source.container_name.container_name == ContainerName::CreatedOutput
+                                || ((crafting_inputs_consumed || pending_craft.is_some())
+                                    && source.container_name.container_name
+                                        == ContainerName::CraftingOutputPreview)
+                            {
+                                result = 1;
+                                break;
+                            }
                             let mut source_stack =
                                 get_slot_stack(&*screen_handler, &source, created_item.as_ref());
                             if source_stack.is_empty() {
@@ -320,6 +448,14 @@ impl BedrockClient {
                         }
                         ItemStackRequestAction::Destroy { count, source }
                         | ItemStackRequestAction::Consume { count, source } => {
+                            if source.container_name.container_name == ContainerName::CreatedOutput
+                                || ((crafting_inputs_consumed || pending_craft.is_some())
+                                    && source.container_name.container_name
+                                        == ContainerName::CraftingOutputPreview)
+                            {
+                                result = 1;
+                                break;
+                            }
                             if screen_handler.window_type()
                                 == Some(pumpkin_data::screen::WindowType::Merchant)
                                 && matches!(
@@ -334,7 +470,7 @@ impl BedrockClient {
                                 // Bedrock subsequently takes the CreatedOutput result.
                                 continue;
                             }
-                            if crafting_inputs_consumed
+                            if (crafting_inputs_consumed || pending_craft.is_some())
                                 && source.container_name.container_name
                                     == ContainerName::CraftingInput
                             {
@@ -435,6 +571,11 @@ impl BedrockClient {
                             }
 
                             if repetitions > 0 {
+                                // ResultSlot.onTake pays one generated batch; a later recipe cannot inherit payment.
+                                if created_item.is_some() || crafting_inputs_consumed {
+                                    result = 1;
+                                    break;
+                                }
                                 screen_handler.update_to_client();
 
                                 let is_player = screen_handler.window_type().is_none();
@@ -465,14 +606,16 @@ impl BedrockClient {
                                 }
 
                                 let mut total_crafted = output_stack.clone();
-                                total_crafted.item_count =
-                                    total_crafted.item_count.saturating_mul(repetitions);
+                                let Some(count) = total_crafted.item_count.checked_mul(repetitions)
+                                else {
+                                    result = 1;
+                                    break;
+                                };
+                                total_crafted.item_count = count;
                                 created_item = Some(total_crafted);
 
-                                for _ in 0..repetitions {
-                                    output_slot.on_take_item(player.as_ref(), &output_stack);
-                                }
-                                crafting_inputs_consumed = true;
+                                // ResultSlot.onTake: consumption is deferred until the destination can commit.
+                                pending_craft = Some((output_stack, repetitions));
 
                                 // Record updates for all grid slots so Bedrock client is notified of consumed ingredients!
                                 let is_player = screen_handler.window_type().is_none();
@@ -505,6 +648,34 @@ impl BedrockClient {
                         | ItemStackRequestAction::Loom { .. }
                         | ItemStackRequestAction::CraftNonImplemented => {
                             // Successful no-ops to prevent client-side transaction rollbacks
+                        }
+                    }
+                }
+
+                if crafting_inputs_consumed {
+                    let is_player = screen_handler.window_type().is_none();
+                    let grid_size = if is_player { 4 } else { 9 };
+                    let grid_start = if is_player { 28 } else { 32 };
+                    for i in 0..grid_size {
+                        let stack = screen_handler.get_behaviour().slots[1 + i].get_cloned_stack();
+                        record_update(
+                            &mut updates,
+                            FullContainerName {
+                                container_name: ContainerName::CraftingInput,
+                                dynamic_id: None,
+                            },
+                            (grid_start + i) as u8,
+                            &stack,
+                        );
+                    }
+                    if let Some(stack) = created_item.take() {
+                        unclaimed_outputs.push(stack);
+                        for update in &mut updates {
+                            if update.container_name.container_name == ContainerName::CreatedOutput
+                            {
+                                update.count = 0;
+                                update.stack_id = VarInt(0);
+                            }
                         }
                     }
                 }
@@ -565,13 +736,27 @@ impl BedrockClient {
                 }
             }
 
-            (responses, inventory_updated)
+            (
+                responses,
+                inventory_updated,
+                unclaimed_outputs,
+                crafting_effects,
+            )
         };
 
         drop(effects);
 
         // Send Bedrock specific responses and updates
+        // Publish the committed request before callbacks can make further inventory edits.
         self.try_enqueue_client_packet(&CItemStackResponse { responses });
+        for commit in crafting_effects {
+            commit.finish(player.as_ref());
+            inventory_updated = true;
+        }
+        for stack in unclaimed_outputs {
+            crate::item::item_utils::give_or_drop(player, stack);
+            inventory_updated = true;
+        }
 
         if inventory_updated {
             let slots = player
@@ -659,7 +844,11 @@ pub(crate) fn map_bedrock_container_slot(
                 None
             }
         }
-        ContainerName::CraftingOutputPreview | ContainerName::CreatedOutput => {
+        // Only merchant previews have physical stock behind CreatedOutput; their Take path pays the trade.
+        ContainerName::CreatedOutput => (screen_handler.window_type()
+            == Some(pumpkin_data::screen::WindowType::Merchant))
+        .then_some(2),
+        ContainerName::CraftingOutputPreview => {
             if is_player_screen {
                 Some(0)
             } else if let Some(window_type) = screen_handler.window_type() {
