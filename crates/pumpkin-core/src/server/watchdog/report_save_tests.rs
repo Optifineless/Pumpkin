@@ -154,3 +154,167 @@ fn existing_insecure_report_directory_becomes_owner_only() {
         true,
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires the source-bound driver's real foreign-UID directory"]
+fn foreign_owned_writable_root_publishes_phase_and_enrichment() {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+    let directory = std::path::PathBuf::from(
+        std::env::var_os("PUMPKIN_WATCHDOG_FOREIGN_ROOT")
+            .expect("The control driver must provide the actual foreign-owned root"),
+    );
+    // SAFETY: geteuid only reads the effective identity of this process.
+    let uid = unsafe { libc::geteuid() };
+    let before = std::fs::metadata(&directory).unwrap();
+    assert_eq!(before.uid(), 65534);
+    assert_ne!(before.uid(), uid);
+    assert_eq!(before.permissions().mode() & 0o777, 0o777);
+    let probe = directory.join("actual-service-uid-write-probe");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&probe)
+        .unwrap();
+    file.write_all(b"The actual test UID can create a report here")
+        .unwrap();
+    drop(file);
+    assert_eq!(std::fs::metadata(&probe).unwrap().uid(), uid);
+    std::fs::remove_file(&probe).unwrap();
+
+    let mut report = report(&directory);
+    report.save();
+    let phase = std::fs::read_to_string(&report.path);
+    report
+        .buffer
+        .write_str("Thread dump:\n#0 actual appended enrichment\n")
+        .unwrap();
+    report.save();
+    let enriched = std::fs::read_to_string(&report.path);
+    assert!(
+        phase
+            .as_ref()
+            .is_ok_and(|text| text.contains("Watching Server"))
+            && enriched
+                .as_ref()
+                .is_ok_and(|text| text == report.buffer.as_str()),
+        "A writable foreign-owned root lost both phase and enriched watchdog diagnostics: phase={:?}, enriched={:?}",
+        phase.as_ref().err(),
+        enriched.as_ref().err(),
+    );
+    let after = std::fs::metadata(&directory).unwrap();
+    assert_eq!(after.uid(), before.uid());
+    assert_eq!(after.permissions().mode() & 0o777, 0o777);
+    let private = std::fs::metadata(&report.directory).unwrap();
+    assert_eq!(private.uid(), uid);
+    assert_eq!(private.permissions().mode() & 0o777, 0o700);
+    assert_eq!(std::fs::metadata(&report.path).unwrap().uid(), uid);
+    assert_eq!(
+        std::fs::metadata(&report.path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+}
+
+#[test]
+fn enrichment_retains_the_first_published_file_after_path_replacement() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut report = report(directory.path());
+    report.save_with(std::io::Write::write_all).unwrap();
+    let original = directory.path().join("original-phase.txt");
+    std::fs::rename(&report.path, &original).unwrap();
+    std::fs::write(&report.path, "replacement file must remain untouched").unwrap();
+    report
+        .buffer
+        .write_str("Thread dump:\n#0 retained file enrichment\n")
+        .unwrap();
+    report.save_with(std::io::Write::write_all).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&original).unwrap(),
+        report.buffer.as_str(),
+        "Enrichment lost the first published phase file after pathname replacement"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&report.path).unwrap(),
+        "replacement file must remain untouched"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn initial_report_refuses_preexisting_link_without_changing_its_target() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    for symbolic in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("protected-target.txt");
+        std::fs::write(&target, "original target bytes").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o666)).unwrap();
+        let mut report = report(directory.path());
+        if symbolic {
+            symlink(&target, &report.path).unwrap();
+        } else {
+            std::fs::hard_link(&target, &report.path).unwrap();
+        }
+        assert!(report.save_with(std::io::Write::write_all).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "original target bytes"
+        );
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o666
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires the source-bound driver's real foreign-UID directory"]
+fn foreign_root_reuses_the_owned_private_child_for_distinct_reports() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let root = std::path::PathBuf::from(
+        std::env::var_os("PUMPKIN_WATCHDOG_FOREIGN_ROOT").expect("real foreign root"),
+    );
+    let before = std::fs::metadata(&root).unwrap();
+    assert_eq!(before.uid(), 65534);
+    let mut published = Vec::new();
+    for name in ["first-distinct-report.txt", "second-distinct-report.txt"] {
+        let mut report = report(&root);
+        report.path = root.join(name);
+        report.save_with(std::io::Write::write_all).unwrap();
+        report.buffer.write_str("completed enrichment\n").unwrap();
+        report.save_with(std::io::Write::write_all).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&report.path).unwrap(),
+            report.buffer.as_str()
+        );
+        assert_eq!(
+            std::fs::metadata(&report.directory)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            std::fs::metadata(&report.path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        published.push(report.directory);
+    }
+    assert_eq!(published[0], published[1]);
+    let after = std::fs::metadata(&root).unwrap();
+    assert_eq!(after.uid(), before.uid());
+    assert_eq!(
+        after.permissions().mode() & 0o777,
+        before.permissions().mode() & 0o777
+    );
+}

@@ -59,6 +59,7 @@ pub(super) struct PreparedReport {
     directory: std::path::PathBuf,
     path: std::path::PathBuf,
     saved_len: usize,
+    file: Option<std::fs::File>,
 }
 
 impl PreparedReport {
@@ -77,6 +78,7 @@ impl PreparedReport {
             directory,
             path,
             saved_len: 0,
+            file: None,
         }
     }
 
@@ -90,43 +92,37 @@ impl PreparedReport {
         &mut self,
         write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
     ) -> std::io::Result<()> {
-        self.prepare_directory()?;
-        let mut options = std::fs::OpenOptions::new();
-        options.create(true).append(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600)
-        };
-        let mut file = options.open(&self.path)?;
+        if self.file.is_none() {
+            self.file = Some(self.open_report()?);
+        }
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("report file was not opened"))?;
         // The already-published phase report must survive a failed or interrupted enrichment.
-        write(
-            &mut file,
-            &self.buffer.as_str().as_bytes()[self.saved_len..],
-        )?;
+        write(file, &self.buffer.as_str().as_bytes()[self.saved_len..])?;
         self.saved_len = self.buffer.as_str().len();
         Ok(())
     }
 
     #[cfg(unix)]
-    fn prepare_directory(&self) -> std::io::Result<()> {
-        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&self.directory)?;
-        // Protect directory entries as well as file contents. Refuse a symlink
-        // and change permissions on the opened directory, including old installs.
-        let directory = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-            .open(&self.directory)?;
-        directory.set_permissions(std::fs::Permissions::from_mode(0o700))
+    fn open_report(&mut self) -> std::io::Result<std::fs::File> {
+        let (file, path) = report_file::open_report(&self.directory, &self.path)?;
+        self.directory = path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("report directory is missing"))?
+            .to_path_buf();
+        self.path = path;
+        Ok(file)
     }
 
     #[cfg(not(unix))]
-    fn prepare_directory(&self) -> std::io::Result<()> {
-        std::fs::create_dir_all(&self.directory)
+    fn open_report(&self) -> std::io::Result<std::fs::File> {
+        std::fs::create_dir_all(&self.directory)?;
+        std::fs::OpenOptions::new()
+            .create_new(true)
+            .append(true)
+            .open(&self.path)
     }
 
     pub(super) fn enrich(&mut self) {
@@ -205,3 +201,7 @@ fn thread_dump() -> String {
 #[cfg(test)]
 #[path = "report_save_tests.rs"]
 mod report_save_tests;
+
+#[cfg(unix)]
+#[path = "report_file.rs"]
+mod report_file;
