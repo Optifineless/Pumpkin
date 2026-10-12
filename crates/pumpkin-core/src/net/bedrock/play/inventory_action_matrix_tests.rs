@@ -25,6 +25,9 @@ mod placement_snapshot;
 #[path = "inventory_action_rebase_tests.rs"]
 mod rebase;
 
+#[path = "inventory_action_callback_tests.rs"]
+mod callback;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]

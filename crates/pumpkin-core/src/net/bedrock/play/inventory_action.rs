@@ -64,7 +64,7 @@ impl BedrockClient {
         player: &Player,
         screen_slot: usize,
         item_stack: ItemStack,
-    ) -> Option<(EquipmentSlot, ItemStack)> {
+    ) -> (bool, Option<(EquipmentSlot, ItemStack)>) {
         let _effects = crate::world::guard_effects::GuardEffects::new();
         let changed = {
             let mut screen_handler = player
@@ -123,7 +123,7 @@ impl BedrockClient {
             }
         }
         player.sync_inventory_to_client();
-        equipment_change
+        (changed, equipment_change)
     }
 
     fn send_player_inventory_content(&self, player: &Player) {
@@ -146,31 +146,79 @@ impl BedrockClient {
         });
     }
 
-    fn sync_consumed_hand_item(
+    /// Commits a click-block result to the originating slot, then publishes the live hands.
+    /// `predicted` is the stack the prediction wrote there before any publication callback;
+    /// `result` is the server's stack when the use changed it.
+    fn finish_block_use(
         player: &Player,
         hand: Hand,
         selected_slot: u8,
+        predicted: Option<&ItemStack>,
         before: &ItemStack,
-        stack: ItemStack,
+        result: Option<ItemStack>,
+        consumed_by_prediction: bool,
     ) {
         let inventory_slot = hand_inventory_slot(hand, selected_slot);
-        // ServerPlayerGameMode.useItemOn retains the originating stack across callbacks.
-        if !player
-            .inventory()
-            .replace_stack_if_unchanged(inventory_slot, before, stack.clone())
+        // ServerPlayerGameMode.useItemOn retains the originating stack across callbacks; each
+        // write is identity-checked so a callback replacement wins.
+        if let Some(stack) = result {
+            if should_write_back_consumed_stack(before, &stack, true, consumed_by_prediction) {
+                player
+                    .inventory()
+                    .replace_stack_if_unchanged(inventory_slot, before, stack);
+            }
+        } else if consumed_by_prediction
+            && let Some(predicted) = predicted
+            && !before.is_empty()
         {
-            return;
+            // The server did not consume the item (for example BlockItem.place was denied),
+            // so a predicted decrement is undone while it is still the current stack.
+            player.inventory().replace_stack_if_unchanged(
+                inventory_slot,
+                predicted,
+                before.clone(),
+            );
         }
-        if let Some(screen_slot) = hand_screen_handler_slot(hand, selected_slot) {
-            let mut screen_handler = player
-                .player_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            screen_handler.set_received_stack(screen_slot, stack.clone());
+        Self::sync_live_hands(player, hand, selected_slot, predicted.unwrap_or(before));
+    }
+
+    /// Mirrors LivingEntity.detectEquipmentUpdates after ServerPlayerGameMode.useItem(On):
+    /// resyncs the originating slot if it differs from what this request last sent, and
+    /// publishes hand equipment (and its attribute modifiers) from the live hands, including a
+    /// main hand selected by a callback. Call with no guard held.
+    fn sync_live_hands(player: &Player, hand: Hand, source_slot: u8, published: &ItemStack) {
+        let inventory_slot = hand_inventory_slot(hand, source_slot);
+        let live = player.inventory().get_slot(inventory_slot);
+        let selected = player.inventory().get_selected_slot();
+        let mut equipment = Vec::new();
+        if live.uid != published.uid || !live.are_equal(published) {
+            if let Some(screen_slot) = hand_screen_handler_slot(hand, source_slot) {
+                player
+                    .player_screen_handler
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .set_received_stack(screen_slot, live.clone());
+            }
+            player.try_send_slot_set_packet(&CSetPlayerInventory::new(
+                (inventory_slot as i32).into(),
+                &ItemStackSerializer::from(live.clone()),
+            ));
+            player.sync_inventory_to_client();
+            if hand == Hand::Left {
+                equipment.push((EquipmentSlot::OFF_HAND, live));
+            } else if selected == source_slot {
+                equipment.push((EquipmentSlot::MAIN_HAND, live));
+            }
         }
-        // Mirrors ServerPlayerGameMode.useItemOn hand writeback and LivingEntity.detectEquipmentUpdates
-        // equipment updates for tracking clients.
-        player.sync_hand_slot(inventory_slot, stack);
+        if selected != source_slot {
+            // Player.getItemBySlot(MAINHAND) reads the live selection, not the source slot.
+            let main = player.inventory().get_slot(usize::from(selected));
+            equipment.push((EquipmentSlot::MAIN_HAND, main));
+        }
+        if !equipment.is_empty() {
+            equipment.sort_unstable_by_key(|(slot, _)| slot.discriminant());
+            player.living_entity.send_equipment_changes(&equipment);
+        }
     }
 
     fn correct_rejected_food_use(&self, player: &Player) {
@@ -228,15 +276,24 @@ impl BedrockClient {
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
         let source_selected_slot = player.inventory().get_selected_slot();
+        let mut origin_screen_slot = None;
         let use_item_stack = match &packet.transaction_data {
             TransactionData::UseItem(data) if matches!(data.action_type.0, 0 | 1) => {
                 let Some(stack) = Self::validated_use_item_stack(player, data) else {
                     return;
                 };
+                let hand = match data.hand {
+                    HandSlot::Mainhand => Hand::Right,
+                    HandSlot::Offhand => Hand::Left,
+                };
+                origin_screen_slot = hand_screen_handler_slot(hand, source_selected_slot);
                 Some(stack)
             }
             _ => None,
         };
+        // The originating slot's prediction-written stack, captured at the write, before any
+        // publication can run a callback that replaces it.
+        let mut predicted_hand: Option<ItemStack> = None;
         let mut inventory_updated = false;
         let mut dropped_items = Vec::new();
         let mut hand_updates: Vec<(EquipmentSlot, ItemStack)> = Vec::new();
@@ -318,9 +375,13 @@ impl BedrockClient {
                     if descriptor_to_stack(&action.old_item).are_equal(&item_stack) {
                         continue;
                     }
-                    if let Some((slot, stack)) =
-                        Self::apply_inventory_action(player, screen_slot, item_stack)
-                    {
+                    let written = item_stack.clone();
+                    let (changed, equipment_change) =
+                        Self::apply_inventory_action(player, screen_slot, item_stack);
+                    if changed && origin_screen_slot == Some(screen_slot) {
+                        predicted_hand = Some(written);
+                    }
+                    if let Some((slot, stack)) = equipment_change {
                         if let Some((_, previous)) =
                             hand_updates.iter_mut().find(|(s, _)| *s == slot)
                         {
@@ -403,7 +464,6 @@ impl BedrockClient {
                     // Inventory transaction actions are applied before the Bedrock UseItem callback.
                     let held_slot_consumed_in_transaction =
                         transaction_consumes_hand(&packet.actions, hand, source_selected_slot);
-                    let authoritative_held_item = true;
                     // ServerPlayerGameMode.useItemOn receives the original item, including bucket exchanges.
                     let before_block_use = held_item.clone();
 
@@ -422,21 +482,17 @@ impl BedrockClient {
                     );
 
                     if result.consumes_action() {
-                        if should_write_back_consumed_stack(
+                        // ServerPlayerGameMode.useItemOn persists the item after the block callback consumes it.
+                        let changed = !held_item.are_equal(&before_block_use);
+                        Self::finish_block_use(
+                            player,
+                            hand,
+                            source_selected_slot,
+                            predicted_hand.as_ref(),
                             &before_block_use,
-                            &held_item,
-                            authoritative_held_item,
+                            changed.then_some(held_item),
                             held_slot_consumed_in_transaction,
-                        ) {
-                            // ServerPlayerGameMode.useItemOn persists the item after the block callback consumes it.
-                            Self::sync_consumed_hand_item(
-                                player,
-                                hand,
-                                source_selected_slot,
-                                &before_block_use,
-                                held_item,
-                            );
-                        }
+                        );
                         return;
                     }
 
@@ -457,12 +513,23 @@ impl BedrockClient {
                         );
 
                         if result.consumes_action() {
+                            Self::finish_block_use(
+                                player,
+                                hand,
+                                source_selected_slot,
+                                predicted_hand.as_ref(),
+                                &before_block_use,
+                                None,
+                                held_slot_consumed_in_transaction,
+                            );
                             return;
                         }
                     }
 
                     let mut stack = held_item;
-                    if !stack.is_empty() {
+                    let result = if stack.is_empty() {
+                        None
+                    } else {
                         let item_id = stack.item.id;
                         let before = stack.clone();
                         player.increment_stat(
@@ -522,22 +589,18 @@ impl BedrockClient {
                                 None,
                             );
                         }
-                        if should_write_back_consumed_stack(
-                            &before,
-                            &stack,
-                            authoritative_held_item,
-                            held_slot_consumed_in_transaction,
-                        ) {
-                            // BlockItem.place consumes the UseOnContext's originating hand.
-                            Self::sync_consumed_hand_item(
-                                player,
-                                hand,
-                                source_selected_slot,
-                                &before_block_use,
-                                stack,
-                            );
-                        }
-                    }
+                        // BlockItem.place consumes the UseOnContext's originating hand.
+                        (!before.are_equal(&stack)).then_some(stack)
+                    };
+                    Self::finish_block_use(
+                        player,
+                        hand,
+                        source_selected_slot,
+                        predicted_hand.as_ref(),
+                        &before_block_use,
+                        result,
+                        held_slot_consumed_in_transaction,
+                    );
                 } else if data.action_type.0 == 1 {
                     // Click air / Use item
                     let hand = match data.hand {
@@ -547,27 +610,34 @@ impl BedrockClient {
                     let Some(before_actions) = use_item_stack else {
                         return;
                     };
-                    let mut held = player.inventory().get_stack_in_hand(hand);
-                    if !before_actions.is_empty()
-                        && (held.is_empty()
-                            || held.item.id != before_actions.item.id
+                    let published = predicted_hand
+                        .clone()
+                        .unwrap_or_else(|| before_actions.clone());
+                    let mut held = if let Some(predicted) = &predicted_hand
+                        && !before_actions.is_empty()
+                        && (predicted.is_empty()
+                            || predicted.item.id != before_actions.item.id
                             || transaction_consumes_hand(
                                 &packet.actions,
                                 hand,
                                 source_selected_slot,
-                            ))
-                    {
+                            )) {
                         // ServerPlayerGameMode.useItem -> EggItem.use consumes once from the original
                         // stack; client prediction is not an additional authoritative consumption.
+                        // Reconcile only while the prediction-written stack is current: a stack a
+                        // callback installed since then wins, and the client is resynced to it.
                         if !player.inventory().replace_stack_if_unchanged(
                             hand_inventory_slot(hand, source_selected_slot),
-                            &held,
+                            predicted,
                             before_actions.clone(),
                         ) {
+                            Self::sync_live_hands(player, hand, source_selected_slot, predicted);
                             return;
                         }
-                        held = before_actions;
-                    }
+                        before_actions
+                    } else {
+                        player.inventory().get_stack_in_hand(hand)
+                    };
                     // Consumable.onConsume and BucketItem/BottleItem.use count on success.
                     if !held.is_empty() && !server.item_registry.records_item_use_stat(&held) {
                         player.increment_stat(
@@ -675,6 +745,8 @@ impl BedrockClient {
                             server.item_registry.on_use(&stack_for_use, player, hand);
                         }
                     }}
+                    // Publish the final authoritative hand after use or cancellation.
+                    Self::sync_live_hands(player, hand, source_selected_slot, &published);
                 }
             }
             TransactionData::UseItemOnEntity(data) => {
