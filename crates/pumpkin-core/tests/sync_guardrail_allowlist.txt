@@ -596,15 +596,12 @@ crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#7
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#8
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#9
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::RwLock::new#1
+crates/pumpkin-core/src/world/mod.rs::load::tokio::sync::Mutex::new#1
 crates/pumpkin-core/src/world/natural_spawner.rs::clone::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/neighbor_updater_tests.rs::neighbor_multi_update_counts_once_and_resumes_depth_first::unknown::Mutex::new#1
 crates/pumpkin-core/src/world/neighbor_updater_tests.rs::shape_update_uses_enqueued_neighbor_state::unknown::Mutex::new#1
-crates/pumpkin-core/src/world/portal/mod.rs::get_portal_destination::block_in_place#1
-crates/pumpkin-core/src/world/portal/mod.rs::get_portal_destination::block_in_place#2
-crates/pumpkin-core/src/world/portal/mod.rs::get_portal_destination::block_on#1
-crates/pumpkin-core/src/world/portal/mod.rs::get_portal_destination::block_on#2
-crates/pumpkin-core/src/world/portal/nether.rs::search_for_portal::block_in_place#1
-crates/pumpkin-core/src/world/portal/nether.rs::search_for_portal::block_on#1
+crates/pumpkin-core/src/world/portal/tests.rs::portal_travel::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/tests.rs::unloaded_portal_destination_leaves_two_rayon_workers_available::block_on#1
 crates/pumpkin-core/src/world/shared_state_tests.rs::pause_first_lazy_load::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/uuid_insertion_tests.rs::command_silent_and_restored_insertions_keep_the_first_uuid::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/weather.rs::from_world_data::std::sync::Mutex::new#1
@@ -838,6 +835,7 @@ crates/pumpkin-world/src/chunk_system/chunk_state.rs::upgrade_to_level_chunk::st
 crates/pumpkin-world/src/chunk_system/schedule.rs::create::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk_system/schedule.rs::create::tokio::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk_system/storage_failure_tests.rs::scheduler::unknown::Mutex::new#1
+crates/pumpkin-world/src/chunk_system/storage_failure_tests.rs::scheduler::unknown::Mutex::new#2
 crates/pumpkin-world/src/data/player_data.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/end_city/mod.rs::get_structure_position::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/jigsaw_placement.rs::add_pieces::std::sync::Mutex::new#1
