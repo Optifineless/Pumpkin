@@ -75,10 +75,14 @@ impl BedrockClient {
                 .get_slot(screen_slot)
                 .get_cloned_stack()
                 .are_equal(&item_stack);
-            screen_handler
-                .get_slot(screen_slot)
-                .set_stack(item_stack.clone());
-            screen_handler.set_received_stack(screen_slot, item_stack.clone());
+            // ServerPlayerGameMode.useItemOn retains the original stack reference.
+            // An equal client prediction must not replace that stack's UID.
+            if changed {
+                screen_handler
+                    .get_slot(screen_slot)
+                    .set_stack(item_stack.clone());
+                screen_handler.set_received_stack(screen_slot, item_stack.clone());
+            }
             changed
         };
 
@@ -308,11 +312,15 @@ impl BedrockClient {
                 if let Some(screen_slot) =
                     map_bedrock_slot_to_screen_handler(window_id, action.inventory_slot)
                 {
-                    if let Some((slot, stack)) = Self::apply_inventory_action(
-                        player,
-                        screen_slot,
-                        descriptor_to_stack(&action.new_item),
-                    ) {
+                    let item_stack = descriptor_to_stack(&action.new_item);
+                    inventory_updated = true;
+                    // Descriptor-only no-ops must also retain authoritative components and UID.
+                    if descriptor_to_stack(&action.old_item).are_equal(&item_stack) {
+                        continue;
+                    }
+                    if let Some((slot, stack)) =
+                        Self::apply_inventory_action(player, screen_slot, item_stack)
+                    {
                         if let Some((_, previous)) =
                             hand_updates.iter_mut().find(|(s, _)| *s == slot)
                         {
@@ -321,7 +329,6 @@ impl BedrockClient {
                             hand_updates.push((slot, stack));
                         }
                     }
-                    inventory_updated = true;
                 }
             }
         }
@@ -542,11 +549,24 @@ impl BedrockClient {
                     };
                     let mut held = player.inventory().get_stack_in_hand(hand);
                     if !before_actions.is_empty()
-                        && (held.is_empty() || held.item.id != before_actions.item.id)
+                        && (held.is_empty()
+                            || held.item.id != before_actions.item.id
+                            || transaction_consumes_hand(
+                                &packet.actions,
+                                hand,
+                                source_selected_slot,
+                            ))
                     {
-                        // EggItem.use and other Item.use callbacks reread the originating hand.
+                        // ServerPlayerGameMode.useItem -> EggItem.use consumes once from the original
+                        // stack; client prediction is not an additional authoritative consumption.
+                        if !player.inventory().replace_stack_if_unchanged(
+                            hand_inventory_slot(hand, source_selected_slot),
+                            &held,
+                            before_actions.clone(),
+                        ) {
+                            return;
+                        }
                         held = before_actions;
-                        player.inventory().set_stack_in_hand(hand, held.clone());
                     }
                     // Consumable.onConsume and BucketItem/BottleItem.use count on success.
                     if !held.is_empty() && !server.item_registry.records_item_use_stat(&held) {
