@@ -4,12 +4,13 @@
 )]
 
 use super::*;
+use crate::entity::EntityBase;
 use crate::net::bedrock::combat_test_support::TestBedrockPlayer;
 use crate::server::{Server, combat_test_support};
 use pumpkin_data::{attributes::Attributes, item::Item};
 use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_protocol::bedrock::{
-    client::inventory_slot::CInventorySlot,
+    client::{CMobArmorEquipment, CMobEquipment, inventory_slot::CInventorySlot},
     network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
     server::inventory_transaction::{WINDOW_ID_ARMOUR, WINDOW_ID_OFF_HAND},
 };
@@ -18,6 +19,7 @@ struct Fixture {
     _directory: tempfile::TempDir,
     server: Arc<Server>,
     target: TestBedrockPlayer,
+    observer: TestBedrockPlayer,
 }
 
 impl Fixture {
@@ -27,6 +29,36 @@ impl Fixture {
         let world = combat_test_support::world(&server, directory.path());
         let target = TestBedrockPlayer::new(&world).await;
         target.player.permission_lvl.store(PermissionLvl::Four);
+        let observer = TestBedrockPlayer::new(&world).await;
+        observer.player.watched_section.store(
+            pumpkin_world::cylindrical_chunk_iterator::Cylindrical::new(
+                target.player.get_entity().chunk_pos.load(),
+                std::num::NonZeroU8::new(2).unwrap(),
+            ),
+        );
+        observer
+            .player
+            .chunk_sender
+            .lock()
+            .unwrap()
+            .mark_sent_out_of_band(target.player.get_entity().chunk_pos.load());
+        world.players.store(Arc::new(vec![
+            target.player.clone(),
+            observer.player.clone(),
+        ]));
+        world
+            .entity_tracker
+            .get_tracked_entity(target.player.entity_id())
+            .unwrap()
+            .update_player(&observer.player, &world);
+        assert!(
+            world
+                .entity_tracker
+                .get_tracked_entity(target.player.entity_id())
+                .unwrap()
+                .seen_by
+                .contains(&observer.player.gameprofile.id)
+        );
         server.worlds.store(Arc::new(vec![world]));
         target
             .player
@@ -39,6 +71,7 @@ impl Fixture {
             _directory: directory,
             server,
             target,
+            observer,
         }
     }
 
@@ -101,6 +134,7 @@ async fn clear_bedrock_target_sends_authoritative_armor_and_offhand_inventory() 
     let mut fixture = Fixture::new().await;
     fixture.equip();
     fixture.target.take_packets();
+    fixture.observer.take_packets();
     let expected: Vec<_> = (0..4)
         .map(|slot| fixture.empty_slot_packet(WINDOW_ID_ARMOUR, slot))
         .chain(std::iter::once(
@@ -121,7 +155,41 @@ async fn clear_bedrock_target_sends_authoritative_armor_and_offhand_inventory() 
             .all(|packet| !counted_packets.contains(packet))
     );
 
+    assert!(fixture.observer.take_packets().is_empty());
     assert_eq!(fixture.clear("clear @s"), 5);
+    let runtime_id = (fixture.target.player.entity_id() as u64).into();
+    let armor_packet = fixture
+        .observer
+        .client()
+        .serialize_packet(&CMobArmorEquipment {
+            target_runtime_id: runtime_id,
+            head: NetworkItemStackDescriptor::default(),
+            torso: NetworkItemStackDescriptor::default(),
+            legs: NetworkItemStackDescriptor::default(),
+            feet: NetworkItemStackDescriptor::default(),
+            body: NetworkItemStackDescriptor::default(),
+        })
+        .unwrap();
+    let offhand_packet = fixture
+        .observer
+        .client()
+        .serialize_packet(&CMobEquipment {
+            target_runtime_id: runtime_id,
+            item: NetworkItemStackDescriptor::default(),
+            slot: 0,
+            selected_slot: 0,
+            container_id: WINDOW_ID_OFF_HAND as u8,
+        })
+        .unwrap();
+    let observer_packets = fixture.observer.take_packets();
+    assert!(
+        observer_packets.contains(&armor_packet),
+        "observer lost cleared armor"
+    );
+    assert!(
+        observer_packets.contains(&offhand_packet),
+        "observer lost cleared offhand"
+    );
     let packets = fixture.target.take_packets();
     for expected_packet in &expected {
         assert!(
@@ -148,4 +216,5 @@ async fn clear_bedrock_target_sends_authoritative_armor_and_offhand_inventory() 
     let idle_packets = fixture.target.take_packets();
     assert!(expected.iter().all(|packet| !idle_packets.contains(packet)));
     fixture.target.close().await;
+    fixture.observer.close().await;
 }

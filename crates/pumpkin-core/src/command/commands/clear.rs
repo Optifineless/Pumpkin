@@ -306,3 +306,6 @@ mod tests;
 
 #[cfg(test)]
 mod bedrock_observer_tests;
+
+#[cfg(test)]
+mod fresh_control_tests;

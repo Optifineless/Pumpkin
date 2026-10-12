@@ -20,6 +20,7 @@ impl Player {
         let victim_entity = victim.get_entity();
         let attacker_entity = &self.living_entity.entity;
 
+        self.reconcile_equipment_attributes();
         let attacking_item = EquippedItem::capture(self, &EquipmentSlot::MAIN_HAND);
         let item_stack = &attacking_item.stack;
         let attribute_damage = self

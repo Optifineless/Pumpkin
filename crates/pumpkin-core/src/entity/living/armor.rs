@@ -216,6 +216,7 @@ impl LivingEntity {
         if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_ARMOR) {
             return damage;
         }
+        self.reconcile_player_equipment_attributes();
         CombatRules::get_damage_after_absorb(
             damage,
             self.get_armor_attribute_value(&Attributes::ARMOR).floor() as f32,

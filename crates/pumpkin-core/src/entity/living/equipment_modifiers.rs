@@ -65,7 +65,8 @@ impl LivingEntity {
         equipment
     }
 
-    fn apply_equipment_attribute_modifiers(
+    /// Replaces transient modifiers for these slots without effects or client notification.
+    pub(crate) fn apply_equipment_attribute_modifiers(
         &self,
         equipment: &[(EquipmentSlot, ItemStack)],
     ) -> Vec<Attributes> {

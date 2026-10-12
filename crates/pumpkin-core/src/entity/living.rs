@@ -18,6 +18,7 @@ mod death_statistics;
 mod effect_load_tests;
 #[path = "effects.rs"]
 pub(crate) mod effects;
+mod equipment_attributes;
 mod equipment_modifiers;
 mod equipment_packets;
 #[cfg(test)]

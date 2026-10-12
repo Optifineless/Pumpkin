@@ -1,5 +1,7 @@
 use super::Player;
-use pumpkin_data::{data_component_impl::EquipmentSlot, item_stack::ItemStack};
+use pumpkin_data::{
+    attributes::Attributes, data_component_impl::EquipmentSlot, item_stack::ItemStack,
+};
 
 #[cfg(test)]
 mod tests;
@@ -7,6 +9,7 @@ mod tests;
 #[derive(Default)]
 pub(super) struct EquipmentUpdates {
     pending: Vec<EquipmentSlot>,
+    combat_attributes: Vec<Attributes>,
     publishing: bool,
 }
 
@@ -47,6 +50,38 @@ impl Player {
         }
     }
 
+    /// Applies queued slots from committed inventory before combat, leaving publication queued.
+    pub(crate) fn reconcile_equipment_attributes(&self) {
+        // Player.attack/getAttackStrengthScale and LivingEntity.getDamageAfterArmorAbsorb
+        // read equipment attributes. Pumpkin batches packets before aiStep detection, so
+        // reconcile only invalidated slots at those reads, without effects or packets.
+        let slots = self
+            .equipment_updates
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pending
+            .clone();
+        if slots.is_empty() {
+            return;
+        }
+        let touched = self
+            .living_entity
+            .apply_equipment_attribute_modifiers(&self.collect_equipment_changes(slots));
+        let mut updates = self
+            .equipment_updates
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for attribute in touched {
+            if !updates
+                .combat_attributes
+                .iter()
+                .any(|old| old.id == attribute.id)
+            {
+                updates.combat_attributes.push(attribute);
+            }
+        }
+    }
+
     pub(crate) fn detect_equipment_updates(&self) {
         // ServerPlayer.doTick -> LivingEntity.detectEquipmentUpdates/collectEquipmentChanges.
         // Packet-driven equips and slot switches run before detection; commands queue no stacks.
@@ -74,6 +109,19 @@ impl Player {
             // Callbacks may queue another batch; only this publisher applies modifiers and sends.
             self.living_entity.publish_equipment_changes(&equipment);
             self.sync_bedrock_equipment_to_owner(&equipment);
+            let attributes = std::mem::take(
+                &mut self
+                    .equipment_updates
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .combat_attributes,
+            );
+            if !attributes.is_empty() {
+                crate::entity::attributes::send_attribute_updates_for_living(
+                    &self.living_entity,
+                    attributes,
+                );
+            }
             let mut updates = self
                 .equipment_updates
                 .lock()
