@@ -134,7 +134,7 @@ impl ResultSlot {
         match_crafting_recipe(&*self.inventory, self.recipe_provider.as_deref())
     }
 
-    fn refill_output(&self) -> ItemStack {
+    pub(crate) fn refill_output(&self) -> ItemStack {
         let result = self
             .match_recipe()
             .map_or_else(|| ItemStack::EMPTY.clone(), |r| r.stack);
@@ -156,6 +156,23 @@ impl Slot for ResultSlot {
     fn on_quick_move_crafted(&self, _stack: ItemStack, _stack_prev: ItemStack) {
         self.refill_output();
     }
+    fn craft_into(
+        &self,
+        output: &ItemStack,
+        repetitions: u8,
+        destination: &dyn Slot,
+        expected_destination: &ItemStack,
+        replacement: &ItemStack,
+    ) -> Option<super::CraftingCommit> {
+        self.commit_craft_into(
+            output,
+            repetitions,
+            destination,
+            expected_destination,
+            replacement,
+        )
+    }
+
     fn on_take_item(&self, player: &dyn InventoryPlayer, stack: &ItemStack) {
         player.increment_stat(
             StatisticCategory::Crafted,

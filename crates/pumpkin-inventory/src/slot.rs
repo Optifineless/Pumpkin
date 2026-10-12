@@ -65,6 +65,19 @@ pub trait Slot: Send + Sync {
         self.mark_dirty();
     }
 
+    /// Commits crafting ingredients and a destination together without publishing effects.
+    /// Finish the returned receipt after releasing inventory and menu guards.
+    fn craft_into(
+        &self,
+        _output: &ItemStack,
+        _repetitions: u8,
+        _destination: &dyn Slot,
+        _expected_destination: &ItemStack,
+        _replacement: &ItemStack,
+    ) -> Option<crate::crafting::CraftingCommit> {
+        None
+    }
+
     /// Plugin callback for slot clicks.
     ///
     /// Called when a player clicks on this slot. Can be used by
