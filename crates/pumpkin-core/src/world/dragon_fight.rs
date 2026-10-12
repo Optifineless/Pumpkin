@@ -96,6 +96,8 @@ pub struct DragonFight {
     ticks_since_dragon_seen: i32,
     ticks_since_crystals_scanned: i32,
     ticks_since_last_player_scan: i32,
+    // Vanilla ticks synchronously; deferred effects must retain their respawn sequence.
+    respawn_generation: u64,
 
     // ── Boss bar ──────────────────────────────────────────────────────────────
     bossbar_uuid: Uuid,
@@ -149,6 +151,7 @@ impl DragonFight {
             ticks_since_crystals_scanned: 0,
             // Start above threshold so first tick with players triggers a scan
             ticks_since_last_player_scan: TIME_BETWEEN_PLAYER_SCANS + 1,
+            respawn_generation: 0,
             bossbar_uuid: Uuid::new_v4(),
             bossbar_players: Vec::new(),
             actions: Vec::new(),
@@ -462,9 +465,8 @@ impl DragonFight {
     }
 
     pub fn set_dragon_killed(&mut self, world: &Arc<World>, killed_uuid: Uuid) {
-        if self.dragon_killed
-            || (self.dragon_uuid.is_some() && Some(killed_uuid) != self.dragon_uuid)
-        {
+        // EnderDragonFight.setDragonKilled requires a tracked UUID; None never matches a death.
+        if self.dragon_killed || Some(killed_uuid) != self.dragon_uuid {
             return;
         }
 
@@ -532,6 +534,7 @@ impl DragonFight {
 
     pub fn abort_respawn_sequence(&mut self, world: &Arc<World>) {
         debug!("Aborting dragon respawn sequence.");
+        self.respawn_generation = self.respawn_generation.wrapping_add(1);
         self.pending_dragon_spawn = None;
         self.respawn_stage = None;
         self.respawn_time = 0;
@@ -603,6 +606,7 @@ impl DragonFight {
         if !self.dragon_killed || self.respawn_stage.is_some() {
             return;
         }
+        self.respawn_generation = self.respawn_generation.wrapping_add(1);
 
         if let Some(loc) = self.find_exit_portal(world).or(self.exit_portal_location) {
             self.actions.push(FightAction::ClearPortal(loc));
@@ -1115,3 +1119,6 @@ impl DragonFight {
         self.dragon_uuid
     }
 }
+
+#[cfg(test)]
+mod fresh_review_tests;

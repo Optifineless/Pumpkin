@@ -121,6 +121,17 @@ async fn scan_and_spike_spawn_callbacks_can_lock_fight() {
 fn portal_fixture(operation: &str) -> Fixture {
     let fixture = Fixture::new(DragonRespawnStage::SummoningDragon, 100);
     chest(&fixture, BlockPos::new(1, 64, 0));
+    let tracked = (operation == "kill").then(|| {
+        let dragon = crate::entity::r#type::from_type(
+            &EntityType::ENDER_DRAGON,
+            Vector3::new(0.5, 128.0, 0.5),
+            &fixture.world,
+            Uuid::new_v4(),
+        );
+        let uuid = dragon.get_entity().entity_uuid;
+        fixture.world.add_entity_silent(dragon);
+        uuid
+    });
     if operation != "find_portal" {
         for (x, z) in [(0.5, -2.5), (0.5, 3.5), (-2.5, 0.5), (3.5, 0.5)] {
             fixture.crystal(Vector3::new(x, 65.0, z), true);
@@ -138,6 +149,7 @@ fn portal_fixture(operation: &str) -> Fixture {
             fight.previously_killed = false;
         }
         if operation == "kill" {
+            fight.dragon_uuid = tracked;
             fight.dragon_killed = false;
             fight.previously_killed = false;
             fight.gateways = vec![0];
@@ -180,7 +192,7 @@ async fn portal_placement_callbacks_can_lock_fight() {
         {
             DragonFight::with_fight(world.dragon_fight.as_ref().unwrap(), &world, |fight| {
                 match operation {
-                    "kill" => fight.set_dragon_killed(&world, Uuid::new_v4()),
+                    "kill" => fight.set_dragon_killed(&world, fight.dragon_uuid.unwrap()),
                     "try_respawn" | "find_portal" => fight.try_respawn(&world),
                     "abort" => fight.abort_respawn_sequence(&world),
                     "scan" => fight.scan_state(&world),

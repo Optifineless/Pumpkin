@@ -118,7 +118,10 @@ impl DragonFight {
                     fight.respawn_time += 1;
                 }
                 if let Some(action) = action {
-                    fight.actions.push(FightAction::Respawn(action));
+                    fight.actions.push(FightAction::Respawn {
+                        action,
+                        generation: fight.respawn_generation,
+                    });
                 }
                 return true;
             }

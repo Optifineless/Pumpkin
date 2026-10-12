@@ -16,14 +16,14 @@ impl Fixture {
 struct SpawnHandler {
     attempts: AtomicUsize,
     reenter: bool,
-    kill: bool,
+    kill: Option<Arc<dyn EntityBase>>,
     cancel: AtomicBool,
 }
 
 impl EventHandler<EntitySpawnEvent> for SpawnHandler {
     fn handle_blocking<'a>(
         &'a self,
-        _: &'a Arc<Server>,
+        server: &'a Arc<Server>,
         event: &'a mut EntitySpawnEvent,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
@@ -48,10 +48,8 @@ impl EventHandler<EntitySpawnEvent> for SpawnHandler {
                     }
                 });
             }
-            if self.kill {
-                DragonFight::with_fight(mutex, world, |fight| {
-                    fight.set_dragon_killed(world, Uuid::new_v4());
-                });
+            if let Some(dragon) = &self.kill {
+                super::fresh_review_tests::finish_dragon_death(dragon, server);
             }
             event.cancelled = self.cancel.load(Ordering::Relaxed);
         })
@@ -59,6 +57,18 @@ impl EventHandler<EntitySpawnEvent> for SpawnHandler {
 }
 
 fn handler(fixture: &Fixture, reenter: bool, kill: bool, cancel: bool) -> Arc<SpawnHandler> {
+    let kill = kill.then(|| {
+        let dragon = crate::entity::r#type::from_type(
+            &EntityType::ENDER_DRAGON,
+            Vector3::new(0.5, 128.0, 0.5),
+            &fixture.world,
+            Uuid::new_v4(),
+        );
+        fixture.world.add_entity_silent(dragon.clone());
+        fixture
+            .with_locked_fight(|fight| fight.dragon_uuid = Some(dragon.get_entity().entity_uuid));
+        dragon
+    });
     let handler = Arc::new(SpawnHandler {
         attempts: AtomicUsize::new(0),
         reenter,
@@ -196,7 +206,13 @@ async fn invalidated_dragon_creation_is_not_published() {
     let fixture = Fixture::new(DragonRespawnStage::Start, 0);
     ordinary(&fixture);
     let handler = handler(&fixture, false, true, false);
-    DragonFight::tick(fixture.world.dragon_fight.as_ref().unwrap(), &fixture.world);
+    DragonFight::with_fight(
+        fixture.world.dragon_fight.as_ref().unwrap(),
+        &fixture.world,
+        |fight| {
+            fight.create_new_dragon(&fixture.world);
+        },
+    );
     assert_eq!(handler.attempts.load(Ordering::Relaxed), 1);
     assert!(dragons(&fixture).is_empty());
     fixture.with_locked_fight(|fight| {

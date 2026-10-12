@@ -27,7 +27,7 @@ impl DragonSpawn {
         Some(spawn)
     }
 
-    // EnderDragonFight.createNewDragon: callbacks precede publication and UUID assignment.
+    // EntitySpawnEvent precedes validation; tracked identity precedes admission packets.
     fn spawn(&self, world: &Arc<World>, validate: impl FnOnce() -> bool) -> bool {
         let position = Vector3::new(
             self.origin.0.x as f64 + 0.5,
@@ -71,7 +71,10 @@ pub(super) enum FightAction {
         respawn_stage: DragonRespawnStage,
         respawn_crystals: Vec<Uuid>,
     },
-    Respawn(RespawnAction),
+    Respawn {
+        action: RespawnAction,
+        generation: u64,
+    },
 }
 
 impl FightAction {
@@ -120,7 +123,37 @@ impl FightAction {
             } => {
                 Self::complete_respawn(world, &spawn, crystals, respawn_stage, &respawn_crystals);
             }
-            Self::Respawn(action) => action.execute(world),
+            Self::Respawn { action, generation } => Self::respawn(world, action, generation),
+        }
+    }
+
+    // DragonRespawnStage.SUMMONING_PILLARS runs synchronously in vanilla. A reentrant
+    // tick may defer its effect past onCrystalDestroyed or a new respawn sequence here.
+    fn respawn(world: &Arc<World>, action: RespawnAction, generation: u64) {
+        let Some(mutex) = &world.dragon_fight else {
+            return;
+        };
+        let current = DragonFight::with_fight(mutex, world, |fight| {
+            // Advancing animation stages preserves earlier work in the same active sequence.
+            if fight.respawn_generation != generation || fight.respawn_stage.is_none() {
+                return false;
+            }
+            // EndCrystal.hurtServer marks removal before notifying the fight. The existing
+            // notification guard serializes this check with that mark, as at completion.
+            let entities = world.entities.load();
+            if fight.respawn_crystals.iter().any(|uuid| {
+                !entities.iter().any(|entity| {
+                    entity.get_entity().entity_uuid == *uuid && !entity.get_entity().is_removed()
+                })
+            }) {
+                fight.abort_respawn_sequence(world);
+                return false;
+            }
+            true
+        });
+        if current {
+            // No fight/notification guard survives into block, explosion or spawn callbacks.
+            action.execute(world);
         }
     }
 
@@ -150,13 +183,21 @@ impl FightAction {
         }
         spawn.spawn(world, || {
             DragonFight::with_fight(fight_mutex, world, |fight| {
-                fight.pending_dragon_spawn == Some(spawn.uuid)
+                if fight.pending_dragon_spawn != Some(spawn.uuid) {
+                    return false;
+                }
+                // Admit the tracked identity after spawn events, before world/packet callbacks.
+                // Keep the reservation until publication finishes or that dragon dies.
+                fight.dragon_uuid = Some(spawn.uuid);
+                fight.dragon_killed = false;
+                true
             })
         });
         DragonFight::with_fight(fight_mutex, world, |fight| {
             if fight.pending_dragon_spawn == Some(spawn.uuid) {
                 fight.pending_dragon_spawn = None;
-                // EnderDragonFight.createNewDragon records the UUID even if addFreshEntity fails.
+                // createNewDragon records failed/cancelled attempts for recovery as well.
+                // A publication death clears this reservation and keeps its completed state.
                 fight.dragon_uuid = Some(spawn.uuid);
                 fight.dragon_killed = false;
             }
@@ -286,6 +327,10 @@ impl FightAction {
         fight.respawn_time = 0;
         fight.dragon_killed = false;
         fight.dragon_uuid = Some(spawn.uuid);
+        // ServerBossEvent.setVisible re-adds existing recipients after a hidden respawn.
+        // Recompute current arena recipients and queue packets outside both state guards.
+        fight.bossbar_players.clear();
+        fight.update_players(world);
         true
     }
 }
