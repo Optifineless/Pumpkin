@@ -151,6 +151,36 @@ impl ActiveChunkTracker {
     }
 }
 
+impl super::World {
+    pub(super) fn take_active_chunk_tick_snapshot(&self) -> FxHashSet<Vector2<i32>> {
+        let mut snapshot = std::mem::take(
+            &mut *self
+                .active_chunk_tick_snapshot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        // ServerLevel.tick invokes callbacks without owning chunk membership. Reuse the owned
+        // snapshot's allocation while preserving one membership view for both callback phases.
+        snapshot.clone_from(
+            &self
+                .active_chunks
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        snapshot
+    }
+
+    pub(super) fn recycle_active_chunk_tick_snapshot(&self, snapshot: FxHashSet<Vector2<i32>>) {
+        let mut buffer = self
+            .active_chunk_tick_snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if snapshot.capacity() >= buffer.capacity() {
+            *buffer = snapshot;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

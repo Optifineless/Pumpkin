@@ -373,6 +373,7 @@ pub struct World {
     pub(crate) pending_destroyed_crystals: crossbeam::queue::SegQueue<Uuid>,
     pub spawn_state: ArcSwap<SpawnState>,
     pub active_chunks: RwLock<FxHashSet<Vector2<i32>>>,
+    active_chunk_tick_snapshot: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     active_chunk_tracker: std::sync::Mutex<ActiveChunkTracker>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     /// Last `/forceload` work task. Force changes chain through it because
@@ -381,6 +382,7 @@ pub struct World {
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
     pub block_entities: DashMap<Vector2<i32>, FxHashMap<BlockPos, Arc<dyn BlockEntity>>>,
+    pending_block_entity_loads: std::sync::Mutex<pending_block_entity::PendingBlockEntityLoads>,
     #[cfg(test)]
     lazy_block_entity_hook: std::sync::Mutex<Option<pending_block_entity::PublicationHook>>,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
@@ -527,11 +529,13 @@ impl World {
             spawn_state: ArcSwap::new(Arc::new(SpawnState::empty())),
             ticking_experience_orbs: arc_swap::ArcSwapOption::empty(),
             active_chunks: RwLock::new(FxHashSet::default()),
+            active_chunk_tick_snapshot: std::sync::Mutex::default(),
             active_chunk_tracker: std::sync::Mutex::new(ActiveChunkTracker::default()),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
             force_change_task: std::sync::Mutex::new(None),
             server,
             block_entities: DashMap::new(),
+            pending_block_entity_loads: std::sync::Mutex::default(),
             #[cfg(test)]
             lazy_block_entity_hook: std::sync::Mutex::new(None),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
@@ -1836,12 +1840,7 @@ impl World {
         let entities_to_tick = self.entities.load();
         let experience_orbs = self.begin_experience_orb_tick(&entities_to_tick);
         let entity_count = entities_to_tick.len();
-        let active_chunks = self
-            .active_chunks
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            // ServerLevel.tick invokes entity/block-entity callbacks without owning chunk membership.
-            .clone();
+        let active_chunks = self.take_active_chunk_tick_snapshot();
         let level_for_entities = self.level.clone();
         let entity_handle = handle.clone();
 
@@ -1953,6 +1952,7 @@ impl World {
         // Drained after all ticks, so changes (hopper -> chest) land in the same tick.
         let guard = be_handle.enter();
         self.flush_comparator_updates(&block_entities);
+        self.recycle_active_chunk_tick_snapshot(active_chunks);
         drop(guard);
         let block_entity_elapsed = t_be.elapsed();
 
@@ -5097,8 +5097,7 @@ impl World {
         // Serialized trees own the unload result; release the old strong riding links.
         entity_persistence::detach_unloaded_trees(&entities_to_remove);
         for chunk_pos in &chunks_set {
-            self.save_block_entities(*chunk_pos);
-            self.block_entities.remove(chunk_pos);
+            self.unload_block_entities(*chunk_pos);
         }
     }
 
@@ -6293,10 +6292,7 @@ impl World {
             );
         }
 
-        self.block_entities
-            .entry(chunk_pos)
-            .or_default()
-            .insert(block_pos, block_entity);
+        self.replace_live_block_entity(block_pos, block_entity);
 
         if let Some(nbt) = block_entity_nbt {
             let mut full_nbt = nbt;
@@ -6313,6 +6309,7 @@ impl World {
     }
 
     pub fn add_block_entity_nbt(&self, block_pos: BlockPos, nbt: &NbtCompound) {
+        let _loads = self.invalidate_pending_block_entity_load(&block_pos);
         if self
             .level
             .read_chunk_sync(&block_pos.chunk_position(), |chunk| {
@@ -6331,29 +6328,7 @@ impl World {
     }
 
     pub fn remove_block_entity(&self, block_pos: &BlockPos) {
-        let chunk_pos = block_pos.chunk_position();
-        let removed_live =
-            self.block_entities
-                .get_mut(&chunk_pos)
-                .is_some_and(|mut chunk_block_entities| {
-                    chunk_block_entities.remove(block_pos).is_some()
-                });
-        let removed_pending = self
-            .level
-            .read_chunk_sync(&chunk_pos, |chunk| {
-                let removed_pending = remove_pending_block_entity(chunk, block_pos);
-                if removed_live {
-                    chunk.mark_dirty(true);
-                }
-                removed_pending
-            })
-            .unwrap_or(false);
-        self.custom_block_entity_data.remove(block_pos);
-        if removed_live || removed_pending {
-            // Drop the chunk's map once its last block entity is gone.
-            self.block_entities
-                .remove_if(&chunk_pos, |_, entities| entities.is_empty());
-        }
+        self.remove_loaded_block_entity(block_pos);
     }
 
     fn migrate_pending_block_entities(&self, chunk_pos: Vector2<i32>) {

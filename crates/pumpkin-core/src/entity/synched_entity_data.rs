@@ -63,9 +63,14 @@ pub struct SynchedEntityData {
 }
 
 /// Immutable metadata revisions shared by every recipient of one tracker flush.
+#[derive(Default)]
 pub struct DirtyBatch(Vec<(TrackedData, Arc<dyn ErasedSerializer>)>);
 
 impl DirtyBatch {
+    pub(super) fn clear(&mut self) {
+        self.0.clear();
+    }
+
     /// Serializes the captured values without reading or locking the entity again.
     #[must_use]
     pub fn pack_for_version(&self, version: &JavaMinecraftVersion) -> Option<Box<[u8]>> {
@@ -176,21 +181,54 @@ impl SynchedEntityData {
 
     /// Captures the dirty revisions once, before serialization for any recipient.
     pub fn pack_dirty(&self) -> Option<DirtyBatch> {
+        let mut batch = DirtyBatch::default();
+        self.pack_dirty_into(&mut batch).then_some(batch)
+    }
+
+    pub(super) fn pack_dirty_into(&self, batch: &mut DirtyBatch) -> bool {
+        batch.clear();
         if !self.is_dirty.load(Ordering::Acquire) {
-            return None;
+            return false;
         }
 
         let items = self
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Some(DirtyBatch(
+        batch.0.extend(
             items
                 .values()
                 .filter(|item| item.dirty)
-                .map(|item| (item.tracked, item.serializer.clone()))
-                .collect(),
-        ))
+                .map(|item| (item.tracked, item.serializer.clone())),
+        );
+        true
+    }
+
+    pub(super) fn discard_dirty(&self) {
+        let mut items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for item in items.values_mut() {
+            item.dirty = false;
+        }
+        self.is_dirty.store(false, Ordering::Release);
+    }
+
+    /// Re-arms ordinary tracking after a sender abandons an acknowledged snapshot.
+    pub(super) fn retry_dirty(&self, batch: &DirtyBatch) {
+        let mut items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (tracked, _) in &batch.0 {
+            if let Some(item) = items.get_mut(tracked) {
+                // Retry the current revision even if a setter replaced the captured one.
+                item.dirty = true;
+            }
+        }
+        // Even an empty snapshot must allow the owner to drain a queued full refresh.
+        self.is_dirty.store(true, Ordering::Release);
     }
 
     /// Serializes a dirty snapshot without acknowledging it.
@@ -233,18 +271,24 @@ impl SynchedEntityData {
 
     /// Captures the non-default revisions for spawning or refreshing an entity.
     pub fn get_non_default_values(&self) -> DirtyBatch {
+        let mut batch = DirtyBatch::default();
+        self.get_non_default_values_into(&mut batch);
+        batch
+    }
+
+    pub(super) fn get_non_default_values_into(&self, batch: &mut DirtyBatch) {
         // SynchedEntityData.getNonDefaultValues copies the values before building a packet.
+        batch.clear();
         let items = self
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        DirtyBatch(
+        batch.0.extend(
             items
                 .values()
                 .filter(|item| !item.is_default)
-                .map(|item| (item.tracked, item.serializer.clone()))
-                .collect(),
-        )
+                .map(|item| (item.tracked, item.serializer.clone())),
+        );
     }
 
     /// Serializes every value that differs from the default the client assumes.

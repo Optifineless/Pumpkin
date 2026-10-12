@@ -1052,6 +1052,7 @@ pub struct Entity {
     /// If true, the entity bypasses physics, collisions, and block effects (e.g. spectator, markers, display entities)
     pub no_physics: AtomicBool,
     pub synched_data: synched_entity_data::SynchedEntityData,
+    metadata_flush: std::sync::Mutex<server_entity::MetadataFlush>,
     /// Multiplies movement for one tick before being reset
     pub movement_multiplier: AtomicCell<Vector3<f64>>,
     /// Vanilla `needsSync`: tracker resyncs position and velocity of entities
@@ -1190,6 +1191,7 @@ impl Entity {
             scoreboard_tags: std::sync::Mutex::new(HashSet::new()),
             no_physics: AtomicBool::new(false),
             synched_data: synched_entity_data::SynchedEntityData::new(),
+            metadata_flush: std::sync::Mutex::default(),
             movement_multiplier: AtomicCell::new(Vector3::default()),
             velocity_dirty: AtomicBool::new(true),
             hurt_marked: AtomicBool::new(false),
@@ -3061,6 +3063,7 @@ impl Entity {
 
     /// Sends the synced values that changed since the last call to this entity's
     /// viewers, and does nothing when none did.
+    /// Overlapping calls defer to the active sender, which enqueues batches in order.
     pub fn send_dirty_entity_data(&self) {
         self.flush_dirty_entity_data();
     }
@@ -3072,6 +3075,7 @@ impl Entity {
     /// their side (a respawn or a dimension change re-creates the local player, and a
     /// spawn packet resets the entity for everyone else), so the values have to be pushed
     /// again even though nothing became dirty on our side.
+    /// Overlapping refreshes defer to the active metadata sender.
     pub fn refresh_synced_data(&self) {
         self.resend_synced_entity_data();
     }

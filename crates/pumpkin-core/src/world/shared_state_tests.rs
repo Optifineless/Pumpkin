@@ -21,17 +21,19 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_world::chunk::io::{FileIO, LoadedData};
+use pumpkin_world::world::BlockFlags;
 use std::sync::{
-    Arc, Barrier,
-    atomic::{AtomicBool, Ordering::Relaxed},
+    Arc, Barrier, Mutex,
+    atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed},
+    mpsc,
 };
 
-fn open_chest(
+fn use_chest(
     server: &Arc<Server>,
     world: &Arc<World>,
     player: &Arc<crate::entity::player::Player>,
     pos: BlockPos,
-) -> Arc<dyn Inventory> {
+) {
     let hit = BlockHitResult {
         face: &BlockDirection::Up,
         cursor_pos: &Vector3::new(0.5, 0.5, 0.5),
@@ -48,6 +50,15 @@ fn open_chest(
             player,
             hit: &hit,
         });
+}
+
+fn open_chest(
+    server: &Arc<Server>,
+    world: &Arc<World>,
+    player: &Arc<crate::entity::player::Player>,
+    pos: BlockPos,
+) -> Arc<dyn Inventory> {
+    use_chest(server, world, player, pos);
     let screen = player.current_screen_handler.lock().unwrap().clone();
     screen.lock().unwrap().get_behaviour().slots[0].get_inventory()
 }
@@ -122,7 +133,7 @@ async fn lazy_chest_publication_keeps_one_inventory_through_click_unload_and_rel
     first.get_entity().set_pos(pos.to_centered_f64());
     second.get_entity().set_pos(pos.to_centered_f64());
     let constructed = Arc::new(Barrier::new(2));
-    *world.lazy_block_entity_hook.lock().unwrap() = Some(Arc::new(move |_| {
+    *world.lazy_block_entity_hook.lock().unwrap() = Some(Arc::new(move || {
         constructed.wait();
     }));
     let runtime = tokio::runtime::Handle::current();
@@ -182,6 +193,164 @@ async fn lazy_chest_publication_keeps_one_inventory_through_click_unload_and_rel
     let inventory = open_chest(&server, &world, &first, pos);
     assert_eq!(inventory.get_stack(0).item_count, 12);
     assert_eq!(inventory.get_stack(0).item, &Item::DIAMOND);
+    world.level.shutdown().await.unwrap();
+}
+
+fn pause_first_lazy_load(world: &World) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
+    let (paused, arrived) = mpsc::channel();
+    let (resume, proceed) = mpsc::channel();
+    let proceed = Mutex::new(proceed);
+    let calls = AtomicUsize::new(0);
+    *world.lazy_block_entity_hook.lock().unwrap() = Some(Arc::new(move || {
+        if calls.fetch_add(1, Relaxed) == 0 {
+            paused.send(()).unwrap();
+            proceed.lock().unwrap().recv().unwrap();
+        }
+    }));
+    (arrived, resume)
+}
+
+#[derive(Debug)]
+enum LazyInvalidation {
+    Remove,
+    Unload,
+    NbtReplacement,
+    ChunkReplacement,
+}
+
+#[tokio::test]
+async fn invalidated_lazy_chest_snapshot_cannot_publish_after_remove_unload_or_replacement() {
+    for invalidation in [
+        LazyInvalidation::Remove,
+        LazyInvalidation::Unload,
+        LazyInvalidation::NbtReplacement,
+        LazyInvalidation::ChunkReplacement,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let server = server(dir.path());
+        let world = world(&server, dir.path());
+        let pos = BlockPos::new(8, 64, 8);
+        let chunk = pending_chest(&world, pos);
+        let player = TestPlayer::new(&world).player;
+        player.get_entity().set_pos(pos.to_centered_f64());
+        let original_screen = player.current_screen_handler.lock().unwrap().clone();
+        let (arrived, resume) = pause_first_lazy_load(&world);
+        let loading = world.clone();
+        let loading_player = player.clone();
+        let loading_server = server.clone();
+        let runtime = tokio::runtime::Handle::current();
+        let reader = std::thread::spawn(move || {
+            let _guard = runtime.enter();
+            use_chest(&loading_server, &loading, &loading_player, pos);
+        });
+        arrived.recv().unwrap();
+        match invalidation {
+            LazyInvalidation::Remove => {
+                world.set_block_state(
+                    &pos,
+                    Block::AIR.default_state.id,
+                    BlockFlags::NOTIFY_LISTENERS,
+                );
+            }
+            LazyInvalidation::Unload => {
+                world
+                    .remove_entities_in_chunks([pos.chunk_position()])
+                    .await;
+            }
+            LazyInvalidation::NbtReplacement => {
+                // Even an identical replacement is a different pending record.
+                let nbt = chunk.pending_block_entities.lock().unwrap()[&pos].clone();
+                world.add_block_entity_nbt(pos, &nbt);
+            }
+            LazyInvalidation::ChunkReplacement => {
+                world.level.loaded_chunks.remove(&pos.chunk_position());
+                pending_chest(&world, pos);
+            }
+        }
+        resume.send(()).unwrap();
+        reader.join().unwrap();
+        assert!(
+            world
+                .block_entities
+                .get(&pos.chunk_position())
+                .is_none_or(|entities| !entities.contains_key(&pos)),
+            "invalidated {invalidation:?} snapshot was published"
+        );
+        assert!(Arc::ptr_eq(
+            &original_screen,
+            &player.current_screen_handler.lock().unwrap()
+        ));
+        assert!(
+            world
+                .pending_block_entity_loads
+                .lock()
+                .unwrap()
+                .snapshots
+                .is_empty()
+        );
+        world.level.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn losing_lazy_chest_initializer_preserves_live_custom_data_through_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path());
+    let world = world(&server, dir.path());
+    let pos = BlockPos::new(8, 64, 8);
+    let chunk = pending_chest(&world, pos);
+    let first = TestPlayer::new(&world).player;
+    let second = TestPlayer::new(&world).player;
+    world
+        .players
+        .store(Arc::new(vec![first.clone(), second.clone()]));
+    first.get_entity().set_pos(pos.to_centered_f64());
+    second.get_entity().set_pos(pos.to_centered_f64());
+    let mut namespace = NbtCompound::new();
+    namespace.put_int("revision", 1);
+    namespace.put_double("nan", f64::NAN);
+    let mut custom = NbtCompound::new();
+    custom.put_compound("test", namespace);
+    chunk
+        .pending_block_entities
+        .lock()
+        .unwrap()
+        .get_mut(&pos)
+        .unwrap()
+        .put_compound("PumpkinCustomData", custom);
+    let (arrived, resume) = pause_first_lazy_load(&world);
+    let loading = world.clone();
+    let loading_server = server.clone();
+    let loading_player = first.clone();
+    let runtime = tokio::runtime::Handle::current();
+    let reader = std::thread::spawn(move || {
+        let _guard = runtime.enter();
+        open_chest(&loading_server, &loading, &loading_player, pos)
+    });
+    arrived.recv().unwrap();
+    let winner = open_chest(&server, &world, &second, pos);
+    world.set_block_entity_custom_data(&pos, "test", "revision", pumpkin_nbt::tag::NbtTag::Int(2));
+    resume.send(()).unwrap();
+    assert!(Arc::ptr_eq(&winner, &reader.join().unwrap()));
+    assert_eq!(
+        world.get_block_entity_custom_data(&pos, "test", "revision"),
+        Some(pumpkin_nbt::tag::NbtTag::Int(2)),
+        "losing initializer overwrote live plugin data"
+    );
+    *world.lazy_block_entity_hook.lock().unwrap() = None;
+    first.close_handled_screen();
+    second.close_handled_screen();
+    unload_and_reload(&world, pos, chunk).await;
+    // Remove the runtime cache so only the data actually written to the chunk can restore it.
+    world.custom_block_entity_data.remove(&pos);
+    open_chest(&server, &world, &first, pos);
+    assert_eq!(
+        world.get_block_entity_custom_data(&pos, "test", "revision"),
+        Some(pumpkin_nbt::tag::NbtTag::Int(2))
+    );
+    assert!(
+        matches!(world.get_block_entity_custom_data(&pos, "test", "nan"), Some(pumpkin_nbt::tag::NbtTag::Double(value)) if value.is_nan())
+    );
     world.level.shutdown().await.unwrap();
 }
 

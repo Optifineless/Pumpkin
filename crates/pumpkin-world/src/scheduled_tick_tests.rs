@@ -5,10 +5,7 @@ use crate::{
 };
 use pumpkin_config::world::LevelConfig;
 use pumpkin_data::{Block, dimension::Dimension, fluid::Fluid};
-use std::{
-    sync::{Arc, mpsc},
-    time::Duration,
-};
+use std::sync::{Arc, mpsc};
 
 fn fixture() -> (tempfile::TempDir, Arc<Level>) {
     let dir = tempfile::tempdir().unwrap();
@@ -29,24 +26,29 @@ fn at_unregister(level: &Arc<Level>, producer: impl FnOnce() + Send + 'static) {
     let (resume, proceed) = mpsc::channel();
     *level.before_tick_unregister.lock().unwrap() = Some(Box::new(move || {
         paused.send(()).unwrap();
-        proceed.recv_timeout(Duration::from_secs(10)).unwrap();
+        proceed.recv().unwrap();
     }));
     let collecting = level.clone();
     let collector = std::thread::spawn(move || {
         collecting.get_tick_data(&FxHashSet::from_iter([Vector2::new(0, 0)]), 0)
     });
-    arrived.recv_timeout(Duration::from_secs(10)).unwrap();
-    let producer = if level.chunks_with_scheduled_ticks.try_lock().is_err() {
-        Some(std::thread::spawn(producer))
-    } else {
+    arrived.recv().unwrap();
+    let locked = level.chunks_with_scheduled_ticks.try_lock().is_err();
+    let (started, starting) = mpsc::channel();
+    let (finished, finishing) = mpsc::channel();
+    let producer = std::thread::spawn(move || {
+        started.send(()).unwrap();
         producer();
-        None
-    };
+        finished.send(()).unwrap();
+    });
+    starting.recv().unwrap();
+    if !locked {
+        // The split-lock negative control must finish publication inside the losing window.
+        finishing.recv().unwrap();
+    }
     resume.send(()).unwrap();
     collector.join().unwrap();
-    if let Some(producer) = producer {
-        producer.join().unwrap();
-    }
+    producer.join().unwrap();
 }
 
 #[tokio::test]

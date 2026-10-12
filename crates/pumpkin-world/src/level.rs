@@ -134,6 +134,7 @@ pub struct Level {
     // LevelTicks owns both its container index and scheduling/draining transitions.
     // Lock order: index -> loaded_chunks -> TickScheduler; no gameplay callbacks under this lock.
     chunks_with_scheduled_ticks: Mutex<FxHashSet<Vector2<i32>>>,
+    scheduled_tick_collect_positions: Mutex<Vec<Vector2<i32>>>,
     #[cfg(test)]
     before_tick_unregister: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     pub chunk_loading: Mutex<ChunkLoading>,
@@ -347,6 +348,7 @@ impl Level {
             #[cfg(test)]
             entity_read_count: std::sync::atomic::AtomicUsize::new(0),
             chunks_with_scheduled_ticks: Mutex::default(),
+            scheduled_tick_collect_positions: Mutex::default(),
             #[cfg(test)]
             before_tick_unregister: Mutex::new(None),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
