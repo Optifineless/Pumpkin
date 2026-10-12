@@ -121,21 +121,29 @@ impl LevelTime {
         level_data: &LevelData,
         root_folder: &Path,
         dimension: &Dimension,
+        retain_clock: bool,
     ) -> Self {
-        if dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name {
-            return Self::from_level_data(level_data);
-        }
-        // ServerClockManager.init creates defaults, then loads each keyed ClockState.
         let mut time = Self::new();
         time.world_age = level_data.game_time;
-        if let Some(clock) = read_world_clocks(root_folder)
-            .clocks
-            .get(dimension.minecraft_name)
-        {
+        let Some(key) = dimension.default_clock else {
+            return time;
+        };
+        // Only the canonical root owns these retained clocks; a custom root uses its own disk.
+        // Canonical memory can be newer than disk after a failed metadata save.
+        let retained = if retain_clock {
+            level_data.dimension_clocks.get(key).cloned()
+        } else {
+            None
+        };
+        let clock = retained.or_else(|| read_world_clocks(root_folder).clocks.get(key).cloned());
+        if let Some(clock) = clock {
             time.time_of_day = clock.total_ticks;
             time.partial_tick = clock.partial_tick;
             time.rate = clock.rate;
             time.paused = clock.paused;
+        } else if Some(key) == Dimension::OVERWORLD.default_clock {
+            // Older fork/vanilla level.dat migrations still provide the overworld fallback.
+            time = Self::from_level_data(level_data);
         }
         time
     }

@@ -247,7 +247,7 @@ async fn dimension_clocks_restart_independently_of_global_game_time() {
     with_worlds(directory.path(), &dimensions, |_, worlds| {
         for (world, expected) in worlds.iter().zip([
             (6007, 0.5, 2.5, true),
-            (21004, 0.5, 1.5, true),
+            (0, 0.0, 1.0, false),
             (0, 0.0, 1.0, false),
         ]) {
             let time = world.level_time.lock().unwrap();

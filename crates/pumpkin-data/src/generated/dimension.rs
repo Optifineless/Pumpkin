@@ -40,6 +40,7 @@ impl BedRule {
 pub struct Dimension {
     pub id: u8,
     pub minecraft_name: &'static str,
+    pub default_clock: Option<&'static str>,
     pub fixed_time: Option<i64>,
     pub has_fixed_time: bool,
     pub has_skylight: bool,
@@ -76,6 +77,7 @@ impl Dimension {
     pub const OVERWORLD: Self = Self {
         id: 0u8,
         minecraft_name: "minecraft:overworld",
+        default_clock: Some("minecraft:overworld"),
         fixed_time: None,
         has_fixed_time: false,
         has_skylight: true,
@@ -120,6 +122,7 @@ impl Dimension {
     pub const OVERWORLD_CAVES: Self = Self {
         id: 1u8,
         minecraft_name: "minecraft:overworld_caves",
+        default_clock: Some("minecraft:overworld"),
         fixed_time: None,
         has_fixed_time: false,
         has_skylight: true,
@@ -164,6 +167,7 @@ impl Dimension {
     pub const THE_END: Self = Self {
         id: 2u8,
         minecraft_name: "minecraft:the_end",
+        default_clock: Some("minecraft:the_end"),
         fixed_time: None,
         has_fixed_time: true,
         has_skylight: true,
@@ -203,6 +207,7 @@ impl Dimension {
     pub const THE_NETHER: Self = Self {
         id: 3u8,
         minecraft_name: "minecraft:the_nether",
+        default_clock: None,
         fixed_time: None,
         has_fixed_time: true,
         has_skylight: false,

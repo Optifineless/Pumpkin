@@ -84,3 +84,53 @@ fn interrupted_metadata_weather_survives_restart() {
 fn interrupted_metadata_wandering_trader_survives_restart() {
     interrupted_metadata_save("wandering_trader.dat");
 }
+
+#[test]
+fn late_metadata_game_rules_failure_still_publishes_independent_documents() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut info = LevelData::default(Seed(42));
+    AnvilLevelInfo
+        .write_world_info(&info, directory.path())
+        .unwrap();
+    let failed = minecraft_data_dir(directory.path()).join("game_rules.dat");
+    let backup = directory.path().join("game-rules-before-fault.dat");
+    let original = fs::read(&failed).unwrap();
+    fs::rename(&failed, &backup).unwrap();
+    fs::create_dir(&failed).unwrap();
+    info.game_rules.advance_time = false;
+    info.world_gen_settings.seed = 99;
+    info.rain_time = 240;
+    let expected = super::super::data_files::DimensionClock {
+        total_ticks: 812,
+        partial_tick: 0.25,
+        rate: 0.75,
+        paused: true,
+    };
+    info.dimension_clocks
+        .insert("minecraft:the_end".into(), expected.clone());
+    let result = AnvilLevelInfo.write_world_info(&info, directory.path());
+    fs::remove_dir(&failed).unwrap();
+    fs::rename(&backup, &failed).unwrap();
+    assert!(result.is_err());
+    assert_eq!(fs::read(&failed).unwrap(), original);
+    let saved = AnvilLevelInfo.read_world_info(directory.path()).unwrap();
+    assert_eq!(
+        super::super::data_files::read_world_clocks(directory.path())
+            .clocks
+            .get("minecraft:the_end"),
+        Some(&expected),
+        "A game-rules failure skipped independently writable clock data"
+    );
+    assert_eq!(saved.world_gen_settings.seed, 99);
+    assert_eq!(saved.rain_time, 240);
+    AnvilLevelInfo
+        .write_world_info(&info, directory.path())
+        .unwrap();
+    assert!(
+        !AnvilLevelInfo
+            .read_world_info(directory.path())
+            .unwrap()
+            .game_rules
+            .advance_time
+    );
+}

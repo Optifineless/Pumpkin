@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use pumpkin_data::translation;
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::math::position::BlockPos;
@@ -71,15 +69,15 @@ impl CommandExecutor for SetWorldSpawnExecutor {
                 .fire_blocking(&server_arc, &mut event);
         }
 
-        let mut new_info = (**current_info).clone();
-
-        new_info.spawn_x = new_position.0.x;
-        new_info.spawn_y = new_position.0.y;
-        new_info.spawn_z = new_position.0.z;
-        new_info.spawn_yaw = new_yaw;
-        new_info.spawn_pitch = new_pitch;
-
-        server.level_info.store(Arc::new(new_info));
+        server.level_info.rcu(|current| {
+            let mut next = (**current).clone();
+            next.spawn_x = new_position.0.x;
+            next.spawn_y = new_position.0.y;
+            next.spawn_z = new_position.0.z;
+            next.spawn_yaw = new_yaw;
+            next.spawn_pitch = new_pitch;
+            next
+        });
 
         context.source.send_feedback(
             TextComponent::translate_cross(

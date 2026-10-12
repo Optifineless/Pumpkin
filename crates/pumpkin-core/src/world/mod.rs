@@ -470,11 +470,19 @@ impl World {
         block_registry: Arc<BlockRegistry>,
         server: Weak<Server>,
     ) -> Self {
+        let retain_clock = server.upgrade().is_none_or(|server| {
+            level.level_folder.root_folder == server.basic_config.get_world_path()
+        });
         let (weather, level_time) = {
             let data = level_info.load();
             (
                 Weather::from_world_data(&data, &dimension, &server),
-                LevelTime::from_world_data(&data, &level.level_folder.root_folder, &dimension),
+                LevelTime::from_world_data(
+                    &data,
+                    &level.level_folder.root_folder,
+                    &dimension,
+                    retain_clock,
+                ),
             )
         };
         // TODO
@@ -1087,10 +1095,11 @@ impl World {
     }
 
     pub fn set_difficulty(&self, difficulty: Difficulty) {
-        let current_info = self.level_info.load();
-        let mut new_info = (**current_info).clone();
-        new_info.difficulty = difficulty;
-        self.level_info.store(Arc::new(new_info));
+        self.level_info.rcu(|current| {
+            let mut next = (**current).clone();
+            next.difficulty = difficulty;
+            next
+        });
     }
 
     pub fn get_game_rule(&self, rule: &GameRule) -> GameRuleValue<i64, bool> {
@@ -1102,18 +1111,19 @@ impl World {
     }
 
     pub fn set_game_rule(&self, rule: &GameRule, value: GameRuleValue<i64, bool>) {
-        let current_info = self.level_info.load();
-        let mut new_info = (**current_info).clone();
-        match (new_info.game_rules.get_mut(rule), value) {
-            (GameRuleValue::Int(target), GameRuleValue::Int(val)) => {
-                *target = val;
+        self.level_info.rcu(move |current| {
+            let mut next = (**current).clone();
+            match (next.game_rules.get_mut(rule), &value) {
+                (GameRuleValue::Int(target), GameRuleValue::Int(val)) => {
+                    *target = *val;
+                }
+                (GameRuleValue::Bool(target), GameRuleValue::Bool(val)) => {
+                    *target = *val;
+                }
+                _ => {}
             }
-            (GameRuleValue::Bool(target), GameRuleValue::Bool(val)) => {
-                *target = val;
-            }
-            _ => {}
-        }
-        self.level_info.store(Arc::new(new_info));
+            next
+        });
         if *rule == GameRule::AdvanceTime {
             let level_time = self
                 .level_time

@@ -1,10 +1,15 @@
+mod clock_storage;
 #[cfg(test)]
 pub(crate) mod combat_test_support;
 mod map_storage;
 #[cfg(test)]
+mod save_family_regression_tests;
+#[cfg(test)]
 pub(crate) mod scenario;
 #[cfg(test)]
 mod startup_tests;
+#[cfg(test)]
+mod world_clock_regression_tests;
 #[cfg(test)]
 mod world_info_save_tests;
 #[cfg(test)]
@@ -574,52 +579,9 @@ impl Server {
         world_to_unload.shutdown().await;
         world_to_unload.unload().await;
 
-        self.worlds.rcu(|w_list| {
-            let mut new_list = (**w_list).clone();
-            new_list.retain(|w| !Arc::ptr_eq(w, &world_to_unload));
-            new_list
-        });
+        self.retain_unloaded_clock(&world_to_unload);
 
         Ok(())
-    }
-
-    fn level_data_for_save(&self) -> LevelData {
-        let mut level_data = (**self.level_info.load()).clone();
-        // ServerClockManager.packState snapshots every live clock; PrimaryLevelData uses
-        // the overworld for global game time. The writer retains unloaded clock records.
-        level_data.dimension_clocks.clear();
-        let world_path = self.basic_config.get_world_path();
-        for world in self.worlds.load().iter().filter(|world| {
-            // Plugin-created worlds can reuse dimension identifiers and even this root.
-            // Their clocks must not replace this saved-data owner's canonical clocks.
-            world.saves_default_clock && world.level.level_folder.root_folder == world_path
-        }) {
-            let time = world
-                .level_time
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            level_data.dimension_clocks.insert(
-                world.dimension.minecraft_name.to_string(),
-                pumpkin_world::world_info::data_files::DimensionClock {
-                    total_ticks: time.time_of_day,
-                    partial_tick: time.partial_tick,
-                    rate: time.rate,
-                    paused: time.paused,
-                },
-            );
-            if world.dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name {
-                level_data.game_time = time.world_age;
-                level_data.day_time = time.time_of_day;
-                level_data.day_time_partial_tick = time.partial_tick;
-                level_data.day_time_rate = time.rate;
-                level_data.day_time_paused = time.paused;
-            }
-        }
-        self.weather_data
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .apply_to_level_data(&mut level_data);
-        level_data
     }
 
     pub fn save_world_info(&self) -> Result<(), WorldInfoError> {
@@ -628,6 +590,7 @@ impl Server {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let level_data = self.level_data_for_save();
+        self.retain_clock_snapshot(&level_data);
         self.world_info_writer
             .write_world_info(&level_data, &self.basic_config.get_world_path())
     }
@@ -716,35 +679,47 @@ impl Server {
 
     pub async fn save_all(&self) -> Result<(), String> {
         self.management_hub.broadcast_server_saving();
-        self.save_random_sequences().await?;
-        self.save_maps().await?;
-
-        if let Err(err) = self.save_world_info() {
-            error!("Failed to save world info: {err}");
-            return Err(format!("Failed to save world info: {err}"));
+        // Independently writable families are attempted even if an earlier one fails.
+        let writes = [
+            ("random sequences", self.save_random_sequences().await),
+            ("maps", self.save_maps().await),
+            (
+                "world info",
+                self.save_world_info().map_err(|error| error.to_string()),
+            ),
+            (
+                "player data",
+                self.player_data_storage
+                    .save_all_players(self)
+                    .await
+                    .map_err(|error| error.to_string()),
+            ),
+            (
+                "player advancements",
+                self.advancement_manager
+                    .save_all_players(&self.get_all_players())
+                    .await
+                    .map_err(|error| error.to_string()),
+            ),
+        ];
+        let mut failures = Vec::new();
+        for (name, result) in writes {
+            if let Err(error) = result {
+                let failure = format!("Failed to save {name}: {error}");
+                error!("{failure}");
+                failures.push(failure);
+            }
         }
-
-        if let Err(err) = self.player_data_storage.save_all_players(self).await {
-            error!("Failed to save player data: {err}");
-            return Err(format!("Failed to save player data: {err}"));
-        }
-
-        if let Err(err) = self
-            .advancement_manager
-            .save_all_players(&self.get_all_players())
-            .await
-        {
-            error!("Failed to save player advancements: {err}");
-            return Err(format!("Failed to save player advancements: {err}"));
-        }
-
-        for world in self.worlds.load().iter() {
+        for world in self.worlds.load_full().iter() {
+            // World::save retains its existing unit/logging contract.
             world.save().await;
         }
-
-        self.management_hub.broadcast_server_saved();
-
-        Ok(())
+        if failures.is_empty() {
+            self.management_hub.broadcast_server_saved();
+            Ok(())
+        } else {
+            Err(failures.join("; "))
+        }
     }
 
     /// Adds a new player to the server.
@@ -1034,22 +1009,24 @@ impl Server {
     ///
     /// This function does not handle the actual mob spawn options update, which is a TODO item for future implementation.
     pub fn set_difficulty(&self, difficulty: Difficulty, force_update: bool) {
-        let current_info = self.level_info.load();
-        if current_info.difficulty_locked && !force_update {
-            return;
-        }
-
         let new_difficulty = if self.basic_config.hardcore {
             Difficulty::Hard
         } else {
             difficulty
         };
 
-        let mut new_info = (**current_info).clone();
-
-        new_info.difficulty = new_difficulty;
-        let locked = new_info.difficulty_locked;
-        self.level_info.store(Arc::new(new_info));
+        let previous = self.level_info.rcu(|current| {
+            if current.difficulty_locked && !force_update {
+                return current.clone();
+            }
+            let mut next = (**current).clone();
+            next.difficulty = new_difficulty;
+            Arc::new(next)
+        });
+        if previous.difficulty_locked && !force_update {
+            return;
+        }
+        let locked = previous.difficulty_locked;
 
         for world in self.worlds.load().iter() {
             world.set_difficulty(new_difficulty);
@@ -1064,11 +1041,12 @@ impl Server {
 
     /// Sets the difficulty lock status of the server and broadcasts the update to all players.
     pub fn set_difficulty_locked(&self, locked: bool) {
-        let current_info = self.level_info.load();
-        let mut new_info = (**current_info).clone();
-        new_info.difficulty_locked = locked;
-        let difficulty = new_info.difficulty;
-        self.level_info.store(Arc::new(new_info));
+        let previous = self.level_info.rcu(|current| {
+            let mut next = (**current).clone();
+            next.difficulty_locked = locked;
+            next
+        });
+        let difficulty = previous.difficulty;
 
         for world in self.worlds.load().iter() {
             world.broadcast_editioned(

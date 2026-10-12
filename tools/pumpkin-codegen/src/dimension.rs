@@ -39,6 +39,9 @@ pub struct Dimension {
     pub infiniburn: String,
     pub monster_spawn_light_level: serde_json::Value,
     pub monster_spawn_block_light_limit: u8,
+    /// Optional registered WorldClock holder declared by DimensionType.defaultClock.
+    #[serde(default)]
+    pub default_clock: Option<String>,
     /// Fixed day-time value in this dimension, or `None` if time progresses normally.
     #[serde(rename = "fixed_time")]
     pub fixed_time: Option<i64>,
@@ -199,6 +202,17 @@ pub fn build() -> TokenStream {
             quote! { None }
         };
         let has_fixed_time = dim.has_fixed_time.unwrap_or(dim.fixed_time.is_some());
+        let default_clock_literal = dim.default_clock.map_or_else(
+            || quote! { None },
+            |clock| {
+                let clock = if clock.contains(':') {
+                    clock
+                } else {
+                    format!("minecraft:{clock}")
+                };
+                quote! { Some(#clock) }
+            },
+        );
 
         let monster_spawn_light_level = value_to_int_provider(&dim.monster_spawn_light_level);
         let monster_spawn_block_light_limit = dim.monster_spawn_block_light_limit;
@@ -290,6 +304,7 @@ pub fn build() -> TokenStream {
             pub const #format_name: Self = Self {
                 id: #id,
                 minecraft_name: #minecraft_name,
+                default_clock: #default_clock_literal,
                 fixed_time: #fixed_time,
                 has_fixed_time: #has_fixed_time,
                 has_skylight: #has_skylight,
@@ -380,6 +395,7 @@ pub fn build() -> TokenStream {
         pub struct Dimension {
             pub id: u8,
             pub minecraft_name: &'static str,
+            pub default_clock: Option<&'static str>,
             pub fixed_time: Option<i64>,
             pub has_fixed_time: bool,
             pub has_skylight: bool,

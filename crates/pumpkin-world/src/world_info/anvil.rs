@@ -433,52 +433,45 @@ impl WorldInfoReader for AnvilLevelInfo {
     }
 }
 
+fn write_primary_level_data(
+    level_data: &LevelData,
+    level_folder: &Path,
+) -> Result<(), WorldInfoError> {
+    fs::create_dir_all(level_folder)?;
+    let path = level_folder.join(LEVEL_DAT_FILE_NAME);
+    let path_new = level_folder.join("level.dat_new");
+    let path_old = level_folder.join(LEVEL_DAT_BACKUP_FILE_NAME);
+    let mut root = existing_level_dat_root(&path)?;
+    let mut data_comp = root
+        .get_compound(LEVEL_DATA_TAG)
+        .cloned()
+        .unwrap_or_default();
+    level_data_to_nbt(level_data, &mut data_comp);
+    root.put_compound(LEVEL_DATA_TAG, data_comp);
+    write_gzip_compound_tag(root, File::create(&path_new)?)
+        .map_err(|error| WorldInfoError::SerializationError(error.to_string()))?;
+    if path.exists() {
+        fs::copy(&path, &path_old)?;
+    }
+    fs::rename(&path_new, &path)?;
+    Ok(())
+}
+
 impl WorldInfoWriter for AnvilLevelInfo {
     fn write_world_info(
         &self,
         info: &LevelData,
         level_folder: &Path,
     ) -> Result<(), WorldInfoError> {
-        fs::create_dir_all(level_folder)?;
-
-        let start = SystemTime::now();
-        let since_the_epoch = start.duration_since(UNIX_EPOCH).unwrap_or_default();
         let mut level_data = info.clone();
-        level_data.last_played = since_the_epoch.as_millis() as i64;
+        level_data.last_played = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
         stamp_current_version(&mut level_data);
-
-        // ── Write level.dat ───────────────────────────────────────────────────
-        let path = level_folder.join(LEVEL_DAT_FILE_NAME);
-        let path_new = level_folder.join("level.dat_new");
-        let path_old = level_folder.join(LEVEL_DAT_BACKUP_FILE_NAME);
-
-        let mut root = existing_level_dat_root(&path)?;
-        let mut data_comp = root
-            .get_compound(LEVEL_DATA_TAG)
-            .cloned()
-            .unwrap_or_default();
-        level_data_to_nbt(&level_data, &mut data_comp);
-        root.put_compound(LEVEL_DATA_TAG, data_comp);
-
-        write_gzip_compound_tag(root, File::create(&path_new)?)
-            .map_err(|e| WorldInfoError::SerializationError(e.to_string()))?;
-
-        if path.exists() {
-            fs::copy(&path, &path_old)?;
-        }
-        fs::rename(&path_new, &path)?;
-
         let data_version = level_data.data_version;
 
-        // ── Write data/minecraft/*.dat files ─────────────────────────────────
-
-        // game_rules.dat
-        write_game_rules(level_folder, &info.game_rules, data_version)?;
-
-        // world_gen_settings.dat
-        write_world_gen_settings(level_folder, &info.world_gen_settings, data_version)?;
-
-        // ServerClockManager.packState persists live ClockStates; retain unloaded records.
+        // ServerClockManager.packState retains unloaded registered clocks and opaque records.
         let mut clocks = read_world_clocks(level_folder);
         clocks.data_version = data_version;
         clocks.clocks.insert(
@@ -490,45 +483,65 @@ impl WorldInfoWriter for AnvilLevelInfo {
                 paused: info.day_time_paused,
             },
         );
-
         clocks.clocks.extend(info.dimension_clocks.clone());
-        // An authoritative saved-data failure must reach save-all, rather than report success.
-        write_world_clocks(level_folder, &clocks)?;
-
-        // weather.dat
-        // WeatherData.CODEC persists all five live fields, not the previous file contents.
+        super::clock_keys::migrate_dimension_aliases(&mut clocks);
         let weather = super::data_files::WeatherData::from_level_data(&level_data);
-        write_weather(level_folder, &weather)?;
-
-        // wandering_trader.dat (stub / load-save)
         let mut wandering_trader = read_wandering_trader(level_folder);
         wandering_trader.data_version = data_version;
-        write_wandering_trader(level_folder, &wandering_trader)?;
 
-        // custom_boss_events.dat
-        if let Err(e) = write_custom_boss_events_stub(level_folder, data_version) {
-            error!("Failed to write custom_boss_events.dat: {e}");
+        // Each document keeps its own atomic writer; no unrelated failure skips later documents.
+        let writes = [
+            (
+                "level.dat",
+                write_primary_level_data(&level_data, level_folder),
+            ),
+            (
+                "game_rules.dat",
+                write_game_rules(level_folder, &info.game_rules, data_version),
+            ),
+            (
+                "world_gen_settings.dat",
+                write_world_gen_settings(level_folder, &info.world_gen_settings, data_version),
+            ),
+            (
+                "world_clocks.dat",
+                write_world_clocks(level_folder, &clocks),
+            ),
+            ("weather.dat", write_weather(level_folder, &weather)),
+            (
+                "wandering_trader.dat",
+                write_wandering_trader(level_folder, &wandering_trader),
+            ),
+            (
+                "custom_boss_events.dat",
+                write_custom_boss_events_stub(level_folder, data_version),
+            ),
+            (
+                "scheduled_events.dat",
+                write_scheduled_events_stub(level_folder, data_version),
+            ),
+            (
+                "scoreboard.dat",
+                write_scoreboard_stub(level_folder, data_version),
+            ),
+            (
+                "stopwatches.dat",
+                write_stopwatches_stub(level_folder, data_version),
+            ),
+        ];
+        // RandomSequences.TYPE has a separate live owner; never recreate its stub here.
+        let failures: Vec<_> = writes
+            .into_iter()
+            .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error}")))
+            .collect();
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(WorldInfoError::SerializationError(format!(
+                "Failed world-info documents: {}",
+                failures.join("; ")
+            )))
         }
-
-        // scheduled_events.dat
-        if let Err(e) = write_scheduled_events_stub(level_folder, data_version) {
-            error!("Failed to write scheduled_events.dat: {e}");
-        }
-
-        // MinecraftServer loads RandomSequences.TYPE through SavedDataStorage; only that
-        // live writer owns random_sequences.dat. A stub can race its atomic replacement.
-
-        // scoreboard.dat
-        if let Err(e) = write_scoreboard_stub(level_folder, data_version) {
-            error!("Failed to write scoreboard.dat: {e}");
-        }
-
-        // stopwatches.dat
-        if let Err(e) = write_stopwatches_stub(level_folder, data_version) {
-            error!("Failed to write stopwatches.dat: {e}");
-        }
-
-        Ok(())
     }
 }
 
@@ -551,7 +564,6 @@ mod test {
     use pumpkin_util::{Difficulty, world_seed::Seed};
     use std::{
         fs::{self, File},
-        io::ErrorKind,
         path::Path,
         sync::LazyLock,
     };
@@ -655,19 +667,28 @@ mod test {
     }
 
     #[test]
-    fn reports_writer_io_errors_as_io_errors() {
+    fn reports_writer_failures_with_document_context() {
         let temp_dir = TempDir::new().unwrap();
         let level_folder = temp_dir.path().join("world");
         File::create(&level_folder).unwrap();
-
         let error = AnvilLevelInfo
             .write_world_info(&LevelData::default(Seed(42)), &level_folder)
             .unwrap_err();
-
-        let WorldInfoError::IoError(error) = error else {
-            panic!("expected writer I/O error");
+        let WorldInfoError::SerializationError(message) = error else {
+            panic!("expected contextual combined writer failures");
         };
-        assert_eq!(error.kind(), ErrorKind::AlreadyExists);
+        for document in [
+            "level.dat",
+            "game_rules.dat",
+            "world_clocks.dat",
+            "weather.dat",
+            "stopwatches.dat",
+        ] {
+            assert!(
+                message.contains(document),
+                "Missing failure context for {document}"
+            );
+        }
     }
 
     #[test]

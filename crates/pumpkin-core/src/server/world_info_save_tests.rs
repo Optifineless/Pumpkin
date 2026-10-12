@@ -16,12 +16,12 @@ impl WorldInfoWriter for SaveSignal {
     }
 }
 
-async fn with_worlds<F: Future<Output = ()>>(
+pub(super) async fn with_worlds<F: Future<Output = ()>>(
     path: &Path,
     writer: Option<Arc<dyn WorldInfoWriter>>,
     check: impl FnOnce(Arc<Server>, Vec<Arc<World>>) -> F,
 ) {
-    let mut server = combat_test_support::server(path);
+    let mut server = combat_test_support::server_with_player_data(path, true);
     if let Some(writer) = writer {
         Arc::get_mut(&mut server).unwrap().world_info_writer = writer;
     }
@@ -60,6 +60,17 @@ async fn with_worlds<F: Future<Output = ()>>(
         .iter()
         .map(|world| Arc::downgrade(&world.level))
         .collect();
+    // Release real player fixtures even when a semantic control unwinds.
+    for world in &owned_worlds {
+        for player in world.players.load_full().iter() {
+            if let Some(client) = player.client.java() {
+                client.close();
+            }
+            world.entity_tracker.remove_entity(player.as_ref(), world);
+            player.storage_session.lock().unwrap().take();
+        }
+        world.players.store(Arc::new(Vec::new()));
+    }
     server.shutdown().await;
     assert!(
         owned_worlds
@@ -77,7 +88,13 @@ async fn with_worlds<F: Future<Output = ()>>(
     result.unwrap();
 }
 
-fn set_clock(server: &Arc<Server>, world: &Arc<World>, ticks: i64, rate: f32, paused: bool) {
+pub(super) fn set_clock(
+    server: &Arc<Server>,
+    world: &Arc<World>,
+    ticks: i64,
+    rate: f32,
+    paused: bool,
+) {
     let source = CommandSender::Console
         .into_source(server)
         .with_world(world.clone());
@@ -118,12 +135,16 @@ fn assert_clocks(path: &Path, expected: &[(i64, f32, f32, bool)]) {
     .iter()
     .zip(expected)
     {
+        let Some(key) = dimension.default_clock else {
+            assert!(!saved.clocks.contains_key(dimension.minecraft_name));
+            continue;
+        };
         assert!(
-            saved.clocks.contains_key(dimension.minecraft_name),
+            saved.clocks.contains_key(key),
             "Save omitted live {} clock",
             dimension.minecraft_name
         );
-        let clock = &saved.clocks[dimension.minecraft_name];
+        let clock = &saved.clocks[key];
         assert_eq!(
             (
                 clock.total_ticks,
@@ -191,6 +212,11 @@ async fn autosave_and_save_all_persist_live_dimension_clocks_before_restart() {
     .await;
     with_worlds(directory.path(), None, |_, worlds| async move {
         for (world, expected) in worlds.iter().zip(SAVE_ALL_CLOCKS) {
+            let expected = if world.dimension.default_clock.is_some() {
+                expected
+            } else {
+                (0, 0.0, 1.0, false)
+            };
             let clock = world.level_time.lock().unwrap();
             assert_eq!(
                 (
@@ -220,7 +246,7 @@ async fn save_all_reports_authoritative_clock_write_failure_and_retry_recovers()
         )
         .unwrap();
     with_worlds(directory.path(), None, |server, worlds| async move {
-        set_clock(&server, &worlds[1], 900, 0.75, true);
+        set_clock(&server, &worlds[2], 900, 0.75, true);
         let path = server.basic_config.get_world_path();
         let clock_path = path.join("data/minecraft/world_clocks.dat");
         let backup = path.join("clock-before-fault.dat");
@@ -240,13 +266,13 @@ async fn save_all_reports_authoritative_clock_write_failure_and_retry_recovers()
         assert!(result.unwrap_err().contains("Failed to save world info"));
         server.save_all().await.unwrap();
         assert_eq!(
-            read_world_clocks(&path).clocks["minecraft:the_nether"].total_ticks,
+            read_world_clocks(&path).clocks["minecraft:the_end"].total_ticks,
             902
         );
     })
     .await;
     with_worlds(directory.path(), None, |_, worlds| async move {
-        let clock = worlds[1].level_time.lock().unwrap();
+        let clock = worlds[2].level_time.lock().unwrap();
         assert_eq!(
             (
                 clock.time_of_day,
@@ -268,9 +294,9 @@ async fn custom_dimension_worlds_do_not_overwrite_default_clock_saved_data() {
             set_clock(&server, world, ticks, 1.0, true);
         }
         let extra_overworld = server.create_world("other_overworld".into(), Dimension::OVERWORLD);
-        let extra_nether = server.create_world("other_nether".into(), Dimension::THE_NETHER);
+        let extra_end = server.create_world("other_end".into(), Dimension::THE_END);
         set_clock(&server, &extra_overworld, 9000, 2.0, false);
-        set_clock(&server, &extra_nether, 19000, 3.0, false);
+        set_clock(&server, &extra_end, 19000, 3.0, false);
         let dot_alias = server.create_world(".".into(), Dimension::OVERWORLD);
         let absolute_alias = server.create_world(
             server
@@ -278,7 +304,7 @@ async fn custom_dimension_worlds_do_not_overwrite_default_clock_saved_data() {
                 .get_world_path()
                 .to_string_lossy()
                 .into_owned(),
-            Dimension::THE_NETHER,
+            Dimension::THE_END,
         );
         assert_eq!(
             dot_alias.level.level_folder.root_folder,
@@ -286,7 +312,7 @@ async fn custom_dimension_worlds_do_not_overwrite_default_clock_saved_data() {
         );
         assert_eq!(
             absolute_alias.level.level_folder.root_folder,
-            worlds[1].level.level_folder.root_folder
+            worlds[2].level.level_folder.root_folder
         );
         set_clock(&server, &dot_alias, 29000, 4.0, false);
         set_clock(&server, &absolute_alias, 39000, 5.0, false);
@@ -297,13 +323,16 @@ async fn custom_dimension_worlds_do_not_overwrite_default_clock_saved_data() {
         server.save_all().await.unwrap();
         let saved = read_world_clocks(&server.basic_config.get_world_path());
         for (world, expected) in worlds.iter().zip([103, 203, 303]) {
+            let Some(key) = world.dimension.default_clock else {
+                continue;
+            };
             assert_eq!(
-                saved.clocks[world.dimension.minecraft_name].total_ticks, expected,
+                saved.clocks[key].total_ticks, expected,
                 "Custom world replaced the canonical clock"
             );
         }
         server
-            .unload_world(Dimension::THE_NETHER.minecraft_name)
+            .unload_world(Dimension::THE_END.minecraft_name)
             .await
             .unwrap();
         assert!(
@@ -311,7 +340,7 @@ async fn custom_dimension_worlds_do_not_overwrite_default_clock_saved_data() {
                 .worlds
                 .load()
                 .iter()
-                .any(|world| Arc::ptr_eq(world, &worlds[1]))
+                .any(|world| Arc::ptr_eq(world, &worlds[2]))
         );
         assert!(
             server
@@ -324,15 +353,15 @@ async fn custom_dimension_worlds_do_not_overwrite_default_clock_saved_data() {
         server.save_all().await.unwrap();
         assert_eq!(
             read_world_clocks(&server.basic_config.get_world_path()).clocks
-                [Dimension::THE_NETHER.minecraft_name]
+                [Dimension::THE_END.minecraft_name]
                 .total_ticks,
-            203,
+            303,
             "Created alias replaced an unloaded canonical clock"
         );
     })
     .await;
     with_worlds(directory.path(), None, |_, worlds| async move {
-        for (world, ticks) in worlds.iter().zip([103, 203, 303]) {
+        for (world, ticks) in worlds.iter().zip([103, 0, 303]) {
             assert_eq!(world.level_time.lock().unwrap().time_of_day, ticks);
         }
     })
