@@ -32,6 +32,7 @@ pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
 mod entity_persistence;
+mod entity_unload;
 pub mod explosion;
 pub(crate) mod fluid_lookup;
 pub mod generation_cache;
@@ -338,6 +339,7 @@ pub struct World {
     /// A map of active entities within the world, keyed by their unique UUID.
     /// This does not include players.
     pub entities: ArcSwap<Vec<Arc<dyn EntityBase>>>,
+    pending_entity_activations: crossbeam::queue::SegQueue<entity_unload::EntityActivation>,
     pub(crate) ticking_experience_orbs: arc_swap::ArcSwapOption<Vec<Arc<dyn EntityBase>>>,
     dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
     spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
@@ -523,6 +525,7 @@ impl World {
             level_info,
             players: ArcSwap::new(Arc::new(Vec::new())),
             entities: ArcSwap::new(Arc::new(Vec::new())),
+            pending_entity_activations: crossbeam::queue::SegQueue::new(),
             dragon_parts: DashMap::new(),
             spawn_uuids: std::sync::Mutex::default(),
             scoreboard: owner_mutex::OwnerMutex::new(Scoreboard::default()),
@@ -738,7 +741,6 @@ impl World {
                     let chunks_to_clean = level.mark_chunks_as_not_watched(watched).await;
                     if !chunks_to_clean.is_empty() {
                         world.remove_entities_in_chunks(&chunks_to_clean).await;
-                        world.level.clean_entity_chunks(&chunks_to_clean);
                     }
                 }
             }));
@@ -1869,6 +1871,7 @@ impl World {
         let player_elapsed = t_players.elapsed();
 
         Phase::EntityPreparation.enter();
+        self.process_entity_chunk_lifecycle();
         let entities_to_tick = self.entities.load();
         let experience_orbs = self.begin_experience_orb_tick(&entities_to_tick);
         let entity_count = entities_to_tick.len();
@@ -2217,7 +2220,6 @@ impl World {
                     if let Some(server) = self.server.upgrade() {
                         server.spawn_task(async move {
                             world_clone.remove_entities_in_chunks(&cleaned_chunks).await;
-                            world_clone.level.clean_entity_chunks(&cleaned_chunks);
                         });
                     }
                 }
@@ -4526,7 +4528,7 @@ impl World {
                 }
 
                 if first_load {
-                    world.make_chunk_entities_live(&chunk, Some(&player));
+                    world.queue_entity_activation(&chunk, Some(&player));
                 } else {
                     // Already live for other watchers: pair this player now so
                     // spawn packets and vehicle restore do not wait on a tracker tick.
@@ -4571,7 +4573,7 @@ impl World {
                 }
 
                 if first_load {
-                    world.make_chunk_entities_live(&chunk, None);
+                    world.queue_entity_activation(&chunk, None);
                 }
             }
         });
@@ -4583,7 +4585,9 @@ impl World {
         chunk: &Arc<ChunkEntityData>,
         player: Option<&Arc<Player>>,
     ) {
-        let entity_nbts = chunk.entities_for_activation();
+        let Some(entity_nbts) = self.level.activate_entity_chunk(chunk) else {
+            return;
+        };
         for entity_nbt in &entity_nbts {
             self.restore_entity_tree(entity_nbt, player);
         }
@@ -5093,46 +5097,6 @@ impl World {
             new_entities.retain(|e| e.get_entity().entity_uuid != base_entity.entity_uuid);
             new_entities
         });
-    }
-
-    pub async fn remove_entities_in_chunks(
-        &self,
-        chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
-    ) {
-        let chunks_set: FxHashSet<_> = chunks.into_iter().map(|c| *c.borrow()).collect();
-        if chunks_set.is_empty() {
-            return;
-        }
-        let mut entities_to_remove = Vec::new();
-
-        self.entities.rcu(|current_entities| {
-            entities_to_remove.clear();
-            let mut new_entities = (**current_entities).clone();
-            new_entities.retain(|entity| {
-                let pos = entity_persistence::root_chunk(entity);
-                if chunks_set.contains(&pos) {
-                    entities_to_remove.push(entity.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            new_entities
-        });
-
-        self.save_entities_by_chunk(&entities_to_remove, chunks_set.iter().copied())
-            .await;
-
-        for entity in &entities_to_remove {
-            self.entity_tracker.remove_entity(entity.as_ref(), self);
-            self.spawn_state.load().remove_entity(self, entity.as_ref());
-        }
-
-        // Serialized trees own the unload result; release the old strong riding links.
-        entity_persistence::detach_unloaded_trees(&entities_to_remove);
-        for chunk_pos in &chunks_set {
-            self.unload_block_entities(*chunk_pos);
-        }
     }
 
     pub(crate) fn set_block_breaking(

@@ -88,12 +88,18 @@ pub struct ChunkData {
     pub custom_data: std::sync::Mutex<NbtCompound>,
 }
 
+pub enum EntityStorageData {}
+impl pumpkin_util::sync::LockClass for EntityStorageData {
+    const NAME: &'static str = "entity storage data";
+    const LEVEL: u8 = 40;
+}
+
 pub struct ChunkEntityData {
     /// Chunk X
     pub x: i32,
     /// Chunk Z
     pub z: i32,
-    pub data: std::sync::Mutex<Vec<NbtCompound>>,
+    pub data: pumpkin_util::sync::Mutex<Vec<NbtCompound>, EntityStorageData>,
     /// Set once the serialized entities have been copied for spawning. From then on the
     /// live entity list is the source of truth and `data` is rebuilt from it on every save.
     pub live: AtomicBool,

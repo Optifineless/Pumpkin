@@ -44,7 +44,7 @@ fn anvil_entity_save_and_reload_fit_on_a_one_mib_stack() {
                     let chunk = Arc::new(ChunkEntityData {
                         x: 0,
                         z: 0,
-                        data: std::sync::Mutex::new(vec![entity.clone()]),
+                        data: pumpkin_util::sync::Mutex::new(vec![entity.clone()]),
                         live: AtomicBool::new(false),
                         dirty: crate::chunk::io::DirtyFlag::new(true),
                     });

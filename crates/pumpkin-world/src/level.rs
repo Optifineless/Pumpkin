@@ -1,3 +1,7 @@
+#[path = "entity_unload.rs"]
+pub(crate) mod entity_unload;
+pub use entity_unload::EntityUnload;
+
 use crate::chunk::format::linear::LinearV2File;
 use crate::chunk::format::pump::PumpFile;
 use crate::chunk_system::{ChunkListener, ChunkLoading, GenerationSchedule, LevelChannel};
@@ -19,7 +23,7 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use crossbeam::queue::SegQueue;
-use dashmap::{DashMap, Entry};
+use dashmap::DashMap;
 use futures::{FutureExt, StreamExt, future::BoxFuture, future::Shared, stream};
 use pumpkin_config::{chunk::ChunkConfig, lighting::LightingEngineConfig, world::LevelConfig};
 use pumpkin_data::biome::Biome;
@@ -124,7 +128,10 @@ pub struct Level {
     pub loaded_chunks: Arc<DashMap<Vector2<i32>, SyncChunk>>,
     pub(crate) loaded_chunk_changes: Arc<SegQueue<LoadedChunkChange>>,
     loaded_entity_chunks: Arc<DashMap<Vector2<i32>, SyncEntityChunk>>,
-    entity_loads: Mutex<FxHashMap<Vector2<i32>, EntityLoadState>>,
+    entity_loads: pumpkin_util::sync::Mutex<
+        FxHashMap<Vector2<i32>, EntityLoadState>,
+        entity_unload::EntityLoads,
+    >,
     #[cfg(test)]
     after_entity_read: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     #[cfg(test)]
@@ -140,6 +147,7 @@ pub struct Level {
     pub chunk_loading: Mutex<ChunkLoading>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
+    pub(crate) entity_unloads: entity_unload::UnloadAdmission,
 
     pub chunk_saver: Arc<ChunkSaver>,
     entity_saver: Arc<EntitySaver>,
@@ -340,7 +348,7 @@ impl Level {
             loaded_chunks: Arc::new(DashMap::new()),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
             loaded_entity_chunks: Arc::new(DashMap::new()),
-            entity_loads: Mutex::new(FxHashMap::default()),
+            entity_loads: pumpkin_util::sync::Mutex::new(FxHashMap::default()),
             #[cfg(test)]
             after_entity_read: Mutex::new(None),
             #[cfg(test)]
@@ -353,6 +361,7 @@ impl Level {
             before_tick_unregister: Mutex::new(None),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
             chunk_watchers: Arc::new(DashMap::new()),
+            entity_unloads: Arc::default(),
             tasks: TaskTracker::new(),
             chunk_system_tasks: TaskTracker::new(),
             cancel_token: CancellationToken::new(),
@@ -399,7 +408,7 @@ impl Level {
             let arc_chunk = Arc::new(ChunkEntityData {
                 x: pos.x,
                 z: pos.y,
-                data: std::sync::Mutex::new(Vec::new()),
+                data: pumpkin_util::sync::Mutex::new(Vec::new()),
                 live: AtomicBool::new(false),
                 dirty: crate::chunk::io::DirtyFlag::new(false),
             });
@@ -493,16 +502,8 @@ impl Level {
     /// it is removed from memory. Should only be called on chunks the player was not watching
     /// before
     pub async fn mark_chunks_as_newly_watched(&self, chunks: &[Vector2<i32>]) {
-        for chunk in chunks {
-            self.chunk_watchers
-                .entry(*chunk)
-                .and_modify(|count| *count = count.saturating_add(1))
-                .or_insert(1);
-        }
-
-        self.entity_saver
-            .watch_chunks(&self.level_folder, chunks)
-            .await;
+        self.watch_entity_chunks(chunks);
+        self.update_entity_storage_watchers(chunks, &[]).await;
     }
 
     /// Marks chunks no longer "watched" by a unique player. When no players are watching a chunk,
@@ -511,23 +512,10 @@ impl Level {
         &self,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
     ) -> Vec<Vector2<i32>> {
-        let mut chunks_to_clean = Vec::new();
-        let chunks_vec: Vec<Vector2<i32>> = chunks.into_iter().map(|c| *c.borrow()).collect();
-
-        for chunk in &chunks_vec {
-            if let Entry::Occupied(mut entry) = self.chunk_watchers.entry(*chunk) {
-                *entry.get_mut() = entry.get().saturating_sub(1);
-                if *entry.get() == 0 {
-                    entry.remove();
-                    chunks_to_clean.push(*chunk);
-                }
-            }
-        }
-
-        self.entity_saver
-            .unwatch_chunks(&self.level_folder, &chunks_vec)
-            .await;
-        chunks_to_clean
+        let chunks_vec: Vec<_> = chunks.into_iter().map(|c| *c.borrow()).collect();
+        let hidden = self.unwatch_entity_chunks(&chunks_vec);
+        self.update_entity_storage_watchers(&[], &chunks_vec).await;
+        hidden
     }
 
     /// Returns whether the chunk should be removed from memory
@@ -541,54 +529,7 @@ impl Level {
         self: &Arc<Self>,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
     ) {
-        let mut loads = self
-            .entity_loads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let chunks_to_process: Vec<_> = chunks
-            .into_iter()
-            .filter_map(|pos_borrow| {
-                let pos = pos_borrow.borrow();
-                // Only include chunks with no watchers
-                let has_watchers = self
-                    .chunk_watchers
-                    .get(pos)
-                    .is_some_and(|count| *count != 0);
-
-                if has_watchers {
-                    return None;
-                }
-
-                // IOWorker.store/loadAsync: register before removal lets a reload see pending data.
-                self.loaded_entity_chunks.remove_if(pos, |_, chunk| {
-                    self.entity_saver
-                        .queue_chunks(&self.level_folder, vec![(*pos, chunk.clone())]);
-                    if let Some(load) = loads.get_mut(pos) {
-                        load.epoch = load.epoch.wrapping_add(1);
-                    }
-                    true
-                })
-            })
-            .collect();
-
-        if chunks_to_process.is_empty() {
-            return;
-        }
-        drop(loads);
-
-        let level = self.clone();
-        self.spawn_task(async move {
-            debug!("Writing {} entity chunks to disk", chunks_to_process.len());
-            // PersistentEntitySectionManager.processChunkUnload stores only this unload.
-            let positions: Vec<_> = chunks_to_process.iter().map(|(pos, _)| *pos).collect();
-            if let Err(error) = level
-                .entity_saver
-                .flush_chunks(&level.level_folder, &positions)
-                .await
-            {
-                error!("Entity unload save failed: {error}");
-            }
-        });
+        self.clean_retired_entity_chunks(chunks.into_iter().map(|pos| *pos.borrow()).collect());
     }
 
     pub fn get_tick_data(

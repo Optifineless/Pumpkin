@@ -134,6 +134,7 @@ async fn ordinary_unload_and_restart_restore_nested_riders_and_equipment() {
     let chunk = world.level.get_entity_chunk(pos).await.unwrap();
     world.make_chunk_entities_live(&chunk, None);
     world.remove_entities_in_chunks([pos]).await;
+    world.process_entity_chunk_lifecycle();
     assert!(world.entities.load().is_empty());
     let saved = chunk.data.lock().unwrap().clone();
     assert_eq!(saved.len(), 1);

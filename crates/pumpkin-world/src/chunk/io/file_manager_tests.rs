@@ -5,7 +5,7 @@ use crate::{
 };
 use pumpkin_config::chunk::AnvilChunkConfig;
 use pumpkin_nbt::compound::NbtCompound;
-use std::sync::{Mutex, atomic::AtomicBool};
+use std::sync::atomic::AtomicBool;
 
 pub(super) fn folder(root: &Path) -> LevelFolder {
     LevelFolder {
@@ -24,7 +24,7 @@ fn entities(position: Vector2<i32>, name: &str) -> Arc<ChunkEntityData> {
     Arc::new(ChunkEntityData {
         x: position.x,
         z: position.y,
-        data: Mutex::new(vec![entity]),
+        data: pumpkin_util::sync::Mutex::new(vec![entity]),
         live: AtomicBool::new(false),
         dirty: crate::chunk::io::DirtyFlag::new(true),
     })

@@ -86,13 +86,14 @@ fn pending_chest(world: &World, pos: BlockPos) -> Arc<pumpkin_world::chunk::Chun
 }
 
 async fn unload_and_reload(
-    world: &World,
+    world: &Arc<World>,
     pos: BlockPos,
     chunk: Arc<pumpkin_world::chunk::ChunkData>,
 ) {
     world
         .remove_entities_in_chunks([pos.chunk_position()])
         .await;
+    world.tick(&world.server.upgrade().unwrap());
     world
         .level
         .chunk_saver
@@ -256,6 +257,7 @@ async fn invalidated_lazy_chest_snapshot_cannot_publish_after_remove_unload_or_r
                 world
                     .remove_entities_in_chunks([pos.chunk_position()])
                     .await;
+                world.tick(&server);
             }
             LazyInvalidation::NbtReplacement => {
                 // Even an identical replacement is a different pending record.

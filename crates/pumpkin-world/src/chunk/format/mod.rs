@@ -667,7 +667,7 @@ impl Dirtiable for ChunkEntityData {
         Arc::new(Self {
             x: self.x,
             z: self.z,
-            data: std::sync::Mutex::new(
+            data: pumpkin_util::sync::Mutex::new(
                 self.data
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -769,7 +769,7 @@ impl ChunkEntityData {
         Ok(Self {
             x: position.x,
             z: position.y,
-            data: std::sync::Mutex::new(entities),
+            data: pumpkin_util::sync::Mutex::new(entities),
             live: AtomicBool::new(false),
             dirty: crate::chunk::io::DirtyFlag::new(false),
         })

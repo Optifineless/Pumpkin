@@ -798,12 +798,10 @@ crates/pumpkin-wasm-host-v0_2/src/world.rs::invoke_phase::block_on#2
 crates/pumpkin-wasm-host-v0_2/src/world.rs::invoke_phase::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk/format/anvil.rs::default::tokio::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk/format/anvil.rs::default::tokio::sync::Mutex::new#2
-crates/pumpkin-world/src/chunk/format/mod.rs::copy_for_load::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::Mutex::new#2
 crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::Mutex::new#3
 crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::Mutex::new#4
-crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::Mutex::new#5
 crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::RwLock::new#1
 crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::RwLock::new#2
 crates/pumpkin-world/src/chunk/format/mod.rs::internal_from_bytes::std::sync::RwLock::new#3
@@ -814,9 +812,7 @@ crates/pumpkin-world/src/chunk/io/file_manager.rs::in_dimension::std::sync::Mute
 crates/pumpkin-world/src/chunk/io/file_manager.rs::in_dimension::std::sync::Mutex::new#4
 crates/pumpkin-world/src/chunk/io/file_manager.rs::in_dimension::tokio::sync::RwLock::new#1
 crates/pumpkin-world/src/chunk/io/file_manager.rs::in_dimension::tokio::sync::RwLock::new#2
-crates/pumpkin-world/src/chunk/io/file_manager_tests.rs::entities::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk/io/heap_stack_tests.rs::anvil_entity_save_and_reload_fit_on_a_one_mib_stack::block_on#1
-crates/pumpkin-world/src/chunk/io/heap_stack_tests.rs::anvil_entity_save_and_reload_fit_on_a_one_mib_stack::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk/mod.rs::empty::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk/mod.rs::empty::std::sync::Mutex::new#2
 crates/pumpkin-world/src/chunk/mod.rs::empty::std::sync::Mutex::new#3
@@ -843,7 +839,6 @@ crates/pumpkin-world/src/chunk_system/schedule.rs::create::std::sync::Mutex::new
 crates/pumpkin-world/src/chunk_system/schedule.rs::create::tokio::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk_system/storage_failure_tests.rs::scheduler::unknown::Mutex::new#1
 crates/pumpkin-world/src/data/player_data.rs::new::std::sync::Mutex::new#1
-crates/pumpkin-world/src/entity_storage_tests.rs::snapshot::unknown::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/end_city/mod.rs::get_structure_position::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/jigsaw_placement.rs::add_pieces::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/mansion/mod.rs::get_structure_position::std::sync::Mutex::new#1
@@ -858,8 +853,6 @@ crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#2
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#3
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#4
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#5
-crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#6
-crates/pumpkin-world/src/level.rs::spawn_entity_generation::std::sync::Mutex::new#1
 crates/pumpkin-world/src/session_lock.rs::<module>::std::sync::Mutex::new#1
 crates/pumpkin-world/src/storage_tests.rs::cancellation_before_queued_open_keeps_cleanup_with_the_operation::block_on#1
 crates/pumpkin-world/src/storage_tests.rs::cancellation_before_queued_open_keeps_cleanup_with_the_operation::block_on#2

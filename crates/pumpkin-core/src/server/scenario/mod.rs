@@ -4,6 +4,7 @@
     reason = "Scenario setup and assertions must fail loudly"
 )]
 
+mod entity_unload;
 mod lifecycle;
 mod old_saves;
 mod ownership;
@@ -347,6 +348,15 @@ impl Scenario {
         )
         .await;
         session.loaded(&self.server);
+        self.until("join entity storage publication", || {
+            session.is_idle()
+                && world
+                    .level
+                    .get_entity_chunk_sync(&session.player.get_entity().chunk_pos.load())
+                    .is_some()
+        })
+        .await;
+        self.ticks(1).await;
         self.until("join watcher tasks", || {
             world
                 .level

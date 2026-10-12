@@ -7,7 +7,7 @@ fn snapshot(pos: Vector2<i32>, name: &str) -> SyncEntityChunk {
     Arc::new(ChunkEntityData {
         x: pos.x,
         z: pos.y,
-        data: Mutex::new(vec![nbt]),
+        data: pumpkin_util::sync::Mutex::new(vec![nbt]),
         live: AtomicBool::new(false),
         dirty: crate::chunk::io::DirtyFlag::new(true),
     })

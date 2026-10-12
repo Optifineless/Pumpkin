@@ -86,6 +86,9 @@ pub fn update_position(player: &Arc<Player>) {
     let unloading_chunks: Vec<_> = unloading_iter.collect();
 
     let level = &world.level;
+    // ChunkMap.move publishes visibility before asynchronous storage work and ticket release.
+    level.watch_entity_chunks(&loading_chunks);
+    let chunks_to_clean = level.unwatch_entity_chunks(&unloading_chunks);
     let mut held_tickets = player
         .held_chunk_tickets
         .lock()
@@ -163,7 +166,7 @@ pub fn update_position(player: &Arc<Player>) {
             let steps = test_support::current();
             server.spawn_task(async move {
                 level
-                    .mark_chunks_as_newly_watched(&loading_chunks_clone)
+                    .update_entity_storage_watchers(&loading_chunks_clone, &unloading_chunks_clone)
                     .await;
                 #[cfg(test)]
                 test_support::pause(
@@ -172,9 +175,6 @@ pub fn update_position(player: &Arc<Player>) {
                     &loading_chunks_clone,
                 )
                 .await;
-                let chunks_to_clean = level
-                    .mark_chunks_as_not_watched(&unloading_chunks_clone)
-                    .await;
                 #[cfg(test)]
                 test_support::pause(
                     steps.as_ref(),
@@ -187,7 +187,6 @@ pub fn update_position(player: &Arc<Player>) {
                     world_clone
                         .remove_entities_in_chunks(&chunks_to_clean)
                         .await;
-                    world_clone.level.clean_entity_chunks(&chunks_to_clean);
                 }
             });
         }

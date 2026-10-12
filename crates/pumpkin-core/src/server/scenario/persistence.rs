@@ -159,10 +159,10 @@ async fn s5_chunk_unload_reload_preserves_entities_items_and_chest() {
         player.loaded(&scenario.server);
         scenario
             .until("movement unload task", || {
-                scenario.server.tasks.is_empty()
-                    && Scenario::entities_live(&world, player.player.get_entity().chunk_pos.load())
+                scenario.server.tasks.is_empty() && player.is_idle()
             })
             .await;
+        scenario.ticks(1).await;
         assert!(world.entities.load().is_empty());
         assert!(world.block_entities.get(&Vector2::new(0, 0)).is_none());
         assert!(
@@ -175,8 +175,7 @@ async fn s5_chunk_unload_reload_preserves_entities_items_and_chest() {
         player.loaded(&scenario.server);
         scenario
             .until("movement reload task", || {
-                scenario.server.tasks.is_empty()
-                    && Scenario::entities_live(&world, player.player.get_entity().chunk_pos.load())
+                scenario.server.tasks.is_empty() && player.is_idle()
             })
             .await;
         scenario.ticks(1).await;
@@ -187,7 +186,6 @@ async fn s5_chunk_unload_reload_preserves_entities_items_and_chest() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: audit row 4"]
 async fn s5_rewatch_while_unload_pending_preserves_live_records() {
     run(async {
         // PersistentEntitySectionManager.processUnloads cancels unload when visibility returns.
@@ -233,6 +231,7 @@ async fn s5_rewatch_while_unload_pending_preserves_live_records() {
         scenario
             .until("teleport entity activation", || player.is_idle())
             .await;
+        scenario.ticks(1).await;
         assert!(Scenario::entities_live(&world, pos));
         pending.release.send(()).unwrap();
         scenario

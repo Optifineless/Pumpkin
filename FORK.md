@@ -4,6 +4,20 @@ This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained fo
 
 Close-event listeners can reopen a menu without closing its predecessor recursively. The closing-menu identity survives callbacks, and an outer close preserves a replacement menu and position. Native API 8 (same version): Player has runtime close ownership state; rebuild native plugins. In-game verification: **Not yet**.
 
+## Entity unload ownership, #150 split PR-1
+
+Entity retirement runs in the owning world's entity tick phase. Rewatch cancels the
+pending generation; the commit checks that generation, visibility and the entity
+storage instance. Terrain stays published until retirement commits. Native API 8
+(same version): Level, World and entity storage layouts change; rebuild native plugins.
+In-game verification: **Not yet**.
+
+Explicitly unprotected after this PR: Tokio-side mutation during serialization
+(a stale snapshot can still win until PR-2's mark-removed-first); ordinary
+`/save-all` versus retirement overwrite (PR-3); the block-entity rewatch-between-
+snapshot-and-detach gap (PR-2); equipment/cargo/invulnerability writers (named
+follow-up after PR-3). Block-entity saving and detachment retain the pre-PR path.
+
 ## How the code here is written
 
 The changes in this fork are written by AI coding agents, not by hand. The fork owner tests them in-game but does not review the code line by line. Treat every commit that isn't from upstream accordingly.
