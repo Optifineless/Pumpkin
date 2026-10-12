@@ -55,7 +55,9 @@ fn prepare_container_use(
     let after = if count == 1 {
         ItemStack::EMPTY.clone()
     } else {
-        ItemStack::new(count - 1, item)
+        let mut after = off.clone();
+        after.decrement(1);
+        after
     };
     let mut packet = click_block_packet(
         HandSlot::Offhand,
@@ -113,7 +115,7 @@ async fn predicted_container_placement(
             let actual_off = player.inventory().off_hand_item();
             assert!(
                 actual_off.are_equal(&after),
-                "prediction must pay only once"
+                "server use consumes once and retains the original components"
             );
             let placed = BlockPos::new(8, 65, 8);
             assert_eq!(world.get_block(&placed), block);
@@ -144,7 +146,7 @@ async fn predicted_last_offhand_shulker_keeps_original_contents() -> TestResult 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn predicted_nonempty_offhand_chest_keeps_original_lock() -> TestResult {
-    // A stackable container exercises descriptor reconstruction with a nonempty remainder.
+    // A stackable container retains its components in the authoritative remainder.
     predicted_container_placement(&Item::CHEST, &Block::CHEST, 2).await
 }
 

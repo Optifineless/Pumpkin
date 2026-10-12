@@ -82,8 +82,8 @@ async fn default_block_use_runs_only_for_mainhand() -> TestResult {
                         .are_equal(&off)
                 );
                 assert!(
-                    !fixture.owner.take_packets().contains(&correction),
-                    "a legitimate aliased item must reach block use without rejection"
+                    fixture.owner.take_packets().contains(&correction),
+                    "valid block use publishes the authoritative hand even when unchanged"
                 );
                 Ok(())
             })
@@ -162,12 +162,9 @@ async fn offhand_fallback_preserves_distinct_mainhand_item() -> TestResult {
                 if placement {
                     assert_packets(fixture, Hand::Left, &expected, true)?;
                 } else {
-                    assert!(
-                        fixture.owner.take_packets().is_empty(),
-                        "valid fallback must not be rejected"
-                    );
-                    assert!(fixture.java_observer.take_packets().is_empty());
-                    assert!(fixture.bedrock_observer.take_packets().is_empty());
+                    let owner_packets = fixture.owner.take_packets();
+                    assert_owner_packet(fixture, &owner_packets, Hand::Left, &expected)?;
+                    callback::assert_observer_hand(fixture, Hand::Left, &expected)?;
                 }
                 Ok(())
             })

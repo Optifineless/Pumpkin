@@ -23,14 +23,6 @@ use pumpkin_util::{Hand, math::position::BlockPos, math::vector3::Vector3};
 #[path = "inventory_action_matrix_tests.rs"]
 mod matrix;
 
-fn descriptor(id: i32, stack_size: u16) -> NetworkItemDescriptor {
-    NetworkItemDescriptor {
-        id: VarInt(id),
-        stack_size,
-        ..NetworkItemDescriptor::default()
-    }
-}
-
 fn action(
     window_id: Option<i32>,
     inventory_slot: u32,
@@ -76,92 +68,16 @@ fn click_block_packet(
     }
 }
 
-#[test]
-fn selected_hand_transaction_action_is_not_consumed_twice() {
-    assert!(transaction_consumes_hand(
-        &[action(
-            Some(WINDOW_ID_INVENTORY),
-            4,
-            descriptor(5, 2),
-            descriptor(5, 1)
-        )],
-        Hand::Right,
-        4
-    ));
-    assert!(transaction_consumes_hand(
-        &[action(
-            Some(WINDOW_ID_INVENTORY),
-            4,
-            descriptor(5, 1),
-            descriptor(0, 0)
-        )],
-        Hand::Right,
-        4
-    ));
-    assert!(!transaction_consumes_hand(
-        &[action(
-            Some(WINDOW_ID_INVENTORY),
-            3,
-            descriptor(5, 2),
-            descriptor(5, 1)
-        )],
-        Hand::Right,
-        4
-    ));
-    assert!(transaction_consumes_hand(
-        &[action(
-            Some(WINDOW_ID_OFF_HAND),
-            0,
-            descriptor(5, 2),
-            descriptor(5, 1)
-        )],
-        Hand::Left,
-        4
-    ));
-    assert!(!transaction_consumes_hand(
-        &[action(
-            Some(WINDOW_ID_OFF_HAND),
-            0,
-            descriptor(5, 2),
-            descriptor(5, 1)
-        )],
-        Hand::Right,
-        4
-    ));
-    assert!(!transaction_consumes_hand(
-        &[action(
-            Some(WINDOW_ID_INVENTORY),
-            4,
-            descriptor(5, 1),
-            descriptor(5, 1)
-        )],
-        Hand::Right,
-        4
-    ));
-    assert!(!transaction_consumes_hand(
-        &[action(None, 4, descriptor(5, 2), descriptor(5, 1))],
-        Hand::Right,
-        4
-    ));
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn selected_hand_transaction_action_is_not_consumed_twice()
+-> Result<(), Box<dyn std::error::Error>> {
+    matrix::authoritative::unrecognised_prediction_placement(false).await
 }
 
-#[test]
-fn consumed_hand_stack_is_written_back_only_when_server_authoritative() {
-    let before = ItemStack::new(2, &Item::GLOWSTONE);
-    let after = ItemStack::new(1, &Item::GLOWSTONE);
-
-    assert!(should_write_back_consumed_stack(
-        &before, &after, true, false
-    ));
-    assert!(!should_write_back_consumed_stack(
-        &before, &after, true, true
-    ));
-    assert!(!should_write_back_consumed_stack(
-        &before, &after, false, false
-    ));
-    assert!(!should_write_back_consumed_stack(
-        &before, &before, true, false
-    ));
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn consumed_hand_stack_is_written_back_only_when_server_authoritative()
+-> Result<(), Box<dyn std::error::Error>> {
+    matrix::authoritative::unrecognised_prediction_placement(true).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
