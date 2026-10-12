@@ -25,6 +25,7 @@ pub mod chunk_state;
 pub mod dag;
 pub mod generation;
 pub mod generation_cache;
+pub mod residency;
 pub mod schedule;
 pub mod worker_logic;
 

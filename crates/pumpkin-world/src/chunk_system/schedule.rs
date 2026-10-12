@@ -58,6 +58,7 @@ pub struct GenerationSchedule {
     last_level: ChunkLevel,
     last_high_priority: Vec<ChunkPos>,
     send_level: Arc<LevelChannel>,
+    chunk_loading: Arc<Mutex<ChunkLoading>>,
 
     public_chunk_map: Arc<DashMap<Vector2<i32>, SyncChunk>>,
     entity_unloads: crate::level::entity_unload::UnloadAdmission,
@@ -160,6 +161,7 @@ impl GenerationSchedule {
                     last_level: ChunkLevel::default(),
                     last_high_priority: Vec::new(),
                     send_level: level_channel,
+                    chunk_loading: level_sched.chunk_loading.clone(),
                     public_chunk_map: level_sched.loaded_chunks.clone(),
                     entity_unloads: level_sched.entity_unloads.clone(),
                     loaded_chunk_changes: level_sched.loaded_chunk_changes.clone(),
@@ -847,6 +849,20 @@ impl GenerationSchedule {
         }
     }
 
+    fn unpublish_if_unticketed(&self, pos: ChunkPos) -> bool {
+        // ChunkMap.updateChunkScheduling rescinds queued unloads after a new ticket.
+        // Only the ticket check and terrain unpublication share this leaf lock.
+        let loading = self
+            .chunk_loading
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if loading.pos_level.contains_key(&pos) {
+            return false;
+        }
+        self.unpublish_chunk(pos);
+        true
+    }
+
     fn process_unload_queue(&mut self) {
         if self.unload_chunks.is_empty() {
             return;
@@ -888,6 +904,12 @@ impl GenerationSchedule {
                 continue;
             }
 
+            if !self.unpublish_if_unticketed(pos) {
+                self.chunk_map.insert(pos, holder);
+                self.unload_chunks.insert(pos);
+                continue;
+            }
+            holder.public = false;
             self.listener.clear_failure(pos);
             for task in holder.tasks {
                 if !task.is_null() {
@@ -901,11 +923,6 @@ impl GenerationSchedule {
 
             self.graph.drop_edge_chain(holder.occupied_by);
             holder.occupied_by = EdgeKey::null();
-
-            if holder.public {
-                self.unpublish_chunk(pos);
-                holder.public = false;
-            }
 
             if let Some(tmp) = holder.chunk {
                 match tmp {

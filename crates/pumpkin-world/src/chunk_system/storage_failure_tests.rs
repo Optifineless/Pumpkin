@@ -8,6 +8,7 @@ fn scheduler() -> (
     let (send_chunk, recv_chunk) = crossbeam::channel::unbounded();
     let (io_read, read_rx) = tokio::sync::mpsc::channel(8);
     let (io_write, _) = tokio::sync::mpsc::channel(8);
+    let level_channel = Arc::new(LevelChannel::new());
     (
         GenerationSchedule {
             failed_loads: HashMap::new(),
@@ -15,7 +16,8 @@ fn scheduler() -> (
             graph: DAG::default(),
             last_level: ChunkLevel::default(),
             last_high_priority: Vec::new(),
-            send_level: Arc::new(LevelChannel::new()),
+            send_level: level_channel.clone(),
+            chunk_loading: Arc::new(Mutex::new(ChunkLoading::new(level_channel))),
             public_chunk_map: Arc::new(DashMap::new()),
             entity_unloads: Arc::default(),
             loaded_chunk_changes: Arc::new(crossbeam::queue::SegQueue::new()),

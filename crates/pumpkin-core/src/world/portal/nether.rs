@@ -1,20 +1,19 @@
-use super::poi;
 use pumpkin_data::{
     Block, BlockDirection, BlockState,
     block_properties::{HorizontalAxis, NetherPortalLikeProperties},
     tag,
     tag::Taggable,
 };
-use pumpkin_util::math::{
-    boundingbox::EntityDimensions, position::BlockPos, vector2::Vector2, vector3::Vector3,
-};
+use pumpkin_util::math::{boundingbox::EntityDimensions, position::BlockPos, vector3::Vector3};
 use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
 use std::sync::Arc;
 
 use crate::world::World;
 
-const SEARCH_RADIUS_NETHER: i32 = 16;
-const SEARCH_RADIUS_OVERWORLD: i32 = 128;
+pub(super) const SEARCH_RADIUS_NETHER: i32 = 16;
+pub(super) const SEARCH_RADIUS_OVERWORLD: i32 = 128;
+// PortalForcer.createPortal scans BlockPos.spiralAround(origin, 16, EAST, SOUTH).
+pub(super) const CREATE_RADIUS: i32 = 16;
 
 #[derive(Debug, Clone)]
 pub struct PortalSearchResult {
@@ -229,7 +228,7 @@ pub struct NetherPortal {
 
 impl NetherPortal {
     const MIN_WIDTH: u32 = 2;
-    const MAX_WIDTH: u32 = 21;
+    pub(super) const MAX_WIDTH: u32 = 21;
     const MAX_HEIGHT: u32 = 21;
     const MIN_HEIGHT: u32 = 3;
     const FRAME_BLOCK: Block = Block::OBSIDIAN;
@@ -492,68 +491,13 @@ impl NetherPortal {
         }
     }
 
-    pub fn search_for_portal(
+    pub(super) fn scan_portal_positions(
         world: &Arc<World>,
         target_pos: BlockPos,
+        portal_positions: Vec<BlockPos>,
     ) -> Option<PortalSearchResult> {
-        tracing::debug!(
-            "Searching for portal in {:?} around {:?}",
-            world.dimension.minecraft_name,
-            target_pos
-        );
         let min_y = world.min_y;
         let max_y = min_y + world.dimension.height - 1;
-
-        let search_radius = if world.dimension.has_ceiling {
-            SEARCH_RADIUS_NETHER
-        } else {
-            SEARCH_RADIUS_OVERWORLD
-        };
-
-        let portal_positions = {
-            let mut poi_storage = world
-                .portal_poi
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            poi_storage.get_in_square(target_pos, search_radius, Some(poi::POI_TYPE_NETHER_PORTAL))
-        };
-
-        let mut candidate_chunks: Vec<Vector2<i32>> = Vec::new();
-        for pos in &portal_positions {
-            let chunk = Vector2::new(pos.0.x >> 4, pos.0.z >> 4);
-            if !candidate_chunks.contains(&chunk) {
-                candidate_chunks.push(chunk);
-            }
-        }
-        if !candidate_chunks.is_empty()
-            && let Ok(handle) = tokio::runtime::Handle::try_current()
-        {
-            tokio::task::block_in_place(|| {
-                handle.block_on(async {
-                    for chunk in &candidate_chunks {
-                        for dx in -1..=1 {
-                            for dz in -1..=1 {
-                                world
-                                    .level
-                                    .get_or_fetch_chunk(
-                                        Vector2::new(chunk.x + dx, chunk.y + dz),
-                                        |_| (),
-                                    )
-                                    .await
-                                    .ok()?;
-                            }
-                        }
-                    }
-                    Some(())
-                })
-            })?;
-        }
-
-        let worldborder = world
-            .worldborder
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
         let mut best: Option<(PortalSearchResult, f64, i32)> = None;
 
         for pos in portal_positions {
@@ -561,7 +505,12 @@ impl NetherPortal {
                 continue;
             }
 
-            if !worldborder.contains_block(pos.0.x, pos.0.z) {
+            if !world
+                .worldborder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_block(pos.0.x, pos.0.z)
+            {
                 continue;
             }
 
@@ -618,10 +567,6 @@ impl NetherPortal {
         );
         let min_y = world.min_y;
         let max_y = min_y + world.dimension.height - 1;
-        let worldborder = world
-            .worldborder
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let top_y_limit = if world.dimension.has_ceiling {
             (min_y + world.dimension.logical_height - 1).min(max_y)
@@ -638,18 +583,28 @@ impl NetherPortal {
         let mut ideal_pos: Option<(BlockPos, HorizontalAxis, f64)> = None;
         let mut acceptable_pos: Option<(BlockPos, HorizontalAxis, f64)> = None;
 
-        for offset_x in -32..=32 {
-            for offset_z in -32..=32 {
+        for offset_x in -CREATE_RADIUS..=CREATE_RADIUS {
+            for offset_z in -CREATE_RADIUS..=CREATE_RADIUS {
                 let check_x = target_pos.0.x + offset_x;
                 let check_z = target_pos.0.z + offset_z;
 
-                if !worldborder.contains_block(check_x, check_z) {
+                if !world
+                    .worldborder
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .contains_block(check_x, check_z)
+                {
                     continue;
                 }
 
                 let offset_pos = BlockPos(Vector3::new(check_x, 0, check_z))
                     .offset_dir(direction.to_offset(), 1);
-                if !worldborder.contains_block(offset_pos.0.x, offset_pos.0.z) {
+                if !world
+                    .worldborder
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .contains_block(offset_pos.0.x, offset_pos.0.z)
+                {
                     continue;
                 }
 
@@ -721,14 +676,23 @@ impl NetherPortal {
             return Some((pos, result_axis, false));
         }
 
-        // Vanilla: clamp between max(bottomY, 70) and topYLimit - 9
-        let fallback_y = target_pos.0.y.clamp(min_y.max(70), top_y_limit - 9);
+        // PortalForcer.createPortal returns empty when no fallback frame fits vertically.
+        let min_start_y = (min_y + 1).max(70);
+        let max_start_y = top_y_limit - 9;
+        if max_start_y < min_start_y {
+            return None;
+        }
+        let fallback_y = target_pos.0.y.clamp(min_start_y, max_start_y);
         let fallback_pos = BlockPos(Vector3::new(
             target_pos.0.x - direction.to_offset().x,
             fallback_y,
             target_pos.0.z - direction.to_offset().z,
         ));
-        let clamped_pos = worldborder.clamp_block(fallback_pos.0.x, fallback_pos.0.z);
+        let clamped_pos = world
+            .worldborder
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clamp_block(fallback_pos.0.x, fallback_pos.0.z);
         Some((
             BlockPos(Vector3::new(clamped_pos.0, fallback_y, clamped_pos.1)),
             axis,

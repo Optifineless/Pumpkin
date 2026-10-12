@@ -144,7 +144,7 @@ pub struct Level {
     scheduled_tick_collect_positions: Mutex<Vec<Vector2<i32>>>,
     #[cfg(test)]
     before_tick_unregister: Mutex<Option<Box<dyn FnOnce() + Send>>>,
-    pub chunk_loading: Mutex<ChunkLoading>,
+    pub chunk_loading: Arc<Mutex<ChunkLoading>>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
     pub(crate) entity_unloads: entity_unload::UnloadAdmission,
@@ -359,7 +359,7 @@ impl Level {
             scheduled_tick_collect_positions: Mutex::default(),
             #[cfg(test)]
             before_tick_unregister: Mutex::new(None),
-            chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
+            chunk_loading: Arc::new(Mutex::new(ChunkLoading::new(level_channel.clone()))),
             chunk_watchers: Arc::new(DashMap::new()),
             entity_unloads: Arc::default(),
             tasks: TaskTracker::new(),
@@ -663,32 +663,7 @@ impl Level {
         self: &Arc<Self>,
         pos: Vector2<i32>,
     ) -> Result<SyncChunk, ChunkReadingError> {
-        let recv = self.chunk_listener.add_single_chunk_listener(pos);
-
-        {
-            let mut lock = self
-                .chunk_loading
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            lock.add_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
-            lock.send_change();
-        };
-
-        let chunk = select! {
-            result = recv => result.map_err(|error| error.to_string()).and_then(std::convert::identity),
-            () = self.cancel_token.cancelled() => Err("Level is shutting down".to_owned()),
-        };
-
-        {
-            let mut lock = self
-                .chunk_loading
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            lock.remove_ticket(pos, ChunkLoading::FULL_CHUNK_LEVEL);
-            lock.send_change();
-        };
-
-        chunk.map_err(|error| ChunkReadingError::IoError(std::io::Error::other(error)))
+        crate::chunk_system::residency::fetch_chunk(self, pos).await
     }
 
     async fn load_single_entity_chunk(
