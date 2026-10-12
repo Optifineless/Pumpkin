@@ -1,34 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::item::registry::should_try_block_placement;
-use pumpkin_protocol::bedrock::server::inventory_transaction::{HandSlot, InventoryAction};
-
-fn transaction_consumes_selected_hotbar(actions: &[InventoryAction], selected_slot: u8) -> bool {
-    let screen_slot = usize::from(selected_slot) + 36;
-    actions.iter().any(|action| {
-        let updates_selected_slot = action
-            .window_id
-            .and_then(|window| map_bedrock_slot_to_screen_handler(window, action.inventory_slot))
-            == Some(screen_slot);
-        let decrements_stack = action
-            .old_item
-            .stack_size
-            .checked_sub(action.new_item.stack_size)
-            == Some(1);
-        let same_item_or_empty =
-            action.old_item.id.0 == action.new_item.id.0 || action.new_item.stack_size == 0;
-        updates_selected_slot && decrements_stack && same_item_or_empty
-    })
-}
-
-fn should_write_back_consumed_stack(
-    before: &ItemStack,
-    after: &ItemStack,
-    authoritative_stack: bool,
-    selected_slot_in_transaction: bool,
-) -> bool {
-    authoritative_stack && !selected_slot_in_transaction && !before.are_equal(after)
-}
+use pumpkin_protocol::bedrock::server::inventory_transaction::HandSlot;
 
 impl BedrockClient {
     fn send_player_inventory_content(&self, player: &Player) {
@@ -109,7 +82,7 @@ impl BedrockClient {
         }
     }
 
-    fn sync_consumed_hand_item(&self, player: &Player, stack: ItemStack) {
+    fn sync_consumed_hand_item(player: &Player, stack: ItemStack) {
         let selected_slot = player.inventory().get_selected_slot();
         player.inventory().set_held_item(stack.clone());
         let mut screen_handler = player
@@ -118,7 +91,6 @@ impl BedrockClient {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         screen_handler.set_received_stack(36 + usize::from(selected_slot), stack);
         drop(screen_handler);
-        self.send_player_inventory_content(player);
     }
 
     fn correct_rejected_food_use(&self, player: &Player) {
@@ -145,22 +117,25 @@ impl BedrockClient {
         player.send_health();
     }
 
-    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::unreachable)]
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
-        // ServerGamePacketListenerImpl.handleContainerClick treats client stacks as
-        // predictions only. Legacy actions cannot authorize inventory writes or drops.
-        if !packet.actions.is_empty() {
-            self.correct_inventory_prediction(player);
-            self.respond_legacy_inventory(packet.legacy_request_id, 1);
-            return;
-        }
+        let request_id = packet.legacy_request_id;
+        Self::drop_legacy_inventory_slots(player, &packet);
+        // ServerGamePacketListenerImpl.handleContainerClick treats client stacks as predictions.
+        // handleUseItemOn/handleUseItem still execute against the server's hand first.
+        let accepted = self.process_inventory_transaction(player, packet);
+        self.correct_inventory_prediction(player);
+        player.send_menu_equipment(&[
+            (EquipmentSlot::MAIN_HAND, player.inventory().held_item()),
+            (EquipmentSlot::OFF_HAND, player.inventory().off_hand_item()),
+        ]);
+        // Bedrock ItemStackResponseInfo: 0 = SUCCESS, 1 = ERROR. Discarding a
+        // prediction does not reject an otherwise processed authoritative use.
+        self.respond_legacy_inventory(request_id, u8::from(!accepted));
+    }
 
-        let mut inventory_updated = false;
+    fn drop_legacy_inventory_slots(player: &Player, packet: &SInventoryTransaction) {
         let mut dropped_items = Vec::new();
-        let mut updates = Vec::new();
-        let result = 0u8;
-
         let effects = crate::world::guard_effects::GuardEffects::new();
         if packet.actions.is_empty() && packet.legacy_request_id.0 != 0 {
             let mut player_screen_handler = player
@@ -190,20 +165,6 @@ impl BedrockClient {
                                 .set_stack(ItemStack::EMPTY.clone());
                             player_screen_handler
                                 .set_received_stack(screen_slot, ItemStack::EMPTY.clone());
-
-                            record_update(
-                                &mut updates,
-                                FullContainerName {
-                                    container_name: match legacy_slot.container_id {
-                                        28 => ContainerName::HotBar,
-                                        _ => ContainerName::Inventory,
-                                    },
-                                    dynamic_id: None,
-                                },
-                                slot_id,
-                                ItemStack::EMPTY,
-                            );
-                            inventory_updated = true;
                         }
                     }
                 }
@@ -216,17 +177,19 @@ impl BedrockClient {
         for item in dropped_items {
             player.drop_item(item);
         }
+    }
 
-        if inventory_updated {
-            self.send_player_inventory_content(player);
-        }
-
+    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::unreachable)]
+    fn process_inventory_transaction(
+        &self,
+        player: &Arc<Player>,
+        packet: SInventoryTransaction,
+    ) -> bool {
         match packet.transaction_data {
-            TransactionData::Normal(_data) => {
-                // Actions are already applied to the inventory screen handler above.
-            }
-            TransactionData::Mismatch(_data) => {
-                // Actions are already applied to the inventory screen handler above.
+            TransactionData::Normal(_) | TransactionData::Mismatch(_) => {
+                // No authoritative operation exists for legacy slot writes, including
+                // World-source drops of client-described stacks.
+                return packet.actions.is_empty();
             }
             TransactionData::UseItem(data) => {
                 let face = match data.block_face {
@@ -240,7 +203,7 @@ impl BedrockClient {
                 let world = player.world();
                 let block = world.get_block(&data.block_position);
                 let Some(server) = world.server.upgrade() else {
-                    return;
+                    return false;
                 };
 
                 if player.gamemode.load() == GameMode::Spectator {
@@ -253,7 +216,7 @@ impl BedrockClient {
                     ) {
                         player.open_handled_screen(factory.as_ref(), Some(data.block_position));
                     }
-                    return;
+                    return true;
                 }
 
                 if data.action_type.0 == 0 {
@@ -264,16 +227,9 @@ impl BedrockClient {
                     let authoritative_held_item = held_item.item.id == client_stack.item.id
                         && held_item.item_count == client_stack.item_count;
                     if !authoritative_held_item {
-                        self.correct_inventory_prediction(player);
-                        self.respond_legacy_inventory(packet.legacy_request_id, 1);
-                        return;
+                        return false;
                     }
                     let before_block_use = held_item.clone();
-                    // Legacy slot predictions were rejected before the use callback.
-                    let held_slot_consumed_in_transaction = transaction_consumes_selected_hotbar(
-                        &packet.actions,
-                        player.inventory().get_selected_slot(),
-                    );
 
                     let result = server.block_registry.use_with_item(
                         block,
@@ -290,16 +246,11 @@ impl BedrockClient {
                     );
 
                     if result.consumes_action() {
-                        if should_write_back_consumed_stack(
-                            &before_block_use,
-                            &held_item,
-                            authoritative_held_item,
-                            held_slot_consumed_in_transaction,
-                        ) {
+                        if !before_block_use.are_equal(&held_item) {
                             // ServerPlayerGameMode.useItemOn persists the item after the block callback consumes it.
-                            self.sync_consumed_hand_item(player, held_item);
+                            Self::sync_consumed_hand_item(player, held_item);
                         }
-                        return;
+                        return true;
                     }
 
                     if matches!(result, BlockActionResult::PassToDefaultBlockAction) {
@@ -316,7 +267,7 @@ impl BedrockClient {
                         );
 
                         if result.consumes_action() {
-                            return;
+                            return true;
                         }
                     }
 
@@ -392,9 +343,7 @@ impl BedrockClient {
                     if held.item.id != client_stack.item.id
                         || held.item_count != client_stack.item_count
                     {
-                        self.correct_inventory_prediction(player);
-                        self.respond_legacy_inventory(packet.legacy_request_id, 1);
-                        return;
+                        return false;
                     }
                     // Consumable.onConsume and BucketItem/BottleItem.use count on success.
                     if !held.is_empty() && !server.item_registry.records_item_use_stat(&held) {
@@ -502,6 +451,9 @@ impl BedrockClient {
                         'after: {
                             server.item_registry.on_use(&stack_for_use, player, hand);
                         }
+                        'cancelled: {
+                            return false;
+                        }
                     }}
                 }
             }
@@ -513,7 +465,7 @@ impl BedrockClient {
                     1 => ActionType::Attack,
                     action => {
                         tracing::warn!("invalid UseItemOnEntity action type {action}");
-                        return;
+                        return false;
                     }
                 };
                 let Ok(target_runtime_id) = i32::try_from(data.target_entity_runtime_id.0) else {
@@ -521,19 +473,19 @@ impl BedrockClient {
                         "invalid UseItemOnEntity target runtime ID {}",
                         data.target_entity_runtime_id.0
                     );
-                    return;
+                    return false;
                 };
 
                 let world = player.world();
                 let Some(target) = world.get_entity_by_id(target_runtime_id) else {
-                    return;
+                    return false;
                 };
                 let Some(server) = world.server.upgrade() else {
-                    return;
+                    return false;
                 };
 
                 if player.is_spectator() {
-                    return;
+                    return false;
                 }
 
                 let mut event = PlayerInteractEntityEvent::new(
@@ -545,7 +497,7 @@ impl BedrockClient {
                 );
                 server.plugin_manager.fire_blocking(&server, &mut event);
                 if event.cancelled {
-                    return;
+                    return false;
                 }
 
                 match event.action {
@@ -603,7 +555,7 @@ impl BedrockClient {
                     .clone();
                 if let Some(stack) = item_in_use {
                     let Some(server) = player.world().server.upgrade() else {
-                        return;
+                        return false;
                     };
                     server.item_registry.on_stopped_using(&stack, player);
                 }
@@ -611,50 +563,7 @@ impl BedrockClient {
             }
         }
 
-        if packet.legacy_request_id.0 != 0 {
-            use pumpkin_protocol::bedrock::client::item_stack_response::{
-                CItemStackResponse, ItemStackResponseContainerInfo, ItemStackResponseInfo,
-                ItemStackResponseSlotInfo,
-            };
-
-            let mut container_infos = Vec::new();
-            if result == 0 {
-                for update in updates {
-                    let container_info = container_infos.iter_mut().find(
-                        |info: &&mut ItemStackResponseContainerInfo| {
-                            info.full_container_name == update.container_name
-                        },
-                    );
-
-                    let slot_info = ItemStackResponseSlotInfo {
-                        requested_slot: update.slot_id,
-                        slot: update.slot_id,
-                        amount: update.count,
-                        item_stack_net_id: update.stack_id,
-                        custom_name: String::new(),
-                        filtered_custom_name: String::new(),
-                        durability_correction: VarInt(0),
-                    };
-
-                    if let Some(info) = container_info {
-                        info.slots.push(slot_info);
-                    } else {
-                        container_infos.push(ItemStackResponseContainerInfo {
-                            full_container_name: update.container_name.clone(),
-                            slots: vec![slot_info],
-                        });
-                    }
-                }
-            }
-
-            self.try_enqueue_client_packet(&CItemStackResponse {
-                responses: vec![ItemStackResponseInfo {
-                    result,
-                    client_request_id: packet.legacy_request_id,
-                    containers: container_infos,
-                }],
-            });
-        }
+        true
     }
 }
 

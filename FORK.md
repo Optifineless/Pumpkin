@@ -4,7 +4,7 @@ This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained fo
 
 Close-event listeners can reopen a menu without closing its predecessor recursively. The closing-menu identity survives callbacks, and an outer close preserves a replacement menu and position. Native API 8 (same version): Player has runtime close ownership state; rebuild native plugins. In-game verification: **Not yet**.
 
-Bedrock inventory requests reject forged hand and legacy slot predictions, Survival creative-item requests, unpaid preview-slot operations and cursor aliases ([#168](https://github.com/Optifineless/Pumpkin/issues/168)). Implemented by Codex (GPT-6.1 Sol). In-game verification: **Not yet**.
+Bedrock inventory requests reject forged hand and legacy slot predictions, Survival creative-item requests, unpaid preview-slot operations and cursor aliases ([#168](https://github.com/Optifineless/Pumpkin/issues/168)). Client slot predictions do not suppress authoritative block, air or entity uses. Mirrors vanilla `ServerGamePacketListenerImpl.handleContainerClick`, `handleSetCreativeModeSlot`, `handleUseItemOn` and `handleUseItem`. Implemented by Codex (GPT-6.1 Sol). In-game verification: **Not yet**.
 
 ## How the code here is written
 
