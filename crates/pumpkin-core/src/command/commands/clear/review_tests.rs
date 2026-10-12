@@ -352,6 +352,60 @@ async fn equipment_detection_waits_for_shift_click_to_finish_writing() {
     );
 }
 
+#[tokio::test]
+async fn shift_click_equipping_armor_publishes_after_menu_unlocks() {
+    let mut fixture = ClearFixture::new();
+    fixture.open_inventory();
+    fixture
+        .target
+        .player
+        .inventory
+        .set_slot(9, ItemStack::new(1, &Item::DIAMOND_CHESTPLATE));
+    // Real container-click entry: slot 9 moves into armor slot 6 under the menu guard.
+    fixture.target.player.on_slot_click(
+        SClickSlot {
+            sync_id: VarInt(0),
+            revision: VarInt(0),
+            slot: 9,
+            button: 0,
+            mode: pumpkin_protocol::java::server::play::SlotActionType::QuickMove,
+            length_of_array: VarInt(0),
+            array_of_changed_slots: Vec::new(),
+            carried_item: OptionalItemStackHash(None),
+        },
+        &fixture.server,
+    );
+    assert!(fixture.target.player.inventory.get_slot(9).is_empty());
+    assert_eq!(
+        fixture.target.player.inventory.get_slot(38).item,
+        &Item::DIAMOND_CHESTPLATE
+    );
+    fixture.target.player.tick(&fixture.server);
+    assert!(
+        fixture
+            .target
+            .player
+            .living_entity
+            .get_attribute_value(&Attributes::ARMOR)
+            > fixture
+                .target
+                .player
+                .living_entity
+                .get_attribute_base(&Attributes::ARMOR)
+    );
+    assert!(
+        fixture
+            .take_observer_equipment_updates()
+            .iter()
+            .any(|packet| {
+                packet.equipment.iter().any(|(slot, stack)| {
+                    *slot == EquipmentSlot::CHEST.discriminant()
+                        && stack.0.item == &Item::DIAMOND_CHESTPLATE
+                })
+            })
+    );
+}
+
 fn assert_attribute_reset(packets: &[bytes::Bytes], target: &Player, attribute: &Attributes) {
     assert!(
         packets

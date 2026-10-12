@@ -4,7 +4,7 @@ use super::{
     AtomicI64, BasicConfiguration, CachedBranding, CachedStatus, CustomBossbars, DefaultGamemode,
     Dimension, Duration, LevelData, MapManager, OnceCell, PermissionManager, PluginManager, Server,
     ServerPlayerData, ServerTickRateManager, TaskTracker, TelemetryConfig, VanillaData, World,
-    WorldInfoReader, debug_profiler, default_dispatcher, enchantment, recipe,
+    WorldInfoReader, debug_profiler, default_dispatcher, enchantment, named_clock_storage, recipe,
 };
 use std::sync::RwLock;
 
@@ -28,6 +28,7 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
 }
 
 /// Creates a test server with player save loading and writing controlled by `player_data_enabled`.
+#[must_use]
 pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool) -> Arc<Server> {
     let session_lock = pumpkin_world::session_lock::acquire(path).unwrap();
     let basic_config = BasicConfiguration {

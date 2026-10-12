@@ -1,8 +1,16 @@
 use super::Player;
 use pumpkin_data::{data_component_impl::EquipmentSlot, item_stack::ItemStack};
+use pumpkin_util::sync::{LockClass, Mutex, assert_no_guards_held};
 
 #[cfg(test)]
 mod tests;
+
+pub(super) enum EquipmentPublication {}
+
+impl LockClass for EquipmentPublication {
+    const NAME: &'static str = "player equipment publication";
+    const LEVEL: u8 = 30;
+}
 
 #[derive(Default)]
 pub(super) struct EquipmentUpdates {
@@ -11,7 +19,7 @@ pub(super) struct EquipmentUpdates {
 }
 
 struct EquipmentPublisher<'a> {
-    updates: &'a std::sync::Mutex<EquipmentUpdates>,
+    updates: &'a Mutex<EquipmentUpdates, EquipmentPublication>,
     active: bool,
 }
 
@@ -36,6 +44,14 @@ thread_local! {
 impl Player {
     /// Queues slots for detection on the player tick, using their current contents.
     pub(crate) fn queue_equipment_updates(&self, slots: &[EquipmentSlot]) {
+        // Menu notifications can precede the slot write (AbstractContainerMenu.broadcastChanges).
+        // Admit the entity/container queue only after the menu owner releases its guard.
+        if crate::world::guard_effects::is_active() {
+            let slots = slots.to_vec();
+            if self.defer_menu_effect(move |player| player.queue_equipment_updates(&slots)) {
+                return;
+            }
+        }
         let mut updates = self
             .equipment_updates
             .lock()
@@ -48,6 +64,7 @@ impl Player {
     }
 
     pub(crate) fn detect_equipment_updates(&self) {
+        assert_no_guards_held("Player::detect_equipment_updates");
         // ServerPlayer.doTick -> LivingEntity.detectEquipmentUpdates/collectEquipmentChanges.
         // Packet-driven equips and slot switches run before detection; commands queue no stacks.
         let mut slots = {
@@ -126,6 +143,8 @@ impl Player {
         };
         use pumpkin_protocol::codec::var_uint::VarUInt;
 
+        assert_no_guards_held("Player::sync_bedrock_equipment_to_owner");
+
         let ClientPlatform::Bedrock(client) = self.client.as_ref() else {
             return;
         };
@@ -153,6 +172,27 @@ impl Player {
             if let Ok(data) = client.serialize_packet(&packet) {
                 client.try_enqueue_packet(data);
             }
+        }
+    }
+
+    pub(super) fn play_equipment_sound_after_menu(&self, stack: &ItemStack) {
+        // Preserve the equip sound after AbstractContainerMenu.broadcastChanges unlocks.
+        if crate::world::guard_effects::is_active() {
+            let stack = stack.clone();
+            if self.defer_menu_effect(move |player| player.play_equipment_sound_after_menu(&stack))
+            {
+                return;
+            }
+        }
+        assert_no_guards_held("Player::play_equipment_sound_after_menu");
+        if let Some(equippable) =
+            stack.get_data_component::<pumpkin_data::data_component_impl::EquippableImpl>()
+        {
+            self.world().play_sound_event(
+                &equippable.equip_sound,
+                pumpkin_data::sound::SoundCategory::Players,
+                &self.position(),
+            );
         }
     }
 

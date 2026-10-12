@@ -245,7 +245,7 @@ impl BedrockPlayer<'_> {
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::damage::DamageType;
-use pumpkin_data::data_component_impl::{EquipmentSlot, EquippableImpl, ToolImpl};
+use pumpkin_data::data_component_impl::{EquipmentSlot, ToolImpl};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityPose, EntityStatus, EntityType};
 use pumpkin_data::item_stack::ItemStack;
@@ -417,7 +417,10 @@ pub struct Player {
     pub client: Arc<ClientPlatform>,
     /// The player's inventory.
     pub inventory: Arc<PlayerInventory>,
-    equipment_updates: Mutex<equipment_updates::EquipmentUpdates>,
+    equipment_updates: pumpkin_util::sync::Mutex<
+        equipment_updates::EquipmentUpdates,
+        equipment_updates::EquipmentPublication,
+    >,
     /// The player's `EnderChest` inventory.
     pub ender_chest_inventory: Arc<EnderChestInventory>,
     /// The player's configuration settings. Changes when the player changes their settings.
@@ -714,7 +717,7 @@ impl Player {
                     |op| AtomicCell::new(op.level),
                 ),
             inventory,
-            equipment_updates: Mutex::default(),
+            equipment_updates: pumpkin_util::sync::Mutex::default(),
             ender_chest_inventory,
             experience_level: AtomicI32::new(0),
             experience_progress: AtomicCell::new(0.0),
@@ -7311,13 +7314,7 @@ impl InventoryPlayer for Player {
         // Screen handlers can notify before writing the slot; detect after the packet completes.
         self.queue_equipment_updates(std::slice::from_ref(slot));
 
-        if let Some(equippable) = stack.get_data_component::<EquippableImpl>() {
-            self.world().play_sound_event(
-                &equippable.equip_sound,
-                SoundCategory::Players,
-                &self.position(),
-            );
-        }
+        self.play_equipment_sound_after_menu(stack);
     }
 
     fn award_experience(&self, amount: i32) {

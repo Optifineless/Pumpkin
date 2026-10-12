@@ -413,6 +413,7 @@ impl LivingEntity {
     /// Publishes a detected batch after storage guards have ended.
     /// Player batches must be admitted by `Player::detect_equipment_updates`.
     pub(crate) fn publish_equipment_changes(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
+        pumpkin_util::sync::assert_no_guards_held("LivingEntity::publish_equipment_changes");
         crate::entity::mob::skeleton::weapon_goal::equipment_changed(self);
         if equipment.is_empty() {
             return;

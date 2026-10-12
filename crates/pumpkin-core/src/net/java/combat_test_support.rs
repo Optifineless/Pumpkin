@@ -1,4 +1,8 @@
 pub use super::outgoing::{Completion, OutgoingPacket};
+#[allow(
+    clippy::wildcard_imports,
+    reason = "Keep the shared baseline namespace for scenario and host fixtures"
+)]
 use super::*;
 use crate::entity::EntityBase;
 use crate::net::ClientPlatform;

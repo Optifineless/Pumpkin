@@ -16,6 +16,7 @@ pub(super) fn send_equipment_changes(
     equipment: &[(EquipmentSlot, ItemStack)],
     java_packet: &CSetEquipment,
 ) {
+    pumpkin_util::sync::assert_no_guards_held("equipment_packets::send_equipment_changes");
     let world = living.entity.world.load();
     // Mirrors vanilla LivingEntity.updatePlayersWithNewEquipment.
     // Bedrock armor requires one separate packet carrying every armor slot.
