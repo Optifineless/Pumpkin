@@ -1,5 +1,6 @@
 #![expect(
     clippy::unwrap_used,
+    clippy::panic,
     reason = "Regression fixtures require successful construction"
 )]
 
@@ -19,15 +20,19 @@ use pumpkin_data::{
 use pumpkin_inventory::Inventory;
 use pumpkin_nbt::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
-use pumpkin_world::world::BlockFlags;
+use pumpkin_world::{
+    chunk::io::{FileIO, LoadedData},
+    world::BlockFlags,
+};
 
 use super::{
     PortalType,
     poi::POI_TYPE_NETHER_PORTAL,
-    tests::{save_destination, save_destination_with_chest},
+    residency::PortalChunkResidency,
+    tests::{save_destination, save_destination_with_block},
 };
 use crate::{
-    block::entities::{BlockEntity, chest::ChestBlockEntity},
+    block::entities::{BlockEntity, chest::ChestBlockEntity, create_block_entity},
     entity::{EntityBase, death_test_world::DeathTestWorld, item::ItemEntity},
     plugin::{EventHandler, EventPriority, api::events::block::block_physics::BlockPhysicsEvent},
     server::Server,
@@ -127,6 +132,7 @@ async fn portal_creation_releases_ownership_before_reentrant_physics() {
         .get_world_from_dimension(&Dimension::THE_NETHER);
     save_destination(&destination, false).await;
     assert!(destination.level.loaded_chunks.is_empty());
+    let residency = retain_frame(&destination);
     let traveler = fixture.mob(&EntityType::COW);
     traveler.get_entity().set_pos(Vector3::new(8.0, 80.0, 8.0));
     let handler = Arc::new(ReentrantPhysics {
@@ -162,83 +168,216 @@ async fn portal_creation_releases_ownership_before_reentrant_physics() {
         18 * BlockDirection::update_order().len()
     );
     assert!(destination.portal_creation.try_lock().is_ok());
+    drop(residency);
     fixture.server.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn frame_callbacks_preserve_new_container_and_drop_only_retired_contents() {
     for live in [true, false] {
-        let fixture = DeathTestWorld::new().await;
-        let source = fixture.world();
-        let destination = fixture
-            .server
-            .get_world_from_dimension(&Dimension::THE_NETHER);
-        // The last fallback ground write is delivered after the first physics callback.
-        let pos = BlockPos::new(1, 79, 2);
-        let old = Arc::new(ChestBlockEntity::new(pos));
-        old.set_stack(0, ItemStack::new(1, &Item::EMERALD));
-        let mut nbt = NbtCompound::new();
-        old.write_internal(&mut nbt);
-        save_destination_with_chest(&destination, false, Some((pos, nbt))).await;
-        assert!(destination.level.loaded_chunks.is_empty());
-        if live {
-            destination
-                .level
-                .get_or_fetch_chunk(pos.chunk_position(), |_| ())
-                .await
-                .unwrap();
-            assert!(destination.get_block_entity(&pos).is_some());
-        }
-        let replacement = Arc::new(ChestBlockEntity::new(pos));
-        replacement.set_stack(0, ItemStack::new(1, &Item::DIAMOND));
-        let replacement: Arc<dyn BlockEntity> = replacement;
-        let traveler = fixture.mob(&EntityType::COW);
-        traveler.get_entity().set_pos(Vector3::new(8.0, 80.0, 8.0));
-        let handler = Arc::new(ReentrantPhysics {
-            source: source.clone(),
-            destination: destination.clone(),
-            traveler: traveler.clone(),
-            callbacks: AtomicUsize::new(0),
-            arrival: OnceLock::new(),
-            replacement: Some(replacement.clone()),
-        });
-        fixture
-            .server
-            .plugin_manager
-            .register::<BlockPhysicsEvent, _>(handler.clone(), EventPriority::Normal, true);
-        let transition = tokio::time::timeout(
-            Duration::from_secs(60),
-            PortalType::Nether.get_portal_destination(
-                &source,
-                destination.clone(),
-                traveler.as_ref(),
-                None,
-            ),
+        assert_frame_preserves_container(&Block::CHEST, live).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn frame_callbacks_preserve_live_sign_replacement() {
+    for block in [&Block::OAK_SIGN, &Block::OAK_HANGING_SIGN] {
+        assert_frame_preserves_container(block, true).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn frame_callbacks_preserve_pending_sign_replacement() {
+    for block in [&Block::OAK_SIGN, &Block::OAK_HANGING_SIGN] {
+        assert_frame_preserves_container(block, false).await;
+    }
+}
+
+async fn assert_frame_preserves_container(old_block: &Block, live: bool) {
+    let fixture = DeathTestWorld::new().await;
+    let source = fixture.world();
+    let destination = fixture
+        .server
+        .get_world_from_dimension(&Dimension::THE_NETHER);
+    // The last fallback ground write is delivered after the first physics callback.
+    let pos = BlockPos::new(1, 79, 2);
+    save_retired_block(&destination, pos, old_block).await;
+    assert!(destination.level.loaded_chunks.is_empty());
+    let residency = retain_frame(&destination);
+    if live {
+        destination
+            .level
+            .get_or_fetch_chunk(pos.chunk_position(), |_| ())
+            .await
+            .unwrap();
+        assert!(destination.get_block_entity(&pos).is_some());
+    }
+    let replacement = Arc::new(ChestBlockEntity::new(pos));
+    replacement.set_stack(0, ItemStack::new(1, &Item::DIAMOND));
+    let replacement: Arc<dyn BlockEntity> = replacement;
+    let traveler = fixture.mob(&EntityType::COW);
+    traveler.get_entity().set_pos(Vector3::new(8.0, 80.0, 8.0));
+    let handler = Arc::new(ReentrantPhysics {
+        source: source.clone(),
+        destination: destination.clone(),
+        traveler: traveler.clone(),
+        callbacks: AtomicUsize::new(0),
+        arrival: OnceLock::new(),
+        replacement: Some(replacement.clone()),
+    });
+    fixture
+        .server
+        .plugin_manager
+        .register::<BlockPhysicsEvent, _>(handler.clone(), EventPriority::Normal, true);
+    let transition = tokio::time::timeout(
+        Duration::from_secs(60),
+        PortalType::Nether.get_portal_destination(
+            &source,
+            destination.clone(),
+            traveler.as_ref(),
+            None,
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(handler.arrival.get(), Some(&transition.position));
+    let current = destination.get_block_entity(&pos);
+    assert!(
+        current
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, &replacement)),
+        "deferred cleanup removed the callback's new chest (old={}, live={live})",
+        old_block.name
+    );
+    let kept = replacement.clone().get_inventory().unwrap().get_stack(0);
+    assert_eq!((kept.item.id, kept.item_count), (Item::DIAMOND.id, 1));
+    let drops: Vec<_> = destination
+        .entities
+        .load()
+        .iter()
+        .filter_map(|entity| entity.cast_any().downcast_ref::<ItemEntity>())
+        .map(|entity| {
+            let stack = entity.get_item_stack().lock().unwrap();
+            (stack.item.id, stack.item_count)
+        })
+        .collect();
+    let expected = if old_block == &Block::CHEST {
+        vec![(Item::EMERALD.id, 1)]
+    } else {
+        Vec::new()
+    };
+    assert_eq!(drops, expected, "old={}, live={live}", old_block.name);
+    tokio::time::timeout(
+        Duration::from_secs(60),
+        assert_saved_chest(&destination, pos),
+    )
+    .await
+    .unwrap();
+    drop(residency);
+    fixture.server.shutdown().await;
+}
+
+async fn assert_saved_chest(world: &Arc<World>, pos: BlockPos) {
+    // Exercise real unload serialization, disk saving, chunk fetch and lazy promotion.
+    let chunk = world
+        .level
+        .loaded_chunks
+        .get(&pos.chunk_position())
+        .unwrap()
+        .clone();
+    world
+        .remove_entities_in_chunks([pos.chunk_position()])
+        .await;
+    world
+        .level
+        .chunk_saver
+        .save_chunks(
+            &world.level.level_folder,
+            vec![(pos.chunk_position(), chunk)],
         )
         .await
-        .unwrap()
         .unwrap();
-        assert_eq!(handler.arrival.get(), Some(&transition.position));
-        let current = destination.get_block_entity(&pos);
-        assert!(
-            current
-                .as_ref()
-                .is_some_and(|current| Arc::ptr_eq(current, &replacement)),
-            "deferred cleanup removed the callback's new chest (live={live})"
-        );
-        let kept = replacement.clone().get_inventory().unwrap().get_stack(0);
-        assert_eq!((kept.item.id, kept.item_count), (Item::DIAMOND.id, 1));
-        let drops: Vec<_> = destination
-            .entities
-            .load()
-            .iter()
-            .filter_map(|entity| entity.cast_any().downcast_ref::<ItemEntity>())
-            .map(|entity| {
-                let stack = entity.get_item_stack().lock().unwrap();
-                (stack.item.id, stack.item_count)
-            })
-            .collect();
-        assert_eq!(drops, [(Item::EMERALD.id, 1)], "live={live}");
-        fixture.server.shutdown().await;
+    world
+        .level
+        .chunk_saver
+        .block_and_await_ongoing_tasks()
+        .await
+        .unwrap();
+    world.level.loaded_chunks.remove(&pos.chunk_position());
+    let (send, mut receive) = tokio::sync::mpsc::channel(1);
+    world
+        .level
+        .chunk_saver
+        .fetch_chunks(&world.level.level_folder, &[pos.chunk_position()], send)
+        .await;
+    let LoadedData::Loaded(reloaded) = receive.recv().await.unwrap() else {
+        panic!("saved replacement chest chunk missing")
+    };
+    world
+        .level
+        .loaded_chunks
+        .insert(pos.chunk_position(), reloaded);
+    assert_eq!(world.get_block(&pos), &Block::CHEST);
+    let inventory = world
+        .get_block_entity(&pos)
+        .unwrap()
+        .get_inventory()
+        .unwrap();
+    let stack = inventory.get_stack(0);
+    assert_eq!((stack.item.id, stack.item_count), (Item::DIAMOND.id, 1));
+}
+
+async fn save_retired_block(world: &World, pos: BlockPos, block: &Block) {
+    let mut nbt = NbtCompound::new();
+    if block == &Block::CHEST {
+        let old = ChestBlockEntity::new(pos);
+        old.set_stack(0, ItemStack::new(1, &Item::EMERALD));
+        old.write_internal(&mut nbt);
+    } else {
+        // Vanilla and older fork saves use these sign IDs and coordinate fields.
+        create_block_entity(block.default_state.block_entity_type, pos)
+            .unwrap()
+            .write_internal(&mut nbt);
     }
+    save_destination_with_block(world, false, Some((pos, block, nbt))).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn frame_callbacks_preserve_rebuilt_portal_poi() {
+    let fixture = DeathTestWorld::new().await;
+    let source = fixture.world();
+    let destination = fixture
+        .server
+        .get_world_from_dimension(&Dimension::THE_NETHER);
+    // Invalid fragment in the fallback interior: construction clears then rebuilds it.
+    // No old POI means the real lookup misses and selects fallback construction.
+    save_destination_with_block(
+        &destination,
+        false,
+        Some((
+            BlockPos::new(1, 80, 1),
+            &Block::NETHER_PORTAL,
+            NbtCompound::new(),
+        )),
+    )
+    .await;
+    let residency = retain_frame(&destination);
+    let traveler = fixture.mob(&EntityType::COW);
+    traveler.get_entity().set_pos(Vector3::new(8.0, 80.0, 8.0));
+    PortalType::Nether
+        .get_portal_destination(&source, destination.clone(), traveler.as_ref(), None)
+        .await
+        .unwrap();
+    assert_frame(&destination);
+    drop(residency);
+    fixture.server.shutdown().await;
+}
+
+fn retain_frame(world: &World) -> PortalChunkResidency {
+    // Retain fixture terrain through assertions and the disk round trip, without
+    // relying on the scheduler's timing after destination creation releases tickets.
+    let mut residency = PortalChunkResidency::new(world.level.clone());
+    residency.add_area(BlockPos::new(1, 80, 1), 3);
+    residency
 }

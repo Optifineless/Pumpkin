@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pumpkin_data::{Block, BlockStateId};
+use pumpkin_data::{Block, BlockStateId, tag::Taggable};
 use pumpkin_nbt::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
@@ -71,4 +71,28 @@ pub(super) fn set_frame_block(
     if let Err(effect) = guard_effects::defer(effect) {
         effect();
     }
+}
+
+// LevelChunk.setBlockState retires block entities before affectNeighborsAfterRemoval.
+// A sign's callback only repeats that retirement; deferred delivery owns no current
+// entity, so it must not remove anything published after the captured retirement.
+pub(in crate::world) fn dispatch_old_block_callback(
+    world: &Arc<World>,
+    position: &BlockPos,
+    old: BlockStateId,
+    moved: bool,
+    block_entity_already_retired: bool,
+) {
+    let block = Block::from_state_id(old);
+    if block_entity_already_retired && block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_ALL_SIGNS)
+    {
+        return;
+    }
+    // ServerLevel.updatePOIOnBlockStateChange: preserve the current portal registration.
+    if block == &Block::NETHER_PORTAL && world.get_block(position) == &Block::NETHER_PORTAL {
+        return;
+    }
+    world
+        .block_registry
+        .on_state_replaced(world, block, position, old, moved);
 }

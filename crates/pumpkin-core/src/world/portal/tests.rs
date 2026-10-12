@@ -190,13 +190,13 @@ async fn portal_travel(existing: bool) {
 }
 
 pub(super) async fn save_destination(world: &World, existing: bool) {
-    save_destination_with_chest(world, existing, None).await;
+    save_destination_with_block(world, existing, None).await;
 }
 
-pub(super) async fn save_destination_with_chest(
+pub(super) async fn save_destination_with_block(
     world: &World,
     existing: bool,
-    chest: Option<(BlockPos, pumpkin_nbt::NbtCompound)>,
+    block_entity: Option<(BlockPos, &Block, pumpkin_nbt::NbtCompound)>,
 ) {
     let generator = WorldGenerator::Flat(Box::new(FlatGenerator::new(
         Seed(0),
@@ -209,11 +209,11 @@ pub(super) async fn save_destination_with_chest(
         for z in -2..=1 {
             let mut proto = ProtoChunk::new(x, z, &generator);
             proto.stage = StagedChunkEnum::Full;
-            if let Some((pos, _)) = &chest
+            if let Some((pos, block, _)) = &block_entity
                 && pos.chunk_position() == Vector2::new(x, z)
             {
                 let relative = pos.chunk_relative_position();
-                proto.set_block_state(relative.x, pos.0.y, relative.z, Block::CHEST.default_state);
+                proto.set_block_state(relative.x, pos.0.y, relative.z, block.default_state);
             }
             if existing && x == 0 && z == 0 {
                 let portal = NetherPortalLikeProperties {
@@ -239,7 +239,8 @@ pub(super) async fn save_destination_with_chest(
             let Chunk::Level(chunk) = chunk else {
                 panic!("fixture must be a full chunk")
             };
-            if let Some((pos, nbt)) = &chest
+            if let Some((pos, _, nbt)) = &block_entity
+                && !nbt.is_empty()
                 && pos.chunk_position() == Vector2::new(x, z)
             {
                 chunk

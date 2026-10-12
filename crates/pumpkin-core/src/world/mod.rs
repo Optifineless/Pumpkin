@@ -5277,12 +5277,12 @@ impl World {
         }
 
         if is_new_block && (flags.contains(BlockFlags::NOTIFY_NEIGHBORS) || block_moved) {
-            self.block_registry.on_state_replaced(
+            portal::frame_effects::dispatch_old_block_callback(
                 self,
-                old_block,
                 position,
                 replaced_block_state_id,
                 block_moved,
+                !replace_block_entity,
             );
         }
 
