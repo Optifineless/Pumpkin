@@ -1,7 +1,9 @@
 use crate::entity::player::Player;
-use pumpkin_data::item_stack::ItemStack;
+use crate::net::java::play::hand_use_result::{HandMutation, hand_slot, write_back_hand_item};
+use pumpkin_data::{data_component_impl::UseRemainderImpl, item_stack::ItemStack};
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
+use pumpkin_util::Hand;
 
 /// Gives extra items to the player, dropping anything their inventory cannot hold.
 pub fn give_or_drop(player: &Player, mut stack: ItemStack) {
@@ -11,6 +13,50 @@ pub fn give_or_drop(player: &Player, mut stack: ItemStack) {
             .world()
             .drop_stack(&player.position().to_block_pos(), stack);
     }
+}
+
+/// Consumes mob food and applies `USE_REMAINDER` before later interaction callbacks.
+/// Handless species keep detached consumption until their callback carries the used hand.
+pub fn use_player_item(player: &Player, input: &mut ItemStack, hand: Option<Hand>) {
+    let Some(hand) = hand else {
+        input.decrement_unless_creative(player.gamemode.load(), 1);
+        return;
+    };
+    // Mob.usePlayerItem snapshots the component before consuming; it does not apply USE_COOLDOWN.
+    let before = input.clone();
+    let source_slot = hand_slot(player, hand);
+    input.decrement_unless_creative(player.gamemode.load(), 1);
+    if !player.has_infinite_materials()
+        && input.item_count < before.item_count
+        && let Some(extra) = before
+            .get_data_component::<UseRemainderImpl>()
+            .and_then(UseRemainderImpl::create)
+    {
+        if input.is_empty() {
+            *input = extra;
+        } else {
+            // Insertion can merge into the consumed stack, so publish it first.
+            write_back_hand_item(
+                player,
+                hand,
+                source_slot,
+                &before,
+                input,
+                HandMutation::ItemUse,
+            );
+            give_or_drop(player, extra);
+            *input = player.inventory().get_stack(source_slot);
+            player.sync_hand_slot(source_slot, input.clone());
+        }
+    }
+    write_back_hand_item(
+        player,
+        hand,
+        source_slot,
+        &before,
+        input,
+        HandMutation::ItemUse,
+    );
 }
 
 /// Converts one input item into an output without writing the source hand.
@@ -40,3 +86,7 @@ pub fn create_filled_result(
         give_or_drop(player, output);
     }
 }
+
+#[cfg(test)]
+#[path = "item_utils_tests.rs"]
+mod tests;
