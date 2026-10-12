@@ -51,6 +51,64 @@ impl BedrockClient {
         });
     }
 
+    fn respond_legacy_inventory(&self, request_id: VarInt, result: u8) {
+        use pumpkin_protocol::bedrock::client::item_stack_response::{
+            CItemStackResponse, ItemStackResponseInfo,
+        };
+        if request_id.0 != 0 {
+            self.try_enqueue_client_packet(&CItemStackResponse {
+                responses: vec![ItemStackResponseInfo {
+                    result,
+                    client_request_id: request_id,
+                    containers: Vec::new(),
+                }],
+            });
+        }
+    }
+
+    fn correct_inventory_prediction(&self, player: &Player) {
+        let effects = crate::world::guard_effects::GuardEffects::new();
+        let equipment = {
+            let handler = player
+                .player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            [
+                (
+                    120,
+                    ContainerName::Armor,
+                    (5..9)
+                        .map(|slot| {
+                            NetworkItemStackDescriptor::from(
+                                &handler.get_slot(slot).get_cloned_stack(),
+                            )
+                        })
+                        .collect(),
+                ),
+                (
+                    119,
+                    ContainerName::Offhand,
+                    vec![NetworkItemStackDescriptor::from(
+                        &handler.get_slot(45).get_cloned_stack(),
+                    )],
+                ),
+            ]
+        };
+        drop(effects);
+        self.send_player_inventory_content(player);
+        for (window, container_name, slots) in equipment {
+            self.try_enqueue_client_packet(&CInventoryContent {
+                container_id: VarUInt(window),
+                slots,
+                full_container_name: FullContainerName {
+                    container_name,
+                    dynamic_id: None,
+                },
+                storage_item: NetworkItemStackDescriptor::default(),
+            });
+        }
+    }
+
     fn sync_consumed_hand_item(&self, player: &Player, stack: ItemStack) {
         let selected_slot = player.inventory().get_selected_slot();
         player.inventory().set_held_item(stack.clone());
@@ -90,6 +148,14 @@ impl BedrockClient {
     #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::unreachable)]
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
+        // ServerGamePacketListenerImpl.handleContainerClick treats client stacks as
+        // predictions only. Legacy actions cannot authorize inventory writes or drops.
+        if !packet.actions.is_empty() {
+            self.correct_inventory_prediction(player);
+            self.respond_legacy_inventory(packet.legacy_request_id, 1);
+            return;
+        }
+
         let mut inventory_updated = false;
         let mut dropped_items = Vec::new();
         let mut updates = Vec::new();
@@ -151,65 +217,6 @@ impl BedrockClient {
             player.drop_item(item);
         }
 
-        for action in &packet.actions {
-            use pumpkin_protocol::bedrock::server::inventory_transaction::InventoryActionSource;
-            let source_type = InventoryActionSource::from(action.source_type);
-            if source_type == InventoryActionSource::World {
-                let old_stack = descriptor_to_stack(&action.old_item);
-                let new_stack = descriptor_to_stack(&action.new_item);
-                if old_stack.is_empty() && !new_stack.is_empty() {
-                    player.drop_item(new_stack);
-                }
-            } else if let Some(window_id) = action.window_id {
-                if let Some(screen_slot) =
-                    map_bedrock_slot_to_screen_handler(window_id, action.inventory_slot)
-                {
-                    let item_stack = descriptor_to_stack(&action.new_item);
-
-                    let _effects = crate::world::guard_effects::GuardEffects::new();
-                    let mut player_screen_handler = player
-                        .player_screen_handler
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-                    let is_armor_equipped = player_screen_handler
-                        .get_slot(screen_slot)
-                        .get_stack()
-                        .are_equal(&item_stack);
-
-                    if !is_armor_equipped {
-                        if (5..9).contains(&screen_slot) {
-                            player.enqueue_equipment_change(
-                                &match screen_slot {
-                                    5 => EquipmentSlot::HEAD,
-                                    6 => EquipmentSlot::CHEST,
-                                    7 => EquipmentSlot::LEGS,
-                                    8 => EquipmentSlot::FEET,
-                                    _ => unreachable!(),
-                                },
-                                &item_stack,
-                            );
-                        } else if (36..45).contains(&screen_slot) {
-                            let hotbar_slot = screen_slot - 36;
-                            if player.inventory().get_selected_slot() == hotbar_slot as u8 {
-                                let equipment = &[(EquipmentSlot::MAIN_HAND, item_stack.clone())];
-                                player.send_menu_equipment(equipment);
-                            }
-                        }
-                    }
-
-                    player_screen_handler
-                        .get_slot(screen_slot)
-                        .set_stack(item_stack.clone());
-                    player_screen_handler.set_received_stack(screen_slot, item_stack);
-                    player_screen_handler.send_content_updates();
-                    drop(player_screen_handler);
-
-                    inventory_updated = true;
-                }
-            }
-        }
-
         if inventory_updated {
             self.send_player_inventory_content(player);
         }
@@ -254,13 +261,15 @@ impl BedrockClient {
                     let client_stack = descriptor_to_stack(&data.item_in_hand);
 
                     let mut held_item = player.inventory().held_item();
-                    let authoritative_held_item = client_stack.is_empty()
-                        || (!held_item.is_empty() && held_item.item.id == client_stack.item.id);
+                    let authoritative_held_item = held_item.item.id == client_stack.item.id
+                        && held_item.item_count == client_stack.item_count;
                     if !authoritative_held_item {
-                        held_item = client_stack;
+                        self.correct_inventory_prediction(player);
+                        self.respond_legacy_inventory(packet.legacy_request_id, 1);
+                        return;
                     }
                     let before_block_use = held_item.clone();
-                    // Inventory transaction actions are applied before the Bedrock UseItem callback.
+                    // Legacy slot predictions were rejected before the use callback.
                     let held_slot_consumed_in_transaction = transaction_consumes_selected_hotbar(
                         &packet.actions,
                         player.inventory().get_selected_slot(),
@@ -380,11 +389,12 @@ impl BedrockClient {
                         HandSlot::Offhand => Hand::Left,
                     };
                     let mut held = player.inventory().get_stack_in_hand(hand);
-                    if !client_stack.is_empty()
-                        && (held.is_empty() || held.item.id != client_stack.item.id)
+                    if held.item.id != client_stack.item.id
+                        || held.item_count != client_stack.item_count
                     {
-                        held = client_stack;
-                        player.inventory().set_stack_in_hand(hand, held.clone());
+                        self.correct_inventory_prediction(player);
+                        self.respond_legacy_inventory(packet.legacy_request_id, 1);
+                        return;
                     }
                     // Consumable.onConsume and BucketItem/BottleItem.use count on success.
                     if !held.is_empty() && !server.item_registry.records_item_use_stat(&held) {

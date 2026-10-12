@@ -147,6 +147,9 @@ pub mod emote;
 pub mod emote_list;
 pub mod interaction;
 pub mod inventory_action;
+#[cfg(test)]
+mod inventory_exploit_tests;
+mod inventory_request_validation;
 pub mod item_stack_request;
 pub(super) use item_stack_request::record_update;
 pub mod mob_equipment;

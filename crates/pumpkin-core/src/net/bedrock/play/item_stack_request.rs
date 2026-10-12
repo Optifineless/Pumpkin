@@ -33,12 +33,31 @@ impl BedrockClient {
                 let mut updates = Vec::new();
                 let mut result = 0u8; // 0 = Success, 1 = Error
 
+                // Validate the entire request before its first write, including pseudo-slots.
+                if !super::inventory_request_validation::validate_request(
+                    &*screen_handler,
+                    &request.actions,
+                    player.gamemode.load(),
+                ) {
+                    responses.push(ItemStackResponseInfo {
+                        result: 1,
+                        client_request_id: request.request_id,
+                        containers: Vec::new(),
+                    });
+                    continue;
+                }
+
                 for action in request.actions {
                     match action {
                         ItemStackRequestAction::CraftCreative {
                             creative_item_id,
                             repetitions,
                         } => {
+                            // ServerGamePacketListenerImpl.handleSetCreativeModeSlot.
+                            if player.gamemode.load() != GameMode::Creative {
+                                result = 1;
+                                break;
+                            }
                             let index = (creative_item_id.0.saturating_sub(1)) as usize;
                             if index < pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.len() {
                                 let entry = pumpkin_data::bedrock_creative::CREATIVE_ENTRIES[index];
@@ -854,6 +873,11 @@ fn get_slot_stack(
     {
         return stack.clone();
     }
+    if slot_info.container_name.container_name == ContainerName::CreatedOutput
+        && screen_handler.window_type() != Some(pumpkin_data::screen::WindowType::Merchant)
+    {
+        return ItemStack::EMPTY.clone();
+    }
     if slot_info.container_name.container_name == ContainerName::Cursor {
         return screen_handler
             .get_behaviour()
@@ -880,6 +904,9 @@ fn update_slot_stack(
     slot_info: &pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo,
     new_stack: ItemStack,
 ) {
+    if slot_info.container_name.container_name == ContainerName::CreatedOutput {
+        return;
+    }
     if slot_info.container_name.container_name == ContainerName::Cursor {
         let mut cursor_lock = screen_handler
             .get_behaviour()
