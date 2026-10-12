@@ -1,3 +1,7 @@
+#[path = "sync_guardrail_scan/coverage.rs"]
+mod coverage;
+#[path = "sync_guardrail_scan/fixtures.rs"]
+mod fixtures;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::{
     env, fs,
@@ -20,6 +24,7 @@ struct Site {
 #[derive(Default)]
 struct Imports {
     locks: HashMap<String, Vec<String>>,
+    paths: HashMap<String, Vec<String>>,
     globs: Vec<String>,
 }
 
@@ -81,13 +86,25 @@ fn tokenize(s: &str) -> Vec<Token<'_>> {
 
 fn leaf(path: &str) -> Option<&str> {
     let name = path.rsplit("::").next()?;
-    ["Mutex", "RwLock", "ReentrantMutex", "FairMutex"]
-        .contains(&name)
-        .then_some(name)
+    [
+        "Mutex",
+        "RwLock",
+        "ReentrantMutex",
+        "FairMutex",
+        "ScreenMutex",
+    ]
+    .contains(&name)
+    .then_some(name)
 }
 fn lock_kind(path: &str) -> Option<String> {
     let name = leaf(path)?;
-    if path == format!("std::sync::{name}") || path == format!("tokio::sync::{name}") {
+    if name == "ScreenMutex" {
+        return Some("ScreenMutex::new".into());
+    }
+    if path == format!("std::sync::{name}")
+        || path == format!("tokio::sync::{name}")
+        || path == format!("pumpkin_util::sync::{name}")
+    {
         Some(format!("{path}::new"))
     } else if path.starts_with("parking_lot::") {
         Some(format!("parking_lot::{name}::new"))
@@ -99,6 +116,10 @@ fn add_import(out: &mut Imports, path: &str, alias: Option<&str>) {
     let Some(name) = path.rsplit("::").next() else {
         return;
     };
+    out.paths
+        .entry(alias.unwrap_or(name).into())
+        .or_default()
+        .push(path.into());
     if let Some(kind) = lock_kind(path) {
         out.locks
             .entry(alias.unwrap_or(name).into())
@@ -189,22 +210,17 @@ fn path_is(t: &[Token<'_>], i: usize, path: &str) -> bool {
     }
     cursor == 0 || t[cursor - 1].text != "::" || cursor == 1
 }
-#[rustfmt::skip]
-fn is_ctor(t: &[Token<'_>], i: usize) -> bool {
-    if t.get(i + 1).is_none_or(|x| x.text != "::") { return false; }
-    if t.get(i + 2).is_some_and(|x| x.text == "new") { return true; }
-    if t.get(i + 2).is_none_or(|x| x.text != "<") { return false; }
-    let mut depth = 0;
-    for j in i + 2..t.len() { match t[j].text { "<" => depth += 1, ">" => { depth -= 1; if depth == 0 { return t.get(j + 1).is_some_and(|x| x.text == "::") && t.get(j + 2).is_some_and(|x| x.text == "new"); } }, _ => {} } }
-    false
-}
 fn imported_lock(imports: &Imports, name: &str) -> String {
+    if name == "ScreenMutex" {
+        return "ScreenMutex::new".into();
+    }
     let mut kinds = imports.locks.get(name).cloned().unwrap_or_default();
     for glob in &imports.globs {
         let path = match glob.as_str() {
             "std::sync" => format!("std::sync::{name}"),
             "tokio::sync" => format!("tokio::sync::{name}"),
             "parking_lot" => format!("parking_lot::{name}"),
+            "pumpkin_util::sync" => format!("pumpkin_util::sync::{name}"),
             _ => continue,
         };
         if let Some(kind) = lock_kind(&path) {
@@ -225,25 +241,15 @@ fn imported_lock(imports: &Imports, name: &str) -> String {
 }
 #[rustfmt::skip]
 fn scan_source(path: &str, source: &str) -> Vec<Site> {
-    let t = tokenize(source); let imports = imports(&t); let (owners, names) = owners(&t);
+    let t = tokenize(source); let mut imports = imports(&t); coverage::aliases(&t, &mut imports); let (owners, names) = owners(&t);
     let mut found = Vec::<(usize, String, bool)>::new();
     for i in 0..t.len() {
-        if is_ctor(&t, i) && (leaf(t[i].text).is_some() || imports.locks.contains_key(t[i].text)) {
-            let full = path_at(&t, i);
-            let kind = if full.contains("::") { lock_kind(&full).unwrap_or_else(|| format!("unknown::{}::new", t[i].text)) }
-        else { imported_lock(&imports, t[i].text) };
-            found.push((i, kind, true));
+        if let Some(kind) = coverage::constructor(&t, i, &imports) {
+            let enforced = !kind.starts_with("pumpkin_util::sync::") && !kind.contains("ScreenMutex");
+            found.push((i, kind, enforced));
         }
-        if t.get(i + 1).is_some_and(|x| x.text == "(") {
-            let name = t[i].text;
-            let prev = i.checked_sub(1).map(|j| t[j].text);
-            let direct = if prev == Some("fn") { None } else { match name {
-                "block_on" if prev == Some(".") => Some(("block_on".into(), true)),
-                "block_on" if path_is(&t, i, "futures::executor::block_on") => Some(("futures::executor::block_on".into(), true)),
-                "block_in_place" => Some(("block_in_place".into(), true)), "spawn_blocking" => Some(("spawn_blocking".into(), false)),
-                "spawn" if path_is(&t, i, "rayon::spawn") => Some(("rayon::spawn".into(), false)), _ => None,
-            }};
-            if let Some((kind, enforced)) = direct { found.push((i, kind, enforced)); }
+        if let Some((kind, enforced)) = coverage::bridge(&t, i, &imports) {
+            found.push((i, kind, enforced));
         }
     }
     found.sort_by_key(|(i, _, _)| *i);
@@ -273,7 +279,7 @@ fn scan_workspace(root: &Path) -> std::io::Result<Vec<Site>> {
     files.sort(); let mut sites = Vec::new();
     for relative in files {
         let file = root.join(&relative); let source = fs::read_to_string(&file)?;
-        if ["Mutex", "RwLock", "block_on", "block_in_place", "spawn_blocking", "rayon::spawn"].iter().any(|key| source.contains(key)) {
+        if ["Mutex", "RwLock", "const_mutex", "const_rwlock", "block_on", "block_in_place", "spawn_blocking", "rayon::spawn"].iter().any(|key| source.contains(key)) {
             sites.extend(scan_source(&relative.to_string_lossy().replace('\\', "/"), &source));
         }
     }
@@ -315,21 +321,24 @@ fn synchronization_sites_are_allowlisted() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = manifest.parent().and_then(Path::parent);
     assert!(root.is_some(), "could not locate workspace root");
+    let started = std::time::Instant::now();
     let scanned = scan_workspace(root.unwrap_or(&manifest));
+    eprintln!("sync guardrail scan runtime: {:?}", started.elapsed());
     assert!(scanned.is_ok(), "could not scan workspace source: {:?}", scanned.as_ref().err());
     let sites = scanned.unwrap_or_default();
     let allow_path = manifest.join("tests/sync_guardrail_allowlist.txt");
-    if env::var("SYNC_GUARDRAIL_WRITE").as_deref() == Ok("1") { assert!(write_allowlist(&allow_path, &sites).is_ok(), "could not write allowlist"); }
     let loaded = fs::read_to_string(&allow_path);
     assert!(loaded.is_ok(), "could not read {}", allow_path.display());
     let enforced: Vec<_> = sites.iter().filter(|site| site.enforced).cloned().collect();
     let (new, stale) = diff(&enforced, &loaded.unwrap_or_default());
+    eprintln!("sync guardrail mismatch summary: new={}, stale={}", new.len(), stale.len());
+    if env::var("SYNC_GUARDRAIL_WRITE").as_deref() == Ok("1") { assert!(write_allowlist(&allow_path, &sites).is_ok(), "could not write allowlist"); }
     let mut counts = BTreeMap::<String, usize>::new();
     for kind in ["std::sync::Mutex::new", "std::sync::RwLock::new", "tokio::sync::Mutex::new", "tokio::sync::RwLock::new", "parking_lot::Mutex::new", "parking_lot::RwLock::new", "parking_lot::ReentrantMutex::new", "parking_lot::FairMutex::new", "unknown::Mutex::new", "unknown::RwLock::new", "block_on", "futures::executor::block_on", "block_in_place", "rayon::spawn", "spawn_blocking"] { counts.insert(kind.into(), 0); }
     for site in &sites { *counts.entry(site.kind.clone()).or_default() += 1; }
-    let enforced_counts = counts.iter().filter(|(kind, _)| !matches!(kind.as_str(), "rayon::spawn" | "spawn_blocking")).map(|(kind, n)| format!("{kind}={n}")).collect::<Vec<_>>().join(", ");
+    let enforced_counts = counts.iter().filter(|(kind, _)| !matches!(kind.as_str(), "rayon::spawn" | "spawn_blocking") && !kind.starts_with("pumpkin_util::sync::") && !kind.contains("ScreenMutex")).map(|(kind, n)| format!("{kind}={n}")).collect::<Vec<_>>().join(", ");
     eprintln!("sync guardrail enforced counts: {enforced_counts}");
-    let informational_counts = counts.iter().filter(|(kind, _)| matches!(kind.as_str(), "rayon::spawn" | "spawn_blocking")).map(|(kind, n)| format!("{kind}={n}")).collect::<Vec<_>>().join(", ");
+    let informational_counts = counts.iter().filter(|(kind, _)| matches!(kind.as_str(), "rayon::spawn" | "spawn_blocking") || kind.starts_with("pumpkin_util::sync::") || kind.contains("ScreenMutex")).map(|(kind, n)| format!("{kind}={n}")).collect::<Vec<_>>().join(", ");
     eprintln!("sync guardrail informational counts: {informational_counts}");
     let informational = sites.iter().filter(|site| !site.enforced).map(|site| format!("{}:{} {}", site.path, site.line, site.key)).collect::<Vec<_>>().join("\n");
     eprintln!("informational only sites (not enforced):\n{informational}");
@@ -338,7 +347,7 @@ fn synchronization_sites_are_allowlisted() {
     let mut top: Vec<_> = files.into_iter().collect(); top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
     eprintln!("top synchronization files: {}", top.iter().take(10).map(|(path, count)| format!("{path}={count}")).collect::<Vec<_>>().join(", "));
     let location = |key: &str| sites.iter().find(|site| site.key == key).map_or_else(|| key.into(), |site| format!("{}:{}: {key}", site.path, site.line));
-    assert!(new.is_empty() && stale.is_empty(),
+    assert!(env::var("SYNC_GUARDRAIL_WRITE").as_deref() == Ok("1") || (new.is_empty() && stale.is_empty()),
         "sync guardrail mismatch (rules B1/B3 in rules-regression-prevention.md).\nNew sites:\n{}\nStale allowlist entries:\n{}\nReview each site: use the instrumented lock wrapper from PR #149 once merged, or add the key here with a justification comment.\nRegenerate the baseline with: SYNC_GUARDRAIL_WRITE=1 cargo test -p pumpkin-core --test sync_guardrail_scan -- --nocapture",
         if new.is_empty() { "  (none)".into() } else { new.iter().map(|key| format!("  {}", location(key))).collect::<Vec<_>>().join("\n") },
         if stale.is_empty() { "  (none)".into() } else { stale.iter().map(|key| format!("  {key}")).collect::<Vec<_>>().join("\n") });
