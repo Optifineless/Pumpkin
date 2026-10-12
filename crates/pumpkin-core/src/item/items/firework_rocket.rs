@@ -60,35 +60,51 @@ impl ItemBehaviour for FireworkRocketItem {
         &self,
         _item: &Item,
         player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        observed: &pumpkin_data::item_stack::ItemStack,
+        player: &Player,
         _yaw: f32,
         _pitch: f32,
         hand: pumpkin_util::Hand,
-    ) {
+    ) -> bool {
         if player.get_entity().is_fall_flying() {
+            if observed.is_empty() || observed.item.id != Item::FIREWORK_ROCKET.id {
+                return false;
+            }
+            let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, observed)
+            else {
+                return false;
+            };
+
             let world = player.world();
             let entity = Entity::new(
                 world.clone(),
                 player.get_entity().pos.load(),
                 &EntityType::FIREWORK_ROCKET,
             );
-            let mut stack = player.inventory().get_stack_in_hand(hand);
-            let expected_stack = stack.clone();
-            if stack.is_empty() || stack.item.id != Item::FIREWORK_ROCKET.id {
-                return;
-            }
             // FireworkRocketItem.use builds the rocket from the hand's stack, attached to the player.
             let rocket = FireworkRocketEntity::with_item(
                 entity,
-                stack.clone(),
+                observed.clone(),
                 Some(player.get_entity()),
                 true,
             );
-            world.spawn_entity(Arc::new(rocket));
-            stack.decrement_unless_creative(player.gamemode.load(), 1);
-            player
-                .inventory()
-                .exchange_stack_in_hand(hand, &expected_stack, stack);
+            if !world.spawn_entity(Arc::new(rocket)) {
+                crate::item::item_utils::give_or_drop(player, receipt);
+                return false;
+            }
+            return true;
         }
+        false
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

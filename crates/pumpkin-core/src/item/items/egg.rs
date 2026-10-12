@@ -31,10 +31,26 @@ impl ItemBehaviour for EggItem {
         &self,
         _item: &Item,
         player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
         _yaw: f32,
         _pitch: f32,
         hand: pumpkin_util::Hand,
-    ) {
+    ) -> bool {
+        // EggItem.use: claim the hand snapshot before projectile effects in Pumpkin's concurrent tick.
+        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+            return false;
+        };
         let position = player.position();
         let world = player.world();
         world.play_sound(
@@ -44,7 +60,7 @@ impl ItemBehaviour for EggItem {
         );
 
         // Capture the held item stack and pass it to the thrown egg entity
-        let item_stack: ItemStack = player.inventory.get_stack_in_hand(hand);
+        let item_stack = stack.clone();
 
         let entity = Entity::new(world.clone(), position, &EntityType::EGG);
         let egg = EggEntity::new_shot(entity, player.get_entity());
@@ -54,15 +70,12 @@ impl ItemBehaviour for EggItem {
 
         let (yaw, pitch) = player.rotation();
         egg.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        world.spawn_entity(Arc::new(egg));
+        if !world.spawn_entity(Arc::new(egg)) {
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
+        }
 
-        let mut stack = player.inventory.get_stack_in_hand(hand);
-
-        let expected_stack = stack.clone();
-        stack.decrement_unless_creative(player.gamemode.load(), 1);
-        player
-            .inventory
-            .exchange_stack_in_hand(hand, &expected_stack, stack);
+        true
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

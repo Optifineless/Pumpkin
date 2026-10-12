@@ -303,7 +303,7 @@ impl MerchantScreenHandler {
         }
         self.publish_trade(offer_index, player);
         self.update_result_slot();
-        self.notify_trade_updated();
+        self.notify_trade_updated(player);
         self.send_content_updates();
         true
     }

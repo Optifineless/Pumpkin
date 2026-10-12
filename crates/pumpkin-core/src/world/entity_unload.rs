@@ -86,7 +86,7 @@ impl World {
             .map(entity_persistence::save_riding_tree)
             .collect();
         // Keep block-entity saving independent of entity-sidecar availability (PR-2 owns detach atomicity).
-        self.save_block_entities(request.position);
+        self.save_block_entities(request.position, false);
         let ids: FxHashSet<_> = members
             .iter()
             .map(|entity| entity.get_entity().entity_id)

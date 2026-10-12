@@ -15,7 +15,7 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
 };
 use pumpkin_util::{
-    GameMode, Hand,
+    Hand,
     math::{position::BlockPos, vector3::Vector3},
 };
 use pumpkin_world::{tick::TickPriority, world::BlockFlags};
@@ -401,12 +401,24 @@ impl ItemBehaviour for EmptyBucketItem {
     // BucketItem.use reads and replaces the originating hand.
     fn normal_use_with_hand(
         &self,
-        _block: &Item,
+        _item: &Item,
         player: &Player,
         yaw: f32,
         pitch: f32,
         hand: Hand,
     ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) -> bool {
         let world = player.world();
         let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
 
@@ -425,11 +437,11 @@ impl ItemBehaviour for EmptyBucketItem {
         };
 
         let Some((block_pos, direction)) = world.raycast(start_pos, end_pos, checker) else {
-            return;
+            return false;
         };
 
         let Some((pickup_pos, item)) = bucket_pickup_target(&world, block_pos, direction) else {
-            return;
+            return false;
         };
 
         if let Some(server) = world.server.upgrade()
@@ -443,19 +455,20 @@ impl ItemBehaviour for EmptyBucketItem {
                 );
             server.plugin_manager.fire_blocking(&server, &mut event);
             if event.cancelled {
-                return;
+                return false;
             }
         }
 
-        let mut stack = player.inventory().get_stack_in_hand(hand);
-
-        let expected_stack = stack.clone();
-        if stack.is_empty()
-            || stack.item != &Item::BUCKET
-            || try_pickup_fluid_at(&world, pickup_pos).is_none()
-        {
-            return;
+        if stack.is_empty() || stack.item != &Item::BUCKET {
+            return false;
         }
+        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+            return false;
+        };
+        let Some(actual_item) = try_pickup_fluid_at(&world, pickup_pos) else {
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
+        };
         // BucketItem.use -> Player.playSound excludes the player and uses their sound source.
         world.play_sound_expect(
             player,
@@ -463,21 +476,20 @@ impl ItemBehaviour for EmptyBucketItem {
             SoundCategory::Players,
             &player.position(),
         );
-
-        crate::item::item_utils::create_filled_result(
-            &mut stack,
+        crate::item::item_utils::finish_claimed_result(
             player,
-            ItemStack::new(1, item),
+            hand,
+            stack,
+            &receipt,
+            ItemStack::new(1, actual_item),
             true,
         );
-        player
-            .inventory()
-            .exchange_stack_in_hand(hand, &expected_stack, stack);
         player.increment_stat(
             pumpkin_data::statistic::StatisticCategory::Used,
             i32::from(Item::BUCKET.id),
             1,
         );
+        true
     }
 
     fn use_on_entity(&self, item: &mut ItemStack, player: &Player, entity: Arc<dyn EntityBase>) {
@@ -519,26 +531,18 @@ impl ItemBehaviour for EmptyBucketItem {
 }
 
 // BucketItem.getEmptySuccessItem leaves creative stacks intact and replaces the requested hand.
-fn finish_empty_bucket(player: &Player, hand: Hand, item: &Item) {
-    if player.gamemode.load() != GameMode::Creative {
-        let mut stack = player.inventory().get_stack_in_hand(hand);
-        let expected_stack = stack.clone();
-        if stack.item != item {
-            return;
-        }
-        crate::item::item_utils::create_filled_result(
-            &mut stack,
-            player,
-            ItemStack::new(1, &Item::BUCKET),
-            true,
-        );
-        player
-            .inventory()
-            .exchange_stack_in_hand(hand, &expected_stack, stack);
-    }
+fn finish_empty_bucket(player: &Player, hand: Hand, expected: &ItemStack, receipt: &ItemStack) {
+    crate::item::item_utils::finish_claimed_result(
+        player,
+        hand,
+        expected,
+        receipt,
+        ItemStack::new(1, &Item::BUCKET),
+        false,
+    );
     player.increment_stat(
         pumpkin_data::statistic::StatisticCategory::Used,
-        i32::from(item.id),
+        i32::from(expected.item.id),
         1,
     );
 }
@@ -554,7 +558,27 @@ impl ItemBehaviour for FilledBucketItem {
     }
 
     // BucketItem.use reads and replaces the originating hand.
-    fn normal_use_with_hand(&self, item: &Item, player: &Player, yaw: f32, pitch: f32, hand: Hand) {
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) -> bool {
+        let item = stack.item;
         let world = player.world();
         let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
         let checker = |pos: &BlockPos, world_inner: &Arc<World>| {
@@ -566,7 +590,7 @@ impl ItemBehaviour for FilledBucketItem {
         };
 
         let Some((pos, direction)) = world.raycast(start_pos, end_pos, checker) else {
-            return;
+            return false;
         };
 
         // BucketItem.use resolves eligibility, then plugin cancellation, before placement.
@@ -577,7 +601,7 @@ impl ItemBehaviour for FilledBucketItem {
             direction,
             player.get_entity().is_sneaking(),
         ) else {
-            return;
+            return false;
         };
         if let Some(server) = world.server.upgrade()
             && let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
@@ -590,14 +614,16 @@ impl ItemBehaviour for FilledBucketItem {
                 );
             server.plugin_manager.fire_blocking(&server, &mut event);
             if event.cancelled {
-                return;
+                return false;
             }
         }
 
-        let stack = player.inventory().get_stack_in_hand(hand);
-        if stack.is_empty() || stack.item != item {
-            return;
+        if stack.is_empty() {
+            return false;
         }
+        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+            return false;
+        };
         let place_pos = if item == &Item::POWDER_SNOW_BUCKET {
             world.set_block_state(
                 &destination,
@@ -611,11 +637,13 @@ impl ItemBehaviour for FilledBucketItem {
         {
             pos
         } else {
-            return;
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
         };
-        check_extra_content(&world, &stack, place_pos);
+        check_extra_content(&world, stack, place_pos);
 
-        finish_empty_bucket(player, hand, item);
+        finish_empty_bucket(player, hand, stack, &receipt);
+        true
     }
 
     fn use_on_entity(&self, item: &mut ItemStack, player: &Player, entity: Arc<dyn EntityBase>) {

@@ -6,6 +6,7 @@ use crate::entity::{Entity, EntityBase};
 use crate::item::{ItemBehaviour, ItemMetadata};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use rand::RngExt;
 use std::sync::Arc;
@@ -33,6 +34,22 @@ impl ItemBehaviour for ExperienceBottleItem {
         pitch: f32,
         hand: pumpkin_util::Hand,
     ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) -> bool {
+        // ExperienceBottleItem.use: claim the hand snapshot before projectile effects in Pumpkin's concurrent tick.
+        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+            return false;
+        };
         let world = player.world();
         let pos = player.position();
         world.play_sound_fine(
@@ -43,23 +60,20 @@ impl ItemBehaviour for ExperienceBottleItem {
             0.4 / (rand::rng().random::<f32>() * 0.4 + 0.8),
         );
 
-        let mut held = player.inventory().get_stack_in_hand(hand);
-
-        let expected_held = held.clone();
         let entity = Entity::new(world.clone(), pos, &EntityType::EXPERIENCE_BOTTLE);
         let bottle = ExperienceBottleEntity::new_shot(entity, player.get_entity());
-        bottle.set_item_stack(&held);
+        bottle.set_item_stack(stack);
         bottle.thrown.set_velocity_from(pitch, yaw, -20.0, 0.7, 1.0);
         crate::item::items::projectile_weapon::ProjectileWeaponItem::add_shooter_movement(
             bottle.get_entity(),
             player.get_entity(),
         );
-        world.spawn_entity(Arc::new(bottle));
+        if !world.spawn_entity(Arc::new(bottle)) {
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
+        }
 
-        held.decrement_unless_creative(player.gamemode.load(), 1);
-        player
-            .inventory()
-            .exchange_stack_in_hand(hand, &expected_held, held);
+        true
     }
 
     fn as_any(&self) -> &dyn Any {

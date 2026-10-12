@@ -20,6 +20,31 @@ impl ItemMetadata for PlaceOnWaterBlockItem {
 
 impl ItemBehaviour for PlaceOnWaterBlockItem {
     fn normal_use(&self, item: &Item, player: &Player) {
+        let (yaw, pitch) = player.rotation();
+        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+    }
+
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        stack: &pumpkin_data::item_stack::ItemStack,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) -> bool {
+        let item = stack.item;
         let world = player.world();
         let (start_pos, end_pos) = self.get_start_and_end_pos(player);
         let checker = |pos: &BlockPos, world_inner: &Arc<World>| {
@@ -31,7 +56,7 @@ impl ItemBehaviour for PlaceOnWaterBlockItem {
         };
 
         let Some((hit_pos, _)) = world.raycast(start_pos, end_pos, checker) else {
-            return;
+            return false;
         };
 
         let above_pos = hit_pos.up();
@@ -43,6 +68,10 @@ impl ItemBehaviour for PlaceOnWaterBlockItem {
                 (&Block::FROGSPAWN, Sound::BlockFrogspawnPlace)
             };
 
+            // PlaceOnWaterBlockItem.use / BlockItem.place consume the same used hand.
+            if crate::item::item_utils::claim_item_in_hand(player, hand, stack).is_none() {
+                return false;
+            }
             world.set_block_state(
                 &above_pos,
                 placed_block.default_state.id,
@@ -54,34 +83,9 @@ impl ItemBehaviour for PlaceOnWaterBlockItem {
                 &above_pos.to_f64(),
             );
 
-            let mut main_hand = player.inventory.held_item();
-
-            let expected_main_hand = main_hand.clone();
-            let consumed = if !main_hand.is_empty() && main_hand.item.id == item.id {
-                main_hand.decrement_unless_creative(player.gamemode.load(), 1);
-                player.inventory.exchange_stack_in_hand(
-                    pumpkin_util::Hand::Right,
-                    &expected_main_hand,
-                    main_hand,
-                );
-                true
-            } else {
-                false
-            };
-
-            if !consumed {
-                let mut off_hand = player.inventory.off_hand_item();
-                let expected_off_hand = off_hand.clone();
-                if !off_hand.is_empty() && off_hand.item.id == item.id {
-                    off_hand.decrement_unless_creative(player.gamemode.load(), 1);
-                    player.inventory.exchange_stack_in_hand(
-                        pumpkin_util::Hand::Left,
-                        &expected_off_hand,
-                        off_hand,
-                    );
-                }
-            }
+            return true;
         }
+        false
     }
 
     fn as_any(&self) -> &dyn Any {

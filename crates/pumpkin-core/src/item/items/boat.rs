@@ -100,12 +100,25 @@ impl ItemBehaviour for BoatItem {
     // BoatItem.use reads and consumes player.getItemInHand(hand).
     fn normal_use_with_hand(
         &self,
-        item: &Item,
+        _item: &Item,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        observed: &pumpkin_data::item_stack::ItemStack,
         player: &Player,
         _yaw: f32,
         _pitch: f32,
         hand: pumpkin_util::Hand,
-    ) {
+    ) -> bool {
+        let item = observed.item;
         let world = player.world();
         let (start_pos, end_pos) = self.get_start_and_end_pos(player);
 
@@ -128,7 +141,7 @@ impl ItemBehaviour for BoatItem {
         };
 
         let Some((hit_pos, _direction)) = world.raycast(start_pos, end_pos, checker) else {
-            return;
+            return false;
         };
 
         // Calculate hit position - center of the block top or water surface
@@ -162,7 +175,7 @@ impl ItemBehaviour for BoatItem {
             // Check if entity's bounding box contains the player's eye position
             if entity_box.intersects(&BoundingBox::new(player_eye_pos, player_eye_pos)) {
                 // Entity is blocking the line of sight at eye position
-                return;
+                return false;
             }
         }
 
@@ -173,13 +186,18 @@ impl ItemBehaviour for BoatItem {
 
         // Vanilla: if (!world.isSpaceEmpty(lv7, lv7.getBoundingBox())) return FAIL
         if !world.is_space_empty(boat_box) {
-            return;
+            return false;
         }
 
         // Check no entities occupy the space
         if !world.get_entities_at_box(&boat_box).is_empty() {
-            return;
+            return false;
         }
+
+        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, observed)
+        else {
+            return false;
+        };
 
         // Create and spawn the boat
         let entity = Entity::new(world.clone(), hit_vec, entity_type);
@@ -189,15 +207,11 @@ impl ItemBehaviour for BoatItem {
         entity.set_rotation(player_yaw, 0.0);
 
         let boat_entity = Arc::new(BoatEntity::new(entity));
-        world.spawn_entity(boat_entity);
-
-        let mut stack = player.inventory.get_stack_in_hand(hand);
-
-        let expected_stack = stack.clone();
-        stack.decrement_unless_creative(player.gamemode.load(), 1);
-        player
-            .inventory
-            .exchange_stack_in_hand(hand, &expected_stack, stack);
+        if !world.spawn_entity(boat_entity) {
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
+        }
+        true
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

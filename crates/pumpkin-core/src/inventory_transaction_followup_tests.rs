@@ -179,6 +179,10 @@ async fn inventory_transactions_number_key_vs_quick_move_packets() {
     let chest = chest(&fixture, 64);
     let first = TestPlayer::new(&fixture.world());
     let second = TestPlayer::new(&fixture.world());
+    fixture
+        .world()
+        .players
+        .store(Arc::new(vec![first.player.clone(), second.player.clone()]));
     let shared: Arc<dyn Inventory> = Arc::new(PausedInventory(chest.clone()));
     open_chest(&first, shared.clone());
     open_chest(&second, shared);
@@ -492,7 +496,7 @@ async fn inventory_transactions_furnace_counts_only_admitted_output() {
             pumpkin_data::screen::WindowType::Furnace,
         );
     *player.player.current_screen_handler.lock().unwrap() =
-        Arc::new(std::sync::Mutex::new(handler));
+        Arc::new(pumpkin_util::sync::Mutex::new(handler));
     let (ready, wait_ready) = mpsc::channel();
     let (resume, wait_resume) = mpsc::channel();
     let runtime = tokio::runtime::Handle::current();

@@ -156,3 +156,75 @@ pub fn create_filled_result(
     }
     true
 }
+
+/// Claims one item from the observed hand before publishing a use effect.
+/// Returns paid stock for cancellation refunds, or an empty receipt for Creative use.
+// Throwable item use consumes the same getItemInHand snapshot in vanilla's serial tick.
+pub(crate) fn claim_item_in_hand(
+    player: &Player,
+    hand: pumpkin_util::Hand,
+    expected: &ItemStack,
+) -> Option<ItemStack> {
+    if expected.is_empty() {
+        return None;
+    }
+    let mode = player.gamemode.load();
+    let mut replacement = expected.clone();
+    replacement.decrement_unless_creative(mode, 1);
+    player
+        .inventory()
+        .exchange_stack_in_hand(hand, expected, replacement)
+        .then(|| {
+            if mode == pumpkin_util::GameMode::Creative {
+                ItemStack::EMPTY.clone()
+            } else {
+                expected.copy_with_count(1)
+            }
+        })
+}
+
+/// Delivers the result of an admitted one-item hand claim without replacing concurrent edits.
+// ItemUtils.createFilledResult replaces the last paid input, otherwise adds the output.
+pub(crate) fn finish_claimed_result(
+    player: &Player,
+    hand: pumpkin_util::Hand,
+    expected: &ItemStack,
+    receipt: &ItemStack,
+    output: ItemStack,
+    creative_output: bool,
+) {
+    let inventory = player.inventory();
+    if receipt.is_empty()
+        && (!creative_output
+            || (0..inventory.size()).any(|slot| {
+                inventory
+                    .get_stack(slot)
+                    .are_items_and_components_equal(&output)
+            }))
+    {
+        return;
+    }
+    let slot = match hand {
+        pumpkin_util::Hand::Right => inventory.get_selected_slot() as usize,
+        pumpkin_util::Hand::Left => {
+            pumpkin_inventory::player::player_inventory::PlayerInventory::OFF_HAND_SLOT
+        }
+    };
+    let current = inventory.get_stack(slot);
+    let delivered = !receipt.is_empty()
+        && expected.item_count == 1
+        && current.is_empty()
+        && pumpkin_inventory::inventory::slot_transaction::exchange(
+            inventory.as_ref(),
+            slot,
+            &current,
+            output.clone(),
+        );
+    if !delivered {
+        give_or_drop(player, output);
+    }
+    player
+        .inventory_changed
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    player.sync_hand_slot(slot, inventory.get_stack(slot));
+}
