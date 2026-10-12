@@ -98,8 +98,10 @@ fn distribute(behaviour: &ScreenHandlerBehaviour, source: &ItemStack) {
         };
         let count = (placed + usize::from(carry))
             .min(usize::from(slot.get_max_item_count_for_stack(source))) as u8;
-        remaining -= i32::from(count) - i32::from(carry);
-        slot.set_stack(source.copy_with_count(count));
+        // AbstractContainerMenu.doClick QUICK_CRAFT distributes owned cursor stock.
+        let offer = count.saturating_sub(carry);
+        let leftover = slot.insert_stack_count(source.copy_with_count(offer), offer);
+        remaining -= i32::from(offer.saturating_sub(leftover.item_count));
     }
     *behaviour
         .cursor_stack

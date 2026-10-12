@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::block::entities::hopper::HopperBlockEntity;
 use crate::entity::{Entity, player::Player};
 use pumpkin_data::translation;
-use pumpkin_inventory::Inventory;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
@@ -59,59 +58,19 @@ impl HopperMinecart {
                 if stack.is_empty() || !source.can_transfer_to(inventory.as_ref(), slot, &stack) {
                     continue;
                 }
-                // HopperBlockEntity.tryTakeInItemFromSlot removes one item before the offer.
-                let owners = pumpkin_inventory::inventory::slot_transaction::ordered_owners(&[
-                    source.as_ref(),
-                    inventory.as_ref(),
-                ]);
-                let transfers = owners
-                    .iter()
-                    .map(|owner| {
-                        owner
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    })
-                    .collect::<Vec<_>>();
-                let expected = source.get_stack(slot);
-                if expected.is_empty()
-                    || !source.can_transfer_to(inventory.as_ref(), slot, &expected)
-                {
-                    continue;
-                }
-                let one = pumpkin_inventory::inventory::slot_transaction::withdraw(
-                    source.as_ref(),
-                    slot,
-                    &expected,
-                    inventory.space_for_stack(&expected).min(1),
-                );
                 #[cfg(test)]
                 self.pause_container_transfer();
-                let (remaining, changed) = HopperBlockEntity::add_item_from_face_deferred(
-                    Some(source.as_ref()),
+                let (moved, leftover) = HopperBlockEntity::transfer_one(
+                    source.as_ref(),
                     inventory.as_ref(),
-                    one.clone(),
+                    slot,
+                    &stack,
                     None,
                 );
-                let moved = one.item_count.saturating_sub(remaining.item_count);
-                let leftover = pumpkin_inventory::inventory::slot_transaction::refund(
-                    source.as_ref(),
-                    slot,
-                    &expected,
-                    remaining,
-                );
-                let source_changed =
-                    !one.is_empty() && !source.get_stack(slot).are_equal(&expected);
-                drop(transfers);
-                if source_changed {
-                    source.on_slot_changed(slot);
-                }
-                for slot in changed {
-                    inventory.on_slot_changed(slot);
-                }
                 if !leftover.is_empty() {
                     world.scatter_stack(pos.x, pos.y, pos.z, leftover);
                 }
-                if moved > 0 {
+                if moved {
                     return;
                 }
             }

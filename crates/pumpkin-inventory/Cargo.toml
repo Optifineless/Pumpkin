@@ -25,6 +25,8 @@ rand.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 rustc-hash.workspace = true
+parking_lot = "0.12.5"
+smallvec = "1.16.2"
 
 [lints]
 workspace = true

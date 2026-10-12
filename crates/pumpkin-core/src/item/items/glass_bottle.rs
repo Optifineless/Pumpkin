@@ -71,6 +71,7 @@ impl ItemBehaviour for GlassBottleItem {
         };
         if let Some((position, _)) = world.raycast(start, end, checker) {
             let mut stack = player.inventory().get_stack_in_hand(hand);
+            let expected_stack = stack.clone();
             if stack.is_empty() || stack.item != &Item::GLASS_BOTTLE {
                 return;
             }
@@ -80,7 +81,9 @@ impl ItemBehaviour for GlassBottleItem {
                 &position.to_f64(),
             );
             crate::item::item_utils::create_filled_result(&mut stack, player, water_bottle(), true);
-            player.inventory().set_stack_in_hand(hand, stack);
+            player
+                .inventory()
+                .exchange_stack_in_hand(hand, &expected_stack, stack);
             player.increment_stat(
                 pumpkin_data::statistic::StatisticCategory::Used,
                 i32::from(Item::GLASS_BOTTLE.id),

@@ -22,6 +22,13 @@ fn vanilla_data() -> VanillaData {
     }
 }
 
+/// Waits for finite server tasks spawned by test commands.
+pub async fn wait_for_tasks(server: &Server) {
+    server.tasks.close();
+    server.tasks.wait().await;
+    server.tasks.reopen();
+}
+
 #[must_use]
 pub fn server(path: &std::path::Path) -> Arc<Server> {
     server_with_player_data(path, false)

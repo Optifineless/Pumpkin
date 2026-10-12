@@ -62,6 +62,14 @@ pub fn write_back_hand_item(
     } else {
         after.clone()
     };
+    if !pumpkin_inventory::inventory::slot_transaction::exchange(
+        player.inventory().as_ref(),
+        source_slot,
+        before,
+        stored.clone(),
+    ) {
+        return;
+    }
     // LivingEntity.onEquippedItemBroken broadcasts while the client still has the old item.
     // ArmorStand.swapItem transfers equipment without ItemStack.hurtAndBreak.
     if mutation == HandMutation::ItemUse
@@ -79,7 +87,6 @@ pub fn write_back_hand_item(
             .world()
             .send_entity_status(player.get_entity(), equipment_break_status(&slot), None);
     }
-    player.inventory().set_stack(source_slot, stored.clone());
     player.sync_hand_slot(source_slot, stored);
 }
 

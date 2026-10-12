@@ -3296,12 +3296,14 @@ dependencies = [
 name = "pumpkin-inventory"
 version = "0.2.0+26.3-26.51"
 dependencies = [
+ "parking_lot",
  "pumpkin-data",
  "pumpkin-nbt",
  "pumpkin-protocol",
  "pumpkin-util",
  "rand 0.10.3",
  "rustc-hash",
+ "smallvec",
  "thiserror 2.0.21",
  "tracing",
 ]

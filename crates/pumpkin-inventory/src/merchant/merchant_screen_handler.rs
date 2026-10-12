@@ -82,7 +82,7 @@ impl MerchantScreenHandler {
         self.send_content_updates();
     }
 
-    fn try_move_items(&mut self, index: usize) {
+    fn try_move_items(&self, index: usize) {
         let Some(offer) = self.offers.get(index) else {
             return;
         };
@@ -92,10 +92,21 @@ impl MerchantScreenHandler {
 
         for index in 0..2 {
             let mut stack = self.inventory.get_stack(index);
-            if !stack.is_empty() && !self.insert_item(&mut stack, 3, player_slots_end, true) {
-                return;
+            if !stack.is_empty() {
+                let mut before = stack.clone();
+                let (moved, leftover) = crate::menu_transfer::transfer(
+                    &self.get_behaviour().slots,
+                    self.get_behaviour().slots[index].as_ref(),
+                    &mut stack,
+                    (3, player_slots_end, true),
+                    &mut before,
+                );
+                // MerchantMenu's private payment inventory cannot be retired while this menu lives.
+                debug_assert!(leftover.is_empty());
+                if !moved {
+                    return;
+                }
             }
-            self.inventory.set_stack(index, stack);
         }
 
         if !self.inventory.get_stack(0).is_empty() || !self.inventory.get_stack(1).is_empty() {
@@ -172,41 +183,44 @@ impl MerchantScreenHandler {
             })
     }
 
-    fn consume_payment(&self, slot: usize, count: u8) {
-        let mut stack = self.inventory.get_stack(slot);
-        stack.decrement(count);
-        if stack.is_empty() {
-            stack = ItemStack::EMPTY.clone();
-        }
-        self.inventory.set_stack(slot, stack);
-        self.get_behaviour().slots[slot].mark_dirty();
-    }
-
-    fn complete_trade(&mut self, player: &dyn InventoryPlayer) -> bool {
-        let Some(offer_index) = self.active_offer else {
-            return false;
-        };
-        let Some(offer) = self.offers.get(offer_index) else {
-            return false;
-        };
+    // MerchantMenu consumes both costs while the private payment inventory is owned.
+    fn commit_payment(&mut self) -> Option<usize> {
+        let offer_index = self.active_offer?;
+        let offer = self.offers.get(offer_index)?;
         if offer.is_out_of_stock() {
-            return false;
+            return None;
         }
-
         let input_a = self.inventory.get_stack(0);
         let input_b = self.inventory.get_stack(1);
-        let Some(swapped) = Self::input_order(offer, &input_a, &input_b) else {
-            return false;
-        };
+        let swapped = Self::input_order(offer, &input_a, &input_b)?;
         let cost_a = Self::adjusted_cost_a(offer).item_count;
         let cost_b = offer.cost_b.as_ref().map(|cost| cost.0.item_count);
-
-        self.consume_payment(usize::from(swapped), cost_a);
+        let inputs = if swapped {
+            [&input_b, &input_a]
+        } else {
+            [&input_a, &input_b]
+        };
+        let _ = crate::inventory::slot_transaction::withdraw(
+            self.inventory.as_ref(),
+            usize::from(swapped),
+            inputs[0],
+            cost_a,
+        );
         if let Some(cost_b) = cost_b {
-            self.consume_payment(usize::from(!swapped), cost_b);
+            let _ = crate::inventory::slot_transaction::withdraw(
+                self.inventory.as_ref(),
+                usize::from(!swapped),
+                inputs[1],
+                cost_b,
+            );
         }
         self.offers[offer_index].uses += 1;
+        Some(offer_index)
+    }
 
+    fn publish_trade(&self, offer_index: usize, player: &dyn InventoryPlayer) {
+        self.inventory.on_slot_changed(0);
+        self.inventory.on_slot_changed(1);
         if let Some(on_trade) = &self.on_trade {
             // MerchantResultSlot.onTake: notify the merchant before awarding the trade statistic.
             let callback = on_trade.clone();
@@ -217,6 +231,80 @@ impl MerchantScreenHandler {
             CustomStatistic::TradedWithVillager as i32,
             1,
         );
+    }
+
+    fn complete_trade(&mut self, player: &dyn InventoryPlayer) -> bool {
+        let owner = self.inventory.slot_transaction(0);
+        let guard = owner.lock();
+        if !owner.is_live() {
+            return false;
+        }
+        let committed = self.commit_payment();
+        drop(guard);
+        committed.is_some_and(|offer_index| {
+            self.publish_trade(offer_index, player);
+            true
+        })
+    }
+
+    /// Consumes payment and inserts its result together, then dispatches trade effects.
+    pub fn complete_bedrock_trade_into(
+        &mut self,
+        player: &dyn InventoryPlayer,
+        result: &ItemStack,
+        destination: Option<&dyn Slot>,
+        change: (&ItemStack, ItemStack),
+    ) -> bool {
+        let destination_inventory = destination.map(Slot::get_inventory);
+        if let Some(inventory) = &destination_inventory
+            && Arc::ptr_eq(inventory, &self.inventory)
+        {
+            return false;
+        }
+        let mut inventories = crate::inventory::slot_transaction::Owners::new();
+        self.inventory.collect_transaction_owners(&mut inventories);
+        if let Some(inventory) = &destination_inventory {
+            inventory.collect_transaction_owners(&mut inventories);
+        }
+        inventories.sort_unstable_by_key(Arc::as_ptr);
+        inventories.dedup_by(|first, second| Arc::ptr_eq(first, second));
+        let guards = crate::inventory::slot_transaction::lock_owners(&inventories);
+        let output = self.inventory.get_stack(2);
+        if !inventories.iter().all(|owner| owner.is_live()) || !output.are_equal(result) {
+            return false;
+        }
+        if let Some(slot) = destination {
+            let current = slot.get_stack();
+            if current.uid != change.0.uid || !current.are_equal(change.0) {
+                return false;
+            }
+        }
+        let Some(offer_index) = self.commit_payment() else {
+            return false;
+        };
+        let _ = crate::inventory::slot_transaction::withdraw(
+            self.inventory.as_ref(),
+            2,
+            &output,
+            output.item_count,
+        );
+        if let Some(slot) = destination {
+            let committed = crate::inventory::slot_transaction::exchange(
+                slot.get_inventory().as_ref(),
+                slot.get_index(),
+                change.0,
+                change.1,
+            );
+            debug_assert!(committed);
+        }
+        drop(guards);
+        if let Some(slot) = destination {
+            slot.get_inventory().on_slot_changed(slot.get_index());
+        }
+        self.publish_trade(offer_index, player);
+        self.update_result_slot();
+        self.notify_trade_updated();
+        self.send_content_updates();
         true
     }
 
@@ -261,37 +349,46 @@ impl MerchantScreenHandler {
     }
 
     fn move_from_inventory_to_payment_slot(&self, payment_slot: usize, cost: &ItemStack) {
-        let mut payment = self.inventory.get_stack(payment_slot);
-
+        // MerchantMenu.tryMoveItems transfers actual payment stock, never copied player slots.
         for slot in &self.get_behaviour().slots[3..] {
-            let mut source = slot.get_stack();
-            if source.is_empty()
-                || source.item.id != cost.item.id
-                || !cost.are_items_and_components_equal(&source)
-                || (!payment.is_empty()
-                    && (!source.are_items_and_components_equal(&payment)
-                        || !payment.are_items_and_components_equal(&source)))
-            {
+            let source = slot.get_stack();
+            if source.is_empty() || !cost.are_items_and_components_equal(&source) {
                 continue;
             }
-
-            if payment.is_empty() {
-                payment = source.copy_with_count(0);
-            }
-            let moved = source
-                .item_count
-                .min(source.get_max_stack_size() - payment.item_count);
-            payment.increment(moved);
-            source.decrement(moved);
-            if source.is_empty() {
-                source = ItemStack::EMPTY.clone();
-            }
-            slot.set_stack(source);
+            let inventory = slot.get_inventory();
+            let owners = crate::inventory::slot_transaction::ordered_owners(&[
+                inventory.as_ref(),
+                self.inventory.as_ref() as &dyn Inventory,
+            ]);
+            let guards = crate::inventory::slot_transaction::lock_owners(&owners);
+            let mut receipt = crate::inventory::slot_transaction::withdraw(
+                inventory.as_ref(),
+                slot.get_index(),
+                &source,
+                source.item_count,
+            );
+            crate::inventory::slot_transaction::deposit(
+                self.inventory.as_ref(),
+                payment_slot,
+                &mut receipt,
+                source.get_max_stack_size(),
+            );
+            let leftover = crate::inventory::slot_transaction::refund(
+                inventory.as_ref(),
+                slot.get_index(),
+                &source,
+                receipt,
+            );
+            // Both admitted containers remain live, so an unaccepted payment always fits back.
+            debug_assert!(leftover.is_empty());
+            drop(guards);
+            inventory.on_slot_changed(slot.get_index());
+            self.inventory.on_slot_changed(payment_slot);
+            let payment = self.inventory.get_stack(payment_slot);
             if payment.item_count == payment.get_max_stack_size() {
                 break;
             }
         }
-        self.inventory.set_stack(payment_slot, payment);
     }
 
     pub fn update_result_slot(&mut self) {
@@ -371,7 +468,7 @@ impl ScreenHandler for MerchantScreenHandler {
         if stack.is_empty() {
             return ItemStack::EMPTY.clone();
         }
-        let original = stack.clone();
+        let mut original = stack.clone();
         let player_slots_end = self.get_behaviour().slots.len() as i32;
 
         if slot_index == 2 {
@@ -379,34 +476,47 @@ impl ScreenHandler for MerchantScreenHandler {
                 &stack,
                 PLAYER_INVENTORY_START as usize,
                 player_slots_end as usize,
-            ) || !self.insert_item(&mut stack, PLAYER_INVENTORY_START, player_slots_end, true)
-            {
+            ) || !self.transfer_item(
+                player,
+                slot.as_ref(),
+                &mut stack,
+                (PLAYER_INVENTORY_START, player_slots_end, true),
+                &mut original,
+            ) {
                 return ItemStack::EMPTY.clone();
             }
         } else if slot_index < PLAYER_INVENTORY_START {
-            if !self.insert_item(&mut stack, PLAYER_INVENTORY_START, player_slots_end, false) {
+            if !self.transfer_item(
+                player,
+                slot.as_ref(),
+                &mut stack,
+                (PLAYER_INVENTORY_START, player_slots_end, false),
+                &mut original,
+            ) {
                 return ItemStack::EMPTY.clone();
             }
         } else if slot_index < PLAYER_HOTBAR_START {
-            if !self.insert_item(&mut stack, PLAYER_HOTBAR_START, player_slots_end, false) {
+            if !self.transfer_item(
+                player,
+                slot.as_ref(),
+                &mut stack,
+                (PLAYER_HOTBAR_START, player_slots_end, false),
+                &mut original,
+            ) {
                 return ItemStack::EMPTY.clone();
             }
-        } else if !self.insert_item(
+        } else if !self.transfer_item(
+            player,
+            slot.as_ref(),
             &mut stack,
-            PLAYER_INVENTORY_START,
-            PLAYER_HOTBAR_START,
-            false,
+            (PLAYER_INVENTORY_START, PLAYER_HOTBAR_START, false),
+            &mut original,
         ) {
             return ItemStack::EMPTY.clone();
         }
 
         if stack.item_count == original.item_count {
             return ItemStack::EMPTY.clone();
-        }
-        if stack.is_empty() {
-            slot.set_stack(ItemStack::EMPTY.clone());
-        } else {
-            slot.set_stack(stack.clone());
         }
 
         let mut taken = original.clone();
@@ -464,6 +574,10 @@ impl MerchantResultSlot {
 }
 
 impl Slot for MerchantResultSlot {
+    fn withdrawal_count(&self, _amount: u8) -> u8 {
+        u8::MAX
+    }
+
     fn get_inventory(&self) -> Arc<dyn Inventory> {
         self.inventory.clone()
     }

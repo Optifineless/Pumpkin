@@ -164,7 +164,7 @@ impl ScreenHandler for StonecutterScreenHandler {
         if stack.is_empty() {
             return ItemStack::EMPTY.clone();
         }
-        let original = stack.clone();
+        let mut original = stack.clone();
         let previous = self.selected_recipe.0.load(Ordering::Relaxed);
         let (start, end, reverse) = if slot_index < 2 {
             (2, 38, slot_index == 1)
@@ -175,10 +175,15 @@ impl ScreenHandler for StonecutterScreenHandler {
         } else {
             (2, 29, false)
         };
-        if !self.insert_item(&mut stack, start, end, reverse) {
+        if !self.transfer_item(
+            player,
+            slot.as_ref(),
+            &mut stack,
+            (start, end, reverse),
+            &mut original,
+        ) {
             return ItemStack::EMPTY.clone();
         }
-        slot.set_stack(stack.clone());
         if slot_index == 1 {
             slot.on_take_item(
                 player,
@@ -220,6 +225,10 @@ impl StonecutterOutputSlot {
 }
 
 impl Slot for StonecutterOutputSlot {
+    fn withdrawal_count(&self, _amount: u8) -> u8 {
+        u8::MAX
+    }
+
     fn take_stack(&self, _amount: u8) -> ItemStack {
         // StonecutterMenu uses ResultContainer.removeItem: take the whole result.
         self.inventory.remove_stack(self.index)

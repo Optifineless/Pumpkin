@@ -102,6 +102,7 @@ mod movement_safety;
 pub mod passive;
 mod pickability;
 pub mod player;
+pub(crate) mod player_inventory_save;
 pub(crate) mod player_skin;
 mod player_teleport;
 pub mod projectile;

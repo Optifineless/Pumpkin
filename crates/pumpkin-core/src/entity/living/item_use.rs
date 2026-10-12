@@ -77,8 +77,9 @@ impl LivingEntity {
             let current = self.get_stack_in_hand(caller, hand);
             // Java's ItemStack.equals also requires the same stack instance here.
             if !current.is_empty() && current.uid == saved.uid && current.item.id == saved.item.id {
+                let expected = current.clone();
                 let result = self.finish_using_item(caller, current, hand);
-                self.set_used_hand_stack(caller, hand, result);
+                self.set_used_hand_stack(caller, hand, &expected, result);
             }
         }
         self.clear_active_hand();
@@ -93,8 +94,9 @@ impl LivingEntity {
     ) {
         let current = self.get_stack_in_hand(caller, hand);
         if current.uid == item.uid && current.are_equal(item) {
+            let expected = current.clone();
             let result = self.finish_using_item(caller, current, hand);
-            self.set_used_hand_stack(caller, hand, result);
+            self.set_used_hand_stack(caller, hand, &expected, result);
         }
     }
 
@@ -160,15 +162,26 @@ impl LivingEntity {
         if let Some(remainder) = before.get_data_component::<UseRemainderImpl>()
             && !player.is_some_and(InventoryPlayer::has_infinite_materials)
             && item.item_count < before.item_count
-            && let Some(extra) = remainder.create()
+            && let Some(mut extra) = remainder.create()
         {
             if item.is_empty() {
                 item = extra;
             } else if let Some(player) = player {
                 // Vanilla's real hand has already been consumed when insertion runs.
-                self.set_used_hand_stack(caller, hand, item);
-                crate::item::item_utils::give_or_drop(player, extra);
+                let inventory = player.inventory();
+                let owner = pumpkin_inventory::Inventory::slot_transaction(inventory.as_ref(), 0);
+                let guard = owner.lock();
+                if !self.set_used_hand_stack(caller, hand, before, item) {
+                    return self.get_stack_in_hand(caller, hand);
+                }
+                inventory.insert_stack_anywhere(&mut extra);
                 item = self.get_stack_in_hand(caller, hand);
+                drop(guard);
+                if !extra.is_empty() {
+                    player
+                        .world()
+                        .drop_stack(&player.position().to_block_pos(), extra);
+                }
             }
         }
         if let Some(player) = player
@@ -186,10 +199,17 @@ impl LivingEntity {
         &self,
         caller: &dyn EntityBase,
         hand: pumpkin_util::Hand,
+        expected: &ItemStack,
         item: ItemStack,
-    ) {
+    ) -> bool {
         if let Some(player) = caller.get_player() {
-            player.inventory().set_stack_in_hand(hand, item);
+            let current = player.inventory().get_stack_in_hand(hand);
+            if current.uid == item.uid && current.are_equal(&item) {
+                return true;
+            }
+            player
+                .inventory()
+                .exchange_stack_in_hand(hand, expected, item)
         } else {
             let slot = if hand == pumpkin_util::Hand::Right {
                 pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND
@@ -200,6 +220,7 @@ impl LivingEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .put(&slot, item);
+            true
         }
     }
 

@@ -154,12 +154,18 @@ impl BedrockClient {
                             .get_slot(screen_slot)
                             .get_cloned_stack();
                         if !current_stack.is_empty() {
-                            // ServerPlayer.drop awards statistics after slot removal commits.
-                            dropped_items.push(current_stack.clone());
-
-                            player_screen_handler
+                            let taken = player_screen_handler
                                 .get_slot(screen_slot)
-                                .set_stack(ItemStack::EMPTY.clone());
+                                .safe_take_matching(
+                                    &current_stack,
+                                    current_stack.item_count,
+                                    u8::MAX,
+                                    player,
+                                );
+                            if taken.is_empty() {
+                                continue;
+                            }
+                            dropped_items.push(taken);
                             player_screen_handler
                                 .set_received_stack(screen_slot, ItemStack::EMPTY.clone());
                         }
@@ -248,7 +254,11 @@ impl BedrockClient {
                     if result.consumes_action() {
                         if !before_block_use.are_equal(&held_item) {
                             // ServerPlayerGameMode.useItemOn persists the item after the block callback consumes it.
-                            player.inventory().set_stack_in_hand(hand, held_item);
+                            player.inventory().exchange_stack_in_hand(
+                                hand,
+                                &before_block_use,
+                                held_item,
+                            );
                         }
                         return true;
                     }
@@ -329,7 +339,9 @@ impl BedrockClient {
                                 None,
                             );
                         }
-                        player.inventory().set_stack_in_hand(hand, stack);
+                        player
+                            .inventory()
+                            .exchange_stack_in_hand(hand, &before, stack);
                     }
                 } else if data.action_type.0 == 1 {
                     // Click air / Use item
@@ -401,26 +413,32 @@ impl BedrockClient {
                                 }
                             }
                             if let Some(equippable) = held.get_data_component::<EquippableImpl>() {
+                                let equipment_slot = equippable.slot.clone();
                                 let should_change = {
                                     let inventory = player.inventory();
                                     let equipment_guard = inventory
                                         .entity_equipment
                                         .lock()
                                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                    let current_equipped = equipment_guard.get(equippable.slot);
+                                    let current_equipped = equipment_guard.get(&equipment_slot);
                                     !current_equipped.are_items_and_components_equal(&held)
                                 };
                                 if should_change {
-                                    player.enqueue_equipment_change(equippable.slot, &held);
-
+                                    let notification = held.clone();
                                     let inventory = player.inventory();
+                                    let owner = inventory.slot_transaction(0);
+                                    let guard = owner.lock();
+                                    let current = inventory.get_stack_in_hand(hand);
+                                    if current.uid != held.uid || !current.are_equal(&held) {
+                                        return false;
+                                    }
                                     let mut equipment_guard = inventory
                                         .entity_equipment
                                         .lock()
                                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                                     let equip_item = equipment_guard
                                         .equipment
-                                        .entry(equippable.slot.clone())
+                                        .entry(equipment_slot.clone())
                                         .or_insert_with(|| ItemStack::EMPTY.clone());
                                     if equip_item.is_empty() {
                                         *equip_item = held.clone();
@@ -432,6 +450,8 @@ impl BedrockClient {
                                     }
                                     drop(equipment_guard);
                                     player.inventory().set_stack_in_hand(hand, held.clone());
+                                    drop(guard);
+                                    player.enqueue_equipment_change(&equipment_slot, &notification);
                                 }
                             }
                         }

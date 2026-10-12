@@ -117,6 +117,21 @@ pub trait Slot: Send + Sync {
         self.mark_dirty();
     }
 
+    /// Commits a player replacement only if the observed stack is still present.
+    fn exchange_stack(&self, expected: &ItemStack, replacement: ItemStack) -> bool {
+        let inventory = self.get_inventory();
+        let changed = crate::inventory::slot_transaction::exchange(
+            inventory.as_ref(),
+            self.get_index(),
+            expected,
+            replacement,
+        );
+        if changed {
+            inventory.on_slot_changed(self.get_index());
+        }
+        changed
+    }
+
     /// Marks this slot as changed.
     ///
     /// Must be implemented by concrete types.
@@ -138,6 +153,11 @@ pub trait Slot: Send + Sync {
     fn take_stack(&self, amount: u8) -> ItemStack {
         let inv = self.get_inventory();
         inv.remove_stack_specific(self.get_index(), amount)
+    }
+
+    /// ResultContainer.removeItem takes the entire result even for a partial request.
+    fn withdrawal_count(&self, amount: u8) -> u8 {
+        amount
     }
 
     /// Checks if the player can take items from this slot.
@@ -166,6 +186,17 @@ pub trait Slot: Send + Sync {
         max: u8,
         player: &dyn InventoryPlayer,
     ) -> Option<ItemStack> {
+        self.try_take_matching(&self.get_stack(), min, max, player)
+    }
+
+    /// Takes only the observed item identity, keeping collection predicates valid at commit.
+    fn try_take_matching(
+        &self,
+        expected: &ItemStack,
+        min: u8,
+        max: u8,
+        player: &dyn InventoryPlayer,
+    ) -> Option<ItemStack> {
         if !self.can_take_items(player) {
             return None;
         }
@@ -174,15 +205,18 @@ pub trait Slot: Send + Sync {
             return None;
         }
         let min = min.min(max);
-        let mut stack = self.take_stack(min);
+        let inventory = self.get_inventory();
+        let mut stack = crate::inventory::slot_transaction::withdraw(
+            inventory.as_ref(),
+            self.get_index(),
+            expected,
+            self.withdrawal_count(min).min(expected.item_count),
+        );
 
         if stack.is_empty() {
             None
         } else {
-            if self.get_cloned_stack().is_empty() {
-                self.set_stack_prev(ItemStack::EMPTY.clone(), stack.clone());
-            }
-
+            inventory.on_slot_changed(self.get_index());
             self.on_crafted_by(player, &mut stack);
             Some(stack)
         }
@@ -203,6 +237,20 @@ pub trait Slot: Send + Sync {
         stack.unwrap_or_else(|| ItemStack::EMPTY.clone())
     }
 
+    fn safe_take_matching(
+        &self,
+        expected: &ItemStack,
+        min: u8,
+        max: u8,
+        player: &dyn InventoryPlayer,
+    ) -> ItemStack {
+        let stack = self.try_take_matching(expected, min, max, player);
+        if let Some(stack) = &stack {
+            self.on_take_item(player, stack);
+        }
+        stack.unwrap_or_else(|| ItemStack::EMPTY.clone())
+    }
+
     /// Inserts a stack into this slot.
     ///
     /// Returns any leftover items that couldn't fit.
@@ -216,19 +264,19 @@ pub trait Slot: Send + Sync {
     /// Returns any leftover items.
     fn insert_stack_count(&self, mut stack: ItemStack, count: u8) -> ItemStack {
         if !stack.is_empty() && self.can_insert(&stack) {
-            let mut stack_self = self.get_stack();
-            let min_count = count
-                .min(stack.item_count)
-                .min(self.get_max_item_count_for_stack(&stack) - stack_self.item_count);
-
-            if min_count != 0 {
-                if stack_self.is_empty() {
-                    self.set_stack(stack.split(min_count));
-                } else if stack.are_items_and_components_equal(&stack_self) {
-                    stack.decrement(min_count);
-                    stack_self.increment(min_count);
-                    self.set_stack(stack_self);
-                }
+            let inventory = self.get_inventory();
+            let maximum = self.get_max_item_count_for_stack(&stack);
+            let mut offered = stack.split(count.min(stack.item_count));
+            let before = offered.item_count;
+            crate::inventory::slot_transaction::deposit(
+                inventory.as_ref(),
+                self.get_index(),
+                &mut offered,
+                maximum,
+            );
+            stack.increment(offered.item_count);
+            if offered.item_count < before {
+                inventory.on_slot_changed(self.get_index());
             }
         }
         if stack.is_empty() {

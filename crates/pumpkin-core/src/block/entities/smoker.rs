@@ -31,6 +31,8 @@ pub struct SmokerBlockEntity {
     pub lit_time_remaining: AtomicU16,
     pub lit_total_time: AtomicU16,
 
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
 
     /// Tracks recipes used for XP calculation (vanilla `RecipesUsed` NBT format)
@@ -49,6 +51,7 @@ impl SmokerBlockEntity {
             lock: super::container_lock::ContainerLock::default(),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             cooking_total_time: AtomicU16::new(0),
             cooking_time_spent: AtomicU16::new(0),

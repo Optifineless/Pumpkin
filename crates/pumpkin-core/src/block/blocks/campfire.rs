@@ -35,7 +35,7 @@ impl BlockBehaviour for CampfireBlock {
             return BlockActionResult::PassToDefaultBlockAction;
         }
 
-        let Some(recipe) = get_cooking_recipe_with_ingredient(
+        let Some(_) = get_cooking_recipe_with_ingredient(
             args.item_stack.item,
             CookingRecipeKind::CampfireCooking,
         ) else {
@@ -50,23 +50,15 @@ impl BlockBehaviour for CampfireBlock {
         };
 
         for slot in 0..CampfireBlockEntity::SLOT_COUNT {
-            let mut stored = campfire.items[slot]
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !stored.is_empty() {
+            // CampfireBlockEntity.placeFood commits the held source and cooking slot together.
+            if !crate::item::item_utils::place_held_item(
+                args.item_stack,
+                args.player,
+                campfire,
+                slot,
+            ) {
                 continue;
             }
-
-            *stored = args
-                .item_stack
-                .split_unless_creative(args.player.gamemode.load(), 1);
-            *campfire.cooking_times[slot]
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = 0;
-            *campfire.cooking_total_times[slot]
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = recipe.cookingtime;
-            drop(stored);
 
             args.player.increment_stat(
                 pumpkin_data::statistic::StatisticCategory::Custom,

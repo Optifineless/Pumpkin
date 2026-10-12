@@ -44,6 +44,8 @@ impl ItemBehaviour for ExperienceBottleItem {
         );
 
         let mut held = player.inventory().get_stack_in_hand(hand);
+
+        let expected_held = held.clone();
         let entity = Entity::new(world.clone(), pos, &EntityType::EXPERIENCE_BOTTLE);
         let bottle = ExperienceBottleEntity::new_shot(entity, player.get_entity());
         bottle.set_item_stack(&held);
@@ -55,7 +57,9 @@ impl ItemBehaviour for ExperienceBottleItem {
         world.spawn_entity(Arc::new(bottle));
 
         held.decrement_unless_creative(player.gamemode.load(), 1);
-        player.inventory().set_stack_in_hand(hand, held);
+        player
+            .inventory()
+            .exchange_stack_in_hand(hand, &expected_held, held);
     }
 
     fn as_any(&self) -> &dyn Any {

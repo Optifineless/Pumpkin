@@ -91,7 +91,7 @@ impl ScreenHandler for MountScreenHandler {
         self.default_on_closed(player);
     }
 
-    fn quick_move(&mut self, _player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
+    fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let mut clicked = ItemStack::EMPTY.clone();
         let slot = self.get_behaviour().slots.get(slot_index as usize).cloned();
 
@@ -107,59 +107,44 @@ impl ScreenHandler for MountScreenHandler {
             let player_container_start = 2 + mount_container_size as i32;
             let total_slots = self.get_behaviour().slots.len() as i32;
 
-            if slot_index < player_container_start {
-                if !self.insert_item(&mut stack, player_container_start, total_slots, true) {
-                    return ItemStack::EMPTY.clone();
-                }
+            // AbstractMountInventoryMenu.quickMoveStack tries equipment and cargo first.
+            let range = if slot_index < player_container_start {
+                (player_container_start, total_slots, true)
             } else if self.get_behaviour().slots[1].can_insert(&stack)
                 && !self.get_behaviour().slots[1].has_stack()
             {
-                if !self.insert_item(&mut stack, 1, 2, false) {
-                    return ItemStack::EMPTY.clone();
-                }
+                (1, 2, false)
             } else if self.get_behaviour().slots[0].can_insert(&stack)
                 && !self.get_behaviour().slots[0].has_stack()
             {
-                if !self.insert_item(&mut stack, 0, 1, false) {
-                    return ItemStack::EMPTY.clone();
+                (0, 1, false)
+            } else {
+                if mount_container_size > 0
+                    && self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut stack,
+                        (2, player_container_start, false),
+                        &mut clicked,
+                    )
+                {
+                    return clicked;
                 }
-            } else if mount_container_size == 0
-                || !self.insert_item(&mut stack, 2, player_container_start, false)
-            {
                 let player_container_end = player_container_start + 27;
                 let player_hotbar_start = player_container_end;
                 let player_hotbar_end = player_hotbar_start + 9;
-
-                if (player_hotbar_start..player_hotbar_end).contains(&slot_index) {
-                    if !self.insert_item(
-                        &mut stack,
-                        player_container_start,
-                        player_container_end,
-                        false,
-                    ) {
-                        return ItemStack::EMPTY.clone();
-                    }
+                let range = if (player_hotbar_start..player_hotbar_end).contains(&slot_index) {
+                    (player_container_start, player_container_end, false)
                 } else if (player_container_start..player_container_end).contains(&slot_index) {
-                    if !self.insert_item(&mut stack, player_hotbar_start, player_hotbar_end, false)
-                    {
-                        return ItemStack::EMPTY.clone();
-                    }
-                } else if !self.insert_item(
-                    &mut stack,
-                    player_hotbar_start,
-                    player_container_end,
-                    false,
-                ) {
-                    return ItemStack::EMPTY.clone();
-                }
-
+                    (player_hotbar_start, player_hotbar_end, false)
+                } else {
+                    (player_hotbar_start, player_container_end, false)
+                };
+                self.transfer_item(player, slot.as_ref(), &mut stack, range, &mut clicked);
                 return ItemStack::EMPTY.clone();
-            }
-
-            if stack.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone());
-            } else {
-                slot.set_stack(stack);
+            };
+            if !self.transfer_item(player, slot.as_ref(), &mut stack, range, &mut clicked) {
+                return ItemStack::EMPTY.clone();
             }
         }
 

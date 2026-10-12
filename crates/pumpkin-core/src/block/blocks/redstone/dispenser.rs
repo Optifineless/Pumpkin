@@ -256,15 +256,32 @@ impl BlockBehaviour for DispenserBlock {
                 return;
             };
 
-            if let Some((slot_index, mut item)) = dispenser.get_random_slot() {
+            if let Some((slot_index, expected)) = dispenser.get_random_slot() {
                 let props = DispenserLikeProperties::from_state_id(state.id);
                 let ctx = DispenseContext {
                     world: args.world,
                     position: args.position,
                     facing: props.facing,
                 };
+                // DispenserBlock.dispenseFrom hands its behavior an owned stack, never a clone.
+                let mut item = pumpkin_inventory::inventory::slot_transaction::withdraw(
+                    dispenser,
+                    slot_index,
+                    &expected,
+                    expected.item_count,
+                );
+                if item.is_empty() {
+                    return;
+                }
                 Self::dispense(&ctx, dispenser, &mut item);
-                dispenser.set_stack(slot_index, item);
+                let leftover = pumpkin_inventory::inventory::slot_transaction::refund(
+                    dispenser, slot_index, &expected, item,
+                );
+                dispenser.on_slot_changed(slot_index);
+                if !leftover.is_empty() {
+                    let pos = args.position.to_centered_f64();
+                    args.world.scatter_stack(pos.x, pos.y, pos.z, leftover);
+                }
             } else {
                 args.world
                     .sync_world_event(WorldEvent::SoundDispenserFail, *args.position, 0);

@@ -124,3 +124,7 @@ pub fn build_equipment_slots() -> FxHashMap<usize, EquipmentSlot> {
     equipment_slots.insert(PlayerInventory::OFF_HAND_SLOT, EquipmentSlot::OFF_HAND);
     equipment_slots
 }
+
+mod slot_swap;
+
+mod menu_transfer;

@@ -31,10 +31,13 @@ impl ItemBehaviour for CarrotOnAStickItem {
         {
             let before = player.inventory.held_item();
             player.damage_held_item(7);
-            if !before.is_empty() && player.inventory.held_item().is_empty() {
-                player
-                    .inventory
-                    .set_held_item(ItemStack::new(1, &Item::FISHING_ROD));
+            let current = player.inventory.held_item();
+            if !before.is_empty() && current.is_empty() {
+                player.inventory.exchange_stack_in_hand(
+                    pumpkin_util::Hand::Right,
+                    &current,
+                    ItemStack::new(1, &Item::FISHING_ROD),
+                );
             }
         }
     }
@@ -65,10 +68,13 @@ impl ItemBehaviour for WarpedFungusOnAStickItem {
         {
             let before = player.inventory.held_item();
             player.damage_held_item(1);
-            if !before.is_empty() && player.inventory.held_item().is_empty() {
-                player
-                    .inventory
-                    .set_held_item(ItemStack::new(1, &Item::FISHING_ROD));
+            let current = player.inventory.held_item();
+            if !before.is_empty() && current.is_empty() {
+                player.inventory.exchange_stack_in_hand(
+                    pumpkin_util::Hand::Right,
+                    &current,
+                    ItemStack::new(1, &Item::FISHING_ROD),
+                );
             }
         }
     }

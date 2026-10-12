@@ -22,6 +22,8 @@ pub struct BrewingStandBlockEntity {
     pub position: BlockPos,
     // recipe eligibility also includes the world's loaded recipes.
     recipe_world: StdMutex<std::sync::Weak<crate::world::World>>,
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
@@ -41,6 +43,7 @@ impl BrewingStandBlockEntity {
         Self {
             position,
             recipe_world: StdMutex::default(),
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -150,10 +153,16 @@ impl BrewingStandBlockEntity {
         // Brew potion slots
         let mut ingredient_used = false;
         {
+            let owner = self.slot_transaction(0);
+            let _guard = owner.lock();
             let Ok(mut items) = self.items.write() else {
                 return;
             };
 
+            if !owner.is_live() || items[3].uid != ingredient.uid || !items[3].are_equal(ingredient)
+            {
+                return;
+            }
             for slot_idx in 0..3usize {
                 let slot = &mut items[slot_idx];
                 if slot.is_empty() {
@@ -319,24 +328,34 @@ impl BrewingStandBlockEntity {
             20
         };
 
-        if self.fuel.load(Ordering::Relaxed) <= 0
-            && let Ok(mut items) = self.items.try_write()
-            && !items[4].is_empty()
-            && items[4].are_equal(&expected_fuel)
-        {
-            self.fuel.store(i32::from(fuel_power), Ordering::Relaxed);
-            items[4].decrement(1);
-            // The fuel slot shrank, comparators needs an update.
-            self.comparator_dirty.store(true, Ordering::Relaxed);
-            true
-        } else {
-            false
+        let mut refilled = false;
+        self.update_slot(4, &mut |current| {
+            if self.fuel.load(Ordering::Relaxed) <= 0
+                && current.uid == expected_fuel.uid
+                && current.are_equal(&expected_fuel)
+                && !current.is_empty()
+            {
+                current.decrement(1);
+                self.fuel.store(i32::from(fuel_power), Ordering::Relaxed);
+                refilled = true;
+            }
+        });
+        if refilled {
+            self.on_slot_changed(4);
         }
+        refilled
     }
 }
 
 impl pumpkin_inventory::Inventory for BrewingStandBlockEntity {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .items
             .write()
@@ -373,39 +392,37 @@ impl pumpkin_inventory::Inventory for BrewingStandBlockEntity {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let removed = std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
         removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let taken = if items[slot].item_count <= amount {
-            std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone())
-        } else {
-            let mut taken = items[slot].clone();
-            taken.item_count = amount;
-            items[slot].item_count -= amount;
-            taken
-        };
-        self.mark_dirty();
-        taken
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items[slot] = stack;
-        self.mark_dirty();
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
     }
 
     fn on_open(&self) {}
@@ -470,12 +487,7 @@ impl pumpkin_inventory::Inventory for BrewingStandBlockEntity {
 
 impl pumpkin_inventory::Clearable for BrewingStandBlockEntity {
     fn clear(&self) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items.fill_with(|| ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }
 

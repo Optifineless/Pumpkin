@@ -49,7 +49,14 @@ impl DoubleInventory {
 }
 
 impl Inventory for DoubleInventory {
-    fn slot_transaction(&self, slot: usize) -> Arc<std::sync::Mutex<()>> {
+    fn collect_transaction_owners(&self, owners: &mut crate::inventory::slot_transaction::Owners) {
+        self.first.collect_transaction_owners(owners);
+        self.second.collect_transaction_owners(owners);
+    }
+    fn slot_transaction(
+        &self,
+        slot: usize,
+    ) -> Arc<crate::inventory::slot_transaction::Transaction> {
         let (inventory, slot) = self.inventory_for_slot(slot);
         inventory.slot_transaction(slot)
     }
@@ -59,9 +66,14 @@ impl Inventory for DoubleInventory {
         inventory.on_slot_changed(slot);
     }
 
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn on_slot_replaced(&self, slot: usize, previous: &ItemStack, current: &ItemStack) {
         let (inventory, slot) = self.inventory_for_slot(slot);
-        inventory.update_slot(slot, update);
+        inventory.on_slot_replaced(slot, previous, current);
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let (inventory, slot) = self.inventory_for_slot(slot);
+        inventory.update_slot_storage(slot, update);
     }
 
     fn size(&self) -> usize {
@@ -140,7 +152,6 @@ impl Inventory for DoubleInventory {
 
 impl Clearable for DoubleInventory {
     fn clear(&self) {
-        self.first.clear();
-        self.second.clear();
+        crate::inventory::slot_transaction::clear(self);
     }
 }

@@ -1,58 +1,171 @@
-use std::{
-    any::Any,
-    collections::HashMap,
-    sync::{Arc, Mutex, OnceLock, Weak},
-};
-
-use pumpkin_data::item_stack::ItemStack;
+//! Container ownership precedes storage locks. Multi-container operations acquire owners in
+//! pointer order.
+//!
+//! Player saving may hold its storage-session lock before owners. Owners never acquire a
+//! storage session; screen closure finishes before the leave path acquires that session.
+//!
+//! Screen handlers may acquire owners, but an owner must never acquire a screen
+//! handler, call a plugin, send packets or notify the world. Reentrancy only permits local slot
+//! primitives beneath an already admitted transfer; it does not permit callbacks under owners.
 
 use super::Inventory;
+use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
+use pumpkin_data::item_stack::ItemStack;
+use smallvec::SmallVec;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
-type Owners = HashMap<usize, Weak<Mutex<()>>>;
+/// Capacity for short-lived transaction metadata.
+pub const INLINE_CAPACITY: usize = 4;
 
-/// Resolves transient transfer ownership by source identity, never by the viewer's menu.
-///
-/// The source must stay alive until the returned owner is released. No storage lock is held
-/// while this owner is locked; callers must defer dirtying, events and packets until release.
+/// The common single/double-container cases retain owners without heap allocation.
+pub type Owners = SmallVec<[Arc<Transaction>; INLINE_CAPACITY]>;
+/// Guards have the same inline capacity as their backing owners.
+pub type Guards<'a> = SmallVec<[ReentrantMutexGuard<'a, ()>; INLINE_CAPACITY]>;
+/// Automation normally changes one destination slot.
+pub type ChangedSlots = SmallVec<[usize; INLINE_CAPACITY]>;
+
+/// Acquires the already ordered owners without allocating for ordinary transfers.
 #[must_use]
-pub fn owner(source: &dyn Any) -> Arc<Mutex<()>> {
-    static OWNERS: OnceLock<Mutex<Owners>> = OnceLock::new();
-    let key = std::ptr::from_ref(source).cast::<()>() as usize;
-    let mut owners = OWNERS
-        .get_or_init(Mutex::default)
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    owners.retain(|_, owner| owner.strong_count() != 0);
-    if let Some(owner) = owners.get(&key).and_then(Weak::upgrade) {
-        return owner;
+pub fn lock_owners(owners: &[Arc<Transaction>]) -> Guards<'_> {
+    owners.iter().map(|owner| owner.lock()).collect()
+}
+
+/// Owns the lifetime and mutation ordering of one backing container.
+pub struct Transaction {
+    lock: ReentrantMutex<()>,
+    retired: AtomicBool,
+}
+
+impl Default for Transaction {
+    fn default() -> Self {
+        Self {
+            lock: ReentrantMutex::new(()),
+            retired: AtomicBool::new(false),
+        }
     }
-    let owner = Arc::new(Mutex::new(()));
-    owners.insert(key, Arc::downgrade(&owner));
-    owner
+}
+
+impl Transaction {
+    pub fn lock(&self) -> ReentrantMutexGuard<'_, ()> {
+        self.lock.lock()
+    }
+
+    pub fn try_lock(&self) -> Option<ReentrantMutexGuard<'_, ()>> {
+        self.lock.try_lock()
+    }
+
+    #[must_use]
+    pub fn is_live(&self) -> bool {
+        !self.retired.load(Ordering::Acquire)
+    }
+
+    // Retirement is committed under the owner, after any admitted transfer has settled.
+    fn retire(&self) {
+        self.retired.store(true, Ordering::Release);
+    }
 }
 
 /// Orders the owners of both sides so opposing transfers cannot deadlock.
 /// Destination slot updates must participate, including deposits into a withdrawn source.
 #[must_use]
-pub fn ordered_owners<I: Inventory + ?Sized>(inventories: &[&I]) -> Vec<Arc<Mutex<()>>> {
-    let mut owners = inventories
-        .iter()
-        .flat_map(|inventory| {
-            (0..inventory.size()).map(move |slot| inventory.slot_transaction(slot))
-        })
-        .collect::<Vec<_>>();
+pub fn ordered_owners<I: Inventory + ?Sized>(inventories: &[&I]) -> Owners {
+    let mut owners = Owners::new();
+    for inventory in inventories {
+        inventory.collect_transaction_owners(&mut owners);
+    }
     owners.sort_unstable_by_key(Arc::as_ptr);
     owners.dedup_by(|first, second| Arc::ptr_eq(first, second));
     owners
+}
+
+/// Stops new mutations after all admitted transfers have settled.
+pub fn retire(inventory: &dyn Inventory) {
+    let owners = ordered_owners(&[inventory]);
+    let _guards = lock_owners(&owners);
+    for owner in &owners {
+        owner.retire();
+    }
+}
+
+/// Retires and drains a container; returns owned stock for scattering after release.
+#[must_use]
+pub fn retire_and_drain(inventory: &dyn Inventory) -> Vec<ItemStack> {
+    let owners = ordered_owners(&[inventory]);
+    let guards = lock_owners(&owners);
+    for owner in &owners {
+        owner.retire();
+    }
+    let mut stacks = Vec::new();
+    for slot in 0..inventory.size() {
+        inventory.update_slot_storage(slot, &mut |stack| {
+            if !stack.is_empty() {
+                stacks.push(std::mem::replace(stack, ItemStack::EMPTY.clone()));
+            }
+        });
+    }
+    drop(guards);
+    stacks
+}
+
+/// Clears one settled inventory, then publishes only committed slot changes.
+pub fn clear(inventory: &dyn Inventory) {
+    let owners = ordered_owners(&[inventory]);
+    let guards = lock_owners(&owners);
+    let mut changed = ChangedSlots::new();
+    for slot in 0..inventory.size() {
+        inventory.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() {
+                *stack = ItemStack::EMPTY.clone();
+                changed.push(slot);
+            }
+        });
+    }
+    drop(guards);
+    for slot in changed {
+        inventory.on_slot_changed(slot);
+    }
+}
+
+/// Replaces an observed stack atomically, returning false if another mover changed it.
+#[must_use]
+pub fn exchange(
+    inventory: &dyn Inventory,
+    slot: usize,
+    expected: &ItemStack,
+    replacement: ItemStack,
+) -> bool {
+    let mut replacement = Some(replacement);
+    inventory.update_slot(slot, &mut |current| {
+        if current.uid == expected.uid
+            && current.are_equal(expected)
+            && let Some(stack) = replacement.take()
+        {
+            *current = stack;
+            inventory.on_slot_replaced(slot, expected, current);
+        }
+    });
+    replacement.is_none()
+}
+
+/// Inserts owned items under the destination's lock; the caller keeps all excess.
+pub fn deposit(inventory: &dyn Inventory, slot: usize, stack: &mut ItemStack, max: u8) {
+    inventory.update_slot(slot, &mut |current| {
+        let empty = current.is_empty();
+        return_to_stack(current, stack, max);
+        if empty && !current.is_empty() {
+            inventory.on_slot_replaced(slot, ItemStack::EMPTY, current);
+        }
+    });
 }
 
 /// Clones one settled slot for serialization without retaining a storage or transfer guard.
 #[must_use]
 pub fn snapshot_slot(inventory: &dyn Inventory, slot: usize) -> ItemStack {
     let owner = inventory.slot_transaction(slot);
-    let _transfer = owner
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _transfer = owner.lock();
     inventory.get_stack(slot)
 }
 
@@ -66,8 +179,12 @@ pub fn withdraw(
 ) -> ItemStack {
     let mut taken = ItemStack::EMPTY.clone();
     inventory.update_slot(slot, &mut |stack| {
-        if stack.uid == expected.uid && stack.are_equal(expected) && !stack.is_empty() {
-            taken = if amount >= stack.item_count {
+        if stack.uid == expected.uid
+            && stack.are_equal(expected)
+            && amount > 0
+            && amount <= stack.item_count
+        {
+            taken = if amount == stack.item_count {
                 std::mem::replace(stack, ItemStack::EMPTY.clone())
             } else {
                 stack.split(amount)
@@ -85,14 +202,17 @@ pub fn refund(
     expected: &ItemStack,
     mut stack: ItemStack,
 ) -> ItemStack {
+    if stack.is_empty() {
+        return stack;
+    }
     inventory.update_slot(slot, &mut |current| {
-        let max = current
-            .get_max_stack_size()
-            .max(if current.uid == expected.uid {
+        let max = current.get_max_stack_size().max(
+            if current.is_empty() || current.uid == expected.uid {
                 expected.item_count
             } else {
                 0
-            });
+            },
+        );
         return_to_stack(current, &mut stack, max);
     });
     stack
@@ -101,8 +221,11 @@ pub fn refund(
 /// Returns a withdrawal without replacing a stack another writer put in its place.
 /// Any excess stays owned by the caller and must be returned or dropped after unlocking.
 pub fn return_to_stack(current: &mut ItemStack, stack: &mut ItemStack, max: u8) {
+    if stack.is_empty() {
+        return;
+    }
     if current.is_empty() {
-        std::mem::swap(current, stack);
+        *current = stack.split(stack.item_count.min(max));
     } else if current.are_items_and_components_equal(stack) {
         let count = stack.item_count.min(max.saturating_sub(current.item_count));
         current.increment(count);
@@ -124,6 +247,34 @@ mod tests {
         inventory.set_stack(0, ItemStack::new(8, &Item::DIAMOND));
         assert!(withdraw(&inventory, 0, &expected, 8).is_empty());
         assert_eq!(inventory.get_stack(0).item_count, 8);
+    }
+
+    #[test]
+    fn withdrawal_rejects_more_than_the_observed_stock() {
+        let inventory = SimpleInventory::new(1);
+        inventory.set_stack(0, ItemStack::new(8, &Item::DIAMOND));
+        let expected = inventory.get_stack(0);
+        assert!(withdraw(&inventory, 0, &expected, 9).is_empty());
+        assert_eq!(inventory.get_stack(0).item_count, 8);
+    }
+
+    #[test]
+    fn retirement_drains_stock_and_rejects_late_refunds() {
+        let inventory = SimpleInventory::new(1);
+        inventory.set_stack(0, ItemStack::new(8, &Item::DIAMOND));
+        let expected = inventory.get_stack(0);
+        let receipt = withdraw(&inventory, 0, &expected, 1);
+        let scattered = retire_and_drain(&inventory);
+        let leftover = refund(&inventory, 0, &expected, receipt);
+        assert_eq!(
+            scattered
+                .iter()
+                .map(|stack| u32::from(stack.item_count))
+                .sum::<u32>(),
+            7
+        );
+        assert_eq!(leftover.item_count, 1);
+        assert!(inventory.is_empty());
     }
 
     #[test]

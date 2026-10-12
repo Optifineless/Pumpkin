@@ -21,6 +21,38 @@ impl ItemMetadata for TridentItem {
     }
 }
 
+impl TridentItem {
+    // TridentItem.releaseUsing / ItemStack.consumeAndReturn acquire the projectile's stock.
+    fn consume_and_return(player: &Player, expected: &ItemStack) -> Option<ItemStack> {
+        let receipt = if player.gamemode.load() == GameMode::Creative {
+            expected.copy_with_count(1)
+        } else {
+            let inventory = player.inventory();
+            let owner = pumpkin_inventory::Inventory::slot_transaction(inventory.as_ref(), 0);
+            let guard = owner.lock();
+            let source =
+                (0..pumpkin_inventory::Inventory::size(inventory.as_ref())).find(|slot| {
+                    let current = inventory.get_slot(*slot);
+                    current.uid == expected.uid && current.are_equal(expected)
+                })?;
+            let receipt = pumpkin_inventory::inventory::slot_transaction::withdraw(
+                inventory.as_ref(),
+                source,
+                expected,
+                1,
+            );
+            if receipt.is_empty() {
+                return None;
+            }
+            let remaining = inventory.get_slot(source);
+            drop(guard);
+            player.sync_hand_slot(source, remaining);
+            receipt
+        };
+        Some(receipt)
+    }
+}
+
 impl ItemBehaviour for TridentItem {
     fn normal_use(&self, _item: &Item, player: &Player) {
         let inventory = player.inventory();
@@ -31,7 +63,7 @@ impl ItemBehaviour for TridentItem {
             .set_active_hand(pumpkin_util::Hand::Right, stack, 72000);
     }
 
-    fn on_stopped_using(&self, _stack: &ItemStack, player: &Player) {
+    fn on_stopped_using(&self, stack: &ItemStack, player: &Player) {
         let use_ticks = player
             .living_entity
             .item_use_time
@@ -43,7 +75,7 @@ impl ItemBehaviour for TridentItem {
         }
 
         let world = player.world();
-        let stack_guard = player.inventory().held_item();
+        let stack_guard = stack.clone();
 
         // Check Riptide level
         let mut riptide_level = 0u32;
@@ -105,14 +137,20 @@ impl ItemBehaviour for TridentItem {
             return;
         }
 
-        // Normal throw - spawn thrown trident
+        let Some(thrown_stack) = Self::consume_and_return(player, &stack_guard) else {
+            return;
+        };
         let (yaw, pitch) = player.rotation();
         let entity = Entity::new(world.clone(), player.position(), &EntityType::TRIDENT);
         let trident = TridentEntity::new_shot(
             entity,
             player.get_entity(),
-            stack_guard.clone(),
-            ArrowPickup::Allowed,
+            thrown_stack,
+            if player.gamemode.load() == GameMode::Creative {
+                ArrowPickup::CreativeOnly
+            } else {
+                ArrowPickup::Allowed
+            },
         );
         trident.set_velocity_from_rotation(pitch, yaw, 0.0, 2.5, 1.0);
         super::projectile_weapon::ProjectileWeaponItem::add_shooter_movement(
@@ -127,25 +165,6 @@ impl ItemBehaviour for TridentItem {
             pumpkin_data::sound::SoundCategory::Players,
             &player.position(),
         );
-
-        if player.gamemode.load() != GameMode::Creative {
-            let inventory = player.inventory();
-            let selected_slot = inventory.get_selected_slot() as usize;
-
-            let main_hand_item = inventory.get_slot(selected_slot);
-            if main_hand_item.item.id == Item::TRIDENT.id {
-                inventory.set_slot(selected_slot, ItemStack::EMPTY.clone());
-                player.sync_hand_slot(selected_slot, ItemStack::EMPTY.clone());
-            } else {
-                let off_hand_slot =
-                    pumpkin_inventory::player::player_inventory::PlayerInventory::OFF_HAND_SLOT;
-                let off_hand_item = inventory.get_slot(off_hand_slot);
-                if off_hand_item.item.id == Item::TRIDENT.id {
-                    inventory.set_slot(off_hand_slot, ItemStack::EMPTY.clone());
-                    player.sync_hand_slot(off_hand_slot, ItemStack::EMPTY.clone());
-                }
-            }
-        }
 
         player.living_entity.clear_active_hand();
     }

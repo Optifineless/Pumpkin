@@ -164,7 +164,13 @@ impl ScreenHandler for SmithingTableScreenHandler {
                 match slot_index.cmp(&3) {
                     std::cmp::Ordering::Equal => {
                         // From output slot to player inventory
-                        if !self.insert_item(&mut slot_stack, 4, 40, true) {
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
+                            &mut slot_stack,
+                            (4, 40, true),
+                            &mut stack,
+                        ) {
                             return ItemStack::EMPTY.clone();
                         }
                         slot.on_quick_move_crafted(slot_stack.clone(), stack.clone());
@@ -174,7 +180,13 @@ impl ScreenHandler for SmithingTableScreenHandler {
                     }
                     std::cmp::Ordering::Less => {
                         // From input slots to player inventory
-                        if !self.insert_item(&mut slot_stack, 4, 40, true) {
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
+                            &mut slot_stack,
+                            (4, 40, true),
+                            &mut stack,
+                        ) {
                             return ItemStack::EMPTY.clone();
                         }
                     }
@@ -188,15 +200,16 @@ impl ScreenHandler for SmithingTableScreenHandler {
                             || if slot_index < 31 { (31, 40) } else { (4, 31) },
                             |i| (i as i32, i as i32 + 1),
                         );
-                        if !self.insert_item(&mut slot_stack, start, end, false) {
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
+                            &mut slot_stack,
+                            (start, end, false),
+                            &mut stack,
+                        ) {
                             return ItemStack::EMPTY.clone();
                         }
                     }
-                }
-                if slot_stack.is_empty() {
-                    slot.set_stack(ItemStack::EMPTY.clone());
-                } else {
-                    slot.set_stack(slot_stack);
                 }
                 self.update_output();
             }

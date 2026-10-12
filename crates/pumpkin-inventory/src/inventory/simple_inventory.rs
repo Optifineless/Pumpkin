@@ -4,6 +4,7 @@ use std::any::Any;
 use std::sync::RwLock;
 
 pub struct SimpleInventory {
+    pub(crate) transaction: std::sync::Arc<crate::inventory::slot_transaction::Transaction>,
     pub stacks: RwLock<Vec<ItemStack>>,
     size: usize,
 }
@@ -12,6 +13,7 @@ impl SimpleInventory {
     #[must_use]
     pub fn new(size: usize) -> Self {
         Self {
+            transaction: std::sync::Arc::default(),
             stacks: RwLock::new(vec![ItemStack::EMPTY.clone(); size]),
             size,
         }
@@ -20,16 +22,19 @@ impl SimpleInventory {
 
 impl Clearable for SimpleInventory {
     fn clear(&self) {
-        let mut stacks = self
-            .stacks
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        stacks.fill_with(|| ItemStack::EMPTY.clone());
+        crate::inventory::slot_transaction::clear(self);
     }
 }
 
 impl Inventory for SimpleInventory {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<crate::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .stacks
             .write()
@@ -64,37 +69,32 @@ impl Inventory for SimpleInventory {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut stacks = self
-            .stacks
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < stacks.len() {
-            std::mem::replace(&mut stacks[slot], ItemStack::EMPTY.clone())
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+
+        removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut stacks = self
-            .stacks
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < stacks.len() && !stacks[slot].is_empty() && amount > 0 {
-            stacks[slot].split(amount)
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let mut stacks = self
-            .stacks
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < stacks.len() {
-            stacks[slot] = stack;
-        }
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
     }
 
     fn as_any(&self) -> &dyn Any {

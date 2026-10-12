@@ -111,6 +111,7 @@ impl BedrockClient {
                                 result = 1;
                                 break;
                             }
+                            let expected_source = source_stack.clone();
                             let count = count.min(source_stack.item_count);
                             if count > 0 {
                                 let mut dest_stack = get_slot_stack(
@@ -118,6 +119,7 @@ impl BedrockClient {
                                     &destination,
                                     created_item.as_ref(),
                                 );
+                                let expected_destination = dest_stack.clone();
                                 if dest_stack.is_empty() {
                                     dest_stack = source_stack.copy_with_count(count);
                                 } else if dest_stack.are_items_and_components_equal(&source_stack) {
@@ -151,7 +153,18 @@ impl BedrockClient {
                                     result = 1;
                                     break;
                                 };
-                                    if !handler.complete_bedrock_trade(player.as_ref()) {
+                                    let destination_slot = map_bedrock_container_slot(
+                                        handler,
+                                        destination.container_name.container_name,
+                                        destination.slot_id,
+                                    )
+                                    .map(|index| handler.get_behaviour().slots[index].clone());
+                                    if !handler.complete_bedrock_trade_into(
+                                        player.as_ref(),
+                                        &expected_source,
+                                        destination_slot.as_deref(),
+                                        (&expected_destination, dest_stack.clone()),
+                                    ) {
                                         result = 1;
                                         break;
                                     }
@@ -210,6 +223,16 @@ impl BedrockClient {
                                     source_stack
                                 };
 
+                                if !super::inventory_commit::commit(
+                                    &*screen_handler,
+                                    &[
+                                        (&source, &expected_source, &source_stack),
+                                        (&destination, &expected_destination, &dest_stack),
+                                    ],
+                                ) {
+                                    result = 1;
+                                    break;
+                                }
                                 update_slot_stack(
                                     player,
                                     &mut *screen_handler,
@@ -243,6 +266,13 @@ impl BedrockClient {
                             let stack2 =
                                 get_slot_stack(&*screen_handler, &slot2, created_item.as_ref());
 
+                            if !super::inventory_commit::commit(
+                                &*screen_handler,
+                                &[(&slot1, &stack1, &stack2), (&slot2, &stack2, &stack1)],
+                            ) {
+                                result = 1;
+                                break;
+                            }
                             update_slot_stack(player, &mut *screen_handler, &slot1, stack2.clone());
                             update_slot_stack(player, &mut *screen_handler, &slot2, stack1.clone());
 
@@ -270,15 +300,10 @@ impl BedrockClient {
                                 result = 1;
                                 break;
                             }
+                            let expected_source = source_stack.clone();
                             let count = count.min(source_stack.item_count);
                             if count > 0 {
                                 let dropped_stack = source_stack.copy_with_count(count);
-                                // ServerPlayer.drop awards statistics after slot removal commits.
-                                let dropper = player.clone();
-                                player.run_menu_callback(Box::new(move || {
-                                    dropper.drop_item(dropped_stack);
-                                }));
-
                                 source_stack.decrement(count);
                                 let source_stack = if source_stack.is_empty() {
                                     ItemStack::EMPTY.clone()
@@ -286,6 +311,13 @@ impl BedrockClient {
                                     source_stack
                                 };
 
+                                if !super::inventory_commit::commit(
+                                    &*screen_handler,
+                                    &[(&source, &expected_source, &source_stack)],
+                                ) {
+                                    result = 1;
+                                    break;
+                                }
                                 update_slot_stack(
                                     player,
                                     &mut *screen_handler,
@@ -293,6 +325,10 @@ impl BedrockClient {
                                     source_stack.clone(),
                                 );
 
+                                let dropper = player.clone();
+                                player.run_menu_callback(Box::new(move || {
+                                    dropper.drop_item(dropped_stack);
+                                }));
                                 record_update(
                                     &mut updates,
                                     source.container_name.clone(),
@@ -341,6 +377,7 @@ impl BedrockClient {
                                 result = 1;
                                 break;
                             }
+                            let expected_source = source_stack.clone();
                             let count = count.min(source_stack.item_count);
                             if count > 0 {
                                 source_stack.decrement(count);
@@ -350,6 +387,13 @@ impl BedrockClient {
                                     source_stack
                                 };
 
+                                if !super::inventory_commit::commit(
+                                    &*screen_handler,
+                                    &[(&source, &expected_source, &source_stack)],
+                                ) {
+                                    result = 1;
+                                    break;
+                                }
                                 update_slot_stack(
                                     player,
                                     &mut *screen_handler,
@@ -947,7 +991,6 @@ fn update_slot_stack(
             }
         }
 
-        screen_handler.get_behaviour().slots[screen_slot].set_stack(new_stack.clone());
         screen_handler.set_received_stack(screen_slot, new_stack);
     }
 }

@@ -72,6 +72,7 @@ impl ItemBehaviour for FireworkRocketItem {
                 &EntityType::FIREWORK_ROCKET,
             );
             let mut stack = player.inventory().get_stack_in_hand(hand);
+            let expected_stack = stack.clone();
             if stack.is_empty() || stack.item.id != Item::FIREWORK_ROCKET.id {
                 return;
             }
@@ -84,7 +85,9 @@ impl ItemBehaviour for FireworkRocketItem {
             );
             world.spawn_entity(Arc::new(rocket));
             stack.decrement_unless_creative(player.gamemode.load(), 1);
-            player.inventory().set_stack_in_hand(hand, stack);
+            player
+                .inventory()
+                .exchange_stack_in_hand(hand, &expected_stack, stack);
         }
     }
 

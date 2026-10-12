@@ -16,6 +16,8 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 pub struct CrafterBlockEntity {
     pub position: BlockPos,
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub disabled_slots: RwLock<[bool; Self::INVENTORY_SIZE]>,
     pub crafting_ticks_remaining: AtomicI32,
@@ -54,6 +56,7 @@ impl BlockEntity for CrafterBlockEntity {
     {
         let mut crafter = Self {
             position,
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             disabled_slots: RwLock::new([false; Self::INVENTORY_SIZE]),
             crafting_ticks_remaining: AtomicI32::new(
@@ -173,6 +176,7 @@ impl CrafterBlockEntity {
     pub fn new(position: BlockPos) -> Self {
         Self {
             position,
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             disabled_slots: RwLock::new([false; Self::INVENTORY_SIZE]),
             crafting_ticks_remaining: AtomicI32::new(0),
@@ -194,12 +198,18 @@ impl CrafterBlockEntity {
     }
 
     pub fn set_slot_state(&self, slot: usize, enabled: bool) {
+        let guard = self.transaction.lock();
+        if !self.transaction.is_live() {
+            return;
+        }
         if self.slot_can_be_disabled(slot) {
             let mut disabled = self
                 .disabled_slots
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             disabled[slot] = !enabled;
+            drop(disabled);
+            drop(guard);
             self.mark_dirty();
         }
     }
@@ -259,7 +269,14 @@ impl RecipeInputInventory for CrafterBlockEntity {
 }
 
 impl Inventory for CrafterBlockEntity {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .items
             .write()
@@ -267,14 +284,14 @@ impl Inventory for CrafterBlockEntity {
         let Some(stack) = items.get_mut(slot) else {
             return;
         };
-        let before = stack.clone();
         update(stack);
-        if !before.are_equal(stack) && before.is_empty() {
-            // CrafterBlockEntity.setItem re-enables an empty slot only after a write.
-            self.disabled_slots
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)[slot] = false;
-        }
+    }
+
+    fn on_slot_replaced(&self, slot: usize, _previous: &ItemStack, _current: &ItemStack) {
+        // CrafterBlockEntity.setItem enables its slot as part of the admitted replacement.
+        self.disabled_slots
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)[slot] = false;
     }
 
     fn size(&self) -> usize {
@@ -298,39 +315,38 @@ impl Inventory for CrafterBlockEntity {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let removed = std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
         removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let res = if !items[slot].is_empty() && amount > 0 {
-            items[slot].split(amount)
-        } else {
-            ItemStack::EMPTY.clone()
-        };
-        self.mark_dirty();
-        res
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        if self.is_slot_disabled(slot) {
-            self.set_slot_state(slot, true);
-        }
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items[slot] = stack;
-        self.mark_dirty();
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                self.on_slot_replaced(slot, current, &stack);
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
     }
 
     fn is_valid_slot_for(&self, slot: usize, _stack: &ItemStack) -> bool {
@@ -349,11 +365,6 @@ impl Inventory for CrafterBlockEntity {
 
 impl Clearable for CrafterBlockEntity {
     fn clear(&self) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items.fill_with(|| ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }

@@ -49,6 +49,7 @@ impl JavaClient {
         {
             return;
         }
+        let expected = held_stack.clone();
         if let Some(title) = title {
             // signBook uses ItemStack.transmuteCopy to retain unrelated components.
             let mut written_book = held_stack;
@@ -63,12 +64,22 @@ impl JavaClient {
                 resolved: true,
             };
             written_book.set_data_component(content);
-            player.inventory().set_stack(slot as usize, written_book);
+            let _ = pumpkin_inventory::inventory::slot_transaction::exchange(
+                player.inventory().as_ref(),
+                slot as usize,
+                &expected,
+                written_book,
+            );
         } else {
             let mut writable_book = held_stack;
             let content = WritableBookContentImpl { pages };
             writable_book.set_data_component(content);
-            player.inventory().set_stack(slot as usize, writable_book);
+            let _ = pumpkin_inventory::inventory::slot_transaction::exchange(
+                player.inventory().as_ref(),
+                slot as usize,
+                &expected,
+                writable_book,
+            );
         }
     }
 }

@@ -41,9 +41,15 @@ impl ItemBehaviour for WindChargeItem {
         world.spawn_entity(Arc::new(WindChargeEntity::new_normal(wind_charge)));
 
         let mut main_hand = player.inventory.held_item();
+
+        let expected_main_hand = main_hand.clone();
         let consumed = if !main_hand.is_empty() && main_hand.item.id == Item::WIND_CHARGE.id {
             main_hand.decrement_unless_creative(player.gamemode.load(), 1);
-            player.inventory.set_held_item(main_hand);
+            player.inventory.exchange_stack_in_hand(
+                pumpkin_util::Hand::Right,
+                &expected_main_hand,
+                main_hand,
+            );
             true
         } else {
             false
@@ -51,11 +57,14 @@ impl ItemBehaviour for WindChargeItem {
 
         if !consumed {
             let mut off_hand = player.inventory.off_hand_item();
+            let expected_off_hand = off_hand.clone();
             if !off_hand.is_empty() && off_hand.item.id == Item::WIND_CHARGE.id {
                 off_hand.decrement_unless_creative(player.gamemode.load(), 1);
-                player
-                    .inventory
-                    .set_stack_in_hand(pumpkin_util::Hand::Left, off_hand);
+                player.inventory.exchange_stack_in_hand(
+                    pumpkin_util::Hand::Left,
+                    &expected_off_hand,
+                    off_hand,
+                );
             }
         }
     }

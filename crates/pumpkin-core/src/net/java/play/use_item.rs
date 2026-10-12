@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pumpkin_inventory::Inventory;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 impl JavaClient {
@@ -113,6 +114,12 @@ impl JavaClient {
             .filter(|equippable| equippable.swappable)
             .map(|equippable| equippable.slot.clone());
         if let Some(slot) = equipment_slot {
+            let owner = inventory.slot_transaction(0);
+            let guard = owner.lock();
+            let current_hand = inventory.get_stack_in_hand(hand);
+            if current_hand.uid != held.uid || !current_hand.are_equal(held) {
+                return;
+            }
             // The equipment lock has to be released before touching the hand again:
             // the off hand lives in the same map, so holding it here would deadlock.
             let current_equipped = inventory
@@ -124,10 +131,8 @@ impl JavaClient {
                 return;
             }
 
-            player.enqueue_equipment_change(&slot, held);
-            // Equippable.swapWithEquipmentSlot awards the original item's successful use.
-            player.increment_stat(StatisticCategory::Used, i32::from(held.item.id), 1);
-
+            let used = held.item.id;
+            let equipped_notification = held.clone();
             let equipped = if current_equipped.is_empty() {
                 let equipped = held.clone();
                 held.decrement_unless_creative(player.gamemode.load(), 1);
@@ -141,6 +146,10 @@ impl JavaClient {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .put(&slot, equipped);
             inventory.set_stack_in_hand(hand, held.clone());
+            drop(guard);
+            player.enqueue_equipment_change(&slot, &equipped_notification);
+            // Equippable.swapWithEquipmentSlot awards the original item's successful use.
+            player.increment_stat(StatisticCategory::Used, i32::from(used), 1);
         }
     }
 }

@@ -224,8 +224,9 @@ impl BlockBehaviour for LecternBlock {
             return BlockActionResult::PassToDefaultBlockAction;
         };
 
-        let book = item_stack.split_unless_creative(args.player.gamemode.load(), 1);
-        lectern.set_stack(0, book);
+        if !crate::item::item_utils::place_held_item(item_stack, args.player, lectern, 0) {
+            return BlockActionResult::PassToDefaultBlockAction;
+        }
 
         Self::set_has_book(args.world, args.position, true);
         args.world

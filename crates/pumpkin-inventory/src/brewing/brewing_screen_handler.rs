@@ -97,6 +97,36 @@ impl BrewingScreenHandler {
         handler
     }
 
+    // BrewingStandMenu.quickMoveStack returns empty immediately when the fuel offer succeeds.
+    fn quick_move_stack(
+        &self,
+        player: &dyn InventoryPlayer,
+        slot: &dyn Slot,
+        slot_index: i32,
+        stack: &mut ItemStack,
+        clicked: &mut ItemStack,
+    ) -> bool {
+        if slot_index >= 5 && is_fuel(clicked) {
+            return !(self.transfer_item(player, slot, stack, (4, 5, false), clicked)
+                || (self.inventory.can_place_item(3, clicked)
+                    && !self.transfer_item(player, slot, stack, (3, 4, false), clicked)));
+        }
+        let range = if slot_index < 5 {
+            (5, 41, true)
+        } else if self.inventory.can_place_item(3, clicked) {
+            (3, 4, false)
+        } else if (0..3).any(|index| self.inventory.can_place_item(index, clicked)) {
+            (0, 3, false)
+        } else if (5..32).contains(&slot_index) {
+            (32, 41, false)
+        } else if (32..41).contains(&slot_index) {
+            (5, 32, false)
+        } else {
+            (5, 41, false)
+        };
+        self.transfer_item(player, slot, stack, range, clicked)
+    }
+
     #[must_use]
     pub fn get_fuel(&self) -> i32 {
         self.property_delegate.get_property(1)
@@ -129,7 +159,7 @@ impl ScreenHandler for BrewingScreenHandler {
         self.default_on_closed(player);
     }
 
-    fn quick_move(&mut self, _player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
+    fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let mut clicked = ItemStack::EMPTY.clone();
         let slot = self.get_behaviour().slots.get(slot_index as usize).cloned();
 
@@ -141,52 +171,11 @@ impl ScreenHandler for BrewingScreenHandler {
             let mut stack = slot.get_stack();
             clicked = stack.clone();
 
-            if slot_index >= 5 {
-                if is_fuel(&clicked) {
-                    if self.insert_item(&mut stack, 4, 5, false)
-                        || (self.inventory.can_place_item(3, &clicked)
-                            && !self.insert_item(&mut stack, 3, 4, false))
-                    {
-                        // Unlike the arms below this one returns after a successful
-                        // move, so the source slot has to be written back here.
-                        if stack.is_empty() {
-                            slot.set_stack(ItemStack::EMPTY.clone());
-                        } else {
-                            slot.set_stack(stack.clone());
-                        }
-                        return ItemStack::EMPTY.clone();
-                    }
-                } else if self.inventory.can_place_item(3, &clicked) {
-                    if !self.insert_item(&mut stack, 3, 4, false) {
-                        return ItemStack::EMPTY.clone();
-                    }
-                } else if (0..3).any(|slot| self.inventory.can_place_item(slot, &clicked)) {
-                    if !self.insert_item(&mut stack, 0, 3, false) {
-                        return ItemStack::EMPTY.clone();
-                    }
-                } else if (5..32).contains(&slot_index) {
-                    if !self.insert_item(&mut stack, 32, 41, false) {
-                        return ItemStack::EMPTY.clone();
-                    }
-                } else if (32..41).contains(&slot_index) {
-                    if !self.insert_item(&mut stack, 5, 32, false) {
-                        return ItemStack::EMPTY.clone();
-                    }
-                } else if !self.insert_item(&mut stack, 5, 41, false) {
-                    return ItemStack::EMPTY.clone();
-                }
-            } else {
-                if !self.insert_item(&mut stack, 5, 41, true) {
-                    return ItemStack::EMPTY.clone();
-                }
-
-                slot.on_quick_move_crafted(stack.clone(), clicked.clone());
+            if !self.quick_move_stack(player, slot.as_ref(), slot_index, &mut stack, &mut clicked) {
+                return ItemStack::EMPTY.clone();
             }
-
-            if stack.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone());
-            } else {
-                slot.set_stack(stack.clone());
+            if slot_index < 5 {
+                slot.on_quick_move_crafted(stack.clone(), clicked.clone());
             }
 
             if stack.item_count == clicked.item_count {

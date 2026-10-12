@@ -121,7 +121,7 @@ impl ScreenHandler for GUIScreenHandler {
         self.inventory.on_close();
     }
 
-    fn quick_move(&mut self, _player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
+    fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let mut stack_left = ItemStack::EMPTY.clone();
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
 
@@ -135,11 +135,16 @@ impl ScreenHandler for GUIScreenHandler {
                 if !self.get_behaviour().allow_grab_items {
                     return ItemStack::EMPTY.clone();
                 }
-                if !self.insert_item(
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
                     &mut slot_stack,
-                    container_slots,
-                    self.get_behaviour().slots.len() as i32,
-                    true,
+                    (
+                        container_slots,
+                        self.get_behaviour().slots.len() as i32,
+                        true,
+                    ),
+                    &mut stack_left,
                 ) {
                     return ItemStack::EMPTY.clone();
                 }
@@ -148,16 +153,16 @@ impl ScreenHandler for GUIScreenHandler {
                 if !self.get_behaviour().allow_put_items {
                     return ItemStack::EMPTY.clone();
                 }
-                if !self.insert_item(&mut slot_stack, 0, container_slots, false) {
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
+                    &mut slot_stack,
+                    (0, container_slots, false),
+                    &mut stack_left,
+                ) {
                     // Move from player area to inventory (start)
                     return ItemStack::EMPTY.clone();
                 }
-            }
-
-            if slot_stack.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone());
-            } else {
-                slot.set_stack(slot_stack);
             }
         }
 
