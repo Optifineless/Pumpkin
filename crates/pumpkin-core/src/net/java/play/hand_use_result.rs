@@ -32,7 +32,7 @@ pub(super) fn write_back_used_item(
     before: &ItemStack,
     after: &ItemStack,
 ) {
-    write_back_hand_item(
+    write_back_and_sync_hand_item(
         player,
         hand,
         source_slot,
@@ -42,8 +42,8 @@ pub(super) fn write_back_used_item(
     );
 }
 
-/// Writes a hand mutation, counting depletion as breakage only for item use.
-pub fn write_back_hand_item(
+/// Commits and synchronizes a Java or entity-interaction hand result.
+pub fn write_back_and_sync_hand_item(
     player: &Player,
     hand: Hand,
     source_slot: usize,
@@ -51,9 +51,24 @@ pub fn write_back_hand_item(
     after: &ItemStack,
     mutation: HandMutation,
 ) {
+    if write_back_hand_item(player, hand, source_slot, before, after, mutation) {
+        player.sync_hand_slot(source_slot, player.inventory().get_stack(source_slot));
+    }
+}
+
+/// Atomically commits a hand mutation; the caller publishes after callback-sensitive use.
+/// Depletion counts as breakage only for item use.
+pub fn write_back_hand_item(
+    player: &Player,
+    hand: Hand,
+    source_slot: usize,
+    before: &ItemStack,
+    after: &ItemStack,
+    mutation: HandMutation,
+) -> bool {
     let current = player.inventory().get_stack(source_slot);
     if after.are_equal(before) || current.uid != before.uid || !current.are_equal(before) {
-        return;
+        return false;
     }
     // Keep the originating slot even if an interaction changes the selected hotbar slot.
     // ItemStack.getItem exposes AIR once a stack is depleted.
@@ -79,8 +94,10 @@ pub fn write_back_hand_item(
             .world()
             .send_entity_status(player.get_entity(), equipment_break_status(&slot), None);
     }
-    player.inventory().set_stack(source_slot, stored.clone());
-    player.sync_hand_slot(source_slot, stored);
+    // Recheck under one inventory guard after statistics/status callbacks have returned.
+    player
+        .inventory()
+        .replace_stack_if_unchanged(source_slot, before, stored)
 }
 
 // HoneycombItem.useOn and AxeItem.useOn trigger before replacing the clicked block.

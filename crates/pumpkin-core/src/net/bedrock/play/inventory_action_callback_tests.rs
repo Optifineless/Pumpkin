@@ -38,7 +38,7 @@ impl EventHandler<PacketSentEvent> for ReplaceDuringEquipment {
     }
 }
 
-fn thrown_eggs(world: &crate::world::World) -> usize {
+pub(super) fn thrown_eggs(world: &crate::world::World) -> usize {
     world
         .entities
         .load()
@@ -48,6 +48,30 @@ fn thrown_eggs(world: &crate::world::World) -> usize {
             entity.is::<EggEntity>()
         })
         .count()
+}
+
+pub(super) fn pre_use_equipment_actions(player: &Player, hand: Hand) -> Vec<InventoryAction> {
+    let diamond = ItemStack::new(1, &Item::DIAMOND);
+    player.inventory().set_stack(0, diamond.clone());
+    let (container, slot, _) = hand_address(if hand == Hand::Right {
+        Hand::Left
+    } else {
+        Hand::Right
+    });
+    vec![
+        action(
+            Some(WINDOW_ID_INVENTORY),
+            0,
+            NetworkItemDescriptor::from(&diamond),
+            NetworkItemDescriptor::default(),
+        ),
+        action(
+            Some(container),
+            slot,
+            NetworkItemDescriptor::default(),
+            NetworkItemDescriptor::from(&diamond),
+        ),
+    ]
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -80,6 +104,16 @@ async fn equipment_callback_replacement_survives_click_air_reconciliation() -> T
                 true,
             );
         let (container, slot, _) = hand_address(hand);
+        let mut actions = pre_use_equipment_actions(&player, hand);
+        actions.insert(
+            0,
+            action(
+                Some(container),
+                slot,
+                NetworkItemDescriptor::from(&before),
+                NetworkItemDescriptor::from(&before.copy_with_count(1)),
+            ),
+        );
         let mut packet = click_block_packet(
             if hand == Hand::Left {
                 HandSlot::Offhand
@@ -88,12 +122,7 @@ async fn equipment_callback_replacement_survives_click_air_reconciliation() -> T
             },
             BlockPos::new(8, 64, 8),
             &before,
-            vec![action(
-                Some(container),
-                slot,
-                NetworkItemDescriptor::from(&before),
-                NetworkItemDescriptor::from(&before.copy_with_count(1)),
-            )],
+            actions,
         );
         if let TransactionData::UseItem(data) = &mut packet.transaction_data {
             data.action_type = VarInt(1);
@@ -107,7 +136,7 @@ async fn equipment_callback_replacement_survives_click_air_reconciliation() -> T
         fixture
             .verify_and_close(|fixture| {
                 let thrown = thrown_eggs(&world);
-                assert!(thrown <= 1, "one click must spawn at most one projectile");
+                assert_eq!(thrown, 0, "a replaced originating stack must skip use");
                 let actual = fixture.owner.player.inventory().get_stack_in_hand(hand);
                 assert!(
                     actual.are_items_and_components_equal(&replacement),
@@ -115,19 +144,20 @@ async fn equipment_callback_replacement_survives_click_air_reconciliation() -> T
                 );
                 assert_eq!(
                     usize::from(actual.item_count),
-                    8 - thrown,
-                    "the callback's stack pays at most once"
+                    8,
+                    "the callback's replacement is not consumed"
                 );
                 assert_eq!(actual.uid, replacement.uid);
                 let owner_packets = fixture.owner.take_packets();
-                assert_owner_packet(fixture, &owner_packets, hand, &actual)
+                assert_owner_packet(fixture, &owner_packets, hand, &actual)?;
+                assert_observer_hand(fixture, hand, &actual)
             })
             .await?;
     }
     Ok(())
 }
 
-struct SelectSlot(Arc<AtomicUsize>);
+pub(super) struct SelectSlot(pub(super) Arc<AtomicUsize>);
 
 impl EventHandler<BlockPlaceEvent> for SelectSlot {
     fn handle_blocking<'a>(
@@ -252,7 +282,7 @@ async fn placement_callback_selection_publishes_the_live_main_hand() -> TestResu
         .await
 }
 
-fn assert_observer_hand(
+pub(super) fn assert_observer_hand(
     fixture: &mut HandUseFixture,
     hand: Hand,
     expected: &ItemStack,
@@ -293,7 +323,7 @@ fn assert_observer_hand(
     Ok(())
 }
 
-struct CancelPlacement;
+pub(super) struct CancelPlacement;
 
 impl EventHandler<BlockPlaceEvent> for CancelPlacement {
     fn handle_blocking<'a>(
