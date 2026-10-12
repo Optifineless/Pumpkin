@@ -151,7 +151,6 @@ pub mod inventory_action;
 mod inventory_exploit_tests;
 mod inventory_request_validation;
 pub mod item_stack_request;
-pub(super) use item_stack_request::record_update;
 pub mod mob_equipment;
 pub mod modal_form_response;
 pub mod player_action;
