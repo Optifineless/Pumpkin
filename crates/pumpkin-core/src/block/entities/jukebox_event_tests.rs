@@ -109,6 +109,7 @@ async fn jukebox_player_actions_emit_one_block_change() {
     let position = jukebox.get_position();
     let player = fixture.player("JukeboxEvents");
     let mut disc = ItemStack::new(2, &Item::MUSIC_DISC_13);
+    player.inventory().set_held_item(disc.clone());
     let cursor = pumpkin_util::math::vector3::Vector3::new(0.5, 1.0, 0.5);
     let hit = BlockHitResult {
         face: &pumpkin_data::BlockDirection::Up,

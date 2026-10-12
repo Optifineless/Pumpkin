@@ -98,21 +98,21 @@ impl EnchantingTableScreenHandler {
         {
             return false;
         }
-        let mut item = proposal.item;
-        let mut lapis = proposal.lapis;
-        if !player.is_creative() {
-            player.add_experience_levels(-(proposal.option + 1));
-        }
-        // Player.onEnchantmentPerformed changes the player's seed before enchanting the item.
-        player.set_enchantment_seed(rand::random());
+        let mut item = proposal.item.clone();
+        let mut lapis = proposal.lapis.clone();
         for (enchantment, level) in proposal.enchantments {
             item.add_enchantment(enchantment, level as u16);
         }
-        self.inventory.set_stack(0, item);
         if !player.is_creative() {
             lapis.decrement((proposal.option + 1) as u8);
-            self.inventory.set_stack(1, lapis);
         }
+        if !self.commit_enchantment_inputs(&proposal.item, &proposal.lapis, item, lapis) {
+            return false;
+        }
+        if !player.is_creative() {
+            player.add_experience_levels(-(proposal.option + 1));
+        }
+        player.set_enchantment_seed(rand::random());
         player.increment_stat(
             StatisticCategory::Custom,
             CustomStatistic::EnchantItem as i32,
@@ -125,6 +125,42 @@ impl EnchantingTableScreenHandler {
             Sound::BlockEnchantmentTableUse,
             rand::random::<f32>().mul_add(0.1, 0.9),
         );
+        true
+    }
+
+    // EnchantmentMenu.clickMenuButton commits the enchanted item and its lapis together.
+    fn commit_enchantment_inputs(
+        &self,
+        expected_item: &ItemStack,
+        expected_lapis: &ItemStack,
+        item: ItemStack,
+        lapis: ItemStack,
+    ) -> bool {
+        let owner = self.inventory.slot_transaction(0);
+        let guard = owner.lock();
+        let current_item = self.inventory.get_stack(0);
+        let current_lapis = self.inventory.get_stack(1);
+        if !owner.is_live()
+            || current_item.uid != expected_item.uid
+            || !current_item.are_equal(expected_item)
+            || current_lapis.uid != expected_lapis.uid
+            || !current_lapis.are_equal(expected_lapis)
+        {
+            return false;
+        }
+        for (index, expected, replacement) in [(0, expected_item, item), (1, expected_lapis, lapis)]
+        {
+            let committed = crate::inventory::slot_transaction::exchange(
+                self.inventory.as_ref(),
+                index,
+                expected,
+                replacement,
+            );
+            debug_assert!(committed);
+        }
+        drop(guard);
+        self.inventory.on_slot_changed(0);
+        self.inventory.on_slot_changed(1);
         true
     }
 

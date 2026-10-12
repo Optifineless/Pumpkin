@@ -189,7 +189,7 @@ impl World {
         drop(loads);
         // LevelChunk.clearAllBlockEntities retires publication with the chunk. Serialization
         // stays outside the gate because native BlockEntity implementations can call back.
-        self.save_block_entities(chunk_pos);
+        self.save_block_entities(chunk_pos, true);
         let mut loads = self
             .pending_block_entity_loads
             .lock()

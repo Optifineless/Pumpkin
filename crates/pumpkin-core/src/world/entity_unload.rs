@@ -83,7 +83,7 @@ impl World {
             return;
         }
         // PR-2b owns the callback-free block-entity snapshot/detach contract.
-        self.save_block_entities(request.position);
+        self.save_block_entities(request.position, false);
         let ids: FxHashSet<_> = members
             .iter()
             .map(|entity| entity.get_entity().entity_id)

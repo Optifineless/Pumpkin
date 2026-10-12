@@ -50,6 +50,19 @@ pub trait ItemBehaviour: Send + Sync {
         self.normal_use_with_rotation(item, player, yaw, pitch);
     }
 
+    /// Uses the dispatcher's observed stack; false suppresses use statistics and cooldowns.
+    fn use_observed_stack(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) -> bool {
+        self.normal_use_with_hand(stack.item, player, yaw, pitch, hand);
+        true
+    }
+
     #[expect(clippy::too_many_arguments)]
     fn use_on_block(
         &self,

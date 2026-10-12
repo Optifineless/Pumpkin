@@ -19,6 +19,22 @@ pub(crate) const fn should_try_block_placement(result: &BlockActionResult) -> bo
     matches!(result, BlockActionResult::Pass)
 }
 
+fn records_committed_use(behaviour: &dyn std::any::Any) -> bool {
+    use super::items;
+    behaviour.is::<items::ender_pearl::EnderPearlItem>()
+        || behaviour.is::<items::egg::EggItem>()
+        || behaviour.is::<items::experience_bottle::ExperienceBottleItem>()
+        || behaviour.is::<items::snowball::SnowBallItem>()
+        || behaviour.is::<items::wind_charge::WindChargeItem>()
+        || behaviour.is::<items::potions::SplashPotionItem>()
+        || behaviour.is::<items::potions::LingeringPotionItem>()
+        || behaviour.is::<items::boat::BoatItem>()
+        || behaviour.is::<items::ender_eye::EnderEyeItem>()
+        || behaviour.is::<items::firework_rocket::FireworkRocketItem>()
+        || behaviour.is::<items::place_on_water::PlaceOnWaterBlockItem>()
+        || behaviour.is::<items::spawn_egg::SpawnEggItem>()
+}
+
 #[derive(Default)]
 pub struct ItemRegistry {
     items: FxHashMap<u16, Arc<dyn ItemBehaviour>>,
@@ -50,7 +66,8 @@ impl ItemRegistry {
         }
         self.get_pumpkin_item(stack.item.id).is_some_and(|item| {
             let behaviour = item.as_any();
-            behaviour.is::<super::items::bucket::EmptyBucketItem>()
+            records_committed_use(behaviour)
+                || behaviour.is::<super::items::bucket::EmptyBucketItem>()
                 || behaviour.is::<super::items::bucket::FilledBucketItem>()
                 || behaviour.is::<super::items::glass_bottle::GlassBottleItem>()
                 // FishingRodItem.use awards the cast itself (both hands).
@@ -80,15 +97,18 @@ impl ItemRegistry {
 
         let pumpkin_item = self.get_pumpkin_item(item.id);
         if let Some(pumpkin_item) = pumpkin_item {
-            pumpkin_item.normal_use_with_hand(item, player, yaw, pitch, hand);
+            if !pumpkin_item.use_observed_stack(stack, player, yaw, pitch, hand) {
+                return;
+            }
             // Legacy void hooks keep their use statistics after dispatch. Consumption,
             // BowItem.releaseUsing and BucketItem.use award at their actual success points.
             let behaviour = pumpkin_item.as_any();
-            if matches!(player.client.as_ref(), crate::net::ClientPlatform::Java(_))
+            if records_committed_use(behaviour)
+                || (matches!(player.client.as_ref(), crate::net::ClientPlatform::Java(_))
                 // BlocksAttacks.hurtBlockingItem counts blocking, not raising the item.
                 && stack.get_data_component::<BlocksAttacksImpl>().is_none()
                 && !self.records_item_use_stat(stack)
-                && !behaviour.is::<super::items::bow::BowItem>()
+                && !behaviour.is::<super::items::bow::BowItem>())
             {
                 player.increment_stat(
                     pumpkin_data::statistic::StatisticCategory::Used,

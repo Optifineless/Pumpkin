@@ -81,10 +81,22 @@ impl ItemBehaviour for EnderEyeItem {
         &self,
         _item: &Item,
         player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        observed: &pumpkin_data::item_stack::ItemStack,
+        player: &Player,
         _yaw: f32,
         _pitch: f32,
         hand: pumpkin_util::Hand,
-    ) {
+    ) -> bool {
         let world = player.world();
 
         let (start_pos, end_pos) = self.get_start_and_end_pos(player);
@@ -94,14 +106,14 @@ impl ItemBehaviour for EnderEyeItem {
         if let Some((hit_pos, _)) = world.raycast(start_pos, end_pos, checker)
             && world.get_block(&hit_pos) == &Block::END_PORTAL_FRAME
         {
-            return;
+            return false;
         }
 
         let origin = player.get_entity().block_pos.load();
         let target_block_pos = find_stronghold(&world, origin);
 
         let Some(target) = target_block_pos else {
-            return;
+            return false;
         };
 
         let spawn_pos = Vector3::new(
@@ -110,6 +122,11 @@ impl ItemBehaviour for EnderEyeItem {
                 + f64::from(EntityType::EYE_OF_ENDER.dimension[1]) * 0.5,
             player.get_entity().pos.load().z,
         );
+
+        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, observed)
+        else {
+            return false;
+        };
 
         let entity = Entity::new(world.clone(), spawn_pos, &EntityType::EYE_OF_ENDER);
         let eye = Arc::new(EyeOfEnder::new(entity));
@@ -121,7 +138,10 @@ impl ItemBehaviour for EnderEyeItem {
         );
         eye.signal_to(target_vec);
 
-        world.spawn_entity(eye);
+        if !world.spawn_entity(eye) {
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
+        }
 
         let pitch = 0.33f32 + rand::random::<f32>() * (0.5 - 0.33);
         world.play_sound_fine(
@@ -135,12 +155,7 @@ impl ItemBehaviour for EnderEyeItem {
         player.trigger_advancement(
             crate::entity::player::advancement::trigger::AdvancementTrigger::LaunchedEyeOfEnder,
         );
-        let mut stack = player.inventory.get_stack_in_hand(hand);
-        let expected_stack = stack.clone();
-        stack.decrement_unless_creative(player.gamemode.load(), 1);
-        player
-            .inventory
-            .exchange_stack_in_hand(hand, &expected_stack, stack);
+        true
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
