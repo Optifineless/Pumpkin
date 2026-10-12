@@ -47,6 +47,7 @@ In-game verification: **Not yet**.
   P2 backlog. Empty membership now skips the replacement registry allocation,
   and completed hidden never-installed storage forgets its generation without
   resetting the monotonic generation counter.
+Bedrock inventory requests reject forged hand and legacy slot predictions, Survival creative-item requests, unpaid preview-slot operations and cursor aliases ([#168](https://github.com/Optifineless/Pumpkin/issues/168)). Implemented by Codex (GPT-6.1 Sol). In-game verification: **Not yet**.
 
 ## How the code here is written
 
