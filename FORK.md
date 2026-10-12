@@ -543,3 +543,7 @@ Bedrock offhand equipment updates use the protocol offhand container 119, includ
 ## PR #102 shared block destruction hook
 
 The shared `player_will_destroy` hook runs after break-event admission and before loot or removal; the paired-block helper suppresses drops and sends destroy effects to Java and Bedrock clients. It provides the vanilla ordering used by `ServerPlayerGameMode.destroyBlock`, `AbstractBedBlock.playerWillDestroy`, and `DoublePlantBlock.preventDropFromBottomPart`. API 8 (same version); native plugins should rebuild for the `BlockBehaviour` trait layout change. Wasm WIT is unchanged. In-game verification: **Not yet**.
+
+## Mob interaction hand plumbing (#116 shared dependency)
+
+Adds a hand-aware mob callback and source-slot commit helper, plus shared `USE_REMAINDER` handling for mob food. It mirrors vanilla `Mob.interact`, `Mob.usePlayerItem` and `Player.getItemInHand`/`setItemInHand`; the default callback forwards to the existing species method, preserving its behavior, and handless species retain detached consumption until they carry the captured interaction. A compare-and-replace commits against the original slot snapshot before granting a remainder, preventing stale or switched hands from consuming another item or minting free remainders. Animal feeding and cow milking use this infrastructure in dependent branches. API 8 (same version); native plugins must rebuild for the added mob-interaction context method. Wasm WIT is unchanged. Addresses the item-duplication findings on fork PR #176. In-game verification: **Not yet**.
