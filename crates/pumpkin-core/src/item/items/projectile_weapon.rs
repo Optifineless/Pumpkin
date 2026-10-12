@@ -58,7 +58,12 @@ impl ProjectileWeaponItem {
             shooter.pos.load(),
             ArrowEntity::entity_type_for_item(projectile.item),
         );
-        let pickup = if is_creative {
+        // AbstractArrow's constructor makes receipt-marked unpaid projectiles creative-only.
+        let pickup = if is_creative
+            || projectile
+                .get_data_component::<pumpkin_data::data_component_impl::IntangibleProjectileImpl>()
+                .is_some()
+        {
             ArrowPickup::CreativeOnly
         } else {
             ArrowPickup::Allowed
@@ -81,27 +86,39 @@ impl ProjectileWeaponItem {
     /// Draws ammo for projectile weapon matching vanilla `ProjectileWeaponItem::draw`.
     #[must_use]
     pub fn draw(weapon: &ItemStack, projectile: &ItemStack, is_creative: bool) -> Vec<ItemStack> {
-        if projectile.item_count == 0 {
-            return Vec::new();
-        }
+        Self::draw_with_ammo_cost(weapon, projectile, is_creative).0
+    }
 
+    /// Returns the drawn projectiles and the exact first-projectile payment from the same draw.
+    /// Callers must own the observed ammo until that payment is committed.
+    #[must_use]
+    pub(crate) fn draw_with_ammo_cost(
+        weapon: &ItemStack,
+        projectile: &ItemStack,
+        is_creative: bool,
+    ) -> (Vec<ItemStack>, u8) {
+        if projectile.item_count == 0 {
+            return (Vec::new(), 0);
+        }
         let num_projectiles = EnchantmentHelper::process_projectile_count(weapon, 1);
         let mut drawn = Vec::with_capacity(num_projectiles);
         let projectile_copy = projectile.copy_with_count(1);
-
+        let mut payment = 0;
         for i in 0..num_projectiles {
-            let drawn_stack = Self::use_ammo(
+            let (drawn_stack, cost) = Self::use_ammo_with_cost(
                 weapon,
                 if i == 0 { projectile } else { &projectile_copy },
                 is_creative,
                 i > 0,
             );
+            if i == 0 {
+                payment = cost;
+            }
             if drawn_stack.item_count > 0 {
                 drawn.push(drawn_stack);
             }
         }
-
-        drawn
+        (drawn, payment)
     }
 
     /// Handles ammo usage logic matching vanilla `ProjectileWeaponItem::useAmmo`.
@@ -112,22 +129,31 @@ impl ProjectileWeaponItem {
         is_creative: bool,
         force_infinite: bool,
     ) -> ItemStack {
+        Self::use_ammo_with_cost(weapon, projectile, is_creative, force_infinite).0
+    }
+
+    fn use_ammo_with_cost(
+        weapon: &ItemStack,
+        projectile: &ItemStack,
+        is_creative: bool,
+        force_infinite: bool,
+    ) -> (ItemStack, u8) {
         let ammo_to_use = if force_infinite || is_creative {
             0
         } else {
             EnchantmentHelper::process_ammo_use(weapon, projectile, 1)
         };
-
-        if ammo_to_use > projectile.item_count as i32 {
-            return ItemStack::EMPTY.clone();
+        let Ok(ammo_to_use) = u8::try_from(ammo_to_use) else {
+            return (ItemStack::EMPTY.clone(), 0);
+        };
+        if ammo_to_use > projectile.item_count {
+            return (ItemStack::EMPTY.clone(), 0);
         }
-
         let mut copy = projectile.copy_with_count(1);
         if ammo_to_use == 0 {
             copy.set_data_component(pumpkin_data::data_component_impl::IntangibleProjectileImpl);
         }
-
-        copy
+        (copy, ammo_to_use)
     }
 
     /// Shoots projectiles matching vanilla `ProjectileWeaponItem::shoot`.

@@ -448,6 +448,8 @@ impl ItemBehaviour for EmptyBucketItem {
         }
 
         let mut stack = player.inventory().get_stack_in_hand(hand);
+
+        let expected_stack = stack.clone();
         if stack.is_empty()
             || stack.item != &Item::BUCKET
             || try_pickup_fluid_at(&world, pickup_pos).is_none()
@@ -468,7 +470,9 @@ impl ItemBehaviour for EmptyBucketItem {
             ItemStack::new(1, item),
             true,
         );
-        player.inventory().set_stack_in_hand(hand, stack);
+        player
+            .inventory()
+            .exchange_stack_in_hand(hand, &expected_stack, stack);
         player.increment_stat(
             pumpkin_data::statistic::StatisticCategory::Used,
             i32::from(Item::BUCKET.id),
@@ -518,6 +522,7 @@ impl ItemBehaviour for EmptyBucketItem {
 fn finish_empty_bucket(player: &Player, hand: Hand, item: &Item) {
     if player.gamemode.load() != GameMode::Creative {
         let mut stack = player.inventory().get_stack_in_hand(hand);
+        let expected_stack = stack.clone();
         if stack.item != item {
             return;
         }
@@ -527,7 +532,9 @@ fn finish_empty_bucket(player: &Player, hand: Hand, item: &Item) {
             ItemStack::new(1, &Item::BUCKET),
             true,
         );
-        player.inventory().set_stack_in_hand(hand, stack);
+        player
+            .inventory()
+            .exchange_stack_in_hand(hand, &expected_stack, stack);
     }
     player.increment_stat(
         pumpkin_data::statistic::StatisticCategory::Used,

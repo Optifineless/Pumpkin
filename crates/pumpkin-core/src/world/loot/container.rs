@@ -7,7 +7,12 @@ fn place_items_in_chest(
     inventory: &std::sync::Arc<dyn pumpkin_inventory::Inventory>,
     mut items_to_place: Vec<ItemStack>,
     rng: &mut LootRandom<'_>,
-) {
+) -> Vec<usize> {
+    // LootTable.fill reserves its available slots until the generated loot is committed.
+    let owners =
+        pumpkin_inventory::inventory::slot_transaction::ordered_owners(&[inventory.as_ref()]);
+    let _guards = pumpkin_inventory::inventory::slot_transaction::lock_owners(&owners);
+    let mut changed = Vec::new();
     let inv_size = inventory.size();
 
     let mut available_slots: Vec<usize> = (0..inv_size)
@@ -24,10 +29,18 @@ fn place_items_in_chest(
     for item in items_to_place {
         let Some(slot) = available_slots.pop() else {
             tracing::warn!("Tried to over-fill a container");
-            return;
+            return changed;
         };
-        inventory.set_stack(slot, item);
+        let mut item = Some(item);
+        inventory.update_slot(slot, &mut |current| {
+            if let Some(item) = item.take() {
+                inventory.on_slot_replaced(slot, current, &item);
+                *current = item;
+                changed.push(slot);
+            }
+        });
     }
+    changed
 }
 
 pub fn fill_chest_inventory_handle(
@@ -46,10 +59,14 @@ pub fn fill_chest_inventory_with_context(
     params: &LootContextParameters,
 ) {
     // LootTable.fill continues the LootContext random source through slot shuffling.
+    let mut changed = Vec::new();
     with_random(handle.parsed(), seed, params, &mut |rng| {
         let items = generate_with_random(handle.parsed(), params, rng);
-        place_items_in_chest(inventory, items, rng);
+        changed = place_items_in_chest(inventory, items, rng);
     });
+    for slot in changed {
+        inventory.on_slot_changed(slot);
+    }
 }
 
 pub fn fill_chest_inventory(
@@ -58,10 +75,14 @@ pub fn fill_chest_inventory(
     seed: i64,
 ) {
     let params = LootContextParameters::default();
+    let mut changed = Vec::new();
     with_random(table.parsed(), seed, &params, &mut |rng| {
         let items = generate_with_random(table.parsed(), &params, rng);
-        place_items_in_chest(inventory, items, rng);
+        changed = place_items_in_chest(inventory, items, rng);
     });
+    for slot in changed {
+        inventory.on_slot_changed(slot);
+    }
 }
 
 fn shuffle_and_split_items(

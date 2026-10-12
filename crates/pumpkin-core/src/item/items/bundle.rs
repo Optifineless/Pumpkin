@@ -84,6 +84,7 @@ impl ItemBehaviour for BundleItem {
             return;
         };
         let mut bundle = player.inventory.get_stack_in_hand(hand);
+        let expected = bundle.clone();
         if bundle.uid != stack.uid || bundle.item != stack.item {
             return;
         }
@@ -94,8 +95,13 @@ impl ItemBehaviour for BundleItem {
         else {
             return;
         };
+        if !player
+            .inventory
+            .exchange_stack_in_hand(hand, &expected, bundle.clone())
+        {
+            return;
+        }
         play_bundle_sound(player, Sound::ItemBundleRemoveOne);
-        player.inventory.set_stack_in_hand(hand, bundle.clone());
         let slot = match hand {
             Hand::Right => player.inventory.get_selected_slot() as usize,
             Hand::Left => {

@@ -137,11 +137,7 @@ impl HostInventory for PluginHostState {
             }
             InventoryProvider::PlayerMain(player) => {
                 if slot < 36 {
-                    let s = player.inventory().get_stack(slot as usize);
-                    player.inventory().set_stack(
-                        slot as usize,
-                        pumpkin_data::item_stack::ItemStack::EMPTY.clone(),
-                    );
+                    let s = player.inventory().remove_stack(slot as usize);
                     let empty_serializer = ItemStackSerializer::from(
                         pumpkin_data::item_stack::ItemStack::EMPTY.clone(),
                     );
@@ -154,11 +150,7 @@ impl HostInventory for PluginHostState {
             }
             InventoryProvider::PlayerEnderChest(player) => {
                 if slot < 27 {
-                    let s = player.ender_chest_inventory().get_stack(slot as usize);
-                    player.ender_chest_inventory().set_stack(
-                        slot as usize,
-                        pumpkin_data::item_stack::ItemStack::EMPTY.clone(),
-                    );
+                    let s = player.ender_chest_inventory().remove_stack(slot as usize);
                     if s.is_empty() { None } else { Some(s) }
                 } else {
                     None

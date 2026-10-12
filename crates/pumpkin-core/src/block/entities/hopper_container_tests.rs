@@ -250,9 +250,12 @@ async fn double_chest_concurrent_insertions_conserve_items() {
 fn chest_rollback_preserves_a_concurrent_replacement() {
     let chest = ChestBlockEntity::new(BlockPos::new(8, 64, 8));
     chest.set_stack(0, ItemStack::new(2, &pumpkin_data::item::Item::DIAMOND));
-    let extraction = HopperBlockEntity::take_from(&chest, 0).unwrap();
+    let expected = chest.get_stack(0);
+    let extraction =
+        pumpkin_inventory::inventory::slot_transaction::withdraw(&chest, 0, &expected, 1);
     chest.set_stack(0, ItemStack::new(64, &pumpkin_data::item::Item::STONE));
-    let leftover = HopperBlockEntity::restore_to(&chest, 0, extraction).unwrap();
+    let leftover =
+        pumpkin_inventory::inventory::slot_transaction::refund(&chest, 0, &expected, extraction);
     assert_eq!(leftover.item_count, 1);
     assert_eq!(leftover.item, &pumpkin_data::item::Item::DIAMOND);
     assert_eq!(chest.get_stack(0).item_count, 64);

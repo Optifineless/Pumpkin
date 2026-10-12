@@ -4560,7 +4560,8 @@ impl Player {
 
     pub fn drop_held_item(&self, drop_stack: bool) {
         let _guard_effects = crate::world::guard_effects::GuardEffects::new();
-        let mut item_stack = self.inventory().held_item();
+        let source_slot = self.inventory.get_selected_slot() as usize;
+        let item_stack = self.inventory.get_stack(source_slot);
 
         if item_stack.is_empty() {
             return;
@@ -4584,10 +4585,16 @@ impl Player {
             }
         }
 
-        item_stack.decrement(drop_amount);
-        let updated_stack = item_stack.clone();
-        self.inventory().set_held_item(updated_stack.clone());
-
+        let dropped_stack = pumpkin_inventory::inventory::slot_transaction::withdraw(
+            self.inventory.as_ref(),
+            source_slot,
+            &item_stack,
+            drop_amount,
+        );
+        if dropped_stack.is_empty() {
+            return;
+        }
+        let updated_stack = self.inventory.get_stack(source_slot);
         self.drop_item(dropped_stack);
 
         let inv: Arc<dyn Inventory> = self.inventory.clone();
@@ -4598,8 +4605,7 @@ impl Player {
         let mut screen_handler = screen_binding
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let selected_slot = self.inventory.get_selected_slot();
-        if let Some(slot_index) = screen_handler.get_slot_index(&inv, selected_slot as usize) {
+        if let Some(slot_index) = screen_handler.get_slot_index(&inv, source_slot) {
             screen_handler.set_received_stack(slot_index, updated_stack);
             screen_handler.send_content_updates();
         }
@@ -6017,70 +6023,7 @@ impl PartialEq for Player {
 
 impl NBTStorage for PlayerInventory {
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        // Save the selected slot (hotbar)
-        nbt.put_int("SelectedItemSlot", i32::from(self.get_selected_slot()));
-
-        // Create inventory list with the correct capacity (inventory size)
-        let mut items: Vec<NbtTag> = Vec::with_capacity(41);
-        {
-            let main_inv = self
-                .main_inventory
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (i, stack) in main_inv.iter().enumerate() {
-                if !stack.is_empty() {
-                    let mut item_compound = NbtCompound::new();
-                    item_compound.put_byte("Slot", i as i8);
-                    stack.write_item_stack(&mut item_compound);
-                    items.push(NbtTag::Compound(item_compound));
-                }
-            }
-        }
-
-        let mut equipment_compound = NbtCompound::new();
-        {
-            let equipment_guard = self
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (slot, stack) in &equipment_guard.equipment {
-                if !stack.is_empty() {
-                    let mut item_compound = NbtCompound::new();
-                    stack.write_item_stack(&mut item_compound);
-                    let vanilla_slot = match slot {
-                        EquipmentSlot::Feet(_) => {
-                            equipment_compound.put_compound("feet", item_compound.clone());
-                            Some(100i8)
-                        }
-                        EquipmentSlot::Legs(_) => {
-                            equipment_compound.put_compound("legs", item_compound.clone());
-                            Some(101i8)
-                        }
-                        EquipmentSlot::Chest(_) => {
-                            equipment_compound.put_compound("chest", item_compound.clone());
-                            Some(102i8)
-                        }
-                        EquipmentSlot::Head(_) => {
-                            equipment_compound.put_compound("head", item_compound.clone());
-                            Some(103i8)
-                        }
-                        EquipmentSlot::OffHand(_) => {
-                            equipment_compound.put_compound("offhand", item_compound.clone());
-                            Some(-106i8)
-                        }
-                        _ => None,
-                    };
-                    if let Some(slot_byte) = vanilla_slot {
-                        let mut inv_item_compound = NbtCompound::new();
-                        inv_item_compound.put_byte("Slot", slot_byte);
-                        stack.write_item_stack(&mut inv_item_compound);
-                        items.push(NbtTag::Compound(inv_item_compound));
-                    }
-                }
-            }
-        }
-        nbt.put_compound("equipment", equipment_compound);
-        nbt.put("Inventory", NbtTag::List(items));
+        super::player_inventory_save::write_player(self, nbt);
     }
 
     fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
@@ -6161,22 +6104,7 @@ impl NBTStorageInit for PlayerInventory {}
 
 impl NBTStorage for EnderChestInventory {
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        // Create item list with the correct capacity (inventory size)
-        let mut items: Vec<NbtTag> = Vec::with_capacity(Self::INVENTORY_SIZE);
-        let ec_items = self
-            .items
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (i, stack) in ec_items.iter().enumerate() {
-            if !stack.is_empty() {
-                let mut item_compound = NbtCompound::new();
-                item_compound.put_byte("Slot", i as i8);
-                stack.write_item_stack(&mut item_compound);
-                items.push(NbtTag::Compound(item_compound));
-            }
-        }
-
-        nbt.put("EnderItems", NbtTag::List(items));
+        super::player_inventory_save::write_ender_chest(self, nbt);
     }
 
     fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
@@ -6335,8 +6263,7 @@ impl EntityBase for Player {
 
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_int("DataVersion", DATA_VERSION);
-        self.inventory.write_nbt(nbt);
-        self.ender_chest_inventory.write_nbt(nbt);
+        super::player_inventory_save::write_both(self, nbt);
 
         self.abilities
             .lock()

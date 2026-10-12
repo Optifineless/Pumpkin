@@ -348,11 +348,12 @@ impl ScreenHandler for EnchantingTableScreenHandler {
 
             if slot_index < 2 {
                 // From enchanting to player
-                if !self.insert_item(
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
                     &mut slot_stack,
-                    2,
-                    self.get_behaviour().slots.len() as i32,
-                    true,
+                    (2, self.get_behaviour().slots.len() as i32, true),
+                    &mut stack_left,
                 ) {
                     return ItemStack::EMPTY.clone();
                 }
@@ -360,18 +361,24 @@ impl ScreenHandler for EnchantingTableScreenHandler {
                 // From player to enchanting
                 // Lapis check
                 if slot_stack.item == &Item::LAPIS_LAZULI {
-                    if !self.insert_item(&mut slot_stack, 1, 2, false) {
+                    if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut slot_stack,
+                        (1, 2, false),
+                        &mut stack_left,
+                    ) {
                         return ItemStack::EMPTY.clone();
                     }
-                } else if !self.insert_item(&mut slot_stack, 0, 1, false) {
+                } else if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
+                    &mut slot_stack,
+                    (0, 1, false),
+                    &mut stack_left,
+                ) {
                     return ItemStack::EMPTY.clone();
                 }
-            }
-
-            if slot_stack.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone());
-            } else {
-                slot.set_stack(slot_stack);
             }
 
             // CRITICAL FIX: Ensure the client is notified when shift-clicking items into the slots

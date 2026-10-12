@@ -138,6 +138,9 @@ impl World {
         }) {
             return;
         }
+        for member in &members {
+            super::container_lifecycle::retire_entity_container(member);
+        }
         // Collect then dispatch: no admission/storage guard reaches these object calls.
         for member in &members {
             self.spawn_state.load().remove_entity(self, member.as_ref());

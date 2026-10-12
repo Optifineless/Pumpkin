@@ -167,9 +167,18 @@ macro_rules! impl_cooking_block_entity_base {
                 false
             }
             fn craft_recipe(&self, recipe: Option<&pumpkin_data::recipes::CookingRecipe>) -> bool {
+                let owner = pumpkin_inventory::Inventory::slot_transaction(self, 0);
+                let _guard = owner.lock();
+                if !owner.is_live() {
+                    return false;
+                }
                 let can_accept_output =
                     self.can_accept_recipe_output(recipe, self.get_max_count_per_stack());
                 if let Some(recipe) = recipe {
+                    // AbstractFurnaceBlockEntity.burn consumes only the matched ingredient.
+                    if !recipe.ingredient.match_item(self.get_input_item().item) {
+                        return false;
+                    }
                     if can_accept_output {
                         let Ok(mut items) = self.items.try_write() else {
                             return false;
@@ -249,12 +258,7 @@ macro_rules! impl_clearable_for_cooking {
     ($struct_name:ty) => {
         impl pumpkin_inventory::Clearable for $struct_name {
             fn clear(&self) {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                items.fill_with(|| ItemStack::EMPTY.clone());
-                self.mark_dirty();
+                pumpkin_inventory::inventory::slot_transaction::clear(self);
             }
         }
     };
@@ -278,7 +282,14 @@ macro_rules! impl_experience_container_for_cooking {
 macro_rules! impl_inventory_for_cooking {
     ($struct_name:ty) => {
         impl pumpkin_inventory::Inventory for $struct_name {
-            fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+            fn slot_transaction(
+                &self,
+                _slot: usize,
+            ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+                self.transaction.clone()
+            }
+
+            fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
                 let mut items = self
                     .items
                     .write()
@@ -286,11 +297,11 @@ macro_rules! impl_inventory_for_cooking {
                 let Some(stack) = items.get_mut(slot) else {
                     return;
                 };
-                let before = stack.clone();
                 update(stack);
-                if !before.are_equal(stack) {
-                    self.update_cooking_input(slot, &before, stack);
-                }
+            }
+
+            fn on_slot_replaced(&self, slot: usize, previous: &ItemStack, current: &ItemStack) {
+                self.update_cooking_input(slot, previous, current);
             }
 
             fn size(&self) -> usize {
@@ -314,39 +325,38 @@ macro_rules! impl_inventory_for_cooking {
             }
 
             fn remove_stack(&self, slot: usize) -> ItemStack {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let removed = std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone());
-                self.mark_dirty();
+                let mut removed = ItemStack::EMPTY.clone();
+                self.update_slot(slot, &mut |stack| {
+                    removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+                });
+                if !removed.is_empty() {
+                    self.on_slot_changed(slot);
+                }
                 removed
             }
 
             fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let res = if !items[slot].is_empty() && amount > 0 {
-                    items[slot].split(amount)
-                } else {
-                    ItemStack::EMPTY.clone()
-                };
-                self.mark_dirty();
-                res
+                let mut removed = ItemStack::EMPTY.clone();
+                self.update_slot(slot, &mut |stack| {
+                    if !stack.is_empty() && amount > 0 {
+                        removed = stack.split(amount);
+                    }
+                });
+                if !removed.is_empty() {
+                    self.on_slot_changed(slot);
+                }
+                removed
             }
 
             fn set_stack(&self, slot: usize, stack: ItemStack) {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                self.update_cooking_input(slot, &items[slot], &stack);
-                items[slot] = stack;
-
-                // Always consider the inventory changed when setting a stack
-                self.mark_dirty();
+                let mut replacement = Some(stack);
+                self.update_slot(slot, &mut |current| {
+                    if let Some(stack) = replacement.take() {
+                        self.update_cooking_input(slot, current, &stack);
+                        *current = stack;
+                    }
+                });
+                self.on_slot_changed(slot);
             }
 
             fn mark_dirty(&self) {
@@ -442,42 +452,32 @@ macro_rules! impl_block_entity_for_cooking {
                             }
                         }
                         if !burn_cancelled {
-                            self.set_lit_time_remaining(burn_ticks);
-                            self.set_lit_total_time(burn_ticks);
-
-                            if self.is_burning() {
-                                is_dirty = true;
-                                if let Ok(mut items_guard) = self.items.try_write() {
-                                    if !items_guard[1].is_empty() {
-                                        let remainder = items_guard[1]
-                                            .get_data_component::<
-                                                pumpkin_data::data_component_impl::UseRemainderImpl,
-                                            >()
-                                            .and_then(|component| component.remainder.as_deref())
-                                            .and_then(pumpkin_data::item::Item::from_registry_key);
-                                        items_guard[1].decrement(1);
-                                        if let Some(remainder_item) = remainder
-                                        {
-                                            let remainder_stack = ItemStack::new(1, remainder_item);
-                                            if items_guard[1].is_empty() {
-                                                items_guard[1] = remainder_stack;
-                                            } else {
-                                                let pos = self.position.to_centered_f64();
-                                                let entity = $crate::entity::Entity::new(
-                                                    world.clone(),
-                                                    pos,
-                                                    &pumpkin_data::entity::EntityType::ITEM,
-                                                );
-                                                world.spawn_entity(std::sync::Arc::new(
-                                                    $crate::entity::item::ItemEntity::new(
-                                                        entity,
-                                                        remainder_stack,
-                                                    ),
-                                                ));
-                                            }
-                                        }
-                                    }
+                            let mut consumed = false;
+                            let mut remainder_drop = None;
+                            self.update_slot(1, &mut |current| {
+                                if burn_ticks == 0 || current.uid != bottom_item.uid || !current.are_equal(&bottom_item) { return; }
+                                let remainder = current.get_data_component::<pumpkin_data::data_component_impl::UseRemainderImpl>()
+                                    .and_then(|component| component.remainder.as_deref())
+                                    .and_then(pumpkin_data::item::Item::from_registry_key);
+                                current.decrement(1);
+                                consumed = true;
+                                if let Some(item) = remainder {
+                                    let stack = ItemStack::new(1, item);
+                                    if current.is_empty() { *current = stack; }
+                                    else { remainder_drop = Some(stack); }
                                 }
+                            });
+                            if consumed {
+                                self.set_lit_time_remaining(burn_ticks);
+                                self.set_lit_total_time(burn_ticks);
+                                is_dirty = true;
+                            }
+                            if let Some(stack) = remainder_drop {
+                                let pos = self.position.to_centered_f64();
+                                let item_entity = std::sync::Arc::new($crate::entity::item::ItemEntity::new(
+                                    $crate::entity::Entity::new(world.clone(), pos, &pumpkin_data::entity::EntityType::ITEM), stack,
+                                ));
+                                world.spawn_entity(item_entity);
                             }
                         }
                     }
@@ -606,6 +606,7 @@ macro_rules! impl_block_entity_for_cooking {
                     lock: $crate::block::entities::container_lock::ContainerLock::from_nbt(nbt),
                     dirty: AtomicBool::new(false),
                     comparator_dirty: AtomicBool::new(false),
+                    transaction: std::sync::Arc::default(),
                     items: std::sync::RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
                     cooking_total_time,
                     cooking_time_spent,

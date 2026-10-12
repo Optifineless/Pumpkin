@@ -34,6 +34,7 @@ macro_rules! impl_block_entity_for_chest {
                 let mut chest = Self {
                     position,
                     lock: $crate::block::entities::container_lock::ContainerLock::from_nbt(nbt),
+                    transaction: std::sync::Arc::default(),
                     items: std::sync::RwLock::new(std::array::from_fn(|_| {
                         ItemStack::EMPTY.clone()
                     })),
@@ -159,7 +160,14 @@ macro_rules! impl_block_entity_for_chest {
 macro_rules! impl_inventory_for_chest {
     ($struct_name:ty) => {
         impl pumpkin_inventory::Inventory for $struct_name {
-            fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+            fn slot_transaction(
+                &self,
+                _slot: usize,
+            ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+                self.transaction.clone()
+            }
+
+            fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
                 let mut items = self
                     .items
                     .write()
@@ -191,36 +199,37 @@ macro_rules! impl_inventory_for_chest {
             }
 
             fn remove_stack(&self, slot: usize) -> ItemStack {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let removed = std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone());
-                self.mark_dirty();
+                let mut removed = ItemStack::EMPTY.clone();
+                self.update_slot(slot, &mut |stack| {
+                    removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+                });
+                if !removed.is_empty() {
+                    self.on_slot_changed(slot);
+                }
                 removed
             }
 
             fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let res = if !items[slot].is_empty() && amount > 0 {
-                    items[slot].split(amount)
-                } else {
-                    ItemStack::EMPTY.clone()
-                };
-                self.mark_dirty();
-                res
+                let mut removed = ItemStack::EMPTY.clone();
+                self.update_slot(slot, &mut |stack| {
+                    if !stack.is_empty() && amount > 0 {
+                        removed = stack.split(amount);
+                    }
+                });
+                if !removed.is_empty() {
+                    self.on_slot_changed(slot);
+                }
+                removed
             }
 
             fn set_stack(&self, slot: usize, stack: ItemStack) {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                items[slot] = stack;
-                self.mark_dirty();
+                let mut replacement = Some(stack);
+                self.update_slot(slot, &mut |current| {
+                    if let Some(stack) = replacement.take() {
+                        *current = stack;
+                    }
+                });
+                self.on_slot_changed(slot);
             }
 
             fn on_open(&self) {
@@ -250,12 +259,7 @@ macro_rules! impl_clearable_for_chest {
     ($struct_name:ty) => {
         impl pumpkin_inventory::Clearable for $struct_name {
             fn clear(&self) {
-                let mut items = self
-                    .items
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                items.fill_with(|| ItemStack::EMPTY.clone());
-                <$struct_name as pumpkin_inventory::Inventory>::mark_dirty(self);
+                pumpkin_inventory::inventory::slot_transaction::clear(self);
             }
         }
     };
@@ -342,6 +346,7 @@ macro_rules! impl_chest_helper_methods {
                 Self {
                     position,
                     lock: $crate::block::entities::container_lock::ContainerLock::default(),
+                    transaction: std::sync::Arc::default(),
                     items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
                     dirty: AtomicBool::new(false),
                     comparator_dirty: AtomicBool::new(false),

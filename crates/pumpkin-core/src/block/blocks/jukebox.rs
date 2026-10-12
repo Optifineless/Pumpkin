@@ -120,16 +120,18 @@ impl BlockBehaviour for JukeboxBlock {
             return BlockActionResult::PassToDefaultBlockAction;
         };
 
-        // Vanilla: ItemStack lv3 = stack.splitUnlessCreative(1, player)
-        let record = item_stack.split_unless_creative(args.player.gamemode.load(), 1);
-
-        // Vanilla: lv4.setStack(lv3)
         if let Some(block_entity) = world.get_block_entity(args.position)
             && let Some(jukebox_entity) = block_entity.as_any().downcast_ref::<JukeboxBlockEntity>()
         {
-            jukebox_entity.set_record(record);
+            // JukeboxBlock.useItemOn consumes the held disc before handing it to setTheItem.
+            if !crate::item::item_utils::place_held_item(item_stack, args.player, jukebox_entity, 0)
+            {
+                return BlockActionResult::PassToDefaultBlockAction;
+            }
             // Start tracking playback with song duration
             jukebox_entity.start_playing(jukebox_song.length_in_ticks());
+        } else {
+            return BlockActionResult::PassToDefaultBlockAction;
         }
 
         // Start playing the music (client-side audio)

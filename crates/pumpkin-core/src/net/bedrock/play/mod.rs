@@ -147,6 +147,7 @@ pub mod emote;
 pub mod emote_list;
 pub mod interaction;
 pub mod inventory_action;
+mod inventory_commit;
 pub mod item_stack_request;
 pub(super) use item_stack_request::record_update;
 pub mod mob_equipment;

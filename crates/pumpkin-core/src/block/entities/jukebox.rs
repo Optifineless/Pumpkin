@@ -17,6 +17,8 @@ use pumpkin_inventory::{Clearable, Inventory};
 pub struct JukeboxBlockEntity {
     position: BlockPos,
     world: Mutex<Weak<World>>,
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     /// The record item stored in the jukebox (`RecordItem` in NBT)
     record_stack: Arc<Mutex<ItemStack>>,
     /// Ticks since the current song started playing
@@ -54,6 +56,7 @@ impl BlockEntity for JukeboxBlockEntity {
         Self {
             position,
             world: Mutex::new(Weak::new()),
+            transaction: std::sync::Arc::default(),
             record_stack: Arc::new(Mutex::new(record_stack)),
             ticks_since_song_started: AtomicU64::new(ticks_since_song_started),
             song_length_ticks: AtomicU64::new(0), // Will be set when playing starts
@@ -78,6 +81,10 @@ impl BlockEntity for JukeboxBlockEntity {
 
     fn tick(&self, world: &Arc<World>) {
         self.bind_world(world);
+        let _guard = self.transaction.lock();
+        if !self.transaction.is_live() {
+            return;
+        }
         // Increment ticks if we're playing
         let song_length = self.song_length_ticks.load(Ordering::Relaxed);
         if song_length > 0 {
@@ -138,16 +145,16 @@ impl JukeboxBlockEntity {
 
     // JukeboxBlockEntity.setTheItem / notifyItemChangedInJukebox.
     fn replace_record(&self, stack: ItemStack) -> ItemStack {
-        let (previous, changed, has_record) = {
-            let mut record = self
-                .record_stack
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let changed = !record.are_equal(&stack);
-            let has_record = !stack.is_empty();
-            let previous = std::mem::replace(&mut *record, stack);
-            (previous, changed, has_record)
-        };
+        let mut previous = ItemStack::EMPTY.clone();
+        let mut replacement = Some(stack);
+        self.update_slot(0, &mut |record| {
+            if let Some(stack) = replacement.take() {
+                previous = std::mem::replace(record, stack);
+            }
+        });
+        let current = self.get_record();
+        let changed = !previous.are_equal(&current);
+        let has_record = !current.is_empty();
         self.mark_dirty();
         if changed {
             self.notify_item_changed_in_jukebox(has_record);
@@ -155,7 +162,10 @@ impl JukeboxBlockEntity {
         previous
     }
 
-    fn notify_item_changed_in_jukebox(&self, has_record: bool) {
+    fn notify_item_changed_in_jukebox(&self, mut has_record: bool) {
+        if !self.transaction.is_live() {
+            return;
+        }
         let world = self
             .world
             .lock()
@@ -164,14 +174,40 @@ impl JukeboxBlockEntity {
         let Some(world) = world else {
             return;
         };
-        if world.get_block(&self.position) != &Block::JUKEBOX {
+        if world.get_block(&self.position) != &Block::JUKEBOX
+            || world.get_block_entity(&self.position).is_none_or(|entity| {
+                entity
+                    .as_any()
+                    .downcast_ref::<Self>()
+                    .is_none_or(|current| !std::ptr::eq(current, self))
+            })
+        {
             return;
         }
-        world.set_block_state(
-            &self.position,
-            JukeboxLikeProperties { has_record }.to_state_id(&Block::JUKEBOX),
-            BlockFlags::NOTIFY_LISTENERS,
-        );
+        loop {
+            if world
+                .set_block_state_if(
+                    &self.position,
+                    JukeboxLikeProperties { has_record }.to_state_id(&Block::JUKEBOX),
+                    BlockFlags::NOTIFY_LISTENERS,
+                    |state| {
+                        self.transaction.is_live() && Block::from_state_id(state) == &Block::JUKEBOX
+                    },
+                )
+                .is_none()
+            {
+                return;
+            }
+            // Deferred notifications may arrive in a different order than their slot commits.
+            let current = !self.get_record().is_empty();
+            if current == has_record {
+                break;
+            }
+            has_record = current;
+        }
+        if !self.transaction.is_live() {
+            return;
+        }
         world.emit_game_event(
             GameEvent::BlockChange.name(),
             self.position.to_centered_f64(),
@@ -185,6 +221,7 @@ impl JukeboxBlockEntity {
         Self {
             position,
             world: Mutex::new(Weak::new()),
+            transaction: std::sync::Arc::default(),
             record_stack: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
             ticks_since_song_started: AtomicU64::new(0),
             song_length_ticks: AtomicU64::new(0),
@@ -208,22 +245,28 @@ impl JukeboxBlockEntity {
 
     /// Clear the stack and return what was there - used for dropping
     pub fn clear_record(&self) -> ItemStack {
-        self.stop_playing();
         self.replace_record(ItemStack::EMPTY.clone())
     }
 
     /// Start playing a song with the given length in ticks
     pub fn start_playing(&self, length_in_ticks: u64) {
+        let guard = self.transaction.lock();
+        if !self.transaction.is_live() || self.get_record().is_empty() {
+            return;
+        }
         self.ticks_since_song_started.store(0, Ordering::Relaxed);
         self.song_length_ticks
             .store(length_in_ticks, Ordering::Relaxed);
+        drop(guard);
         self.mark_dirty();
     }
 
     /// Stop playing the current song
     pub fn stop_playing(&self) {
+        let guard = self.transaction.lock();
         self.ticks_since_song_started.store(0, Ordering::Relaxed);
         self.song_length_ticks.store(0, Ordering::Relaxed);
+        drop(guard);
         self.mark_dirty();
     }
 
@@ -245,13 +288,25 @@ impl JukeboxBlockEntity {
 
 /// Implements single-slot inventory for jukebox (matches vanilla's `SingleStackInventory`)
 impl Inventory for JukeboxBlockEntity {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         if slot == 0 {
             let mut record = self
                 .record_stack
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             update(&mut record);
+            if record.is_empty() {
+                // JukeboxSongPlayer.onItemChanged stops playback with the committed removal.
+                self.ticks_since_song_started.store(0, Ordering::Relaxed);
+                self.song_length_ticks.store(0, Ordering::Relaxed);
+            }
         }
     }
 
@@ -259,9 +314,6 @@ impl Inventory for JukeboxBlockEntity {
         // JukeboxBlockEntity.notifyItemChangedInJukebox runs after the committed mutation.
         self.mark_dirty();
         let has_record = !self.get_record().is_empty();
-        if !has_record {
-            self.stop_playing();
-        }
         self.notify_item_changed_in_jukebox(has_record);
     }
 
@@ -283,17 +335,24 @@ impl Inventory for JukeboxBlockEntity {
             .clone()
     }
 
-    fn remove_stack(&self, _slot: usize) -> ItemStack {
-        self.clear_record()
+    fn remove_stack(&self, slot: usize) -> ItemStack {
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
+        removed
     }
 
     fn remove_stack_specific(&self, _slot: usize, _amount: u8) -> ItemStack {
-        // Jukebox only holds one item, so remove the whole stack
+        // JukeboxBlockEntity.splitTheItem ignores the requested amount.
         self.remove_stack(0)
     }
 
     fn set_stack(&self, _slot: usize, stack: ItemStack) {
-        self.set_record(stack);
+        self.replace_record(stack);
     }
 
     fn mark_dirty(&self) {
@@ -308,7 +367,7 @@ impl Inventory for JukeboxBlockEntity {
 
 impl Clearable for JukeboxBlockEntity {
     fn clear(&self) {
-        self.clear_record();
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }
 

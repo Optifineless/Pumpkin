@@ -51,7 +51,12 @@ impl BlockBehaviour for DecoratedPotBlock {
                 .as_any()
                 .downcast_ref::<DecoratedPotBlockEntity>()
         {
-            if pot_entity.try_insert_item(args.item_stack, 1) {
+            if crate::item::item_utils::insert_held_item(
+                args.item_stack,
+                args.player,
+                pot_entity,
+                0,
+            ) {
                 args.world.play_sound(
                     Sound::BlockDecoratedPotInsert,
                     SoundCategory::Blocks,

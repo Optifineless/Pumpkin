@@ -38,6 +38,7 @@ impl ItemBehaviour for MapItem {
             };
 
         if found {
+            let expected = hand_stack.clone();
             let map_id = server.next_map_id();
             let _ = server.map_manager.create_map(
                 map_id,
@@ -55,10 +56,12 @@ impl ItemBehaviour for MapItem {
 
             let gamemode = player.gamemode.load();
             if hand_stack.item_count == 1 && gamemode != GameMode::Creative {
-                inventory.set_stack_in_hand(hand, filled_map);
+                inventory.exchange_stack_in_hand(hand, &expected, filled_map);
             } else {
                 hand_stack.decrement_unless_creative(gamemode, 1);
-                inventory.set_stack_in_hand(hand, hand_stack);
+                if !inventory.exchange_stack_in_hand(hand, &expected, hand_stack) {
+                    return;
+                }
                 let mut stack_to_give = filled_map;
                 let was_added = inventory.insert_stack_anywhere(&mut stack_to_give);
                 if !was_added && !stack_to_give.is_empty() {

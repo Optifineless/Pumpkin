@@ -13,7 +13,7 @@ pub fn override_click(
     if let Some(contents) = cursor.get_data_component_mut::<BundleContentsImpl>() {
         if *click == MouseClick::Left && !other.is_empty() {
             let max = contents.max_amount_to_add(&other);
-            let mut taken = slot.safe_take(other.item_count, max, player);
+            let mut taken = slot.safe_take_matching(&other, other.item_count, max, player);
             let inserted = contents.try_insert(&mut taken);
             player.play_bundle_sound(if inserted {
                 Sound::ItemBundleInsert
@@ -34,35 +34,51 @@ pub fn override_click(
             return true;
         }
     }
+    let expected = other.clone();
+    let mut candidate_cursor = cursor.clone();
     let mut other = other;
     if let Some(contents) = other.get_data_component_mut::<BundleContentsImpl>() {
         if *click == MouseClick::Left && cursor.is_empty() {
             contents.selected_item = -1;
-            slot.set_stack(other);
+            if slot.exchange_stack(&expected, other) {
+                *cursor = candidate_cursor;
+            }
             return false;
         }
         if *click == MouseClick::Left && !cursor.is_empty() {
-            let inserted = slot.allow_modification(player) && contents.try_insert(cursor);
-            player.play_bundle_sound(if inserted {
-                Sound::ItemBundleInsert
-            } else {
-                Sound::ItemBundleInsertFail
-            });
-            slot.set_stack(other);
+            let inserted =
+                slot.allow_modification(player) && contents.try_insert(&mut candidate_cursor);
+            if slot.exchange_stack(&expected, other) {
+                *cursor = candidate_cursor;
+                player.play_bundle_sound(if inserted {
+                    Sound::ItemBundleInsert
+                } else {
+                    Sound::ItemBundleInsertFail
+                });
+            }
             return true;
         }
         if *click == MouseClick::Right && cursor.is_empty() {
-            if slot.allow_modification(player)
+            let extracted_item = if slot.allow_modification(player)
                 && let Some(extracted) = contents.try_extract()
             {
-                *cursor = extracted;
-                player.play_bundle_sound(Sound::ItemBundleRemoveOne);
+                candidate_cursor = extracted;
+                true
+            } else {
+                false
+            };
+            if slot.exchange_stack(&expected, other) {
+                *cursor = candidate_cursor;
+                if extracted_item {
+                    player.play_bundle_sound(Sound::ItemBundleRemoveOne);
+                }
             }
-            slot.set_stack(other);
             return true;
         }
         contents.selected_item = -1;
-        slot.set_stack(other);
+        if slot.exchange_stack(&expected, other) {
+            *cursor = candidate_cursor;
+        }
     }
     false
 }

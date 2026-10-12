@@ -1,9 +1,13 @@
 use super::BlockEntity;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_inventory::{Clearable, Inventory, inventory::slot_transaction};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::world::World;
 
@@ -11,6 +15,9 @@ pub struct DecoratedPotBlockEntity {
     pub position: BlockPos,
     pub sherds: Mutex<Option<Vec<NbtTag>>>,
     pub item: Mutex<Option<ItemStack>>,
+    transaction: Arc<slot_transaction::Transaction>,
+    dirty: AtomicBool,
+    comparator_dirty: AtomicBool,
 }
 
 impl BlockEntity for DecoratedPotBlockEntity {
@@ -23,9 +30,8 @@ impl BlockEntity for DecoratedPotBlockEntity {
     }
 
     fn on_block_replaced(self: Arc<Self>, world: &Arc<World>, position: &BlockPos) {
-        if let Some(item) = self.take_item() {
-            world.drop_stack(position, item);
-        }
+        // DecoratedPotBlockEntity.preRemoveSideEffects / Containers.dropContents.
+        world.scatter_inventory(position, &(self as Arc<dyn Inventory>));
     }
 
     fn from_nbt(nbt: &pumpkin_nbt::compound::NbtCompound, position: BlockPos) -> Self
@@ -40,6 +46,9 @@ impl BlockEntity for DecoratedPotBlockEntity {
             position,
             sherds: Mutex::new(sherds),
             item: Mutex::new(item),
+            transaction: Arc::default(),
+            dirty: AtomicBool::new(false),
+            comparator_dirty: AtomicBool::new(false),
         }
     }
 
@@ -49,30 +58,35 @@ impl BlockEntity for DecoratedPotBlockEntity {
         {
             nbt.put_list("sherds", sh.clone());
         }
-        if let Ok(item) = self.item.lock()
-            && let Some(it) = item.as_ref()
-        {
-            let mut it_nbt = NbtCompound::new();
-            it.write_item_stack(&mut it_nbt);
-            nbt.put_compound("item", it_nbt);
+        // DecoratedPotBlockEntity.saveAdditional keeps the single-item tag format.
+        let item = slot_transaction::snapshot_slot(self, 0);
+        if !item.is_empty() {
+            let mut item_nbt = NbtCompound::new();
+            item.write_item_stack(&mut item_nbt);
+            nbt.put_compound("item", item_nbt);
         }
     }
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        if let Ok(sherds) = self.sherds.try_lock()
-            && let Some(ref sh) = *sherds
-        {
-            nbt.put_list("sherds", sh.clone());
-        }
-        if let Ok(item) = self.item.try_lock()
-            && let Some(ref it) = *item
-        {
-            let mut it_nbt = NbtCompound::new();
-            it.write_item_stack(&mut it_nbt);
-            nbt.put_compound("item", it_nbt);
-        }
+        self.write_nbt(&mut nbt);
         Some(nbt)
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::Relaxed)
+    }
+
+    fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::Relaxed);
+    }
+
+    fn is_comparator_dirty(&self) -> bool {
+        self.comparator_dirty.load(Ordering::Relaxed)
+    }
+
+    fn clear_comparator_dirty(&self) {
+        self.comparator_dirty.store(false, Ordering::Relaxed);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -84,11 +98,14 @@ impl DecoratedPotBlockEntity {
     pub const ID: &'static str = "minecraft:decorated_pot";
 
     #[must_use]
-    pub const fn new(position: BlockPos) -> Self {
+    pub fn new(position: BlockPos) -> Self {
         Self {
             position,
             sherds: Mutex::new(None),
             item: Mutex::new(None),
+            transaction: Arc::default(),
+            dirty: AtomicBool::new(false),
+            comparator_dirty: AtomicBool::new(false),
         }
     }
 
@@ -100,40 +117,22 @@ impl DecoratedPotBlockEntity {
     }
 
     pub fn take_item(&self) -> Option<ItemStack> {
-        self.item
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
+        let stack = self.remove_stack(0);
+        (!stack.is_empty()).then_some(stack)
     }
 
+    /// Deposits only owned stock and keeps the unaccepted receipt in `stack`.
     pub fn try_insert_item(&self, stack: &mut ItemStack, count: u8) -> bool {
-        let mut item_guard = self
-            .item
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(existing) = item_guard.as_mut() {
-            if existing.item.id == stack.item.id {
-                // Vanilla gates on the item's own max stack size, not a fixed 64.
-                // Saturate so a count loaded from NBT above that limit cannot underflow.
-                let space = existing
-                    .get_max_stack_size()
-                    .saturating_sub(existing.item_count);
-                let add = count.min(space).min(stack.item_count);
-                if add > 0 {
-                    existing.item_count += add;
-                    stack.item_count -= add;
-                    return true;
-                }
-            }
-            false
-        } else {
-            let insert_count = count.min(stack.item_count).min(stack.get_max_stack_size());
-            let mut inserted = stack.clone();
-            inserted.item_count = insert_count;
-            *item_guard = Some(inserted);
-            stack.item_count -= insert_count;
-            true
+        let mut receipt = stack.split(count.min(stack.item_count));
+        let before = receipt.item_count;
+        let maximum = receipt.get_max_stack_size();
+        slot_transaction::deposit(self, 0, &mut receipt, maximum);
+        stack.increment(receipt.item_count);
+        let moved = before > receipt.item_count;
+        if moved {
+            self.on_slot_changed(0);
         }
+        moved
     }
 
     pub fn get_comparator_output(&self) -> u8 {
@@ -152,5 +151,88 @@ impl DecoratedPotBlockEntity {
                     1 + (filled * 14.0).floor() as u8
                 }
             })
+    }
+}
+
+// DecoratedPotBlockEntity.getTheItem/splitTheItem/setTheItem and ContainerSingleItem.
+impl Inventory for DecoratedPotBlockEntity {
+    fn slot_transaction(&self, _slot: usize) -> Arc<slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        if slot != 0 {
+            return;
+        }
+        let mut item = self
+            .item
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut stack = item.take().unwrap_or_else(|| ItemStack::EMPTY.clone());
+        update(&mut stack);
+        *item = (!stack.is_empty()).then_some(stack);
+    }
+
+    fn size(&self) -> usize {
+        1
+    }
+
+    fn is_empty(&self) -> bool {
+        self.get_stack(0).is_empty()
+    }
+
+    fn get_stack(&self, slot: usize) -> ItemStack {
+        if slot == 0 {
+            self.get_item().unwrap_or_else(|| ItemStack::EMPTY.clone())
+        } else {
+            ItemStack::EMPTY.clone()
+        }
+    }
+
+    fn remove_stack(&self, slot: usize) -> ItemStack {
+        let mut taken = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            taken = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !taken.is_empty() {
+            self.on_slot_changed(slot);
+        }
+        taken
+    }
+
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+        let mut taken = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            taken = stack.split(amount.min(stack.item_count));
+        });
+        if !taken.is_empty() {
+            self.on_slot_changed(slot);
+        }
+        taken
+    }
+
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
+    }
+
+    fn mark_dirty(&self) {
+        self.dirty.store(true, Ordering::Relaxed);
+        self.comparator_dirty.store(true, Ordering::Relaxed);
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl Clearable for DecoratedPotBlockEntity {
+    fn clear(&self) {
+        slot_transaction::clear(self);
     }
 }

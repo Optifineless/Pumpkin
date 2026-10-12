@@ -21,13 +21,12 @@ use std::any::Any;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
-use tracing::warn;
-
 /// The player's inventory.
 ///
 /// Contains 36 main inventory slots (hotbar + main storage) plus
 /// equipment slots accessed through [`EntityEquipment`].
 pub struct PlayerInventory {
+    pub(crate) transaction: std::sync::Arc<crate::inventory::slot_transaction::Transaction>,
     /// The 36 main inventory slots (slots 0-35).
     ///
     /// The first 9 slots (0-8) are the hotbar, the remaining 27 (9-35) are the main storage.
@@ -63,6 +62,7 @@ impl PlayerInventory {
         equipment_slots: Arc<FxHashMap<usize, EquipmentSlot>>,
     ) -> Self {
         Self {
+            transaction: std::sync::Arc::default(),
             main_inventory: RwLock::new(std::array::from_fn(|_| ItemStack::EMPTY.clone())),
             equipment_slots,
             selected_slot: AtomicU8::new(0),
@@ -109,27 +109,30 @@ impl PlayerInventory {
     /// Sets the item in the currently selected hotbar slot.
     pub fn set_held_item(&self, stack: ItemStack) {
         let selected = self.get_selected_slot() as usize;
-        let mut inv = self
-            .main_inventory
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        inv[selected] = stack;
+        self.set_stack(selected, stack);
     }
 
     /// Sets the item in the specified hand.
     pub fn set_stack_in_hand(&self, hand: Hand, stack: ItemStack) {
-        match hand {
-            Hand::Right => self.set_held_item(stack),
-            Hand::Left => {
-                let Some(slot) = self.equipment_slots.get(&Self::OFF_HAND_SLOT) else {
-                    return;
-                };
-                self.entity_equipment
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .put(slot, stack);
-            }
-        }
+        let slot = match hand {
+            Hand::Right => self.get_selected_slot() as usize,
+            Hand::Left => Self::OFF_HAND_SLOT,
+        };
+        self.set_stack(slot, stack);
+    }
+
+    /// Commits a hand edit only while the observed stack is still in that hand's slot.
+    pub fn exchange_stack_in_hand(
+        &self,
+        hand: Hand,
+        expected: &ItemStack,
+        replacement: ItemStack,
+    ) -> bool {
+        let slot = match hand {
+            Hand::Right => self.get_selected_slot() as usize,
+            Hand::Left => Self::OFF_HAND_SLOT,
+        };
+        crate::inventory::slot_transaction::exchange(self, slot, expected, replacement)
     }
 
     /// Gets the item in the specified hand.
@@ -161,6 +164,7 @@ impl PlayerInventory {
     /// # Returns
     /// The new main hand item and new off-hand item.
     pub fn swap_item(&self) -> (ItemStack, ItemStack) {
+        let _owner = self.transaction.lock();
         let Some(slot) = self.equipment_slots.get(&Self::OFF_HAND_SLOT) else {
             return (ItemStack::EMPTY.clone(), ItemStack::EMPTY.clone());
         };
@@ -205,40 +209,10 @@ impl PlayerInventory {
     ///
     /// Returns the number of items that couldn't fit.
     fn add_stack_to_slot(&self, slot: usize, stack: ItemStack) -> usize {
-        if slot >= Self::MAIN_SIZE {
-            if let Some(slot_type) = self.equipment_slots.get(&slot) {
-                let mut equipment = self
-                    .entity_equipment
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let current = equipment.get(slot_type);
-                if current.is_empty() {
-                    equipment.put(slot_type, stack);
-                    return 0;
-                }
-            }
-            return stack.item_count as usize;
-        }
-
-        let mut inv = self
-            .main_inventory
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut stack_count = stack.item_count;
-        let self_stack = &mut inv[slot];
-
-        if self_stack.is_empty() {
-            *self_stack = stack.copy_with_count(0);
-        }
-
-        let count_left = self_stack.get_max_stack_size() - self_stack.item_count;
-        let count_min = stack_count.min(count_left);
-
-        if count_min != 0 {
-            stack_count -= count_min;
-            self_stack.increment(count_min);
-        }
-        stack_count as usize
+        let mut remaining = stack;
+        let max = remaining.get_max_stack_size();
+        crate::inventory::slot_transaction::deposit(self, slot, &mut remaining, max);
+        remaining.item_count as usize
     }
 
     /// Finds an empty slot in the inventory.
@@ -313,6 +287,7 @@ impl PlayerInventory {
     /// # Returns
     /// `true` if any items were inserted, `false` otherwise.
     pub fn insert_stack(&self, slot: i16, stack: &mut ItemStack) -> bool {
+        let _owner = self.transaction.lock();
         if stack.is_empty() {
             return false;
         }
@@ -375,6 +350,7 @@ impl PlayerInventory {
     ///
     /// Finds an empty hotbar slot and places the stack there.
     pub fn swap_stack_with_hotbar(&self, stack: ItemStack) {
+        let _owner = self.transaction.lock();
         let swappable = self.get_swappable_hotbar_slot();
         self.set_selected_slot(swappable as u8);
         let selected = self.get_selected_slot() as usize;
@@ -394,6 +370,7 @@ impl PlayerInventory {
 
     /// Swaps the items at two slot indices.
     pub fn swap_slot_with_hotbar(&self, slot: usize) {
+        let _owner = self.transaction.lock();
         let swappable = self.get_swappable_hotbar_slot();
         self.set_selected_slot(swappable as u8);
         let selected = self.get_selected_slot() as usize;
@@ -424,6 +401,7 @@ impl PlayerInventory {
 
     /// Sets the item in the specified slot (synchronously).
     pub fn set_slot(&self, slot: usize, stack: ItemStack) {
+        let _owner = self.transaction.lock();
         if slot < Self::MAIN_SIZE {
             let mut inv = self
                 .main_inventory
@@ -462,9 +440,9 @@ impl PlayerInventory {
                 break;
             }
 
-            let items_fit =
-                stack.get_max_stack_size() - self.get_stack(room_for_stack as usize).item_count;
-            if self.insert_stack(room_for_stack, &mut stack.split(items_fit)) && notify_client {
+            let before = stack.item_count;
+            self.insert_stack(room_for_stack, &mut stack);
+            if stack.item_count < before && notify_client {
                 player.enqueue_slot_set_packet(&CSetPlayerInventory::new(
                     i32::from(room_for_stack).into(),
                     &self.get_stack(room_for_stack as usize).into(),
@@ -476,15 +454,16 @@ impl PlayerInventory {
 
 impl Clearable for PlayerInventory {
     fn clear(&self) {
-        let mut inv = self
-            .main_inventory
+        // Inventory.clearContent clears every compartment, including equipment-only entries.
+        let _owner = self.transaction.lock();
+        self.main_inventory
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        inv.fill_with(|| ItemStack::EMPTY.clone());
-        drop(inv);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .fill_with(|| ItemStack::EMPTY.clone());
         self.entity_equipment
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .equipment
             .clear();
     }
 }
@@ -511,7 +490,14 @@ impl Inventory for PlayerInventory {
         space
     }
 
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<crate::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         if slot < Self::MAIN_SIZE {
             let mut inventory = self
                 .main_inventory
@@ -574,67 +560,32 @@ impl Inventory for PlayerInventory {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        if slot < Self::MAIN_SIZE {
-            let mut inv = self
-                .main_inventory
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::replace(&mut inv[slot], ItemStack::EMPTY.clone())
-        } else if let Some(slot) = self.equipment_slots.get(&slot) {
-            self.entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .put(slot, ItemStack::EMPTY.clone())
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+
+        removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        if slot < Self::MAIN_SIZE {
-            let mut inv = self
-                .main_inventory
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !inv[slot].is_empty() && amount > 0 {
-                inv[slot].split(amount)
-            } else {
-                ItemStack::EMPTY.clone()
-            }
-        } else if let Some(slot) = self.equipment_slots.get(&slot) {
-            let mut equipment = self
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut stack = equipment.get(slot);
-
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
             if !stack.is_empty() && amount > 0 {
-                let split = stack.split(amount);
-                equipment.put(slot, stack);
-                split
-            } else {
-                ItemStack::EMPTY.clone()
+                removed = stack.split(amount);
             }
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        });
+
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        if slot < Self::MAIN_SIZE {
-            let mut inv = self
-                .main_inventory
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            inv[slot] = stack;
-        } else if let Some(slot) = self.equipment_slots.get(&slot) {
-            self.entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .put(slot, stack);
-        } else {
-            warn!("Failed to get Equipment Slot at {slot}");
-        }
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
     }
 
     fn mark_dirty(&self) {}

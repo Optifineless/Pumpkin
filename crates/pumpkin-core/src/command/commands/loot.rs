@@ -113,31 +113,23 @@ struct LootExecutor {
     source: Source,
 }
 
+// LootCommand.distributeToContainer adds owned generated loot without restoring slot snapshots.
 fn distribute_to_container(inventory: &dyn Inventory, mut stack: ItemStack) -> bool {
-    let mut changed = false;
-    for i in 0..inventory.size() {
+    let offered = stack.item_count;
+    for slot in 0..inventory.size() {
+        let before = stack.item_count;
+        let max = inventory
+            .get_max_count_per_stack()
+            .min(stack.get_max_stack_size());
+        pumpkin_inventory::inventory::slot_transaction::deposit(inventory, slot, &mut stack, max);
+        if before != stack.item_count {
+            inventory.on_slot_changed(slot);
+        }
         if stack.is_empty() {
             break;
         }
-        let mut slot_stack = inventory.get_stack(i);
-        if slot_stack.is_empty() {
-            inventory.set_stack(i, stack);
-            changed = true;
-            break;
-        }
-        if slot_stack.get_item().id == stack.get_item().id {
-            let max_stack_size = stack.get_max_stack_size();
-            let space = max_stack_size.saturating_sub(slot_stack.item_count);
-            if space > 0 {
-                let to_add = stack.item_count.min(space);
-                slot_stack.item_count += to_add;
-                stack.item_count -= to_add;
-                inventory.set_stack(i, slot_stack);
-                changed = true;
-            }
-        }
     }
-    changed
+    stack.item_count != offered
 }
 
 fn get_hand_item(

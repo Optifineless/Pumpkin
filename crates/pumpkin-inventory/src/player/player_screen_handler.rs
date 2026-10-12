@@ -154,70 +154,59 @@ impl ScreenHandler for PlayerScreenHandler {
 
         if slot.has_stack() {
             let mut slot_stack = slot.get_stack();
-            let stack_prev = slot_stack.clone();
+            let mut stack_prev = slot_stack.clone();
 
             let equipment_slot = slot_stack
                 .get_data_component::<EquippableImpl>()
                 .map_or(&EquipmentSlot::MAIN_HAND, |equippable| equippable.slot);
 
-            // Quick move logic based on source slot
-            let success = if slot_index == 0 {
-                // From crafting result slot (0) -> Player Inventory (9-45, from end)
-                self.insert_item(&mut slot_stack, 9, 45, true)
+            // InventoryMenu.quickMoveStack chooses one destination range before moving.
+            let mut clear_equipment_slot = None;
+            let range = if slot_index == 0 {
+                (9, 45, true)
             } else if (1..5).contains(&slot_index) {
-                // From craft ingredient slots (1-4) -> Player Inventory (9-45, from start)
-                self.insert_item(&mut slot_stack, 9, 45, false)
+                (9, 45, false)
             } else if (5..9).contains(&slot_index) {
-                // From armour slots (5-8) -> Player Inventory (9-45, from start)
-                let result = self.insert_item(&mut slot_stack, 9, 45, false);
-
-                if result {
-                    player.enqueue_equipment_change(equipment_slot, ItemStack::EMPTY);
-                }
-                result
+                clear_equipment_slot = Some(true);
+                (9, 45, false)
             } else if equipment_slot.slot_type() == EquipmentType::HumanoidArmor
                 && self
                     .get_slot((8 - equipment_slot.get_entity_slot_id()) as usize)
                     .get_cloned_stack()
                     .is_empty()
             {
-                // Into empty armour slots (5-8)
+                clear_equipment_slot = Some(false);
                 let index = 8 - equipment_slot.get_entity_slot_id();
-                let result = self.insert_item(&mut slot_stack, index, index + 1, false);
-
-                if result {
-                    player.enqueue_equipment_change(equipment_slot, &stack_prev);
-                }
-                result
+                (index, index + 1, false)
             } else if matches!(equipment_slot, EquipmentSlot::OffHand(_))
                 && slot_index != 45
                 && self.get_slot(45).get_cloned_stack().is_empty()
             {
-                // Into empty offhand slot (45)
-                let index = 45;
-                self.insert_item(&mut slot_stack, index, index + 1, false)
+                (45, 46, false)
             } else if (9..36).contains(&slot_index) {
-                // From main inventory (9-35) -> Hotbar (36-44)
-                self.insert_item(&mut slot_stack, 36, 45, false)
+                (36, 45, false)
             } else if (36..45).contains(&slot_index) {
-                // From hotbar (36-44) -> Main inventory (9-35)
-                self.insert_item(&mut slot_stack, 9, 36, false)
+                (9, 36, false)
             } else {
-                // Fallback to moving into the player inventory area
-                self.insert_item(&mut slot_stack, 9, 45, false)
+                (9, 45, false)
             };
-
-            if !success {
+            if !self.transfer_item(
+                player,
+                slot.as_ref(),
+                &mut slot_stack,
+                range,
+                &mut stack_prev,
+            ) {
                 return ItemStack::EMPTY.clone();
+            }
+            if let Some(clear) = clear_equipment_slot {
+                player.enqueue_equipment_change(
+                    equipment_slot,
+                    if clear { ItemStack::EMPTY } else { &stack_prev },
+                );
             }
 
             let stack = slot_stack.clone();
-
-            if stack.is_empty() {
-                slot.set_stack_prev(ItemStack::EMPTY.clone(), stack_prev.clone());
-            } else {
-                slot.set_stack(stack.clone());
-            }
 
             if stack.item_count == stack_prev.item_count {
                 return ItemStack::EMPTY.clone();

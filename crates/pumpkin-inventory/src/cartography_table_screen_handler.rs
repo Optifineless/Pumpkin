@@ -173,39 +173,74 @@ impl ScreenHandler for CartographyTableScreenHandler {
             if !stack.is_empty() {
                 clicked = stack.clone();
                 if slot_index == 2 {
+                    let expected = stack.clone();
                     slot.on_crafted_by(player, &mut stack);
-                    // Java mutates the slot's stack before moveItemStackTo can fail.
-                    slot.set_stack(stack.clone());
+                    // CartographyTableMenu.quickMoveStack processes the source before moving it.
+                    if !stack.are_equal(&expected) && !slot.exchange_stack(&expected, stack.clone())
+                    {
+                        return ItemStack::EMPTY.clone();
+                    }
                     clicked = stack.clone();
-                    if !self.insert_item(&mut stack, 3, 39, true) {
+                    if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut stack,
+                        (3, 39, true),
+                        &mut clicked,
+                    ) {
                         return ItemStack::EMPTY.clone();
                     }
                     slot.on_quick_move_crafted(stack.clone(), clicked.clone());
                 } else if slot_index != 1 && slot_index != 0 {
                     if is_map_item(&stack) {
-                        if !self.insert_item(&mut stack, 0, 1, false) {
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
+                            &mut stack,
+                            (0, 1, false),
+                            &mut clicked,
+                        ) {
                             return ItemStack::EMPTY.clone();
                         }
                     } else if !is_additional_item(&stack) {
                         if (3..30).contains(&slot_index) {
-                            if !self.insert_item(&mut stack, 30, 39, false) {
+                            if !self.transfer_item(
+                                player,
+                                slot.as_ref(),
+                                &mut stack,
+                                (30, 39, false),
+                                &mut clicked,
+                            ) {
                                 return ItemStack::EMPTY.clone();
                             }
                         } else if (30..39).contains(&slot_index)
-                            && !self.insert_item(&mut stack, 3, 30, false)
+                            && !self.transfer_item(
+                                player,
+                                slot.as_ref(),
+                                &mut stack,
+                                (3, 30, false),
+                                &mut clicked,
+                            )
                         {
                             return ItemStack::EMPTY.clone();
                         }
-                    } else if !self.insert_item(&mut stack, 1, 2, false) {
+                    } else if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut stack,
+                        (1, 2, false),
+                        &mut clicked,
+                    ) {
                         return ItemStack::EMPTY.clone();
                     }
-                } else if !self.insert_item(&mut stack, 3, 39, false) {
+                } else if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
+                    &mut stack,
+                    (3, 39, false),
+                    &mut clicked,
+                ) {
                     return ItemStack::EMPTY.clone();
-                }
-                if stack.is_empty() {
-                    slot.set_stack(ItemStack::EMPTY.clone());
-                } else {
-                    slot.set_stack(stack.clone());
                 }
 
                 if stack.item_count == clicked.item_count {
@@ -366,6 +401,10 @@ impl CartographyResultSlot {
 }
 
 impl Slot for CartographyResultSlot {
+    fn withdrawal_count(&self, _amount: u8) -> u8 {
+        u8::MAX
+    }
+
     fn take_stack(&self, _amount: u8) -> ItemStack {
         // CartographyTableMenu uses ResultContainer.removeItem: take the whole result.
         self.inventory.remove_stack(self.index)

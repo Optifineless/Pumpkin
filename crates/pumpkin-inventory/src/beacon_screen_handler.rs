@@ -79,7 +79,7 @@ impl ScreenHandler for BeaconScreenHandler {
     ///
     /// - From beacon payment slot (0): Move to player inventory
     /// - From player inventory (1+): Move to beacon payment slot
-    fn quick_move(&mut self, _player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
+    fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let mut stack_left = ItemStack::EMPTY.clone();
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
 
@@ -89,25 +89,26 @@ impl ScreenHandler for BeaconScreenHandler {
 
             if slot_index == 0 {
                 // Move from the single beacon slot to the player inventory (slots 1 to end)
-                if !self.insert_item(
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
                     &mut slot_stack,
-                    1,
-                    self.get_behaviour().slots.len() as i32,
-                    true,
+                    (1, self.get_behaviour().slots.len() as i32, true),
+                    &mut stack_left,
                 ) {
                     return ItemStack::EMPTY.clone();
                 }
             } else {
                 // Move from player inventory into the beacon payment slot (slot 0)
-                if !self.insert_item(&mut slot_stack, 0, 1, false) {
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
+                    &mut slot_stack,
+                    (0, 1, false),
+                    &mut stack_left,
+                ) {
                     return ItemStack::EMPTY.clone();
                 }
-            }
-
-            if slot_stack.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone());
-            } else {
-                slot.set_stack(slot_stack);
             }
         }
 

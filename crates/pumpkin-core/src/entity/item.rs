@@ -40,6 +40,8 @@ pub struct ItemEntity {
     item_age: AtomicI32,
     // These cannot be atomic values because we mutate their state based on what they are; we run
     // into the ABA problem
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     item_stack: Mutex<ItemStack>,
     #[cfg(test)]
     transfer_pause: Mutex<Option<transfer::TransferPause>>,
@@ -108,6 +110,7 @@ impl ItemEntity {
 
         Self {
             entity,
+            transaction: std::sync::Arc::default(),
             item_stack: Mutex::new(item_stack),
             #[cfg(test)]
             transfer_pause: Mutex::new(None),
@@ -132,6 +135,7 @@ impl ItemEntity {
 
         Self {
             entity,
+            transaction: std::sync::Arc::default(),
             item_stack: Mutex::new(item_stack),
             #[cfg(test)]
             transfer_pause: Mutex::new(None),
@@ -149,6 +153,7 @@ impl ItemEntity {
     pub fn new_empty(entity: Entity) -> Self {
         Self {
             entity,
+            transaction: std::sync::Arc::default(),
             item_stack: Mutex::new(ItemStack::new(1, &pumpkin_data::item::Item::AIR)),
             #[cfg(test)]
             transfer_pause: Mutex::new(None),
@@ -307,6 +312,12 @@ impl ItemEntity {
             return;
         }
 
+        let mut owners = pumpkin_inventory::inventory::slot_transaction::Owners::from_iter([
+            self.transaction.clone(),
+            other.transaction.clone(),
+        ]);
+        owners.sort_unstable_by_key(std::sync::Arc::as_ptr);
+        let guards = pumpkin_inventory::inventory::slot_transaction::lock_owners(&owners);
         let low_stack = low
             .item_stack
             .lock()
@@ -360,6 +371,7 @@ impl ItemEntity {
         target
             .item_age
             .fetch_min(source.item_age.load(Ordering::Relaxed), Ordering::Relaxed);
+        drop(guards);
 
         target.on_count_changed();
         if source_empty {
@@ -373,10 +385,8 @@ impl ItemEntity {
     /// spill their contents where the item died, whatever the damage type was).
     fn on_destroyed(&self, world: &Arc<World>) {
         let contents = {
-            let owner = pumpkin_inventory::inventory::slot_transaction::owner(self);
-            let _transfer = owner
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let owner = self.transaction.clone();
+            let _transfer = owner.lock();
             let mut stack = self
                 .item_stack
                 .lock()

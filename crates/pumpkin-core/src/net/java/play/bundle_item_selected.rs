@@ -27,6 +27,7 @@ impl JavaClient {
             && let Some(slot) = menu.get_behaviour().slots.get(index)
         {
             let mut stack = slot.get_stack();
+            let expected = stack.clone();
             if let Some(contents) = stack
                 .get_data_component_mut::<pumpkin_data::data_component_impl::BundleContentsImpl>()
             {
@@ -37,7 +38,7 @@ impl JavaClient {
                 } else {
                     -1
                 };
-                slot.set_stack(stack);
+                let _ = slot.exchange_stack(&expected, stack);
             }
         }
     }

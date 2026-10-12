@@ -706,22 +706,12 @@ pub trait ScreenHandler: Send + Sync {
                 })
             {
                 let slot = self.get_behaviour().slots[current_index as usize].clone();
-                let mut slot_stack = slot.get_stack();
+                let slot_stack = slot.get_stack();
 
                 if !slot_stack.is_empty() && slot_stack.are_items_and_components_equal(stack) {
-                    let combined_count = slot_stack.item_count + stack.item_count;
-                    let max_slot_count = slot.get_max_item_count_for_stack(&slot_stack);
-                    if combined_count <= max_slot_count {
-                        stack.set_count(0);
-                        slot_stack.set_count(combined_count);
-                        slot.set_stack(slot_stack);
-                        success = true;
-                    } else if slot_stack.item_count < max_slot_count {
-                        stack.decrement(max_slot_count - slot_stack.item_count);
-                        slot_stack.set_count(max_slot_count);
-                        slot.set_stack(slot_stack);
-                        success = true;
-                    }
+                    let before = stack.item_count;
+                    *stack = slot.insert_stack(stack.clone());
+                    success |= stack.item_count < before;
                 }
 
                 if from_last {
@@ -748,11 +738,12 @@ pub trait ScreenHandler: Send + Sync {
                 let slot_stack = slot.get_stack();
 
                 if slot_stack.is_empty() && slot.can_insert(stack) {
-                    let max_count = slot.get_max_item_count_for_stack(stack);
-                    slot.set_stack(stack.split(max_count.min(stack.item_count)));
-                    slot.mark_dirty();
-                    success = true;
-                    break;
+                    let before = stack.item_count;
+                    *stack = slot.insert_stack(stack.clone());
+                    if stack.item_count < before {
+                        success = true;
+                        break;
+                    }
                 }
 
                 if from_last {
@@ -764,6 +755,28 @@ pub trait ScreenHandler: Send + Sync {
         }
 
         success
+    }
+
+    /// Transfers an observed source stack into a menu range under its backing owners.
+    fn transfer_item(
+        &self,
+        player: &dyn InventoryPlayer,
+        source: &dyn Slot,
+        stack: &mut ItemStack,
+        range: (i32, i32, bool),
+        before: &mut ItemStack,
+    ) -> bool {
+        let (moved, leftover) = crate::menu_transfer::transfer(
+            &self.get_behaviour().slots,
+            source,
+            stack,
+            range,
+            before,
+        );
+        if !leftover.is_empty() {
+            player.drop_item(leftover, false);
+        }
+        moved
     }
 
     /// Handles a slot click event.
@@ -842,7 +855,8 @@ pub trait ScreenHandler: Send + Sync {
                     continue;
                 }
 
-                let taken_stack = slot.safe_take(
+                let taken_stack = slot.safe_take_matching(
+                    &item_stack,
                     item_stack.item_count.min(to_pick_up),
                     cursor_stack.get_max_stack_size() - cursor_stack.item_count,
                     player,
@@ -864,8 +878,17 @@ pub trait ScreenHandler: Send + Sync {
                 if !prev_stack.is_empty() {
                     if button == 1 {
                         // Throw all
-                        while slot.get_cloned_stack().item == prev_stack.item {
-                            let drop_stack = slot.safe_take(prev_stack.item_count, u8::MAX, player);
+                        loop {
+                            let current = slot.get_cloned_stack();
+                            if current.item != prev_stack.item {
+                                break;
+                            }
+                            let drop_stack = slot.safe_take_matching(
+                                &current,
+                                prev_stack.item_count,
+                                u8::MAX,
+                                player,
+                            );
                             // AbstractContainerMenu.doClick: an unavailable result must stop THROW.
                             if drop_stack.is_empty() {
                                 break;
@@ -874,7 +897,7 @@ pub trait ScreenHandler: Send + Sync {
                             // player.handleCreativeModeItemDrop(itemStack);
                         }
                     } else {
-                        let drop_stack = slot.safe_take(1, u8::MAX, player);
+                        let drop_stack = slot.safe_take_matching(&prev_stack, 1, u8::MAX, player);
                         if !drop_stack.is_empty() {
                             // Slot.safeTake already invokes onTake.
                             player.drop_item(drop_stack, true);
@@ -1013,7 +1036,8 @@ pub trait ScreenHandler: Send + Sync {
                         } else {
                             slot_stack.item_count.div_ceil(2)
                         };
-                        let taken = slot.try_take_stack_range(take_count, u8::MAX, player);
+                        let taken =
+                            slot.try_take_matching(&slot_stack, take_count, u8::MAX, player);
                         if let Some(taken) = taken {
                             // Reverse order of operations, shouldn't affect anything
                             *cursor_stack = taken.clone();
@@ -1047,12 +1071,14 @@ pub trait ScreenHandler: Send + Sync {
                             <= slot.get_max_item_count_for_stack(&cursor_stack)
                         {
                             let old_cursor_stack = cursor_stack.clone();
-                            *cursor_stack = slot_stack;
-                            slot.set_stack(old_cursor_stack);
+                            if slot.exchange_stack(&slot_stack, old_cursor_stack) {
+                                *cursor_stack = slot_stack;
+                            }
                         }
                     } else if ItemStack::are_items_and_components_equal(&slot_stack, &cursor_stack)
                     {
-                        let taken = slot.try_take_stack_range(
+                        let taken = slot.try_take_matching(
+                            &slot_stack,
                             slot_stack.item_count,
                             cursor_stack
                                 .get_max_stack_size()
@@ -1079,50 +1105,11 @@ pub trait ScreenHandler: Send + Sync {
             if slot_index < 0 {
                 return;
             }
-            let player_inventory = player.get_inventory();
-            let mut button_stack = player_inventory.get_stack(button as usize);
-            let source_slot = self.get_behaviour().slots[slot_index as usize].clone();
-            let mut source_stack = source_slot.get_cloned_stack();
-
-            if !button_stack.is_empty() || !source_stack.is_empty() {
-                if button_stack.is_empty() {
-                    if source_slot.can_take_items(player) {
-                        source_slot.on_crafted_by(player, &mut source_stack);
-                        player_inventory.set_stack(button as usize, source_stack.clone());
-                        source_slot.set_stack(ItemStack::EMPTY.clone());
-                        source_slot.on_take_item(player, &source_stack);
-                    }
-                } else if source_stack.is_empty() && source_slot.can_insert(&button_stack) {
-                    let max_count = source_slot.get_max_item_count_for_stack(&button_stack);
-                    if button_stack.item_count > max_count {
-                        source_slot.set_stack(button_stack.split(max_count));
-                        player_inventory.set_stack(button as usize, button_stack);
-                    } else {
-                        player_inventory.set_stack(button as usize, ItemStack::EMPTY.clone());
-                        source_slot.set_stack(button_stack);
-                    }
-                } else if source_slot.can_take_items(player)
-                    && source_slot.can_insert(&button_stack)
-                {
-                    source_slot.on_crafted_by(player, &mut source_stack);
-                    let max_count = source_slot.get_max_item_count_for_stack(&button_stack);
-                    if button_stack.item_count > max_count {
-                        source_slot.set_stack(button_stack.split(max_count));
-                        player_inventory.set_stack(button as usize, button_stack);
-                        source_slot.on_take_item(player, &source_stack);
-
-                        let mut displaced_stack = source_stack;
-                        player_inventory.insert_stack_anywhere(&mut displaced_stack);
-                        if !displaced_stack.is_empty() {
-                            player.drop_item(displaced_stack, true);
-                        }
-                    } else {
-                        player_inventory.set_stack(button as usize, source_stack.clone());
-                        source_slot.set_stack(button_stack);
-                        source_slot.on_take_item(player, &source_stack);
-                    }
-                }
-            }
+            crate::slot_swap::click(
+                self.get_behaviour().slots[slot_index as usize].as_ref(),
+                button as usize,
+                player,
+            );
         }
     }
 }

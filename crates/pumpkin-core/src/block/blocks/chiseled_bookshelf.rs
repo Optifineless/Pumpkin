@@ -130,10 +130,9 @@ impl ChiseledBookshelfBlock {
 
         let sound = Self::insert_sound(item.get_item());
 
-        entity.set_book(
-            slot as usize,
-            item.split_unless_creative(player.gamemode.load(), 1),
-        );
+        if !crate::item::item_utils::place_held_item(item, player, entity, slot as usize) {
+            return;
+        }
         entity.update_state(properties, world, slot as usize);
 
         world.play_sound(sound, SoundCategory::Blocks, &position.to_centered_f64());
@@ -147,11 +146,28 @@ impl ChiseledBookshelfBlock {
         properties: ChiseledBookshelfLikeProperties,
         slot: i8,
     ) {
-        let mut stack = entity.remove_book(slot as usize, 1);
-
+        // ChiseledBookShelfBlock.removeBook settles removal and Inventory.add together.
+        let inventory = player.get_inventory();
+        let expected = pumpkin_inventory::Inventory::get_stack(entity, slot as usize);
+        let owners = pumpkin_inventory::inventory::slot_transaction::ordered_owners(&[
+            entity as &dyn pumpkin_inventory::Inventory,
+            inventory.as_ref(),
+        ]);
+        let guards = pumpkin_inventory::inventory::slot_transaction::lock_owners(&owners);
+        let mut stack = pumpkin_inventory::inventory::slot_transaction::withdraw(
+            entity,
+            slot as usize,
+            &expected,
+            1,
+        );
+        if stack.is_empty() {
+            return;
+        }
         let sound = Self::pickup_sound(stack.get_item());
-
-        if !player.get_inventory().insert_stack_anywhere(&mut stack) {
+        inventory.insert_stack_anywhere(&mut stack);
+        drop(guards);
+        pumpkin_inventory::Inventory::on_slot_changed(entity, slot as usize);
+        if !stack.is_empty() {
             // Drop the item on the ground if the player cannot hold it because of a full inventory
             player.drop_item(stack);
         }

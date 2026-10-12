@@ -25,6 +25,7 @@ use pumpkin_data::item_stack::ItemStack;
 /// Contents persist across dimensions and are accessible from any
 /// ender chest block.
 pub struct EnderChestInventory {
+    pub(crate) transaction: std::sync::Arc<crate::inventory::slot_transaction::Transaction>,
     /// The 27 item slots in the ender chest.
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     /// Viewer count tracker for lid animation.
@@ -47,6 +48,7 @@ impl EnderChestInventory {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(std::array::from_fn(|_| ItemStack::EMPTY.clone())),
             tracker: Mutex::new(None),
         }
@@ -89,7 +91,14 @@ impl EnderChestInventory {
 }
 
 impl Inventory for EnderChestInventory {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<crate::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .items
             .write()
@@ -124,37 +133,32 @@ impl Inventory for EnderChestInventory {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < Self::INVENTORY_SIZE {
-            std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone())
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+
+        removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < Self::INVENTORY_SIZE && !items[slot].is_empty() && amount > 0 {
-            items[slot].split(amount)
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < Self::INVENTORY_SIZE {
-            items[slot] = stack;
-        }
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
     }
 
     fn on_open(&self) {
@@ -188,11 +192,7 @@ impl Inventory for EnderChestInventory {
 
 impl Clearable for EnderChestInventory {
     fn clear(&self) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items.fill_with(|| ItemStack::EMPTY.clone());
+        crate::inventory::slot_transaction::clear(self);
     }
 }
 

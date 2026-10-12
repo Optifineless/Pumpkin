@@ -36,6 +36,8 @@ const MAX_NO_CLEAR_BUT_SIMULATE: i32 = 0;
 
 fn clear_player(target: &Player, item: &ItemPredicate, max: i32) -> i32 {
     let inventory = target.inventory();
+    let owner = pumpkin_inventory::Inventory::slot_transaction(inventory.as_ref(), 0);
+    let _guard = owner.lock();
     let mut count: i32 = 0;
     let mut max: i32 = max;
     let mut is_done: bool = false;

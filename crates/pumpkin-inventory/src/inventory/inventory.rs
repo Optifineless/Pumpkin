@@ -9,13 +9,30 @@ use std::{
 
 pub trait Inventory: Send + Sync + Clearable {
     /// Mutates a valid slot once under its storage lock, without dispatching side effects.
-    /// The callback only mutates the stack; it must not call inventories, events or networking.
+    /// The caller must already hold this slot's transaction owner. Use `update_slot` normally.
+    /// The callback may update this stack and its local `on_slot_replaced` fields only.
+    /// It must not access other slots, dispatch events or send packets.
     /// Call `on_slot_changed` after releasing transfer ownership when the stack changed.
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack));
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack));
+
+    /// Updates local derived fields for `Container.setItem`, while the slot is owned.
+    /// This must not acquire storage, invoke plugins, notify the world or send packets.
+    fn on_slot_replaced(&self, _slot: usize, _previous: &ItemStack, _current: &ItemStack) {}
+
+    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        let owner = self.slot_transaction(slot);
+        let _guard = owner.lock();
+        if owner.is_live() {
+            self.update_slot_storage(slot, update);
+        }
+    }
 
     /// Returns ownership of the backing inventory; double chests route slots to their halves.
-    fn slot_transaction(&self, _slot: usize) -> Arc<std::sync::Mutex<()>> {
-        super::slot_transaction::owner(self.as_any())
+    fn slot_transaction(&self, slot: usize) -> Arc<super::slot_transaction::Transaction>;
+
+    /// Collects backing owners once per container, including both halves of double chests.
+    fn collect_transaction_owners(&self, owners: &mut super::slot_transaction::Owners) {
+        owners.push(self.slot_transaction(0));
     }
 
     /// Dispatches effects of a committed slot update after storage and transfer locks are gone.
@@ -96,14 +113,7 @@ pub trait Inventory: Send + Sync + Clearable {
         let mut slots = Vec::new();
         let size = self.size();
         let owners = super::slot_transaction::ordered_owners(&[self]);
-        let transfers = owners
-            .iter()
-            .map(|owner| {
-                owner
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-            })
-            .collect::<Vec<_>>();
+        let transfers = super::slot_transaction::lock_owners(&owners);
         let snapshot = (0..size).map(|i| self.get_stack(i)).collect::<Vec<_>>();
         drop(transfers);
         for (i, stack) in snapshot.into_iter().enumerate() {

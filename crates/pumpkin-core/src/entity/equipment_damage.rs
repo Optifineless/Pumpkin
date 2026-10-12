@@ -15,6 +15,8 @@ pub(super) fn with_slot<T>(
     index: usize,
     action: impl FnOnce(&mut ItemStack) -> T,
 ) -> Option<T> {
+    let owner = pumpkin_inventory::Inventory::slot_transaction(inventory, index);
+    let _guard = owner.lock();
     if index < PlayerInventory::MAIN_SIZE {
         let mut items = inventory
             .main_inventory

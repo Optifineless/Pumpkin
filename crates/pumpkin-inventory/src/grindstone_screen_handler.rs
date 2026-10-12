@@ -405,11 +405,12 @@ impl ScreenHandler for GrindstoneScreenHandler {
             let additional = self.inventory.get_stack(Self::ADDITIONAL_SLOT);
 
             if slot_index as usize == Self::RESULT_SLOT {
-                if !self.insert_item(
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
                     &mut slot_stack,
-                    Self::INV_SLOT_START,
-                    Self::USE_ROW_SLOT_END,
-                    true,
+                    (Self::INV_SLOT_START, Self::USE_ROW_SLOT_END, true),
+                    &mut stack_left,
                 ) {
                     return ItemStack::EMPTY.clone();
                 }
@@ -421,11 +422,12 @@ impl ScreenHandler for GrindstoneScreenHandler {
                 return stack_left;
             } else if slot_index < Self::INV_SLOT_START {
                 // Input slots (0, 1): from grindstone to player inventory (3..39, reversed = false)
-                if !self.insert_item(
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
                     &mut slot_stack,
-                    Self::INV_SLOT_START,
-                    Self::USE_ROW_SLOT_END,
-                    false,
+                    (Self::INV_SLOT_START, Self::USE_ROW_SLOT_END, false),
+                    &mut stack_left,
                 ) {
                     return ItemStack::EMPTY.clone();
                 }
@@ -433,27 +435,30 @@ impl ScreenHandler for GrindstoneScreenHandler {
                 // Player inventory (3..39)
                 if !input.is_empty() && !additional.is_empty() {
                     if slot_index < Self::USE_ROW_SLOT_START {
-                        if !self.insert_item(
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
                             &mut slot_stack,
-                            Self::USE_ROW_SLOT_START,
-                            Self::USE_ROW_SLOT_END,
-                            false,
+                            (Self::USE_ROW_SLOT_START, Self::USE_ROW_SLOT_END, false),
+                            &mut stack_left,
                         ) {
                             return ItemStack::EMPTY.clone();
                         }
-                    } else if !self.insert_item(
+                    } else if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
                         &mut slot_stack,
-                        Self::INV_SLOT_START,
-                        Self::INV_SLOT_END,
-                        false,
+                        (Self::INV_SLOT_START, Self::INV_SLOT_END, false),
+                        &mut stack_left,
                     ) {
                         return ItemStack::EMPTY.clone();
                     }
-                } else if !self.insert_item(
+                } else if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
                     &mut slot_stack,
-                    Self::INPUT_SLOT as i32,
-                    Self::RESULT_SLOT as i32,
-                    false,
+                    (Self::INPUT_SLOT as i32, Self::RESULT_SLOT as i32, false),
+                    &mut stack_left,
                 ) {
                     return ItemStack::EMPTY.clone();
                 }
@@ -461,12 +466,6 @@ impl ScreenHandler for GrindstoneScreenHandler {
 
             if slot_stack.item_count == stack_left.item_count {
                 return ItemStack::EMPTY.clone();
-            }
-
-            if slot_stack.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone());
-            } else {
-                slot.set_stack(slot_stack.clone());
             }
 
             slot.on_take_item(player, &slot_stack);
