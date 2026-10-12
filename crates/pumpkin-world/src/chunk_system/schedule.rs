@@ -60,6 +60,7 @@ pub struct GenerationSchedule {
     send_level: Arc<LevelChannel>,
 
     public_chunk_map: Arc<DashMap<Vector2<i32>, SyncChunk>>,
+    entity_unloads: Arc<Mutex<crate::level::entity_unload::EntityUnloads>>,
     loaded_chunk_changes: Arc<crossbeam::queue::SegQueue<LoadedChunkChange>>,
     chunk_map: HashMap<ChunkPos, ChunkHolder>,
     unload_chunks: HashSetType<ChunkPos>,
@@ -98,6 +99,7 @@ impl GenerationSchedule {
         if removed.is_some() {
             self.loaded_chunk_changes
                 .push(LoadedChunkChange::Unloaded(pos));
+            self.listener.unpublished(pos);
         }
         removed
     }
@@ -160,6 +162,7 @@ impl GenerationSchedule {
                     last_high_priority: Vec::new(),
                     send_level: level_channel,
                     public_chunk_map: level_sched.loaded_chunks.clone(),
+                    entity_unloads: level_sched.entity_unloads.clone(),
                     loaded_chunk_changes: level_sched.loaded_chunk_changes.clone(),
                     unload_chunks: HashSetType::default(),
                     waiting_for_chunks: HashSetType::default(),
@@ -854,6 +857,16 @@ impl GenerationSchedule {
         swap(&mut unload_chunks, &mut self.unload_chunks);
         let mut chunks = Vec::with_capacity(unload_chunks.len());
         for pos in unload_chunks {
+            // ChunkMap.scheduleUnload waits for the live block-entity snapshot before saving terrain.
+            if self
+                .entity_unloads
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .retains_terrain(pos)
+            {
+                self.unload_chunks.insert(pos);
+                continue;
+            }
             let Some(mut holder) = self.chunk_map.remove(&pos) else {
                 continue;
             };

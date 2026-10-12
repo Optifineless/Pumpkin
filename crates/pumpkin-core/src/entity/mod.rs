@@ -5,6 +5,7 @@ pub(crate) mod death_test_world;
 #[cfg(test)]
 mod harvest_tests;
 pub mod kill_credit;
+pub(crate) mod persistence_revision;
 use crate::{
     entity::item::ItemEntity,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
@@ -1059,6 +1060,7 @@ pub struct Entity {
     pub hurt_marked: AtomicBool,
     /// Set when an Entity is to be removed but could still be referenced
     pub removed: AtomicBool,
+    pub(crate) persistence_revision: persistence_revision::PersistenceRevision,
     /// The last sent yaw value (encoded as u8) for change detection
     pub last_sent_yaw: AtomicU8,
     /// The last sent pitch value (encoded as u8) for change detection
@@ -1193,6 +1195,7 @@ impl Entity {
             velocity_dirty: AtomicBool::new(true),
             hurt_marked: AtomicBool::new(false),
             removed: AtomicBool::new(false),
+            persistence_revision: persistence_revision::PersistenceRevision::new(entity_id),
             last_sent_yaw: AtomicU8::new(0),
             last_sent_pitch: AtomicU8::new(0),
             last_sent_head_yaw: AtomicU8::new(0),
@@ -1216,9 +1219,11 @@ impl Entity {
     pub fn set_world(&self, world: Arc<World>) {
         let block_pos = self.block_pos.load();
         let biome = world.level.get_rough_biome(&block_pos);
-        self.current_biome.store(Arc::new(biome));
-        self.last_biome_update_pos.store(block_pos);
-        self.world.store(world);
+        self.update_persistent_state(|| {
+            self.current_biome.store(Arc::new(biome));
+            self.last_biome_update_pos.store(block_pos);
+            self.world.store(world);
+        });
     }
 
     pub fn bedrock_metadata(&self) -> SyncedActorDataList {
@@ -1419,46 +1424,7 @@ impl Entity {
     ///
     /// This function calculates the new position, block position, and chunk position based on the provided coordinates. If any of these values change, the corresponding fields are updated.
     pub fn set_pos(&self, new_position: Vector3<f64>) {
-        let pos = self.pos.load();
-        if pos != new_position {
-            self.pos.store(new_position);
-            self.bounding_box.store(BoundingBox::new_from_pos(
-                new_position.x,
-                new_position.y,
-                new_position.z,
-                &self.entity_dimension.load(),
-            ));
-
-            let floor_x = new_position.x.floor() as i32;
-            let floor_y = new_position.y.floor() as i32;
-            let floor_z = new_position.z.floor() as i32;
-
-            let block_pos = self.block_pos.load();
-            let block_pos_vec = block_pos.0;
-            if floor_x != block_pos_vec.x
-                || floor_y != block_pos_vec.y
-                || floor_z != block_pos_vec.z
-            {
-                let new_block_pos = Vector3::new(floor_x, floor_y, floor_z);
-                let new_bp = BlockPos(new_block_pos);
-                self.block_pos.store(new_bp);
-
-                let world = self.world.load();
-                let biome = world.level.get_rough_biome(&new_bp);
-                self.current_biome.store(Arc::new(biome));
-                self.last_biome_update_pos.store(new_bp);
-
-                let chunk_pos = self.chunk_pos.load();
-                if get_section_cord(floor_x) != chunk_pos.x
-                    || get_section_cord(floor_z) != chunk_pos.y
-                {
-                    self.chunk_pos.store(Vector2::new(
-                        get_section_cord(new_block_pos.x),
-                        get_section_cord(new_block_pos.z),
-                    ));
-                }
-            }
-        }
+        self.set_pos_with_revision(new_position);
     }
 
     /// Returns entity rotation as vector
@@ -3280,13 +3246,8 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
-        // Update server-side position and bounding box
-        self.set_pos(position);
-        if let Some(yaw) = yaw {
-            self.yaw.store(yaw);
-        }
-        if let Some(pitch) = pitch {
-            self.set_pitch(pitch);
+        if !self.set_teleport_state(position, yaw, pitch) {
+            return;
         }
         // Update cache so we don't send rubberbanding deltas
         self.last_sent_pos.store(position);
@@ -3561,18 +3522,14 @@ impl Entity {
             return;
         }
 
-        let passenger_entity = passenger.get_entity();
-        *passenger_entity
-            .vehicle
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(vehicle);
-
-        let mut passengers = self
+        if !self.link_passenger(vehicle, passenger) {
+            return;
+        }
+        let passengers = self
             .passengers
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        passengers.push(passenger);
-
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let passenger_ids: Vec<VarInt> = passengers
             .iter()
             .map(|p| VarInt(p.get_entity().entity_id))
@@ -3587,27 +3544,16 @@ impl Entity {
     }
 
     pub(crate) fn remove_passenger_on_disconnect(&self, passenger_id: i32) {
-        let mut passengers = self
+        self.unlink_passenger(passenger_id);
+        let passengers = self
             .passengers
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(index) = passengers
-            .iter()
-            .position(|passenger| passenger.get_entity().entity_id == passenger_id)
-        {
-            let passenger = passengers.remove(index);
-            *passenger
-                .get_entity()
-                .vehicle
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        }
-
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let passenger_ids: Vec<VarInt> = passengers
             .iter()
             .map(|passenger| VarInt(passenger.get_entity().entity_id))
             .collect();
-        drop(passengers);
 
         self.world.load().broadcast_to_chunk(
             self.chunk_pos.load(),
@@ -3652,22 +3598,12 @@ impl Entity {
         }
 
         let (removed_passenger, passenger_ids) = {
-            let mut passengers = self
+            let removed_passenger = self.unlink_passenger(passenger_id);
+            let passengers = self
                 .passengers
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let removed_passenger = passengers
-                .iter()
-                .position(|p| p.get_entity().entity_id == passenger_id)
-                .map(|idx| {
-                    let passenger = passengers.remove(idx);
-                    *passenger
-                        .get_entity()
-                        .vehicle
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-                    passenger
-                });
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
 
             let passenger_ids: Vec<VarInt> = passengers
                 .iter()

@@ -4,22 +4,28 @@ use std::sync::{Arc, atomic::Ordering};
 
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::vector2::Vector2;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Level, SyncEntityChunk};
 use crate::chunk::io::FileIO;
 
 #[derive(Default)]
-pub(super) struct EntityUnloads {
+pub struct EntityUnloads {
     next_generation: u64,
     generations: FxHashMap<Vector2<i32>, u64>,
     pending: FxHashMap<Vector2<i32>, EntityUnload>,
+    retained_terrain: FxHashSet<Vector2<i32>>,
 }
 
 impl EntityUnloads {
     pub(super) fn forget(&mut self, pos: Vector2<i32>) {
         self.generations.remove(&pos);
         self.pending.remove(&pos);
+        self.retained_terrain.remove(&pos);
+    }
+
+    pub(crate) fn retains_terrain(&self, pos: Vector2<i32>) -> bool {
+        self.retained_terrain.contains(&pos)
     }
 
     #[must_use]
@@ -38,7 +44,7 @@ impl EntityUnloads {
 #[derive(Clone)]
 pub struct EntityUnload {
     pub position: Vector2<i32>,
-    pub storage: SyncEntityChunk,
+    pub storage: Option<SyncEntityChunk>,
     generation: u64,
 }
 
@@ -51,6 +57,7 @@ impl Level {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for &pos in chunks {
             unloads.invalidate(pos);
+            unloads.retained_terrain.insert(pos);
             self.chunk_watchers
                 .entry(pos)
                 .and_modify(|count| *count = count.saturating_add(1))
@@ -96,22 +103,19 @@ impl Level {
         if self.is_chunk_watched(&pos) {
             return;
         }
-        if let Some(storage) = self.get_entity_chunk_sync(&pos) {
-            let generation = *unloads.generations.entry(pos).or_insert_with(|| {
-                unloads.next_generation = unloads.next_generation.wrapping_add(1);
-                unloads.next_generation
-            });
-            unloads.pending.insert(
-                pos,
-                EntityUnload {
-                    position: pos,
-                    storage,
-                    generation,
-                },
-            );
-        } else {
-            unloads.forget(pos);
-        }
+        let generation = *unloads.generations.entry(pos).or_insert_with(|| {
+            unloads.next_generation = unloads.next_generation.wrapping_add(1);
+            unloads.next_generation
+        });
+        unloads.retained_terrain.insert(pos);
+        unloads.pending.insert(
+            pos,
+            EntityUnload {
+                position: pos,
+                storage: self.get_entity_chunk_sync(&pos),
+                generation,
+            },
+        );
     }
 
     /// Requests tick-boundary retirement; positions alone never authorize removal.
@@ -151,12 +155,15 @@ impl Level {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let pos = request.position;
         // ChunkMap.scheduleUnload rechecks both the pending future and expected holder.
-        if unloads.generations.get(&pos) != Some(&request.generation)
-            || self.is_chunk_watched(&pos)
-            || !self
-                .get_entity_chunk_sync(&pos)
-                .is_some_and(|storage| Arc::ptr_eq(&storage, &request.storage))
+        if unloads.generations.get(&pos) != Some(&request.generation) || self.is_chunk_watched(&pos)
         {
+            return false;
+        }
+        let storage = self.get_entity_chunk_sync(&pos);
+        if !same_storage(storage.as_ref(), request.storage.as_ref()) {
+            if let Some(pending) = unloads.pending.get_mut(&pos) {
+                pending.storage = storage;
+            }
             return false;
         }
         if !commit() {
@@ -167,6 +174,7 @@ impl Level {
             return false;
         }
         unloads.invalidate(pos);
+        unloads.retained_terrain.remove(&pos);
         true
     }
 
@@ -190,5 +198,64 @@ impl Level {
             self.request_entity_unload_locked(&mut unloads, pos);
         }
         Some(records)
+    }
+}
+
+fn same_storage(a: Option<&SyncEntityChunk>, b: Option<&SyncEntityChunk>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+impl Level {
+    /// Captures save authority before reading the live registry. No guard escapes this call.
+    pub fn entity_snapshot(&self, storage: &SyncEntityChunk) -> Option<EntityUnload> {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let pos = Vector2::new(storage.x, storage.z);
+        if !self
+            .get_entity_chunk_sync(&pos)
+            .is_some_and(|current| Arc::ptr_eq(&current, storage))
+        {
+            return None;
+        }
+        let generation = *unloads.generations.entry(pos).or_insert(0);
+        Some(EntityUnload {
+            position: pos,
+            storage: Some(storage.clone()),
+            generation,
+        })
+    }
+
+    /// Validates an ordinary save under the same admission as retirement. Commit must be leaf-only.
+    pub fn commit_entity_snapshot(
+        &self,
+        request: &EntityUnload,
+        commit: impl FnOnce() -> bool,
+    ) -> bool {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if unloads.generations.get(&request.position) != Some(&request.generation)
+            || !same_storage(
+                self.get_entity_chunk_sync(&request.position).as_ref(),
+                request.storage.as_ref(),
+            )
+            || !commit()
+        {
+            return false;
+        }
+        unloads.next_generation = unloads.next_generation.wrapping_add(1);
+        let generation = unloads.next_generation;
+        unloads.generations.insert(request.position, generation);
+        if let Some(pending) = unloads.pending.get_mut(&request.position) {
+            pending.generation = generation;
+        }
+        true
     }
 }

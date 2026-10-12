@@ -626,8 +626,15 @@ impl LivingEntity {
         // Clamp to [0, max_health]
         let max_health = self.get_max_health();
         let clamped = health.max(0.0).min(max_health);
-        self.damage_owner.changed(self.health.load() - clamped);
-        self.health.store(clamped);
+        let delta = self.health.load() - clamped;
+        if !self
+            .entity
+            .update_persistent_state(|| self.health.store(clamped))
+        {
+            return;
+        }
+        self.damage_owner.changed(delta);
+        super::persistence_revision::assert_released();
         // tell everyone entities health changed
         self.entity
             .set_synced_data(tracked_data::living_entity::DATA_HEALTH_ID, clamped);

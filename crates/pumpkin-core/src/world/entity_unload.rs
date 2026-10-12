@@ -1,17 +1,12 @@
 //! Tick-boundary `PersistentEntitySectionManager.processPendingLoads/processUnloads`.
 
-use std::sync::{Arc, Weak, atomic::Ordering};
+use std::sync::{Arc, Weak};
 
-use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::vector2::Vector2;
-use pumpkin_world::{
-    chunk::io::Dirtiable,
-    level::{EntityUnload, SyncEntityChunk},
-};
-use rustc_hash::FxHashSet;
+use pumpkin_world::level::{EntityUnload, SyncEntityChunk};
 
-use super::{World, entity_persistence, merge_entity_records};
-use crate::entity::{RemovalReason, player::Player};
+use super::{World, entity_persistence, entity_snapshot::EntityChunkSnapshot};
+use crate::entity::player::Player;
 
 pub(super) struct EntityActivation {
     storage: SyncEntityChunk,
@@ -79,20 +74,8 @@ impl World {
     }
 
     fn retire_entity_chunk(&self, request: &EntityUnload) {
-        let current = self.entities.load_full();
-        let members: Vec<_> = current
-            .iter()
-            .filter(|entity| entity_persistence::root_chunk(entity) == request.position)
-            .cloned()
-            .collect();
-        let records: Vec<NbtCompound> = members
-            .iter()
-            .filter(|entity| {
-                let base = entity.get_entity();
-                !base.is_removed() && base.get_vehicle().is_none()
-            })
-            .map(entity_persistence::save_riding_tree)
-            .collect();
+        let snapshot = EntityChunkSnapshot::prepare(self, request.position);
+        let members = snapshot.members.clone();
         self.save_block_entities(request.position);
 
         #[cfg(test)]
@@ -102,51 +85,7 @@ impl World {
             hook();
         }
 
-        if !self.level.commit_entity_unload(request, || {
-            let ids: FxHashSet<_> = members
-                .iter()
-                .map(|member| member.get_entity().entity_id)
-                .collect();
-            // Snapshot and retirement need the same complete membership, including riding roots.
-            if current.iter().any(|entity| {
-                ids.contains(&entity.get_entity().entity_id)
-                    != (entity_persistence::root_chunk(entity) == request.position)
-            }) {
-                return false;
-            }
-            let remaining: Vec<_> = current
-                .iter()
-                .filter(|entity| !ids.contains(&entity.get_entity().entity_id))
-                .cloned()
-                .collect();
-            let previous = self
-                .entities
-                .compare_and_swap(&current, Arc::new(remaining));
-            if !Arc::ptr_eq(&previous, &current) {
-                return false;
-            }
-
-            let mut data = request
-                .storage
-                .data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let live = request.storage.live.load(Ordering::Acquire);
-            if live || !records.is_empty() {
-                merge_entity_records(&mut data, live, records);
-                request.storage.mark_dirty(true);
-            }
-            request.storage.live.store(false, Ordering::Release);
-            for member in &members {
-                let entity = member.get_entity();
-                // Entity.setRemoved preserves an existing reason and removes before tracker callbacks.
-                let _ = entity
-                    .removal_reason
-                    .compare_exchange(None, Some(RemovalReason::UnloadedToChunk));
-                entity.removed.store(true, Ordering::Release);
-            }
-            true
-        }) {
+        if !snapshot.commit(self, request, true) {
             return;
         }
 

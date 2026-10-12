@@ -2,6 +2,13 @@
 use super::*;
 use std::sync::RwLock;
 
+impl Server {
+    pub(crate) async fn finish_test_tasks(&self) {
+        self.tasks.close();
+        self.tasks.wait().await;
+    }
+}
+
 pub fn server(path: &std::path::Path) -> Arc<Server> {
     let session_lock = pumpkin_world::session_lock::acquire(path).unwrap();
     let basic_config = BasicConfiguration {
@@ -106,10 +113,17 @@ pub fn server(path: &std::path::Path) -> Arc<Server> {
 }
 
 pub fn world(server: &Arc<Server>, path: &std::path::Path) -> Arc<World> {
-    use pumpkin_config::world::LevelConfig;
+    world_with_config(server, path, &pumpkin_config::world::LevelConfig::default())
+}
+
+pub fn world_with_config(
+    server: &Arc<Server>,
+    path: &std::path::Path,
+    config: &pumpkin_config::world::LevelConfig,
+) -> Arc<World> {
     Arc::new(World::load(
         pumpkin_world::level::Level::from_root_folder(
-            &LevelConfig::default(),
+            config,
             path.to_path_buf(),
             0,
             Dimension::OVERWORLD,

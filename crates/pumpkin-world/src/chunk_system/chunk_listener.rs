@@ -7,6 +7,7 @@ use tokio::sync::oneshot;
 
 #[expect(clippy::type_complexity)]
 pub struct ChunkListener {
+    unload: Mutex<Vec<(ChunkPos, oneshot::Sender<()>)>>,
     single: Mutex<Vec<(ChunkPos, oneshot::Sender<Result<SyncChunk, String>>)>>,
     failures: Mutex<std::collections::HashMap<ChunkPos, String>>,
     global: Mutex<Vec<Sender<(ChunkPos, Weak<crate::chunk::ChunkData>)>>>,
@@ -22,9 +23,42 @@ impl ChunkListener {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            unload: Mutex::default(),
             single: Mutex::new(Vec::new()),
             failures: Mutex::new(std::collections::HashMap::new()),
             global: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Observes completion of terrain unpublication, without polling the loaded map.
+    pub fn next_unload(&self, pos: ChunkPos) -> oneshot::Receiver<()> {
+        let (sender, receiver) = oneshot::channel();
+        self.unload
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((pos, sender));
+        receiver
+    }
+
+    pub(super) fn unpublished(&self, pos: ChunkPos) {
+        let completed = {
+            let mut unload = self
+                .unload
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut completed = Vec::new();
+            let mut index = 0;
+            while index < unload.len() {
+                if unload[index].0 == pos {
+                    completed.push(unload.swap_remove(index).1);
+                } else {
+                    index += 1;
+                }
+            }
+            completed
+        };
+        for sender in completed {
+            let _ = sender.send(());
         }
     }
 

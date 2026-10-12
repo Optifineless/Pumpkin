@@ -1,5 +1,5 @@
 #[path = "entity_unload.rs"]
-mod entity_unload;
+pub(crate) mod entity_unload;
 pub use entity_unload::EntityUnload;
 
 use crate::chunk::format::linear::LinearV2File;
@@ -136,7 +136,7 @@ pub struct Level {
     pub chunk_loading: Mutex<ChunkLoading>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
-    entity_unloads: Mutex<entity_unload::EntityUnloads>,
+    pub(crate) entity_unloads: Arc<Mutex<entity_unload::EntityUnloads>>,
 
     pub chunk_saver: Arc<ChunkSaver>,
     entity_saver: Arc<EntitySaver>,
@@ -347,7 +347,7 @@ impl Level {
             chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
             chunk_watchers: Arc::new(DashMap::new()),
-            entity_unloads: Mutex::default(),
+            entity_unloads: Arc::default(),
             tasks: TaskTracker::new(),
             chunk_system_tasks: TaskTracker::new(),
             cancel_token: CancellationToken::new(),

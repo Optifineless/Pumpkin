@@ -31,6 +31,9 @@ pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
 mod entity_persistence;
+mod entity_snapshot;
+#[cfg(test)]
+mod entity_snapshot_tests;
 mod entity_unload;
 #[cfg(test)]
 mod entity_unload_tests;
@@ -776,9 +779,7 @@ impl World {
     }
 
     pub async fn shutdown(&self) {
-        let entities = self.entities.load_full();
-        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
-            .await;
+        self.save_entity_snapshots().await;
 
         let chunks: Vec<Vector2<i32>> = self
             .block_entities
@@ -802,60 +803,6 @@ impl World {
         if let Err(error) = self.level.shutdown().await {
             error!("World shutdown left unsaved chunks: {error}");
             crate::SERVER_EXIT_CODE.store(1, std::sync::atomic::Ordering::Release);
-        }
-    }
-
-    /// Writes `entities` into the saved data of the chunks they are in. A live chunk is
-    /// rebuilt from scratch, so `snapshot_chunks` lists the live chunks that must be rewritten
-    /// even when nothing is left in them; a chunk that never went live keeps its records.
-    async fn save_entities_by_chunk(
-        &self,
-        entities: &[Arc<dyn EntityBase>],
-        snapshot_chunks: impl IntoIterator<Item = Vector2<i32>>,
-    ) {
-        let mut groups: FxHashMap<Vector2<i32>, Vec<NbtCompound>> = FxHashMap::default();
-        for entity in entities {
-            let base_entity = entity.get_entity();
-            // Entity.save saves passengers only inside their root's record.
-            if base_entity.is_removed() || base_entity.get_vehicle().is_some() {
-                continue;
-            }
-            let nbt = entity_persistence::save_riding_tree(entity);
-            groups
-                .entry(base_entity.chunk_pos.load())
-                .or_default()
-                .push(nbt);
-        }
-        for pos in snapshot_chunks {
-            groups.entry(pos).or_default();
-        }
-
-        for (pos, records) in groups {
-            let chunk = if records.is_empty() {
-                let Some(chunk) = self.level.get_entity_chunk_sync(&pos) else {
-                    continue;
-                };
-                chunk
-            } else {
-                match self.level.get_entity_chunk(pos).await {
-                    Ok(chunk) => chunk,
-                    Err(error) => {
-                        error!("Entity snapshot cannot load chunk {pos:?}: {error}");
-                        continue;
-                    }
-                }
-            };
-            let live = chunk.live.load(Relaxed);
-            if !live && records.is_empty() {
-                continue;
-            }
-            let mut data = chunk
-                .data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            merge_entity_records(&mut data, live, records);
-            drop(data);
-            chunk.mark_dirty(true);
         }
     }
 
@@ -5023,15 +4970,10 @@ impl World {
 
     pub fn remove_entity(&self, entity: &dyn EntityBase) {
         let base_entity = entity.get_entity();
-        if base_entity
-            .removal_reason
-            .swap(Some(RemovalReason::Discarded))
-            .is_some()
-        {
+        if !base_entity.set_removed(RemovalReason::Discarded) {
             return;
         }
         self.clear_fishing_hook_owner(base_entity);
-        base_entity.removed.store(true, Ordering::Release);
 
         self.spawn_state.load().remove_entity(self, entity);
         self.entity_tracker.remove_entity(entity, self);
@@ -6948,9 +6890,7 @@ impl World {
     }
 
     pub async fn save(&self) {
-        let entities = self.entities.load_full();
-        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
-            .await;
+        self.save_entity_snapshots().await;
 
         let chunks: Vec<Vector2<i32>> = self
             .block_entities

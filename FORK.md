@@ -115,6 +115,8 @@ These are open upstream PRs merged here before upstream merges them. Each is dro
 
 ## Known regressions under investigation
 
+PR #150 follow-up: ordinary saves and entity retirement share generation/storage ownership; position, health, riding and projectile transfer invalidate stale retirement snapshots. Chest-only chunks retain terrain until their live block entities are saved, even without an entity sidecar. In-game verification **Not yet**.
+
 Offline Java identities now follow `UUIDUtil.createOfflinePlayerUUID`: MD5 of UTF-8
 `OfflinePlayer:<case-sensitive name>`, with UUID version 3 and RFC variant bits. This
 matches vanilla/Paper offline worlds. Earlier Pumpkin identities used the first
@@ -230,6 +232,8 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 - Deferred function gap: `execute if|unless function`, `/function ... with`, macro instantiation not implemented.
 
 ## Native plugin API 8
+
+- API 8 (same version): entity persistence adds revision admission to `Entity`; `Level` shares unload admission with the terrain scheduler, and `EntityUnload.storage` becomes optional. Rebuild native plugins against this checkout. Saved NBT and both Wasm WIT versions keep their existing formats.
 
 - API 8 (same version), [#7](https://github.com/Optifineless/Pumpkin/issues/7): candle stacks now use ordinary item placement, consuming one candle in survival while preserving the lit state and four-candle limit. In-game verification **Not yet**.
 - API 8 (same version), [#8](https://github.com/Optifineless/Pumpkin/issues/8): sugar cane accepts tagged adjacent water fluids, including waterlogged blocks, or tagged frosted-ice support. In-game verification **Not yet**.

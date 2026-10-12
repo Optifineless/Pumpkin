@@ -307,11 +307,11 @@ pub(crate) fn teleport_projectile(
         return false;
     };
     let previous_position = entity.pos.load();
-    entity.set_pos(position);
-    entity.set_world(destination.clone());
+    if !entity.transfer_projectile_state(position, destination.clone()) {
+        return true;
+    }
     if !destination.spawn_entity(projectile.clone()) {
-        entity.set_world(source);
-        entity.set_pos(previous_position);
+        entity.transfer_projectile_state(previous_position, source);
         return true;
     }
     source
