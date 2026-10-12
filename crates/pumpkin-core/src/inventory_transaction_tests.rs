@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     cell::RefCell,
-    sync::{Arc, Barrier, Mutex, mpsc},
+    sync::{Arc, Barrier, mpsc},
 };
 
 use pumpkin_data::{Block, biome::Biome, entity::EntityType, item::Item, item_stack::ItemStack};
@@ -103,7 +103,8 @@ pub fn open_chest(player: &TestPlayer, inventory: Arc<dyn Inventory>) {
         inventory,
         player.player.as_ref(),
     );
-    *player.player.current_screen_handler.lock().unwrap() = Arc::new(Mutex::new(handler));
+    *player.player.current_screen_handler.lock().unwrap() =
+        Arc::new(pumpkin_util::sync::Mutex::new(handler));
 }
 
 pub fn diamonds(inventory: &dyn Inventory) -> u32 {
@@ -137,6 +138,10 @@ async fn inventory_transactions_two_packets_withdraw_one_shared_chest_stack() {
     let fixture = DeathTestWorld::new().await;
     let first = TestPlayer::new(&fixture.world());
     let second = TestPlayer::new(&fixture.world());
+    fixture
+        .world()
+        .players
+        .store(Arc::new(vec![first.player.clone(), second.player.clone()]));
     // A partial first transfer must leave items available to the other viewer.
     leave_space(&first, 16);
     let world = fixture.world();
@@ -330,6 +335,10 @@ async fn inventory_transactions_failed_container_transfer_refunds_only_one_item(
     }
     inventory.set_stack(4, ItemStack::new(63, &Item::DIAMOND));
     let filler = TestPlayer::new(&fixture.world());
+    fixture
+        .world()
+        .players
+        .store(Arc::new(vec![player.player.clone(), filler.player.clone()]));
     filler
         .player
         .inventory
@@ -340,7 +349,8 @@ async fn inventory_transactions_failed_container_transfer_refunds_only_one_item(
         inventory.clone(),
         filler.player.as_ref(),
     );
-    *filler.player.current_screen_handler.lock().unwrap() = Arc::new(Mutex::new(handler));
+    *filler.player.current_screen_handler.lock().unwrap() =
+        Arc::new(pumpkin_util::sync::Mutex::new(handler));
     let (ready, wait_ready) = mpsc::channel();
     let (resume, wait_resume) = mpsc::channel();
     cart.set_container_transfer_pause(Box::new(move || {

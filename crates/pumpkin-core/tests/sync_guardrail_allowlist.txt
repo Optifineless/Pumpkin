@@ -606,7 +606,6 @@ crates/pumpkin-core/src/world/weather.rs::from_world_data::std::sync::Mutex::new
 crates/pumpkin-core/src/world/weather.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-inventory/src/anvil/anvil_screen_handler.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-inventory/src/crafting/crafting_inventory.rs::new::std::sync::RwLock::new#1
-crates/pumpkin-inventory/src/crafting/crafting_screen_handler.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-inventory/src/ext_review_tests.rs::new::std::sync::Mutex::default#1
 crates/pumpkin-inventory/src/ext_review_tests.rs::new::std::sync::Mutex::default#2
 crates/pumpkin-inventory/src/ext_review_tests.rs::new::std::sync::Mutex::default#3
@@ -858,3 +857,8 @@ crates/pumpkin-world/src/tick/scheduler.rs::default::std::sync::Mutex::new#1
 # before inventory mutation/publication. A sync wrapper cannot replace the resource type.
 crates/pumpkin-wasm-host-common/src/equipment_tests.rs::set_hand::tokio::sync::Mutex::new#1
 crates/pumpkin-wasm-host-common/src/equipment_tests.rs::wasm_non_player_main_hand_keeps_entity_equipment_storage::tokio::sync::Mutex::new#1
+# PR #145 exception: owner admission is reentrant because admitted multi-slot operations
+# call Inventory.update_slot/exchange beneath the same owner. pumpkin_util::sync currently
+# wraps non-reentrant std locks; replacing this mutex directly would self-deadlock.
+# Owners contain no stack storage, acquire in Arc identity order, and release before effects.
+crates/pumpkin-inventory/src/inventory/slot_transaction.rs::default::parking_lot::ReentrantMutex::new#1

@@ -7,6 +7,7 @@ use crate::entity::projectile::snowball::SnowballEntity;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 
 pub struct SnowBallItem;
@@ -20,7 +21,35 @@ impl ItemMetadata for SnowBallItem {
 const POWER: f32 = 1.5;
 
 impl ItemBehaviour for SnowBallItem {
-    fn normal_use(&self, _block: &Item, player: &Player) {
+    fn normal_use(&self, item: &Item, player: &Player) {
+        let (yaw, pitch) = player.rotation();
+        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+    }
+
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) {
+        let stack = player.inventory().get_stack_in_hand(hand);
+        self.use_observed_stack(&stack, player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: pumpkin_util::Hand,
+    ) -> bool {
+        // SnowballItem.use consumes the observed hand, before effects in the concurrent tick.
+        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+            return false;
+        };
         let position = player.position();
         let world = player.world();
         world.play_sound(
@@ -34,35 +63,12 @@ impl ItemBehaviour for SnowBallItem {
         snowball
             .thrown
             .set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        world.spawn_entity(Arc::new(snowball));
-
-        // Consume item
-        let mut main_hand = player.inventory.held_item();
-        let expected_main_hand = main_hand.clone();
-        let consumed = if !main_hand.is_empty() && main_hand.item.id == Item::SNOWBALL.id {
-            main_hand.decrement_unless_creative(player.gamemode.load(), 1);
-            player.inventory.exchange_stack_in_hand(
-                pumpkin_util::Hand::Right,
-                &expected_main_hand,
-                main_hand,
-            );
-            true
-        } else {
-            false
-        };
-
-        if !consumed {
-            let mut off_hand = player.inventory.off_hand_item();
-            let expected_off_hand = off_hand.clone();
-            if !off_hand.is_empty() && off_hand.item.id == Item::SNOWBALL.id {
-                off_hand.decrement_unless_creative(player.gamemode.load(), 1);
-                player.inventory.exchange_stack_in_hand(
-                    pumpkin_util::Hand::Left,
-                    &expected_off_hand,
-                    off_hand,
-                );
-            }
+        if !world.spawn_entity(Arc::new(snowball)) {
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
         }
+
+        true
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
