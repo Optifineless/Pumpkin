@@ -203,18 +203,21 @@ impl DragonFight {
             self.spawn_crystals(world);
         }
 
-        self.actions
-            .push(FightAction::ReconcileState(active_portal_exists));
+        // Preserve this fork's legacy scan policy, with identity ready before queued callbacks.
+        self.reconcile_state(world, active_portal_exists);
     }
 
-    // EnderDragonFight.scanState reconciles live dragons after placing the podium.
+    // State reconciliation only reads members and queues effects; it never invokes callbacks.
     fn reconcile_state(&mut self, world: &Arc<World>, active_portal_exists: bool) {
         self.pending_dragon_spawn = None;
         let existing = {
             let entities = world.entities.load();
             entities
                 .iter()
-                .find(|e| e.get_entity().entity_type == &EntityType::ENDER_DRAGON)
+                .find(|e| {
+                    e.get_entity().entity_type == &EntityType::ENDER_DRAGON
+                        && !e.get_entity().is_removed()
+                })
                 .map(|e| (e.get_entity().entity_uuid, e.clone()))
         };
 
@@ -766,7 +769,10 @@ impl DragonFight {
         None
     }
 
-    fn regenerate_spike(world: &Arc<World>, spike: &EndSpike) {
+    fn regenerate_spike(world: &Arc<World>, spike: &EndSpike, current: &impl Fn() -> bool) {
+        if !current() {
+            return;
+        }
         let bedrock_pos = BlockPos::new(spike.center_x, spike.height, spike.center_z);
         world.set_block_state(
             &bedrock_pos,
@@ -774,6 +780,9 @@ impl DragonFight {
             BlockFlags::NOTIFY_ALL,
         );
 
+        if !current() {
+            return;
+        }
         let fire_pos = BlockPos::new(spike.center_x, spike.height + 1, spike.center_z);
         world.set_block_state(
             &fire_pos,
@@ -781,6 +790,9 @@ impl DragonFight {
             BlockFlags::NOTIFY_ALL,
         );
 
+        if !current() {
+            return;
+        }
         if spike.guarded {
             for dy in 0i32..=3 {
                 for dx in -2i32..=2 {
@@ -804,6 +816,9 @@ impl DragonFight {
                         props.east = z_edge && dx != -2;
 
                         let bar_state = props.to_state_id(&Block::IRON_BARS);
+                        if !current() {
+                            return;
+                        }
                         world.set_block_state(
                             &BlockPos::new(
                                 spike.center_x + dx,
@@ -813,11 +828,17 @@ impl DragonFight {
                             bar_state,
                             BlockFlags::NOTIFY_ALL,
                         );
+                        if !current() {
+                            return;
+                        }
                     }
                 }
             }
         }
 
+        if !current() {
+            return;
+        }
         let entity = Entity::new(
             world.clone(),
             Vector3::new(
@@ -830,7 +851,9 @@ impl DragonFight {
         let crystal = Arc::new(EndCrystalEntity::new(entity));
         crystal.set_show_bottom(true);
         crystal.set_invulnerable(false);
-        world.spawn_entity_non_save(crystal);
+        let crystal: Arc<dyn EntityBase> = crystal;
+        // A native EntitySpawnEvent may abort after the last block effect, before admission.
+        world.admit_spawn_tree(&crystal, true, current);
     }
 
     pub fn reset_spike_crystals(&self, world: &Arc<World>) {

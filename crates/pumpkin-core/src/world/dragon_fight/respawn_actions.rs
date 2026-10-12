@@ -11,9 +11,12 @@ pub(super) enum RespawnAction {
 
 impl RespawnAction {
     // DragonRespawnStage.tick: run in the same tick, with the fight mutex released.
-    pub(super) fn execute(self, world: &Arc<World>) {
+    pub(super) fn execute(self, world: &Arc<World>, current: impl Fn() -> bool) {
         match self {
             Self::RegenerateSpike(spike) => {
+                if !current() {
+                    return;
+                }
                 for dx in -10i32..=10 {
                     for dy in -10i32..=10 {
                         for dz in -10i32..=10 {
@@ -27,14 +30,23 @@ impl RespawnAction {
                                 && block != &Block::OBSIDIAN
                                 && block != &Block::AIR
                             {
+                                if !current() {
+                                    return;
+                                }
                                 world.set_block_state(
                                     &pos,
                                     Block::AIR.default_state.id,
                                     BlockFlags::NOTIFY_ALL,
                                 );
+                                if !current() {
+                                    return;
+                                }
                             }
                         }
                     }
+                }
+                if !current() {
+                    return;
                 }
                 world.explode(
                     Vector3::new(
@@ -45,7 +57,10 @@ impl RespawnAction {
                     5.0,
                     crate::world::ExplosionInteraction::Block,
                 );
-                DragonFight::regenerate_spike(world, &spike);
+                if !current() {
+                    return;
+                }
+                DragonFight::regenerate_spike(world, &spike, &current);
             }
             Self::DestroyRespawnCrystals(crystals) => {
                 for entity in crystals {

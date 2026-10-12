@@ -62,7 +62,6 @@ pub(super) enum FightAction {
     SpawnGateway(BlockPos),
     PlaceEgg(BlockPos),
     RemoveEntity(Arc<dyn EntityBase>),
-    ReconcileState(bool),
     TryRespawn,
     SpawnDragon(DragonSpawn),
     CompleteRespawn {
@@ -100,13 +99,6 @@ impl FightAction {
                 );
             }
             Self::RemoveEntity(entity) => entity.get_entity().remove(),
-            Self::ReconcileState(active_portal_exists) => {
-                if let Some(fight_mutex) = &world.dragon_fight {
-                    DragonFight::with_fight(fight_mutex, world, |fight| {
-                        fight.reconcile_state(world, active_portal_exists);
-                    });
-                }
-            }
             Self::TryRespawn => {
                 if let Some(fight_mutex) = &world.dragon_fight {
                     DragonFight::with_fight(fight_mutex, world, |fight| {
@@ -130,10 +122,15 @@ impl FightAction {
     // DragonRespawnStage.SUMMONING_PILLARS runs synchronously in vanilla. A reentrant
     // tick may defer its effect past onCrystalDestroyed or a new respawn sequence here.
     fn respawn(world: &Arc<World>, action: RespawnAction, generation: u64) {
+        // Every world effect releases state ownership before native callbacks can run.
+        action.execute(world, || Self::respawn_is_current(world, generation));
+    }
+
+    fn respawn_is_current(world: &Arc<World>, generation: u64) -> bool {
         let Some(mutex) = &world.dragon_fight else {
-            return;
+            return false;
         };
-        let current = DragonFight::with_fight(mutex, world, |fight| {
+        DragonFight::with_fight(mutex, world, |fight| {
             // Advancing animation stages preserves earlier work in the same active sequence.
             if fight.respawn_generation != generation || fight.respawn_stage.is_none() {
                 return false;
@@ -150,11 +147,7 @@ impl FightAction {
                 return false;
             }
             true
-        });
-        if current {
-            // No fight/notification guard survives into block, explosion or spawn callbacks.
-            action.execute(world);
-        }
+        })
     }
 
     // ServerBossEvent.addPlayer only sends while visible; a deferred kill may have hidden it.
@@ -304,7 +297,7 @@ impl FightAction {
             completed
         });
         if finished {
-            RespawnAction::DestroyRespawnCrystals(crystals).execute(world);
+            RespawnAction::DestroyRespawnCrystals(crystals).execute(world, || true);
         }
     }
 
