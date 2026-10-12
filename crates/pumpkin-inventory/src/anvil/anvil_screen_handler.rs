@@ -77,13 +77,8 @@ impl Slot for AnvilResultSlot {
 
         let repair_item_count_cost = self.repair_item_count_cost.load(Ordering::Relaxed);
         if repair_item_count_cost > 0 {
-            let mut addition = self.inventory.get_stack(1);
-            if !addition.is_empty() && addition.item_count > repair_item_count_cost as u8 {
-                addition.decrement(repair_item_count_cost as u8);
-                self.inventory.set_stack(1, addition);
-            } else {
-                self.inventory.set_stack(1, ItemStack::EMPTY.clone());
-            }
+            self.inventory
+                .remove_stack_specific(1, repair_item_count_cost as u8);
         } else if !self.only_renaming.load(Ordering::Relaxed) {
             self.inventory.set_stack(1, ItemStack::EMPTY.clone());
         }
@@ -503,7 +498,13 @@ impl ScreenHandler for AnvilScreenHandler {
                     if !slot.can_take_items(player) {
                         return ItemStack::EMPTY.clone();
                     }
-                    if !self.insert_item(&mut slot_stack, 3, 39, true) {
+                    if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut slot_stack,
+                        (3, 39, true),
+                        &mut stack_left,
+                    ) {
                         return ItemStack::EMPTY.clone();
                     }
                     slot.on_quick_move_crafted(slot_stack.clone(), stack_left.clone());
@@ -514,13 +515,25 @@ impl ScreenHandler for AnvilScreenHandler {
                 }
                 std::cmp::Ordering::Less => {
                     // Input slots (0, 1): from anvil to player
-                    if !self.insert_item(&mut slot_stack, 3, 39, false) {
+                    if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut slot_stack,
+                        (3, 39, false),
+                        &mut stack_left,
+                    ) {
                         return ItemStack::EMPTY.clone();
                     }
                 }
                 std::cmp::Ordering::Greater => {
                     // From player to anvil input slots (0..2)
-                    if !self.insert_item(&mut slot_stack, 0, 2, false) {
+                    if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut slot_stack,
+                        (0, 2, false),
+                        &mut stack_left,
+                    ) {
                         return ItemStack::EMPTY.clone();
                     }
                 }
@@ -529,8 +542,6 @@ impl ScreenHandler for AnvilScreenHandler {
             if slot_stack.item_count == stack_left.item_count {
                 return ItemStack::EMPTY.clone();
             }
-
-            slot.set_stack_prev(slot_stack.clone(), stack_left.clone());
             slot.on_take_item(player, &slot_stack);
             slot.mark_dirty();
             self.create_result(player.has_infinite_materials());

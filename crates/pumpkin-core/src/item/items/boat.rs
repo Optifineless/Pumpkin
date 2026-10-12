@@ -192,8 +192,12 @@ impl ItemBehaviour for BoatItem {
         world.spawn_entity(boat_entity);
 
         let mut stack = player.inventory.get_stack_in_hand(hand);
+
+        let expected_stack = stack.clone();
         stack.decrement_unless_creative(player.gamemode.load(), 1);
-        player.inventory.set_stack_in_hand(hand, stack);
+        player
+            .inventory
+            .exchange_stack_in_hand(hand, &expected_stack, stack);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

@@ -66,10 +66,13 @@ impl Inventory for PausedChest {
     fn set_stack(&self, slot: usize, stack: ItemStack) {
         self.0.set_stack(slot, stack);
     }
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
-        self.0.update_slot(slot, update);
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+        self.0.update_slot_storage(slot, update);
     }
-    fn slot_transaction(&self, slot: usize) -> Arc<Mutex<()>> {
+    fn slot_transaction(
+        &self,
+        slot: usize,
+    ) -> Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
         self.0.slot_transaction(slot)
     }
     fn mark_dirty(&self) {
@@ -80,7 +83,7 @@ impl Inventory for PausedChest {
     }
 }
 
-fn click() -> SClickSlot {
+pub fn click() -> SClickSlot {
     SClickSlot {
         sync_id: VarInt(1),
         revision: VarInt(0),
@@ -93,7 +96,7 @@ fn click() -> SClickSlot {
     }
 }
 
-fn open_chest(player: &TestPlayer, inventory: Arc<dyn Inventory>) {
+pub fn open_chest(player: &TestPlayer, inventory: Arc<dyn Inventory>) {
     let handler = create_generic_9x3(
         1,
         &player.player.inventory,
@@ -103,7 +106,7 @@ fn open_chest(player: &TestPlayer, inventory: Arc<dyn Inventory>) {
     *player.player.current_screen_handler.lock().unwrap() = Arc::new(Mutex::new(handler));
 }
 
-fn diamonds(inventory: &dyn Inventory) -> u32 {
+pub fn diamonds(inventory: &dyn Inventory) -> u32 {
     (0..inventory.size())
         .map(|slot| {
             let stack = inventory.get_stack(slot);
@@ -116,7 +119,7 @@ fn diamonds(inventory: &dyn Inventory) -> u32 {
         .sum()
 }
 
-fn leave_space(player: &TestPlayer, space: u8) {
+pub fn leave_space(player: &TestPlayer, space: u8) {
     for slot in 0..36 {
         player
             .player

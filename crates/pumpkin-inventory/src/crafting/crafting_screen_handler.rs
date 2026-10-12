@@ -15,8 +15,8 @@
 //! - Special recipes (like decorated pots)
 
 use std::any::Any;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
 
 use super::recipe_matching::recipe_matches;
 use super::recipe_provider::{GenericRecipe, RecipeProvider};
@@ -42,7 +42,7 @@ pub struct ResultSlot {
     /// Protocol ID for this slot (assigned by screen handler).
     pub id: AtomicU8,
     /// The cached result item stack.
-    pub result: Arc<Mutex<ItemStack>>,
+    pub result: Arc<crate::SimpleInventory>,
     /// Provider for dynamic recipes.
     pub recipe_provider: Option<Arc<dyn RecipeProvider>>,
 }
@@ -125,7 +125,7 @@ impl ResultSlot {
         Self {
             inventory,
             id: AtomicU8::new(0),
-            result: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
+            result: Arc::new(crate::SimpleInventory::new(1)),
             recipe_provider: provider,
         }
     }
@@ -138,20 +138,17 @@ impl ResultSlot {
         let result = self
             .match_recipe()
             .map_or_else(|| ItemStack::EMPTY.clone(), |r| r.stack);
-        *self
-            .result
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = result.clone();
+        self.result.set_stack(0, result.clone());
         result
     }
 }
 
 impl Slot for ResultSlot {
     fn get_inventory(&self) -> Arc<dyn Inventory> {
-        self.inventory.clone()
+        self.result.clone()
     }
     fn get_index(&self) -> usize {
-        999
+        0
     }
     fn set_id(&self, id: usize) {
         self.id.store(id as u8, Ordering::Relaxed);
@@ -173,12 +170,13 @@ impl Slot for ResultSlot {
                 if remainder.is_empty() {
                     continue;
                 }
-                if remaining.is_empty() {
-                    self.inventory.set_stack(i, remainder);
-                } else if remaining.are_items_and_components_equal(&remainder) {
-                    remainder.increment(remaining.item_count);
-                    self.inventory.set_stack(i, remainder);
-                } else {
+                crate::inventory::slot_transaction::deposit(
+                    self.inventory.as_ref(),
+                    i,
+                    &mut remainder,
+                    remaining.get_max_stack_size(),
+                );
+                if !remainder.is_empty() {
                     crate::screen_handler::offer_or_drop_stack(player, remainder);
                 }
             }
@@ -190,23 +188,13 @@ impl Slot for ResultSlot {
         false
     }
     fn get_stack(&self) -> ItemStack {
-        self.result
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.result.get_stack(0)
     }
     fn get_cloned_stack(&self) -> ItemStack {
-        self.result
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.result.get_stack(0)
     }
     fn has_stack(&self) -> bool {
-        !self
-            .result
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
+        !self.result.get_stack(0).is_empty()
     }
     fn set_stack(&self, _stack: ItemStack) {
         self.refill_output();
@@ -228,14 +216,11 @@ impl Slot for ResultSlot {
         count
     }
     fn take_stack(&self, _amount: u8) -> ItemStack {
-        // ResultSlot.remove -> Slot.remove -> ResultContainer.removeItem takes the entire craft.
-        std::mem::replace(
-            &mut *self
-                .result
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-            ItemStack::EMPTY.clone(),
-        )
+        self.result.remove_stack(0)
+    }
+
+    fn withdrawal_count(&self, _amount: u8) -> u8 {
+        u8::MAX
     }
 }
 
@@ -324,36 +309,66 @@ impl ScreenHandler for CraftingTableScreenHandler {
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
         if slot.has_stack() {
             let mut slot_stack = slot.get_stack();
-            let stack_prev = slot_stack.clone();
+            let mut stack_prev = slot_stack.clone();
             if slot_index == 0 {
-                if !self.insert_item(&mut slot_stack, 10, 46, true) {
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
+                    &mut slot_stack,
+                    (10, 46, true),
+                    &mut stack_prev,
+                ) {
                     return ItemStack::EMPTY.clone();
                 }
             } else if (1..=9).contains(&slot_index) {
-                if !self.insert_item(&mut slot_stack, 10, 46, false) {
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
+                    &mut slot_stack,
+                    (10, 46, false),
+                    &mut stack_prev,
+                ) {
                     return ItemStack::EMPTY.clone();
                 }
             } else if (10..46).contains(&slot_index) {
-                if !self.insert_item(&mut slot_stack, 1, 10, false) {
+                if !self.transfer_item(
+                    player,
+                    slot.as_ref(),
+                    &mut slot_stack,
+                    (1, 10, false),
+                    &mut stack_prev,
+                ) {
                     if slot_index < 37 {
-                        if !self.insert_item(&mut slot_stack, 37, 46, false) {
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
+                            &mut slot_stack,
+                            (37, 46, false),
+                            &mut stack_prev,
+                        ) {
                             return ItemStack::EMPTY.clone();
                         }
-                    } else if !self.insert_item(&mut slot_stack, 10, 37, false) {
+                    } else if !self.transfer_item(
+                        player,
+                        slot.as_ref(),
+                        &mut slot_stack,
+                        (10, 37, false),
+                        &mut stack_prev,
+                    ) {
                         return ItemStack::EMPTY.clone();
                     }
                 }
-            } else if !self.insert_item(&mut slot_stack, 10, 46, false) {
+            } else if !self.transfer_item(
+                player,
+                slot.as_ref(),
+                &mut slot_stack,
+                (10, 46, false),
+                &mut stack_prev,
+            ) {
                 return ItemStack::EMPTY.clone();
             }
             let stack = slot_stack.clone();
             drop(slot_stack);
-            if stack.is_empty() {
-                slot.set_stack_prev(ItemStack::EMPTY.clone(), stack_prev.clone());
-            } else {
-                // CraftingMenu.quickMoveStack mutates the source, including partial transfers.
-                slot.set_stack(stack.clone());
-            }
             if stack.item_count == stack_prev.item_count {
                 return ItemStack::EMPTY.clone();
             }

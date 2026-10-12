@@ -20,6 +20,8 @@ pub struct BeaconBlockEntity {
     pub secondary_effect: AtomicI32,
     pub levels: AtomicI32,
     pub dirty: AtomicBool,
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     pub payment: Arc<Mutex<ItemStack>>,
 
     // Vanilla Parity Fields
@@ -45,6 +47,7 @@ impl BeaconBlockEntity {
             secondary_effect: AtomicI32::new(-1),
             levels: AtomicI32::new(0),
             dirty: AtomicBool::new(false),
+            transaction: std::sync::Arc::default(),
             payment: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
             custom_name: Mutex::new(None),
             lock_key: Mutex::new(None),
@@ -269,6 +272,7 @@ impl BlockEntity for BeaconBlockEntity {
             secondary_effect: AtomicI32::new(secondary),
             levels: AtomicI32::new(levels),
             dirty: AtomicBool::new(false),
+            transaction: std::sync::Arc::default(),
             payment: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
             custom_name: Mutex::new(custom_name),
             lock_key: Mutex::new(lock_key),
@@ -361,7 +365,14 @@ impl BlockEntity for BeaconBlockEntity {
 }
 
 impl Inventory for BeaconBlockEntity {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         if slot == 0 {
             let mut payment = self
                 .payment
@@ -394,45 +405,37 @@ impl Inventory for BeaconBlockEntity {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        if slot == 0 {
-            let mut removed = ItemStack::EMPTY.clone();
-            let mut guard = self
-                .payment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::swap(&mut removed, &mut *guard);
-            self.mark_dirty();
-            removed
-        } else {
-            ItemStack::EMPTY.clone()
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
         }
+        removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        if slot == 0 {
-            let mut stack = self
-                .payment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if stack.is_empty() {
-                return ItemStack::EMPTY.clone();
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
             }
-            let res = stack.split(amount);
-            self.mark_dirty();
-            res
-        } else {
-            ItemStack::EMPTY.clone()
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
         }
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        if slot == 0 {
-            *self
-                .payment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = stack;
-            self.mark_dirty();
-        }
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
     }
 
     fn mark_dirty(&self) {
@@ -446,8 +449,6 @@ impl Inventory for BeaconBlockEntity {
 
 impl Clearable for BeaconBlockEntity {
     fn clear(&self) {
-        if let Ok(mut payment) = self.payment.try_lock() {
-            *payment = ItemStack::EMPTY.clone();
-        }
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }

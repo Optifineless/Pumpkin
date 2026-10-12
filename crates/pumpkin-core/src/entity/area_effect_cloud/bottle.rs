@@ -26,6 +26,7 @@ pub fn try_bottle(player: &Player, hand: Hand) -> bool {
         return false;
     };
     let mut held = player.inventory().get_stack_in_hand(hand);
+    let expected = held.clone();
     if held.is_empty() || held.item != &Item::GLASS_BOTTLE {
         return false;
     }
@@ -47,10 +48,20 @@ pub fn try_bottle(player: &Player, hand: Hand) -> bool {
             player.inventory().insert_stack_anywhere(&mut result);
         }
     } else if held.item_count == 1 {
-        player.inventory().set_stack_in_hand(hand, result);
+        if !player
+            .inventory()
+            .exchange_stack_in_hand(hand, &expected, result)
+        {
+            return false;
+        }
     } else {
         held.decrement_unless_creative(player.gamemode.load(), 1);
-        player.inventory().set_stack_in_hand(hand, held);
+        if !player
+            .inventory()
+            .exchange_stack_in_hand(hand, &expected, held)
+        {
+            return false;
+        }
         player.inventory().insert_stack_anywhere(&mut result);
         if !result.is_empty() {
             world.drop_stack(&player.position().to_block_pos(), result);

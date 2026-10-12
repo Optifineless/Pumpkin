@@ -30,9 +30,12 @@ impl ItemBehaviour for KnowledgeBookItem {
         hand: pumpkin_util::Hand,
     ) {
         let mut stack = player.inventory().get_stack_in_hand(hand);
+        let expected_stack = stack.clone();
         let _recipes = stack.get_data_component::<RecipesImpl>();
         stack.decrement_unless_creative(player.gamemode.load(), 1);
-        player.inventory().set_stack_in_hand(hand, stack);
+        player
+            .inventory()
+            .exchange_stack_in_hand(hand, &expected_stack, stack);
     }
 
     fn as_any(&self) -> &dyn Any {

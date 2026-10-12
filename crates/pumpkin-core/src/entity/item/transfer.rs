@@ -32,16 +32,9 @@ impl ItemEntity {
         #[cfg(test)]
         self.pause_transfer();
         let mut owners = slot_transaction::ordered_owners(&[destination]);
-        owners.push(slot_transaction::owner(self));
+        owners.push(self.transaction.clone());
         owners.sort_unstable_by_key(std::sync::Arc::as_ptr);
-        let transfers = owners
-            .iter()
-            .map(|owner| {
-                owner
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-            })
-            .collect::<Vec<_>>();
+        let transfers = pumpkin_inventory::inventory::slot_transaction::lock_owners(&owners);
         let (original, mut withdrawn) = self.withdraw_for_insertion(destination);
         if withdrawn.is_empty() {
             return (original.item.id, original.item_count, 0, false);
@@ -132,10 +125,8 @@ impl ItemEntity {
     }
 
     pub(super) fn stack_snapshot(&self) -> ItemStack {
-        let owner = slot_transaction::owner(self);
-        let _transfer = owner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let owner = self.transaction.clone();
+        let _transfer = owner.lock();
         self.item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -143,10 +134,8 @@ impl ItemEntity {
     }
 
     pub(super) fn stack_is_empty_between_transfers(&self) -> bool {
-        let owner = slot_transaction::owner(self);
-        let _transfer = owner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let owner = self.transaction.clone();
+        let _transfer = owner.lock();
         self.item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

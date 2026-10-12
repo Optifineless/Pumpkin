@@ -305,7 +305,13 @@ impl ScreenHandler for LoomScreenHandler {
                 stack = slot_stack.clone();
                 match slot_index.cmp(&3) {
                     std::cmp::Ordering::Equal => {
-                        if !self.insert_item(&mut slot_stack, 4, 40, true) {
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
+                            &mut slot_stack,
+                            (4, 40, true),
+                            &mut stack,
+                        ) {
                             return ItemStack::EMPTY.clone();
                         }
                         slot.on_quick_move_crafted(slot_stack.clone(), stack.clone());
@@ -314,41 +320,71 @@ impl ScreenHandler for LoomScreenHandler {
                         slot.on_take_item(player, &taken_stack);
                     }
                     std::cmp::Ordering::Less => {
-                        if !self.insert_item(&mut slot_stack, 4, 40, false) {
+                        if !self.transfer_item(
+                            player,
+                            slot.as_ref(),
+                            &mut slot_stack,
+                            (4, 40, false),
+                            &mut stack,
+                        ) {
                             return ItemStack::EMPTY.clone();
                         }
                     }
                     std::cmp::Ordering::Greater => {
                         if is_banner_item(slot_stack.item) {
-                            if !self.insert_item(&mut slot_stack, 0, 1, false) {
+                            if !self.transfer_item(
+                                player,
+                                slot.as_ref(),
+                                &mut slot_stack,
+                                (0, 1, false),
+                                &mut stack,
+                            ) {
                                 return ItemStack::EMPTY.clone();
                             }
                         } else if is_dye_item(slot_stack.item) {
-                            if !self.insert_item(&mut slot_stack, 1, 2, false) {
+                            if !self.transfer_item(
+                                player,
+                                slot.as_ref(),
+                                &mut slot_stack,
+                                (1, 2, false),
+                                &mut stack,
+                            ) {
                                 return ItemStack::EMPTY.clone();
                             }
                         } else if is_pattern_item(slot_stack.item) {
-                            if !self.insert_item(&mut slot_stack, 2, 3, false) {
+                            if !self.transfer_item(
+                                player,
+                                slot.as_ref(),
+                                &mut slot_stack,
+                                (2, 3, false),
+                                &mut stack,
+                            ) {
                                 return ItemStack::EMPTY.clone();
                             }
                         } else if (4..31).contains(&slot_index) {
-                            if !self.insert_item(&mut slot_stack, 31, 40, false) {
+                            if !self.transfer_item(
+                                player,
+                                slot.as_ref(),
+                                &mut slot_stack,
+                                (31, 40, false),
+                                &mut stack,
+                            ) {
                                 return ItemStack::EMPTY.clone();
                             }
                         } else if (31..40).contains(&slot_index)
-                            && !self.insert_item(&mut slot_stack, 4, 31, false)
+                            && !self.transfer_item(
+                                player,
+                                slot.as_ref(),
+                                &mut slot_stack,
+                                (4, 31, false),
+                                &mut stack,
+                            )
                         {
                             return ItemStack::EMPTY.clone();
                         }
                     }
                 }
                 self.slots_changed();
-
-                if slot_stack.is_empty() {
-                    slot.set_stack(ItemStack::EMPTY.clone());
-                } else {
-                    slot.set_stack(slot_stack);
-                }
             }
         }
         stack

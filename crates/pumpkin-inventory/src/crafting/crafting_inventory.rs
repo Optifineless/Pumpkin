@@ -32,6 +32,7 @@ pub struct CraftingInventory {
     pub width: u8,
     /// Height of the crafting grid (typically 2 or 3).
     pub height: u8,
+    pub(crate) transaction: std::sync::Arc<crate::inventory::slot_transaction::Transaction>,
     /// Items in the crafting grid, stored row by row.
     pub items: RwLock<Vec<ItemStack>>,
 }
@@ -57,6 +58,7 @@ impl CraftingInventory {
         Self {
             width,
             height,
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(vec![
                 ItemStack::EMPTY.clone();
                 width as usize * height as usize
@@ -66,7 +68,14 @@ impl CraftingInventory {
 }
 
 impl Inventory for CraftingInventory {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<crate::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .items
             .write()
@@ -101,37 +110,32 @@ impl Inventory for CraftingInventory {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < items.len() {
-            std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone())
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+
+        removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < items.len() && !items[slot].is_empty() && amount > 0 {
-            items[slot].split(amount)
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if slot < items.len() {
-            items[slot] = stack;
-        }
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -151,10 +155,6 @@ impl RecipeInputInventory for CraftingInventory {
 
 impl Clearable for CraftingInventory {
     fn clear(&self) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items.fill_with(|| ItemStack::EMPTY.clone());
+        crate::inventory::slot_transaction::clear(self);
     }
 }

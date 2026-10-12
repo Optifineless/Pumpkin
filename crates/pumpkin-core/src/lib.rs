@@ -59,6 +59,8 @@ pub mod enchantment;
 pub mod entity;
 pub mod error;
 #[cfg(test)]
+mod inventory_transaction_followup_tests;
+#[cfg(test)]
 mod inventory_transaction_tests;
 pub mod item;
 pub mod logging;
@@ -906,3 +908,9 @@ fn adjust_file_descriptor_limit() {
         );
     }
 }
+
+#[cfg(test)]
+mod inventory_transaction_block_use_tests;
+
+#[cfg(test)]
+mod inventory_transaction_crossbow_tests;

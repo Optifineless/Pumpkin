@@ -28,28 +28,16 @@ impl BedrockClient {
         let slot_with_stack = player.inventory().get_slot_with_stack(&stack);
 
         if slot_with_stack != -1 {
-            if pumpkin_inventory::player::player_inventory::PlayerInventory::is_valid_hotbar_index(
-                slot_with_stack as usize,
-            ) {
-                if slot_with_stack as usize != target_hotbar_slot {
-                    let target_stack = player.inventory().get_stack(target_hotbar_slot);
-                    let source_stack = player.inventory().get_stack(slot_with_stack as usize);
-                    player
-                        .inventory()
-                        .set_stack(target_hotbar_slot, source_stack);
-                    player
-                        .inventory()
-                        .set_stack(slot_with_stack as usize, target_stack);
-                }
-            } else {
-                let target_stack = player.inventory().get_stack(target_hotbar_slot);
-                let source_stack = player.inventory().get_stack(slot_with_stack as usize);
-                player
-                    .inventory()
-                    .set_stack(target_hotbar_slot, source_stack);
-                player
-                    .inventory
-                    .set_stack(slot_with_stack as usize, target_stack);
+            let inventory = player.inventory();
+            let owner = inventory.slot_transaction(0);
+            let _guard = owner.lock();
+            if slot_with_stack as usize != target_hotbar_slot {
+                let target = inventory.get_stack(target_hotbar_slot);
+                let source = inventory.get_stack(slot_with_stack as usize);
+                inventory.update_slot(target_hotbar_slot, &mut |stack| *stack = source.clone());
+                inventory.update_slot(slot_with_stack as usize, &mut |stack| {
+                    *stack = target.clone();
+                });
             }
         } else if player.gamemode.load() == GameMode::Creative {
             player.inventory.set_stack(target_hotbar_slot, stack);

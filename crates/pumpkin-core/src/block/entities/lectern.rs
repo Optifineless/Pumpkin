@@ -16,6 +16,8 @@ use pumpkin_inventory::{Clearable, Inventory};
 
 pub struct LecternBlockEntity {
     pub position: BlockPos,
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     pub book: Arc<Mutex<ItemStack>>,
     pub page: AtomicUsize,
     pub dirty: AtomicBool,
@@ -50,6 +52,7 @@ impl BlockEntity for LecternBlockEntity {
         Self {
             position,
             book,
+            transaction: Arc::default(),
             page: AtomicUsize::new(page),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -110,6 +113,7 @@ impl LecternBlockEntity {
     pub fn new(position: BlockPos) -> Self {
         Self {
             position,
+            transaction: std::sync::Arc::default(),
             book: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
             page: AtomicUsize::new(0),
             dirty: AtomicBool::new(false),
@@ -162,7 +166,14 @@ impl LecternBlockEntity {
 }
 
 impl Inventory for LecternBlockEntity {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         if slot != 0 {
             return;
         }
@@ -195,38 +206,38 @@ impl Inventory for LecternBlockEntity {
             .clone()
     }
 
-    fn remove_stack(&self, _slot: usize) -> ItemStack {
+    fn remove_stack(&self, slot: usize) -> ItemStack {
         let mut removed = ItemStack::EMPTY.clone();
-        let mut guard = self
-            .book
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        std::mem::swap(&mut removed, &mut *guard);
-        self.mark_dirty();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
         removed
     }
 
-    fn remove_stack_specific(&self, _slot: usize, amount: u8) -> ItemStack {
-        let mut stack = self
-            .book
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if stack.is_empty() {
-            return ItemStack::EMPTY.clone();
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
         }
-        let res = stack.split(amount);
-        self.mark_dirty();
-        res
+        removed
     }
 
-    fn set_stack(&self, _slot: usize, stack: ItemStack) {
-        *self
-            .book
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = stack;
-        // A freshly placed book always opens on its first page.
-        self.page.store(0, Ordering::Relaxed);
-        self.mark_dirty();
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
     }
 
     fn mark_dirty(&self) {
@@ -241,10 +252,6 @@ impl Inventory for LecternBlockEntity {
 
 impl Clearable for LecternBlockEntity {
     fn clear(&self) {
-        *self
-            .book
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = ItemStack::EMPTY.clone();
-        self.mark_dirty();
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }

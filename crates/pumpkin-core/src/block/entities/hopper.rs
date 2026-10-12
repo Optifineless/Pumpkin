@@ -1,4 +1,4 @@
-use super::hopper_container::{get_container_at, with_inventory_slot};
+use super::hopper_container::get_container_at;
 use crate::block::entities::BlockEntity;
 use crate::entity::item::ItemEntity;
 use crate::world::World;
@@ -25,6 +25,8 @@ const SUCK_AABB: BoundingBox = BoundingBox::new_array([0.0, 11.0 / 16.0, 0.0], [
 
 pub struct HopperBlockEntity {
     pub position: BlockPos,
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
@@ -51,17 +53,6 @@ fn hopper_properties(block: BlockId, state_id: BlockStateId) -> Option<HopperLik
     (block == BlockId::HOPPER).then(|| HopperLikeProperties::from_state_id(state_id))
 }
 
-/// One item taken out of a slot, with what the slot held before and after the removal.
-///
-/// A compare-and-swap: the offer runs without the source lock (holding it across
-/// [`HopperBlockEntity::add_one_item`] deadlocks two hoppers facing each other), so the rollback
-/// has to compare against `remainder` to tell an untouched slot from someone else's write.
-struct Extraction {
-    one_item: ItemStack,
-    snapshot: ItemStack,
-    remainder: ItemStack,
-}
-
 impl BlockEntity for HopperBlockEntity {
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put(
@@ -77,6 +68,7 @@ impl BlockEntity for HopperBlockEntity {
     {
         let mut hopper = Self {
             position,
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -173,6 +165,7 @@ impl HopperBlockEntity {
     pub fn new(position: BlockPos, facing: FacingHopper) -> Self {
         Self {
             position,
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -233,16 +226,14 @@ impl HopperBlockEntity {
             for i in 0..container.size() {
                 let item = container.get_stack(i);
                 if !item.is_empty() && container.can_transfer_to(self, i, &item) {
-                    // HopperBlockEntity.tryTakeInItemFromSlot removes before offering.
-                    let Some(extraction) = Self::take_from(container.as_ref(), i) else {
-                        continue;
-                    };
-                    if Self::add_one_item(container.as_ref(), self, &extraction.one_item) {
-                        return true;
-                    }
-                    if let Some(leftover) = Self::restore_to(container.as_ref(), i, extraction) {
+                    let (moved, leftover) =
+                        Self::transfer_one(container.as_ref(), self, i, &item, None);
+                    if !leftover.is_empty() {
                         let pos = pos_up.to_centered_f64();
                         world.scatter_stack(pos.x, pos.y, pos.z, leftover);
+                    }
+                    if moved {
+                        return true;
                     }
                 }
             }
@@ -287,66 +278,6 @@ impl HopperBlockEntity {
         false
     }
 
-    /// Splits one item off `slot`. One lock for read and write, so the snapshot is the state the
-    /// removal really happened on and not an older one. `None` when the slot is empty by then.
-    fn take_one(&self, slot: usize) -> Option<Extraction> {
-        Self::take_from(self, slot)
-    }
-
-    fn take_from(container: &dyn Inventory, slot: usize) -> Option<Extraction> {
-        let extraction = with_inventory_slot(container, slot, |stack| {
-            if stack.is_empty() {
-                return None;
-            }
-            let snapshot = stack.clone();
-            let one_item = stack.split(1);
-            Some(Extraction {
-                one_item,
-                snapshot,
-                remainder: stack.clone(),
-            })
-        });
-        if extraction.is_some() {
-            container.mark_dirty();
-        }
-        extraction
-    }
-
-    /// Undoes [`Self::take_one`] after a failed offer, handing the item back when the slot has no
-    /// room for it any more.
-    ///
-    /// The snapshot only fits a slot nobody wrote to, so it is restored on a match and dropped on
-    /// a mismatch, writing it anyway would undo the other write, in either direction.
-    fn put_back(&self, slot: usize, extraction: Extraction) -> Option<ItemStack> {
-        Self::restore_to(self, slot, extraction)
-    }
-
-    fn restore_to(
-        container: &dyn Inventory,
-        slot: usize,
-        extraction: Extraction,
-    ) -> Option<ItemStack> {
-        let leftover = with_inventory_slot(container, slot, |current| {
-            if current.are_equal(&extraction.remainder) {
-                *current = extraction.snapshot;
-                return None;
-            }
-            if current.is_empty() {
-                *current = extraction.one_item;
-                return None;
-            }
-            if current.are_items_and_components_equal(&extraction.one_item)
-                && current.item_count < current.get_max_stack_size()
-            {
-                current.item_count += 1;
-                return None;
-            }
-            Some(extraction.one_item)
-        });
-        container.mark_dirty();
-        leftover
-    }
-
     /// `facing` comes from the live block state: `self.facing` is never updated for hoppers
     /// loaded from disk, so it would read `Down` for every side-facing hopper after a reload.
     fn eject_items(&self, world: &Arc<World>, facing: FacingHopper) -> bool {
@@ -385,15 +316,6 @@ impl HopperBlockEntity {
                 if move_event.cancelled {
                     continue;
                 }
-                // Vanilla `HopperBlockEntity.ejectItems`: actually remove the item from the
-                // hopper before offering it to the target, restoring it on failure. Reading a
-                // clone and never writing back left the source stack untouched, duplicating
-                // the item into the target while the hopper kept its full stack.
-                let Some(extraction) = self.take_one(slot) else {
-                    // Emptied while the event was firing. An empty stack takes `add_one_item`'s
-                    // `dst.is_empty()` branch and reports a transfer that never happened.
-                    continue;
-                };
                 // HopperBlockEntity.addItem supplies the destination face.
                 let incoming_face = match facing {
                     FacingHopper::Down => pumpkin_data::BlockDirection::Up,
@@ -402,20 +324,14 @@ impl HopperBlockEntity {
                     FacingHopper::West => pumpkin_data::BlockDirection::East,
                     FacingHopper::East => pumpkin_data::BlockDirection::West,
                 };
-                if Self::add_item_from_face(
-                    Some(self),
-                    container.as_ref(),
-                    extraction.one_item.clone(),
-                    Some(incoming_face),
-                )
-                .is_empty()
-                {
-                    return true;
-                }
-                if let Some(leftover) = self.put_back(slot, extraction) {
-                    // Slot is someone else's now and full -> dropping beats overwriting or voiding.
+                let (moved, leftover) =
+                    Self::transfer_one(self, container.as_ref(), slot, &item, Some(incoming_face));
+                if !leftover.is_empty() {
                     let pos = self.position.to_centered_f64();
                     world.scatter_stack(pos.x, pos.y, pos.z, leftover);
+                }
+                if moved {
+                    return true;
                 }
             }
         }
@@ -428,7 +344,7 @@ impl HopperBlockEntity {
     /// Vanilla `addItem(Container, ItemEntity)`: moves as much of the entity's stack as fits, and
     /// only counts as a transfer once all of it is in.
     pub(crate) fn add_item_entity(to: &dyn Inventory, item_entity: &ItemEntity) -> bool {
-        let mut changed_slots = Vec::new();
+        let mut changed_slots = pumpkin_inventory::inventory::slot_transaction::ChangedSlots::new();
         let (_, original_count, moved, empty) = item_entity.transfer_stack(to, |stack| {
             let (remaining, changed) =
                 Self::add_item_from_face_deferred(None, to, stack.clone(), None);
@@ -470,8 +386,11 @@ impl HopperBlockEntity {
         to: &dyn Inventory,
         mut stack: ItemStack,
         face: Option<pumpkin_data::BlockDirection>,
-    ) -> (ItemStack, Vec<usize>) {
-        let mut changed = Vec::new();
+    ) -> (
+        ItemStack,
+        pumpkin_inventory::inventory::slot_transaction::ChangedSlots,
+    ) {
+        let mut changed = pumpkin_inventory::inventory::slot_transaction::ChangedSlots::new();
         // BrewingStandBlockEntity.getSlotsForFace.
         let slots: &[usize] = if to
             .as_any()
@@ -515,9 +434,9 @@ impl HopperBlockEntity {
         let to_empty = to.is_empty();
         // Vanilla `Container.getMaxStackSize(ItemStack)`, which `setItem` limits the slot to.
         let max_count = to.get_max_count_per_stack().min(stack.get_max_stack_size());
-        let success = with_inventory_slot(to, slot, |dst| {
-            Self::merge_into_slot(dst, &mut stack, max_count)
-        });
+        let original_count = stack.item_count;
+        pumpkin_inventory::inventory::slot_transaction::deposit(to, slot, &mut stack, max_count);
+        let success = stack.item_count < original_count;
         if success
             && to_empty
             && let Some(hopper) = to.as_any().downcast_ref::<Self>()
@@ -537,32 +456,17 @@ impl HopperBlockEntity {
         }
         (stack, success)
     }
-
-    /// The slot half of vanilla `tryMoveInItem`: fills an empty `dst` from `stack`, or tops `dst`
-    /// up from it, up to `max_count`. Returns whether anything moved.
-    ///
-    /// Vanilla's `setItem` drops whatever is over the limit; here it stays in `stack`.
-    fn merge_into_slot(dst: &mut ItemStack, stack: &mut ItemStack, max_count: u8) -> bool {
-        if dst.is_empty() {
-            *dst = if stack.item_count > max_count {
-                stack.split(max_count)
-            } else {
-                std::mem::replace(stack, ItemStack::EMPTY.clone())
-            };
-            true
-        } else if dst.item_count < max_count && dst.are_items_and_components_equal(stack) {
-            let count = (max_count - dst.item_count).min(stack.item_count);
-            stack.decrement(count);
-            dst.increment(count);
-            true
-        } else {
-            false
-        }
-    }
 }
 
 impl Inventory for HopperBlockEntity {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .items
             .write()
@@ -594,36 +498,37 @@ impl Inventory for HopperBlockEntity {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let removed = std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
         removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let res = if !items[slot].is_empty() && amount > 0 {
-            items[slot].split(amount)
-        } else {
-            ItemStack::EMPTY.clone()
-        };
-        self.mark_dirty();
-        res
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items[slot] = stack;
-        self.mark_dirty();
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
     }
 
     fn mark_dirty(&self) {
@@ -638,12 +543,7 @@ impl Inventory for HopperBlockEntity {
 
 impl Clearable for HopperBlockEntity {
     fn clear(&self) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items.fill_with(|| ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }
 
@@ -730,11 +630,13 @@ mod tests {
     fn take_one_splits_a_single_item_off() {
         let hopper = hopper_holding(ItemStack::new(10, &Item::DIAMOND));
 
-        let extraction = hopper.take_one(0).unwrap();
+        let expected = hopper.get_stack(0);
+        let one =
+            pumpkin_inventory::inventory::slot_transaction::withdraw(&hopper, 0, &expected, 1);
 
-        assert_eq!(extraction.one_item.item_count, 1);
-        assert_eq!(extraction.snapshot.item_count, 10);
-        assert_eq!(extraction.remainder.item_count, 9);
+        assert_eq!(one.item_count, 1);
+        assert_eq!(expected.item_count, 10);
+        assert_eq!(hopper.get_stack(0).item_count, 9);
         assert_eq!(hopper.get_stack(0).item_count, 9);
     }
 
@@ -742,15 +644,24 @@ mod tests {
     fn take_one_on_an_empty_slot_extracts_nothing() {
         let hopper = hopper_holding(ItemStack::EMPTY.clone());
 
-        assert!(hopper.take_one(0).is_none());
+        let expected = hopper.get_stack(0);
+        assert!(
+            pumpkin_inventory::inventory::slot_transaction::withdraw(&hopper, 0, &expected, 1)
+                .is_empty()
+        );
     }
 
     #[test]
     fn untouched_slot_gets_the_snapshot_back() {
         let hopper = hopper_holding(ItemStack::new(10, &Item::DIAMOND));
-        let extraction = hopper.take_one(0).unwrap();
+        let expected = hopper.get_stack(0);
+        let one =
+            pumpkin_inventory::inventory::slot_transaction::withdraw(&hopper, 0, &expected, 1);
 
-        assert!(hopper.put_back(0, extraction).is_none());
+        assert!(
+            pumpkin_inventory::inventory::slot_transaction::refund(&hopper, 0, &expected, one)
+                .is_empty()
+        );
         assert_eq!(hopper.get_stack(0).item_count, 10);
     }
 
@@ -759,10 +670,15 @@ mod tests {
     #[test]
     fn changed_count_takes_back_one_item_not_the_snapshot() {
         let hopper = hopper_holding(ItemStack::new(10, &Item::DIAMOND));
-        let extraction = hopper.take_one(0).unwrap();
+        let expected = hopper.get_stack(0);
+        let one =
+            pumpkin_inventory::inventory::slot_transaction::withdraw(&hopper, 0, &expected, 1);
         hopper.set_stack(0, ItemStack::new(3, &Item::DIAMOND));
 
-        assert!(hopper.put_back(0, extraction).is_none());
+        assert!(
+            pumpkin_inventory::inventory::slot_transaction::refund(&hopper, 0, &expected, one)
+                .is_empty()
+        );
         assert_eq!(hopper.get_stack(0).item_count, 4);
     }
 
@@ -771,10 +687,13 @@ mod tests {
     #[test]
     fn foreign_item_in_the_slot_is_left_alone() {
         let hopper = hopper_holding(ItemStack::new(1, &Item::DIAMOND));
-        let extraction = hopper.take_one(0).unwrap();
+        let expected = hopper.get_stack(0);
+        let one =
+            pumpkin_inventory::inventory::slot_transaction::withdraw(&hopper, 0, &expected, 1);
         hopper.set_stack(0, ItemStack::new(64, &Item::DIRT));
 
-        let leftover = hopper.put_back(0, extraction).unwrap();
+        let leftover =
+            pumpkin_inventory::inventory::slot_transaction::refund(&hopper, 0, &expected, one);
 
         assert_eq!(leftover.get_item().id, Item::DIAMOND.id);
         assert_eq!(leftover.item_count, 1);
@@ -787,10 +706,15 @@ mod tests {
     #[test]
     fn emptied_slot_takes_the_single_item() {
         let hopper = hopper_holding(ItemStack::new(10, &Item::DIAMOND));
-        let extraction = hopper.take_one(0).unwrap();
+        let expected = hopper.get_stack(0);
+        let one =
+            pumpkin_inventory::inventory::slot_transaction::withdraw(&hopper, 0, &expected, 1);
         hopper.set_stack(0, ItemStack::EMPTY.clone());
 
-        assert!(hopper.put_back(0, extraction).is_none());
+        assert!(
+            pumpkin_inventory::inventory::slot_transaction::refund(&hopper, 0, &expected, one)
+                .is_empty()
+        );
         assert_eq!(hopper.get_stack(0).item_count, 1);
     }
 
@@ -798,11 +722,14 @@ mod tests {
     #[test]
     fn full_slot_of_the_same_item_hands_the_item_back() {
         let hopper = hopper_holding(ItemStack::new(10, &Item::DIAMOND));
-        let extraction = hopper.take_one(0).unwrap();
+        let expected = hopper.get_stack(0);
+        let one =
+            pumpkin_inventory::inventory::slot_transaction::withdraw(&hopper, 0, &expected, 1);
         let max = ItemStack::new(1, &Item::DIAMOND).get_max_stack_size();
         hopper.set_stack(0, ItemStack::new(max, &Item::DIAMOND));
 
-        let leftover = hopper.put_back(0, extraction).unwrap();
+        let leftover =
+            pumpkin_inventory::inventory::slot_transaction::refund(&hopper, 0, &expected, one);
 
         assert_eq!(leftover.item_count, 1);
         assert_eq!(hopper.get_stack(0).item_count, max);

@@ -1,4 +1,5 @@
 pub(crate) use explosion::ExplosionDamageSource;
+mod container_lifecycle;
 mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
@@ -744,7 +745,7 @@ impl World {
             .map(|chunk_block_entities| *chunk_block_entities.key())
             .collect();
         for chunk_pos in chunks {
-            self.save_block_entities(chunk_pos);
+            self.save_block_entities(chunk_pos, true);
         }
 
         // Save portal POI to disk
@@ -827,7 +828,7 @@ impl World {
     /// `get_block_entity` takes the saved NBT out of the chunk when it wakes an
     /// entity up - so this has to run before the chunk is dropped, or everything
     /// the entity did since it was loaded is lost.
-    fn save_block_entities(&self, chunk_pos: Vector2<i32>) {
+    fn save_block_entities(&self, chunk_pos: Vector2<i32>, retire: bool) {
         let Some(block_entities) = self
             .block_entities
             .get(&chunk_pos)
@@ -837,6 +838,9 @@ impl World {
         };
 
         for block_entity in block_entities {
+            if retire {
+                container_lifecycle::retire_block_entity(&block_entity);
+            }
             let mut nbt = NbtCompound::new();
             block_entity.write_internal(&mut nbt);
             if let Some(custom_data) = self
@@ -5020,6 +5024,7 @@ impl World {
             return;
         }
         self.clear_fishing_hook_owner(base_entity);
+        self.retire_removed_container(entity);
         base_entity.removed.store(true, Ordering::Release);
 
         self.spawn_state.load().remove_entity(self, entity);
@@ -5375,6 +5380,7 @@ impl World {
 
         self.block_registry
             .player_will_destroy(self, cause, position, broken_block_state);
+        self.retire_container(position);
 
         if !flags.contains(BlockFlags::SKIP_DROPS) {
             let tool = cause.as_ref().and_then(|p| {
@@ -5824,12 +5830,14 @@ impl World {
         position: &BlockPos,
         inventory: &Arc<dyn Inventory>,
     ) {
-        for i in 0..inventory.size() {
+        for stack in
+            pumpkin_inventory::inventory::slot_transaction::retire_and_drain(inventory.as_ref())
+        {
             self.scatter_stack(
                 f64::from(position.0.x),
                 f64::from(position.0.y),
                 f64::from(position.0.z),
-                inventory.remove_stack(i),
+                stack,
             );
         }
     }
@@ -6228,6 +6236,7 @@ impl World {
     }
 
     pub fn add_block_entity(&self, block_entity: Arc<dyn BlockEntity>) {
+        self.retire_replaced_container(&block_entity);
         self.bind_block_entity_context(block_entity.as_ref());
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
@@ -6282,6 +6291,7 @@ impl World {
     }
 
     pub fn remove_block_entity(&self, block_pos: &BlockPos) {
+        self.retire_container(block_pos);
         self.remove_loaded_block_entity(block_pos);
     }
 
@@ -6923,7 +6933,7 @@ impl World {
             .map(|chunk_block_entities| *chunk_block_entities.key())
             .collect();
         for chunk_pos in chunks {
-            self.save_block_entities(chunk_pos);
+            self.save_block_entities(chunk_pos, false);
         }
 
         if let Ok(mut portal_poi) = self.portal_poi.try_lock() {

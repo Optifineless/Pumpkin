@@ -125,6 +125,7 @@ pub mod emote;
 pub mod emote_list;
 pub mod interaction;
 pub mod inventory_action;
+mod inventory_commit;
 #[cfg(test)]
 mod inventory_exploit_tests;
 mod inventory_request_validation;

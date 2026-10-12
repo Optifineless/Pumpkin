@@ -127,14 +127,7 @@ impl gui::HostGui for PluginHostState {
     ) -> wasmtime::Result<()> {
         let item_stack = self.take(item)?.lock().await.clone();
         let gui = self.get(&res)?.lock().await;
-        let mut slots = gui
-            .inventory
-            .slots
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if (slot as usize) < slots.len() {
-            slots[slot as usize] = item_stack;
-        }
+        pumpkin_inventory::Inventory::set_stack(gui.inventory.as_ref(), slot as usize, item_stack);
         Ok(())
     }
 

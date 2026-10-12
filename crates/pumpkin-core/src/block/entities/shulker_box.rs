@@ -17,6 +17,8 @@ use pumpkin_inventory::{Clearable, Inventory};
 pub struct ShulkerBoxBlockEntity {
     pub position: BlockPos,
     pub lock: super::container_lock::ContainerLock,
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     pub items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
@@ -44,6 +46,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
         let mut shulker_box = Self {
             position,
             lock: super::container_lock::ContainerLock::from_nbt(nbt),
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -103,6 +106,11 @@ impl BlockEntity for ShulkerBoxBlockEntity {
             return;
         };
 
+        let owner = self.slot_transaction(0);
+        let _guard = owner.lock();
+        if !owner.is_live() {
+            return;
+        }
         let mut items = self
             .items
             .write()
@@ -174,6 +182,7 @@ impl ShulkerBoxBlockEntity {
         Self {
             position,
             lock: super::container_lock::ContainerLock::default(),
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -198,7 +207,14 @@ impl ShulkerBoxBlockEntity {
 }
 
 impl Inventory for ShulkerBoxBlockEntity {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .items
             .write()
@@ -230,36 +246,37 @@ impl Inventory for ShulkerBoxBlockEntity {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let removed = std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
         removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let res = if !items[slot].is_empty() && amount > 0 {
-            items[slot].split(amount)
-        } else {
-            ItemStack::EMPTY.clone()
-        };
-        self.mark_dirty();
-        res
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+        if !removed.is_empty() {
+            self.on_slot_changed(slot);
+        }
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items[slot] = stack;
-        self.mark_dirty();
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
     }
 
     fn on_open(&self) {
@@ -282,11 +299,6 @@ impl Inventory for ShulkerBoxBlockEntity {
 
 impl Clearable for ShulkerBoxBlockEntity {
     fn clear(&self) {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items.fill_with(|| ItemStack::EMPTY.clone());
-        self.mark_dirty();
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }

@@ -113,7 +113,13 @@ impl CrafterBlock {
             return;
         };
 
+        let owner = crafter.slot_transaction(0);
+        let guard = owner.lock();
+        let expected = (0..CrafterBlockEntity::INVENTORY_SIZE)
+            .map(|slot| crafter.get_stack(slot))
+            .collect::<Vec<_>>();
         let recipe = match_crafting_recipe(crafter, None);
+        drop(guard);
         if let Some(recipe_result) = recipe
             && !recipe_result.stack.is_empty()
         {
@@ -138,6 +144,23 @@ impl CrafterBlock {
                 }
                 result_stack = event.result;
             }
+            // CrafterBlock.dispenseFrom consumes the matched input, not replacement stacks.
+            let guard = owner.lock();
+            if !owner.is_live()
+                || expected.iter().enumerate().any(|(slot, stack)| {
+                    let current = crafter.get_stack(slot);
+                    current.uid != stack.uid || !current.are_equal(stack)
+                })
+            {
+                return;
+            }
+            for (slot, stack) in expected.iter().enumerate() {
+                let _ = pumpkin_inventory::inventory::slot_transaction::withdraw(
+                    crafter, slot, stack, 1,
+                );
+            }
+            drop(guard);
+            crafter.mark_dirty();
             Self::dispense_item(world, pos, crafter, &mut result_stack, props.orientation);
 
             // CrafterBlock.dispenseFrom uses the matched recipe's remaining items.
@@ -152,15 +175,6 @@ impl CrafterBlock {
                     );
                 }
             }
-
-            for i in 0..CrafterBlockEntity::INVENTORY_SIZE {
-                let mut stack = crafter.get_stack(i);
-                if !stack.is_empty() {
-                    stack.decrement(1);
-                    crafter.set_stack(i, stack);
-                }
-            }
-            crafter.mark_dirty();
         } else {
             world.sync_world_event(WorldEvent::SoundCrafterFail, *pos, 0);
         }

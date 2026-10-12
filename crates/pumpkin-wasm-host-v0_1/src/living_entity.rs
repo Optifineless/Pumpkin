@@ -402,8 +402,12 @@ impl HostLivingEntity for PluginHostState {
         };
 
         let entity = self.get(&this)?;
+        let owner = entity.get_player().map(|player| {
+            pumpkin_inventory::Inventory::slot_transaction(player.inventory().as_ref(), 0)
+        });
         if let Some(living) = entity.get_living_entity() {
             let slot = from_wit_equipment_slot(slot);
+            let guard = owner.as_ref().map(|owner| owner.lock());
             // PlayerEquipment.set: MAINHAND writes the selected inventory item.
             if slot == pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND
                 && let Some(player) = entity.get_player()
@@ -417,6 +421,7 @@ impl HostLivingEntity for PluginHostState {
                     .put(&slot, item_stack.clone());
             }
 
+            drop(guard);
             living.send_equipment_changes(&[(slot, item_stack)]);
         }
         Ok(())
@@ -424,7 +429,11 @@ impl HostLivingEntity for PluginHostState {
 
     fn clear_equipment(&mut self, this: Resource<WitLivingEntity>) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
+        let owner = entity.get_player().map(|player| {
+            pumpkin_inventory::Inventory::slot_transaction(player.inventory().as_ref(), 0)
+        });
         if let Some(living) = entity.get_living_entity() {
+            let guard = owner.as_ref().map(|owner| owner.lock());
             let mut equipment = living
                 .entity_equipment
                 .lock()
@@ -448,6 +457,7 @@ impl HostLivingEntity for PluginHostState {
                     slots_to_clear.push((slot, pumpkin_data::item_stack::ItemStack::EMPTY.clone()));
                 }
             }
+            drop(guard);
 
             living.send_equipment_changes(&slots_to_clear);
         }

@@ -116,6 +116,8 @@ fn take_inventory_for_death(inventory: &PlayerInventory, keep_inventory: bool) -
     if keep_inventory {
         return Vec::new();
     }
+    let owner = pumpkin_inventory::Inventory::slot_transaction(inventory, 0);
+    let _guard = owner.lock();
     let mut drops = Vec::new();
     let mut main = inventory
         .main_inventory

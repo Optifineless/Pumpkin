@@ -157,7 +157,7 @@ impl BlockBehaviour for DropperBlock {
                 return;
             };
 
-            if let Some((slot_index, mut item)) = dropper.get_random_slot() {
+            if let Some((slot_index, item)) = dropper.get_random_slot() {
                 let props = DispenserLikeProperties::from_state_id(state.id);
 
                 let target_pos = args
@@ -167,21 +167,28 @@ impl BlockBehaviour for DropperBlock {
                 if let Some(entity) = args.world.get_block_entity(&target_pos)
                     && let Some(container) = entity.get_inventory()
                 {
-                    let backup = item.clone();
-                    let one_item = item.split(1);
-
-                    if HopperBlockEntity::add_one_item(dropper, container.as_ref(), &one_item) {
-                        dropper.set_stack(slot_index, item);
-                        return;
+                    let (_, leftover) = HopperBlockEntity::transfer_one(
+                        dropper,
+                        container.as_ref(),
+                        slot_index,
+                        &item,
+                        Some(props.facing.to_block_direction().opposite()),
+                    );
+                    if !leftover.is_empty() {
+                        let pos = args.position.to_centered_f64();
+                        args.world.scatter_stack(pos.x, pos.y, pos.z, leftover);
                     }
-
-                    dropper.set_stack(slot_index, backup);
                     return;
                 }
 
-                // No container found, dispense item into the world
-                let drop_item = item.split(1);
-                dropper.set_stack(slot_index, item);
+                // DropperBlock.dispenseFrom transfers an owned one-item receipt to the world.
+                let drop_item = pumpkin_inventory::inventory::slot_transaction::withdraw(
+                    dropper, slot_index, &item, 1,
+                );
+                if drop_item.is_empty() {
+                    return;
+                }
+                dropper.on_slot_changed(slot_index);
                 let facing = to_normal(props.facing);
                 let mut pos = args.position.to_centered_f64().add(&(facing * 0.7));
 

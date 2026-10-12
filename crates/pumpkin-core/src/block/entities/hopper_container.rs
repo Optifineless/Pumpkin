@@ -55,20 +55,3 @@ pub(super) fn get_container_at(world: &World, pos: &BlockPos) -> Option<Arc<dyn 
         DoubleInventory::new(other, inventory)
     })
 }
-
-// HopperBlockEntity.tryTakeInItemFromSlot/tryMoveInItem operate on the actual container.
-// The closure only mutates the stack; callers must send packets and fire events afterwards.
-pub(super) fn with_inventory_slot<T: Default>(
-    inventory: &dyn Inventory,
-    slot: usize,
-    update: impl FnOnce(&mut pumpkin_data::item_stack::ItemStack) -> T,
-) -> T {
-    let mut update = Some(update);
-    let mut result = T::default();
-    inventory.update_slot(slot, &mut |stack| {
-        if let Some(update) = update.take() {
-            result = update(stack);
-        }
-    });
-    result
-}

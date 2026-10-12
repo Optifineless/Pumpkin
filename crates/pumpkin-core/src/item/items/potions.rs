@@ -82,14 +82,18 @@ impl ItemBehaviour for SplashPotionItem {
         // Decrement the used stack (clear)
         if used_main {
             let mut s = player.inventory.held_item();
-            s.decrement_unless_creative(player.gamemode.load(), 1);
-            player.inventory.set_held_item(s);
-        } else {
-            let mut s = player.inventory.off_hand_item();
+            let expected_s = s.clone();
             s.decrement_unless_creative(player.gamemode.load(), 1);
             player
                 .inventory
-                .set_stack_in_hand(pumpkin_util::Hand::Left, s);
+                .exchange_stack_in_hand(pumpkin_util::Hand::Right, &expected_s, s);
+        } else {
+            let mut s = player.inventory.off_hand_item();
+            let expected_s = s.clone();
+            s.decrement_unless_creative(player.gamemode.load(), 1);
+            player
+                .inventory
+                .exchange_stack_in_hand(pumpkin_util::Hand::Left, &expected_s, s);
         }
     }
 
@@ -134,14 +138,18 @@ impl ItemBehaviour for LingeringPotionItem {
         // Decrement the used stack (clear)
         if used_main {
             let mut s = player.inventory.held_item();
-            s.decrement_unless_creative(player.gamemode.load(), 1);
-            player.inventory.set_held_item(s);
-        } else {
-            let mut s = player.inventory.off_hand_item();
+            let expected_s = s.clone();
             s.decrement_unless_creative(player.gamemode.load(), 1);
             player
                 .inventory
-                .set_stack_in_hand(pumpkin_util::Hand::Left, s);
+                .exchange_stack_in_hand(pumpkin_util::Hand::Right, &expected_s, s);
+        } else {
+            let mut s = player.inventory.off_hand_item();
+            let expected_s = s.clone();
+            s.decrement_unless_creative(player.gamemode.load(), 1);
+            player
+                .inventory
+                .exchange_stack_in_hand(pumpkin_util::Hand::Left, &expected_s, s);
         }
     }
 

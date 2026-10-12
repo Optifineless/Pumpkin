@@ -25,6 +25,8 @@ pub fn take_n_ingredient(
     ingredient: &GenericIngredient<'_>,
     count: u8,
 ) -> ItemStack {
+    let owner = pumpkin_inventory::Inventory::slot_transaction(inventory, 0);
+    let _guard = owner.lock();
     let mut taken = 0u8;
     let mut result: Option<ItemStack> = None;
 

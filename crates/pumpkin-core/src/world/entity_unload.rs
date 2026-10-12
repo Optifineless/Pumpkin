@@ -110,6 +110,9 @@ impl World {
         else {
             return;
         };
+        for member in &members {
+            super::container_lifecycle::retire_entity_container(member);
+        }
         self.store_retired_entities(request, &members, was_live);
         // Collect then dispatch: no admission/storage guard reaches these object calls.
         for member in &members {

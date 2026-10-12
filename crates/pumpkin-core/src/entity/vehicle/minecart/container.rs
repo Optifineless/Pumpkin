@@ -16,7 +16,9 @@ use pumpkin_util::text::TextComponent;
 
 use crate::entity::{Entity, player::Player};
 
-pub(crate) struct MinecartInventory {
+pub struct MinecartInventory {
+    pub(crate) transaction:
+        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     items: RwLock<Vec<ItemStack>>,
     size: usize,
     loot_table: Mutex<Option<(String, i64)>>,
@@ -26,6 +28,7 @@ pub(crate) struct MinecartInventory {
 impl MinecartInventory {
     pub(super) fn new(size: usize) -> Self {
         Self {
+            transaction: std::sync::Arc::default(),
             items: RwLock::new(vec![ItemStack::EMPTY.clone(); size]),
             size,
             loot_table: Mutex::new(None),
@@ -78,7 +81,8 @@ impl MinecartInventory {
             .is_some()
     }
 
-    pub(super) fn unpack_loot(
+    /// Resolves deferred contents before access, destruction or retirement.
+    pub(crate) fn unpack_loot(
         self: &Arc<Self>,
         params: &crate::world::loot::LootContextParameters,
     ) {
@@ -107,7 +111,14 @@ impl MinecartInventory {
 }
 
 impl Inventory for MinecartInventory {
-    fn update_slot(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
+    fn slot_transaction(
+        &self,
+        _slot: usize,
+    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
+        self.transaction.clone()
+    }
+
+    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
         let mut items = self
             .items
             .write()
@@ -138,29 +149,33 @@ impl Inventory for MinecartInventory {
     }
 
     fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        std::mem::replace(&mut items[slot], ItemStack::EMPTY.clone())
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
+        });
+        self.on_slot_changed(slot);
+        removed
     }
 
     fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut items = self
-            .items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !items[slot].is_empty() && amount > 0 {
-            items[slot].split(amount)
-        } else {
-            ItemStack::EMPTY.clone()
-        }
+        let mut removed = ItemStack::EMPTY.clone();
+        self.update_slot(slot, &mut |stack| {
+            if !stack.is_empty() && amount > 0 {
+                removed = stack.split(amount);
+            }
+        });
+        self.on_slot_changed(slot);
+        removed
     }
 
     fn set_stack(&self, slot: usize, stack: ItemStack) {
-        self.items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)[slot] = stack;
+        let mut replacement = Some(stack);
+        self.update_slot(slot, &mut |current| {
+            if let Some(stack) = replacement.take() {
+                *current = stack;
+            }
+        });
+        self.on_slot_changed(slot);
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -170,10 +185,7 @@ impl Inventory for MinecartInventory {
 
 impl Clearable for MinecartInventory {
     fn clear(&self) {
-        self.items
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .fill_with(|| ItemStack::EMPTY.clone());
+        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }
 

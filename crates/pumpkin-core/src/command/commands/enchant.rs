@@ -1,3 +1,4 @@
+use pumpkin_inventory::Inventory;
 use std::sync::Arc;
 
 use pumpkin_data::data_component_impl::EnchantmentsImpl;
@@ -48,7 +49,8 @@ fn enchant_target(
         return Err(ERROR_FAILED.create_without_context());
     };
 
-    let mut item = player.inventory().held_item();
+    let source_slot = player.inventory().get_selected_slot() as usize;
+    let mut item = player.inventory().get_stack(source_slot);
 
     if item.is_empty() {
         return Err(ERROR_FAILED_ITEMLESS.create_without_context(target.get_display_name()));
@@ -64,11 +66,19 @@ fn enchant_target(
         return Err(ERROR_FAILED_INCOMPATIBLE.create_without_context(item.item.translated_name()));
     }
 
+    let expected = item.clone();
     item.enchant(enchantment, level);
     let inventory = player.inventory();
-    inventory.set_held_item(item.clone());
+    if !pumpkin_inventory::inventory::slot_transaction::exchange(
+        inventory.as_ref(),
+        source_slot,
+        &expected,
+        item.clone(),
+    ) {
+        return Err(ERROR_FAILED.create_without_context());
+    }
 
-    player.sync_hand_slot(inventory.get_selected_slot() as usize, item);
+    player.sync_hand_slot(source_slot, item);
 
     Ok(())
 }
