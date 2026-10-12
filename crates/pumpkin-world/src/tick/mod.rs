@@ -11,6 +11,8 @@ pub mod scheduler;
 const MAX_TICK_DELAY: usize = 1 << 8;
 /// Largest positive delay representable by vanilla's `SavedTick.codec`.
 pub const MAX_SAVED_TICK_DELAY: u32 = i32::MAX as u32;
+// ServerLevel.tick passes this independent budget to blockTicks and fluidTicks.
+pub const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 #[repr(i32)]
@@ -170,19 +172,27 @@ where
 }
 
 /// Merges due chunk queues by priority and sub-tick order without reordering a chunk's triggers.
-pub(crate) fn drain_containers<T>(containers: Vec<Vec<OrderedTick<T>>>) -> Vec<OrderedTick<T>> {
+pub(crate) fn drain_containers<'a, T: std::hash::Hash + Eq>(
+    containers: &[&scheduler::ChunkTickScheduler<&'a T>],
+    current_tick: i64,
+    max_ticks: usize,
+) -> Vec<OrderedTick<&'a T>> {
     // LevelTicks.drainContainers / drainFromCurrentContainer compare only each container's head.
-    let mut containers: Vec<_> = containers.into_iter().map(Vec::into_iter).collect();
     let mut heads = BinaryHeap::new();
-    for (index, container) in containers.iter_mut().enumerate() {
-        if let Some(tick) = container.next() {
+    for (index, container) in containers.iter().enumerate() {
+        container.prepare_tick(current_tick);
+        if let Some(tick) = container.peek_due_tick() {
             heads.push(Reverse((tick, index)));
         }
     }
     let mut due = Vec::new();
-    while let Some(Reverse((tick, index))) = heads.pop() {
-        due.push(tick);
-        if let Some(tick) = containers[index].next() {
+    while due.len() < max_ticks
+        && let Some(Reverse((_, index))) = heads.pop()
+    {
+        if let Some(tick) = containers[index].poll_due_tick() {
+            due.push(tick);
+        }
+        if let Some(tick) = containers[index].peek_due_tick() {
             heads.push(Reverse((tick, index)));
         }
     }

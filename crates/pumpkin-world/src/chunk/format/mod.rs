@@ -71,9 +71,13 @@ impl PathFromLevelFolder for ChunkData {
 
 impl Dirtiable for ChunkData {
     fn dirty_version(&self) -> Option<u64> {
+        self.block_ticks.mark_dirty_if_changed(&self.dirty);
+        self.fluid_ticks.mark_dirty_if_changed(&self.dirty);
         Some(self.dirty.version())
     }
     fn clear_published(&self, version: u64) {
+        self.block_ticks.mark_dirty_if_changed(&self.dirty);
+        self.fluid_ticks.mark_dirty_if_changed(&self.dirty);
         self.dirty.clear_published(version);
     }
 
@@ -84,6 +88,8 @@ impl Dirtiable for ChunkData {
 
     #[inline]
     fn is_dirty(&self) -> bool {
+        self.block_ticks.mark_dirty_if_changed(&self.dirty);
+        self.fluid_ticks.mark_dirty_if_changed(&self.dirty);
         self.dirty.load(Ordering::Relaxed)
     }
 }

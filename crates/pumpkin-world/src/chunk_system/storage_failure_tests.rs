@@ -1,7 +1,7 @@
 use super::*;
 use crate::chunk::ChunkData;
 
-fn scheduler() -> (
+pub(super) fn scheduler() -> (
     GenerationSchedule,
     tokio::sync::mpsc::Receiver<Vec<ChunkPos>>,
 ) {
