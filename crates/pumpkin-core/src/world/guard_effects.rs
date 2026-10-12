@@ -140,9 +140,7 @@ impl OrderedEffects {
                 effect
             };
             if let Some(pending) = effect {
-                for effect in pending.effects {
-                    effect();
-                }
+                run_committed_effects(pending.effects);
             }
         }
     }
@@ -240,10 +238,39 @@ impl Drop for GuardEffects {
         });
         if !effects.is_empty() {
             assert_no_guards_held("GuardEffects::dispatch");
-            for effect in effects {
-                effect();
+            run_committed_effects(effects);
+        }
+    }
+}
+
+// Delivery has started after the state owner unlocked: these effects are committed.
+// Finish every recipient and sibling before propagating the first callback panic.
+// A batch abandoned before delivery still follows the separate unwind discard path.
+fn run_committed_effects(effects: Vec<Effect>) {
+    let mut first_panic = None;
+    let mut later_panics = Vec::new();
+    for effect in effects {
+        if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(effect)) {
+            if first_panic.is_none() {
+                first_panic = Some(payload);
+            } else {
+                later_panics.push(payload);
             }
         }
+    }
+    // Panic payload destructors may themselves call native code. Drop them only
+    // after delivery finishes, outside owners and outside an active unwind.
+    for payload in later_panics {
+        if let Err(nested) =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(payload)))
+        {
+            // A second panic from a payload destructor must not replace the first
+            // callback panic or cause a double-panic abort while it propagates.
+            std::mem::forget(nested);
+        }
+    }
+    if let Some(payload) = first_panic {
+        std::panic::resume_unwind(payload);
     }
 }
 

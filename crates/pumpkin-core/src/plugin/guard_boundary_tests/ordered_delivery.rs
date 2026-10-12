@@ -380,3 +380,134 @@ async fn guard_boundary_score_dispatch_unwind_delivers_ready_successor() {
 async fn guard_boundary_advancement_dispatch_unwind_delivers_ready_successor() {
     dispatch_unwind_preserves_ready_successor(Change::Advancement).await;
 }
+
+struct PanicOncePerBroadcast {
+    calls: AtomicUsize,
+}
+
+impl EventHandler<PacketSentEvent> for PanicOncePerBroadcast {
+    fn handle_blocking<'a>(
+        &'a self,
+        _: &'a Arc<Server>,
+        event: &'a mut PacketSentEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.packet_id == Change::Border.id() && self.calls.fetch_add(1, Ordering::AcqRel) == 0
+        {
+            assert!(!std::thread::panicking());
+            drop(event.player.world().worldborder.try_lock().unwrap());
+            panic!("one-shot actual border packet callback");
+        }
+        Box::pin(async {})
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_outer_batch_unwind_keeps_committed_sibling() {
+    let mut fixture = Fixture::new();
+    Change::Border.prepare(&mut fixture);
+    fixture.translating();
+    let hook = Arc::new(PanicOncePerBroadcast {
+        calls: AtomicUsize::new(0),
+    });
+    fixture
+        .server
+        .plugin_manager
+        .register::<PacketSentEvent, _>(hook.clone(), EventPriority::Normal, true);
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let effects = crate::world::guard_effects::GuardEffects::new();
+        Change::Border.mutate(&fixture.server, &fixture.player.player, true);
+        Change::Border.mutate(&fixture.server, &fixture.player.player, false);
+        assert_eq!(
+            fixture.world.worldborder.lock().unwrap().new_diameter,
+            128.0
+        );
+        assert_eq!(hook.calls.load(Ordering::Acquire), 0);
+        drop(effects);
+    }));
+    assert!(
+        failed.is_err(),
+        "The first actual border callback did not unwind"
+    );
+    let values = Change::Border.values(fixture.player.take_packets());
+    let calls = hook.calls.load(Ordering::Acquire);
+    fixture.close().await;
+    assert_eq!(
+        values,
+        vec![128],
+        "Dispatch unwind discarded a later committed sibling in the same outer batch"
+    );
+    assert_eq!(
+        calls, 2,
+        "The failed packet was replayed or its sibling omitted"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_boundary_broadcast_unwind_keeps_remaining_recipient() {
+    let mut fixture = Fixture::new();
+    Change::Border.prepare(&mut fixture);
+    fixture.translating();
+    let mut observer = TestPlayer::new(&fixture.world);
+    fixture.world.players.store(Arc::new(vec![
+        fixture.player.player.clone(),
+        observer.player.clone(),
+    ]));
+    observer.client().set_player(observer.player.clone());
+    observer
+        .client()
+        .version
+        .store(JavaMinecraftVersion::V_1_21_2);
+    fixture.player.take_packets();
+    observer.take_packets();
+    let recipients: Vec<_> = fixture
+        .world
+        .players
+        .load()
+        .iter()
+        .map(|p| p.gameprofile.id)
+        .collect();
+    assert_eq!(
+        recipients.len(),
+        2,
+        "The actual broadcast must target two clients"
+    );
+    let hook = Arc::new(PanicOncePerBroadcast {
+        calls: AtomicUsize::new(0),
+    });
+    fixture
+        .server
+        .plugin_manager
+        .register::<PacketSentEvent, _>(hook.clone(), EventPriority::Normal, true);
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        Change::Border.mutate(&fixture.server, &fixture.player.player, false);
+    }));
+    assert!(
+        failed.is_err(),
+        "The first actual recipient callback did not unwind"
+    );
+    assert_eq!(
+        fixture.world.worldborder.lock().unwrap().new_diameter,
+        128.0
+    );
+    let owner_values = Change::Border.values(fixture.player.take_packets());
+    let observer_values = Change::Border.values(observer.take_packets());
+    let (first, second) = if recipients[0] == fixture.player.player.gameprofile.id {
+        (owner_values, observer_values)
+    } else {
+        assert_eq!(recipients[0], observer.player.gameprofile.id);
+        (observer_values, owner_values)
+    };
+    let calls = hook.calls.load(Ordering::Acquire);
+    observer.client().close();
+    fixture.close().await;
+    assert!(first.is_empty(), "The failed first recipient was replayed");
+    assert_eq!(
+        second,
+        vec![128],
+        "One recipient's native callback panic discarded the other committed notification"
+    );
+    assert_eq!(
+        calls, 2,
+        "Both actual recipient sends must be attempted once"
+    );
+}
