@@ -243,3 +243,92 @@ async fn predicted_shulker_callback_replacement_keeps_original_placement_content
 async fn predicted_shulker_cancel_preserves_callback_replacement_without_placement() -> TestResult {
     callback_container_placement(true).await
 }
+
+// Force callback re-entry through the real placement handler, without prediction actions.
+async fn no_action_callback_placement(hand: Hand, identical_replacement: bool) -> TestResult {
+    let mut fixture = HandUseFixture::new().await;
+    let world = fixture.world.world();
+    let (mut packet, _, _, _) = prepare_container_use(&fixture, &Item::SHULKER_BOX, 1);
+    packet.actions.clear();
+    let before = fixture.owner.player.inventory().off_hand_item();
+    if hand == Hand::Right {
+        fixture
+            .owner
+            .player
+            .inventory()
+            .set_stack(4, before.clone());
+        if let TransactionData::UseItem(data) = &mut packet.transaction_data {
+            data.hand = HandSlot::Mainhand;
+        }
+    }
+    let hotbar = ItemStack::new(2, &Item::DIAMOND);
+    fixture
+        .owner
+        .player
+        .inventory()
+        .set_stack(8, hotbar.clone());
+    let replacement = if identical_replacement {
+        // Equal components/count, but a different identity must still win.
+        let mut replacement = before.clone();
+        replacement.uid = ItemStack::new(1, &Item::SHULKER_BOX).uid;
+        replacement
+    } else {
+        ItemStack::new(3, &Item::EMERALD)
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    fixture
+        .world
+        .server
+        .plugin_manager
+        .register::<BlockPlaceEvent, _>(
+            Arc::new(PlacementEdit {
+                replacement: replacement.clone(),
+                calls: calls.clone(),
+                cancelled: false,
+            }),
+            EventPriority::Normal,
+            true,
+        );
+    fixture.drain_packets();
+    fixture
+        .owner
+        .client()
+        .handle_inventory_action(&fixture.owner.player, packet);
+    fixture
+        .verify_and_close(|fixture| {
+            let player = &fixture.owner.player;
+            assert_eq!(calls.load(SeqCst), 1);
+            assert_eq!(player.inventory().get_selected_slot(), 8);
+            assert!(
+                player.inventory().get_stack(8).are_equal(&hotbar),
+                "callback selected slot overwritten"
+            );
+            assert_eq!(player.inventory().get_stack(8).uid, hotbar.uid);
+            if hand == Hand::Right {
+                assert!(
+                    player.inventory().get_stack(4).is_empty(),
+                    "originating slot was not charged"
+                );
+            } else {
+                let actual = player.inventory().off_hand_item();
+                assert!(
+                    actual.are_equal(&replacement),
+                    "callback replacement overwritten"
+                );
+                assert_eq!(actual.uid, replacement.uid);
+            }
+            assert_placed_diamonds(&world)
+        })
+        .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_action_placement_pins_originating_hotbar_slot() -> TestResult {
+    no_action_callback_placement(Hand::Right, false).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_action_placement_respects_offhand_callback_replacement() -> TestResult {
+    no_action_callback_placement(Hand::Left, false).await?;
+    no_action_callback_placement(Hand::Left, true).await
+}
