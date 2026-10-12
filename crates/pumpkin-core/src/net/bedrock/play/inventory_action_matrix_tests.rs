@@ -28,6 +28,9 @@ mod rebase;
 #[path = "inventory_action_callback_tests.rs"]
 mod callback;
 
+#[path = "inventory_action_authoritative_tests.rs"]
+pub(super) mod authoritative;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]
@@ -361,7 +364,7 @@ async fn run_hand_use(kind: BlockUse, hand: Hand, actions: bool, count: u8) -> T
     let world = fixture.world.world();
     let (position, before) = prepare_hand_use(&fixture, kind, hand, count);
 
-    // Existing descriptor_to_stack reconstructs components from game data for action writes.
+    // UseItem origin predictions are advisory; the remainder retains authoritative components.
     let after_action = if count == 1 {
         ItemStack::EMPTY.clone()
     } else {
@@ -378,7 +381,6 @@ async fn run_hand_use(kind: BlockUse, hand: Hand, actions: bool, count: u8) -> T
     } else {
         Vec::new()
     };
-    let supplied_by_actions = !actions.is_empty();
     let mut packet = click_block_packet(
         match hand {
             Hand::Right => HandSlot::Mainhand,
@@ -412,30 +414,23 @@ async fn run_hand_use(kind: BlockUse, hand: Hand, actions: bool, count: u8) -> T
             }
             let player = &fixture.owner.player;
             assert_hands(player, hand, count);
-            let mut expected = if supplied_by_actions {
-                after_action
-            } else {
-                let mut after = before;
-                after.decrement(1);
-                after
-            };
+            let mut expected = before;
+            expected.decrement(1);
             let actual = player.inventory().get_stack_in_hand(hand);
             assert!((actual.is_empty() && expected.is_empty()) || actual.are_equal(&expected));
-            if supplied_by_actions {
-                // Action descriptors omit stack IDs; decoding allocates a new server ID.
-                expected.uid = actual.uid;
+            if count > 1 {
+                assert_eq!(
+                    actual.uid, expected.uid,
+                    "origin prediction retains the server UID"
+                );
             }
-            let expected_luck = if supplied_by_actions || count == 1 {
-                2.0
-            } else {
-                11.0
-            };
+            let expected_luck = if count == 1 { 2.0 } else { 11.0 };
             assert_eq!(
                 player.living_entity.get_attribute_value(&Attributes::LUCK),
                 expected_luck,
                 "equipment modifiers must match the authoritative hand after consumption"
             );
-            assert_packets(fixture, hand, &expected, !supplied_by_actions && count > 1)
+            assert_packets(fixture, hand, &expected, count > 1)
         })
         .await
 }
