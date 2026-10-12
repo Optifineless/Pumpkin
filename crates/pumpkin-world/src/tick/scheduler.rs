@@ -1,5 +1,5 @@
 use std::sync::{
-    Arc, Mutex, OnceLock,
+    Arc, OnceLock,
     atomic::{AtomicI64, AtomicU64, Ordering},
 };
 use std::{
@@ -10,14 +10,19 @@ use std::{
 use pumpkin_util::math::position::BlockPos;
 use rustc_hash::FxHashSet;
 
-use crate::tick::{MAX_TICK_DELAY, OrderedTick, SavedTick, ScheduledTick};
+use crate::tick::{MAX_TICK_DELAY, OrderedTick, SavedTick, ScheduledTick, TickPriority};
+
+use super::scheduler_lock::SchedulerMutex;
+
+pub(super) type TickKey = (TickPriority, i64, i64);
 
 pub struct ChunkTickScheduler<T> {
-    inner: Mutex<Option<Box<ChunkTickSchedulerInner<T>>>>,
+    inner: SchedulerMutex<Option<Box<ChunkTickSchedulerInner<T>>>, 30>,
+    next_trigger: AtomicI64,
     last_tick: AtomicI64,
     game_time: OnceLock<Arc<AtomicI64>>,
     mutation: AtomicU64,
-    observed_save_state: Mutex<(i64, u64)>,
+    observed_save_state: SchedulerMutex<(i64, u64), 40>,
 }
 
 struct PendingTick<T> {
@@ -51,6 +56,7 @@ struct ChunkTickSchedulerInner<T> {
     queued_ticks: FxHashSet<(BlockPos, T)>,
     long_ticks: BTreeMap<i64, Vec<PendingTick<T>>>,
     due_ticks: BinaryHeap<Reverse<PendingTick<T>>>,
+    next_queued_trigger: i64,
 }
 
 fn queue_index(trigger_tick: i64, last_tick: i64) -> usize {
@@ -60,6 +66,25 @@ fn queue_index(trigger_tick: i64, last_tick: i64) -> usize {
 }
 
 impl<'a, T> ChunkTickSchedulerInner<&'a T> {
+    fn refresh_next_queued_trigger(&mut self) {
+        if self.queued_ticks.len() == self.pending_ticks.len() + self.due_ticks.len() {
+            self.next_queued_trigger = i64::MAX;
+            return;
+        }
+        self.next_queued_trigger = self
+            .tick_queue
+            .iter()
+            .flatten()
+            .map(|tick| tick.trigger_tick)
+            .chain(
+                self.long_ticks
+                    .first_key_value()
+                    .map(|(trigger, _)| *trigger),
+            )
+            .min()
+            .unwrap_or(i64::MAX);
+    }
+
     fn saved_ticks(&self, current_tick: i64) -> Vec<SavedTick<&'a T>> {
         // LevelChunkTicks.pack / ScheduledTick.toSavedTick keep negative overdue delays.
         let mut pending: Vec<_> = self
@@ -91,10 +116,7 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
 
     /// Retains relative save delays after the chunk leaves the loaded owner.
     pub(crate) fn freeze_for_unload(&self, current_tick: i64) {
-        let mut guard = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = self.inner.lock();
         let Some(inner) = guard.as_mut() else {
             return;
         };
@@ -109,6 +131,8 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         }
         inner.long_ticks.clear();
         inner.due_ticks.clear();
+        inner.next_queued_trigger = i64::MAX;
+        self.update_next_trigger(inner);
         self.mutation.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -122,6 +146,7 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         self.last_tick.store(last_tick, Ordering::Relaxed);
         for (index, tick) in inner.pending_ticks.drain(..).enumerate() {
             let trigger_tick = current_tick + i64::from(tick.delay);
+            inner.next_queued_trigger = inner.next_queued_trigger.min(trigger_tick);
             let queue = if tick.delay > MAX_TICK_DELAY as i32 {
                 inner.long_ticks.entry(trigger_tick).or_default()
             } else {
@@ -147,83 +172,142 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         )
     }
 
-    pub(crate) fn prepare_tick(&self, current_tick: i64) {
-        let mut inner_guard = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(inner) = inner_guard.as_mut() else {
+    /// Lock-free eligibility hint, including saved ticks awaiting first simulation.
+    pub(crate) fn has_due_ticks(&self, current_tick: i64) -> bool {
+        self.next_trigger.load(Ordering::Acquire) <= current_tick
+    }
+
+    /// Reports an empty hint; marker removal still rechecks the authoritative set.
+    pub(crate) fn is_empty_hint(&self) -> bool {
+        self.next_trigger.load(Ordering::Acquire) == i64::MAX
+    }
+
+    fn update_next_trigger(&self, inner: &ChunkTickSchedulerInner<&'a T>) {
+        // LevelTicks.nextTickForContainer / updateContainerScheduling. Pending delays
+        // must unpack on first simulation before their absolute deadline is known.
+        let trigger = if inner.pending_ticks.is_empty() {
+            inner
+                .due_ticks
+                .peek()
+                .map_or(inner.next_queued_trigger, |tick| {
+                    tick.0.trigger_tick.min(inner.next_queued_trigger)
+                })
+        } else {
+            i64::MIN
+        };
+        self.next_trigger.store(trigger, Ordering::Release);
+    }
+
+    pub(crate) fn prepare_tick(&self, current_tick: i64) -> Option<(TickKey, usize)> {
+        let mut guard = self.inner.lock();
+        let Some(inner) = guard.as_mut() else {
             self.last_tick.store(current_tick, Ordering::Relaxed);
-            return;
+            return None;
         };
         self.unpack(inner, current_tick);
         let previous_tick = self.last_tick.swap(current_tick, Ordering::Relaxed);
-
         // LevelTicks.sortContainersToTick makes overdue work eligible after tickCheck.
-        // Scan one wheel slot normally, at most one whole wheel after a simulation gap.
         let elapsed = (current_tick - previous_tick).clamp(0, MAX_TICK_DELAY as i64);
-        for delta in 1..=elapsed {
-            let index = (previous_tick + delta).rem_euclid(MAX_TICK_DELAY as i64) as usize;
-            inner.due_ticks.extend(
-                inner.tick_queue[index]
-                    .extract_if(.., |tick| tick.trigger_tick <= current_tick)
-                    .map(Reverse),
-            );
-        }
-        while inner
-            .long_ticks
-            .first_key_value()
-            .is_some_and(|(trigger, _)| *trigger <= current_tick)
-        {
-            if let Some((_, queue)) = inner.long_ticks.pop_first() {
-                inner.due_ticks.extend(queue.into_iter().map(Reverse));
+        if inner.next_queued_trigger <= current_tick {
+            let mut extracted = std::mem::take(&mut inner.due_ticks).into_vec();
+            let wheel_count: usize = (1..=elapsed)
+                .map(|delta| {
+                    let index = (previous_tick + delta).rem_euclid(MAX_TICK_DELAY as i64) as usize;
+                    inner.tick_queue[index].len()
+                })
+                .sum();
+            let long_count: usize = inner
+                .long_ticks
+                .range(..=current_tick)
+                .map(|(_, queue)| queue.len())
+                .sum();
+            extracted.reserve(wheel_count + long_count);
+            for delta in 1..=elapsed {
+                let index = (previous_tick + delta).rem_euclid(MAX_TICK_DELAY as i64) as usize;
+                extracted.extend(
+                    inner.tick_queue[index]
+                        .extract_if(.., |tick| tick.trigger_tick <= current_tick)
+                        .map(Reverse),
+                );
             }
+            while inner
+                .long_ticks
+                .first_key_value()
+                .is_some_and(|(trigger, _)| *trigger <= current_tick)
+            {
+                if let Some((_, queue)) = inner.long_ticks.pop_first() {
+                    extracted.extend(queue.into_iter().map(Reverse));
+                }
+            }
+            // Heapify once, rather than heap insertion for every extracted wheel entry.
+            inner.due_ticks = BinaryHeap::from(extracted);
+            inner.refresh_next_queued_trigger();
         }
-    }
-
-    pub(crate) fn peek_due_tick(&self) -> Option<OrderedTick<&'a T>> {
-        let guard = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard
-            .as_ref()?
+        self.update_next_trigger(inner);
+        inner
             .due_ticks
             .peek()
-            .map(|pending| pending.0.tick.clone())
+            .map(|tick| (Self::key(&tick.0), inner.due_ticks.len()))
     }
 
-    pub(crate) fn poll_due_tick(&self) -> Option<OrderedTick<&'a T>> {
-        let mut inner_guard = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let inner = inner_guard.as_mut()?;
-        let Reverse(pending) = inner.due_ticks.pop()?;
-        inner
-            .queued_ticks
-            .remove(&(pending.tick.position, pending.tick.value));
-        self.mutation.fetch_add(1, Ordering::Relaxed);
-        if inner.queued_ticks.is_empty() {
-            *inner_guard = None;
+    const fn key(pending: &PendingTick<&'a T>) -> TickKey {
+        (
+            pending.tick.priority,
+            pending.tick.sub_tick_order,
+            pending.trigger_tick,
+        )
+    }
+
+    /// Moves a due run under one lock; later schedules wait for the next prepare.
+    pub(crate) fn poll_due_batch(
+        &self,
+        limit: usize,
+        next_best: Option<(TickPriority, i64)>,
+        output: &mut Vec<OrderedTick<&'a T>>,
+    ) -> Option<TickKey> {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut()?;
+        let start = output.len();
+        // LevelTicks.drainFromCurrentContainer compares INTRA_TICK_DRAIN_ORDER,
+        // not trigger times across chunks. Each chunk still uses DRAIN_ORDER.
+        while output.len() - start < limit
+            && inner.due_ticks.peek().is_some_and(|head| {
+                output.len() == start
+                    || next_best.is_none_or(|next| {
+                        (head.0.tick.priority, head.0.tick.sub_tick_order) <= next
+                    })
+            })
+        {
+            if let Some(Reverse(pending)) = inner.due_ticks.pop() {
+                output.push(pending.tick);
+            }
         }
-        Some(pending.tick)
+        for tick in &output[start..] {
+            inner.queued_ticks.remove(&(tick.position, tick.value));
+        }
+        if output.len() != start {
+            self.mutation.fetch_add(1, Ordering::Relaxed);
+        }
+        self.update_next_trigger(inner);
+        let next = inner.due_ticks.peek().map(|tick| Self::key(&tick.0));
+        if inner.queued_ticks.is_empty() {
+            *guard = None;
+        }
+        next
     }
 
     pub fn step_tick(&self, current_tick: i64) -> Vec<OrderedTick<&'a T>> {
-        self.prepare_tick(current_tick);
-        std::iter::from_fn(|| self.poll_due_tick()).collect()
+        let count = self
+            .prepare_tick(current_tick)
+            .map_or(0, |(_, count)| count);
+        let mut due = Vec::with_capacity(count);
+        self.poll_due_batch(count, None, &mut due);
+        due
     }
 
     pub(crate) fn mark_dirty_if_changed(&self, dirty: &crate::chunk::io::DirtyFlag) {
-        let inner = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut observed = self
-            .observed_save_state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let inner = self.inner.lock();
+        let mut observed = self.observed_save_state.lock();
         let state = (self.current_tick(), self.mutation.load(Ordering::Relaxed));
         // ScheduledTick.toSavedTick uses trigger - game time. Queue mutations and
         // elapsed-only changes must reach Pumpkin's versioned publication barrier.
@@ -241,10 +325,7 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
     }
 
     fn schedule_saved_tick(&self, tick: &SavedTick<&'a T>, sub_tick_order: i64) {
-        let mut inner_guard = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut inner_guard = self.inner.lock();
         let current_tick = self.current_tick();
         let last_tick = self.last_tick.load(Ordering::Relaxed);
         let inner = inner_guard.get_or_insert_with(|| {
@@ -254,6 +335,7 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
                 queued_ticks: FxHashSet::default(),
                 long_ticks: BTreeMap::new(),
                 due_ticks: BinaryHeap::new(),
+                next_queued_trigger: i64::MAX,
             })
         });
 
@@ -261,6 +343,7 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
             self.mutation.fetch_add(1, Ordering::Relaxed);
             // LevelAccessor.createTick stores game time + delay, even outside simulation range.
             let trigger_tick = current_tick + i64::from(tick.delay);
+            inner.next_queued_trigger = inner.next_queued_trigger.min(trigger_tick);
             let queue = if tick.delay > MAX_TICK_DELAY as i32 {
                 inner.long_ticks.entry(trigger_tick).or_default()
             } else {
@@ -275,22 +358,19 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
                     value: tick.value,
                 },
             });
+            self.update_next_trigger(inner);
         }
     }
 
     pub fn is_scheduled(&self, pos: BlockPos, value: &T) -> bool {
         self.inner
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
             .is_some_and(|inner| inner.queued_ticks.contains(&(pos, value)))
     }
 
     pub fn clear_area(&self, min: &BlockPos, max: &BlockPos) {
-        let mut inner_guard = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut inner_guard = self.inner.lock();
         let Some(inner) = inner_guard.as_mut() else {
             return;
         };
@@ -322,6 +402,8 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         if inner.queued_ticks.len() != previous_count {
             self.mutation.fetch_add(1, Ordering::Relaxed);
         }
+        inner.refresh_next_queued_trigger();
+        self.update_next_trigger(inner);
         if inner.queued_ticks.is_empty() {
             *inner_guard = None;
         }
@@ -330,17 +412,13 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
     pub fn has_ticks(&self) -> bool {
         self.inner
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
             .is_some_and(|inner| !inner.queued_ticks.is_empty())
     }
 
     #[must_use]
     pub fn to_vec(&self) -> Vec<SavedTick<&'a T>> {
-        let inner_guard = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let inner_guard = self.inner.lock();
         let current_tick = self.current_tick();
         let Some(inner) = inner_guard.as_ref() else {
             return Vec::new();
@@ -363,17 +441,15 @@ impl<'a, T: std::hash::Hash + Eq + 'static> FromIterator<SavedTick<&'a T>>
                 .into_iter()
                 .filter(|tick| queued_ticks.insert((tick.position, tick.value)))
                 .collect();
-            *scheduler
-                .inner
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                Some(Box::new(ChunkTickSchedulerInner {
-                    pending_ticks,
-                    queued_ticks,
-                    tick_queue: std::array::from_fn(|_| Vec::new()),
-                    long_ticks: BTreeMap::new(),
-                    due_ticks: BinaryHeap::new(),
-                }));
+            *scheduler.inner.lock() = Some(Box::new(ChunkTickSchedulerInner {
+                pending_ticks,
+                queued_ticks,
+                tick_queue: std::array::from_fn(|_| Vec::new()),
+                long_ticks: BTreeMap::new(),
+                due_ticks: BinaryHeap::new(),
+                next_queued_trigger: i64::MAX,
+            }));
+            scheduler.next_trigger.store(i64::MIN, Ordering::Release);
         }
         scheduler
     }
@@ -390,11 +466,12 @@ impl<'a, T: std::hash::Hash + Eq + 'static> FromIterator<ScheduledTick<&'a T>>
 impl<T> Default for ChunkTickScheduler<T> {
     fn default() -> Self {
         Self {
-            inner: Mutex::new(None),
+            inner: SchedulerMutex::new(None),
+            next_trigger: AtomicI64::new(i64::MAX),
             last_tick: AtomicI64::new(0),
             game_time: OnceLock::new(),
             mutation: AtomicU64::new(0),
-            observed_save_state: Mutex::new((0, 0)),
+            observed_save_state: SchedulerMutex::new((0, 0)),
         }
     }
 }

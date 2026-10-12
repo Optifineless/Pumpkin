@@ -7,6 +7,7 @@ use pumpkin_util::{
 };
 
 pub mod scheduler;
+mod scheduler_lock;
 
 const MAX_TICK_DELAY: usize = 1 << 8;
 /// Largest positive delay representable by vanilla's `SavedTick.codec`.
@@ -177,24 +178,33 @@ pub(crate) fn drain_containers<'a, T: std::hash::Hash + Eq>(
     current_tick: i64,
     max_ticks: usize,
 ) -> Vec<OrderedTick<&'a T>> {
-    // LevelTicks.drainContainers / drainFromCurrentContainer compare only each container's head.
+    // LevelTicks.sortContainersToTick / drainContainers: only due containers enter the heap.
     let mut heads = BinaryHeap::new();
+    let mut estimated = 0;
     for (index, container) in containers.iter().enumerate() {
-        container.prepare_tick(current_tick);
-        if let Some(tick) = container.peek_due_tick() {
-            heads.push(Reverse((tick, index)));
+        if container.has_due_ticks(current_tick)
+            && let Some(((priority, sub_order, trigger), count)) =
+                container.prepare_tick(current_tick)
+        {
+            heads.push(Reverse((priority, sub_order, index, trigger)));
+            estimated += count;
         }
     }
-    let mut due = Vec::new();
+    let mut due = Vec::with_capacity(max_ticks.min(estimated));
     while due.len() < max_ticks
-        && let Some(Reverse((_, index))) = heads.pop()
+        && let Some(Reverse((_, _, index, _))) = heads.pop()
     {
-        if let Some(tick) = containers[index].poll_due_tick() {
-            due.push(tick);
-        }
-        if let Some(tick) = containers[index].peek_due_tick() {
-            heads.push(Reverse((tick, index)));
+        let next_best = heads
+            .peek()
+            .map(|Reverse((priority, order, _, _))| (*priority, *order));
+        if let Some((priority, order, trigger)) =
+            containers[index].poll_due_batch(max_ticks - due.len(), next_best, &mut due)
+        {
+            heads.push(Reverse((priority, order, index, trigger)));
         }
     }
     due
 }
+
+#[cfg(test)]
+mod collection_tests;
