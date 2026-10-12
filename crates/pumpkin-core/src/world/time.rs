@@ -142,8 +142,25 @@ impl LevelTime {
             time.rate = clock.rate;
             time.paused = clock.paused;
         } else if Some(key) == Dimension::OVERWORLD.default_clock {
-            // Older fork/vanilla level.dat migrations still provide the overworld fallback.
-            time = Self::from_level_data(level_data);
+            // DayTimeToClockFix migrates the same save's legacy clock, never another root.
+            if retain_clock {
+                time = Self::from_level_data(level_data);
+            } else {
+                use pumpkin_world::world_info::{
+                    WorldInfoError, WorldInfoReader, anvil::AnvilLevelInfo,
+                };
+                match AnvilLevelInfo.read_world_info(root_folder) {
+                    Ok(own) => {
+                        time = Self::from_level_data(&own);
+                        time.world_age = level_data.game_time;
+                    }
+                    Err(WorldInfoError::InfoNotFound) => {}
+                    Err(error) => tracing::warn!(
+                        "Failed to load legacy clock from {}: {error}",
+                        root_folder.display()
+                    ),
+                }
+            }
         }
         time
     }

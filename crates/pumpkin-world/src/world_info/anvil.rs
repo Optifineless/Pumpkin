@@ -283,9 +283,8 @@ fn level_data_from_nbt(data: &NbtCompound, seed: i64) -> LevelData {
     if let Some(game_time) = data.get_long("Time") {
         level_data.game_time = game_time;
     }
-    if let Some(day_time) = data.get_long("DayTime") {
-        level_data.day_time = day_time;
-    }
+    // DayTimeToClockFix uses this save's Time when legacy DayTime is absent.
+    level_data.day_time = data.get_long("DayTime").unwrap_or(level_data.game_time);
     if let Some(clear_weather_time) = data.get_int("clearWeatherTime") {
         level_data.clear_weather_time = clear_weather_time;
     }

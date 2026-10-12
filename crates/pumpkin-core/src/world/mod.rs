@@ -351,6 +351,8 @@ pub struct World {
     pub dimension: Dimension,
     /// Owns the canonical dimension clock in the server's default save root.
     pub(crate) saves_default_clock: bool,
+    /// Physical clock saved-data root, resolved once after level directories exist.
+    pub(crate) clock_root_identity: Option<std::path::PathBuf>,
     pub sea_level: i32,
     pub min_y: i32,
     /// The world's weather, including rain and thunder levels.
@@ -470,11 +472,14 @@ impl World {
         block_registry: Arc<BlockRegistry>,
         server: Weak<Server>,
     ) -> Self {
-        let retain_clock = server.upgrade().is_none_or(|server| {
-            level.level_folder.root_folder == server.basic_config.get_world_path()
-        });
+        let clock_root_identity = crate::server::named_clock_storage::clock_root_identity(
+            &level.level_folder.root_folder,
+        );
+        let retain_clock = server
+            .upgrade()
+            .is_none_or(|server| server.is_main_clock_root(clock_root_identity.as_deref()));
         let (weather, level_time) = {
-            let data = level_info.load();
+            let data = level_info.load_full();
             (
                 Weather::from_world_data(&data, &dimension, &server),
                 LevelTime::from_world_data(
@@ -532,6 +537,7 @@ impl World {
             level_time: std::sync::Mutex::new(level_time),
             dimension,
             saves_default_clock: true,
+            clock_root_identity,
             weather: pumpkin_util::sync::Mutex::new(weather),
             block_registry,
             neighbor_updates: std::sync::Mutex::default(),
@@ -820,6 +826,11 @@ impl World {
         if let Err(error) = self.level.shutdown().await {
             error!("World shutdown left unsaved chunks: {error}");
             crate::SERVER_EXIT_CODE.store(1, std::sync::atomic::Ordering::Release);
+        }
+        if let Some(server) = self.server.upgrade()
+            && let Err(error) = server.save_named_world_clock(self).await
+        {
+            error!("Failed to save named clock: {error}");
         }
     }
 
@@ -2184,7 +2195,7 @@ impl World {
 
     pub fn tick_environment(self: &Arc<Self>) {
         self.tick_weather_and_sleep();
-        let mut save_world_info = false;
+        let mut save_clocks = false;
         {
             let mut level_time = self
                 .level_time
@@ -2228,15 +2239,15 @@ impl World {
                     {
                         server.schedule_random_sequence_save();
                         // MinecraftServer.saveAllChunks also persists live level metadata on autosave.
-                        save_world_info = true;
                     }
+                    save_clocks = true;
                     self.level.should_save.store(true, Relaxed);
                     self.level.level_channel.notify();
                 }
             }
         }
-        if save_world_info && let Some(server) = self.server.upgrade() {
-            server.schedule_world_info_save();
+        if save_clocks && let Some(server) = self.server.upgrade() {
+            server.schedule_clock_save(self);
         }
         Phase::Environment.enter();
     }
@@ -7029,6 +7040,9 @@ impl World {
         );
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire(&server, &mut save_event).await;
+            if let Err(error) = server.save_named_world_clock(self).await {
+                error!("Failed to save named clock: {error}");
+            }
         }
     }
 

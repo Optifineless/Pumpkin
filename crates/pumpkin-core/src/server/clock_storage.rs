@@ -11,10 +11,9 @@ use crate::world::World;
 impl Server {
     fn canonical_clock_key(&self, world: &World) -> Option<&'static str> {
         // Plugin-created aliases never own this root's default clock, even for '.' paths.
-        (world.saves_default_clock
-            && world.level.level_folder.root_folder == self.basic_config.get_world_path())
-        .then_some(world.dimension.default_clock)
-        .flatten()
+        (world.saves_default_clock && self.is_main_clock_root(world.clock_root_identity.as_deref()))
+            .then_some(world.dimension.default_clock)
+            .flatten()
     }
 
     pub(super) fn retain_unloaded_clock(&self, retired: &Arc<World>) {
@@ -41,6 +40,7 @@ impl Server {
                 });
             }
         }
+        self.retain_named_unloaded_clock(retired, &worlds);
         self.worlds.rcu(|current| {
             let mut remaining = (**current).clone();
             remaining.retain(|world| !Arc::ptr_eq(world, retired));
@@ -50,10 +50,10 @@ impl Server {
 
     pub(super) fn level_data_for_save(&self) -> LevelData {
         let mut data = (**self.level_info.load()).clone();
-        let world_path = self.basic_config.get_world_path();
         // Retained records seed the snapshot; legitimate current owners replace them.
         for world in self.worlds.load().iter().filter(|world| {
-            world.saves_default_clock && world.level.level_folder.root_folder == world_path
+            world.saves_default_clock
+                && self.is_main_clock_root(world.clock_root_identity.as_deref())
         }) {
             let time = world
                 .level_time
@@ -101,7 +101,7 @@ impl Server {
     }
 }
 
-fn snapshot_clock(world: &World) -> DimensionClock {
+pub(super) fn snapshot_clock(world: &World) -> DimensionClock {
     let time = world
         .level_time
         .lock()

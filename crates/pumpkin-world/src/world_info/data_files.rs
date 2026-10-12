@@ -118,6 +118,13 @@ pub struct WorldClocksData {
     pub data_version: i32,
 }
 
+impl WorldClocksData {
+    /// Removes only known unregistered aliases written by older fork builds.
+    pub fn migrate_dimension_aliases(&mut self) {
+        super::clock_keys::migrate_dimension_aliases(self);
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct WanderingTraderData {
     #[serde(rename = "spawn_delay", default = "default_wandering_trader_delay")]

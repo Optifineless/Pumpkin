@@ -6,6 +6,16 @@ fn make_player_data_storage(path: &std::path::Path, enabled: bool) -> ServerPlay
     ServerPlayerData::new(path.join("players"), Duration::from_secs(300), enabled)
 }
 
+fn vanilla_data() -> VanillaData {
+    VanillaData {
+        banned_ip_list: RwLock::default(),
+        banned_player_list: RwLock::default(),
+        operator_config: RwLock::default(),
+        user_cache: RwLock::default(),
+        whitelist_config: RwLock::default(),
+    }
+}
+
 pub fn server(path: &std::path::Path) -> Arc<Server> {
     server_with_player_data(path, false)
 }
@@ -19,13 +29,7 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
     };
     let advanced_config = AdvancedConfiguration::default();
     let telemetry_config = TelemetryConfig::default();
-    let vanilla_data = VanillaData {
-        banned_ip_list: RwLock::default(),
-        banned_player_list: RwLock::default(),
-        operator_config: RwLock::default(),
-        user_cache: RwLock::default(),
-        whitelist_config: RwLock::default(),
-    };
+    let vanilla_data = vanilla_data();
     let management_settings = Arc::new(crate::net::management::hub::ManagementSettings::new(
         &basic_config,
         &advanced_config,
@@ -108,6 +112,7 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
         mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
         world_info_writer: Arc::new(AnvilLevelInfo),
         world_info_save_lock: std::sync::Mutex::new(()),
+        clock_roots: named_clock_storage::ClockRoots::new(path).unwrap(),
         level_info,
         management_hub,
     };

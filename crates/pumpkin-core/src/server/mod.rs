@@ -2,6 +2,9 @@ mod clock_storage;
 #[cfg(test)]
 pub(crate) mod combat_test_support;
 mod map_storage;
+pub(crate) mod named_clock_storage;
+#[cfg(test)]
+mod named_root_clock_tests;
 #[cfg(test)]
 mod save_family_regression_tests;
 #[cfg(test)]
@@ -175,6 +178,7 @@ pub struct Server {
     world_info_writer: Arc<dyn WorldInfoWriter>,
     /// Serializes level.dat and saved-data writes from autosave and admin saves.
     world_info_save_lock: std::sync::Mutex<()>,
+    clock_roots: named_clock_storage::ClockRoots,
 }
 
 impl Server {
@@ -380,6 +384,7 @@ impl Server {
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
             world_info_save_lock: std::sync::Mutex::new(()),
+            clock_roots: named_clock_storage::ClockRoots::new(&world_path)?,
             level_info,
             management_hub,
         };
@@ -523,7 +528,11 @@ impl Server {
             let worlds = self.worlds.load();
             let world = worlds
                 .iter()
-                .find(|w| w.get_world_name() == name && w.dimension == dimension)
+                .find(|w| {
+                    w.get_world_name() == name
+                        && w.dimension == dimension
+                        && !w.level.cancel_token.is_cancelled()
+                })
                 .cloned();
             if let Some(world) = world {
                 return world;
@@ -544,11 +553,10 @@ impl Server {
         let world = Arc::new(world);
         let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
         level.world_portal.store(Arc::new(Some(portal)));
-        self.worlds.rcu(|worlds| {
-            let mut new_worlds = (**worlds).clone();
-            new_worlds.push(world.clone());
-            new_worlds
-        });
+        let admitted = self.admit_named_clock_world(world.clone());
+        if !Arc::ptr_eq(&admitted, &world) {
+            return admitted;
+        }
         let mut event =
             crate::plugin::api::events::world::world_init::WorldInitEvent::new(world.clone());
         self.plugin_manager.fire_blocking(self, &mut event);
@@ -559,7 +567,15 @@ impl Server {
         let worlds = self.worlds.load();
         let world_to_unload = worlds
             .iter()
-            .find(|w| w.get_world_name() == name || w.dimension.minecraft_name == name)
+            .find(|w| {
+                (w.get_world_name() == name || w.dimension.minecraft_name == name)
+                    && !w.level.cancel_token.is_cancelled()
+            })
+            .or_else(|| {
+                worlds
+                    .iter()
+                    .find(|w| w.get_world_name() == name || w.dimension.minecraft_name == name)
+            })
             .cloned()
             .ok_or_else(|| format!("World '{name}' not found"))?;
 
@@ -576,11 +592,14 @@ impl Server {
             ));
         }
 
+        drop(worlds);
         world_to_unload.shutdown().await;
         world_to_unload.unload().await;
 
         self.retain_unloaded_clock(&world_to_unload);
-
+        if let Some(server) = world_to_unload.server.upgrade() {
+            server.save_named_world_clock(&world_to_unload).await?;
+        }
         Ok(())
     }
 
@@ -591,8 +610,18 @@ impl Server {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let level_data = self.level_data_for_save();
         self.retain_clock_snapshot(&level_data);
-        self.world_info_writer
-            .write_world_info(&level_data, &self.basic_config.get_world_path())
+        // MinecraftServer.saveAllChunks saves each saved-data root even after another fails.
+        let writes = [
+            self.world_info_writer
+                .write_world_info(&level_data, &self.basic_config.get_world_path()),
+            self.write_named_clock_roots(None),
+        ];
+        named_clock_storage::save_result(
+            &writes
+                .into_iter()
+                .filter_map(|result| result.err().map(|error| error.to_string()))
+                .collect::<Vec<_>>(),
+        )
     }
 
     /// Saves live time metadata from the overworld autosave without blocking the tick worker.
@@ -898,7 +927,7 @@ impl Server {
             crate::SERVER_EXIT_CODE.store(1, Ordering::Release);
         }
         info!("Starting worlds");
-        for world in self.worlds.load().iter() {
+        for world in self.worlds.load_full().iter() {
             world.shutdown().await;
         }
         if let Err(error) = self.save_random_sequences().await {
