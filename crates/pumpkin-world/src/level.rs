@@ -144,7 +144,7 @@ pub struct Level {
     scheduled_tick_collect_positions: Mutex<Vec<Vector2<i32>>>,
     #[cfg(test)]
     before_tick_unregister: Mutex<Option<Box<dyn FnOnce() + Send>>>,
-    pub chunk_loading: Arc<Mutex<ChunkLoading>>,
+    pub chunk_loading: Arc<pumpkin_util::sync::Mutex<ChunkLoading, ChunkLoading>>,
 
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
     pub(crate) entity_unloads: entity_unload::UnloadAdmission,
@@ -359,7 +359,9 @@ impl Level {
             scheduled_tick_collect_positions: Mutex::default(),
             #[cfg(test)]
             before_tick_unregister: Mutex::new(None),
-            chunk_loading: Arc::new(Mutex::new(ChunkLoading::new(level_channel.clone()))),
+            chunk_loading: Arc::new(pumpkin_util::sync::Mutex::new(ChunkLoading::new(
+                level_channel.clone(),
+            ))),
             chunk_watchers: Arc::new(DashMap::new()),
             entity_unloads: Arc::default(),
             tasks: TaskTracker::new(),

@@ -299,6 +299,10 @@ pub(crate) fn teleport_projectile(
     pitch: Option<f32>,
     destination: &Arc<World>,
 ) -> bool {
+    // Entity.teleport returns null for removed entities; true prevents the caller's fallback.
+    if entity.is_removed() {
+        return true;
+    }
     let source = entity.world.load_full();
     if Arc::ptr_eq(&source, destination) {
         return false;

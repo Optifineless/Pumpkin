@@ -17,6 +17,11 @@ pub struct ChunkLoading {
     pub sender: Arc<LevelChannel>,
 }
 
+impl pumpkin_util::sync::LockClass for ChunkLoading {
+    const NAME: &'static str = "chunk ticket state";
+    const LEVEL: u8 = 30;
+}
+
 impl ChunkLoading {
     // pub const FULL_CHUNK_LEVEL: i8 = 33;
     pub const FULL_CHUNK_LEVEL: i8 = 43;

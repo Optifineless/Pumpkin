@@ -8,6 +8,10 @@ use rustc_hash::FxHashSet;
 use super::{World, entity_persistence, guard_effects::GuardEffects, merge_entity_records};
 use crate::entity::{RemovalReason, player::Player};
 
+#[cfg(test)]
+#[path = "entity_unload_tests.rs"]
+mod tests;
+
 pub(super) struct EntityActivation {
     storage: SyncEntityChunk,
     player: Option<Weak<Player>>,
@@ -78,66 +82,35 @@ impl World {
         if request.storage.is_none() && !members.is_empty() {
             return;
         }
-        let records: Vec<_> = members
-            .iter()
-            .filter(|entity| {
-                !entity.get_entity().is_removed() && entity.get_entity().get_vehicle().is_none()
-            })
-            .map(entity_persistence::save_riding_tree)
-            .collect();
-        // Keep block-entity saving independent of entity-sidecar availability (PR-2 owns detach atomicity).
+        // PR-2b owns the callback-free block-entity snapshot/detach contract.
         self.save_block_entities(request.position);
         let ids: FxHashSet<_> = members
             .iter()
             .map(|entity| entity.get_entity().entity_id)
             .collect();
-        let remaining: Vec<_> = current
-            .iter()
-            .filter(|entity| !ids.contains(&entity.get_entity().entity_id))
-            .cloned()
-            .collect();
+        let remaining = (!members.is_empty()).then(|| {
+            Arc::new(
+                current
+                    .iter()
+                    .filter(|entity| !ids.contains(&entity.get_entity().entity_id))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+        });
         let bases: Vec<_> = members.iter().map(|entity| entity.get_entity()).collect();
         let effects = GuardEffects::new();
-        // Recheck complete membership before admission; Tokio-side mutation remains PR-2 work.
+        // Entry checks cannot exclude a writer already admitted before the retirement mark.
         if current.iter().any(|entity| {
             ids.contains(&entity.get_entity().entity_id)
                 != (entity_persistence::root_chunk(entity) == request.position)
         }) {
             return;
         }
-        if !self.level.commit_entity_unload(request, || {
-            if !members.is_empty() {
-                let previous = self
-                    .entities
-                    .compare_and_swap(&current, Arc::new(remaining));
-                if !Arc::ptr_eq(&previous, &current) {
-                    return false;
-                }
-            } else if !Arc::ptr_eq(&self.entities.load_full(), &current) {
-                return false;
-            }
-            if let Some(storage) = &request.storage {
-                let mut data = storage.data.lock().unwrap_or_else(PoisonError::into_inner);
-                let live = storage.live.load(Ordering::Acquire);
-                if live || !records.is_empty() {
-                    merge_entity_records(&mut data, live, records);
-                    storage.dirty.store(true, Ordering::Relaxed);
-                }
-                storage.live.store(false, Ordering::Release);
-            }
-            // PersistentEntitySectionManager.unloadEntity marks removed before tracker callbacks.
-            for entity in &bases {
-                if entity.removal_reason.load().is_none() {
-                    entity
-                        .removal_reason
-                        .store(Some(RemovalReason::UnloadedToChunk));
-                }
-                entity.removed.store(true, Ordering::Release);
-            }
-            true
-        }) {
+        let Some(was_live) = self.commit_entity_retirement(request, &current, remaining, &bases)
+        else {
             return;
-        }
+        };
+        self.store_retired_entities(request, &members, was_live);
         // Collect then dispatch: no admission/storage guard reaches these object calls.
         for member in &members {
             self.spawn_state.load().remove_entity(self, member.as_ref());
@@ -149,5 +122,69 @@ impl World {
         self.unload_block_entities(request.position);
         self.level.clean_entity_chunks([request.position]);
         drop(effects);
+    }
+
+    // PersistentEntitySectionManager.unloadEntity, adapted to irrevocable mark-before-save.
+    #[expect(
+        clippy::rc_buffer,
+        reason = "Retirement must compare the existing ArcSwap<Vec<...>> registry incarnation"
+    )]
+    fn commit_entity_retirement(
+        &self,
+        request: &EntityUnload,
+        current: &Arc<Vec<Arc<dyn crate::entity::EntityBase>>>,
+        remaining: Option<Arc<Vec<Arc<dyn crate::entity::EntityBase>>>>,
+        bases: &[&crate::entity::Entity],
+    ) -> Option<bool> {
+        let mut was_live = false;
+        let committed = self.level.commit_entity_unload(request, || {
+            if let Some(remaining) = remaining {
+                let previous = self.entities.compare_and_swap(current, remaining);
+                if !Arc::ptr_eq(&previous, current) {
+                    return false;
+                }
+            } else if !Arc::ptr_eq(&self.entities.load_full(), current) {
+                return false;
+            }
+            // Entity.setRemoved preserves the first reason; this fork marks before serialization.
+            for entity in bases {
+                let _ = entity
+                    .removal_reason
+                    .compare_exchange(None, Some(RemovalReason::UnloadedToChunk));
+                entity.removed.store(true, Ordering::Release);
+            }
+            if let Some(storage) = &request.storage {
+                let _data = storage.data.lock().unwrap_or_else(PoisonError::into_inner);
+                was_live = storage.live.swap(false, Ordering::AcqRel);
+                storage.dirty.store(true, Ordering::Relaxed);
+            }
+            true
+        });
+        committed.then_some(was_live)
+    }
+
+    fn store_retired_entities(
+        &self,
+        request: &EntityUnload,
+        members: &[Arc<dyn crate::entity::EntityBase>],
+        was_live: bool,
+    ) {
+        // Virtual serialization must run outside admission, before releasing terrain/cleanup authority.
+        let records: Vec<_> = members
+            .iter()
+            .filter(|entity| {
+                entity_persistence::can_save_retired(entity.get_entity())
+                    && entity.get_entity().get_vehicle().is_none()
+            })
+            .map(entity_persistence::save_retired_riding_tree)
+            .collect();
+        if let Some(storage) = &request.storage {
+            let mut data = storage.data.lock().unwrap_or_else(PoisonError::into_inner);
+            if was_live || !records.is_empty() {
+                merge_entity_records(&mut data, was_live, records);
+                storage.dirty.store(true, Ordering::Relaxed);
+            }
+        }
+        self.level.finish_entity_unload(request);
     }
 }

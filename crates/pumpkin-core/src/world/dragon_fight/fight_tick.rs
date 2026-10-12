@@ -168,8 +168,8 @@ impl World {
             });
         let needs_cleanup = entity
             .removal_reason
-            .swap(Some(RemovalReason::Discarded))
-            .is_none();
+            .compare_exchange(None, Some(RemovalReason::Discarded))
+            .is_ok();
         #[cfg(test)]
         super::removal_lock_tests::observe_marked();
         needs_cleanup

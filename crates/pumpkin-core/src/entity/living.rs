@@ -615,6 +615,10 @@ impl LivingEntity {
     }
 
     pub fn set_health(&self, health: f32) {
+        // Fork retirement rejection; vanilla LivingEntity.setHealth only clamps and writes.
+        if self.entity.is_removed() {
+            return;
+        }
         let _owner = self.damage_owner.enter();
         // Clamp to [0, max_health]
         let max_health = self.get_max_health();

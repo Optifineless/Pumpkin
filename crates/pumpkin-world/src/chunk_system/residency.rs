@@ -1,7 +1,6 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashSet, sync::Arc};
+
+use pumpkin_util::sync::Mutex;
 
 use super::{ChunkLoading, ChunkPos};
 use crate::chunk::ChunkReadingError;
@@ -9,14 +8,14 @@ use crate::chunk::ChunkReadingError;
 /// Retains full-chunk tickets until dropped, including when an async load is cancelled.
 /// Await chunk readiness separately before reading terrain.
 pub struct ChunkResidency {
-    loading: Arc<Mutex<ChunkLoading>>,
+    loading: Arc<Mutex<ChunkLoading, ChunkLoading>>,
     chunks: Vec<ChunkPos>,
     positions: HashSet<ChunkPos>,
 }
 
 impl ChunkResidency {
     #[must_use]
-    pub fn new(loading: Arc<Mutex<ChunkLoading>>) -> Self {
+    pub fn new(loading: Arc<Mutex<ChunkLoading, ChunkLoading>>) -> Self {
         Self {
             loading,
             chunks: Vec::new(),

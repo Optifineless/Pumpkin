@@ -1,6 +1,119 @@
 use super::*;
 use crate::chunk::ChunkData;
 
+#[test]
+fn residency_after_unload_decision_preserves_terrain_until_release() {
+    let (mut schedule, _) = scheduler();
+    let pos = ChunkPos::new(0, 0);
+    let chunk = ChunkData::empty_sync(0, 0);
+    schedule.publish_chunk(pos, chunk.clone());
+    schedule.chunk_map.insert(
+        pos,
+        ChunkHolder {
+            public: true,
+            chunk: Some(Chunk::Level(chunk.clone())),
+            current_stage: StagedChunkEnum::Full,
+            ..Default::default()
+        },
+    );
+    schedule.unload_chunks.insert(pos);
+    // The portal's real RAII handle arrives after the scheduler's unload decision.
+    // A neighbor ticket also retains this position through propagated pos_level.
+    let mut residency =
+        crate::chunk_system::residency::ChunkResidency::new(schedule.chunk_loading.clone());
+    residency.add(ChunkPos::new(1, 0));
+    schedule.process_unload_queue();
+    assert!(
+        schedule
+            .public_chunk_map
+            .get(&pos)
+            .is_some_and(|entry| Arc::ptr_eq(&entry, &chunk)),
+        "residency ticket failed to retain the published incarnation"
+    );
+    assert!(schedule.chunk_map[&pos].public);
+    assert!(schedule.unload_chunks.contains(&pos));
+    assert!(
+        matches!(schedule.loaded_chunk_changes.pop(), Some(LoadedChunkChange::Loaded(p)) if p == pos)
+    );
+    assert!(schedule.loaded_chunk_changes.is_empty());
+    drop(residency);
+    schedule.process_unload_queue();
+    assert!(!schedule.public_chunk_map.contains_key(&pos));
+    assert!(!schedule.chunk_map.contains_key(&pos));
+    assert!(schedule.unload_chunks.is_empty());
+    assert!(
+        matches!(schedule.loaded_chunk_changes.pop(), Some(LoadedChunkChange::Unloaded(p)) if p == pos)
+    );
+    assert!(schedule.loaded_chunk_changes.is_empty());
+}
+
+#[tokio::test]
+async fn rewatch_after_terrain_check_preserves_the_published_incarnation() {
+    let directory = tempfile::tempdir().unwrap();
+    let level = Level::from_root_folder(
+        &pumpkin_config::world::LevelConfig::default(),
+        directory.path().into(),
+        0,
+        pumpkin_data::dimension::Dimension::OVERWORLD,
+    );
+    let (mut schedule, _) = scheduler();
+    schedule.entity_unloads = level.entity_unloads.clone();
+    schedule.public_chunk_map = level.loaded_chunks.clone();
+    let pos = ChunkPos::new(0, 0);
+    let chunk = ChunkData::empty_sync(0, 0);
+    schedule.publish_chunk(pos, chunk.clone());
+    schedule.chunk_map.insert(
+        pos,
+        ChunkHolder {
+            public: true,
+            chunk: Some(Chunk::Level(chunk.clone())),
+            current_stage: StagedChunkEnum::Full,
+            ..Default::default()
+        },
+    );
+    // The earlier scheduler decision is obsolete before the final map mutation.
+    assert!(!schedule.entity_unloads.lock().unwrap().retains_terrain(pos));
+    level.watch_entity_chunks(&[pos]);
+    schedule.unload_chunks.insert(pos);
+    schedule.process_unload_queue();
+    assert!(Arc::ptr_eq(
+        &schedule.public_chunk_map.get(&pos).unwrap(),
+        &chunk
+    ));
+    assert!(schedule.chunk_map.contains_key(&pos));
+    assert!(schedule.unload_chunks.contains(&pos));
+    assert!(
+        matches!(schedule.loaded_chunk_changes.pop(), Some(LoadedChunkChange::Loaded(p)) if p == pos)
+    );
+    assert!(schedule.loaded_chunk_changes.is_empty());
+    level.shutdown().await.unwrap();
+}
+
+#[test]
+fn terrain_unload_cannot_remove_a_replacement_incarnation() {
+    let (mut schedule, _) = scheduler();
+    let pos = ChunkPos::new(0, 0);
+    let old = ChunkData::empty_sync(0, 0);
+    let replacement = ChunkData::empty_sync(0, 0);
+    schedule.chunk_map.insert(
+        pos,
+        ChunkHolder {
+            public: true,
+            chunk: Some(Chunk::Level(old)),
+            current_stage: StagedChunkEnum::Full,
+            ..Default::default()
+        },
+    );
+    schedule.publish_chunk(pos, replacement.clone());
+    schedule.unload_chunks.insert(pos);
+    schedule.process_unload_queue();
+    assert!(Arc::ptr_eq(
+        &schedule.public_chunk_map.get(&pos).unwrap(),
+        &replacement
+    ));
+    assert!(schedule.chunk_map.contains_key(&pos));
+}
+
 fn scheduler() -> (
     GenerationSchedule,
     tokio::sync::mpsc::Receiver<Vec<ChunkPos>>,
@@ -17,7 +130,9 @@ fn scheduler() -> (
             last_level: ChunkLevel::default(),
             last_high_priority: Vec::new(),
             send_level: level_channel.clone(),
-            chunk_loading: Arc::new(Mutex::new(ChunkLoading::new(level_channel))),
+            chunk_loading: Arc::new(pumpkin_util::sync::Mutex::new(ChunkLoading::new(
+                level_channel,
+            ))),
             public_chunk_map: Arc::new(DashMap::new()),
             entity_unloads: Arc::default(),
             loaded_chunk_changes: Arc::new(crossbeam::queue::SegQueue::new()),

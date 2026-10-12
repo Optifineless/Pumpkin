@@ -585,8 +585,6 @@ crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#10
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#11
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#12
-crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#13
-crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#14
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#2
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#3
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#4
@@ -835,7 +833,6 @@ crates/pumpkin-world/src/chunk_system/chunk_state.rs::upgrade_to_level_chunk::st
 crates/pumpkin-world/src/chunk_system/schedule.rs::create::std::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk_system/schedule.rs::create::tokio::sync::Mutex::new#1
 crates/pumpkin-world/src/chunk_system/storage_failure_tests.rs::scheduler::unknown::Mutex::new#1
-crates/pumpkin-world/src/chunk_system/storage_failure_tests.rs::scheduler::unknown::Mutex::new#2
 crates/pumpkin-world/src/data/player_data.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/end_city/mod.rs::get_structure_position::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/jigsaw_placement.rs::add_pieces::std::sync::Mutex::new#1
@@ -850,7 +847,6 @@ crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#1
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#2
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#3
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#4
-crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#5
 crates/pumpkin-world/src/session_lock.rs::<module>::std::sync::Mutex::new#1
 crates/pumpkin-world/src/storage_tests.rs::cancellation_before_queued_open_keeps_cleanup_with_the_operation::block_on#1
 crates/pumpkin-world/src/storage_tests.rs::cancellation_before_queued_open_keeps_cleanup_with_the_operation::block_on#2

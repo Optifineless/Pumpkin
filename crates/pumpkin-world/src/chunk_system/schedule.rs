@@ -1,5 +1,7 @@
 #[path = "storage_failure.rs"]
 mod storage_failure;
+#[path = "terrain_unload.rs"]
+mod terrain_unload;
 
 use super::channel::LevelChange;
 use super::chunk_holder::ChunkHolder;
@@ -58,7 +60,7 @@ pub struct GenerationSchedule {
     last_level: ChunkLevel,
     last_high_priority: Vec<ChunkPos>,
     send_level: Arc<LevelChannel>,
-    chunk_loading: Arc<Mutex<ChunkLoading>>,
+    chunk_loading: Arc<pumpkin_util::sync::Mutex<ChunkLoading, ChunkLoading>>,
 
     public_chunk_map: Arc<DashMap<Vector2<i32>, SyncChunk>>,
     entity_unloads: crate::level::entity_unload::UnloadAdmission,
@@ -849,20 +851,6 @@ impl GenerationSchedule {
         }
     }
 
-    fn unpublish_if_unticketed(&self, pos: ChunkPos) -> bool {
-        // ChunkMap.updateChunkScheduling rescinds queued unloads after a new ticket.
-        // Only the ticket check and terrain unpublication share this leaf lock.
-        let loading = self
-            .chunk_loading
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if loading.pos_level.contains_key(&pos) {
-            return false;
-        }
-        self.unpublish_chunk(pos);
-        true
-    }
-
     fn process_unload_queue(&mut self) {
         if self.unload_chunks.is_empty() {
             return;
@@ -881,18 +869,6 @@ impl GenerationSchedule {
                 self.chunk_map.insert(pos, holder);
                 continue;
             }
-            // ChunkMap.scheduleUnload rechecks tickets and keeps terrain until live contents are saved.
-            if self
-                .entity_unloads
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .retains_terrain(pos)
-            {
-                self.chunk_map.insert(pos, holder);
-                self.unload_chunks.insert(pos);
-                continue;
-            }
-
             if self.failed_loads.remove(&pos).is_some() {
                 self.drop_node(holder.occupied);
                 holder.occupied = NodeKey::null();
@@ -904,12 +880,13 @@ impl GenerationSchedule {
                 continue;
             }
 
-            if !self.unpublish_if_unticketed(pos) {
+            if !self.claim_terrain_unload(pos, &holder) {
                 self.chunk_map.insert(pos, holder);
                 self.unload_chunks.insert(pos);
                 continue;
             }
             holder.public = false;
+
             self.listener.clear_failure(pos);
             for task in holder.tasks {
                 if !task.is_null() {

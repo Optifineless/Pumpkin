@@ -5,9 +5,24 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::math::vector2::Vector2;
 
 use super::World;
-use crate::entity::{EntityBase, player::Player, spawn_mount::UnpublishedRidingTree};
+use crate::entity::{
+    Entity, EntityBase, RemovalReason, player::Player, spawn_mount::UnpublishedRidingTree,
+};
 
 pub(super) fn save_riding_tree(entity: &Arc<dyn EntityBase>) -> NbtCompound {
+    save_tree(entity, false)
+}
+
+pub(super) fn can_save_retired(entity: &Entity) -> bool {
+    !entity.is_removed() || entity.removal_reason.load() == Some(RemovalReason::UnloadedToChunk)
+}
+
+// Entity.saveWithoutId's passenger traversal, adapted to the fork's mark-before-save ordering.
+pub(super) fn save_retired_riding_tree(entity: &Arc<dyn EntityBase>) -> NbtCompound {
+    save_tree(entity, true)
+}
+
+fn save_tree(entity: &Arc<dyn EntityBase>, retiring: bool) -> NbtCompound {
     let mut nbt = NbtCompound::new();
     entity.write_nbt(&mut nbt);
     // Entity.saveWithoutId stores a passenger's X/Z at its vehicle, retaining its own Y.
@@ -31,9 +46,13 @@ pub(super) fn save_riding_tree(entity: &Arc<dyn EntityBase>) -> NbtCompound {
     let saved: Vec<_> = passengers
         .iter()
         .filter(|passenger| {
-            !passenger.get_entity().is_removed() && passenger.get_player().is_none()
+            (if retiring {
+                can_save_retired(passenger.get_entity())
+            } else {
+                !passenger.get_entity().is_removed()
+            }) && passenger.get_player().is_none()
         })
-        .map(|passenger| NbtTag::Compound(save_riding_tree(passenger)))
+        .map(|passenger| NbtTag::Compound(save_tree(passenger, retiring)))
         .collect();
     if !saved.is_empty() {
         nbt.put("Passengers", NbtTag::List(saved));

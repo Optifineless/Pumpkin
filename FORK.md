@@ -18,6 +18,36 @@ Explicitly unprotected after this PR: Tokio-side mutation during serialization
 snapshot-and-detach gap (PR-2); equipment/cargo/invulnerability writers (named
 follow-up after PR-3). Block-entity saving and detachment retain the pre-PR path.
 
+## Entity unload retirement, #150 split PR-2 (v2)
+
+Registry detachment succeeds before the irrevocable first-reason removal mark.
+Detached entities serialize outside admission, including unloaded passenger trees;
+terrain/cleanup authority stays retained until their records are published.
+Later position, teleport, world, health and riding writes are rejected at entry.
+Forced tickets publish authoritative watches synchronously, and final terrain
+unpublication rechecks watch authority, residency tickets and the expected chunk
+incarnation together. The shared ticket wrapper stays in an Arc for portal residency.
+API 8 (same version): existing force/task/ticket locks are instrumented and the
+force transitions share unload admission; rebuild native plugins. Written by Codex.
+In-game verification: **Not yet**.
+
+**EXPLICITLY UNPROTECTED** until the named follow-ups:
+
+- A writer that passed its `is_removed` check before the mark and writes after
+  serialization (tick-phase window): entity writer ownership follow-up. Entry
+  checks are best-effort rejection, not exclusion of an already admitted writer.
+- A block-entity handle (`get_block_entity` Arc) retained across a rewatch, and
+  the existing block-entity snapshot/detach gap: **PR-2b: block-entity leaf snapshot
+  contract**. Block-entity save/detach ordering is unchanged in this PR.
+- Ordinary `/save-all` versus retirement overwrite: **PR-3: shared ordinary-save
+  admission**. This race remains accepted and unprotected here.
+- Equipment/cargo/invulnerability and other persisted writer families: named
+  writer coverage follow-up after PR-3.
+- Per-chunk registry rescan cost and unordered movement storage-watcher deltas:
+  P2 backlog. Empty membership now skips the replacement registry allocation,
+  and completed hidden never-installed storage forgets its generation without
+  resetting the monotonic generation counter.
+
 ## How the code here is written
 
 The changes in this fork are written by AI coding agents, not by hand. The fork owner tests them in-game but does not review the code line by line. Treat every commit that isn't from upstream accordingly.

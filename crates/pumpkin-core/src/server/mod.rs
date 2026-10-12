@@ -175,7 +175,7 @@ pub struct Server {
     /// Manages scheduled tasks (e.g. from plugins)
     /// Manages scheduled datapack functions (`/schedule`)
     pub scheduled_functions: Arc<crate::server::scheduler::ScheduledFunctionQueue>,
-    tasks: TaskTracker,
+    pub(crate) tasks: TaskTracker,
     pub runtime: tokio::runtime::Handle,
     pub management_hub: Arc<crate::net::management::hub::ManagementHub>,
 

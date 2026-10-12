@@ -66,6 +66,10 @@ impl Level {
             .entity_unloads
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        self.watch_entity_chunks_locked(&mut unloads, chunks);
+    }
+
+    fn watch_entity_chunks_locked(&self, unloads: &mut EntityUnloads, chunks: &[Vector2<i32>]) {
         for &pos in chunks {
             unloads.invalidate(pos);
             unloads.retained_terrain.insert(pos);
@@ -82,6 +86,14 @@ impl Level {
             .entity_unloads
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        self.unwatch_entity_chunks_locked(&mut unloads, chunks)
+    }
+
+    fn unwatch_entity_chunks_locked(
+        &self,
+        unloads: &mut EntityUnloads,
+        chunks: &[Vector2<i32>],
+    ) -> Vec<Vector2<i32>> {
         let mut hidden = Vec::new();
         for &pos in chunks {
             if let dashmap::Entry::Occupied(mut entry) = self.chunk_watchers.entry(pos) {
@@ -89,11 +101,31 @@ impl Level {
                 if *entry.get() == 0 {
                     entry.remove();
                     hidden.push(pos);
-                    self.request_entity_unload_locked(&mut unloads, pos);
+                    self.request_entity_unload_locked(unloads, pos);
                 }
             }
         }
         hidden
+    }
+
+    /// Publishes forced membership/tickets and visibility under the same unload admission.
+    /// The change closure is leaf-only: no callbacks, serialization, sends or awaits.
+    pub fn change_forced_entity_chunks<R>(
+        &self,
+        forced: bool,
+        change: impl FnOnce() -> (Vec<Vector2<i32>>, R),
+    ) -> R {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let (changed, result) = change();
+        if forced {
+            self.watch_entity_chunks_locked(&mut unloads, &changed);
+        } else {
+            self.unwatch_entity_chunks_locked(&mut unloads, &changed);
+        }
+        result
     }
 
     /// Updates storage cache watch counts after synchronous visibility publication.
@@ -159,6 +191,7 @@ impl Level {
 
     /// Commits current hidden storage; the closure may only publish prepared leaf state.
     /// No object callbacks, serialization, packets, plugins or awaits are allowed inside it.
+    /// On success the tick owner must publish detached records, then call `finish_entity_unload`.
     pub fn commit_entity_unload(
         &self,
         request: &EntityUnload,
@@ -192,9 +225,20 @@ impl Level {
                 .or_insert_with(|| request.clone());
             return false;
         }
-        unloads.invalidate(pos);
-        unloads.retained_terrain.remove(&pos);
         true
+    }
+
+    /// Releases a committed unload after detached records are published outside admission.
+    /// Rewatch or a fresh hidden incarnation retains its own authority.
+    pub fn finish_entity_unload(&self, request: &EntityUnload) {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if unloads.generations.get(&request.position) == Some(&request.generation) {
+            unloads.invalidate(request.position);
+            unloads.retained_terrain.remove(&request.position);
+        }
     }
 
     /// Claims an installed storage incarnation for activation, cancelling older unloads.
@@ -232,16 +276,28 @@ impl Level {
     pub(super) fn clean_retired_entity_chunks(self: &Arc<Self>, positions: Vec<Vector2<i32>>) {
         for pos in positions {
             let candidate = {
-                let unloads = self
+                let mut unloads = self
                     .entity_unloads
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner);
                 if self.chunk_watchers.contains_key(&pos) || unloads.pending.contains_key(&pos) {
                     continue;
                 }
-                self.loaded_entity_chunks
+                let candidate = self
+                    .loaded_entity_chunks
                     .get(&pos)
-                    .map(|entry| entry.clone())
+                    .map(|entry| entry.clone());
+                if candidate.is_none()
+                    && !self
+                        .entity_loads
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .contains_key(&pos)
+                    && !self.pending_entity_generations.contains_key(&pos)
+                {
+                    unloads.forget(pos);
+                }
+                candidate
             };
             let Some(storage) = candidate else { continue };
             if storage.live.load(Ordering::Acquire) {
@@ -286,5 +342,45 @@ impl Level {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn forgotten_never_installed_storage_does_not_reuse_unload_authority() {
+        let directory = tempfile::tempdir().unwrap();
+        let level = Level::from_root_folder(
+            &pumpkin_config::world::LevelConfig::default(),
+            directory.path().into(),
+            0,
+            pumpkin_data::dimension::Dimension::OVERWORLD,
+        );
+        let pos = Vector2::new(0, 0);
+        level.watch_entity_chunks(&[pos]);
+        level.unwatch_entity_chunks(&[pos]);
+        let old = level.pending_entity_unloads().pop().unwrap();
+        assert!(old.storage.is_none());
+        assert!(level.commit_entity_unload(&old, || true));
+        level.finish_entity_unload(&old);
+        level.clean_retired_entity_chunks(vec![pos]);
+        assert!(
+            !level
+                .entity_unloads
+                .lock()
+                .unwrap()
+                .generations
+                .contains_key(&pos)
+        );
+        level.watch_entity_chunks(&[pos]);
+        level.unwatch_entity_chunks(&[pos]);
+        let new = level.pending_entity_unloads().pop().unwrap();
+        assert!(new.generation > old.generation);
+        assert!(!level.commit_entity_unload(&old, || panic!("forgotten authority was reused")));
+        assert!(level.commit_entity_unload(&new, || true));
+        level.finish_entity_unload(&new);
+        level.shutdown().await.unwrap();
     }
 }

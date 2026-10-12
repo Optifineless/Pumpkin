@@ -106,6 +106,7 @@ pub(crate) mod player_skin;
 mod player_teleport;
 pub mod projectile;
 pub mod projectile_deflection;
+mod riding_retirement;
 pub(crate) mod spawn_mount;
 
 mod leash_shearing;
@@ -1218,6 +1219,10 @@ impl Entity {
     /// Updates the world reference for this entity.
     /// Called when the entity changes dimensions (e.g., through a nether portal).
     pub fn set_world(&self, world: Arc<World>) {
+        // Fork retirement rejection; Entity.teleportCrossDimension admits only live entities.
+        if self.is_removed() {
+            return;
+        }
         let block_pos = self.block_pos.load();
         let biome = world.level.get_rough_biome(&block_pos);
         self.current_biome.store(Arc::new(biome));
@@ -1423,6 +1428,10 @@ impl Entity {
     ///
     /// This function calculates the new position, block position, and chunk position based on the provided coordinates. If any of these values change, the corresponding fields are updated.
     pub fn set_pos(&self, new_position: Vector3<f64>) {
+        // Fork retirement rejection; vanilla Entity.setPosRaw itself does not reject removal.
+        if self.is_removed() {
+            return;
+        }
         let pos = self.pos.load();
         if pos != new_position {
             self.pos.store(new_position);
@@ -3210,6 +3219,10 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
+        // Entity.teleport rejects removed entities before changing position or sending packets.
+        if self.is_removed() {
+            return;
+        }
         // Update server-side position and bounding box
         self.set_pos(position);
         if let Some(yaw) = yaw {
@@ -3469,6 +3482,10 @@ impl Entity {
     }
 
     pub fn add_passenger(&self, vehicle: Arc<dyn EntityBase>, passenger: Arc<dyn EntityBase>) {
+        // Entity.startRiding/addPassenger, with fork retirement rejection on both members.
+        if self.is_removed() || passenger.get_entity().is_removed() {
+            return;
+        }
         let mut mount_event =
             crate::plugin::api::events::entity::entity_mount::EntityMountEvent::new(
                 passenger.get_entity().entity_id,
@@ -3487,7 +3504,11 @@ impl Entity {
                 .plugin_manager
                 .fire_blocking(&server, &mut vehicle_enter);
         }
-        if mount_event.cancelled || vehicle_enter.cancelled {
+        if mount_event.cancelled
+            || vehicle_enter.cancelled
+            || self.is_removed()
+            || passenger.get_entity().is_removed()
+        {
             return;
         }
 
@@ -3503,9 +3524,11 @@ impl Entity {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         passengers.push(passenger);
 
-        let passenger_ids: Vec<VarInt> = passengers
+        let current_passengers = passengers.clone();
+        drop(passengers);
+        let passenger_ids: Vec<VarInt> = current_passengers
             .iter()
-            .map(|p| VarInt(p.get_entity().entity_id))
+            .map(|passenger| VarInt(passenger.get_entity().entity_id))
             .collect();
 
         let world = self.world.load();
@@ -3519,27 +3542,7 @@ impl Entity {
     pub(crate) fn remove_passenger_on_disconnect(&self, passenger_id: i32) {
         #[cfg(test)]
         crate::server::scenario::riding_lock_probe::assert_unlocked(self);
-        let mut passengers = self
-            .passengers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(index) = passengers
-            .iter()
-            .position(|passenger| passenger.get_entity().entity_id == passenger_id)
-        {
-            let passenger = passengers.remove(index);
-            *passenger
-                .get_entity()
-                .vehicle
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        }
-
-        let passenger_ids: Vec<VarInt> = passengers
-            .iter()
-            .map(|passenger| VarInt(passenger.get_entity().entity_id))
-            .collect();
-        drop(passengers);
+        let (_, passenger_ids) = self.unlink_passenger(passenger_id);
 
         self.world.load().broadcast_to_chunk(
             self.chunk_pos.load(),
@@ -3548,6 +3551,10 @@ impl Entity {
     }
 
     pub fn remove_passenger_sync(&self, passenger_id: i32) {
+        // Live /ride dismount rejects retirement; disconnect cleanup uses the mandatory path directly.
+        if self.is_removed() {
+            return;
+        }
         self.remove_passenger_on_disconnect(passenger_id);
     }
 
@@ -3561,6 +3568,10 @@ impl Entity {
 
     #[allow(clippy::too_many_lines)]
     fn remove_passenger_internal(&self, passenger_id: i32, reposition: bool) {
+        // Entity.removePassenger; terminal unload teardown uses detach_unloaded_trees instead.
+        if self.is_removed() {
+            return;
+        }
         #[cfg(test)]
         crate::server::scenario::riding_lock_probe::assert_unlocked(self);
         let mut dismount_event =
@@ -3581,34 +3592,11 @@ impl Entity {
                 .plugin_manager
                 .fire_blocking(&server, &mut vehicle_exit);
         }
-        if dismount_event.cancelled || vehicle_exit.cancelled {
+        if dismount_event.cancelled || vehicle_exit.cancelled || self.is_removed() {
             return;
         }
 
-        let (removed_passenger, passenger_ids) = {
-            let mut passengers = self
-                .passengers
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let removed_passenger = passengers
-                .iter()
-                .position(|p| p.get_entity().entity_id == passenger_id)
-                .map(|idx| {
-                    let passenger = passengers.remove(idx);
-                    *passenger
-                        .get_entity()
-                        .vehicle
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-                    passenger
-                });
-
-            let passenger_ids: Vec<VarInt> = passengers
-                .iter()
-                .map(|p| VarInt(p.get_entity().entity_id))
-                .collect();
-            (removed_passenger, passenger_ids)
-        };
+        let (removed_passenger, passenger_ids) = self.unlink_passenger(passenger_id);
 
         let chunk_pos = self.chunk_pos.load();
 

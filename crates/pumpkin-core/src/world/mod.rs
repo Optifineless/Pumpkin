@@ -35,6 +35,7 @@ mod entity_persistence;
 mod entity_unload;
 pub mod explosion;
 pub(crate) mod fluid_lookup;
+mod forced_chunks;
 pub mod generation_cache;
 pub mod loot;
 pub mod map;
@@ -383,10 +384,12 @@ pub struct World {
     pub active_chunks: RwLock<FxHashSet<Vector2<i32>>>,
     active_chunk_tick_snapshot: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     active_chunk_tracker: std::sync::Mutex<ActiveChunkTracker>,
-    pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
+    pub forced_chunks:
+        pumpkin_util::sync::Mutex<FxHashSet<Vector2<i32>>, forced_chunks::ForcedChunks>,
     /// Last `/forceload` work task. Force changes chain through it because
     /// `spawn_task` does not order the tasks it spawns.
-    force_change_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    force_change_task:
+        pumpkin_util::sync::Mutex<Option<forced_chunks::ForceChange>, forced_chunks::ForceChanges>,
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
     pub block_entities: DashMap<Vector2<i32>, FxHashMap<BlockPos, Arc<dyn BlockEntity>>>,
@@ -560,8 +563,8 @@ impl World {
             active_chunks: RwLock::new(FxHashSet::default()),
             active_chunk_tick_snapshot: std::sync::Mutex::default(),
             active_chunk_tracker: std::sync::Mutex::new(ActiveChunkTracker::default()),
-            forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
-            force_change_task: std::sync::Mutex::new(None),
+            forced_chunks: pumpkin_util::sync::Mutex::new(FxHashSet::default()),
+            force_change_task: pumpkin_util::sync::Mutex::new(None),
             server,
             block_entities: DashMap::new(),
             pending_block_entity_loads: std::sync::Mutex::default(),
@@ -676,78 +679,6 @@ impl World {
             &self.entities,
             self,
         )));
-    }
-
-    /// Adds or removes force tickets for `chunks`, mirroring vanilla
-    /// `ServerLevel.setChunkForced`: the chunks stay loaded, their entities are
-    /// kept live through the watch counts, and they join the active set.
-    pub fn set_chunks_forced(self: &Arc<Self>, chunks: &[Vector2<i32>], forced: bool) {
-        let changed: Vec<Vector2<i32>> = {
-            let mut guard = self
-                .forced_chunks
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut changed = Vec::new();
-            for &chunk in chunks {
-                let changed_membership = if forced {
-                    guard.insert(chunk)
-                } else {
-                    guard.remove(&chunk)
-                };
-                if changed_membership {
-                    changed.push(chunk);
-                }
-            }
-            changed
-        };
-        if changed.is_empty() {
-            return;
-        }
-
-        let mut lock = self
-            .level
-            .chunk_loading
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for &chunk in &changed {
-            if forced {
-                lock.add_force_ticket(chunk);
-            } else {
-                lock.remove_force_ticket(chunk);
-            }
-        }
-        lock.send_change();
-        drop(lock);
-
-        if let Some(server) = self.server.upgrade() {
-            let level = self.level.clone();
-            let world = self.clone();
-            let watched = changed;
-            // A force change has to run before the unforce that follows it:
-            // the watch counts are updated inside these tasks, so running them
-            // out of order leaves a count on a chunk that is no longer forced.
-            let mut previous_task = self
-                .force_change_task
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let previous = previous_task.take();
-            *previous_task = Some(server.spawn_task(async move {
-                if let Some(previous) = previous {
-                    let _ = previous.await;
-                }
-                if forced {
-                    level.mark_chunks_as_newly_watched(&watched).await;
-                    world.spawn_forced_entity_chunks(watched);
-                } else {
-                    let chunks_to_clean = level.mark_chunks_as_not_watched(watched).await;
-                    if !chunks_to_clean.is_empty() {
-                        world.remove_entities_in_chunks(&chunks_to_clean).await;
-                    }
-                }
-            }));
-        }
-
-        self.update_active_chunks();
     }
 
     pub fn get_lighting_config(&self) -> LightingEngineConfig {
