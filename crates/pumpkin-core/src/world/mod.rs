@@ -194,6 +194,7 @@ mod fishing_hook;
 mod game_events;
 pub(crate) mod generation_spawning;
 pub mod guard_effects;
+mod item_drop;
 #[cfg(test)]
 mod minecart_stall_tests;
 pub mod natural_spawner;
@@ -5666,37 +5667,7 @@ impl World {
     }
 
     pub fn drop_stack(self: &Arc<Self>, pos: &BlockPos, stack: ItemStack) {
-        if stack.is_empty() {
-            return;
-        }
-
-        let half_height = f64::from(EntityType::ITEM.dimension[1]) / 2.0;
-        let spawn_pos = {
-            let mut r = rand::rng();
-            Vector3::new(
-                f64::from(pos.0.x) + 0.5 + r.random_range(-0.25..0.25),
-                f64::from(pos.0.y) + 0.5 + r.random_range(-0.25..0.25) - half_height,
-                f64::from(pos.0.z) + 0.5 + r.random_range(-0.25..0.25),
-            )
-        };
-
-        let entity = Entity::new(self.clone(), spawn_pos, &EntityType::ITEM);
-        let mut item_event = crate::plugin::api::events::entity::item_spawn::ItemSpawnEvent::new(
-            entity.entity_id,
-            spawn_pos,
-            stack.item.registry_key.to_string(),
-        );
-        if let Some(server) = self.server.upgrade() {
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut item_event);
-        }
-        if item_event.cancelled {
-            return;
-        }
-
-        let item_entity = Arc::new(ItemEntity::new(entity, stack));
-        self.spawn_entity(item_entity);
+        self.drop_stack_with_commit(pos, stack, || true);
     }
 
     pub fn drop_stack_from_face(

@@ -543,3 +543,7 @@ Bedrock offhand equipment updates use the protocol offhand container 119, includ
 ## PR #102 shared block destruction hook
 
 The shared `player_will_destroy` hook runs after break-event admission and before loot or removal; the paired-block helper suppresses drops and sends destroy effects to Java and Bedrock clients. It provides the vanilla ordering used by `ServerPlayerGameMode.destroyBlock`, `AbstractBedBlock.playerWillDestroy`, and `DoublePlantBlock.preventDropFromBottomPart`. API 8 (same version); native plugins should rebuild for the `BlockBehaviour` trait layout change. Wasm WIT is unchanged. In-game verification: **Not yet**.
+
+## Glass bottle water pickup (#116 issue #32)
+
+Water bottle filling clips the player’s block outline and source fluids within the block interaction range, uses the main-hand collision context even for an offhand bottle, and checks world-border and spawn protection before changing the bottle. It emits the neutral fill sound and `FLUID_PICKUP`, awards the item-use statistic, then commits the captured hand after plugin callbacks. Dragon-breath collection remains first. Mirrors vanilla 26.3 `BottleItem.use/turnBottleIntoItem`, `Item.getPlayerPOVHitResult`, `BlockGetter.clip` and `Level.mayInteract`. In-game verification: **Not yet**.
