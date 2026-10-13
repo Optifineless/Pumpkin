@@ -51,6 +51,7 @@ pub(in super::super) async fn unrecognised_prediction_placement(denied: bool) ->
         let total = conserved_items(&fixture);
         let (container, slot, _) = hand_address(hand);
         let packet = click_block_packet(
+            &fixture.owner.player,
             if hand == Hand::Left {
                 HandSlot::Offhand
             } else {
@@ -265,8 +266,13 @@ async fn air_selection_callback(phase: SelectionCallback) -> TestResult {
             NetworkItemDescriptor::from(&eggs.copy_with_count(1)),
         ),
     );
-    let mut packet =
-        click_block_packet(HandSlot::Mainhand, BlockPos::new(8, 64, 8), &eggs, actions);
+    let mut packet = click_block_packet(
+        &fixture.owner.player,
+        HandSlot::Mainhand,
+        BlockPos::new(8, 64, 8),
+        &eggs,
+        actions,
+    );
     if let TransactionData::UseItem(data) = &mut packet.transaction_data {
         data.action_type = VarInt(1);
     }
@@ -350,7 +356,13 @@ async fn authoritative_final_publication_selection_uses_empty_hand_damage() -> T
     fixture.drain_packets();
     fixture.owner.client().handle_inventory_action(
         &player,
-        click_block_packet(HandSlot::Mainhand, position, &blocks, Vec::new()),
+        click_block_packet(
+            &fixture.owner.player,
+            HandSlot::Mainhand,
+            position,
+            &blocks,
+            Vec::new(),
+        ),
     );
     fixture
         .verify_and_close(|fixture| {

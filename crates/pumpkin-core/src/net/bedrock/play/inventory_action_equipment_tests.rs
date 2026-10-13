@@ -93,7 +93,13 @@ async fn transaction_moves_a_shared_modifier_between_hands() -> TestResult {
             NetworkItemDescriptor::from(ItemStack::EMPTY),
         ),
     ];
-    let mut packet = click_block_packet(HandSlot::Mainhand, BlockPos::new(8, 64, 8), &off, actions);
+    let mut packet = click_block_packet(
+        &fixture.owner.player,
+        HandSlot::Mainhand,
+        BlockPos::new(8, 64, 8),
+        &off,
+        actions,
+    );
     packet.transaction_type = VarUInt(0);
     packet.transaction_data = TransactionData::Normal(NormalTransactionData);
     fixture.drain_packets();

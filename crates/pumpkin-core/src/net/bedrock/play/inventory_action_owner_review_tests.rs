@@ -44,6 +44,7 @@ async fn default_block_use_runs_only_for_mainhand() -> TestResult {
         };
         let correction = fixture.owner.client().serialize_packet(&correction)?;
         let packet = click_block_packet(
+            &fixture.owner.player,
             if hand == Hand::Left {
                 HandSlot::Offhand
             } else {
@@ -124,7 +125,13 @@ async fn offhand_fallback_preserves_distinct_mainhand_item() -> TestResult {
             .living_entity
             .send_equipment_changes(&[(EquipmentSlot::OFF_HAND, off.clone())]);
         fixture.drain_packets();
-        let packet = click_block_packet(HandSlot::Offhand, position, &off, Vec::new());
+        let packet = click_block_packet(
+            &fixture.owner.player,
+            HandSlot::Offhand,
+            position,
+            &off,
+            Vec::new(),
+        );
         fixture
             .owner
             .client()
@@ -211,6 +218,7 @@ async fn predicted_last_egg_retains_authoritative_projectile_item() -> TestResul
                 Vec::new()
             };
             let mut packet = click_block_packet(
+                &fixture.owner.player,
                 if hand == Hand::Left {
                     HandSlot::Offhand
                 } else {
@@ -299,6 +307,7 @@ async fn predicted_bucket_exchange_uses_authoritative_original_item() -> TestRes
                 Vec::new()
             };
             let packet = click_block_packet(
+                &fixture.owner.player,
                 if hand == Hand::Left {
                     HandSlot::Offhand
                 } else {
@@ -379,6 +388,7 @@ async fn run_forged_use(hand: Hand, scenario: ForgedUse) -> TestResult {
         Vec::new()
     };
     let mut packet = click_block_packet(
+        &fixture.owner.player,
         if hand == Hand::Left {
             HandSlot::Offhand
         } else {

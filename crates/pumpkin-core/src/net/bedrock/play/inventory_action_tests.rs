@@ -40,6 +40,7 @@ fn action(
 }
 
 fn click_block_packet(
+    player: &Player,
     hand: HandSlot,
     position: BlockPos,
     held_item: &ItemStack,
@@ -56,7 +57,7 @@ fn click_block_packet(
             trigger_type: 0,
             block_position: position,
             block_face: 1,
-            hot_bar_slot: VarInt(0),
+            hot_bar_slot: VarInt(i32::from(player.inventory().get_selected_slot())),
             hand,
             item_in_hand: NetworkItemDescriptor::from(held_item),
             player_position: Vector3::new(8.5, 64.0, 8.5),
@@ -103,6 +104,7 @@ async fn offhand_anchor_charge_consumes_only_the_offhand_transaction_stack() {
         .set_stack_in_hand(Hand::Left, glowstone.clone());
     let after_transaction = ItemStack::new(1, &Item::GLOWSTONE);
     let packet = click_block_packet(
+        &bedrock.player,
         HandSlot::Offhand,
         position,
         &glowstone,
@@ -157,7 +159,13 @@ async fn consuming_last_block_use_item_sends_equipment_to_tracker() {
         .inventory()
         .set_stack_in_hand(Hand::Right, glowstone.clone());
     tracker.take_packets();
-    let packet = click_block_packet(HandSlot::Mainhand, position, &glowstone, Vec::new());
+    let packet = click_block_packet(
+        &bedrock.player,
+        HandSlot::Mainhand,
+        position,
+        &glowstone,
+        Vec::new(),
+    );
 
     bedrock
         .client()
