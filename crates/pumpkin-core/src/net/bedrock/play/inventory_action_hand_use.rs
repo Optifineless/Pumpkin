@@ -3,7 +3,15 @@ use super::{
     Player, PlayerInventory, hand_inventory_slot, hand_screen_handler_slot,
 };
 use crate::net::java::play::hand_use_result::{HandMutation, write_back_hand_item};
+use pumpkin_data::BlockDirection;
 use pumpkin_inventory::screen_handler::ScreenHandler;
+use pumpkin_protocol::bedrock::{
+    client::{player_hotbar::CPlayerHotbar, update_block::CUpdateBlock},
+    server::inventory_transaction::{HandSlot, UseItemTransactionData},
+};
+use pumpkin_protocol::codec::var_uint::VarUInt;
+use pumpkin_util::math::position::BlockPos;
+use std::sync::Arc;
 
 struct LiveHands {
     selected: u8,
@@ -27,6 +35,79 @@ impl LiveHands {
 }
 
 impl BedrockClient {
+    pub(super) fn reconcile_use_item_selection(
+        &self,
+        player: &Arc<Player>,
+        data: &UseItemTransactionData,
+    ) -> Option<u8> {
+        let requested = usize::try_from(data.hot_bar_slot.0)
+            .ok()
+            .filter(|slot| PlayerInventory::is_valid_hotbar_index(*slot));
+        let Some(requested) = requested else {
+            self.correct_use_item_selection(player, data.hand);
+            return None;
+        };
+        let requested = requested as u8;
+        if player.inventory().get_selected_slot() != requested {
+            let Some(server) = player.world().server.upgrade() else {
+                self.correct_use_item_selection(player, data.hand);
+                return None;
+            };
+            // Geyser BedrockInventoryTransactionTranslator.translate switches before use admission.
+            if !self.select_hotbar_slot(&server, player, requested) {
+                self.correct_use_item_selection(player, data.hand);
+                return None;
+            }
+            self.send_live_hotbar_selection(player);
+            if player.inventory().get_selected_slot() != requested {
+                self.correct_use_item_selection(player, data.hand);
+                return None;
+            }
+        }
+        Some(requested)
+    }
+
+    fn send_live_hotbar_selection(&self, player: &Player) {
+        self.try_enqueue_client_packet(&CPlayerHotbar {
+            selected_slot: VarUInt(u32::from(player.inventory().get_selected_slot())),
+            container_id: 0,
+            should_select_slot: true,
+        });
+    }
+
+    fn correct_use_item_selection(&self, player: &Player, hand: HandSlot) {
+        self.send_player_inventory_content(player);
+        Self::sync_live_hands(player, Hand::Right, player.inventory().get_selected_slot());
+        if hand == HandSlot::Offhand {
+            Self::sync_live_hands(player, Hand::Left, player.inventory().get_selected_slot());
+        }
+        self.send_live_hotbar_selection(player);
+    }
+
+    pub(super) fn correct_denied_placement(
+        &self,
+        player: &Player,
+        clicked: BlockPos,
+        face: BlockDirection,
+    ) {
+        // ServerGamePacketListenerImpl.handleUseItemOn corrects pos and pos.relative(direction).
+        let world = player.world();
+        let offset = face.to_offset();
+        // BlockPos.relative uses Java's wrapping int addition, even for rejected positions.
+        let adjacent = BlockPos::new(
+            clicked.0.x.wrapping_add(offset.x),
+            clicked.0.y.wrapping_add(offset.y),
+            clicked.0.z.wrapping_add(offset.z),
+        );
+        for position in [clicked, adjacent] {
+            let state = world.get_block_state_id(&position);
+            self.try_enqueue_client_packet(&CUpdateBlock::new(
+                position,
+                pumpkin_data::BlockState::to_be_network_id(state),
+            ));
+        }
+    }
+
     /// Commits the server's block-use result before publishing the live hands.
     pub(super) fn finish_block_use(
         player: &Player,
