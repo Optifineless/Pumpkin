@@ -15,7 +15,7 @@ const SHIELD_SLOT: usize = 45;
 
 #[path = "inventory_action_hand_use.rs"]
 mod hand_use;
-use hand_use::LiveHands;
+use hand_use::{LiveHands, ReleaseUseSnapshot};
 
 // ServerGamePacketListenerImpl.handleUseItemOn selects the hand passed to useItemOn.
 fn hand_screen_handler_slot(hand: Hand, selected_slot: u8) -> Option<usize> {
@@ -172,13 +172,18 @@ impl BedrockClient {
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
         let mut source_selected_slot = player.inventory().get_selected_slot();
-        let mut origin_screen_slot = None;
-        let mut release_hand = None;
+        let mut origin_screen_slots = [None, None];
+        let mut release_use = None;
+        let mut hands_before_use = LiveHands::read(player);
         let use_item_stack = match &packet.transaction_data {
             TransactionData::UseItem(data) if matches!(data.action_type.0, 0 | 1) => {
-                let Some(selected) =
-                    self.reconcile_use_item_selection(player, data.hot_bar_slot.0, data.hand)
-                else {
+                let Some(selected) = self.reconcile_use_item_selection(
+                    player,
+                    data.hot_bar_slot.0,
+                    data.hand,
+                    &hands_before_use,
+                ) else {
+                    self.correct_rejected_block_use(player, data);
                     return;
                 };
                 source_selected_slot = selected;
@@ -188,9 +193,10 @@ impl BedrockClient {
                 };
                 let Some(stack) = Self::validated_use_item_stack(player, hand, &data.item_in_hand)
                 else {
+                    self.correct_rejected_block_use(player, data);
                     return;
                 };
-                origin_screen_slot = hand_screen_handler_slot(hand, source_selected_slot);
+                origin_screen_slots = [hand_screen_handler_slot(hand, source_selected_slot), None];
                 Some(stack)
             }
             TransactionData::UseItemOnEntity(data) => {
@@ -198,11 +204,15 @@ impl BedrockClient {
                     player,
                     data.hot_bar_slot.0,
                     HandSlot::Mainhand,
+                    &hands_before_use,
                 ) else {
                     return;
                 };
                 source_selected_slot = selected;
-                origin_screen_slot = hand_screen_handler_slot(Hand::Right, source_selected_slot);
+                origin_screen_slots = [
+                    hand_screen_handler_slot(Hand::Right, source_selected_slot),
+                    None,
+                ];
                 let Some(stack) =
                     Self::validated_use_item_stack(player, Hand::Right, &data.item_in_hand)
                 else {
@@ -211,13 +221,19 @@ impl BedrockClient {
                 Some(stack)
             }
             TransactionData::ReleaseItem(_) => {
-                release_hand = *player
-                    .living_entity
-                    .active_hand
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let hand = release_hand.unwrap_or(Hand::Right);
-                origin_screen_slot = hand_screen_handler_slot(hand, source_selected_slot);
+                let snapshot = ReleaseUseSnapshot::read(player);
+                let hand = snapshot.hand.unwrap_or(Hand::Right);
+                // LivingEntity.releaseUsingItem with no active use cannot debit either hand.
+                let offhand_slot = if snapshot.hand.is_none() {
+                    hand_screen_handler_slot(Hand::Left, source_selected_slot)
+                } else {
+                    None
+                };
+                origin_screen_slots = [
+                    hand_screen_handler_slot(hand, source_selected_slot),
+                    offhand_slot,
+                ];
+                release_use = Some(snapshot);
                 Some(player.inventory().get_stack_in_hand(hand))
             }
             _ => None,
@@ -298,7 +314,7 @@ impl BedrockClient {
                     map_bedrock_slot_to_screen_handler(window_id, action.inventory_slot)
                 {
                     // ServerPlayerGameMode.useItem/useItemOn and Player.interactOn consume the server stack once.
-                    if origin_screen_slot == Some(screen_slot) {
+                    if origin_screen_slots.contains(&Some(screen_slot)) {
                         continue;
                     }
                     let item_stack = descriptor_to_stack(&action.new_item);
@@ -333,14 +349,14 @@ impl BedrockClient {
                 *stack = player.inventory().get_stack_in_hand(hand);
             }
             hand_updates.sort_unstable_by_key(|(slot, _)| slot.discriminant());
+            hands_before_use
+                .record_equipment(player.inventory().get_selected_slot(), &hand_updates);
             player.send_menu_equipment(&hand_updates);
         }
         if inventory_updated {
             self.send_player_inventory_content(player);
         }
 
-        // Bundled actions have published; retain both hands before gameplay callbacks.
-        let hands_before_use = LiveHands::read(player);
         match packet.transaction_data {
             TransactionData::Normal(_data) => {
                 // Actions are already applied to the inventory screen handler above.
@@ -389,6 +405,7 @@ impl BedrockClient {
                     };
 
                     let Some(before_block_use) = use_item_stack else {
+                        self.correct_rejected_block_use(player, &data);
                         return;
                     };
                     let Some(mut held_item) = Self::stack_for_hand_use(
@@ -398,6 +415,7 @@ impl BedrockClient {
                         &before_block_use,
                         &hands_before_use,
                     ) else {
+                        self.correct_rejected_block_use(player, &data);
                         return;
                     };
 
@@ -441,6 +459,7 @@ impl BedrockClient {
                         )
                         .is_none()
                         {
+                            self.correct_rejected_block_use(player, &data);
                             return;
                         }
                         let result = server.block_registry.on_use(
@@ -486,6 +505,7 @@ impl BedrockClient {
                         )
                         .is_none()
                         {
+                            self.correct_rejected_block_use(player, &data);
                             return;
                         }
                         let item_result = server.item_registry.use_on_block(
@@ -703,10 +723,23 @@ impl BedrockClient {
                 }
             }
             TransactionData::ReleaseItem(_) => {
-                let hand = release_hand.unwrap_or(Hand::Right);
-                if let Some(before) = use_item_stack {
-                    Self::release_admitted_hand(player, hand, source_selected_slot, &before);
+                if let (Some(before), Some(release_use)) = (use_item_stack, release_use) {
+                    let hand = release_use.hand.unwrap_or(Hand::Right);
+                    Self::release_admitted_hand(
+                        player,
+                        source_selected_slot,
+                        &before,
+                        &release_use,
+                    );
                     Self::sync_live_hands(player, hand, source_selected_slot, &hands_before_use);
+                    if release_use.hand.is_none() {
+                        Self::sync_live_hands(
+                            player,
+                            Hand::Left,
+                            source_selected_slot,
+                            &hands_before_use,
+                        );
+                    }
                 }
             }
         }

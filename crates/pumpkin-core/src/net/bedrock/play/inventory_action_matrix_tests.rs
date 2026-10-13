@@ -37,6 +37,9 @@ mod addendum;
 #[path = "inventory_action_round4c_tests.rs"]
 mod round4c;
 
+#[path = "inventory_action_round4d_tests.rs"]
+mod round4d;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]

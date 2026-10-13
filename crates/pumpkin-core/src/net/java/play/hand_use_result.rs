@@ -77,7 +77,14 @@ pub fn write_back_hand_item(
     } else {
         after.clone()
     };
-    // LivingEntity.onEquippedItemBroken broadcasts while the client still has the old item.
+    // ItemStack.applyDamage shrinks the real stack before onEquippedItemBroken runs.
+    if !player
+        .inventory()
+        .replace_stack_if_unchanged(source_slot, before, stored)
+    {
+        return false;
+    }
+    // LivingEntity.onEquippedItemBroken broadcasts before the empty-hand packet.
     // ArmorStand.swapItem transfers equipment without ItemStack.hurtAndBreak.
     if mutation == HandMutation::ItemUse
         && !before.is_empty()
@@ -94,10 +101,7 @@ pub fn write_back_hand_item(
             .world()
             .send_entity_status(player.get_entity(), equipment_break_status(&slot), None);
     }
-    // Recheck under one inventory guard after statistics/status callbacks have returned.
-    player
-        .inventory()
-        .replace_stack_if_unchanged(source_slot, before, stored)
+    true
 }
 
 // HoneycombItem.useOn and AxeItem.useOn trigger before replacing the clicked block.

@@ -20,6 +20,48 @@ pub(super) struct LiveHands {
     off: ItemStack,
 }
 
+pub(super) struct ReleaseUseSnapshot {
+    pub(super) hand: Option<Hand>,
+    stack: Option<ItemStack>,
+    remaining: i32,
+}
+
+impl ReleaseUseSnapshot {
+    pub(super) fn read(player: &Player) -> Self {
+        let hand = *player
+            .living_entity
+            .active_hand
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let stack = player
+            .living_entity
+            .item_in_use
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let remaining = player
+            .living_entity
+            .item_use_time
+            .load(std::sync::atomic::Ordering::Relaxed);
+        Self {
+            hand,
+            stack,
+            remaining,
+        }
+    }
+
+    fn is_current(&self, player: &Player) -> bool {
+        let current = Self::read(player);
+        let same_item = match (&self.stack, &current.stack) {
+            (Some(before), Some(after)) => same_stack(before, after),
+            (None, None) => true,
+            _ => false,
+        };
+        // LivingEntity.releaseUsingItem stops the original use, never a callback's newer use.
+        current.hand == self.hand && same_item && current.remaining <= self.remaining
+    }
+}
+
 fn same_stack(left: &ItemStack, right: &ItemStack) -> bool {
     left.uid == right.uid && left.are_equal(right)
 }
@@ -33,6 +75,22 @@ impl LiveHands {
             off: player.inventory().get_slot(PlayerInventory::OFF_HAND_SLOT),
         }
     }
+
+    pub(super) fn record_equipment(
+        &mut self,
+        selected: u8,
+        equipment: &[(EquipmentSlot, ItemStack)],
+    ) {
+        // LivingEntity.collectEquipmentChanges retains the stacks in its published equipment batch.
+        for (slot, stack) in equipment {
+            if *slot == EquipmentSlot::MAIN_HAND {
+                self.selected = selected;
+                self.main = stack.clone();
+            } else if *slot == EquipmentSlot::OFF_HAND {
+                self.off = stack.clone();
+            }
+        }
+    }
 }
 
 impl BedrockClient {
@@ -41,35 +99,37 @@ impl BedrockClient {
         player: &Arc<Player>,
         hot_bar_slot: i32,
         hand: HandSlot,
+        before: &LiveHands,
     ) -> Option<u8> {
         let requested = usize::try_from(hot_bar_slot)
             .ok()
             .filter(|slot| PlayerInventory::is_valid_hotbar_index(*slot));
         let Some(requested) = requested else {
-            self.correct_use_item_selection(player, hand);
+            self.correct_use_item_selection(player, hand, before);
             return None;
         };
         let requested = requested as u8;
         if player.inventory().get_selected_slot() != requested {
             let Some(server) = player.world().server.upgrade() else {
-                self.correct_use_item_selection(player, hand);
+                self.correct_use_item_selection(player, hand, before);
                 return None;
             };
             // Geyser BedrockInventoryTransactionTranslator.translate switches before use admission.
             if !self.select_hotbar_slot(&server, player, requested) {
-                self.correct_use_item_selection(player, hand);
+                self.correct_use_item_selection(player, hand, before);
                 return None;
             }
             self.send_live_hotbar_selection(player);
             if player.inventory().get_selected_slot() != requested {
-                self.correct_use_item_selection(player, hand);
+                self.correct_use_item_selection(player, hand, before);
                 return None;
             }
         }
         Some(requested)
     }
 
-    fn send_live_hotbar_selection(&self, player: &Player) {
+    /// Publishes the current selection without retaining a guard across the send.
+    pub(in crate::net::bedrock::play) fn send_live_hotbar_selection(&self, player: &Player) {
         self.try_enqueue_client_packet(&CPlayerHotbar {
             selected_slot: VarUInt(u32::from(player.inventory().get_selected_slot())),
             container_id: 0,
@@ -77,24 +137,35 @@ impl BedrockClient {
         });
     }
 
-    fn correct_use_item_selection(&self, player: &Player, hand: HandSlot) {
+    fn correct_use_item_selection(&self, player: &Player, hand: HandSlot, before: &LiveHands) {
         self.send_player_inventory_content(player);
-        let before = LiveHands::read(player);
         Self::sync_live_hands(
             player,
             Hand::Right,
             player.inventory().get_selected_slot(),
-            &before,
+            before,
         );
         if hand == HandSlot::Offhand {
             Self::sync_live_hands(
                 player,
                 Hand::Left,
                 player.inventory().get_selected_slot(),
-                &before,
+                before,
             );
         }
         self.send_live_hotbar_selection(player);
+    }
+
+    pub(super) fn correct_rejected_block_use(
+        &self,
+        player: &Player,
+        data: &pumpkin_protocol::bedrock::server::inventory_transaction::UseItemTransactionData,
+    ) {
+        if data.action_type.0 == 0 {
+            let face =
+                BlockDirection::try_from(i32::from(data.block_face)).unwrap_or(BlockDirection::Up);
+            self.correct_denied_placement(player, data.block_position, face);
+        }
     }
 
     pub(super) fn correct_denied_placement(
@@ -333,36 +404,30 @@ impl BedrockClient {
         }
     }
 
-    /// Releases the current active hand, ignoring any client-predicted hand write.
+    /// Releases the admitted use and preserves a newer use started by a callback.
     pub(super) fn release_admitted_hand(
         player: &Player,
-        hand: Hand,
         selected: u8,
         before: &ItemStack,
+        use_before: &ReleaseUseSnapshot,
     ) {
         // LivingEntity.releaseUsingItem checks the live used hand before releaseUsing, then stops use.
-        let active = player
-            .living_entity
-            .item_in_use
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let active_hand = *player
-            .living_entity
-            .active_hand
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if active_hand.is_some_and(|current| current != hand) {
+        if !use_before.is_current(player) {
             return;
         }
-        if active_hand == Some(hand)
+        if let Some(hand) = use_before.hand
             && let Some(live) = Self::admitted_hand_stack(player, hand, selected, before)
-            && active.is_some_and(|stack| stack.item == live.item)
+            && use_before
+                .stack
+                .as_ref()
+                .is_some_and(|stack| stack.item == live.item)
             && let Some(server) = player.world().server.upgrade()
         {
             server.item_registry.on_stopped_using(&live, player);
         }
-        player.living_entity.clear_active_hand();
+        if use_before.is_current(player) {
+            player.living_entity.clear_active_hand();
+        }
     }
 
     /// Commits an equipment swap before any announcement can run a plugin callback.
