@@ -8,6 +8,9 @@ use pumpkin_protocol::{
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 
+#[cfg(test)]
+mod tests;
+
 /// Removes a paired half without drops and sends its destroy particles to both editions.
 pub fn remove_partner(args: PlayerWillDestroyArgs<'_>, pos: BlockPos, replacement: BlockStateId) {
     // AbstractBedBlock.playerWillDestroy / DoublePlantBlock.preventDropFromBottomPart: flag 35.
