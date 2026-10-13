@@ -173,6 +173,15 @@ impl Slot for ResultSlot {
         )
     }
 
+    fn quick_move_craft(
+        &self,
+        player: &dyn InventoryPlayer,
+        slots: &[Arc<dyn Slot>],
+        range: (i32, i32, bool),
+    ) -> ItemStack {
+        self.commit_quick_move(player, slots, range)
+    }
+
     fn on_take_item(&self, player: &dyn InventoryPlayer, stack: &ItemStack) {
         player.increment_stat(
             StatisticCategory::Crafted,
@@ -324,20 +333,13 @@ impl ScreenHandler for CraftingTableScreenHandler {
     }
     fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
+        if slot_index == 0 {
+            return slot.quick_move_craft(player, &self.get_behaviour().slots, (10, 46, true));
+        }
         if slot.has_stack() {
             let mut slot_stack = slot.get_stack();
             let mut stack_prev = slot_stack.clone();
-            if slot_index == 0 {
-                if !self.transfer_item(
-                    player,
-                    slot.as_ref(),
-                    &mut slot_stack,
-                    (10, 46, true),
-                    &mut stack_prev,
-                ) {
-                    return ItemStack::EMPTY.clone();
-                }
-            } else if (1..=9).contains(&slot_index) {
+            if (1..=9).contains(&slot_index) {
                 if !self.transfer_item(
                     player,
                     slot.as_ref(),
@@ -394,12 +396,6 @@ impl ScreenHandler for CraftingTableScreenHandler {
             taken_stack.set_count(stack_prev.item_count - stack.item_count);
             slot.on_take_item(player, &taken_stack);
 
-            if slot_index == 0 {
-                slot.on_quick_move_crafted(stack.clone(), stack_prev.clone());
-                if !stack.is_empty() {
-                    player.drop_item(stack, false);
-                }
-            }
             return stack_prev;
         }
         ItemStack::EMPTY.clone()

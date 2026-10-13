@@ -128,3 +128,6 @@ pub fn build_equipment_slots() -> FxHashMap<usize, EquipmentSlot> {
 mod slot_swap;
 
 mod menu_transfer;
+
+#[cfg(test)]
+mod result_conservation_tests;

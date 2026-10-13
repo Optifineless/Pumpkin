@@ -1,6 +1,7 @@
 use crate::{Inventory, inventory::slot_transaction, screen_handler::InventoryPlayer, slot::Slot};
+use pumpkin_data::item_stack::ItemStack;
 
-// AbstractContainerMenu.doClick SWAP: the two replacements are one admitted transaction.
+// AbstractContainerMenu.doClick SWAP: claim both stacks in one admitted transaction.
 pub fn click(slot: &dyn Slot, button: usize, player: &dyn InventoryPlayer) {
     let source = slot.get_inventory();
     let destination = player.get_inventory();
@@ -14,10 +15,6 @@ pub fn click(slot: &dyn Slot, button: usize, player: &dyn InventoryPlayer) {
     }
     if expected.is_empty() && button_stack.is_empty() {
         return;
-    }
-    let mut crafted = expected.clone();
-    if !crafted.is_empty() {
-        slot.on_crafted_by(player, &mut crafted);
     }
     let owners = slot_transaction::ordered_owners(&[source.as_ref(), destination.as_ref()]);
     let guards = crate::inventory::slot_transaction::lock_owners(&owners);
@@ -52,33 +49,51 @@ pub fn click(slot: &dyn Slot, button: usize, player: &dyn InventoryPlayer) {
         &expected,
         expected.item_count,
     );
-    if !taken.is_empty() {
-        crafted.set_count(taken.item_count);
-        taken = crafted;
-    }
     source.update_slot(slot.get_index(), &mut |current| {
         source.on_slot_replaced(slot.get_index(), current, &replacement);
         *current = replacement.clone();
     });
     let overflow = !button_remainder.is_empty();
     destination.update_slot(button, &mut |current| {
-        *current = if overflow {
-            button_remainder.clone()
-        } else {
-            taken.clone()
-        }
+        *current = button_remainder.clone();
     });
+    drop(guards);
+    // CartographyTableMenu.onTake post-processes only admitted, owned stock.
+    // Keep the receipt local across callbacks; later insertion preserves competing edits.
+    if !taken.is_empty() {
+        slot.on_crafted_by(player, &mut taken);
+    }
     let taken_for_callback = taken.clone();
-    if overflow && !taken.is_empty() {
+    let owner = destination.slot_transaction(button);
+    let guard = owner.lock();
+    if !overflow && !taken.is_empty() {
+        insert_into_hotbar(destination.as_ref(), button, &mut taken);
+    }
+    if !taken.is_empty() {
         destination.insert_stack_anywhere(&mut taken);
     }
-    drop(guards);
+    drop(guard);
     if !taken_for_callback.is_empty() {
         slot.on_take_item(player, &taken_for_callback);
     }
     source.on_slot_changed(slot.get_index());
     destination.on_slot_changed(button);
-    if overflow && !taken.is_empty() {
+    if !taken.is_empty() {
         player.drop_item(taken, true);
+    }
+}
+
+// AbstractContainerMenu.doClick SWAP keeps the moved stack instance for a whole hotbar replacement.
+// The caller owns the destination; retain the receipt if it retired while callbacks ran.
+fn insert_into_hotbar(destination: &dyn Inventory, button: usize, taken: &mut ItemStack) {
+    let current = destination.get_stack(button);
+    let max = taken.get_max_stack_size();
+    if current.is_empty()
+        && taken.item_count <= max
+        && slot_transaction::exchange(destination, button, &current, taken.clone())
+    {
+        *taken = ItemStack::EMPTY.clone();
+    } else {
+        slot_transaction::deposit(destination, button, taken, max);
     }
 }

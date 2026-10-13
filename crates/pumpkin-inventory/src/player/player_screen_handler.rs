@@ -150,6 +150,10 @@ impl ScreenHandler for PlayerScreenHandler {
     fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
 
+        if slot_index == 0 {
+            return slot.quick_move_craft(player, &self.get_behaviour().slots, (9, 45, true));
+        }
+
         // TODO: Equippable component
 
         if slot.has_stack() {
@@ -162,9 +166,7 @@ impl ScreenHandler for PlayerScreenHandler {
 
             // InventoryMenu.quickMoveStack chooses one destination range before moving.
             let mut clear_equipment_slot = None;
-            let range = if slot_index == 0 {
-                (9, 45, true)
-            } else if (1..5).contains(&slot_index) {
+            let range = if (1..5).contains(&slot_index) {
                 (9, 45, false)
             } else if (5..9).contains(&slot_index) {
                 clear_equipment_slot = Some(true);
@@ -215,16 +217,6 @@ impl ScreenHandler for PlayerScreenHandler {
             let mut taken_stack = stack_prev.clone();
             taken_stack.set_count(stack_prev.item_count - stack.item_count);
             slot.on_take_item(player, &taken_stack);
-
-            if slot_index == 0 {
-                // From crafting result slot (0)
-                // Notify the result slot to refill
-                slot.on_quick_move_crafted(stack.clone(), stack_prev.clone());
-                // For crafting result slot, drop any remaining items
-                if !stack.is_empty() {
-                    player.drop_item(stack, false);
-                }
-            }
 
             return stack_prev;
         }

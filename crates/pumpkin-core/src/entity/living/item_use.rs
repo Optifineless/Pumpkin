@@ -63,23 +63,10 @@ impl LivingEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         if let (Some(hand), Some(saved)) = (hand, saved) {
-            // ServerPlayer.completeUsingItem notifies only the consuming player's connection.
-            if !saved.is_empty()
-                && let Some(player) = caller.get_player()
-            {
-                player.try_send_client_packet(
-                    &pumpkin_protocol::java::client::play::CEntityStatus::new(
-                        self.entity.entity_id,
-                        pumpkin_data::entity::EntityStatus::UseItemComplete as i8,
-                    ),
-                );
-            }
             let current = self.get_stack_in_hand(caller, hand);
             // Java's ItemStack.equals also requires the same stack instance here.
             if !current.is_empty() && current.uid == saved.uid && current.item.id == saved.item.id {
-                let expected = current.clone();
-                let result = self.finish_using_item(caller, current, hand);
-                self.set_used_hand_stack(caller, hand, &expected, result);
+                self.finish_using_item(caller, current, hand, true);
             }
         }
         self.clear_active_hand();
@@ -94,9 +81,7 @@ impl LivingEntity {
     ) {
         let current = self.get_stack_in_hand(caller, hand);
         if current.uid == item.uid && current.are_equal(item) {
-            let expected = current.clone();
-            let result = self.finish_using_item(caller, current, hand);
-            self.set_used_hand_stack(caller, hand, &expected, result);
+            self.finish_using_item(caller, current, hand, false);
         }
     }
 
@@ -105,10 +90,32 @@ impl LivingEntity {
         caller: &dyn EntityBase,
         mut item: ItemStack,
         hand: pumpkin_util::Hand,
-    ) -> ItemStack {
+        timed: bool,
+    ) {
         let before = item.clone();
-        if let Some(consumable) = item.get_data_component::<ConsumableImpl>() {
-            // Consumable.onConsume awards statistics, invokes listeners, then consumes one.
+        let consumable = before.get_data_component::<ConsumableImpl>();
+        if consumable.is_some() {
+            if let Some(player) = caller.get_player() {
+                item.decrement_unless_creative(player.gamemode.load(), 1);
+            } else {
+                item.decrement(1);
+            }
+            // Consumable.onConsume consumes the live stack in one serial operation.
+            // Claim first here so callbacks cannot leave effects without payment.
+            if !self.set_used_hand_stack(caller, hand, &before, item.clone()) {
+                return;
+            }
+        }
+        // ServerPlayer.completeUsingItem only notifies the consuming connection.
+        if timed && let Some(player) = caller.get_player() {
+            player.try_send_client_packet(
+                &pumpkin_protocol::java::client::play::CEntityStatus::new(
+                    self.entity.entity_id,
+                    pumpkin_data::entity::EntityStatus::UseItemComplete as i8,
+                ),
+            );
+        }
+        if let Some(consumable) = consumable {
             self.play_consume_sound(&consumable.sound_event);
             let event = if consumable.animation
                 == pumpkin_data::data_component_impl::ConsumeAnimation::Drink
@@ -118,13 +125,13 @@ impl LivingEntity {
                 "eat"
             };
             if let Some(player) = caller.get_player() {
-                player.increment_stat(StatisticCategory::Used, i32::from(item.item.id), 1);
+                player.increment_stat(StatisticCategory::Used, i32::from(before.item.id), 1);
                 player.trigger_advancement(
                     crate::entity::player::advancement::trigger::AdvancementTrigger::ConsumeItem {
-                        item_id: format!("minecraft:{}", item.item.registry_key),
+                        item_id: format!("minecraft:{}", before.item.registry_key),
                     },
                 );
-                if let Some(food) = item.get_data_component::<FoodImpl>() {
+                if let Some(food) = before.get_data_component::<FoodImpl>() {
                     player
                         .hunger_manager
                         .eat(player, food.nutrition as u8, food.saturation);
@@ -135,53 +142,41 @@ impl LivingEntity {
                     );
                 }
             }
-            self.on_consume_listeners(&item);
-            self.apply_consumable_effects(caller, &item);
+            self.on_consume_listeners(&before);
+            self.apply_consumable_effects(caller, &before);
             self.entity
                 .world
                 .load()
                 .emit_game_event(event, self.entity.pos.load());
-            if let Some(player) = caller.get_player() {
-                item.decrement_unless_creative(player.gamemode.load(), 1);
-            } else {
-                item.decrement(1);
-            }
         }
-        self.apply_after_use_component_side_effects(caller, item, &before, hand)
+        self.apply_after_use_component_side_effects(caller, &item, &before, hand);
     }
 
     // ItemStack.applyAfterUseComponentSideEffects uses the original components and count.
     fn apply_after_use_component_side_effects(
         &self,
         caller: &dyn EntityBase,
-        mut item: ItemStack,
+        item: &ItemStack,
         before: &ItemStack,
         hand: pumpkin_util::Hand,
-    ) -> ItemStack {
+    ) {
         let player = caller.get_player();
         if let Some(remainder) = before.get_data_component::<UseRemainderImpl>()
             && !player.is_some_and(InventoryPlayer::has_infinite_materials)
             && item.item_count < before.item_count
-            && let Some(mut extra) = remainder.create()
+            && let Some(extra) = remainder.create()
         {
-            if item.is_empty() {
-                item = extra;
-            } else if let Some(player) = player {
-                // Vanilla's real hand has already been consumed when insertion runs.
-                let inventory = player.inventory();
-                let owner = pumpkin_inventory::Inventory::slot_transaction(inventory.as_ref(), 0);
-                let guard = owner.lock();
-                if !self.set_used_hand_stack(caller, hand, before, item) {
-                    return self.get_stack_in_hand(caller, hand);
-                }
-                inventory.insert_stack_anywhere(&mut extra);
-                item = self.get_stack_in_hand(caller, hand);
-                drop(guard);
-                if !extra.is_empty() {
-                    player
-                        .world()
-                        .drop_stack(&player.position().to_block_pos(), extra);
-                }
+            if let Some(player) = player {
+                crate::item::item_utils::finish_claimed_result(
+                    player,
+                    hand,
+                    before,
+                    &before.copy_with_count(1),
+                    extra,
+                    false,
+                );
+            } else if item.is_empty() {
+                self.set_used_hand_stack(caller, hand, item, extra);
             }
         }
         if let Some(player) = player
@@ -192,7 +187,6 @@ impl LivingEntity {
                 (cooldown.seconds * 20.0) as i32,
             );
         }
-        item
     }
 
     fn set_used_hand_stack(
@@ -203,10 +197,6 @@ impl LivingEntity {
         item: ItemStack,
     ) -> bool {
         if let Some(player) = caller.get_player() {
-            let current = player.inventory().get_stack_in_hand(hand);
-            if current.uid == item.uid && current.are_equal(&item) {
-                return true;
-            }
             player
                 .inventory()
                 .exchange_stack_in_hand(hand, expected, item)
@@ -216,10 +206,15 @@ impl LivingEntity {
             } else {
                 pumpkin_data::data_component_impl::EquipmentSlot::OFF_HAND
             };
-            self.entity_equipment
+            let mut equipment = self
+                .entity_equipment
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .put(&slot, item);
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let current = equipment.get(&slot);
+            if current.uid != expected.uid || !current.are_equal(expected) {
+                return false;
+            }
+            equipment.put(&slot, item);
             true
         }
     }
@@ -303,3 +298,7 @@ mod tests {
         assert!(world.level.shutdown().await.is_ok());
     }
 }
+
+#[cfg(test)]
+#[path = "consumption_conservation_tests.rs"]
+mod conservation_tests;

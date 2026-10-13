@@ -78,6 +78,16 @@ pub trait Slot: Send + Sync {
         None
     }
 
+    /// Pays a crafting result and quick-moves it to the given menu range.
+    fn quick_move_craft(
+        &self,
+        _player: &dyn InventoryPlayer,
+        _slots: &[Arc<dyn Slot>],
+        _range: (i32, i32, bool),
+    ) -> ItemStack {
+        ItemStack::EMPTY.clone()
+    }
+
     /// Plugin callback for slot clicks.
     ///
     /// Called when a player clicks on this slot. Can be used by
