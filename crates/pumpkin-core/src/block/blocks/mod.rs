@@ -4,6 +4,7 @@ pub mod end_portal;
 pub mod end_portal_frame;
 pub mod end_rod;
 pub mod nether_portal;
+pub mod player_destroy;
 
 // Storage & containers
 pub mod barrel;
