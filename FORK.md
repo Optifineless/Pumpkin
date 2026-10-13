@@ -2,6 +2,10 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+Inventory ownership E1 adds a test-only manifest and independent source scan for
+inventory and cooperating-state coverage. It has no gameplay effect; runtime
+ownership enforcement remains **Not yet**.
+
 Close-event listeners can reopen a menu without closing its predecessor recursively. The closing-menu identity survives callbacks, and an outer close preserves a replacement menu and position. Native API 8 (same version): Player has runtime close ownership state; rebuild native plugins. In-game verification: **Not yet**.
 
 ## Entity unload ownership, #150 split PR-1
