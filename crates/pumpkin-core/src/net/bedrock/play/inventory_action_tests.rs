@@ -292,3 +292,6 @@ async fn prediction_still_allows_release_item() {
     fixture.close().await;
     server.server.shutdown().await;
 }
+
+#[path = "inventory_followup_tests.rs"]
+mod followup;
