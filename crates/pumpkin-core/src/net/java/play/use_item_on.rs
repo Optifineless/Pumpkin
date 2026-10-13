@@ -19,7 +19,8 @@ impl JavaClient {
         let position = use_item_on.position;
         let cursor_pos = use_item_on.cursor_pos;
 
-        let mut should_try_decrement = false;
+        let mut placed = false;
+        let mut placement_attempted = false;
 
         if !player.can_interact_with_block_at(&position, 1.0) {
             // TODO: maybe log?
@@ -160,32 +161,33 @@ impl JavaClient {
             // Check if the item is a block, because not every item can be placed :D
             let item_id = item.item.id;
             if let Some(block) = Block::from_item_id(item_id) {
-                match Self::run_is_block_place(player, block, server, use_item_on, position, face) {
-                    Ok(placed) => should_try_decrement = placed,
-                    Err(error) => {
-                        super::hand_use_result::write_back_used_item(
-                            player,
-                            hand,
-                            source_slot,
-                            &before,
-                            &item,
-                        );
-                        return Err(error);
-                    }
-                }
+                placement_attempted = true;
+                placed = Self::run_is_block_place(
+                    player,
+                    block,
+                    server,
+                    use_item_on,
+                    position,
+                    face,
+                    source_slot,
+                    &before,
+                )?;
             }
         }
 
-        if should_try_decrement {
-            // TODO: Config
-            // Decrease block count
-            if player.gamemode.load() != GameMode::Creative {
-                item.decrement(1);
+        // BlockItem.place owns payment before installation; no fallible second hand commit.
+        if placement_attempted {
+            player.sync_hand_slot(source_slot, inventory.get_slot(source_slot));
+            for position in [position, position.offset(face.to_offset())] {
+                player.try_send_client_packet(&CBlockUpdate::new(
+                    position,
+                    VarInt(i32::from(world.get_block_state_id(&position).as_u16())),
+                ));
             }
+        } else {
+            super::hand_use_result::write_back_used_item(player, hand, source_slot, &before, &item);
         }
-
-        super::hand_use_result::write_back_used_item(player, hand, source_slot, &before, &item);
-        if item_result.consumes_action() || should_try_decrement {
+        if item_result.consumes_action() || placed {
             if !before.is_empty() {
                 player.increment_stat(StatisticCategory::Used, i32::from(before.item.id), 1);
             }
@@ -268,6 +270,10 @@ impl JavaClient {
         BlockActionResult::Pass
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Carries BlockItem.place's pinned UseOnContext stack through placement callbacks."
+    )]
     fn run_is_block_place(
         player: &Arc<Player>,
         block: &'static Block,
@@ -275,18 +281,20 @@ impl JavaClient {
         use_item_on: &SUseItemOn,
         location: BlockPos,
         face: BlockDirection,
+        source_slot: usize,
+        stack: &ItemStack,
     ) -> Result<bool, BlockPlacingError> {
-        match server
-            .block_registry
-            .place_block(player, block, server, use_item_on, location, face)
-        {
-            Ok(Some((final_block_pos, new_state))) => {
-                player.try_send_client_packet(&CBlockUpdate::new(
-                    final_block_pos,
-                    VarInt(i32::from(new_state.as_u16())),
-                ));
-                Ok(true)
-            }
+        match server.block_registry.place_block_with_stack(
+            player,
+            block,
+            server,
+            use_item_on,
+            location,
+            face,
+            stack,
+            source_slot,
+        ) {
+            Ok(Some(_)) => Ok(true),
             Ok(None) => Ok(false),
             Err(crate::block::registry::BlockPlacingError::InvalidGamemode) => {
                 Err(BlockPlacingError::InvalidGamemode)

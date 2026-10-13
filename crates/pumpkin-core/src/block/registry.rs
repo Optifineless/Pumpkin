@@ -191,6 +191,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState};
+use pumpkin_inventory::Inventory;
 use pumpkin_inventory::screen_handler::ScreenHandlerFactory;
 use pumpkin_protocol::java::server::play::SUseItemOn;
 use pumpkin_util::math::boundingbox::BoundingBox;
@@ -618,6 +619,7 @@ impl BlockRegistry {
         })
     }
 
+    /// Places a block and consumes one item from the pinned hand on success.
     pub fn place_block(
         &self,
         player: &Arc<Player>,
@@ -627,10 +629,11 @@ impl BlockRegistry {
         location: BlockPos,
         face: BlockDirection,
     ) -> Result<Option<(BlockPos, BlockStateId)>, BlockPlacingError> {
-        let stack = pumpkin_util::Hand::from_packet_id(use_item_on.hand.0).map_or_else(
-            |_| ItemStack::EMPTY.clone(),
-            |hand| player.inventory().get_stack_in_hand(hand),
-        );
+        let Ok(hand) = pumpkin_util::Hand::from_packet_id(use_item_on.hand.0) else {
+            return Ok(None);
+        };
+        let source_slot = crate::net::java::play::hand_use_result::hand_slot(player, hand);
+        let stack = player.inventory().get_stack(source_slot);
         self.place_block_with_stack(
             player,
             placed_block,
@@ -639,6 +642,7 @@ impl BlockRegistry {
             location,
             face,
             &stack,
+            source_slot,
         )
     }
 
@@ -656,6 +660,7 @@ impl BlockRegistry {
         location: BlockPos,
         face: BlockDirection,
         stack: &ItemStack,
+        source_slot: usize,
     ) -> Result<Option<(BlockPos, BlockStateId)>, BlockPlacingError> {
         let entity = &player.get_entity();
 
@@ -713,9 +718,14 @@ impl BlockRegistry {
             None
         };
 
-        let (final_block_pos, final_face, replacing) =
+        let (final_block_pos, final_face, replacing, previous_state) =
             if let Some(replacing) = replace_clicked_block {
-                (clicked_block_pos, face.opposite(), replacing)
+                (
+                    clicked_block_pos,
+                    face.opposite(),
+                    replacing,
+                    clicked_block_state.id,
+                )
             } else {
                 let block_pos = BlockPos(location.0 + face.to_offset());
                 let (previous_block, previous_block_state) = world.get_block_and_state(&block_pos);
@@ -745,7 +755,12 @@ impl BlockRegistry {
                 };
 
                 match replace_previous_block {
-                    Some(replacing) => (block_pos, face.opposite(), replacing),
+                    Some(replacing) => (
+                        block_pos,
+                        face.opposite(),
+                        replacing,
+                        previous_block_state.id,
+                    ),
                     None => {
                         return Ok(None);
                     }
@@ -832,43 +847,25 @@ impl BlockRegistry {
             return Ok(None);
         }
 
-        let _replaced_id =
-            world.set_block_state(&final_block_pos, new_state, BlockFlags::NOTIFY_ALL);
-
-        world.play_bedrock_level_sound(
-            "place",
-            &final_block_pos.to_centered_f64(),
-            BlockState::to_be_network_id(new_state) as i32,
-        );
-
-        if pumpkin_util::Hand::from_packet_id(use_item_on.hand.0).is_ok()
-            && placed_block.default_state.block_entity_type != u16::MAX
-            && let Some(block_entity) = world.get_block_entity(&final_block_pos)
-        {
-            // BlockItem.updateBlockEntityComponents uses the retained UseOnContext item,
-            // even when prediction or a placement callback changed the actual inventory hand.
-            block_entity.apply_item_components(stack);
-            crate::block::entities::sign::apply_trusted_item_data(
-                &block_entity,
-                stack,
-                player,
-                &world,
-            );
-        }
-
-        self.player_placed(
+        let Some(claimed_stack) = Self::install_claimed_block(
+            player,
+            source_slot,
+            stack,
+            &world,
+            &final_block_pos,
+            new_state,
+            previous_state,
+        ) else {
+            return Ok(None);
+        };
+        self.finish_block_placement(
+            player,
             &world,
             placed_block,
-            new_state,
             &final_block_pos,
+            new_state,
             face,
-            player,
-        );
-
-        player.trigger_advancement(
-            crate::entity::player::advancement::trigger::AdvancementTrigger::PlacedBlock {
-                block_id: format!("minecraft:{}", placed_block.name),
-            },
+            &claimed_stack,
         );
 
         Ok(Some((final_block_pos, new_state)))

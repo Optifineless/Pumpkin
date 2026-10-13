@@ -1,8 +1,8 @@
 use super::{
     Arc, BedrockClient, BlockActionResult, BlockDirection, BlockHitResult, BlocksAttacksImpl,
-    ConsumableImpl, EquipmentSlot, EquippableImpl, FoodImpl, GameMode, Hand, HandSlot,
-    InteractAction, InventoryPlayer, ItemStack, LiveHands, Ordering, Player, PlayerInteractEvent,
-    VarInt, should_try_block_placement,
+    ConsumableImpl, EquipmentSlot, EquippableImpl, FoodImpl, Hand, HandSlot, InteractAction,
+    InventoryPlayer, ItemStack, LiveHands, Ordering, Player, PlayerInteractEvent, VarInt,
+    should_try_block_placement,
 };
 use crate::{server::Server, world::World};
 use pumpkin_data::Block;
@@ -132,10 +132,9 @@ impl BedrockClient {
             Some(true) => return true,
             Some(false) => {}
         }
-        let Some((stack, denied)) = self.use_admitted_stack_on_block(context, held) else {
+        let Some(denied) = self.use_admitted_stack_on_block(context, held) else {
             return false;
         };
-        context.finish(&stack);
         if denied {
             self.correct_denied_placement(
                 context.player,
@@ -181,9 +180,10 @@ impl BedrockClient {
         &self,
         context: &AdmittedItemUse<'_>,
         mut stack: ItemStack,
-    ) -> Option<(ItemStack, bool)> {
+    ) -> Option<bool> {
         if stack.is_empty() {
-            return Some((stack, false));
+            context.finish(&stack);
+            return Some(false);
         }
         context.player.increment_stat(
             pumpkin_data::statistic::StatisticCategory::Used,
@@ -206,18 +206,23 @@ impl BedrockClient {
         let denied = if should_try_block_placement(&result)
             && let Some(block) = Block::from_item_id(stack.item.id)
         {
-            Self::place_admitted_block(context, &mut stack, block)
+            let denied = Self::place_admitted_block(context, block);
+            // BlockItem.place has already claimed/refunded the source; only publish live hands.
+            Self::sync_live_hands(
+                context.player,
+                context.hand,
+                context.selected,
+                context.hands,
+            );
+            denied
         } else {
+            context.finish(&stack);
             matches!(result, BlockActionResult::Fail)
         };
-        Some((stack, denied))
+        Some(denied)
     }
 
-    fn place_admitted_block(
-        context: &AdmittedItemUse<'_>,
-        stack: &mut ItemStack,
-        block: &'static Block,
-    ) -> bool {
+    fn place_admitted_block(context: &AdmittedItemUse<'_>, block: &'static Block) -> bool {
         // BlockItem.place receives the retained UseOnContext stack and requested hand.
         let packet = pumpkin_protocol::java::server::play::SUseItemOn {
             hand: VarInt(i32::from(context.hand == Hand::Left)),
@@ -235,14 +240,10 @@ impl BedrockClient {
             &packet,
             context.data.block_position,
             context.face,
-            stack,
+            &context.before,
+            super::hand_inventory_slot(context.hand, context.selected),
         ) {
-            Ok(Some(_)) => {
-                if context.player.gamemode.load() != GameMode::Creative {
-                    stack.decrement(1);
-                }
-                false
-            }
+            Ok(Some(_)) => false,
             Ok(None) | Err(_) => true,
         }
     }
