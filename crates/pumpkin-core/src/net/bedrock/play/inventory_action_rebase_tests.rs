@@ -33,7 +33,13 @@ async fn noop_action_preserves_uid_and_following_pinned_use() -> TestResult {
         } else {
             HandSlot::Mainhand
         };
-        let mut packet = click_block_packet(packet_hand, position, &before, vec![noop()]);
+        let mut packet = click_block_packet(
+            &fixture.owner.player,
+            packet_hand,
+            position,
+            &before,
+            vec![noop()],
+        );
         packet.transaction_type = VarUInt(0);
         packet.transaction_data = TransactionData::Normal(NormalTransactionData);
         fixture
@@ -50,7 +56,13 @@ async fn noop_action_preserves_uid_and_following_pinned_use() -> TestResult {
         // Exercise the same no-op before the actual pinned writeback, not just a getter.
         fixture.owner.client().handle_inventory_action(
             player,
-            click_block_packet(packet_hand, position, &before, vec![noop()]),
+            click_block_packet(
+                &fixture.owner.player,
+                packet_hand,
+                position,
+                &before,
+                vec![noop()],
+            ),
         );
         fixture
             .verify_and_close(|fixture| {
@@ -86,6 +98,7 @@ async fn predicted_two_egg_air_use_consumes_once() -> TestResult {
         player.inventory().set_stack_in_hand(hand, before.clone());
         let (container, slot, _) = hand_address(hand);
         let mut packet = click_block_packet(
+            &fixture.owner.player,
             if hand == Hand::Left {
                 HandSlot::Offhand
             } else {

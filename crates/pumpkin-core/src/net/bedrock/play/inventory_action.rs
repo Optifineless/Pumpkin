@@ -174,10 +174,14 @@ impl BedrockClient {
     #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::unreachable)]
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
-        let source_selected_slot = player.inventory().get_selected_slot();
+        let mut source_selected_slot = player.inventory().get_selected_slot();
         let mut origin_screen_slot = None;
         let use_item_stack = match &packet.transaction_data {
             TransactionData::UseItem(data) if matches!(data.action_type.0, 0 | 1) => {
+                let Some(selected) = self.reconcile_use_item_selection(player, data) else {
+                    return;
+                };
+                source_selected_slot = selected;
                 let Some(stack) = Self::validated_use_item_stack(player, data) else {
                     return;
                 };
@@ -437,6 +441,7 @@ impl BedrockClient {
                     }
 
                     let mut stack = held_item;
+                    let mut placement_denied = false;
                     if !stack.is_empty() {
                         let item_id = stack.item.id;
                         player.increment_stat(
@@ -479,7 +484,7 @@ impl BedrockClient {
                                         sequence: VarInt(0),
                                     };
 
-                                if let Ok(Some(_)) = server.block_registry.place_block_with_stack(
+                                match server.block_registry.place_block_with_stack(
                                     player,
                                     placed_block,
                                     &server,
@@ -487,10 +492,14 @@ impl BedrockClient {
                                     data.block_position,
                                     face,
                                     &stack,
-                                ) && player.gamemode.load() != GameMode::Creative
-                                {
-                                    // BlockItem.place consumes the retained UseOnContext stack.
-                                    stack.decrement(1);
+                                ) {
+                                    Ok(Some(_)) => {
+                                        if player.gamemode.load() != GameMode::Creative {
+                                            // BlockItem.place consumes the retained UseOnContext stack.
+                                            stack.decrement(1);
+                                        }
+                                    }
+                                    Ok(None) | Err(_) => placement_denied = true,
                                 }
                             }
                         }
@@ -502,6 +511,9 @@ impl BedrockClient {
                         &before_block_use,
                         &stack,
                     );
+                    if placement_denied {
+                        self.correct_denied_placement(player, data.block_position, face);
+                    }
                 } else if data.action_type.0 == 1 {
                     // Click air / Use item
                     let hand = match data.hand {
