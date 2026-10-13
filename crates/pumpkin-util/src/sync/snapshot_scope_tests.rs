@@ -29,6 +29,28 @@ fn snapshot_checks_only_registered_own_locks_and_restores_on_unwind() {
 
 #[test]
 #[cfg(debug_assertions)]
+fn own_lock_scope_rejects_a_preheld_foreign_guard() {
+    let approved = pumpkin_util::sync::Mutex::<_, ScreenSelection>::new(());
+    let foreign = pumpkin_util::sync::Mutex::<_, Cursor>::new(());
+    let identity = CaptureIdentity {
+        kind: "audited test adapter",
+        instance: 2,
+        position: None,
+    };
+    let descriptor =
+        OwnLock::new::<ScreenSelection>(std::ptr::from_ref(&approved).cast::<()>() as usize);
+    let foreign_guard = foreign.lock().unwrap();
+    let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _scope = SnapshotScope::with_own_locks(identity, &[descriptor]);
+    }))
+    .unwrap_err();
+    drop(foreign_guard);
+    assert!(message(error.as_ref()).contains("SnapshotScope::with_own_locks"));
+    assert_no_guards_held("after rejected own-lock entry");
+}
+
+#[test]
+#[cfg(debug_assertions)]
 fn snapshot_rejects_nested_capture_and_bounded_lock_descriptor() {
     let identity = CaptureIdentity {
         kind: "test capture",

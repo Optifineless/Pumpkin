@@ -25,6 +25,59 @@ fn rejects_new_capture_live_nbt_write_and_aliased_host_api() {
 }
 
 #[test]
+fn rejects_restricted_visibility_lifecycle_fields_without_manifest_rows() {
+    for visibility in ["pub(crate)", "pub(super)", "pub(in crate::world)"] {
+        let source = format!("struct World {{ {visibility} loot_random: Mutex<Random>, }}");
+        let found = scan::sites("pumpkin-core/src/world/mod.rs", &source);
+        assert!(
+            found.iter().any(|site| site.contains("loot_random")),
+            "restricted field was not inventoried: {source}"
+        );
+        let actual = BTreeMap::from([(found[0].clone(), "hash".into())]);
+        assert!(compare(&actual, "")[0].contains("unmanifested"));
+    }
+}
+
+#[test]
+fn inventories_own_lock_scope_adapter_entries_in_both_path_forms() {
+    for source in [
+        "fn adapter() { SnapshotScope::with_own_locks(identity, &[]); }",
+        "fn adapter() { pumpkin_util::sync::SnapshotScope::with_own_locks(identity, &[]); }",
+    ] {
+        let found = scan::boundaries("pumpkin-core/src/block/entities/adapter.rs", source);
+        assert_eq!(found.len(), 1, "missing adapter boundary record: {source}");
+        assert!(found[0].0.starts_with("boundary:"));
+        assert!(found[0].0.contains("adapter"));
+    }
+}
+
+#[test]
+fn rejects_coverage_status_that_does_not_match_row_kind() {
+    let actual = BTreeMap::from([
+        (
+            "boundary:adapter.rs:4::Adapter::capture".into(),
+            "boundary-hash".into(),
+        ),
+        ("pumpkin-core/src/world".into(), "family-hash".into()),
+    ]);
+    let errors = compare(
+        &actual,
+        "boundary:adapter.rs:4::Adapter::capture|boundary-hash|Legacy|reviewed\npumpkin-core/src/world|family-hash|BoundaryCheckedLegacy|reviewed\n",
+    );
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.contains("boundary:adapter.rs"))
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.contains("pumpkin-core/src/world"))
+    );
+}
+
+#[test]
 fn rejects_stale_row_and_changed_fingerprint() {
     let actual = BTreeMap::from([("current".into(), "new".into())]);
     let errors = compare(

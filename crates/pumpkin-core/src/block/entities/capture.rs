@@ -11,34 +11,6 @@ pub enum CaptureStatus {
     Certified,
 }
 
-/// Concrete limits required before a future adapter can be certified.
-/// These are not enforced on legacy saves and have no guessed default.
-#[derive(Clone, Copy, Debug)]
-pub struct CaptureBudget {
-    pub max_encoded_bytes: usize,
-    pub max_nodes: usize,
-    pub max_depth: usize,
-    pub max_collection_entries: usize,
-    pub max_inventory_slots: usize,
-}
-
-/// Failure must retain the final image obligation, never produce a partial image.
-#[derive(Clone, Copy, Debug)]
-pub enum CaptureFailure {
-    UnsupportedComponent,
-    BudgetExhausted,
-    IncompletePayload,
-}
-
-/// A future adapter must explicitly report every required field complete or fail.
-///
-/// Its writer audit, transitive behavior and enforced budget need separate review.
-/// No legacy adapter implements this contract automatically.
-pub trait CompleteCaptureAdapter {
-    fn budget(&self) -> CaptureBudget;
-    fn capture_complete(&self) -> Result<NbtCompound, CaptureFailure>;
-}
-
 /// Existing NBT, explicitly unable to supply an owned/complete capture stamp.
 pub struct LegacyCapture {
     nbt: NbtCompound,

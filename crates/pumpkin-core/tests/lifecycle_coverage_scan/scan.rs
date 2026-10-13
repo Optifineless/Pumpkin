@@ -51,9 +51,25 @@ fn api(name: &str) -> bool {
         .any(|prefix| name.starts_with(prefix))
 }
 
-// Reuses #149's comment/string-safe lexer and enclosing-symbol inventory.
-// This is a lexical alarm, not Rust type/alias analysis. Fingerprints include literal-bearing
-// source lines at mapped sites; wrapping/comment edits there conservatively require review.
+fn public_field(tokens: &[super::syntax::Token<'_>], i: usize) -> bool {
+    if tokens.get(i).is_none_or(|token| token.text != "pub") {
+        return false;
+    }
+    let field = if tokens.get(i + 1).is_some_and(|token| token.text == "(") {
+        tokens
+            .iter()
+            .enumerate()
+            .skip(i + 2)
+            .find(|(_, token)| token.text == ")")
+            .map(|(index, _)| index + 1)
+    } else {
+        Some(i + 1)
+    };
+    field.is_some_and(|field| tokens.get(field + 1).is_some_and(|token| token.text == ":"))
+}
+
+// Reuses #149's lexer and owner inventory; this is a lexical alarm, not type/alias analysis.
+// Fingerprints include mapped-site literals; source edits there conservatively require review.
 #[must_use]
 pub fn sites(path: &str, source: &str) -> Vec<String> {
     let tokens = tokenize(source);
@@ -77,7 +93,7 @@ pub fn sites(path: &str, source: &str) -> Vec<String> {
             }
             resolved = next;
         }
-        let public_field = token.text == "pub" && tokens.get(i + 2).is_some_and(|t| t.text == ":");
+        let public_field = public_field(&tokens, i);
         let assignment = token.text == "="
             && tokens
                 .get(i + 1)
@@ -148,20 +164,23 @@ pub fn boundaries(path: &str, source: &str) -> Vec<(String, String)> {
         .enumerate()
         .filter_map(|(i, token)| {
             let name = path_at(&tokens, i);
-            if !matches!(
-                name.as_str(),
-                "SnapshotScope::legacy"
-                    | "assert_not_in_snapshot"
-                    | "pumpkin_util::sync::assert_not_in_snapshot"
-                    | "SnapshotCall::enter"
-                    | "pumpkin_util::sync::SnapshotCall::enter"
-            ) || tokens.get(i + 1).is_none_or(|t| t.text != "(")
+            let snapshot_scope_entry = name.ends_with("SnapshotScope::legacy")
+                || name.ends_with("SnapshotScope::with_own_locks");
+            if !(snapshot_scope_entry
+                || matches!(
+                    name.as_str(),
+                    "assert_not_in_snapshot"
+                        | "pumpkin_util::sync::assert_not_in_snapshot"
+                        | "SnapshotCall::enter"
+                        | "pumpkin_util::sync::SnapshotCall::enter"
+                ))
+                || tokens.get(i + 1).is_none_or(|t| t.text != "(")
             {
                 return None;
             }
             let end = tokens.iter().skip(i).find(|t| t.text == ";")?;
             let call = lines[token.line - 1..end.line].join(" ");
-            let boundary = if name == "SnapshotScope::legacy" {
+            let boundary = if snapshot_scope_entry {
                 owner_ids.get(i).and_then(|id| names.get(*id))?.as_str()
             } else {
                 call.split('"').nth(1)?
