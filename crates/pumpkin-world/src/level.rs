@@ -1208,3 +1208,6 @@ mod entity_storage_tests;
 #[cfg(test)]
 #[path = "level_ticks_tests.rs"]
 mod level_ticks_tests;
+
+#[path = "tick/level_ticks.rs"]
+mod level_ticks;
