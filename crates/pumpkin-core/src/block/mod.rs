@@ -153,6 +153,9 @@ pub trait BlockBehaviour: Send + Sync {
     /// Called when a player starts digging this block, except in creative.
     fn attack(&self, _args: AttackArgs<'_>) {}
 
+    /// Runs after break-event admission and before drops or block removal.
+    fn player_will_destroy(&self, _args: PlayerWillDestroyArgs<'_>) {}
+
     fn broken(&self, _args: BrokenArgs<'_>) {}
 
     fn on_neighbor_update(&self, _args: OnNeighborUpdateArgs<'_>) {}
@@ -375,6 +378,15 @@ pub struct UpdateEntityMovementAfterFallOnArgs<'a> {
 }
 
 pub struct AttackArgs<'a> {
+    pub world: &'a Arc<World>,
+    pub block: &'a Block,
+    pub state: &'a BlockState,
+    pub position: &'a BlockPos,
+    pub player: &'a Arc<Player>,
+}
+
+#[derive(Clone, Copy)]
+pub struct PlayerWillDestroyArgs<'a> {
     pub world: &'a Arc<World>,
     pub block: &'a Block,
     pub state: &'a BlockState,

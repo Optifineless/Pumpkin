@@ -1261,6 +1261,29 @@ impl BlockRegistry {
         }
     }
 
+    /// Dispatches vanilla `Block.playerWillDestroy` after admission and before drops.
+    pub fn player_will_destroy(
+        &self,
+        world: &Arc<World>,
+        cause: Option<&Arc<Player>>,
+        position: &BlockPos,
+        state: &BlockState,
+    ) {
+        let Some(player) = cause else {
+            return;
+        };
+        let block = Block::from_state_id(state.id);
+        if let Some(behaviour) = self.get_pumpkin_block(block.id) {
+            behaviour.player_will_destroy(crate::block::PlayerWillDestroyArgs {
+                world,
+                block,
+                state,
+                position,
+                player,
+            });
+        }
+    }
+
     pub fn broken(
         &self,
         world: &Arc<World>,

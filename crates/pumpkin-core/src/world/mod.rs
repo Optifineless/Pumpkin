@@ -5373,6 +5373,9 @@ impl World {
             flags.insert(BlockFlags::SKIP_DROPS);
         }
 
+        self.block_registry
+            .player_will_destroy(self, cause, position, broken_block_state);
+
         if !flags.contains(BlockFlags::SKIP_DROPS) {
             let tool = cause.as_ref().and_then(|p| {
                 let item = p.inventory().held_item();
