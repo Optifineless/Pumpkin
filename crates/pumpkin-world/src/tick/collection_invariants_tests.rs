@@ -122,7 +122,7 @@ fn collection_invariant_empty_retirement_survives_clear_and_repeated_freeze() {
         },
         0,
     );
-    assert!(!scheduler.has_ticks());
+    assert!(scheduler.has_ticks());
     assert!(scheduler.prepare_tick(200).is_none());
     let mut due = Vec::new();
     assert!(scheduler.poll_due_batch(1, None, &mut due).is_none());

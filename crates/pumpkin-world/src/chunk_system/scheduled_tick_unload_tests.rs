@@ -368,3 +368,127 @@ async fn collection_invariant_retained_arc_cannot_unpack_after_real_unload() {
     );
     level.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn scheduler_retirement_late_producer_persists_and_fires_after_reload() {
+    for during_publication in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let config = LevelConfig {
+            chunk: ChunkConfig::Anvil(AnvilChunkConfig::default()),
+            ..Default::default()
+        };
+        let level = TestLevel(Level::from_root_folder(
+            &config,
+            directory.path().into(),
+            0,
+            Dimension::OVERWORLD,
+        ));
+        let active = FxHashSet::from_iter([CHUNK]);
+        level.set_game_time(100);
+        let chunk = ChunkData::empty_sync(CHUNK.x, CHUNK.y);
+        chunk.light_populated.store(true, Relaxed);
+        level.loaded_chunks.insert(CHUNK, chunk.clone());
+        level.schedule_block_tick_after(&Block::STONE, POSITION, 100, TickPriority::Normal);
+        level.schedule_fluid_tick(&Fluid::WATER, POSITION, 100, TickPriority::Normal);
+        assert_waiting(&level, &active, 100);
+        chunk.block_ticks.freeze_for_unload(100);
+        chunk.fluid_ticks.freeze_for_unload(100);
+        let late = BlockPos::new(1, 64, 0);
+        let (started, start) = tokio::sync::oneshot::channel();
+        let (resume, resumed) = tokio::sync::oneshot::channel();
+        manager(&level).pause_next_publication_for_test(started, resumed);
+        if !during_publication {
+            // Sequential fallback: frozen but public, through the actual producer entry points.
+            level.set_game_time(101);
+            level.schedule_block_tick_after(&Block::STONE, late, 10, TickPriority::High);
+            level.schedule_fluid_tick(&Fluid::WATER, late, 10, TickPriority::High);
+        }
+        let worker = unload(&level, chunk.clone()).await;
+        start.await.unwrap(); // Existing storage boundary: the first image is already encoded.
+        if during_publication {
+            level.set_game_time(101);
+            schedule_late_retained_ticks(&chunk, late);
+        }
+        assert_eq!(
+            chunk
+                .block_ticks
+                .to_vec()
+                .iter()
+                .map(|t| t.delay)
+                .collect::<Vec<_>>(),
+            [100, 11]
+        );
+        assert_eq!(
+            chunk
+                .fluid_ticks
+                .to_vec()
+                .iter()
+                .map(|t| t.delay)
+                .collect::<Vec<_>>(),
+            [100, 11]
+        );
+        assert!(chunk.block_ticks.prepare_tick(200).is_none());
+        assert!(chunk.fluid_ticks.prepare_tick(200).is_none());
+        resume.send(()).unwrap();
+        worker.await.unwrap();
+        if during_publication {
+            assert!(
+                chunk.is_dirty(),
+                "late producer mutation was acknowledged as published"
+            );
+            assert_eq!(manager(&level).retained_region_counts_for_test().await.1, 1);
+            level
+                .chunk_saver
+                .block_and_await_ongoing_tasks()
+                .await
+                .unwrap();
+            assert!(!chunk.is_dirty());
+        }
+        assert_late_tick_disk_reload(&level, &chunk, &active, late).await;
+        level.shutdown().await.unwrap();
+    }
+}
+
+fn schedule_late_retained_ticks(chunk: &ChunkData, late: BlockPos) {
+    chunk.block_ticks.schedule_tick(
+        &crate::tick::ScheduledTick {
+            delay: 10,
+            priority: TickPriority::High,
+            position: late,
+            value: &Block::STONE,
+        },
+        2,
+    );
+    chunk.fluid_ticks.schedule_tick(
+        &crate::tick::ScheduledTick {
+            delay: 10,
+            priority: TickPriority::High,
+            position: late,
+            value: &Fluid::WATER,
+        },
+        3,
+    );
+}
+
+async fn assert_late_tick_disk_reload(
+    level: &Arc<Level>,
+    chunk: &SyncChunk,
+    active: &FxHashSet<ChunkPos>,
+    late: BlockPos,
+) {
+    level.chunk_saver.clear_watched_chunks().await;
+    assert_eq!(
+        manager(level).retained_region_counts_for_test().await,
+        (0, 0)
+    );
+    level.set_game_time(300);
+    ticket_for_reload(level);
+    let loaded = level.get_or_fetch_chunk(CHUNK, Clone::clone).await.unwrap();
+    assert!(!Arc::ptr_eq(&loaded, chunk));
+    assert_waiting(level, active, 300);
+    assert_waiting(level, active, 310);
+    assert_due_at(level, active, 311, late);
+    assert_waiting(level, active, 399);
+    assert_due_at(level, active, 400, POSITION);
+    assert_waiting(level, active, 401);
+}
