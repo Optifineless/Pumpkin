@@ -72,9 +72,10 @@ impl SnapshotScope {
         Self::enter(identity, None)
     }
 
-    /// Checks only the supplied own lock instances, retaining normal lock ordering.
-    /// This declaration alone does not certify an adapter or exclude writers.
+    /// Checks supplied own locks with normal ordering; debug builds require no tracked guards at entry.
+    /// This does not certify adapters or exclude writers.
     pub fn with_own_locks(identity: CaptureIdentity, own_locks: &[OwnLock]) -> Self {
+        super::assert_no_guards_held("SnapshotScope::with_own_locks");
         Self::enter(identity, Some(own_locks))
     }
 

@@ -1331,6 +1331,7 @@ impl World {
         sender_name: &TextComponent,
         target_name: Option<&TextComponent>,
     ) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_chat_message");
         let tracked = crate::net::chat::OutgoingChatMessage::create(message.clone());
         let mut was_fully_filtered = false;
 
@@ -1410,6 +1411,7 @@ impl World {
         je_packet: &J,
         be_packet: &B,
     ) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_packet_except_editioned");
         let players = self.players.load();
         let mut java_recipients = Vec::new();
         let mut bedrock_recipients = Vec::new();
@@ -1488,6 +1490,7 @@ impl World {
     ///
     /// **Note:** This function acquires a lock on the `current_players` map, ensuring thread safety.
     pub fn broadcast_packet_except<P: ClientPacket>(&self, except: &[uuid::Uuid], packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_packet_except");
         let players = self.players.load();
         let recipients_by_version = Self::collect_java_recipients_by_version(
             players
@@ -6863,6 +6866,7 @@ impl World {
         except: &[uuid::Uuid],
         packet: &P,
     ) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_to_chunk_except");
         let players = self.players.load();
 
         let recipients = players.iter().filter(|p| {
@@ -6885,6 +6889,7 @@ impl World {
         je_packet: &J,
         be_packet: &B,
     ) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_to_chunk_except_editioned");
         let players = self.players.load();
         let recipients = players.iter().filter(|p| {
             if except.contains(&p.get_entity().entity_uuid) {

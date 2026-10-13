@@ -76,9 +76,8 @@ lock checker; serialization and saved NBT semantics remain legacy.
 Existing live writers, terrain publication, image ordering and detach remain
 legacy until the ownership map's ordered migrations activate. Retained chest
 handles, final capture/detach and ordinary-save stale images remain unprotected;
-this does not fix S6 or complete rule F3. API 8 (same version): additive native
-capture/debug interfaces; rebuild native plugins. Implemented by Codex
-(GPT-6.1 Sol). In-game verification: **Not yet**.
+this does not fix S6 or rule F3. API 8 (same version): internal debug diagnostics; no plugin API changes.
+Implemented by Codex (GPT-6.1 Sol). In-game verification: **Not yet**.
 
 ## How the code here is written
 
