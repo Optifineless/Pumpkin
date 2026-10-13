@@ -9,7 +9,7 @@ use pumpkin_data::{Block, BlockDirection};
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 
 /// Uses a bed through the block registry entry point used by the Java use-on packet handler.
-pub(crate) fn use_bed(
+pub fn use_bed(
     world: &Arc<World>,
     player: &Arc<Player>,
     block: &Block,

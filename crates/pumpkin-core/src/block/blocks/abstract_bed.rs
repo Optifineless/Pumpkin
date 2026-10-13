@@ -241,6 +241,12 @@ pub fn bed_rule(world: &World, block: &Block) -> pumpkin_data::dimension::BedRul
     }
 }
 
+/// Computes the wake rotation used by `LivingEntity.stopSleeping`.
+pub fn wake_yaw(head: BlockPos, position: Vector3<f64>) -> f32 {
+    let direction = head.to_f64().add_raw(0.5, 0.0, 0.5) - position;
+    (direction.z.atan2(direction.x).to_degrees() + 90.0).rem_euclid(360.0) as f32 - 180.0
+}
+
 pub(super) fn head_inside_border(world: Option<&World>, head: BlockPos) -> bool {
     // AbstractBedBlock.getStateForPlacement / WorldBorder.isWithinBounds(BlockPos).
     world.is_none_or(|world| {
@@ -252,7 +258,8 @@ pub(super) fn head_inside_border(world: Option<&World>, head: BlockPos) -> bool 
     })
 }
 
-pub(super) fn sleep_admission(
+/// Returns the vanilla reach or obstruction refusal for a bed use.
+pub fn sleep_admission(
     world: &World,
     player: &crate::entity::player::Player,
     head: BlockPos,
@@ -283,7 +290,8 @@ pub(super) fn sleep_admission(
     None
 }
 
-pub(super) fn monsters_prevent_sleep(
+/// Checks whether a nearby hostile mob prevents the player from sleeping.
+pub fn monsters_prevent_sleep(
     world: &World,
     player: &crate::entity::player::Player,
     head: BlockPos,

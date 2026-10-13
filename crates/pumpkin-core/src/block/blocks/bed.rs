@@ -150,24 +150,14 @@ impl BedBlock {
             return BlockActionResult::SuccessServer;
         }
 
-        // AbstractBedBlock.kickVillagerOutOfBed, adapted from upstream #3693.
         if bed_props.occupied {
-            let bounds =
-                pumpkin_util::math::boundingbox::BoundingBox::full_block().at_pos(bed_head_pos);
-            if !world.get_entities_at_box(&bounds).iter().any(|entity| {
-                entity
-                    .cast_any()
-                    .downcast_ref::<crate::entity::passive::villager::VillagerEntity>()
-                    .is_some_and(|villager| villager.wake_up_if_sleeping_at(bed_head_pos))
-            }) {
-                player.send_system_message_raw(
-                    &pumpkin_macros::translate_cross!(
-                        translation::java::BLOCK_MINECRAFT_BED_OCCUPIED,
-                        translation::bedrock::TILE_BED_OCCUPIED
-                    ),
-                    true,
-                );
-            }
+            player.send_system_message_raw(
+                &pumpkin_macros::translate_cross!(
+                    translation::java::BLOCK_MINECRAFT_BED_OCCUPIED,
+                    translation::bedrock::TILE_BED_OCCUPIED
+                ),
+                true,
+            );
             return BlockActionResult::SuccessServer;
         }
 

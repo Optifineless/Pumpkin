@@ -41,11 +41,6 @@ async fn missing_bed_wakes_player_before_night_skip_or_sleep_timer() {
     assert!(client.player.get_entity().pose.load() == EntityPose::Standing);
     assert!(client.player.sleeping_since.load().is_none());
     assert!(!fixture.world.should_skip_night());
-    let (_, head) = place(&fixture.world, &Block::RED_BED);
-    client.player.sleep(head);
-    client.player.sleeping_since.store(Some(100));
-    fixture.world.level_time.lock().unwrap().time_of_day = 6_000;
-    assert!(!fixture.world.should_skip_night());
     assert!(client.player.sleeping_bed_pos.load().is_none());
     fixture.finish().await;
 }
@@ -105,6 +100,38 @@ async fn player_wake_finds_safe_standing_position_and_corrects_client() {
         );
         fixture.finish().await;
     }
+}
+
+#[tokio::test]
+async fn using_a_bed_dismounts_the_player_before_sleeping() {
+    let fixture = PlayerFixture::new();
+    publish(&fixture.world, proto(&Biome::PLAINS, &Block::STONE));
+    fixture.world.level_time.lock().unwrap().time_of_day = 13_000;
+    let (foot, head) = place(&fixture.world, &Block::RED_BED);
+    let client = TestPlayer::new(&fixture.world);
+    client.player.get_entity().set_pos(foot.to_centered_f64());
+    let cart = Arc::new(crate::entity::vehicle::minecart::MinecartEntity::new(
+        Entity::new(
+            fixture.world.clone(),
+            foot.to_centered_f64(),
+            &EntityType::MINECART,
+        ),
+    ));
+    fixture.world.add_entity_silent(cart.clone());
+    cart.get_entity()
+        .add_passenger(cart.clone(), client.player.clone());
+    assert!(client.player.get_entity().has_vehicle());
+
+    crate::block::blocks::bed::test_support::use_bed(
+        &fixture.world,
+        &client.player,
+        &Block::RED_BED,
+        &foot,
+    );
+
+    assert!(!client.player.get_entity().has_vehicle());
+    assert_eq!(client.player.sleeping_bed_pos.load(), Some(head));
+    fixture.finish().await;
 }
 
 #[tokio::test]

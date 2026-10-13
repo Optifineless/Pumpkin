@@ -1,4 +1,5 @@
 use super::Player;
+use crate::block::blocks::abstract_bed::wake_yaw;
 use crate::entity::EntityBase;
 use pumpkin_data::{
     Block,
@@ -13,14 +14,28 @@ use pumpkin_util::math::vector3::Vector3;
 
 impl Player {
     pub fn sleep(&self, bed_head_pos: BlockPos) {
-        // TODO: Stop riding
-
         let world = self.world();
-        let Some(position) =
+        let Some(mut position) =
             crate::block::blocks::abstract_bed::sleep_position(&world, bed_head_pos)
         else {
             return;
         };
+        // LivingEntity.startSleeping stops riding after confirming the bed's sleep height.
+        if let Some(vehicle) = self.get_entity().get_vehicle() {
+            vehicle
+                .get_entity()
+                .remove_passenger(self.get_entity().entity_id);
+            if self.get_entity().has_vehicle() {
+                return;
+            }
+            // Dismount hooks can change the bed, so recheck it before applying sleep state.
+            let Some(sleep_position) =
+                crate::block::blocks::abstract_bed::sleep_position(&world, bed_head_pos)
+            else {
+                return;
+            };
+            position = sleep_position;
+        }
         let (block, state) = world.get_block_and_state_id(&bed_head_pos);
         crate::block::blocks::bed::BedBlock::set_occupied(
             true,
@@ -198,11 +213,8 @@ impl Player {
                 bed_pos,
                 facing,
             );
-            let direction = bed_pos.to_f64().add_raw(0.5, 0.0, 0.5) - position;
-            let yaw = ((direction.z.atan2(direction.x).to_degrees() - 90.0 + 180.0)
-                .rem_euclid(360.0)
-                - 180.0) as f32;
-            self.get_entity().set_rotation(yaw, 0.0);
+            self.get_entity()
+                .set_rotation(wake_yaw(bed_pos, position), 0.0);
             position
         } else {
             // LivingEntity.stopSleeping uses its above-bed fallback if the saved bed is gone.

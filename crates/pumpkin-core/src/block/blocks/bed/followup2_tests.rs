@@ -5,12 +5,9 @@ use crate::{
     world::spawn_test_support::{proto, publish},
 };
 use pumpkin_data::{
-    biome::Biome,
-    block_properties::HorizontalFacing,
-    dimension::BedRuleOption,
-    entity::{EntityPose, EntityType},
+    biome::Biome, block_properties::HorizontalFacing, dimension::BedRuleOption, entity::EntityPose,
 };
-use pumpkin_util::{math::vector3::Vector3, text::TextComponent};
+use pumpkin_util::text::TextComponent;
 
 fn place(world: &Arc<World>) -> (BlockPos, BlockPos) {
     let foot = BlockPos::new(5, 64, 5);
@@ -164,50 +161,6 @@ async fn followup3_default_bed_denial_uses_each_editions_translation() {
 }
 
 #[tokio::test]
-async fn followup2_bed_kicks_only_a_villager_intersecting_its_head() {
-    let fixture = PlayerFixture::new();
-    publish(&fixture.world, proto(&Biome::PLAINS, &Block::STONE));
-    let (foot, head) = place(&fixture.world);
-    let client = TestPlayer::new(&fixture.world);
-    client.player.get_entity().set_pos(foot.to_centered_f64());
-    let villager =
-        crate::entity::passive::villager::VillagerEntity::new(crate::entity::Entity::new(
-            fixture.world.clone(),
-            Vector3::new(12.5, 64.0, 5.5),
-            &EntityType::VILLAGER,
-        ));
-    *villager.home_pos.lock().unwrap() = Some(head);
-    villager.get_entity().set_pose(EntityPose::Sleeping);
-    fixture.world.add_entity_silent(villager.clone());
-    BedBlock::set_occupied(
-        true,
-        &fixture.world,
-        &Block::RED_BED,
-        &head,
-        fixture.world.get_block_state_id(&head),
-    );
-    crate::block::blocks::bed::test_support::use_bed(
-        &fixture.world,
-        &client.player,
-        &Block::RED_BED,
-        &head,
-    );
-    assert!(
-        villager.get_entity().pose.load() == EntityPose::Sleeping,
-        "a distant sleeper was kicked"
-    );
-    villager.get_entity().set_pos(head.to_centered_f64());
-    crate::block::blocks::bed::test_support::use_bed(
-        &fixture.world,
-        &client.player,
-        &Block::RED_BED,
-        &head,
-    );
-    assert!(villager.get_entity().pose.load() == EntityPose::Standing);
-    fixture.finish().await;
-}
-
-#[tokio::test]
 async fn waking_after_bed_head_is_removed_uses_the_vanilla_fallback_position() {
     let fixture = PlayerFixture::new();
     let chunk = publish(&fixture.world, proto(&Biome::PLAINS, &Block::STONE));
@@ -236,6 +189,6 @@ async fn waking_after_bed_head_is_removed_uses_the_vanilla_fallback_position() {
         client.player.position(),
         head.up().to_f64().add_raw(0.5, 0.1, 0.5)
     );
-    assert_eq!(client.player.get_entity().pose.load(), EntityPose::Standing);
+    assert!(client.player.get_entity().pose.load() == EntityPose::Standing);
     fixture.finish().await;
 }

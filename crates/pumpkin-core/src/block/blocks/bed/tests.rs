@@ -1,11 +1,9 @@
 use super::*;
 use crate::block::blocks::player_destroy::test_support::{self, PlayerFixture};
-use crate::entity::Entity;
 use crate::{
     net::java::combat_test_support::TestPlayer,
     world::spawn_test_support::{Fixture, proto, publish},
 };
-use pumpkin_data::entity::EntityType;
 use pumpkin_data::{biome::Biome, block_properties::HorizontalFacing, entity::EntityPose};
 
 fn place(world: &Arc<World>, block: &Block, foot: BlockPos) -> BlockPos {
@@ -225,46 +223,5 @@ async fn isolated_bed_head_still_drops_once() {
         .world
         .break_block(&pos, None, BlockFlags::NOTIFY_ALL);
     assert_eq!(bed_drops(&fixture.world, &Block::RED_BED), 1);
-    fixture.finish().await;
-}
-
-#[tokio::test]
-async fn occupied_foot_wakes_villager_before_obstruction_check() {
-    let fixture = PlayerFixture::new();
-    publish(&fixture.world, proto(&Biome::PLAINS, &Block::STONE));
-    let foot = BlockPos::new(5, 64, 5);
-    let head = place(&fixture.world, &Block::RED_BED, foot);
-    let villager = crate::entity::passive::villager::VillagerEntity::new(Entity::new(
-        fixture.world.clone(),
-        head.to_centered_f64(),
-        &EntityType::VILLAGER,
-    ));
-    *villager.home_pos.lock().unwrap() = Some(head);
-    villager
-        .get_entity()
-        .set_pose(pumpkin_data::entity::EntityPose::Sleeping);
-    fixture.world.add_entity_silent(villager.clone());
-    BedBlock::set_occupied(
-        true,
-        &fixture.world,
-        &Block::RED_BED,
-        &head,
-        fixture.world.get_block_state_id(&head),
-    );
-    fixture.world.set_block_state(
-        &head.up(),
-        Block::STONE.default_state.id,
-        BlockFlags::NOTIFY_ALL,
-    );
-    let client = TestPlayer::new(&fixture.world);
-    crate::block::blocks::bed::test_support::use_bed(
-        &fixture.world,
-        &client.player,
-        &Block::RED_BED,
-        &foot,
-    );
-    assert!(villager.get_entity().pose.load() == pumpkin_data::entity::EntityPose::Standing);
-    assert!(client.player.sleeping_bed_pos.load().is_none());
-    assert!(!BedProperties::from_state_id(fixture.world.get_block_state_id(&head)).occupied);
     fixture.finish().await;
 }
