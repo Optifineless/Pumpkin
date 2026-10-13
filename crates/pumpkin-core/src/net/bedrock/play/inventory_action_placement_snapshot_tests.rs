@@ -60,6 +60,7 @@ fn prepare_container_use(
         after
     };
     let mut packet = click_block_packet(
+        &fixture.owner.player,
         HandSlot::Offhand,
         position,
         &off,
