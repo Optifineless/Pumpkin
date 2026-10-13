@@ -514,6 +514,10 @@ async fn air_placement_guard_precedes_side_effects_and_allows_other_air_states()
         registry,
         Arc::downgrade(&f.server),
     ));
+    f.player
+        .player
+        .inventory()
+        .set_stack(0, ItemStack::new(1, &Item::STONE));
     assert!(
         world
             .block_registry

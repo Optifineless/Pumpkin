@@ -225,20 +225,18 @@ async fn callback_container_placement(cancelled: bool) -> TestResult {
                 "callback replacement overwritten"
             );
             assert_eq!(actual.uid, replacement.uid, "callback replacement identity");
-            if cancelled {
-                let placed = BlockPos::new(8, 65, 8);
-                assert_eq!(world.get_block(&placed), &Block::AIR);
-                assert!(world.get_block_entity(&placed).is_none());
-                Ok(())
-            } else {
-                assert_placed_diamonds(&world)
-            }
+            // Cancelled or replaced sources cannot authorize placement.
+            let placed = BlockPos::new(8, 65, 8);
+            assert_eq!(world.get_block(&placed), &Block::AIR);
+            assert!(world.get_block_entity(&placed).is_none());
+            let packets = fixture.owner.take_packets();
+            addendum::assert_block_corrections(fixture, &packets, BlockPos::new(8, 64, 8))
         })
         .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn predicted_shulker_callback_replacement_keeps_original_placement_contents() -> TestResult {
+async fn predicted_shulker_callback_replacement_rejects_unpaid_placement() -> TestResult {
     callback_container_placement(false).await
 }
 
@@ -320,7 +318,15 @@ async fn no_action_callback_placement(hand: Hand, identical_replacement: bool) -
                 );
                 assert_eq!(actual.uid, replacement.uid);
             }
-            assert_placed_diamonds(&world)
+            if hand == Hand::Right {
+                assert_placed_diamonds(&world)
+            } else {
+                let placed = BlockPos::new(8, 65, 8);
+                assert_eq!(world.get_block(&placed), &Block::AIR);
+                assert!(world.get_block_entity(&placed).is_none());
+                let packets = fixture.owner.take_packets();
+                addendum::assert_block_corrections(fixture, &packets, BlockPos::new(8, 64, 8))
+            }
         })
         .await
 }

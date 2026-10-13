@@ -9,6 +9,7 @@ use crate::entity::player::Player;
 use crate::world::World;
 use std::sync::Arc;
 
+mod block_item;
 mod loot;
 pub use loot::{block_drops, drop_experience, drop_loot, loot_table_name};
 pub mod blocks;
