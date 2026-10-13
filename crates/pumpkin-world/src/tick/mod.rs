@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{cmp::Reverse, collections::BinaryHeap, str::FromStr};
 
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::{
@@ -66,6 +66,26 @@ pub struct ScheduledTick<T> {
     pub value: T,
 }
 
+/// A chunk tick's signed delay relative to the save or load game time.
+#[derive(Clone)]
+pub struct SavedTick<T> {
+    pub delay: i32,
+    pub priority: TickPriority,
+    pub position: BlockPos,
+    pub value: T,
+}
+
+impl<T> From<ScheduledTick<T>> for SavedTick<T> {
+    fn from(tick: ScheduledTick<T>) -> Self {
+        Self {
+            delay: tick.delay.min(MAX_SAVED_TICK_DELAY) as i32,
+            priority: tick.priority,
+            position: tick.position,
+            value: tick.value,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct OrderedTick<T> {
     pub priority: TickPriority,
@@ -108,7 +128,7 @@ impl<T> Ord for OrderedTick<T> {
     }
 }
 
-impl<T> ScheduledTick<T>
+impl<T> SavedTick<T>
 where
     T: ToResourceLocation,
 {
@@ -118,14 +138,14 @@ where
         nbt.put_int("x", self.position.0.x);
         nbt.put_int("y", self.position.0.y);
         nbt.put_int("z", self.position.0.z);
-        nbt.put_int("t", self.delay.min(MAX_SAVED_TICK_DELAY) as i32);
+        nbt.put_int("t", self.delay);
         nbt.put_int("p", self.priority as i32);
         nbt.put_string("i", self.value.to_resource_location());
         nbt
     }
 }
 
-impl<T> ScheduledTick<T>
+impl<T> SavedTick<T>
 where
     T: FromResourceLocation,
 {
@@ -134,7 +154,7 @@ where
         let x = nbt.get_int("x")?;
         let y = nbt.get_int("y")?;
         let z = nbt.get_int("z")?;
-        let delay = nbt.get_int("t")?.max(0) as u32;
+        let delay = nbt.get_int("t")?;
         let priority = TickPriority::try_from(nbt.get_int("p")?).ok()?;
         let res_loc_str = nbt.get_string("i")?;
         let res_loc = ResourceLocation::from_str(res_loc_str).ok()?;
@@ -147,4 +167,24 @@ where
             value,
         })
     }
+}
+
+/// Merges due chunk queues by priority and sub-tick order without reordering a chunk's triggers.
+pub(crate) fn drain_containers<T>(containers: Vec<Vec<OrderedTick<T>>>) -> Vec<OrderedTick<T>> {
+    // LevelTicks.drainContainers / drainFromCurrentContainer compare only each container's head.
+    let mut containers: Vec<_> = containers.into_iter().map(Vec::into_iter).collect();
+    let mut heads = BinaryHeap::new();
+    for (index, container) in containers.iter_mut().enumerate() {
+        if let Some(tick) = container.next() {
+            heads.push(Reverse((tick, index)));
+        }
+    }
+    let mut due = Vec::new();
+    while let Some(Reverse((tick, index))) = heads.pop() {
+        due.push(tick);
+        if let Some(tick) = containers[index].next() {
+            heads.push(Reverse((tick, index)));
+        }
+    }
+    due
 }
