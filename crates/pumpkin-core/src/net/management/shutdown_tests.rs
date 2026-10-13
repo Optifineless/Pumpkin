@@ -1,5 +1,5 @@
 //! Shutdown regressions through the real management listener and RPC entry points.
-use std::{collections::HashSet, process::Command, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use axum::{
     Router,
@@ -176,26 +176,77 @@ async fn management_shutdown_bounds_partial_http_request_drain() {
 }
 
 #[tokio::test]
+async fn concurrent_shutdown_claim_enqueues_before_cancellation() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let directory = tempfile::tempdir().unwrap();
+        let server = combat_test_support::server(directory.path());
+        let mut first_session = server.management_hub.subscribe();
+        let mut second_session = server.management_hub.subscribe();
+        let shutdown = server.management_shutdown.clone();
+        let (monitor_ready_tx, monitor_ready_rx) = oneshot::channel();
+        let observed_shutdown = tokio::spawn(async move {
+            let _ = monitor_ready_tx.send(());
+            shutdown.cancelled().await;
+            (
+                first_session.try_recv(),
+                first_session.try_recv(),
+                second_session.try_recv(),
+                second_session.try_recv(),
+            )
+        });
+        monitor_ready_rx.await.unwrap();
+
+        let (after_claim_tx, after_claim_rx) = oneshot::channel();
+        let (resume_tx, resume_rx) = oneshot::channel();
+        let first_server = server.clone();
+        let first_shutdown = tokio::task::spawn_blocking(move || {
+            first_server.begin_shutdown_with_adapter(move || {
+                let _ = after_claim_tx.send(());
+                let _ = resume_rx.blocking_recv();
+            });
+        });
+        after_claim_rx.await.unwrap();
+        assert!(server.management_hub.is_server_stopping());
+
+        let second_server = server.clone();
+        tokio::task::spawn_blocking(move || second_server.begin_shutdown())
+            .await
+            .unwrap();
+        let cancellation_preceded_enqueue = server.management_shutdown.is_cancelled();
+        let _ = resume_tx.send(());
+        first_shutdown.await.unwrap();
+
+        let (first, first_extra, second, second_extra) = observed_shutdown.await.unwrap();
+        assert!(
+            !cancellation_preceded_enqueue,
+            "a losing shutdown caller cancelled management before the stopping notification was enqueued"
+        );
+        for event in [first, second] {
+            let notification: serde_json::Value = serde_json::from_str(&event.unwrap()).unwrap();
+            assert_eq!(
+                notification["method"],
+                "minecraft:notification/server/stopping"
+            );
+        }
+        assert!(first_extra.is_err(), "first session received a duplicate stop notification");
+        assert!(second_extra.is_err(), "second session received a duplicate stop notification");
+    })
+    .await
+    .expect("concurrent shutdown claim regression exceeded its 30-second crash guard");
+}
+
+#[tokio::test]
 async fn management_stop_rpc_requests_shutdown_owner_after_reply() {
     const CHILD: &str = "PUMPKIN_MANAGEMENT_STOP_RPC_TEST_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        let output = Command::new(std::env::current_exe().unwrap())
-            .arg("management_stop_rpc_requests_shutdown_owner_after_reply")
-            .arg("--nocapture")
-            .env(CHILD, "1")
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "child test failed\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            String::from_utf8_lossy(&output.stdout).contains("test result: ok."),
-            "child test exited before its assertions completed\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
+        assert_eq!(
+            super::shutdown_child::run_isolated_child_test(
+                "net::management::shutdown_tests::management_stop_rpc_requests_shutdown_owner_after_reply",
+                CHILD,
+            )
+            .await,
+            Ok(()),
+            "parent process could not verify the stop RPC child"
         );
         return;
     }

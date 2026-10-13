@@ -123,7 +123,7 @@ xxhash-rust.workspace = true
 [dev-dependencies]
 tokio-tungstenite = "0.29.0"
 tempfile.workspace = true
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["process", "test-util"] }
 
 [lints]
 workspace = true

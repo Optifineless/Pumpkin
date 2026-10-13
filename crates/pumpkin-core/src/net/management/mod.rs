@@ -5,6 +5,8 @@ pub mod hub;
 pub mod rpc;
 
 #[cfg(test)]
+mod shutdown_child;
+#[cfg(test)]
 mod shutdown_rpc_tests;
 #[cfg(test)]
 mod shutdown_tests;

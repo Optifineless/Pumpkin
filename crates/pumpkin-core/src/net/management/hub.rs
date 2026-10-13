@@ -119,13 +119,36 @@ impl ManagementHub {
     }
 
     pub fn broadcast_server_stopping(&self) {
-        // JsonRpcNotificationService.serverShuttingDown notifies once; latch first to close upgrade admission.
-        if !self.server_stopping.swap(true, Ordering::Relaxed) {
-            self.broadcast(&RpcNotification::new(
-                "minecraft:notification/server/stopping",
-                None,
-            ));
+        let _ = self.broadcast_server_stopping_with(|| {});
+    }
+
+    pub(crate) fn try_broadcast_server_stopping(&self) -> bool {
+        self.broadcast_server_stopping_with(|| {})
+    }
+
+    pub(crate) fn broadcast_server_stopping_with(&self, after_claim: impl FnOnce()) -> bool {
+        // JsonRpcNotificationService.serverShuttingDown claims once before notifying or closing sessions.
+        if self
+            .server_stopping
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return false;
         }
+        after_claim();
+        self.broadcast(&RpcNotification::new(
+            "minecraft:notification/server/stopping",
+            None,
+        ));
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn broadcast_server_stopping_with_adapter(
+        &self,
+        after_claim: impl FnOnce(),
+    ) -> bool {
+        self.broadcast_server_stopping_with(after_claim)
     }
 
     pub fn broadcast_server_saving(&self) {
