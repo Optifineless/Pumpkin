@@ -34,6 +34,9 @@ pub(super) mod authoritative;
 #[path = "inventory_action_addendum_tests.rs"]
 mod addendum;
 
+#[path = "inventory_action_round4c_tests.rs"]
+mod round4c;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]
