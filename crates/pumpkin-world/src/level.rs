@@ -612,6 +612,12 @@ impl Level {
         self.game_time.store(game_time, Ordering::Relaxed);
     }
 
+    /// Reads the shared game time used by bound schedulers and chunk tick saves.
+    pub fn get_game_time(&self) -> i64 {
+        // LevelAccessor.getGameTime reads the restored LevelData game clock.
+        self.game_time.load(Ordering::Relaxed)
+    }
+
     fn bind_chunk_tick_clocks(&self, chunk: &SyncChunk) {
         chunk.block_ticks.bind_clock(self.game_time.clone());
         chunk.fluid_ticks.bind_clock(self.game_time.clone());

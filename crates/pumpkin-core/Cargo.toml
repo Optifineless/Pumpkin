@@ -121,6 +121,7 @@ xxhash-rust.workspace = true
 
 
 [dev-dependencies]
+syn = { workspace = true, features = ["visit"] }
 tokio-tungstenite = "0.29.0"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

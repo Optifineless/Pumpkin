@@ -3236,6 +3236,7 @@ dependencies = [
  "sha1 0.11.0",
  "sha2 0.11.0",
  "subtle",
+ "syn 3.0.6",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.21",

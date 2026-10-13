@@ -79,6 +79,33 @@ production implementation and adds only regression coverage. The proven race rou
 is already closed on murgicraft; the historical intermittent S6 failure's connection
 to it remains unconfirmed. Written by Codex. In-game verification: **Not yet**.
 
+## World normal/frozen service boundary, ticks M1
+
+Normal World ticking and each frozen flush/player batch now require exclusive
+per-World service entry after restored World age initialization. Rejected entry
+runs no body and advances no service epoch; receipts release on return or unwind.
+This mirrors `MinecraftServer.tickChildren` / `ServerLevel.tick` serialization
+while retaining Pumpkin's parallel ticking of different Worlds. Written by Codex
+(GPT-6.1 Sol). Native API 8 (same version): World layout changes; rebuild native
+plugins. In-game verification: **Not yet**.
+
+Adapted after M0 on `4020a2658`: initialization compares the recorded restored age
+with the shared Level scheduling clock before admitting service. A mismatch logs
+both ages and leaves service unavailable; initialization cannot be retried. Real
+saved-data loading and mismatched-clock rejection have regression coverage.
+
+Level publication/admission sealing remains M2/M4/M10. Public Level APIs and
+`Level::new` stay open. M1 establishes service exclusion only, not scheduler writer,
+terrain lifecycle, coherent image, block-entity or shutdown ownership. U1/U2/U5/U8/
+U9/U13/U14/U17 and the remaining U15/U16 limitations in the ownership map remain.
+The next architectural stage is M3 transport, followed by M2 lifecycle routing.
+
+Play test: run a repeating redstone circuit, freeze ticking, place/use blocks,
+then unfreeze; expect player operations to work while frozen and simulation to
+resume. Stop/restart with pending redstone or water updates; expect the existing
+restored-time behavior. Record freeze → place/use → unfreeze and report any
+World service entry invariant error in the log.
+
 ## How the code here is written
 
 The changes in this fork are written by AI coding agents, not by hand. The fork owner tests them in-game but does not review the code line by line. Treat every commit that isn't from upstream accordingly.

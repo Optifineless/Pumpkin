@@ -2,6 +2,8 @@
 mod coverage;
 #[path = "sync_guardrail_scan/fixtures.rs"]
 mod fixtures;
+#[path = "sync_guardrail_scan/owner_manifest.rs"]
+mod owner_manifest;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::{
     env, fs,

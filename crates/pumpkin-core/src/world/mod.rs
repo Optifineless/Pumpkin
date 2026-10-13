@@ -199,6 +199,7 @@ pub mod guard_effects;
 mod minecart_stall_tests;
 pub mod natural_spawner;
 pub mod owner_mutex;
+mod owner_service;
 #[cfg(test)]
 mod scheduled_ticks_tests;
 pub mod scoreboard;
@@ -370,6 +371,7 @@ pub struct World {
     /// Vanilla's `ServerLevel.handlingTick`: set while scheduled ticks, chunk ticks and block
     /// events run, but not while entities and block entities tick.
     handling_tick: std::sync::atomic::AtomicBool,
+    owner_service: owner_service::OwnerServiceState,
     /// A map of unsent block changes, keyed by block position.
     unsent_block_changes: std::sync::Mutex<HashMap<BlockPos, BlockStateId>>,
     /// Persisted vanilla POI storage for portal and villager lookups.
@@ -524,7 +526,8 @@ impl World {
             NbtCompound::new()
         };
 
-        Self {
+        let restored_age = level_time.world_age;
+        let mut world = Self {
             loot_random: std::sync::Mutex::new(
                 pumpkin_util::random::legacy_rand::LegacyRand::from_seed(get_seed()),
             ),
@@ -556,6 +559,7 @@ impl World {
             min_y: i32::from(generation_settings.shape.min_y),
             synced_block_event_queue: std::sync::Mutex::new(VecDeque::new()),
             handling_tick: std::sync::atomic::AtomicBool::new(false),
+            owner_service: owner_service::OwnerServiceState::new(),
             unsent_block_changes: std::sync::Mutex::new(HashMap::new()),
             portal_poi: std::sync::Mutex::new(portal_poi),
             portal_creation: Arc::new(tokio::sync::Mutex::new(())),
@@ -579,7 +583,9 @@ impl World {
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
             entity_tracker: entity_tracker::EntityTracker::new(),
-        }
+        };
+        world.initialize_owner_service(restored_age);
+        world
     }
 
     pub fn update_active_chunks(self: &Arc<Self>) {
@@ -1735,7 +1741,7 @@ impl World {
     }
 
     #[expect(clippy::too_many_lines)]
-    pub fn tick(self: &Arc<Self>, server: &Arc<Server>) {
+    fn tick_body(self: &Arc<Self>, server: &Arc<Server>) {
         const ENTITY_TICK_BATCH_SIZE: usize = 16;
 
         let start = std::time::Instant::now();

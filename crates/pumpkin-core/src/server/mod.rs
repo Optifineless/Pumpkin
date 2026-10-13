@@ -1355,24 +1355,29 @@ impl Server {
 
         for (index, world) in worlds.iter().enumerate() {
             let _phase = self.watchdog_world(index, watchdog::markers::Phase::PlayerTicks);
-            world.flush_block_updates();
-            world.flush_synced_block_events();
+            // MinecraftServer.tickChildren keeps player/network service live while clocks are frozen.
+            if let Err(error) = world.with_frozen_service(|| {
+                world.flush_block_updates();
+                world.flush_synced_block_events();
 
-            let players = world.players.load();
-            let player_handle = handle.clone();
-            players.par_iter().for_each_init(
-                || self.watchdog_worker(index),
-                |marker, player| {
-                    let _guard = player_handle.enter();
-                    let entity = player.get_entity();
-                    let _phase = marker.entity(
-                        entity.entity_id,
-                        entity.entity_type.id,
-                        watchdog::markers::Phase::PlayerTicks,
-                    );
-                    player.tick(self);
-                },
-            );
+                let players = world.players.load();
+                let player_handle = handle.clone();
+                players.par_iter().for_each_init(
+                    || self.watchdog_worker(index),
+                    |marker, player| {
+                        let _guard = player_handle.enter();
+                        let entity = player.get_entity();
+                        let _phase = marker.entity(
+                            entity.entity_id,
+                            entity.entity_type.id,
+                            watchdog::markers::Phase::PlayerTicks,
+                        );
+                        player.tick(self);
+                    },
+                );
+            }) {
+                world.report_service_violation(error);
+            }
         }
     }
 
