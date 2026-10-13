@@ -122,6 +122,9 @@ pub struct Level {
 
     /// Counts the number of ticks that have been scheduled for this world
     schedule_tick_counts: AtomicI64,
+    pub(crate) game_time: Arc<AtomicI64>,
+    #[cfg(test)]
+    before_tick_chunk_remove: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 
     // Chunks that are paired with chunk watchers. When a chunk is no longer watched, it is removed
     // from the loaded chunks map and sent to the underlying ChunkIO
@@ -345,6 +348,9 @@ impl Level {
             chunk_saver,
             entity_saver,
             schedule_tick_counts: AtomicI64::new(0),
+            game_time: Arc::new(AtomicI64::new(0)),
+            #[cfg(test)]
+            before_tick_chunk_remove: Mutex::new(None),
             loaded_chunks: Arc::new(DashMap::new()),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
             loaded_entity_chunks: Arc::new(DashMap::new()),
@@ -597,11 +603,17 @@ impl Level {
         }
 
         self.collect_scheduled_ticks(active_chunks, &mut ticks);
-
-        ticks.block_ticks.sort_unstable();
-        ticks.fluid_ticks.sort_unstable();
-
         ticks
+    }
+
+    /// Publishes the game time used by scheduling and chunk tick saves.
+    pub fn set_game_time(&self, game_time: i64) {
+        self.game_time.store(game_time, Ordering::Relaxed);
+    }
+
+    fn unpack_chunk_ticks(&self, chunk: &SyncChunk) {
+        chunk.block_ticks.unpack(self.game_time.clone());
+        chunk.fluid_ticks.unpack(self.game_time.clone());
     }
 
     pub fn clean_entity_chunk(self: &Arc<Self>, chunk: &Vector2<i32>) {
@@ -650,9 +662,13 @@ impl Level {
             return Ok(res);
         }
         let chunk = self.fetch_chunk(pos).await?;
+        self.unpack_chunk_ticks(&chunk);
         if self.loaded_chunks.insert(pos, chunk.clone()).is_none() {
             self.loaded_chunk_changes
                 .push(LoadedChunkChange::Loaded(pos));
+        }
+        if chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks() {
+            self.chunks_with_scheduled_ticks.insert(pos);
         }
         Ok(f(&chunk))
     }
@@ -1015,6 +1031,7 @@ impl Level {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
+                self.unpack_chunk_ticks(chunk);
                 chunk.block_ticks.schedule_tick(&scheduled_tick, tick_order);
             })
             .is_some()
@@ -1046,6 +1063,7 @@ impl Level {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
+                self.unpack_chunk_ticks(chunk);
                 chunk.fluid_ticks.schedule_tick(&scheduled_tick, tick_order);
             })
             .is_some()
@@ -1161,6 +1179,7 @@ mod tests {
         );
 
         let active = FxHashSet::from_iter([pos]);
+        level.set_game_time(1);
         assert_eq!(level.get_tick_data(&active, 0).block_ticks.len(), 1);
 
         // An unloaded chunk is dropped even when inactive; it re-registers when it loads.
@@ -1185,3 +1204,7 @@ mod tests {
 #[cfg(test)]
 #[path = "entity_storage_tests.rs"]
 mod entity_storage_tests;
+
+#[cfg(test)]
+#[path = "level_ticks_tests.rs"]
+mod level_ticks_tests;

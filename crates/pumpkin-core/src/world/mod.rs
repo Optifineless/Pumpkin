@@ -2141,6 +2141,7 @@ impl World {
             // `forceGameTimeSynchronization` in `Server::tick_worlds`, *before*
             // this increment.
             level_time.tick(advance_time);
+            self.level.set_game_time(level_time.world_age);
 
             // Auto-save logic
             Phase::Autosave.enter();
