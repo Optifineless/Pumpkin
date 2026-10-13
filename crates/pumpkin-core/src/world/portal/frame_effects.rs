@@ -1,12 +1,79 @@
 use std::sync::Arc;
 
-use pumpkin_data::{Block, BlockStateId, tag::Taggable};
+use pumpkin_data::{
+    Block, BlockStateId,
+    block_properties::{BedPart, DoubleBlockHalf, OakDoorLikeProperties, WhiteBedLikeProperties},
+    tag::Taggable,
+};
 use pumpkin_nbt::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 
 use crate::block::entities::{BlockEntity, block_entity_from_nbt, block_entity_name};
 use crate::world::{World, guard_effects, neighbor_updater::UPDATE_LIMIT};
+
+/// Captures positional cleanup targets before deferred callbacks can replace them.
+pub(in crate::world) struct RetiredBlockEffects {
+    partner: Option<RetiredPartner>,
+}
+
+struct RetiredPartner {
+    position: BlockPos,
+    state: BlockStateId,
+}
+
+impl RetiredBlockEffects {
+    fn capture(world: &World, position: &BlockPos, old: BlockStateId) -> Self {
+        let block = Block::from_state_id(old);
+        // AbstractBedBlock.getConnectedDirection and DoorBlock/DoublePlantBlock's
+        // DoubleBlockHalf lookup, at LevelChunk.setBlockState's removal boundary.
+        let partner = if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
+            || block == &Block::STRAW_BED
+        {
+            let props = WhiteBedLikeProperties::from_state_id(old);
+            let direction = if props.part == BedPart::Head {
+                props.facing.opposite()
+            } else {
+                props.facing
+            };
+            Some(position.offset(direction.to_offset()))
+        } else if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_DOORS) {
+            Some(match OakDoorLikeProperties::from_state_id(old).half {
+                DoubleBlockHalf::Upper => position.down(),
+                DoubleBlockHalf::Lower => position.up(),
+            })
+        } else {
+            None
+        };
+        Self {
+            partner: partner.map(|position| RetiredPartner {
+                state: world.get_block_state_id(&position),
+                position,
+            }),
+        }
+    }
+
+    fn partner_is_unchanged(&self, world: &World) -> bool {
+        self.partner
+            .as_ref()
+            .is_none_or(|partner| world.get_block_state_id(&partner.position) == partner.state)
+    }
+
+    /// Delivers pair notifications when a newer block occupies the retired position.
+    pub(in crate::world) fn notify_replaced_pair(
+        &self,
+        world: &Arc<World>,
+        position: &BlockPos,
+        old: BlockStateId,
+        flags: BlockFlags,
+    ) {
+        // Level.setBlock's neighbour notification survives skipped pair teardown,
+        // even when the plugin also replaced the retired position during replay.
+        if !self.partner_is_unchanged(world) && flags.contains(BlockFlags::NOTIFY_NEIGHBORS) {
+            world.update_neighbors_at(position, Block::from_state_id(old), None);
+        }
+    }
+}
 
 /// Retains removed block-entity state for callbacks without republishing its cache entry.
 pub(in crate::world) struct RetiredBlockEntity {
@@ -46,6 +113,7 @@ pub(super) fn set_frame_block(
     let old = world
         .write_block_state_if(position, state, |_| true)
         .unwrap_or(Block::AIR.default_state.id);
+    let retired_effects = RetiredBlockEffects::capture(world, position, old);
     // Retire live and saved caches under their existing publication gate. Constructing
     // pending entities or binding native context must wait until creation unlocks.
     let retired = (Block::from_state_id(old) != Block::from_state_id(state)
@@ -65,7 +133,7 @@ pub(super) fn set_frame_block(
             state,
             flags,
             UPDATE_LIMIT,
-            false,
+            Some(&retired_effects),
         );
     };
     if let Err(effect) = guard_effects::defer(effect) {
@@ -81,12 +149,17 @@ pub(in crate::world) fn dispatch_old_block_callback(
     position: &BlockPos,
     old: BlockStateId,
     moved: bool,
-    block_entity_already_retired: bool,
+    retired: Option<&RetiredBlockEffects>,
 ) {
     let block = Block::from_state_id(old);
-    if block_entity_already_retired && block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_ALL_SIGNS)
-    {
-        return;
+    if let Some(retired) = retired {
+        // LevelChunk.setBlockState removes synchronously; a deferred callback must
+        // not tear down a different pair installed by an earlier physics event.
+        if !retired.partner_is_unchanged(world)
+            || block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_ALL_SIGNS)
+        {
+            return;
+        }
     }
     // ServerLevel.updatePOIOnBlockStateChange: preserve the current portal registration.
     if block == &Block::NETHER_PORTAL && world.get_block(position) == &Block::NETHER_PORTAL {

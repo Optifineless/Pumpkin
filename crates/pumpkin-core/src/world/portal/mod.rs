@@ -18,6 +18,8 @@ mod search;
 #[cfg(test)]
 mod callback_tests;
 pub mod nether;
+#[cfg(test)]
+mod pair_cleanup_tests;
 pub mod poi;
 #[cfg(test)]
 mod tests;

@@ -5244,7 +5244,7 @@ impl World {
             block_state_id,
             flags,
             update_limit,
-            true,
+            None,
         )
     }
 
@@ -5256,7 +5256,7 @@ impl World {
         block_state_id: BlockStateId,
         flags: BlockFlags,
         update_limit: u32,
-        replace_block_entity: bool,
+        retired: Option<&portal::frame_effects::RetiredBlockEffects>,
     ) -> BlockStateId {
         if !flags.contains(BlockFlags::FORCE_STATE) && replaced_block_state_id == block_state_id {
             return block_state_id;
@@ -5267,7 +5267,7 @@ impl World {
         let is_new_block = old_block != new_block;
         let block_moved = flags.contains(BlockFlags::MOVED);
 
-        if replace_block_entity && is_new_block && block_entity_name(old_block).is_some() {
+        if retired.is_none() && is_new_block && block_entity_name(old_block).is_some() {
             if let Some(entity) = self.get_block_entity(position)
                 && !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK)
             {
@@ -5282,7 +5282,7 @@ impl World {
                 position,
                 replaced_block_state_id,
                 block_moved,
-                !replace_block_entity,
+                retired,
             );
         }
 
@@ -5372,6 +5372,8 @@ impl World {
                     poi.add_with_free_tickets(*position, poi_type, 1);
                 }
             }
+        } else if let Some(retired) = retired {
+            retired.notify_replaced_pair(self, position, replaced_block_state_id, flags);
         }
 
         let old_state = replaced_block_state_id.to_state();
