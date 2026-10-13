@@ -58,11 +58,13 @@ async fn scheduling_at_collector_unregistration_keeps_block_and_fluid_ticks() {
     let block_pos = BlockPos::new(0, 64, 0);
     level.loaded_chunks.insert(pos, ChunkData::empty_sync(0, 0));
     level.schedule_block_tick(&Block::STONE, block_pos, 1, TickPriority::Normal);
+    level.set_game_time(1);
     let scheduling = level.clone();
     at_unregister(&level, move || {
         scheduling.schedule_block_tick(&Block::STONE, block_pos, 1, TickPriority::Normal);
         scheduling.schedule_fluid_tick(&Fluid::WATER, block_pos, 1, TickPriority::Normal);
     });
+    level.set_game_time(2);
     let next = level.get_tick_data(&FxHashSet::from_iter([pos]), 0);
     assert_eq!(
         next.block_ticks.len(),
@@ -105,6 +107,7 @@ async fn loaded_container_registration_survives_stale_unregistration() {
         loading.loaded_chunks.insert(pos, chunk);
         loading.register_loaded_chunk_ticks(pos);
     });
+    level.set_game_time(1);
     let next = level.get_tick_data(&FxHashSet::from_iter([pos]), 0);
     assert_eq!(
         next.block_ticks.len(),

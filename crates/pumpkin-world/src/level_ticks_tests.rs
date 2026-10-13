@@ -79,7 +79,13 @@ async fn scheduled_time_long_and_short_ticks_resume_on_first_simulated_tick() {
     assert_eq!(resumed.block_ticks.len(), 1);
     assert_eq!(resumed.fluid_ticks.len(), 1);
     assert_eq!(resumed.block_ticks[0].position, BLOCK_POS);
-    assert!(!level.chunks_with_scheduled_ticks.contains(&CHUNK));
+    assert!(
+        !level
+            .chunks_with_scheduled_ticks
+            .lock()
+            .unwrap()
+            .contains(&CHUNK)
+    );
     level.shutdown().await.unwrap();
 }
 
@@ -149,7 +155,13 @@ async fn scheduled_time_marker_survives_schedule_between_empty_check_and_remove(
     }));
     level.set_game_time(1);
     assert_eq!(level.get_tick_data(&active(), 0).block_ticks.len(), 1);
-    assert!(level.chunks_with_scheduled_ticks.contains(&CHUNK));
+    assert!(
+        level
+            .chunks_with_scheduled_ticks
+            .lock()
+            .unwrap()
+            .contains(&CHUNK)
+    );
     level.set_game_time(2);
     assert_eq!(level.get_tick_data(&active(), 0).fluid_ticks.len(), 1);
     level.shutdown().await.unwrap();
@@ -405,7 +417,7 @@ async fn scheduled_time_overdue_backlog_obeys_each_type_budget_and_container_ord
         tick_positions(&second.fluid_ticks),
         expected_fluids[MAX_SCHEDULED_TICKS_PER_TICK..]
     );
-    assert!(level.chunks_with_scheduled_ticks.is_empty());
+    assert!(level.chunks_with_scheduled_ticks.lock().unwrap().is_empty());
     assert!(level.get_tick_data(&active, 0).block_ticks.is_empty());
     level.shutdown().await.unwrap();
 }
