@@ -243,8 +243,41 @@ async fn creative_packet_publishes_replacement_and_removed_selected_sword() {
 }
 
 #[tokio::test]
-async fn bedrock_inventory_action_publishes_replacement_and_removed_selected_sword() {
-    packet_writes_publish_current_hand(PacketRoute::InventoryAction).await;
+async fn bedrock_inventory_action_writes_are_prediction_only() {
+    // Since #169 a legacy Bedrock `InventoryTransaction` action is a client prediction, not a
+    // server write (vanilla `handleContainerClick` treats client stacks as predictions): the
+    // held item, its modifiers and the published equipment must not change, for an unselected
+    // slot or for the selected one. Authoritative writes go through `ItemStackRequest`
+    // (`bedrock_stack_request_publishes_replacement_and_removed_selected_sword`).
+    let mut fixture = Fixture::new().await;
+    let player = fixture.player(PacketRoute::InventoryAction).clone();
+    player.set_gamemode(pumpkin_util::GameMode::Creative);
+    player.inventory.set_selected_slot(3);
+    let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+    player.inventory.set_held_item(sword.clone());
+    player.enqueue_equipment_change(&EquipmentSlot::MAIN_HAND, &sword);
+    player.tick(&fixture.server);
+    assert_attack_modifiers(&player, &sword);
+    fixture.observer.take_packets();
+
+    for (slot, stack) in [
+        (4u8, ItemStack::new(1, &Item::STONE)),
+        (3u8, ItemStack::new(1, &Item::IRON_SWORD)),
+        (3u8, ItemStack::EMPTY.clone()),
+    ] {
+        fixture.write_packet(PacketRoute::InventoryAction, slot, stack);
+        player.tick(&fixture.server);
+        assert!(
+            player.inventory.held_item().are_equal(&sword),
+            "a predicted legacy action write changed the held item"
+        );
+        assert!(
+            fixture.take_equipment(&player).is_empty(),
+            "a predicted legacy action write published equipment"
+        );
+        assert_attack_modifiers(&player, &sword);
+    }
+    fixture.bedrock.close().await;
 }
 
 #[tokio::test]
