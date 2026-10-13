@@ -136,7 +136,7 @@ pub(super) fn scheduler() -> (
             public_chunk_map: Arc::new(DashMap::new()),
             entity_unloads: Arc::default(),
             game_time: Arc::new(std::sync::atomic::AtomicI64::new(0)),
-            chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
+            chunks_with_scheduled_ticks: Arc::new(pumpkin_util::sync::Mutex::default()),
             loaded_chunk_changes: Arc::new(crossbeam::queue::SegQueue::new()),
             chunk_map: HashMap::new(),
             unload_chunks: HashSetType::default(),

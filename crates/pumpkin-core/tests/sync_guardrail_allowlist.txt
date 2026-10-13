@@ -840,8 +840,6 @@ crates/pumpkin-world/src/generation/structure/structures/mineshaft.rs::new::std:
 crates/pumpkin-world/src/generation/structure/structures/nether_fortress/mod.rs::get_structure_position::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/ocean_monument/mod.rs::get_structure_position::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/stronghold/mod.rs::get_structure_position::std::sync::Mutex::new#1
-crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::default#1
-crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::default#2
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#1
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#2
 crates/pumpkin-world/src/level.rs::from_root_folder::std::sync::Mutex::new#3
@@ -850,7 +848,6 @@ crates/pumpkin-world/src/session_lock.rs::<module>::std::sync::Mutex::new#1
 crates/pumpkin-world/src/storage_tests.rs::cancellation_before_queued_open_keeps_cleanup_with_the_operation::block_on#1
 crates/pumpkin-world/src/storage_tests.rs::cancellation_before_queued_open_keeps_cleanup_with_the_operation::block_on#2
 crates/pumpkin-world/src/storage_tests.rs::cancellation_before_queued_open_keeps_cleanup_with_the_operation::block_on#3
-crates/pumpkin-world/src/tick/scheduler.rs::default::std::sync::Mutex::new#1
 
 # PR #124 test-only WIT resources: both hosts require Arc<tokio::sync::Mutex<ItemStack>>.
 # Only test resources are constructed here; hosts clone/release their async item guards

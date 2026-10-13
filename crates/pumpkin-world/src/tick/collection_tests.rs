@@ -229,9 +229,18 @@ async fn collection_measurement() {
                 samples.push(start.elapsed().as_nanos() / 1000);
             } else {
                 let mut collected = 0;
+                let mut callback_sum = 0i64;
                 while collected < count {
-                    collected += black_box(level.get_tick_data(&active, 0)).block_ticks.len();
+                    let ticks = black_box(level.get_tick_data(&active, 0)).block_ticks;
+                    collected += ticks.len();
+                    // Model runCollectedTicks dispatch; actual block effects need a World.
+                    for tick in ticks {
+                        callback_sum = black_box(
+                            callback_sum.wrapping_add(black_box(tick.position.0.x as i64)),
+                        );
+                    }
                 }
+                black_box(callback_sum);
                 samples.push(start.elapsed().as_nanos());
                 assert_eq!(collected, count);
             }
@@ -242,4 +251,35 @@ async fn collection_measurement() {
             samples[3]
         );
     }
+}
+
+#[tokio::test]
+async fn prepared_backlog_keeps_trigger_order_when_fresh_ticks_join() {
+    let (_dir, level, active) = fixture(1).await;
+    for index in 0..70_000 {
+        level.schedule_block_tick_after(&Block::STONE, position(0, index), 1, TickPriority::Normal);
+    }
+    level.set_game_time(5000);
+    assert_eq!(level.get_tick_data(&active, 0).block_ticks.len(), 65_536);
+    let fresh = position(0, 70_000);
+    level.schedule_block_tick_after(&Block::STONE, fresh, 0, TickPriority::ExtremelyHigh);
+    // LevelChunkTicks.schedule still deduplicates work outside the prepared queue.
+    level.schedule_block_tick_after(&Block::STONE, fresh, 0, TickPriority::ExtremelyHigh);
+    level.set_game_time(5001);
+    let due = level.get_tick_data(&active, 0).block_ticks;
+    assert_eq!(due.len(), 4_465);
+    // DRAIN_ORDER keeps the older triggers first despite the fresh tick's priority.
+    assert_eq!(due.last().unwrap().position, fresh);
+    assert_eq!(
+        due[..4_464].iter().map(|t| t.position).collect::<Vec<_>>(),
+        (65_536..70_000)
+            .map(|index| position(0, index))
+            .collect::<Vec<_>>()
+    );
+    assert!(!level.is_block_tick_scheduled(&fresh, &Block::STONE));
+    level.schedule_block_tick_after(&Block::STONE, fresh, 1, TickPriority::Normal);
+    level.set_game_time(5002);
+    let next = level.get_tick_data(&active, 0).block_ticks;
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].position, fresh);
 }

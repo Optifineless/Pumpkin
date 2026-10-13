@@ -2,6 +2,19 @@ use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use rustc_hash::FxHashSet;
 
 use crate::level::{Level, TickData};
+use pumpkin_util::sync::LockClass;
+
+/// Shares the level-20 index owner with chunk publication.
+pub enum TickRegistry {}
+impl LockClass for TickRegistry {
+    const NAME: &'static str = "scheduled tick index";
+    const LEVEL: u8 = 20;
+}
+pub(super) enum TickCollectBuffer {}
+impl LockClass for TickCollectBuffer {
+    const NAME: &'static str = "scheduled tick collection buffer";
+    const LEVEL: u8 = 40;
+}
 
 impl Level {
     pub(crate) fn collect_scheduled_ticks(
@@ -12,7 +25,12 @@ impl Level {
         super::level_ticks::collect(self, active, ticks);
     }
 
-    pub(super) fn unregister_empty_tick_container(&self, pos: Vector2<i32>, active: &FxHashSet<Vector2<i32>>) {
+    /// Rechecks the current container under the index owner before unregistering it.
+    pub(super) fn unregister_empty_tick_container(
+        &self,
+        pos: Vector2<i32>,
+        active: &FxHashSet<Vector2<i32>>,
+    ) {
         let mut registered = self
             .chunks_with_scheduled_ticks
             .lock()

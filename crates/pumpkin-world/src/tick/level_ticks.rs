@@ -10,13 +10,21 @@ pub(super) fn collect(
     ticks: &mut TickData,
 ) {
     let mut scheduled_chunk_pos = std::mem::take(
-        &mut *level.scheduled_tick_collect_positions.lock()
+        &mut *level
+            .scheduled_tick_collect_positions
+            .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner),
     );
     scheduled_chunk_pos.clear();
     // Release the index before consulting the loaded registry.
-    scheduled_chunk_pos.extend(level.chunks_with_scheduled_ticks.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner).iter().copied());
+    scheduled_chunk_pos.extend(
+        level
+            .chunks_with_scheduled_ticks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .copied(),
+    );
     let current_tick = level.game_time.load(Ordering::Relaxed);
     let capacity = scheduled_chunk_pos.len().min(active_chunks.len());
     let mut containers = Vec::new();
@@ -46,11 +54,17 @@ pub(super) fn collect(
         }
     }
     scheduled_chunk_pos.clear();
-    let mut buffer = level.scheduled_tick_collect_positions.lock()
+    let mut buffer = level
+        .scheduled_tick_collect_positions
+        .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if scheduled_chunk_pos.capacity() > buffer.capacity() { *buffer = scheduled_chunk_pos; }
+    if scheduled_chunk_pos.capacity() > buffer.capacity() {
+        *buffer = scheduled_chunk_pos;
+    }
     drop(buffer);
-    if containers.is_empty() { return; }
+    if containers.is_empty() {
+        return;
+    }
     let block_containers: Vec<_> = containers
         .iter()
         .map(|(_, chunk)| &chunk.block_ticks)
@@ -77,5 +91,12 @@ pub(super) fn collect(
 }
 
 fn remove_empty(level: &Level, pos: Vector2<i32>, active: &FxHashSet<Vector2<i32>>) {
+    #[cfg(test)]
+    {
+        let hook = level.before_tick_chunk_remove.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
     level.unregister_empty_tick_container(pos, active);
 }
