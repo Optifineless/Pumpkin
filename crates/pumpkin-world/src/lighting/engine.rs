@@ -505,6 +505,7 @@ impl BlockLightPropagator {
                         }
                     }
                     Chunk::Level(lvl) => {
+                        let mut changed = false;
                         let mut light_engine = lvl
                             .light_engine
                             .lock()
@@ -522,8 +523,8 @@ impl BlockLightPropagator {
                                 let section_idx = ((y - min_y) >> 4) as usize;
                                 let local_y = (y & 15) as usize;
                                 if section_idx < light_engine.block_light.len() {
-                                    light_engine.block_light[section_idx]
-                                        .set(local_x, local_y, local_z, emission);
+                                    changed |= light_engine.block_light[section_idx]
+                                        .set_if_changed(local_x, local_y, local_z, emission);
                                 }
                                 if self.visited.test_and_set(x, y, z) {
                                     let pos = BlockPos(Vector3::new(x, y, z));
@@ -533,6 +534,11 @@ impl BlockLightPropagator {
                                     });
                                 }
                             }
+                        }
+                        drop(light_engine);
+                        if changed {
+                            // Saved light changes advance the ChunkAccess.markUnsaved generation.
+                            lvl.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
                         }
                     }
                 }
@@ -639,6 +645,7 @@ impl SkyLightPropagator {
                         }
                     }
                     Chunk::Level(c) => {
+                        let mut changed = false;
                         let mut light_engine = c
                             .light_engine
                             .lock()
@@ -648,8 +655,8 @@ impl SkyLightPropagator {
                             let section_idx = ((y - bottom_y) >> 4) as usize;
                             let local_y = (y & 15) as usize;
                             if section_idx < light_engine.sky_light.len() {
-                                light_engine.sky_light[section_idx]
-                                    .set(local_x, local_y, local_z, 15);
+                                changed |= light_engine.sky_light[section_idx]
+                                    .set_if_changed(local_x, local_y, local_z, 15);
                             }
                         }
 
@@ -677,13 +684,18 @@ impl SkyLightPropagator {
                             let light_val = if light <= 0 { 0 } else { light as u8 };
 
                             if section_idx < light_engine.sky_light.len() {
-                                light_engine.sky_light[section_idx]
-                                    .set(local_x, local_y, local_z, light_val);
+                                changed |= light_engine.sky_light[section_idx]
+                                    .set_if_changed(local_x, local_y, local_z, light_val);
                             }
 
                             if light <= 0 {
                                 break;
                             }
+                        }
+                        drop(light_engine);
+                        if changed {
+                            // Saved light changes advance the ChunkAccess.markUnsaved generation.
+                            c.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
                         }
                     }
                 }

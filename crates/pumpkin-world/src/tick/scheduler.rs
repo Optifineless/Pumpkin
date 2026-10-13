@@ -202,7 +202,8 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         self.mutation.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn current_tick(&self) -> i64 {
+    /// Reads the bound level clock, or the scheduler's last tick when no clock is bound.
+    pub(crate) fn current_tick(&self) -> i64 {
         self.game_time.get().map_or_else(
             || self.last_tick.load(Ordering::Relaxed),
             |time| time.load(Ordering::Relaxed),
@@ -513,11 +514,16 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
 
     #[must_use]
     pub fn to_vec(&self) -> Vec<SavedTick<&'a T>> {
+        self.to_vec_at(self.current_tick())
+    }
+
+    /// Packs each pending delay relative to the supplied shared clock snapshot.
+    #[must_use]
+    pub(crate) fn to_vec_at(&self, current_tick: i64) -> Vec<SavedTick<&'a T>> {
         let inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let current_tick = self.current_tick();
         let Some(inner) = inner_guard.inner.as_ref() else {
             return Vec::new();
         };
@@ -525,16 +531,16 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         inner.saved_ticks(current_tick)
     }
 
-    /// Captures relative delays and remembers the clock used by this encoded image.
+    /// Captures relative delays at the supplied clock and remembers that encoded image time.
     pub(crate) fn to_vec_for_save(
         &self,
+        current_tick: i64,
         dirty: &crate::chunk::io::DirtyFlag,
     ) -> Vec<SavedTick<&'a T>> {
         let inner = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let current_tick = self.current_tick();
         self.observe_dirty(inner.inner.as_deref(), Some(current_tick), dirty);
         // SerializableChunkData.copyOf -> LevelChunkTicks.pack snapshots game time
         // with the relative delays. Inspection via to_vec must not advance this clock.
@@ -654,6 +660,57 @@ mod tests {
     }
 
     #[test]
+    fn tick_packers_keep_one_snapshot_when_clock_advances_between_lists() {
+        use crate::chunk::{ChunkData, format::anvil::SingleChunkDataSerializer, io::Dirtiable};
+        use pumpkin_data::{Block, dimension::Dimension, fluid::Fluid};
+        use pumpkin_util::math::vector2::Vector2;
+
+        let chunk = ChunkData::empty_sync(0, 0);
+        let clock = Arc::new(AtomicI64::new(100));
+        chunk.block_ticks.bind_clock(clock.clone());
+        chunk.fluid_ticks.bind_clock(clock.clone());
+        let position = BlockPos::new(0, 64, 0);
+        chunk.block_ticks.schedule_tick(
+            &ScheduledTick {
+                delay: 100,
+                priority: TickPriority::Normal,
+                position,
+                value: &Block::STONE,
+            },
+            0,
+        );
+        chunk.fluid_ticks.schedule_tick(
+            &ScheduledTick {
+                delay: 100,
+                priority: TickPriority::Normal,
+                position,
+                value: &Fluid::WATER,
+            },
+            0,
+        );
+
+        let captured_tick = chunk.block_ticks.current_tick();
+        let saved_blocks = chunk
+            .block_ticks
+            .to_vec_for_save(captured_tick, &chunk.dirty);
+        clock.store(101, Ordering::Relaxed);
+        let saved_fluids = chunk
+            .fluid_ticks
+            .to_vec_for_save(captured_tick, &chunk.dirty);
+        assert_eq!(saved_blocks[0].delay, 100);
+        assert_eq!(saved_fluids[0].delay, 100);
+
+        let bytes = chunk.to_bytes().unwrap();
+        let saved = ChunkData::from_bytes(&bytes, Vector2::new(0, 0)).unwrap();
+        assert_eq!(saved.block_ticks.to_vec()[0].delay, 99);
+        assert_eq!(saved.fluid_ticks.to_vec()[0].delay, 99);
+
+        let copied = chunk.copy_for_load(&Dimension::OVERWORLD).unwrap();
+        assert_eq!(copied.block_ticks.to_vec()[0].delay, 99);
+        assert_eq!(copied.fluid_ticks.to_vec()[0].delay, 99);
+    }
+
+    #[test]
     fn pending_snapshot_clock_observes_encoded_delay_width_and_coalesces_requests() {
         let clock = Arc::new(AtomicI64::new(0));
         let scheduler = ChunkTickScheduler::default();
@@ -662,7 +719,7 @@ mod tests {
         let dirty = crate::chunk::io::DirtyFlag::new(true);
         scheduler.mark_dirty_if_changed(&dirty);
         let version = dirty.version();
-        assert_eq!(scheduler.to_vec_for_save(&dirty)[0].delay, 5000);
+        assert_eq!(scheduler.to_vec_for_save(0, &dirty)[0].delay, 5000);
         assert!(dirty.clear_published(version));
         clock.store(1i64 << 32, Ordering::Relaxed);
         scheduler.mark_dirty_if_changed(&dirty);

@@ -1,6 +1,7 @@
 use super::chunk_state::{Chunk, StagedChunkEnum};
 use crate::ProtoChunk;
 use crate::chunk::ChunkHeightmapType;
+use crate::chunk::io::Dirtiable;
 use crate::generation::biome_coords;
 use crate::generation::generator;
 use crate::generation::height_limit::HeightLimitView;
@@ -311,12 +312,16 @@ impl GenerationCache for Cache {
         }
         match &mut self.chunks[(dx * self.size + dz) as usize] {
             Chunk::Level(data) => {
-                data.set_block_absolute_y(
+                let replaced_block_state_id = data.set_block_absolute_y(
                     (pos.x & 15) as usize,
                     pos.y,
                     (pos.z & 15) as usize,
                     block_state.id,
                 );
+                if replaced_block_state_id != block_state.id {
+                    // LevelChunk.setBlockState calls ChunkAccess.markUnsaved for changed states.
+                    data.mark_dirty(true);
+                }
             }
             Chunk::Proto(data) => {
                 data.set_block_state(pos.x, pos.y, pos.z, block_state);
@@ -795,5 +800,27 @@ mod tests {
             Some(Biome::DESERT.id)
         );
         assert_eq!(neighborhood.get_biome_id(13 * 4, -16, -4 * 4), None);
+    }
+
+    #[test]
+    fn generation_cache_block_edits_version_loaded_chunks() {
+        use super::Cache;
+        use crate::chunk::io::Dirtiable;
+        use crate::generation::proto_chunk::GenerationCache;
+        use pumpkin_data::Block;
+        use pumpkin_util::math::vector3::Vector3;
+
+        let chunk = ChunkData::empty_sync(12, -4);
+        let mut cache = Cache::new(12, -4, 1);
+        cache.chunks.push(Chunk::Level(chunk.clone()));
+        let position = Vector3::new(12 * 16 + 3, 64, -4 * 16 + 2);
+
+        GenerationCache::set_block_state(&mut cache, &position, Block::STONE.default_state);
+
+        assert!(chunk.is_dirty());
+        assert_eq!(
+            chunk.section.get_block_absolute_y(3, 64, 2),
+            Some(Block::STONE.default_state.id)
+        );
     }
 }

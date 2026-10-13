@@ -3,9 +3,10 @@ use crate::entity::EntityBase;
 use crate::net::java::combat_test_support::TestPlayer;
 use crate::server::{Server, combat_test_support};
 use crate::world::World;
-use pumpkin_data::{item::Item, item_stack::ItemStack};
+use pumpkin_data::{biome::Biome, item::Item, item_stack::ItemStack};
 use pumpkin_protocol::java::server::play::SChatCommand;
-use pumpkin_util::{GameMode, PermissionLvl, math::vector3::Vector3};
+use pumpkin_util::{GameMode, PermissionLvl, math::vector2::Vector2, math::vector3::Vector3};
+use pumpkin_world::chunk::io::Dirtiable;
 use std::sync::Arc;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -118,6 +119,54 @@ async fn execute_as_implicit_clear_targets_executing_entity() -> TestResult {
         }
     }
     Ok(())
+}
+
+#[tokio::test]
+async fn fillbiome_marks_changed_chunk_content_dirty_but_skips_noop() {
+    let fixture = Fixture::new().expect("command fixture");
+    let chunk_pos = Vector2::new(0, 0);
+    combat_test_support::publish_empty_chunk(&fixture.world, chunk_pos);
+    let chunk = fixture
+        .world
+        .level
+        .loaded_chunks
+        .get(&chunk_pos)
+        .expect("published chunk")
+        .clone();
+    let relative_y = ((64 >> 2) - (fixture.world.min_y >> 2)) as usize;
+    chunk
+        .section
+        .set_relative_biome(0, relative_y, 0, Biome::PLAINS.id);
+    chunk.mark_dirty(false);
+    let source = CommandSender::Console.into_source(&fixture.server);
+    let dispatcher = fixture.server.command_dispatcher.load();
+
+    assert_eq!(
+        dispatcher
+            .execute_input("fillbiome 0 64 0 3 64 3 minecraft:desert", &source)
+            .expect("fillbiome command"),
+        1
+    );
+    assert!(chunk.is_dirty());
+    assert_eq!(
+        chunk.section.get_noise_biome(8, 0, 0, 0),
+        Some(Biome::DESERT.id)
+    );
+
+    chunk.mark_dirty(false);
+    assert_eq!(
+        dispatcher
+            .execute_input("fillbiome 0 64 0 3 64 3 minecraft:desert", &source)
+            .expect("no-op fillbiome command"),
+        0
+    );
+    assert!(!chunk.is_dirty());
+    fixture
+        .world
+        .level
+        .shutdown()
+        .await
+        .expect("world shutdown");
 }
 
 #[tokio::test]

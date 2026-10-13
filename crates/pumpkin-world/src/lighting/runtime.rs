@@ -551,7 +551,7 @@ impl DynamicLightEngine {
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
         level.read_chunk_sync(&chunk_coordinate, |chunk| {
             let section_index = (relative.y - chunk.section.min_y) as usize / BlockPalette::SIZE;
-            {
+            let changed = {
                 let mut light_engine = chunk
                     .light_engine
                     .lock()
@@ -560,15 +560,15 @@ impl DynamicLightEngine {
                     return Err("Invalid section index".to_string());
                 }
                 let relative_y = (relative.y - chunk.section.min_y) as usize % BlockPalette::SIZE;
-                light_engine.block_light[section_index].set(
+                light_engine.block_light[section_index].set_if_changed(
                     relative.x as usize,
                     relative_y,
                     relative.z as usize,
                     light_level,
-                );
+                )
             };
-            // Mark chunk as dirty so lighting changes are saved to disk
-            if !chunk.is_dirty() {
+            if changed {
+                // Saved light changes advance the ChunkAccess.markUnsaved generation.
                 chunk.mark_dirty(true);
             }
             Ok(())
@@ -610,7 +610,7 @@ impl DynamicLightEngine {
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
         level.read_chunk_sync(&chunk_coordinate, |chunk| {
             let section_index = (relative.y - chunk.section.min_y) as usize / BlockPalette::SIZE;
-            {
+            let changed = {
                 let mut light_engine = chunk
                     .light_engine
                     .lock()
@@ -619,15 +619,15 @@ impl DynamicLightEngine {
                     return Err("Invalid section index".to_string());
                 }
                 let relative_y = (relative.y - chunk.section.min_y) as usize % BlockPalette::SIZE;
-                light_engine.sky_light[section_index].set(
+                light_engine.sky_light[section_index].set_if_changed(
                     relative.x as usize,
                     relative_y,
                     relative.z as usize,
                     light_level,
-                );
+                )
             };
-            // Mark chunk as dirty so lighting changes are saved to disk
-            if !chunk.is_dirty() {
+            if changed {
+                // Saved light changes advance the ChunkAccess.markUnsaved generation.
                 chunk.mark_dirty(true);
             }
             Ok(())

@@ -1,8 +1,20 @@
 use crate::server::combat_test_support::{publish_empty_chunk, server, world};
+use bytes::Bytes;
+use pumpkin_config::chunk::AnvilChunkConfig;
 use pumpkin_data::{Block, block_properties::RedstoneOreLikeProperties};
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
+use pumpkin_world::{
+    chunk::{
+        ChunkData, ChunkReadingError, ChunkWritingError,
+        format::anvil::{AnvilChunkFile, SingleChunkDataSerializer},
+        io::{ChunkSerializer, Dirtiable, FileIO, LoadedData, file_manager::ChunkFileManager},
+    },
+    tick::TickPriority,
+    world::BlockFlags,
+};
+use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::{Notify, OnceCell, mpsc};
 
 struct TickWorld(Arc<super::World>);
 
@@ -102,4 +114,134 @@ async fn collection_invariant_world_load_publishes_restored_age_before_schedulin
         assert!(RedstoneOreLikeProperties::from_state_id(world.get_block_state(&position).id).lit);
         world.level.shutdown().await.unwrap();
     }
+}
+
+struct PublicationPause {
+    started: Notify,
+    resume: Notify,
+    first_write: OnceCell<()>,
+}
+
+#[derive(Default)]
+struct PausedChunkWriter {
+    anvil: AnvilChunkFile<ChunkData>,
+    pause: Option<Arc<PublicationPause>>,
+}
+
+impl ChunkSerializer for PausedChunkWriter {
+    type Data = ChunkData;
+    type WriteBackend = PathBuf;
+    type ChunkConfig = Arc<PublicationPause>;
+
+    fn get_chunk_key(chunk: &Vector2<i32>) -> String {
+        AnvilChunkFile::<ChunkData>::get_chunk_key(chunk)
+    }
+
+    fn should_write(&self, watched: bool) -> bool {
+        self.anvil.should_write(watched)
+    }
+
+    async fn write(&self, path: &PathBuf) -> Result<(), std::io::Error> {
+        let pause = self.pause.as_ref().unwrap();
+        pause
+            .first_write
+            .get_or_init(|| async {
+                pause.started.notify_one();
+                pause.resume.notified().await;
+            })
+            .await;
+        self.anvil.write(path).await
+    }
+
+    fn read(bytes: Bytes) -> Result<Self, ChunkReadingError> {
+        Ok(Self {
+            anvil: AnvilChunkFile::read(bytes)?,
+            pause: None,
+        })
+    }
+
+    async fn update_chunk(
+        &mut self,
+        chunk: Arc<Self::Data>,
+        pause: &Self::ChunkConfig,
+    ) -> Result<(), ChunkWritingError> {
+        self.pause = Some(pause.clone());
+        self.anvil
+            .update_chunk(chunk, &AnvilChunkConfig::default())
+            .await
+    }
+
+    async fn get_chunks(
+        &self,
+        chunks: Vec<Vector2<i32>>,
+        stream: mpsc::Sender<LoadedData<Self::Data, ChunkReadingError>>,
+        dimension: pumpkin_data::dimension::Dimension,
+    ) {
+        self.anvil.get_chunks(chunks, stream, dimension).await;
+    }
+}
+
+#[tokio::test]
+async fn clock_dirty_block_edit_survives_the_pending_image_publication() {
+    let directory = tempfile::tempdir().unwrap();
+    let server = server(directory.path());
+    let fixture = TickWorld(world(&server, directory.path()));
+    let world = &fixture.0;
+    let chunk_pos = Vector2::new(0, 0);
+    let position = BlockPos::new(8, 64, 8);
+    publish_empty_chunk(world, chunk_pos);
+    world.level.set_game_time(1000);
+
+    let chunk = world.level.loaded_chunks.get(&chunk_pos).unwrap().clone();
+    chunk
+        .section
+        .set_block_absolute_y(8, 64, 8, Block::DIRT.default_state.id);
+    world.schedule_block_tick(&Block::DIRT, position, 200, TickPriority::Normal);
+    chunk.to_bytes().unwrap();
+    chunk.mark_dirty(false);
+    assert!(!chunk.is_dirty());
+    world.level.set_game_time(1001);
+    assert!(chunk.is_dirty(), "elapsed tick time should dirty the chunk");
+
+    let pause = Arc::new(PublicationPause {
+        started: Notify::new(),
+        resume: Notify::new(),
+        first_write: OnceCell::new(),
+    });
+    let manager = ChunkFileManager::<PausedChunkWriter>::new(pause.clone());
+    manager.queue_chunks(&world.level.level_folder, vec![(chunk_pos, chunk.clone())]);
+
+    let (save_result, ()) = tokio::join!(manager.block_and_await_ongoing_tasks(), async {
+        pause.started.notified().await;
+        world.level.set_game_time(1002);
+        assert!(chunk.is_dirty());
+        assert_eq!(
+            world.set_block_state(
+                &position,
+                Block::STONE.default_state.id,
+                BlockFlags::FORCE_STATE | BlockFlags::UPDATE_KNOWN_SHAPE,
+            ),
+            Block::DIRT.default_state.id
+        );
+        pause.resume.notify_one();
+    });
+    save_result.unwrap();
+
+    let reader = ChunkFileManager::<AnvilChunkFile<ChunkData>>::new(AnvilChunkConfig::default());
+    let (send, mut receive) = mpsc::channel(1);
+    reader
+        .fetch_chunks(&world.level.level_folder, &[chunk_pos], send)
+        .await;
+    let Some(LoadedData::Loaded(saved)) = receive.recv().await else {
+        panic!("published chunk image was not readable");
+    };
+    assert_eq!(
+        saved.section.get_block_absolute_y(8, 64, 8),
+        Some(Block::STONE.default_state.id),
+        "the saved image must include the edit made before publication"
+    );
+    let saved_ticks = saved.block_ticks.to_vec();
+    assert_eq!(saved_ticks.len(), 1);
+    assert_eq!(saved_ticks[0].delay, 198);
+    world.level.shutdown().await.unwrap();
 }

@@ -13,6 +13,7 @@ use pumpkin_util::PermissionLvl;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
+use pumpkin_world::chunk::io::Dirtiable;
 use rustc_hash::FxHashMap;
 
 const DESCRIPTION: &str = "Changes biomes of an area.";
@@ -106,6 +107,7 @@ impl CommandExecutor for FillBiomeExecutor {
                             .section
                             .get_noise_biome(section_index, rel_x, scale_y, rel_z)
                         && replace_biome_id.is_none_or(|rep| current_id == rep)
+                        && current_id != target_biome_id
                     {
                         chunk
                             .section
@@ -113,6 +115,10 @@ impl CommandExecutor for FillBiomeExecutor {
                         local_count += 1;
                         modified = true;
                     }
+                }
+                if modified {
+                    // FillBiomeCommand.fill marks each changed ChunkAccess unsaved.
+                    chunk.mark_dirty(true);
                 }
                 (local_count, modified.then(|| chunk.clone()))
             });
