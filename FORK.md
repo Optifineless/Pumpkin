@@ -10,7 +10,9 @@ are counted by the shutdown drain. The server broadcasts `server/stopping` once 
 player and world saves; delivery remains best-effort. Incomplete ordinary HTTP requests
 no longer hold final saves: after the five-second management grace, remaining listener
 connections are closed and awaited. Later requests in a stop batch receive a
-server-stopping error.
+server-stopping error. Concurrent shutdown callers share one atomic claim, so
+the stopping notification is queued before session cancellation. Regression
+children now have a parent-side kill deadline and must match one exact test.
 Native API 8 (same version): Server has runtime management shutdown state, and
 ManagementServer exposes listener binding separately from serving; rebuild native
 plugins. Written by Codex.

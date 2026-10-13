@@ -5,7 +5,6 @@ use std::{
     io,
     net::SocketAddr,
     pin::Pin,
-    process::Command,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
@@ -261,32 +260,19 @@ async fn receive_stopping_notification(client: &mut WsClient) {
     }
 }
 
-fn run_isolated_child_test(test_name: &str, child_env: &str) {
-    let output = Command::new(std::env::current_exe().unwrap())
-        .arg(test_name)
-        .arg("--nocapture")
-        .env(child_env, "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "child test failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("test result: ok."),
-        "child test exited before its assertions completed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 #[tokio::test]
 async fn management_stop_rpc_signals_when_reply_flush_stalls() {
     const CHILD: &str = "PUMPKIN_MANAGEMENT_STOP_RPC_STALLED_REPLY_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        run_isolated_child_test("management_stop_rpc_signals_when_reply_flush_stalls", CHILD);
+        assert_eq!(
+            super::shutdown_child::run_isolated_child_test(
+                "net::management::shutdown_rpc_tests::management_stop_rpc_signals_when_reply_flush_stalls",
+                CHILD,
+            )
+            .await,
+            Ok(()),
+            "parent process could not verify the stalled-reply child"
+        );
         return;
     }
     stalled_reply_child().await;
@@ -358,9 +344,14 @@ async fn stalled_reply_scenario() {
 async fn management_stop_rpc_batch_preempts_a_blocked_later_dispatch() {
     const CHILD: &str = "PUMPKIN_MANAGEMENT_STOP_RPC_BATCH_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        run_isolated_child_test(
-            "management_stop_rpc_batch_preempts_a_blocked_later_dispatch",
-            CHILD,
+        assert_eq!(
+            super::shutdown_child::run_isolated_child_test(
+                "net::management::shutdown_rpc_tests::management_stop_rpc_batch_preempts_a_blocked_later_dispatch",
+                CHILD,
+            )
+            .await,
+            Ok(()),
+            "parent process could not verify the batch stop child"
         );
         return;
     }

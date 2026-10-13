@@ -15,6 +15,7 @@ mod named_root_clock_tests;
 mod save_family_regression_tests;
 #[cfg(test)]
 pub(crate) mod scenario;
+mod shutdown;
 #[cfg(test)]
 mod startup_tests;
 #[cfg(test)]
@@ -920,17 +921,6 @@ impl Server {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove_player(player);
-    }
-
-    /// Notifies management clients and stops its listener before shutdown saves begin.
-    ///
-    /// Mirrors `DedicatedServer.stopServer`, which notifies before `MinecraftServer.stopServer` saves.
-    pub(crate) fn begin_shutdown(&self) {
-        if self.management_shutdown.is_cancelled() {
-            return;
-        }
-        self.management_hub.broadcast_server_stopping();
-        self.management_shutdown.cancel();
     }
 
     pub async fn shutdown(&self) {
