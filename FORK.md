@@ -7,6 +7,8 @@ heartbeat so the final player, world and level.dat saves can finish. The authent
 `minecraft:server/stop` RPC sends its success response before requesting that lifecycle;
 WebSocket clients subscribe before the upgrade response, so shutdown cannot miss a
 new session. Clients receive `server/stopping` once before player and world saves.
+Incomplete ordinary HTTP requests no longer hold final saves: after the five-second
+management grace, remaining listener connections are closed and awaited.
 Native API 8 (same version): Server has runtime management shutdown state, and
 ManagementServer exposes listener binding separately from serving; rebuild native
 plugins. Written by Codex.

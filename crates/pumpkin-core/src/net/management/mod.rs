@@ -9,8 +9,12 @@ mod shutdown_tests;
 
 use std::{
     collections::HashSet,
+    future::Future,
+    io,
     net::SocketAddr,
+    pin::Pin,
     sync::{Arc, atomic::Ordering},
+    task::{Context, Poll},
     time::Duration,
 };
 
@@ -24,12 +28,16 @@ use axum::{
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
+    serve::Listener,
 };
 use futures::{SinkExt, StreamExt};
 use pumpkin_config::networking::management::ManagementServerConfig;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use serde_json::Value;
-use tokio::net::TcpListener;
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::{TcpListener, TcpStream},
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -43,8 +51,109 @@ use self::{
 
 pub struct ManagementServer;
 
-// Bound shutdown drainage when a management peer stops reading or an RPC stalls.
+// Bound management HTTP and WebSocket drainage when a peer stops reading or an RPC stalls.
 const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(5);
+
+struct ForceCloseListener {
+    listener: TcpListener,
+    force_close: CancellationToken,
+}
+
+// Axum spawns each connection, so the deadline wakes tasks through their I/O wrapper.
+struct ForceCloseConnection {
+    stream: TcpStream,
+    force_close: CancellationToken,
+    force_close_future: Pin<Box<dyn Future<Output = ()> + Send>>,
+}
+
+impl Listener for ForceCloseListener {
+    type Io = ForceCloseConnection;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            let (stream, address) = match self.listener.accept().await {
+                Ok(connection) => connection,
+                Err(error) => {
+                    warn!("Management listener accept failed: {error}");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            let force_close = self.force_close.clone();
+            let force_close_future = Box::pin(force_close.clone().cancelled_owned());
+            return (
+                ForceCloseConnection {
+                    stream,
+                    force_close,
+                    force_close_future,
+                },
+                address,
+            );
+        }
+    }
+
+    fn local_addr(&self) -> io::Result<Self::Addr> {
+        self.listener.local_addr()
+    }
+}
+
+impl ForceCloseConnection {
+    fn force_close_ready(&mut self, context: &mut Context<'_>) -> bool {
+        self.force_close.is_cancelled() || self.force_close_future.as_mut().poll(context).is_ready()
+    }
+}
+
+fn force_close_error() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::ConnectionAborted,
+        "management connection closed at shutdown deadline",
+    )
+}
+
+impl AsyncRead for ForceCloseConnection {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let connection = self.get_mut();
+        if connection.force_close_ready(context) {
+            return Poll::Ready(Err(force_close_error()));
+        }
+        Pin::new(&mut connection.stream).poll_read(context, buffer)
+    }
+}
+
+impl AsyncWrite for ForceCloseConnection {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let connection = self.get_mut();
+        if connection.force_close_ready(context) {
+            return Poll::Ready(Err(force_close_error()));
+        }
+        Pin::new(&mut connection.stream).poll_write(context, buffer)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let connection = self.get_mut();
+        if connection.force_close_ready(context) {
+            return Poll::Ready(Err(force_close_error()));
+        }
+        Pin::new(&mut connection.stream).poll_flush(context)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let connection = self.get_mut();
+        if connection.force_close_ready(context) {
+            return Poll::Ready(Err(force_close_error()));
+        }
+        Pin::new(&mut connection.stream).poll_shutdown(context)
+    }
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -102,14 +211,36 @@ impl ManagementServer {
 
         let app = Router::new().route("/", get(ws_handler)).with_state(state);
 
-        if let Err(e) = axum::serve(
+        let force_close = CancellationToken::new();
+        let listener = ForceCloseListener {
             listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(server.management_shutdown.clone().cancelled_owned())
-        .await
-        {
-            error!("Management server error: {e}");
+            force_close: force_close.clone(),
+        };
+        let management_shutdown = server.management_shutdown.clone();
+        let serve = async move {
+            axum::serve(listener, app.into_make_service())
+                .with_graceful_shutdown(management_shutdown.clone().cancelled_owned())
+                .await
+        };
+        tokio::pin!(serve);
+        tokio::select! {
+            biased;
+            result = &mut serve => {
+                if let Err(error) = result {
+                    error!("Management server error: {error}");
+                }
+            }
+            () = async {
+                server.management_shutdown.cancelled().await;
+                tokio::time::sleep(SHUTDOWN_GRACE_PERIOD).await;
+            } => {
+                // ManagementServer.stop closes its listener and event loop outright.
+                warn!("Management HTTP shutdown grace period expired; closing remaining connections");
+                force_close.cancel();
+                if let Err(error) = serve.await {
+                    error!("Management server error: {error}");
+                }
+            }
         }
         heartbeat_shutdown.cancel();
         if let Err(e) = heartbeat.await {
