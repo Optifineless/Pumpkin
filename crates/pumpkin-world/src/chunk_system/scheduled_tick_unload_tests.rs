@@ -56,6 +56,8 @@ fn ticket_for_reload(level: &Level) {
 async fn unload(level: &Arc<Level>, chunk: SyncChunk) -> tokio::task::JoinHandle<()> {
     let (mut schedule, _) = super::storage_failure_tests::scheduler();
     schedule.public_chunk_map = level.loaded_chunks.clone();
+    schedule.entity_unloads = level.entity_unloads.clone();
+    schedule.chunk_loading = level.chunk_loading.clone();
     schedule.game_time = level.game_time.clone();
     schedule.chunks_with_scheduled_ticks = level.chunks_with_scheduled_ticks.clone();
     schedule.loaded_chunk_changes = level.loaded_chunk_changes.clone();
@@ -208,6 +210,91 @@ async fn scheduled_time_completed_unload_publication_reloads_relative_delays() {
         }
         level.shutdown().await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn collection_invariant_unpublished_chunk_preserves_ticks_before_save_completion() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = LevelConfig {
+        chunk: ChunkConfig::Anvil(AnvilChunkConfig::default()),
+        ..Default::default()
+    };
+    let level = TestLevel(Level::from_root_folder(
+        &config,
+        directory.path().into(),
+        0,
+        Dimension::OVERWORLD,
+    ));
+    let active = FxHashSet::from_iter([CHUNK]);
+    level.set_game_time(100);
+    let chunk = ChunkData::empty_sync(CHUNK.x, CHUNK.y);
+    chunk.light_populated.store(true, Relaxed);
+    level.loaded_chunks.insert(CHUNK, chunk.clone());
+    let future = BlockPos::new(1, 64, 0);
+    level.schedule_block_tick_after(&Block::STONE, POSITION, 0, TickPriority::High);
+    level.schedule_block_tick_after(&Block::STONE, future, 100, TickPriority::Normal);
+    level.schedule_fluid_tick(&Fluid::WATER, POSITION, 0, TickPriority::High);
+    level.schedule_fluid_tick(&Fluid::WATER, future, 100, TickPriority::Normal);
+    let retained = crate::level::level_ticks::retain_containers(&level, &active, 100);
+    assert_eq!(retained.len(), 1);
+
+    let (started, start) = tokio::sync::oneshot::channel();
+    let (resume, resumed) = tokio::sync::oneshot::channel();
+    manager(&level).pause_next_publication_for_test(started, resumed);
+    let worker = unload(&level, chunk.clone()).await;
+    start.await.unwrap();
+    assert!(!level.loaded_chunks.contains_key(&CHUNK));
+    // This existing storage boundary follows freezing; it does not expose removal vs freeze.
+    let mut due = crate::level::TickData {
+        block_ticks: Vec::new(),
+        fluid_ticks: Vec::new(),
+        random_ticks: Vec::new(),
+    };
+    crate::level::level_ticks::drain_retained_containers(&level, &active, &mut due, retained, 100);
+    assert!(
+        due.block_ticks.is_empty(),
+        "unpublished block ticks escaped"
+    );
+    assert!(
+        due.fluid_ticks.is_empty(),
+        "unpublished fluid ticks escaped"
+    );
+    assert_eq!(
+        chunk
+            .block_ticks
+            .to_vec()
+            .iter()
+            .map(|t| t.delay)
+            .collect::<Vec<_>>(),
+        [0, 100]
+    );
+    assert_eq!(
+        chunk
+            .fluid_ticks
+            .to_vec()
+            .iter()
+            .map(|t| t.delay)
+            .collect::<Vec<_>>(),
+        [0, 100]
+    );
+    resume.send(()).unwrap();
+    worker.await.unwrap();
+
+    // Evict retained storage so reload exercises persisted bytes and fresh schedulers.
+    level.chunk_saver.clear_watched_chunks().await;
+    assert_eq!(
+        manager(&level).retained_region_counts_for_test().await,
+        (0, 0)
+    );
+    level.set_game_time(300);
+    ticket_for_reload(&level);
+    let loaded = level.get_or_fetch_chunk(CHUNK, Clone::clone).await.unwrap();
+    assert!(!Arc::ptr_eq(&loaded, &chunk));
+    assert_due_at(&level, &active, 300, POSITION);
+    assert_waiting(&level, &active, 399);
+    assert_due_at(&level, &active, 400, future);
+    assert_waiting(&level, &active, 401);
+    level.shutdown().await.unwrap();
 }
 
 #[tokio::test]

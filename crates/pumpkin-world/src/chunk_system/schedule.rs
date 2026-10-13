@@ -1,7 +1,8 @@
 #[path = "storage_failure.rs"]
 mod storage_failure;
-#[path = "terrain_unload.rs"]
-mod terrain_unload;
+
+#[path = "chunk_map_unload.rs"]
+mod chunk_map_unload;
 
 use super::channel::LevelChange;
 use super::chunk_holder::ChunkHolder;
@@ -922,9 +923,6 @@ impl GenerationSchedule {
             if let Some(tmp) = holder.chunk {
                 match tmp {
                     Chunk::Level(chunk) => {
-                        let game_time = self.game_time.load(Relaxed);
-                        chunk.block_ticks.freeze_for_unload(game_time);
-                        chunk.fluid_ticks.freeze_for_unload(game_time);
                         // Save chunk to disk if dirty
                         if chunk.is_dirty() {
                             chunks.push((pos, Chunk::Level(chunk)));
@@ -1750,3 +1748,7 @@ mod storage_failure_tests;
 #[cfg(test)]
 #[path = "scheduled_tick_unload_tests.rs"]
 mod scheduled_tick_unload_tests;
+
+#[cfg(test)]
+#[path = "chunk_map_unload_tests.rs"]
+mod chunk_map_unload_tests;
