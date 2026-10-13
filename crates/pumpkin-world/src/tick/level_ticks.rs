@@ -1,4 +1,4 @@
-use super::{Level, TickData};
+use super::{Level, SyncChunk, TickData};
 use crate::tick::{MAX_SCHEDULED_TICKS_PER_TICK, drain_containers};
 use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::FxHashSet;
@@ -9,13 +9,25 @@ pub(super) fn collect(
     active_chunks: &FxHashSet<Vector2<i32>>,
     ticks: &mut TickData,
 ) {
+    let current_tick = level.game_time.load(Ordering::Relaxed);
+    let containers = retain_containers(level, active_chunks, current_tick);
+    drain_retained_containers(level, active_chunks, ticks, containers, current_tick);
+}
+
+/// Retains eligible loaded containers, releasing registry guards before preparation.
+pub fn retain_containers(
+    level: &Level,
+    active_chunks: &FxHashSet<Vector2<i32>>,
+    current_tick: i64,
+) -> Vec<(Vector2<i32>, SyncChunk)> {
     let mut scheduled_chunk_pos = std::mem::take(
         &mut *level
             .scheduled_tick_collect_positions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner),
     );
-    scheduled_chunk_pos.clear();
+    // This buffer only reuses allocation; the authoritative index supplies all work.
+    debug_assert!(scheduled_chunk_pos.is_empty());
     // Release the index before consulting the loaded registry.
     scheduled_chunk_pos.extend(
         level
@@ -25,7 +37,6 @@ pub(super) fn collect(
             .iter()
             .copied(),
     );
-    let current_tick = level.game_time.load(Ordering::Relaxed);
     let capacity = scheduled_chunk_pos.len().min(active_chunks.len());
     let mut containers = Vec::new();
     for &pos in &scheduled_chunk_pos {
@@ -50,7 +61,7 @@ pub(super) fn collect(
             true
         };
         if empty {
-            remove_empty(level, pos, active_chunks);
+            level.unregister_empty_tick_container(pos, active_chunks);
         }
     }
     scheduled_chunk_pos.clear();
@@ -62,6 +73,17 @@ pub(super) fn collect(
         *buffer = scheduled_chunk_pos;
     }
     drop(buffer);
+    containers
+}
+
+/// Collects from retained Arcs; retired schedulers reject admission under their existing guard.
+pub fn drain_retained_containers(
+    level: &Level,
+    active_chunks: &FxHashSet<Vector2<i32>>,
+    ticks: &mut TickData,
+    containers: Vec<(Vector2<i32>, SyncChunk)>,
+    current_tick: i64,
+) {
     if containers.is_empty() {
         return;
     }
@@ -85,18 +107,7 @@ pub(super) fn collect(
     );
     for (pos, chunk) in containers {
         if !chunk.block_ticks.has_ticks() && !chunk.fluid_ticks.has_ticks() {
-            remove_empty(level, pos, active_chunks);
+            level.unregister_empty_tick_container(pos, active_chunks);
         }
     }
-}
-
-fn remove_empty(level: &Level, pos: Vector2<i32>, active: &FxHashSet<Vector2<i32>>) {
-    #[cfg(test)]
-    {
-        let hook = level.before_tick_chunk_remove.lock().unwrap().take();
-        if let Some(hook) = hook {
-            hook();
-        }
-    }
-    level.unregister_empty_tick_container(pos, active);
 }

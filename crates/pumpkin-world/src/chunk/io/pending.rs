@@ -32,15 +32,22 @@ impl<P: Dirtiable> Pending<P> {
 }
 
 impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
-    pub(super) fn pending_chunk(&self, path: &Path, pos: Vector2<i32>) -> Option<Arc<S::Data>> {
+    pub(super) fn pending_chunk(
+        &self,
+        path: &Path,
+        pos: Vector2<i32>,
+    ) -> Option<Result<Arc<S::Data>, super::ChunkReadingError>> {
         // IOWorker.loadAsync returns pending data before consulting region storage.
-        self.pending
+        let chunk = self
+            .pending
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .regions
             .get(path)?
             .get(&(pos.x, pos.y))
-            .map(|(_, chunk)| chunk.copy_for_load())
+            .map(|(_, chunk)| chunk.clone())?;
+        // Copy after releasing storage ownership; decoding takes the scheduler's own guard.
+        Some(chunk.copy_for_load(&self.dimension))
     }
 
     pub(super) async fn flush_region(&self, path: &PathBuf) -> Result<(), ChunkWritingError> {

@@ -124,11 +124,6 @@ pub struct Level {
     /// Counts the number of ticks that have been scheduled for this world
     schedule_tick_counts: AtomicI64,
     pub(crate) game_time: Arc<AtomicI64>,
-    #[cfg(test)]
-    before_tick_chunk_remove: pumpkin_util::sync::Mutex<
-        Option<Box<dyn FnOnce() + Send>>,
-        scheduled_tick_registration::TickCollectBuffer,
-    >,
 
     // Chunks that are paired with chunk watchers. When a chunk is no longer watched, it is removed
     // from the loaded chunks map and sent to the underlying ChunkIO
@@ -357,8 +352,6 @@ impl Level {
             entity_saver,
             schedule_tick_counts: AtomicI64::new(0),
             game_time: Arc::new(AtomicI64::new(0)),
-            #[cfg(test)]
-            before_tick_chunk_remove: pumpkin_util::sync::Mutex::new(None),
             loaded_chunks: Arc::new(DashMap::new()),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
             loaded_entity_chunks: Arc::new(DashMap::new()),
@@ -1218,4 +1211,4 @@ mod entity_storage_tests;
 mod level_ticks_tests;
 
 #[path = "tick/level_ticks.rs"]
-mod level_ticks;
+pub(crate) mod level_ticks;

@@ -44,9 +44,12 @@ impl<D: Send, E: error::Error> LoadedData<D, E> {
 }
 
 pub trait Dirtiable {
-    /// Copies retained data when a loader can consume or mutate the returned object.
-    fn copy_for_load(self: &Arc<Self>) -> Arc<Self> {
-        self.clone()
+    /// Copies retained data for activation in the destination dimension, reporting decode failures.
+    fn copy_for_load(
+        self: &Arc<Self>,
+        _dimension: &pumpkin_data::dimension::Dimension,
+    ) -> Result<Arc<Self>, ChunkReadingError> {
+        Ok(self.clone())
     }
 
     fn is_dirty(&self) -> bool;

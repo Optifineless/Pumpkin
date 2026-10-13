@@ -8,7 +8,7 @@ use crate::{
             file_manager::{ChunkFileManager, LevelFileIO},
         },
     },
-    tick::{ScheduledTick, TickPriority},
+    tick::TickPriority,
 };
 use pumpkin_config::{
     chunk::{AnvilChunkConfig, ChunkConfig},
@@ -21,7 +21,6 @@ use std::ops::Deref;
 
 const CHUNK: ChunkPos = ChunkPos::new(0, 0);
 const POSITION: BlockPos = BlockPos::new(0, 64, 0);
-const NEW_POSITION: BlockPos = BlockPos::new(1, 64, 0);
 
 struct TestLevel(Arc<Level>);
 
@@ -88,25 +87,10 @@ async fn unload(level: &Arc<Level>, chunk: SyncChunk) -> tokio::task::JoinHandle
     worker
 }
 
-fn add_during_publication(chunk: &ChunkData) {
-    chunk.block_ticks.schedule_tick(
-        &ScheduledTick {
-            delay: 50,
-            priority: TickPriority::Normal,
-            position: NEW_POSITION,
-            value: &Block::STONE,
-        },
-        1,
-    );
-    chunk.fluid_ticks.schedule_tick(
-        &ScheduledTick {
-            delay: 50,
-            priority: TickPriority::Normal,
-            position: NEW_POSITION,
-            value: &Fluid::WATER,
-        },
-        1,
-    );
+fn clear_during_publication(chunk: &ChunkData) {
+    let max = BlockPos::new(1, 65, 1);
+    chunk.block_ticks.clear_area(&POSITION, &max);
+    chunk.fluid_ticks.clear_area(&POSITION, &max);
 }
 
 fn assert_waiting(level: &Level, active: &FxHashSet<ChunkPos>, time: i64) {
@@ -171,7 +155,7 @@ async fn scheduled_time_completed_unload_publication_reloads_relative_delays() {
         start.await.unwrap(); // Real bytes serialized; disk publication has not completed.
         level.set_game_time(101);
         if mutate {
-            add_during_publication(&chunk);
+            clear_during_publication(&chunk);
         }
         resume.send(()).unwrap();
         worker.await.unwrap(); // Completed save, released position I/O ownership, no rewatch.
@@ -210,8 +194,7 @@ async fn scheduled_time_completed_unload_publication_reloads_relative_delays() {
             "reload reused the retired scheduler"
         );
         if mutate {
-            assert_waiting(&level, &active, 349);
-            assert_due_at(&level, &active, 350, NEW_POSITION);
+            assert_waiting(&level, &active, 400);
         } else {
             assert_eq!(
                 after_publication,
@@ -219,8 +202,82 @@ async fn scheduled_time_completed_unload_publication_reloads_relative_delays() {
                 "elapsed-only time retained the published original"
             );
         }
-        assert_waiting(&level, &active, 399);
-        assert_due_at(&level, &active, 400, POSITION);
+        if !mutate {
+            assert_waiting(&level, &active, 399);
+            assert_due_at(&level, &active, 400, POSITION);
+        }
         level.shutdown().await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn collection_invariant_retained_arc_cannot_unpack_after_real_unload() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = LevelConfig {
+        chunk: ChunkConfig::Anvil(AnvilChunkConfig::default()),
+        ..Default::default()
+    };
+    let level = TestLevel(Level::from_root_folder(
+        &config,
+        directory.path().into(),
+        0,
+        Dimension::OVERWORLD,
+    ));
+    let active = FxHashSet::from_iter([CHUNK]);
+    level.set_game_time(100);
+    let chunk = ChunkData::empty_sync(CHUNK.x, CHUNK.y);
+    chunk.light_populated.store(true, Relaxed);
+    level.loaded_chunks.insert(CHUNK, chunk.clone());
+    let future = BlockPos::new(1, 64, 0);
+    level.schedule_block_tick_after(&Block::STONE, POSITION, 0, TickPriority::High);
+    level.schedule_block_tick_after(&Block::STONE, future, 100, TickPriority::Normal);
+    level.schedule_fluid_tick(&Fluid::WATER, POSITION, 0, TickPriority::High);
+    level.schedule_fluid_tick(&Fluid::WATER, future, 100, TickPriority::Normal);
+    // Complete Arc retention, then drive native unpublication, freezing and the real save worker.
+    let retained = crate::level::level_ticks::retain_containers(&level, &active, 100);
+    assert_eq!(retained.len(), 1);
+    let worker = unload(&level, chunk.clone()).await;
+    worker.await.unwrap();
+    level.set_game_time(300);
+    let mut due = crate::level::TickData {
+        block_ticks: Vec::new(),
+        fluid_ticks: Vec::new(),
+        random_ticks: Vec::new(),
+    };
+    crate::level::level_ticks::drain_retained_containers(&level, &active, &mut due, retained, 300);
+    assert!(
+        due.block_ticks.is_empty(),
+        "collector drained a retired scheduler"
+    );
+    assert!(due.fluid_ticks.is_empty());
+    assert_eq!(
+        chunk
+            .block_ticks
+            .to_vec()
+            .iter()
+            .map(|t| t.delay)
+            .collect::<Vec<_>>(),
+        [0, 100]
+    );
+    // Force the retained-pending path, not only disk decoding, and fence storage completion.
+    chunk.mark_dirty(true);
+    level
+        .chunk_saver
+        .queue_chunks(&level.level_folder, vec![(CHUNK, chunk.clone())]);
+    ticket_for_reload(&level);
+    let loaded = level.get_or_fetch_chunk(CHUNK, Clone::clone).await.unwrap();
+    assert!(!Arc::ptr_eq(&loaded, &chunk));
+    assert_due_at(&level, &active, 300, POSITION);
+    assert_waiting(&level, &active, 399);
+    assert_due_at(&level, &active, 400, future);
+    assert_eq!(
+        chunk
+            .block_ticks
+            .to_vec()
+            .iter()
+            .map(|t| t.delay)
+            .collect::<Vec<_>>(),
+        [0, 100]
+    );
+    level.shutdown().await.unwrap();
 }
