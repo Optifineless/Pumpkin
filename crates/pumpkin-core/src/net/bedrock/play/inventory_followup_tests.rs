@@ -480,3 +480,30 @@ async fn noop_after_clear_keeps_attribute_refresh_without_inventory_packets() {
     fixture.close().await;
     server.server.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spectator_no_effect_use_still_acknowledges_a_processed_transaction() {
+    let server = DeathTestWorld::new().await;
+    let world = server.world();
+    let mut fixture = TestBedrockPlayer::new(&world).await;
+    let held = ItemStack::new(12, &Item::STONE);
+    fixture.player.inventory().set_held_item(held.clone());
+    fixture.player.set_gamemode(GameMode::Spectator);
+    send_use(
+        &mut fixture,
+        vec![],
+        use_item(&held, 1, BlockPos::new(8, 64, 8)),
+    );
+    let packets = fixture.take_packets();
+    let mut response = packets.iter().find_map(|p| packet_payload(p, 148)).unwrap();
+    assert_eq!(VarUInt::read(&mut response).unwrap().0, 1);
+    assert_eq!(
+        u8::read(&mut response).unwrap(),
+        0,
+        "a valid no-effect use was processed"
+    );
+    assert_eq!(VarInt::read(&mut response).unwrap().0, 1);
+    assert!(fixture.player.inventory().held_item().are_equal(&held));
+    fixture.close().await;
+    server.server.shutdown().await;
+}

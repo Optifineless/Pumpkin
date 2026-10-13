@@ -87,6 +87,9 @@ impl BedrockClient {
             }
         }
         // LivingEntity.detectEquipmentUpdates refreshes modifiers and publishes on the tick.
+        if before.selected != after.selected {
+            self.send_live_hotbar_selection(player);
+        }
         if before.selected != after.selected
             || before.main_hand.uid != after.main_hand.uid
             || !before.main_hand.are_equal(&after.main_hand)

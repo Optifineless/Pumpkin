@@ -6186,8 +6186,8 @@ impl EntityBase for Player {
         let equipment = pumpkin_protocol::bedrock::client::CMobEquipment {
             target_runtime_id: (self.entity_id() as u64).into(),
             item: (&self.inventory.held_item()).into(),
-            slot: 0,
-            selected_slot: 0,
+            slot: self.inventory.get_selected_slot(),
+            selected_slot: self.inventory.get_selected_slot(),
             container_id: 0,
         };
         for data in [

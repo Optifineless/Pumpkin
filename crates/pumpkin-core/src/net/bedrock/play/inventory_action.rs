@@ -261,9 +261,13 @@ impl BedrockClient {
                     return None;
                 };
                 source_selected_slot = selected;
-                let Some(stack) =
+                // ServerGamePacketListenerImpl.handleInteract reads the server hand; Bedrock may omit the descriptor.
+                let stack = if data.item_in_hand.id.0 == 0 {
+                    Some(player.inventory().held_item())
+                } else {
                     Self::validated_use_item_stack(player, Hand::Right, &data.item_in_hand)
-                else {
+                };
+                let Some(stack) = stack else {
                     *rejected_hand_prediction = true;
                     return None;
                 };
