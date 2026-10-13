@@ -1,15 +1,10 @@
 use super::*;
 use crate::{
     entity::projectile::egg::EggEntity,
-    plugin::{
-        BoxFuture, EventHandler, EventPriority, api::events::server::packet::PacketSentEvent,
-        block::block_place::BlockPlaceEvent,
-    },
+    plugin::{BoxFuture, EventHandler, EventPriority, block::block_place::BlockPlaceEvent},
     server::Server,
 };
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_inventory::Inventory;
-use pumpkin_protocol::MultiVersionJavaPacket;
 use pumpkin_util::version::JavaMinecraftVersion;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst};
 
@@ -21,15 +16,13 @@ struct ReplaceDuringEquipment {
     fired: AtomicBool,
 }
 
-impl EventHandler<PacketSentEvent> for ReplaceDuringEquipment {
+impl EventHandler<PlayerInteractEvent> for ReplaceDuringEquipment {
     fn handle_blocking<'a>(
         &'a self,
         _: &'a Arc<Server>,
-        event: &'a mut PacketSentEvent,
+        _event: &'a mut PlayerInteractEvent,
     ) -> BoxFuture<'a, ()> {
-        if event.packet_id == CSetEquipment::to_id(CURRENT_MC_VERSION)
-            && !self.fired.swap(true, SeqCst)
-        {
+        if !self.fired.swap(true, SeqCst) {
             self.owner
                 .inventory()
                 .set_stack_in_hand(self.hand, self.replacement.clone());
@@ -85,7 +78,7 @@ async fn equipment_callback_replacement_survives_click_air_reconciliation() -> T
         player.inventory().set_stack_in_hand(hand, before.clone());
         let mut replacement = ItemStack::new(8, &Item::BROWN_EGG);
         replacement.set_custom_name("Callback egg".to_owned());
-        // PacketSentEvent runs synchronously for a tracking Java client on an older protocol.
+        // PlayerInteractEvent is the real pre-dispatch boundary after predictions became advisory.
         let java = fixture.java_observer.client();
         java.set_player(fixture.java_observer.player.clone());
         java.version.store(JavaMinecraftVersion::V_26_2);
@@ -93,7 +86,7 @@ async fn equipment_callback_replacement_survives_click_air_reconciliation() -> T
             .world
             .server
             .plugin_manager
-            .register::<PacketSentEvent, _>(
+            .register::<PlayerInteractEvent, _>(
                 Arc::new(ReplaceDuringEquipment {
                     owner: player.clone(),
                     hand,
@@ -209,6 +202,7 @@ async fn placement_callback_selection_publishes_the_live_main_hand() -> TestResu
     player
         .living_entity
         .send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, blocks.clone())]);
+    fixture.owner.player.tick(&fixture.world.server);
     let base = player
         .living_entity
         .get_attribute_value(&Attributes::ATTACK_DAMAGE);
@@ -306,7 +300,7 @@ pub(super) fn assert_observer_hand(
     let java_packets = fixture.java_observer.take_packets();
     assert_eq!(
         java_packets.iter().filter(|p| **p == java).count(),
-        1,
+        usize::from(fixture.hand_changed(hand)),
         "Java observer authoritative hand"
     );
     let (container_id, slot, _) = hand_address(hand);
@@ -324,7 +318,7 @@ pub(super) fn assert_observer_hand(
     let bedrock_packets = fixture.bedrock_observer.take_packets();
     assert_eq!(
         bedrock_packets.iter().filter(|p| **p == bedrock).count(),
-        1,
+        usize::from(fixture.hand_changed(hand)),
         "Bedrock observer authoritative hand"
     );
     Ok(())
@@ -448,6 +442,7 @@ async fn predicted_two_egg_air_use_republishes_the_authoritative_hand() -> TestR
             player
                 .living_entity
                 .send_equipment_changes(&[(equipment_slot(hand), before.clone())]);
+            fixture.owner.player.tick(&fixture.world.server);
             let modified_luck = player.living_entity.get_attribute_value(&Attributes::LUCK);
             assert!(modified_luck > 2.0);
             if cancelled {
