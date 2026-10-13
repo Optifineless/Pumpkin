@@ -146,15 +146,13 @@ async fn scheduled_time_marker_survives_schedule_between_empty_check_and_remove(
     let level = level(dir.path());
     insert_empty(&level);
     level.schedule_block_tick(&Block::STONE, BLOCK_POS, 1, TickPriority::Normal);
-    let weak = Arc::downgrade(&level);
-    *level.before_tick_chunk_remove.lock().unwrap() = Some(Box::new(move || {
-        // Collector has drained the old work and observed empty. The concurrent scheduler
-        // inserts new work and its marker before the collector removes that marker.
-        let level = weak.upgrade().unwrap();
-        level.schedule_fluid_tick(&Fluid::WATER, BLOCK_POS, 1, TickPriority::High);
-    }));
     level.set_game_time(1);
-    assert_eq!(level.get_tick_data(&active(), 0).block_ticks.len(), 1);
+    let retained = super::level_ticks::retain_containers(&level, &active(), 1);
+    let old = crate::tick::drain_containers(&[&retained[0].1.block_ticks], 1, 1);
+    assert_eq!(old.len(), 1);
+    // The old container is empty; scheduling completes before its index cleanup.
+    level.schedule_fluid_tick(&Fluid::WATER, BLOCK_POS, 1, TickPriority::High);
+    level.unregister_empty_tick_container(CHUNK, &active());
     assert!(
         level
             .chunks_with_scheduled_ticks

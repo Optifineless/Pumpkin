@@ -498,6 +498,8 @@ impl World {
                 ),
             )
         };
+        // LevelAccessor.createTick uses restored game time even before the first world tick.
+        level.set_game_time(level_time.world_age);
         // TODO
         let generation_settings = NoiseSettings::from_dimension(&dimension);
 

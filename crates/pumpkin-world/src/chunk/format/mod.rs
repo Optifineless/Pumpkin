@@ -70,6 +70,20 @@ impl PathFromLevelFolder for ChunkData {
 }
 
 impl Dirtiable for ChunkData {
+    fn copy_for_load(
+        self: &Arc<Self>,
+        dimension: &pumpkin_data::dimension::Dimension,
+    ) -> Result<Arc<Self>, ChunkReadingError> {
+        // IOWorker.PendingStore.copyData: reload owns fresh LevelChunkTicks, never a retired Arc.
+        Self::internal_from_bytes(
+            &self.internal_to_bytes(),
+            Vector2::new(self.x, self.z),
+            dimension,
+        )
+        .map(Arc::new)
+        .map_err(ChunkReadingError::ParsingError)
+    }
+
     fn dirty_version(&self) -> Option<u64> {
         self.block_ticks.mark_dirty_if_changed(&self.dirty);
         self.fluid_ticks.mark_dirty_if_changed(&self.dirty);
@@ -668,9 +682,12 @@ impl PathFromLevelFolder for ChunkEntityData {
 }
 
 impl Dirtiable for ChunkEntityData {
-    fn copy_for_load(self: &Arc<Self>) -> Arc<Self> {
+    fn copy_for_load(
+        self: &Arc<Self>,
+        _dimension: &pumpkin_data::dimension::Dimension,
+    ) -> Result<Arc<Self>, ChunkReadingError> {
         // IOWorker.PendingStore.copyData: activation must not consume a retained save.
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             x: self.x,
             z: self.z,
             data: pumpkin_util::sync::Mutex::new(
@@ -681,7 +698,7 @@ impl Dirtiable for ChunkEntityData {
             ),
             live: std::sync::atomic::AtomicBool::new(false),
             dirty: crate::chunk::io::DirtyFlag::new(false),
-        })
+        }))
     }
 
     fn dirty_version(&self) -> Option<u64> {

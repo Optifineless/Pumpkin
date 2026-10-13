@@ -340,7 +340,11 @@ where
             let path = P::file_path(folder, &S::get_chunk_key(at));
             let pending = self.pending_chunk(&path, *at);
             if let Some(chunk) = pending {
-                let _ = stream.send(LoadedData::Loaded(chunk)).await;
+                let data = match chunk {
+                    Ok(chunk) => LoadedData::Loaded(chunk),
+                    Err(error) => LoadedData::Error((*at, error)),
+                };
+                let _ = stream.send(data).await;
                 continue;
             }
             regions_chunks

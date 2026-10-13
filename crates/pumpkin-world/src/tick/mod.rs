@@ -178,16 +178,32 @@ pub(crate) fn drain_containers<'a, T: std::hash::Hash + Eq>(
     max_ticks: usize,
 ) -> Vec<OrderedTick<&'a T>> {
     // LevelTicks.sortContainersToTick / drainContainers: only due containers enter the heap.
+    let prepared = containers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, container)| {
+            if !container.has_due_ticks(current_tick) {
+                return None;
+            }
+            container
+                .prepare_tick(current_tick)
+                .map(|head| (index, head))
+        });
+    drain_prepared_containers(containers, prepared, max_ticks)
+}
+
+/// Drains prepared containers, rechecking their current heads under the scheduler owner.
+/// Each prepared index must identify its container in `containers`, at most once.
+pub(crate) fn drain_prepared_containers<'a, T: std::hash::Hash + Eq>(
+    containers: &[&scheduler::ChunkTickScheduler<&'a T>],
+    prepared: impl IntoIterator<Item = (usize, (scheduler::TickKey, usize))>,
+    max_ticks: usize,
+) -> Vec<OrderedTick<&'a T>> {
     let mut heads = BinaryHeap::new();
     let mut estimated = 0;
-    for (index, container) in containers.iter().enumerate() {
-        if container.has_due_ticks(current_tick)
-            && let Some(((priority, sub_order, trigger), count)) =
-                container.prepare_tick(current_tick)
-        {
-            heads.push(Reverse((priority, sub_order, index, trigger)));
-            estimated += count;
-        }
+    for (index, ((priority, sub_order, trigger), count)) in prepared {
+        heads.push(Reverse((priority, sub_order, index, trigger)));
+        estimated += count;
     }
     let mut due = Vec::with_capacity(max_ticks.min(estimated));
     while due.len() < max_ticks
@@ -207,3 +223,6 @@ pub(crate) fn drain_containers<'a, T: std::hash::Hash + Eq>(
 
 #[cfg(test)]
 mod collection_tests;
+
+#[cfg(test)]
+mod collection_invariants_tests;

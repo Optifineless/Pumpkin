@@ -137,6 +137,8 @@ fn double_freeze_unpack_preserves_pending_first_pack_order() {
     );
     assert!(drain_containers(&[&scheduler], 200, MAX_SCHEDULED_TICKS_PER_TICK).is_empty());
     clock.store(200, Ordering::Relaxed);
+    let scheduler: scheduler::ChunkTickScheduler<_> = scheduler.to_vec().into_iter().collect();
+    scheduler.bind_clock(clock.clone());
     scheduler.schedule_tick(
         &ScheduledTick {
             delay: 10,
@@ -159,6 +161,8 @@ fn double_freeze_unpack_preserves_pending_first_pack_order() {
     );
     assert!(packed.iter().all(|t| t.delay == 10));
     clock.store(205, Ordering::Relaxed);
+    let scheduler: scheduler::ChunkTickScheduler<_> = packed.into_iter().collect();
+    scheduler.bind_clock(clock);
     assert!(drain_containers(&[&scheduler], 205, MAX_SCHEDULED_TICKS_PER_TICK).is_empty());
     let due = drain_containers(&[&scheduler], 215, MAX_SCHEDULED_TICKS_PER_TICK);
     assert_eq!(
