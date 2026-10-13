@@ -82,17 +82,6 @@ impl BedrockClient {
         }
     }
 
-    fn sync_consumed_hand_item(player: &Player, stack: ItemStack) {
-        let selected_slot = player.inventory().get_selected_slot();
-        player.inventory().set_held_item(stack.clone());
-        let mut screen_handler = player
-            .player_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        screen_handler.set_received_stack(36 + usize::from(selected_slot), stack);
-        drop(screen_handler);
-    }
-
     fn correct_rejected_food_use(&self, player: &Player) {
         // Holding use can repeat rejected transactions. Limit prediction corrections
         // to every 20 ticks, without indefinitely trusting a previously sent snapshot.
@@ -120,15 +109,20 @@ impl BedrockClient {
     pub fn handle_inventory_action(&self, player: &Arc<Player>, packet: SInventoryTransaction) {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
         let request_id = packet.legacy_request_id;
+        let before = inventory_changes::InventorySnapshot::capture(player);
+        let correct_prediction = !packet.actions.is_empty();
+        let rejected_hand_prediction = matches!(&packet.transaction_data, TransactionData::UseItem(data)
+                if matches!(data.action_type.0, 0 | 1)
+                    && !Self::matches_hand_descriptor(player, data));
         Self::drop_legacy_inventory_slots(player, &packet);
         // ServerGamePacketListenerImpl.handleContainerClick treats client stacks as predictions.
         // handleUseItemOn/handleUseItem still execute against the server's hand first.
         let accepted = self.process_inventory_transaction(player, packet);
-        self.correct_inventory_prediction(player);
-        player.send_menu_equipment(&[
-            (EquipmentSlot::MAIN_HAND, player.inventory().held_item()),
-            (EquipmentSlot::OFF_HAND, player.inventory().off_hand_item()),
-        ]);
+        self.publish_inventory_changes(
+            player,
+            &before,
+            correct_prediction || (!accepted && rejected_hand_prediction),
+        );
         // Bedrock ItemStackResponseInfo: 0 = SUCCESS, 1 = ERROR. Discarding a
         // prediction does not reject an otherwise processed authoritative use.
         self.respond_legacy_inventory(request_id, u8::from(!accepted));
@@ -137,7 +131,10 @@ impl BedrockClient {
     fn drop_legacy_inventory_slots(player: &Player, packet: &SInventoryTransaction) {
         let mut dropped_items = Vec::new();
         let effects = crate::world::guard_effects::GuardEffects::new();
-        if packet.actions.is_empty() && packet.legacy_request_id.0 != 0 {
+        if packet.actions.is_empty()
+            && packet.legacy_request_id.0 != 0
+            && !packet.legacy_set_item_slots.is_empty()
+        {
             let mut player_screen_handler = player
                 .player_screen_handler
                 .lock()
@@ -219,14 +216,17 @@ impl BedrockClient {
                     return true;
                 }
 
+                // ServerGamePacketListenerImpl.handleUseItemOn uses packet.hand() throughout.
+                let hand = Self::transaction_hand(data.hand);
+                let equipment_slot = if hand == Hand::Right {
+                    EquipmentSlot::MAIN_HAND
+                } else {
+                    EquipmentSlot::OFF_HAND
+                };
                 if data.action_type.0 == 0 {
                     // Click block
-                    let client_stack = descriptor_to_stack(&data.item_in_hand);
-
-                    let mut held_item = player.inventory().held_item();
-                    let authoritative_held_item = held_item.item.id == client_stack.item.id
-                        && held_item.item_count == client_stack.item_count;
-                    if !authoritative_held_item {
+                    let mut held_item = player.inventory().get_stack_in_hand(hand);
+                    if !Self::matches_hand_descriptor(player, &data) {
                         return false;
                     }
                     let before_block_use = held_item.clone();
@@ -240,7 +240,7 @@ impl BedrockClient {
                             cursor_pos: &data.click_position,
                         },
                         &mut held_item,
-                        &EquipmentSlot::MAIN_HAND,
+                        &equipment_slot,
                         &server,
                         &world,
                     );
@@ -248,7 +248,7 @@ impl BedrockClient {
                     if result.consumes_action() {
                         if !before_block_use.are_equal(&held_item) {
                             // ServerPlayerGameMode.useItemOn persists the item after the block callback consumes it.
-                            Self::sync_consumed_hand_item(player, held_item);
+                            player.inventory().set_stack_in_hand(hand, held_item);
                         }
                         return true;
                     }
@@ -295,7 +295,7 @@ impl BedrockClient {
                             if let Some(placed_block) = pumpkin_data::Block::from_item_id(item_id) {
                                 let dummy_use_item_on =
                                     pumpkin_protocol::java::server::play::SUseItemOn {
-                                        hand: VarInt(0),
+                                        hand: VarInt(i32::from(hand == Hand::Left)),
                                         position: data.block_position,
                                         face: VarInt(i32::from(data.block_face)),
                                         cursor_pos: data.click_position,
@@ -325,24 +325,16 @@ impl BedrockClient {
                             );
                             player.world().send_entity_status(
                                 player.get_entity(),
-                                crate::entity::equipment_break_status(&EquipmentSlot::MAIN_HAND),
+                                crate::entity::equipment_break_status(&equipment_slot),
                                 None,
                             );
                         }
-                        player.inventory().set_held_item(stack);
+                        player.inventory().set_stack_in_hand(hand, stack);
                     }
                 } else if data.action_type.0 == 1 {
                     // Click air / Use item
-                    let client_stack = descriptor_to_stack(&data.item_in_hand);
-
-                    let hand = match data.hand {
-                        HandSlot::Mainhand => Hand::Right,
-                        HandSlot::Offhand => Hand::Left,
-                    };
                     let mut held = player.inventory().get_stack_in_hand(hand);
-                    if held.item.id != client_stack.item.id
-                        || held.item_count != client_stack.item_count
-                    {
+                    if !Self::matches_hand_descriptor(player, &data) {
                         return false;
                     }
                     // Consumable.onConsume and BucketItem/BottleItem.use count on success.
@@ -566,6 +558,9 @@ impl BedrockClient {
         true
     }
 }
+
+#[path = "inventory_changes.rs"]
+mod inventory_changes;
 
 #[cfg(test)]
 #[path = "inventory_action_tests.rs"]
