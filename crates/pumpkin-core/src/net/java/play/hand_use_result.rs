@@ -4,7 +4,7 @@ use pumpkin_data::{
     BlockStateId, data_component_impl::EquipmentSlot, item::Item, item_stack::ItemStack,
     statistic::StatisticCategory, tag::Taggable,
 };
-use pumpkin_inventory::{Inventory, player::player_inventory::PlayerInventory};
+use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_util::Hand;
 
 /// Returns the inventory slot to retain while an interaction mutates a hand clone.
@@ -51,10 +51,18 @@ pub fn write_back_hand_item(
     after: &ItemStack,
     mutation: HandMutation,
 ) {
-    let current = player.inventory().get_stack(source_slot);
-    if after.are_equal(before) || current.uid != before.uid || !current.are_equal(before) {
-        return;
-    }
+    let _ = try_write_back_hand_item(player, hand, source_slot, before, after, mutation);
+}
+
+/// Atomically replaces the captured slot when it still contains the interaction's original stack.
+pub fn try_write_back_hand_item(
+    player: &Player,
+    hand: Hand,
+    source_slot: usize,
+    before: &ItemStack,
+    after: &ItemStack,
+    mutation: HandMutation,
+) -> bool {
     // Keep the originating slot even if an interaction changes the selected hotbar slot.
     // ItemStack.getItem exposes AIR once a stack is depleted.
     let stored = if after.is_empty() {
@@ -62,13 +70,8 @@ pub fn write_back_hand_item(
     } else {
         after.clone()
     };
-    if !pumpkin_inventory::inventory::slot_transaction::exchange(
-        player.inventory().as_ref(),
-        source_slot,
-        before,
-        stored.clone(),
-    ) {
-        return;
+    if !try_commit_hand_slot(player, source_slot, before, after) {
+        return false;
     }
     // LivingEntity.onEquippedItemBroken broadcasts while the client still has the old item.
     // ArmorStand.swapItem transfers equipment without ItemStack.hurtAndBreak.
@@ -88,6 +91,31 @@ pub fn write_back_hand_item(
             .send_entity_status(player.get_entity(), equipment_break_status(&slot), None);
     }
     player.sync_hand_slot(source_slot, stored);
+    true
+}
+
+/// Commits `Mob.usePlayerItem`'s source stack before `handleExtraItemsCreatedOnUse` grants a remainder.
+/// The slot transaction completes without publishing packets or invoking callbacks.
+pub fn try_commit_hand_slot(
+    player: &Player,
+    source_slot: usize,
+    before: &ItemStack,
+    after: &ItemStack,
+) -> bool {
+    if after.are_equal(before) {
+        return false;
+    }
+    let stored = if after.is_empty() {
+        ItemStack::EMPTY.clone()
+    } else {
+        after.clone()
+    };
+    pumpkin_inventory::inventory::slot_transaction::exchange(
+        player.inventory().as_ref(),
+        source_slot,
+        before,
+        stored,
+    )
 }
 
 // HoneycombItem.useOn and AxeItem.useOn trigger before replacing the clicked block.
@@ -118,6 +146,7 @@ pub(super) fn trigger_item_used_on_block(
 mod tests {
     use super::*;
     use crate::{net::java::combat_test_support::TestPlayer, server::combat_test_support};
+    use pumpkin_inventory::Inventory;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn hand_use_break_animation_precedes_empty_hand_sync() {
