@@ -111,6 +111,23 @@ resume. Stop/restart with pending redstone or water updates; expect the existing
 restored-time behavior. Record freeze → place/use → unfreeze and report any
 World service entry invariant error in the log.
 
+## Lifecycle capture boundary, PR-2b
+
+BE saving enters a checked leaf serialization boundary, following vanilla
+`ChunkMap.save`, `SerializableChunkData.copyOf` and
+`LevelChunk.getBlockEntityNbtForSaving`. In debug builds, capture reentry into
+mapped world, packet, plugin and effect boundaries is rejected, including virtual
+item-component calls. The reviewed lifecycle manifest detects changed capture,
+live-NBT and mutable API coverage. Release checks compile out with the existing
+lock checker; serialization and saved NBT semantics remain legacy.
+
+Existing live writers, terrain publication, image ordering and detach remain
+legacy until the ownership map's ordered migrations activate. Retained chest
+handles, final capture/detach and ordinary-save stale images remain unprotected;
+this does not fix S6 or complete rule F3. API 8 (same version): additive native
+capture/debug interfaces; rebuild native plugins. Implemented by Codex
+(GPT-6.1 Sol). In-game verification: **Not yet**.
+
 ## How the code here is written
 
 The changes in this fork are written by AI coding agents, not by hand. The fork owner tests them in-game but does not review the code line by line. Treat every commit that isn't from upstream accordingly.

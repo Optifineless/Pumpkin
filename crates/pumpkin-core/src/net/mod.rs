@@ -5,6 +5,7 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 use pumpkin_world::level::SyncChunk;
 use std::{
     net::SocketAddr,
@@ -266,6 +267,7 @@ impl ClientPlatform {
     }
 
     pub async fn enqueue_packet(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "ClientPlatform::enqueue_packet");
         match self {
             Self::Java(java) => java.enqueue_packet(packet_data).await,
             Self::Bedrock(bedrock) => bedrock.enqueue_packet(packet_data).await,
@@ -273,6 +275,7 @@ impl ClientPlatform {
     }
 
     pub fn try_enqueue_packet(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "ClientPlatform::try_enqueue_packet");
         match self {
             Self::Java(java) => java.try_enqueue_packet(packet_data),
             Self::Bedrock(bedrock) => bedrock.try_enqueue_packet(packet_data),
@@ -298,6 +301,7 @@ impl ClientPlatform {
     }
 
     pub async fn send_packet_now(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "ClientPlatform::send_packet_now");
         match self {
             Self::Java(java) => java.send_packet_now(packet_data).await,
             Self::Bedrock(bedrock) => bedrock.send_game_packet(packet_data).await,

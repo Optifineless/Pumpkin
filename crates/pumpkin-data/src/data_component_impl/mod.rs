@@ -53,6 +53,7 @@ pub trait DataComponentImpl: Send + Sync {
 
 impl Clone for Box<dyn DataComponentImpl> {
     fn clone(&self) -> Self {
+        let _call = pumpkin_util::sync::SnapshotCall::enter("DataComponentImpl::clone_dyn");
         self.clone_dyn()
     }
 }

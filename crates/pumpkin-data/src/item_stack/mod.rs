@@ -829,6 +829,8 @@ impl ItemStack {
 
         for (id, data) in &self.patch {
             if let Some(data) = data {
+                let _call =
+                    pumpkin_util::sync::SnapshotCall::enter("DataComponentImpl::write_data");
                 tag.put(id.to_name(), data.write_data());
             } else {
                 let name = '!'.to_string() + id.to_name();
