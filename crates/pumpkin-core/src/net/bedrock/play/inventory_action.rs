@@ -3,7 +3,7 @@ use super::*;
 use crate::item::registry::should_try_block_placement;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_protocol::bedrock::server::inventory_transaction::{
-    HandSlot, UseItemTransactionData, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
+    HandSlot, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
 };
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer, java::client::play::CSetPlayerInventory,
@@ -15,6 +15,7 @@ const SHIELD_SLOT: usize = 45;
 
 #[path = "inventory_action_hand_use.rs"]
 mod hand_use;
+use hand_use::LiveHands;
 
 // ServerGamePacketListenerImpl.handleUseItemOn selects the hand passed to useItemOn.
 fn hand_screen_handler_slot(hand: Hand, selected_slot: u8) -> Option<usize> {
@@ -146,18 +147,14 @@ impl BedrockClient {
 
     fn validated_use_item_stack(
         player: &Player,
-        data: &UseItemTransactionData,
+        hand: Hand,
+        client_descriptor: &NetworkItemDescriptor,
     ) -> Option<ItemStack> {
-        let hand = match data.hand {
-            HandSlot::Mainhand => Hand::Right,
-            HandSlot::Offhand => Hand::Left,
-        };
         // ServerGamePacketListenerImpl.handleUseItemOn/handleUseItem use the server's held stack.
         // Validate before predicted actions can empty or transform the originating item.
         let held = player.inventory().get_stack_in_hand(hand);
         // Several Java items share a Bedrock ID, including sticks and debug sticks.
         let authoritative_descriptor = NetworkItemDescriptor::from(&held);
-        let client_descriptor = &data.item_in_hand;
         if client_descriptor.id.0 != 0
             && client_descriptor.stack_size != 0
             && client_descriptor.id != authoritative_descriptor.id
@@ -176,21 +173,52 @@ impl BedrockClient {
         tracing::debug!("handle_inventory_action: packet={:?}", packet);
         let mut source_selected_slot = player.inventory().get_selected_slot();
         let mut origin_screen_slot = None;
+        let mut release_hand = None;
         let use_item_stack = match &packet.transaction_data {
             TransactionData::UseItem(data) if matches!(data.action_type.0, 0 | 1) => {
-                let Some(selected) = self.reconcile_use_item_selection(player, data) else {
+                let Some(selected) =
+                    self.reconcile_use_item_selection(player, data.hot_bar_slot.0, data.hand)
+                else {
                     return;
                 };
                 source_selected_slot = selected;
-                let Some(stack) = Self::validated_use_item_stack(player, data) else {
-                    return;
-                };
                 let hand = match data.hand {
                     HandSlot::Mainhand => Hand::Right,
                     HandSlot::Offhand => Hand::Left,
                 };
+                let Some(stack) = Self::validated_use_item_stack(player, hand, &data.item_in_hand)
+                else {
+                    return;
+                };
                 origin_screen_slot = hand_screen_handler_slot(hand, source_selected_slot);
                 Some(stack)
+            }
+            TransactionData::UseItemOnEntity(data) => {
+                let Some(selected) = self.reconcile_use_item_selection(
+                    player,
+                    data.hot_bar_slot.0,
+                    HandSlot::Mainhand,
+                ) else {
+                    return;
+                };
+                source_selected_slot = selected;
+                origin_screen_slot = hand_screen_handler_slot(Hand::Right, source_selected_slot);
+                let Some(stack) =
+                    Self::validated_use_item_stack(player, Hand::Right, &data.item_in_hand)
+                else {
+                    return;
+                };
+                Some(stack)
+            }
+            TransactionData::ReleaseItem(_) => {
+                release_hand = *player
+                    .living_entity
+                    .active_hand
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let hand = release_hand.unwrap_or(Hand::Right);
+                origin_screen_slot = hand_screen_handler_slot(hand, source_selected_slot);
+                Some(player.inventory().get_stack_in_hand(hand))
             }
             _ => None,
         };
@@ -269,7 +297,7 @@ impl BedrockClient {
                 if let Some(screen_slot) =
                     map_bedrock_slot_to_screen_handler(window_id, action.inventory_slot)
                 {
-                    // ServerPlayerGameMode.useItem/useItemOn consumes the server stack once.
+                    // ServerPlayerGameMode.useItem/useItemOn and Player.interactOn consume the server stack once.
                     if origin_screen_slot == Some(screen_slot) {
                         continue;
                     }
@@ -311,6 +339,8 @@ impl BedrockClient {
             self.send_player_inventory_content(player);
         }
 
+        // Bundled actions have published; retain both hands before gameplay callbacks.
+        let hands_before_use = LiveHands::read(player);
         match packet.transaction_data {
             TransactionData::Normal(_data) => {
                 // Actions are already applied to the inventory screen handler above.
@@ -366,6 +396,7 @@ impl BedrockClient {
                         hand,
                         source_selected_slot,
                         &before_block_use,
+                        &hands_before_use,
                     ) else {
                         return;
                     };
@@ -392,6 +423,7 @@ impl BedrockClient {
                             source_selected_slot,
                             &before_block_use,
                             &held_item,
+                            &hands_before_use,
                         );
                         return;
                     }
@@ -405,6 +437,7 @@ impl BedrockClient {
                             hand,
                             source_selected_slot,
                             &before_block_use,
+                            &hands_before_use,
                         )
                         .is_none()
                         {
@@ -429,6 +462,7 @@ impl BedrockClient {
                                 source_selected_slot,
                                 &before_block_use,
                                 &held_item,
+                                &hands_before_use,
                             );
                             return;
                         }
@@ -448,6 +482,7 @@ impl BedrockClient {
                             hand,
                             source_selected_slot,
                             &before_block_use,
+                            &hands_before_use,
                         )
                         .is_none()
                         {
@@ -504,6 +539,7 @@ impl BedrockClient {
                         source_selected_slot,
                         &before_block_use,
                         &stack,
+                        &hands_before_use,
                     );
                     if placement_denied {
                         self.correct_denied_placement(player, data.block_position, face);
@@ -522,6 +558,7 @@ impl BedrockClient {
                         hand,
                         source_selected_slot,
                         &before_actions,
+                        &hands_before_use,
                     ) else {
                         return;
                     };
@@ -534,8 +571,14 @@ impl BedrockClient {
                         );
                     }
 
-                    if Self::stack_for_hand_use(player, hand, source_selected_slot, &before_actions)
-                        .is_none()
+                    if Self::stack_for_hand_use(
+                        player,
+                        hand,
+                        source_selected_slot,
+                        &before_actions,
+                        &hands_before_use,
+                    )
+                    .is_none()
                     {
                         return;
                     }
@@ -605,40 +648,24 @@ impl BedrockClient {
                                     !current_equipped.are_items_and_components_equal(&held)
                                 };
                                 if should_change {
-                                    player.enqueue_equipment_change(equippable.slot, &held);
-                                    if Self::stack_for_hand_use(
+                                    let slot = equippable.slot;
+                                    let Some((new_held, equipped)) = Self::equip_admitted_hand(
                                         player,
                                         hand,
                                         source_selected_slot,
                                         &held,
-                                    )
-                                    .is_none()
-                                    {
+                                        slot,
+                                    ) else {
+                                        Self::sync_live_hands(
+                                            player,
+                                            hand,
+                                            source_selected_slot,
+                                            &hands_before_use,
+                                        );
                                         return;
-                                    }
-
-                                    let inventory = player.inventory();
-                                    let mut equipment_guard = inventory
-                                        .entity_equipment
-                                        .lock()
-                                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                    let equip_item = equipment_guard
-                                        .equipment
-                                        .entry(equippable.slot.clone())
-                                        .or_insert_with(|| ItemStack::EMPTY.clone());
-                                    if equip_item.is_empty() {
-                                        *equip_item = held.clone();
-                                        held.decrement_unless_creative(player.gamemode.load(), 1);
-                                    } else {
-                                        let old_held = held.clone();
-                                        held = equip_item.clone();
-                                        *equip_item = old_held;
-                                    }
-                                    drop(equipment_guard);
-                                    player.inventory().set_stack(
-                                        hand_inventory_slot(hand, source_selected_slot),
-                                        held.clone(),
-                                    );
+                                    };
+                                    held = new_held;
+                                    player.enqueue_equipment_change(slot, &equipped);
                                 }
                             }
                         }
@@ -649,120 +676,38 @@ impl BedrockClient {
                         event;
                         'after: {
                             if Self::stack_for_hand_use(
-                                player, hand, source_selected_slot, &held,
-                            ).is_none() {
+                                player, hand, source_selected_slot, &held, &hands_before_use).is_none() {
                                 return;
                             }
                             server.item_registry.on_use(&stack_for_use, player, hand);
                         }
                     }}
                     // Publish the final authoritative hand after use or cancellation.
-                    Self::sync_live_hands(player, hand, source_selected_slot);
+                    Self::sync_live_hands(player, hand, source_selected_slot, &hands_before_use);
                 }
             }
             TransactionData::UseItemOnEntity(data) => {
-                let action = match data.action_type.0 {
-                    // Bedrock does not distinguish an entity hit position here. ItemInteract is
-                    // therefore exposed as the general Interact action rather than InteractAt.
-                    0 | 2 => ActionType::Interact,
-                    1 => ActionType::Attack,
-                    action => {
-                        tracing::warn!("invalid UseItemOnEntity action type {action}");
-                        return;
-                    }
-                };
-                let Ok(target_runtime_id) = i32::try_from(data.target_entity_runtime_id.0) else {
-                    tracing::warn!(
-                        "invalid UseItemOnEntity target runtime ID {}",
-                        data.target_entity_runtime_id.0
+                if let Some(before) = use_item_stack {
+                    Self::interact_entity_with_admitted_hand(
+                        player,
+                        &data,
+                        source_selected_slot,
+                        &before,
                     );
-                    return;
-                };
-
-                let world = player.world();
-                let Some(target) = world.get_entity_by_id(target_runtime_id) else {
-                    return;
-                };
-                let Some(server) = world.server.upgrade() else {
-                    return;
-                };
-
-                if player.is_spectator() {
-                    return;
-                }
-
-                let mut event = PlayerInteractEntityEvent::new(
-                    player,
-                    target.clone(),
-                    action,
-                    None,
-                    player.get_entity().is_sneaking(),
-                );
-                server.plugin_manager.fire_blocking(&server, &mut event);
-                if event.cancelled {
-                    return;
-                }
-
-                match event.action {
-                    ActionType::Interact | ActionType::InteractAt => {
-                        let source_slot =
-                            crate::net::java::play::hand_use_result::hand_slot(player, Hand::Right);
-                        let mut stack = player.inventory().held_item();
-                        let item_id = stack.item.id;
-                        let before = stack.clone();
-                        let interacted =
-                            event
-                                .target
-                                .interact_with_hand(player, &mut stack, Hand::Right);
-                        let stand_swap = interacted
-                            && event
-                                .target
-                                .cast_any()
-                                .is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
-                        if !interacted {
-                            server
-                                .item_registry
-                                .use_on_entity(&mut stack, player, event.target);
-                        }
-                        if !stack.are_equal(&before) {
-                            if !stand_swap {
-                                player.increment_stat(
-                                    pumpkin_data::statistic::StatisticCategory::Used,
-                                    item_id as i32,
-                                    1,
-                                );
-                            }
-                        }
-                        crate::net::java::play::hand_use_result::write_back_and_sync_hand_item(
-                            player,
-                            Hand::Right,
-                            source_slot,
-                            &before,
-                            &stack,
-                            if stand_swap {
-                                crate::net::java::play::hand_use_result::HandMutation::EquipmentTransfer
-                            } else {
-                                crate::net::java::play::hand_use_result::HandMutation::ItemUse
-                            },
-                        );
-                    }
-                    ActionType::Attack => player.attack(&event.target),
+                    Self::sync_live_hands(
+                        player,
+                        Hand::Right,
+                        source_selected_slot,
+                        &hands_before_use,
+                    );
                 }
             }
-            TransactionData::ReleaseItem(_data) => {
-                let item_in_use = player
-                    .living_entity
-                    .item_in_use
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone();
-                if let Some(stack) = item_in_use {
-                    let Some(server) = player.world().server.upgrade() else {
-                        return;
-                    };
-                    server.item_registry.on_stopped_using(&stack, player);
+            TransactionData::ReleaseItem(_) => {
+                let hand = release_hand.unwrap_or(Hand::Right);
+                if let Some(before) = use_item_stack {
+                    Self::release_admitted_hand(player, hand, source_selected_slot, &before);
+                    Self::sync_live_hands(player, hand, source_selected_slot, &hands_before_use);
                 }
-                player.living_entity.clear_active_hand();
             }
         }
 
