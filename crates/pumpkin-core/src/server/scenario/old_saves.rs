@@ -189,8 +189,8 @@ async fn s7_vanilla_explicit_invulnerable_save_preserves_entity_flag() {
 }
 
 async fn sleep_timer_without_bed(legacy: bool) {
-    // Player.readAdditionalSaveData keeps a sleep counter; ServerPlayer.readAdditionalSaveData
-    // clears actual sleeping state. SleepTimer alone never establishes a sleeping player.
+    // Player.readAdditionalSaveData restores SleepTimer; Player::tick clears it because neither
+    // the old fork save nor this vanilla-shaped save has a bed.
     let scenario = Scenario::new().await;
     let id = Uuid::new_v4();
     let mut nbt = distinctive_player_save(legacy);
@@ -198,10 +198,10 @@ async fn sleep_timer_without_bed(legacy: bool) {
     write_save(&scenario, id, nbt);
     let player = scenario.join(id, "OldSleep").await;
     assert_save_restored(&player);
-    let sleeping = player.player.sleeping_since.load();
-    let night_skip = player.player.world().should_skip_night();
     assert!(player.player.sleeping_bed_pos.load().is_none());
     scenario.ticks(2).await;
+    let sleeping = player.player.sleeping_since.load();
+    let night_skip = player.player.world().should_skip_night();
     scenario.stop().await;
     assert!(
         sleeping.is_none(),
@@ -214,7 +214,6 @@ async fn sleep_timer_without_bed(legacy: bool) {
 }
 
 #[tokio::test]
-#[ignore = "known bug: audit row 35"]
 async fn s7_old_fork_sleep_timer_does_not_restore_sleeping() {
     run(async {
         sleep_timer_without_bed(true).await;
@@ -223,7 +222,6 @@ async fn s7_old_fork_sleep_timer_does_not_restore_sleeping() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: audit row 35"]
 async fn s7_vanilla_sleep_timer_does_not_restore_sleeping() {
     run(async {
         sleep_timer_without_bed(false).await;

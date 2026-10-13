@@ -1250,7 +1250,11 @@ pub fn is_valid_spawn_floor(state: &'static BlockState, entity_type: &'static En
     }
 }
 
-fn is_block_dangerous(entity_type: &'static EntityType, state: &'static BlockState) -> bool {
+/// Tests the vanilla entity type's block hazards, including its tag-based immunities.
+pub(crate) fn is_block_dangerous(
+    entity_type: &'static EntityType,
+    state: &'static BlockState,
+) -> bool {
     let block = Block::from_state_id(state.id);
     // EntityTypes.immuneTo registrations / EntityType.isBlockDangerous test immunity first.
     let immune_to = match entity_type.resource_name {

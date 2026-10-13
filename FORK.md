@@ -574,3 +574,7 @@ PR #145 Java conservation follow-up: eating and drinking claim the live hand bef
 ## split-102-dimension-infra: dimension bed rules
 
 The generated dimensions now include ordinary-bed and straw-bed `BedRule` data, including vanilla `destroy_on_use`, `destroy_on_leave` and error-message fields. The regression checks these values and respawn-anchor rules against vanilla 26.3 `BedRule` and `DimensionTypes.bootstrap`. Existing gameplay readers retain their prior output until `split-102-beds-r2` uses the new fields; this branch adds no gameplay behavior.
+
+## split-102-beds-r2: bed behavior
+
+Fork issues #24 and #153: ordinary and straw beds share vanilla head/foot lookup, sleep admission, occupied-state updates, safe wake positions and destruction rules. Vanilla 26.3 `BedRule` data selects whether each bed can set spawn, allow sleep, explode or be destroyed on use/leave. Replaced or missing bed heads use the vanilla above-bed wake fallback. Old fork and vanilla saves containing `SleepTimer` without a bed position clear that timer on the first player tick. Mirrors `AbstractBedBlock.useWithoutItem/updateShape/playerWillDestroy/setPlacedBy/findStandUpPosition`, `BedBlock.destroyOnUse`, `StrawBedBlock.getSleepHeight/destroyOnUse/destroyOnLeave`, `ServerPlayer.startSleepInBed`, and `LivingEntity.stopSleeping/tick/isInWall`. Includes the sleeping travel guards related to #164; recovery of an already displaced or persisted sleeper remains with the villager HOME/sleep lane. No saved format or plugin API change. In-game verification: **Not yet**.
