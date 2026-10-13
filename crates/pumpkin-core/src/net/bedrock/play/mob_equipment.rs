@@ -8,7 +8,14 @@ impl BedrockClient {
         player: &Arc<Player>,
         packet: &SMobEquipment,
     ) {
-        self.select_hotbar_slot(server, player, packet.selected_slot);
+        if !self.select_hotbar_slot(server, player, packet.selected_slot) {
+            // LivingEntity.detectEquipmentUpdates publishes the live selection after callbacks.
+            self.send_live_hotbar_selection(player);
+            let held = player.inventory().held_item();
+            player
+                .living_entity
+                .send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, held)]);
+        }
     }
 
     /// Reconciles selection through the held-item event and equipment publication.
@@ -29,19 +36,14 @@ impl BedrockClient {
         server.plugin_manager.fire_blocking(server, &mut event);
         // A held-item hook may itself select a slot. Preserve that newer selection.
         if event.cancelled || player.inventory().get_selected_slot() != previous_slot {
-            self.try_enqueue_client_packet(&CPlayerHotbar {
-                selected_slot: VarUInt(u32::from(player.inventory().get_selected_slot())),
-                container_id: 0,
-                should_select_slot: true,
-            });
+            self.send_live_hotbar_selection(player);
             return false;
         }
 
         let inv = player.inventory();
         inv.set_selected_slot(slot);
         let stack = inv.held_item();
-        let equipment = &[(EquipmentSlot::MAIN_HAND, stack)];
-        player.living_entity.send_equipment_changes(equipment);
+        player.enqueue_equipment_change(&EquipmentSlot::MAIN_HAND, &stack);
         player.inventory().get_selected_slot() == slot
     }
 }

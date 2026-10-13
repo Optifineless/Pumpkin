@@ -143,7 +143,8 @@ async fn empty_offhand_uses_block_beside_occupied_main_hand() {
         vec![],
         use_offhand(ItemStack::EMPTY, 0, position),
     );
-    assert!(LeverLikeProperties::from_state_id(world.get_block_state_id(&position)).powered);
+    // ServerPlayerGameMode.useItemOn only tries default block use for the main hand.
+    assert!(!LeverLikeProperties::from_state_id(world.get_block_state_id(&position)).powered);
     assert!(fixture.player.inventory().held_item().are_equal(&main));
     assert!(fixture.player.inventory().off_hand_item().is_empty());
     assert_conserved(before, &fixture.player, 0);
@@ -342,11 +343,11 @@ async fn main_hand_consumption_updates_only_selected_slot() {
     let mut observer = observer(&world, &fixture).await;
     let position = BlockPos::new(10, 63, 8);
     let before = stock(&fixture.player, &[]);
-    send_use(
-        &mut fixture,
-        vec![],
-        use_item(&held.copy_with_count(63), 0, position),
-    );
+    let mut data = use_item(&held.copy_with_count(63), 0, position);
+    if let TransactionData::UseItem(data) = &mut data {
+        data.hot_bar_slot = VarInt(3);
+    }
+    send_use(&mut fixture, vec![], data);
     assert_eq!(world.get_block(&position.up()), &Block::STONE);
     assert_eq!(fixture.player.inventory().held_item().item_count, 63);
     assert_conserved(before, &fixture.player, 1);
