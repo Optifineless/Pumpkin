@@ -13,6 +13,8 @@ use crate::{
     plugin::world::world_save::WorldSaveEvent,
     server::combat_test_support::{publish_empty_chunk, server, world},
 };
+#[cfg(debug_assertions)]
+use futures::FutureExt as _;
 use pumpkin_data::{
     Block, data_component::DataComponent, data_component_impl::DataComponentImpl, item::Item,
     item_stack::ItemStack,
@@ -22,6 +24,8 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use std::sync::Arc;
+#[cfg(debug_assertions)]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(debug_assertions)]
 async fn snapshot_boundary_case(case: usize) {
@@ -283,4 +287,204 @@ fn canonical_bytes(nbt: NbtCompound) -> Vec<u8> {
     writer.write_u8(pumpkin_nbt::COMPOUND_ID).unwrap();
     payload(NbtTag::Compound(nbt), &mut writer);
     bytes
+}
+
+#[cfg(debug_assertions)]
+struct ProbeJavaPacket(Arc<AtomicBool>);
+
+#[cfg(debug_assertions)]
+impl pumpkin_protocol::MultiVersionJavaPacket for ProbeJavaPacket {
+    fn to_id(_: pumpkin_util::version::JavaMinecraftVersion) -> i32 {
+        0
+    }
+}
+
+#[cfg(debug_assertions)]
+impl pumpkin_protocol::ClientPacket for ProbeJavaPacket {
+    fn write_packet_data(
+        &self,
+        _: impl std::io::Write,
+        _: &pumpkin_util::version::JavaMinecraftVersion,
+    ) -> Result<(), pumpkin_protocol::ser::WritingError> {
+        self.0.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+#[cfg(debug_assertions)]
+struct ProbeBedrockPacket;
+
+#[cfg(debug_assertions)]
+impl pumpkin_protocol::Packet for ProbeBedrockPacket {
+    const PACKET_ID: i32 = 0;
+}
+
+#[cfg(debug_assertions)]
+impl pumpkin_protocol::BClientPacket for ProbeBedrockPacket {
+    fn write_packet(&self, _: impl std::io::Write) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+}
+
+#[cfg(debug_assertions)]
+fn rejected_capture_boundary(expected: &str, operation: impl Fn() + Send + Sync + 'static) {
+    let capture = TestCapture(Arc::new(move |_| operation()));
+    rejected(
+        || {
+            let _ = capture_legacy(&capture);
+        },
+        expected,
+    );
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_editioned_packet_encoding_before_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path());
+    let world = world(&server, dir.path());
+    let player = TestPlayer::new(&world);
+    let client = player.player.client.clone();
+    let encoded = Arc::new(AtomicBool::new(false));
+    let packet = ProbeJavaPacket(encoded.clone());
+    rejected_capture_boundary("ClientPlatform::try_enqueue_packet_editioned", move || {
+        client.try_enqueue_packet_editioned(&packet, &ProbeBedrockPacket);
+    });
+    assert!(!encoded.load(Ordering::Relaxed));
+    world.level.shutdown().await.unwrap();
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_editioned_enqueue_before_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path());
+    let world = world(&server, dir.path());
+    let player = TestPlayer::new(&world);
+    let client = player.player.client.clone();
+    let encoded = Arc::new(AtomicBool::new(false));
+    let packet = ProbeJavaPacket(encoded.clone());
+    // Poll only the synchronous prefix, where the guard must run before serialization or await.
+    rejected_capture_boundary("ClientPlatform::enqueue_packet_editioned", move || {
+        let _ = client
+            .enqueue_packet_editioned(&packet, &ProbeBedrockPacket)
+            .now_or_never();
+    });
+    assert!(!encoded.load(Ordering::Relaxed));
+    world.level.shutdown().await.unwrap();
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_editioned_send_before_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path());
+    let world = world(&server, dir.path());
+    let player = TestPlayer::new(&world);
+    let client = player.player.client.clone();
+    let encoded = Arc::new(AtomicBool::new(false));
+    let packet = ProbeJavaPacket(encoded.clone());
+    rejected_capture_boundary("ClientPlatform::send_packet_now_editioned", move || {
+        let _ = client
+            .send_packet_now_editioned(&packet, &ProbeBedrockPacket)
+            .now_or_never();
+    });
+    assert!(!encoded.load(Ordering::Relaxed));
+    world.level.shutdown().await.unwrap();
+}
+
+#[cfg(debug_assertions)]
+async fn rejects_empty_recipient_broadcast(
+    expected: &'static str,
+    broadcast: impl Fn(&Arc<super::World>, &ProbeJavaPacket, &ProbeBedrockPacket)
+    + Send
+    + Sync
+    + 'static,
+) {
+    let fixture = super::spawn_test_support::Fixture::new();
+    let world = fixture.world.clone();
+    let encoded = Arc::new(AtomicBool::new(false));
+    let packet = ProbeJavaPacket(encoded.clone());
+    rejected_capture_boundary(expected, move || {
+        broadcast(&world, &packet, &ProbeBedrockPacket);
+    });
+    assert!(!encoded.load(Ordering::Relaxed));
+    fixture.finish().await;
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_except_broadcast_before_recipient_filtering() {
+    rejects_empty_recipient_broadcast("World::broadcast_packet_except", |world, packet, _| {
+        world.broadcast_packet_except(&[], packet);
+    })
+    .await;
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_editioned_except_broadcast_before_recipient_filtering() {
+    rejects_empty_recipient_broadcast(
+        "World::broadcast_packet_except_editioned",
+        |world, packet, bedrock| {
+            world.broadcast_packet_except_editioned(&[], packet, bedrock);
+        },
+    )
+    .await;
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_chunk_except_broadcast_before_recipient_filtering() {
+    rejects_empty_recipient_broadcast("World::broadcast_to_chunk_except", |world, packet, _| {
+        world.broadcast_to_chunk_except(
+            pumpkin_util::math::vector2::Vector2::new(0, 0),
+            &[],
+            packet,
+        );
+    })
+    .await;
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_editioned_chunk_except_broadcast_before_recipient_filtering() {
+    rejects_empty_recipient_broadcast(
+        "World::broadcast_to_chunk_except_editioned",
+        |world, packet, bedrock| {
+            world.broadcast_to_chunk_except_editioned(
+                pumpkin_util::math::vector2::Vector2::new(0, 0),
+                &[],
+                packet,
+                bedrock,
+            );
+        },
+    )
+    .await;
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn snapshot_rejects_chat_filter_boundary_before_callback() {
+    let fixture = super::spawn_test_support::Fixture::new();
+    let world = fixture.world.clone();
+    let called = Arc::new(AtomicBool::new(false));
+    let filter_called = called.clone();
+    let message = crate::net::chat::PlayerChatMessage::system("snapshot filter".into());
+    rejected_capture_boundary("World::broadcast_chat_message", move || {
+        let filter_called = filter_called.clone();
+        world.broadcast_chat_message(
+            &message,
+            move |_| {
+                filter_called.store(true, Ordering::Relaxed);
+                false
+            },
+            None,
+            0.into(),
+            &pumpkin_util::text::TextComponent::empty(),
+            None,
+        );
+    });
+    assert!(!called.load(Ordering::Relaxed));
+    fixture.finish().await;
 }

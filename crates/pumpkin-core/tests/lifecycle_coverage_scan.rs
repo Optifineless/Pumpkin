@@ -77,6 +77,14 @@ fn compare(actual: &BTreeMap<String, String>, manifest: &str) -> Vec<String> {
                 "invalid or prematurely certified lifecycle manifest row: {row}"
             ));
         }
+        if fields.get(2)
+            != Some(
+                &["Legacy", "BoundaryCheckedLegacy"]
+                    [usize::from(fields[0].starts_with("boundary:"))],
+            )
+        {
+            errors.push(format!("lifecycle status mismatch: {}", fields[0]));
+        }
     }
     for (key, fingerprint) in actual {
         match expected.get(key) {

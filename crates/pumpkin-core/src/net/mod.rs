@@ -233,6 +233,7 @@ impl ClientPlatform {
         je_packet: &J,
         be_packet: &B,
     ) {
+        assert_not_in_snapshot(SB::Packet, "ClientPlatform::enqueue_packet_editioned");
         match self {
             Self::Java(java) => {
                 if let Ok(data) = java.serialize_packet(je_packet) {
@@ -252,6 +253,7 @@ impl ClientPlatform {
         je_packet: &J,
         be_packet: &B,
     ) {
+        assert_not_in_snapshot(SB::Packet, "ClientPlatform::try_enqueue_packet_editioned");
         match self {
             Self::Java(java) => {
                 if let Ok(data) = java.serialize_packet(je_packet) {
@@ -313,6 +315,7 @@ impl ClientPlatform {
         je_packet: &J,
         be_packet: &B,
     ) {
+        assert_not_in_snapshot(SB::Packet, "ClientPlatform::send_packet_now_editioned");
         match self {
             Self::Java(java) => {
                 if let Ok(data) = java.serialize_packet(je_packet) {
