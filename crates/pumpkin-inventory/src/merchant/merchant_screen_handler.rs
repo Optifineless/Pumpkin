@@ -323,29 +323,31 @@ impl MerchantScreenHandler {
         true
     }
 
-    fn can_fully_insert(&self, stack: &ItemStack, start: usize, end: usize) -> bool {
-        let mut remaining = stack.item_count;
-        for slot in &self.get_behaviour().slots[start..end] {
-            if !slot.can_insert(stack) {
-                continue;
-            }
-            let existing = slot.get_cloned_stack();
-            let capacity = if existing.is_empty() {
-                slot.get_max_item_count_for_stack(stack)
-            } else if existing.are_items_and_components_equal(stack)
-                && stack.are_items_and_components_equal(&existing)
-            {
-                slot.get_max_item_count_for_stack(&existing)
-                    .saturating_sub(existing.item_count)
-            } else {
-                0
-            };
-            remaining = remaining.saturating_sub(capacity);
-            if remaining == 0 {
-                return true;
-            }
-        }
-        false
+    // MerchantMenu.quickMoveStack / MerchantResultSlot.onTake pay before publishing trade effects.
+    fn quick_move_result(&mut self, player: &dyn InventoryPlayer, output: &ItemStack) -> ItemStack {
+        let slots = self.get_behaviour().slots.clone();
+        let inventory = self.inventory.clone();
+        let committed = crate::menu_transfer::transfer_result(
+            &slots,
+            (inventory.as_ref(), 2, None),
+            output,
+            (3, slots.len() as i32, true),
+            true,
+            || {
+                let offer = self.offers.get(self.active_offer?)?;
+                if !offer.output.0.are_equal(output) {
+                    return None;
+                }
+                self.commit_payment()
+            },
+        );
+        let Some((offer_index, leftover)) = committed else {
+            return ItemStack::EMPTY.clone();
+        };
+        debug_assert!(leftover.is_empty());
+        self.publish_trade(offer_index, player);
+        self.update_result_slot();
+        output.clone()
     }
 
     fn move_from_inventory_to_payment_slot(&self, payment_slot: usize, cost: &ItemStack) {
@@ -472,20 +474,9 @@ impl ScreenHandler for MerchantScreenHandler {
         let player_slots_end = self.get_behaviour().slots.len() as i32;
 
         if slot_index == 2 {
-            if !self.can_fully_insert(
-                &stack,
-                PLAYER_INVENTORY_START as usize,
-                player_slots_end as usize,
-            ) || !self.transfer_item(
-                player,
-                slot.as_ref(),
-                &mut stack,
-                (PLAYER_INVENTORY_START, player_slots_end, true),
-                &mut original,
-            ) {
-                return ItemStack::EMPTY.clone();
-            }
-        } else if slot_index < PLAYER_INVENTORY_START {
+            return self.quick_move_result(player, &original);
+        }
+        if slot_index < PLAYER_INVENTORY_START {
             if !self.transfer_item(
                 player,
                 slot.as_ref(),
@@ -522,14 +513,6 @@ impl ScreenHandler for MerchantScreenHandler {
         let mut taken = original.clone();
         taken.set_count(original.item_count - stack.item_count);
         slot.on_take_item(player, &taken);
-        if slot_index == 2 {
-            slot.on_quick_move_crafted(stack, original.clone());
-            self.result_taken.store(false, Ordering::Relaxed);
-            if !self.complete_trade(player) {
-                return ItemStack::EMPTY.clone();
-            }
-            self.update_result_slot();
-        }
 
         original
     }

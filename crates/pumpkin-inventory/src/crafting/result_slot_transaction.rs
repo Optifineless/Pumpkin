@@ -14,7 +14,7 @@ impl RecipeProvider for RecipeSnapshot {
     }
 }
 
-/// Publishes the effects of a paid crafting transfer after releasing the menu guard.
+/// Holds the effects of a paid crafting transfer until inventory ownership is released.
 #[must_use = "Finish the crafting effects after releasing the menu guard"]
 pub struct CraftingCommit {
     grid: std::sync::Arc<dyn super::recipes::RecipeInputInventory>,
@@ -29,6 +29,11 @@ pub struct CraftingCommit {
 impl CraftingCommit {
     /// Publishes notifications, remainders and crafting statistics.
     pub fn finish(self, player: &dyn InventoryPlayer) {
+        self.publish(player);
+    }
+
+    // Java menu callers use InventoryPlayer's existing callback deferral; Bedrock releases its menu.
+    fn publish(self, player: &dyn InventoryPlayer) {
         for i in self.grid_slots {
             self.grid.on_slot_changed(i);
         }
@@ -106,19 +111,7 @@ impl ResultSlot {
         {
             return None;
         }
-        let simulation = CraftingInventory::new(
-            self.inventory.get_width().try_into().ok()?,
-            self.inventory.get_height().try_into().ok()?,
-        );
-        if simulation.size() != self.inventory.size() {
-            return None;
-        }
-        let mut expected = Vec::with_capacity(self.inventory.size());
-        for i in 0..self.inventory.size() {
-            let stack = self.inventory.get_stack(i);
-            simulation.set_stack(i, stack.clone());
-            expected.push(stack);
-        }
+        let (simulation, expected) = self.snapshot_inputs()?;
         let excess = Self::simulate_crafts(&simulation, &recipes, output, repetitions)?;
         if same_grid {
             if !simulation.get_stack(destination.get_index()).is_empty() {
@@ -147,6 +140,23 @@ impl ResultSlot {
             repetitions,
             excess,
         })
+    }
+
+    fn snapshot_inputs(&self) -> Option<(CraftingInventory, Vec<ItemStack>)> {
+        let simulation = CraftingInventory::new(
+            self.inventory.get_width().try_into().ok()?,
+            self.inventory.get_height().try_into().ok()?,
+        );
+        if simulation.size() != self.inventory.size() {
+            return None;
+        }
+        let mut expected = Vec::with_capacity(self.inventory.size());
+        for i in 0..self.inventory.size() {
+            let stack = self.inventory.get_stack(i);
+            simulation.set_stack(i, stack.clone());
+            expected.push(stack);
+        }
+        Some((simulation, expected))
     }
 
     fn apply_crafting_inputs(
@@ -194,5 +204,55 @@ impl ResultSlot {
             }
         }
         Some(excess)
+    }
+}
+
+impl ResultSlot {
+    // CraftingMenu / InventoryMenu.quickMoveStack and ResultSlot.onTake are one paid click.
+    pub(crate) fn commit_quick_move(
+        &self,
+        player: &dyn InventoryPlayer,
+        slots: &[std::sync::Arc<dyn Slot>],
+        range: (i32, i32, bool),
+    ) -> ItemStack {
+        // Recipe providers may call plugins, so snapshot before acquiring inventory owners.
+        let recipes = RecipeSnapshot(
+            self.recipe_provider
+                .as_ref()
+                .map_or_else(Vec::new, |provider| provider.get_dynamic_recipes()),
+        );
+        let output = self.result.get_stack(0);
+        let committed = crate::menu_transfer::transfer_result(
+            slots,
+            (self.result.as_ref(), 0, Some(self.inventory.as_ref())),
+            &output,
+            range,
+            false,
+            || {
+                let (simulation, expected) = self.snapshot_inputs()?;
+                let excess = Self::simulate_crafts(&simulation, &recipes, &output, 1)?;
+                let changed = self.apply_crafting_inputs(&simulation, &expected);
+                Some((changed, excess))
+            },
+        );
+        let Some(((grid_slots, excess), leftover)) = committed else {
+            return ItemStack::EMPTY.clone();
+        };
+        let crafted = output.copy_with_count(output.item_count - leftover.item_count);
+        CraftingCommit {
+            grid: self.inventory.clone(),
+            target: self.result.clone(),
+            target_slot: None,
+            grid_slots,
+            output: crafted,
+            repetitions: 1,
+            excess,
+        }
+        .publish(player);
+        self.refill_output();
+        if !leftover.is_empty() {
+            player.drop_item(leftover, false);
+        }
+        output
     }
 }
