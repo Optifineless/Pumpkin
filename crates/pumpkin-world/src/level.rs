@@ -611,9 +611,9 @@ impl Level {
         self.game_time.store(game_time, Ordering::Relaxed);
     }
 
-    fn unpack_chunk_ticks(&self, chunk: &SyncChunk) {
-        chunk.block_ticks.unpack(self.game_time.clone());
-        chunk.fluid_ticks.unpack(self.game_time.clone());
+    fn bind_chunk_tick_clocks(&self, chunk: &SyncChunk) {
+        chunk.block_ticks.bind_clock(self.game_time.clone());
+        chunk.fluid_ticks.bind_clock(self.game_time.clone());
     }
 
     pub fn clean_entity_chunk(self: &Arc<Self>, chunk: &Vector2<i32>) {
@@ -662,7 +662,7 @@ impl Level {
             return Ok(res);
         }
         let chunk = self.fetch_chunk(pos).await?;
-        self.unpack_chunk_ticks(&chunk);
+        self.bind_chunk_tick_clocks(&chunk);
         if self.loaded_chunks.insert(pos, chunk.clone()).is_none() {
             self.loaded_chunk_changes
                 .push(LoadedChunkChange::Loaded(pos));
@@ -1031,7 +1031,7 @@ impl Level {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
-                self.unpack_chunk_ticks(chunk);
+                self.bind_chunk_tick_clocks(chunk);
                 chunk.block_ticks.schedule_tick(&scheduled_tick, tick_order);
             })
             .is_some()
@@ -1063,7 +1063,7 @@ impl Level {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
-                self.unpack_chunk_ticks(chunk);
+                self.bind_chunk_tick_clocks(chunk);
                 chunk.fluid_ticks.schedule_tick(&scheduled_tick, tick_order);
             })
             .is_some()

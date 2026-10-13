@@ -166,6 +166,23 @@ impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
     }
 }
 
+#[cfg(test)]
+impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
+    pub(crate) fn pause_next_publication_for_test(
+        &self,
+        started: tokio::sync::oneshot::Sender<()>,
+        resume: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        *self.publication_pause.lock().unwrap() = Some((started, resume));
+    }
+
+    pub(crate) async fn retained_region_counts_for_test(&self) -> (usize, usize) {
+        let cached = self.file_locks.read().await.len();
+        let pending = self.pending.lock().unwrap().regions.len();
+        (cached, pending)
+    }
+}
+
 impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
     /// Returns the serializer for `path`, inserting a lazy-loader if absent.
     ///

@@ -114,7 +114,7 @@ fn terrain_unload_cannot_remove_a_replacement_incarnation() {
     assert!(schedule.chunk_map.contains_key(&pos));
 }
 
-fn scheduler() -> (
+pub(super) fn scheduler() -> (
     GenerationSchedule,
     tokio::sync::mpsc::Receiver<Vec<ChunkPos>>,
 ) {
