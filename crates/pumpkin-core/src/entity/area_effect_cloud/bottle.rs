@@ -7,7 +7,7 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
     statistic::StatisticCategory,
 };
-use pumpkin_util::{GameMode, Hand};
+use pumpkin_util::Hand;
 
 /// BottleItem.use's dragon-breath branch, before the ordinary water raycast.
 pub fn try_bottle(player: &Player, hand: Hand) -> bool {
@@ -25,11 +25,14 @@ pub fn try_bottle(player: &Player, hand: Hand) -> bool {
     else {
         return false;
     };
-    let mut held = player.inventory().get_stack_in_hand(hand);
-    let expected = held.clone();
+    let held = player.inventory().get_stack_in_hand(hand);
     if held.is_empty() || held.item != &Item::GLASS_BOTTLE {
         return false;
     }
+    let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, &held) else {
+        return false;
+    };
+    // BottleItem.use claims the bottle and shrinks the cloud in one serial operation.
     cloud.set_radius(cloud.radius() - 0.5);
     world.play_sound(
         Sound::ItemBottleFillDragonbreath,
@@ -41,31 +44,13 @@ pub fn try_bottle(player: &Player, hand: Hand) -> bool {
         player.position(),
     );
     player.increment_stat(StatisticCategory::Used, i32::from(Item::GLASS_BOTTLE.id), 1);
-    let mut result = ItemStack::new(1, &Item::DRAGON_BREATH);
-    // ItemUtils.createFilledResult limits creative inventory additions to one matching stack.
-    if player.gamemode.load() == GameMode::Creative {
-        if !player.inventory().contains_item(&Item::DRAGON_BREATH) {
-            player.inventory().insert_stack_anywhere(&mut result);
-        }
-    } else if held.item_count == 1 {
-        if !player
-            .inventory()
-            .exchange_stack_in_hand(hand, &expected, result)
-        {
-            return false;
-        }
-    } else {
-        held.decrement_unless_creative(player.gamemode.load(), 1);
-        if !player
-            .inventory()
-            .exchange_stack_in_hand(hand, &expected, held)
-        {
-            return false;
-        }
-        player.inventory().insert_stack_anywhere(&mut result);
-        if !result.is_empty() {
-            world.drop_stack(&player.position().to_block_pos(), result);
-        }
-    }
+    crate::item::item_utils::finish_claimed_result(
+        player,
+        hand,
+        &held,
+        &receipt,
+        ItemStack::new(1, &Item::DRAGON_BREATH),
+        true,
+    );
     true
 }
