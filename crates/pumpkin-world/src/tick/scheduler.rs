@@ -14,7 +14,8 @@ use pumpkin_util::sync::{LockClass, Mutex};
 enum SchedulerState {}
 impl LockClass for SchedulerState {
     const NAME: &'static str = "scheduled tick container";
-    const LEVEL: u8 = 30;
+    // Final unload holds ticket state 30 before freezing; all other callers release tickets first.
+    const LEVEL: u8 = 31;
 }
 enum SaveObservation {}
 impl LockClass for SaveObservation {
@@ -137,14 +138,14 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         let _ = self.game_time.set(game_time);
     }
 
-    /// Retains relative save delays after the chunk leaves the loaded owner.
+    /// Retains relative save delays before the chunk leaves the loaded owner.
     pub(crate) fn freeze_for_unload(&self, current_tick: i64) {
         let mut guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let inner = guard.get_or_insert_with(Box::default);
-        // ChunkMap.scheduleUnload detaches the container before freezing its saved image.
+        // ChunkMap.scheduleUnload freezes its saved image before ServerLevel.unload.
         // Stale collectors and producers must never reactivate this object.
         inner.retired = true;
         self.update_next_trigger(inner);
