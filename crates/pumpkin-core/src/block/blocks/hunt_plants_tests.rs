@@ -86,6 +86,13 @@ impl Fixture {
     }
 
     fn tick(&self) {
+        // ServerLevel.tickTime advances game time before LevelTicks.tick collects work.
+        let game_time = {
+            let mut time = self.world.level_time.lock().unwrap();
+            time.tick(self.world.level_info.load().game_rules.advance_time);
+            time.world_age
+        };
+        self.world.level.set_game_time(game_time);
         let active = FxHashSet::from_iter([Vector2::new(0, 0)]);
         let data = self.world.level.get_tick_data(&active, 0);
         for tick in data.block_ticks {

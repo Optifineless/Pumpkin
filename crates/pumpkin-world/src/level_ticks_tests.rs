@@ -2,20 +2,55 @@ use super::*;
 use crate::chunk::format::anvil::{SingleChunkDataSerializer, WORLD_DATA_VERSION};
 use crate::tick::TickPriority;
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
+use std::{
+    future::{Future, poll_fn},
+    ops::Deref,
+    task::Poll,
+    time::Duration,
+};
 
 const CHUNK: Vector2<i32> = Vector2::new(0, 0);
 const BLOCK_POS: BlockPos = BlockPos::new(0, 64, 0);
+const MAX_ASYNC_POLLS: usize = 10_000;
 
-fn level(path: &std::path::Path) -> Arc<Level> {
-    Level::from_root_folder(
-        &LevelConfig {
-            lighting: pumpkin_config::lighting::LightingEngineConfig::Full,
-            ..LevelConfig::default()
-        },
+struct TestLevel(Arc<Level>);
+
+impl Deref for TestLevel {
+    type Target = Arc<Level>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for TestLevel {
+    fn drop(&mut self) {
+        // An assertion failure must also stop the native scheduler before runtime teardown.
+        self.cancel_token.cancel();
+        self.shut_down_chunk_system.store(true, Ordering::Relaxed);
+        self.level_channel.notify();
+    }
+}
+
+fn level(path: &std::path::Path) -> TestLevel {
+    TestLevel(Level::from_root_folder(
+        &LevelConfig::default(),
         path.into(),
         0,
         Dimension::OVERWORLD,
-    )
+    ))
+}
+
+async fn bounded<F: Future>(operation: &str, future: F) -> F::Output {
+    let mut future = std::pin::pin!(future);
+    for _ in 0..MAX_ASYNC_POLLS {
+        if let Poll::Ready(result) = poll_fn(|cx| Poll::Ready(future.as_mut().poll(cx))).await {
+            return result;
+        }
+        // Let filesystem and native scheduler workers run between counted polls.
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    panic!("{operation} remained pending after {MAX_ASYNC_POLLS} polls");
 }
 
 fn active() -> FxHashSet<Vector2<i32>> {
@@ -24,6 +59,9 @@ fn active() -> FxHashSet<Vector2<i32>> {
 
 fn insert_empty(level: &Level) -> SyncChunk {
     let chunk = ChunkData::empty_sync(CHUNK.x, CHUNK.y);
+    // SerializableChunkData.parse/read preserves isLightOn for a completed full chunk.
+    // Unlit fixtures enter terrain generation, which requires a world portal.
+    chunk.light_populated.store(true, Ordering::Relaxed);
     level.unpack_chunk_ticks(&chunk);
     level.loaded_chunks.insert(CHUNK, chunk.clone());
     chunk
@@ -60,7 +98,7 @@ async fn scheduled_time_long_and_short_ticks_resume_on_first_simulated_tick() {
     assert_eq!(resumed.fluid_ticks.len(), 1);
     assert_eq!(resumed.block_ticks[0].position, BLOCK_POS);
     assert!(!level.chunks_with_scheduled_ticks.contains(&CHUNK));
-    level.shutdown().await.unwrap();
+    bounded("level shutdown", level.shutdown()).await.unwrap();
 }
 
 #[tokio::test]
@@ -76,7 +114,7 @@ async fn scheduled_time_saved_delay_includes_unsimulated_game_ticks() {
     level.get_tick_data(&FxHashSet::default(), 0);
     assert_eq!(saved_delay(&chunk, "block_ticks"), 4000);
     assert_eq!(saved_delay(&chunk, "fluid_ticks"), -995);
-    level.shutdown().await.unwrap();
+    bounded("level shutdown", level.shutdown()).await.unwrap();
 }
 
 #[tokio::test]
@@ -92,21 +130,23 @@ async fn scheduled_time_overdue_save_reloads_through_chunk_load_and_runs_immedia
     assert_eq!(saved_delay(&chunk, "block_ticks"), -1000);
     assert_eq!(saved_delay(&chunk, "fluid_ticks"), -5995);
     chunk.mark_dirty(true);
-    old.chunk_saver
-        .save_chunks(&old.level_folder, vec![(CHUNK, chunk)])
-        .await
-        .unwrap();
-    old.shutdown().await.unwrap();
+    bounded(
+        "overdue chunk save",
+        old.chunk_saver
+            .save_chunks(&old.level_folder, vec![(CHUNK, chunk)]),
+    )
+    .await
+    .unwrap();
+    bounded("old level shutdown", old.shutdown()).await.unwrap();
     drop(old);
 
     let loaded = level(dir.path());
     loaded.set_game_time(20_000);
-    tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+    bounded(
+        "overdue chunk load (saved full chunk must be lit)",
         loaded.get_or_fetch_chunk(CHUNK, |_| ()),
     )
     .await
-    .unwrap()
     .unwrap();
     assert!(
         loaded
@@ -117,7 +157,9 @@ async fn scheduled_time_overdue_save_reloads_through_chunk_load_and_runs_immedia
     let due = loaded.get_tick_data(&active(), 0);
     assert_eq!(due.block_ticks.len(), 1);
     assert_eq!(due.fluid_ticks.len(), 1);
-    loaded.shutdown().await.unwrap();
+    bounded("loaded level shutdown", loaded.shutdown())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -138,7 +180,7 @@ async fn scheduled_time_marker_survives_schedule_between_empty_check_and_remove(
     assert!(level.chunks_with_scheduled_ticks.contains(&CHUNK));
     level.set_game_time(2);
     assert_eq!(level.get_tick_data(&active(), 0).fluid_ticks.len(), 1);
-    level.shutdown().await.unwrap();
+    bounded("level shutdown", level.shutdown()).await.unwrap();
 }
 
 #[tokio::test]
@@ -151,6 +193,7 @@ async fn scheduled_time_old_fork_and_vanilla_tick_lists_load_with_relative_delay
     root.put_int("xPos", CHUNK.x);
     root.put_int("zPos", CHUNK.y);
     root.put_string("Status", "minecraft:full".into());
+    root.put_bool("isLightOn", true);
     root.put_list("sections", vec![]);
     let tick_list = |id: &str| {
         [-4, 0, 17]
@@ -179,18 +222,20 @@ async fn scheduled_time_old_fork_and_vanilla_tick_lists_load_with_relative_delay
         .unwrap(),
     );
     chunk.mark_dirty(true);
-    level
-        .chunk_saver
-        .save_chunks(&level.level_folder, vec![(CHUNK, chunk)])
-        .await
-        .unwrap();
+    bounded(
+        "old fork and vanilla chunk save",
+        level
+            .chunk_saver
+            .save_chunks(&level.level_folder, vec![(CHUNK, chunk)]),
+    )
+    .await
+    .unwrap();
     level.set_game_time(1000);
-    tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+    bounded(
+        "old fork and vanilla chunk load (saved full chunk must be lit)",
         level.get_or_fetch_chunk(CHUNK, |_| ()),
     )
     .await
-    .unwrap()
     .unwrap();
     let due = level.get_tick_data(&active(), 0);
     assert_eq!(
@@ -207,7 +252,7 @@ async fn scheduled_time_old_fork_and_vanilla_tick_lists_load_with_relative_delay
     let due = level.get_tick_data(&active(), 0);
     assert_eq!(due.block_ticks[0].position.0.x, 2);
     assert_eq!(due.fluid_ticks.len(), 1);
-    level.shutdown().await.unwrap();
+    bounded("level shutdown", level.shutdown()).await.unwrap();
 }
 
 #[tokio::test]
@@ -245,5 +290,5 @@ async fn scheduled_time_catchup_keeps_future_wheel_slots_and_vanilla_container_o
         level.get_tick_data(&active, 0).block_ticks[0].position,
         future
     );
-    level.shutdown().await.unwrap();
+    bounded("level shutdown", level.shutdown()).await.unwrap();
 }

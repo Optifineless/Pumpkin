@@ -114,6 +114,13 @@ impl RuntimeFixture {
 
     pub fn advance(&self, count: u8) {
         for _ in 0..count {
+            // ServerLevel.tickTime advances game time before LevelTicks.tick collects work.
+            let game_time = {
+                let mut time = self.world.level_time.lock().unwrap();
+                time.tick(self.world.level_info.load().game_rules.advance_time);
+                time.world_age
+            };
+            self.world.level.set_game_time(game_time);
             self.world.tick_chunks(&self.server);
         }
     }
