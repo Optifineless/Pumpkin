@@ -56,6 +56,7 @@ pub mod giant;
 pub mod guardian;
 pub mod hoglin;
 pub mod illusioner;
+pub(crate) mod interaction;
 pub mod magma_cube;
 pub mod movement;
 pub mod neutral;
@@ -1263,6 +1264,21 @@ pub trait Mob: EntityBase + Send + Sync {
         self.get_mob_entity().mob_interact(player, item_stack)
     }
 
+    /// Mirrors `Mob.interact` passing the selected hand to `mobInteract`.
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: pumpkin_util::Hand,
+    ) -> bool {
+        let interaction = interaction::MobInteraction::new(player, item_stack, hand);
+        let interacted = self.mob_interact(player, item_stack);
+        if interacted {
+            interaction.finish(player, item_stack);
+        }
+        interacted
+    }
+
     fn tame(&self, player: &Arc<Player>) {
         let mob = self.get_mob_entity();
         let mut event = crate::plugin::api::events::entity::entity_tame::EntityTameEvent::new(
@@ -1564,7 +1580,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         hand: pumpkin_util::Hand,
     ) -> bool {
         crate::entity::shearable::interact_with_hand(self, player, item_stack, hand)
-            .unwrap_or_else(|| self.mob_interact(player, item_stack))
+            .unwrap_or_else(|| self.mob_interact_with_hand(player, item_stack, hand))
     }
 
     fn interact_at_with_hand(
