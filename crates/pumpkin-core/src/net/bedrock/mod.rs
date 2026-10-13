@@ -1,3 +1,4 @@
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 pub mod nethernet;
 pub mod play;
 pub(crate) mod recipe;
@@ -446,10 +447,12 @@ impl BedrockClient {
 
     #[allow(clippy::unused_async)]
     pub async fn enqueue_packet(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::enqueue_packet");
         self.try_enqueue_packet_data(packet_data);
     }
 
     pub fn try_enqueue_packet(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::try_enqueue_packet");
         self.try_enqueue_packet_data(packet_data);
     }
 
@@ -461,10 +464,12 @@ impl BedrockClient {
     /// * `packet_data`: A `Bytes` payload representing the encoded packet.
     #[allow(clippy::unused_async)]
     pub async fn enqueue_packet_data(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::enqueue_packet_data");
         self.try_enqueue_packet_data(packet_data);
     }
 
     pub fn try_enqueue_packet_data(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::try_enqueue_packet_data");
         if self.is_closed() {
             return;
         }
@@ -531,6 +536,7 @@ impl BedrockClient {
     }
 
     pub async fn send_packet<P: BClientPacket>(&self, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::send_packet");
         let mut data = Vec::new();
         match self.write_game_packet(packet, &mut data).await {
             Ok(()) => self.send_game_packet(data.into()).await,
@@ -539,6 +545,7 @@ impl BedrockClient {
     }
 
     pub async fn enqueue_client_packet<P: BClientPacket>(&self, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::enqueue_client_packet");
         let mut data = Vec::new();
         match self.write_game_packet(packet, &mut data).await {
             Ok(()) => self.enqueue_packet(data.into()).await,
@@ -547,6 +554,7 @@ impl BedrockClient {
     }
 
     pub fn try_enqueue_client_packet<P: BClientPacket>(&self, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::try_enqueue_client_packet");
         match self.serialize_packet(packet) {
             Ok(data) => self.try_enqueue_packet(data),
             Err(err) => error!("Failed to serialize Bedrock packet: {err}"),
@@ -554,6 +562,7 @@ impl BedrockClient {
     }
 
     pub async fn send_game_packet(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "BedrockClient::send_game_packet");
         if self.is_closed() {
             return;
         }

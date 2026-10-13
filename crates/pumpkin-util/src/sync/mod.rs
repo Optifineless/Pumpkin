@@ -21,8 +21,14 @@
 use std::marker::PhantomData;
 use std::sync::{LockResult, TryLockResult};
 
+mod snapshot_scope;
+#[cfg(test)]
+mod snapshot_scope_tests;
 #[cfg(test)]
 mod tests;
+pub use snapshot_scope::{
+    CaptureIdentity, OwnLock, SnapshotBoundary, SnapshotCall, SnapshotScope, assert_not_in_snapshot,
+};
 #[cfg(debug_assertions)]
 mod tracking;
 
