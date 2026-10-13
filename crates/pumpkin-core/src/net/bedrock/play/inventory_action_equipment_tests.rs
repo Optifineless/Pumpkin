@@ -56,7 +56,6 @@ async fn transaction_moves_a_shared_modifier_between_hands() -> TestResult {
         })
         .ok_or("sword attack modifier")?;
     assert_eq!(attack.operation, Operation::AddValue);
-    let expected_attack = 2.0 + attack.amount;
     let mut off = sword.clone();
     let mut off_modifier = attack.clone();
     off_modifier.slot = AttributeModifierSlot::OffHand;
@@ -73,6 +72,7 @@ async fn transaction_moves_a_shared_modifier_between_hands() -> TestResult {
     player
         .living_entity
         .send_equipment_changes(&[(EquipmentSlot::OFF_HAND, off.clone())]);
+    fixture.owner.player.tick(&fixture.world.server);
     assert_eq!(
         player
             .living_entity
@@ -112,18 +112,29 @@ async fn transaction_moves_a_shared_modifier_between_hands() -> TestResult {
     fixture
         .verify_and_close(|fixture| {
             let player = &fixture.owner.player;
-            assert!(player.inventory().held_item().are_equal(&sword));
-            assert!(player.inventory().off_hand_item().is_empty());
-            assert_eq!(player.inventory().count_item(&Item::IRON_SWORD), 1);
-            // LivingEntity.collectEquipmentChanges removes both old hands before installing new ones.
+            // #169: a legacy descriptor swap is prediction-only, including its modifiers.
+            assert!(player.inventory().held_item().is_empty());
+            assert!(player.inventory().off_hand_item().are_equal(&off));
+            assert_eq!(
+                crate::net::bedrock::play::inventory_exploit_tests::stock(player, &[]),
+                1
+            );
             assert_eq!(
                 player
                     .living_entity
                     .get_attribute_value(&Attributes::ATTACK_DAMAGE),
-                expected_attack
+                11.0
             );
+            assert!(fixture.java_observer.take_packets().iter().all(|p| {
+                VarInt::decode(&mut p.as_ref()).is_ok_and(|id| {
+                    id.0 != pumpkin_data::packet::clientbound::play::SET_EQUIPMENT.0
+                })
+            }));
+            assert!(fixture.bedrock_observer.take_packets().iter().all(|p| {
+                crate::net::bedrock::play::inventory_exploit_tests::packet_payload(p, 31).is_none()
+            }));
             let packets = fixture.owner.take_packets();
-            assert_owner_packet(fixture, &packets, Hand::Left, ItemStack::EMPTY)
+            assert_owner_packet(fixture, &packets, Hand::Left, &off)
         })
         .await
 }

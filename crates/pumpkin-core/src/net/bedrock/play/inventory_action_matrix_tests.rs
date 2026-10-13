@@ -37,6 +37,9 @@ mod addendum;
 #[path = "inventory_action_round4c_tests.rs"]
 mod round4c;
 
+#[path = "inventory_action_round4d_tests.rs"]
+mod round4d;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]
@@ -45,72 +48,9 @@ enum BlockUse {
     Placement,
 }
 
-struct HandUseFixture {
-    world: DeathTestWorld,
-    owner: TestBedrockPlayer,
-    java_observer: TestPlayer,
-    bedrock_observer: TestBedrockPlayer,
-}
-
-impl HandUseFixture {
-    async fn new() -> Self {
-        let fixture = DeathTestWorld::new().await;
-        let world = fixture.world();
-        publish(&world, proto(&Biome::PLAINS, &Block::AIR));
-        let owner = TestBedrockPlayer::new(&world).await;
-        owner
-            .player
-            .permission_lvl
-            .store(pumpkin_util::permission::PermissionLvl::Four);
-        let java_observer = TestPlayer::new(&world);
-        let bedrock_observer = TestBedrockPlayer::new(&world).await;
-        world.players.store(Arc::new(vec![
-            owner.player.clone(),
-            java_observer.player.clone(),
-            bedrock_observer.player.clone(),
-        ]));
-        let tracked = world
-            .entity_tracker
-            .get_tracked_entity(owner.player.entity_id());
-        assert!(tracked.is_some());
-        if let Some(tracked) = tracked {
-            tracked.seen_by.insert(java_observer.player.gameprofile.id);
-            tracked
-                .seen_by
-                .insert(bedrock_observer.player.gameprofile.id);
-        }
-        Self {
-            world: fixture,
-            owner,
-            java_observer,
-            bedrock_observer,
-        }
-    }
-
-    fn drain_packets(&mut self) {
-        self.owner.take_packets();
-        self.java_observer.take_packets();
-        self.bedrock_observer.take_packets();
-    }
-
-    async fn close(self) {
-        self.owner.close().await;
-        self.bedrock_observer.close().await;
-        self.world.server.shutdown().await;
-    }
-
-    async fn verify_and_close(
-        mut self,
-        verify: impl FnOnce(&mut Self) -> TestResult,
-    ) -> TestResult {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| verify(&mut self)));
-        self.close().await;
-        match result {
-            Ok(result) => result,
-            Err(panic) => std::panic::resume_unwind(panic),
-        }
-    }
-}
+#[path = "inventory_action_fixture.rs"]
+mod fixture;
+use fixture::{HandUseFixture, assert_owner_inventory_slot, assert_owner_packet};
 
 fn equipment_slot(hand: Hand) -> EquipmentSlot {
     match hand {
@@ -162,49 +102,6 @@ fn assert_hands(player: &Player, hand: Hand, count: u8) {
     assert_eq!(unused.item_count, 2);
 }
 
-fn assert_owner_packet(
-    fixture: &HandUseFixture,
-    owner_packets: &[bytes::Bytes],
-    hand: Hand,
-    expected: &ItemStack,
-) -> TestResult {
-    let (container_id, slot, container_name) = hand_address(hand);
-    let owner_packet = CInventorySlot {
-        container_id: VarUInt(container_id as u32),
-        slot: VarUInt(slot),
-        full_container_name: Some(FullContainerName {
-            container_name,
-            dynamic_id: None,
-        }),
-        storage_item: None,
-        item: NetworkItemStackDescriptor::from(expected),
-    };
-    let encoded = fixture.owner.client().serialize_packet(&owner_packet)?;
-    let slot_updates = owner_packets.iter().filter(|p| **p == encoded).count();
-    if hand == Hand::Left {
-        assert_eq!(slot_updates, 1, "owner off-hand correction");
-    } else {
-        let mut slots = vec![NetworkItemStackDescriptor::default(); PlayerInventory::MAIN_SIZE];
-        slots[4] = NetworkItemStackDescriptor::from(expected);
-        let content = CInventoryContent {
-            container_id: VarUInt(WINDOW_ID_INVENTORY as u32),
-            slots,
-            full_container_name: FullContainerName {
-                container_name: ContainerName::Inventory,
-                dynamic_id: None,
-            },
-            storage_item: NetworkItemStackDescriptor::default(),
-        };
-        let encoded = fixture.owner.client().serialize_packet(&content)?;
-        let content_updates = owner_packets.iter().filter(|p| **p == encoded).count();
-        assert!(
-            slot_updates <= 1 && (slot_updates == 1 || content_updates == 1),
-            "owner main-hand correction"
-        );
-    }
-    Ok(())
-}
-
 fn assert_packets(
     fixture: &mut HandUseFixture,
     hand: Hand,
@@ -231,7 +128,7 @@ fn assert_packets(
         .serialize_packet(&java_packet)?;
     assert_eq!(
         java_packets.iter().filter(|p| **p == encoded).count(),
-        1,
+        usize::from(fixture.hand_changed(hand)),
         "Java observer equipment"
     );
 
@@ -248,7 +145,7 @@ fn assert_packets(
         .serialize_packet(&bedrock_packet)?;
     assert_eq!(
         bedrock_packets.iter().filter(|p| **p == encoded).count(),
-        1,
+        usize::from(fixture.hand_changed(hand)),
         "Bedrock observer equipment"
     );
     assert_attribute_packets(
@@ -357,6 +254,7 @@ fn prepare_hand_use(
     player
         .living_entity
         .send_equipment_changes(&[(equipment_slot(hand), before.clone())]);
+    fixture.owner.player.tick(&fixture.world.server);
     assert_eq!(
         player.living_entity.get_attribute_value(&Attributes::LUCK),
         11.0

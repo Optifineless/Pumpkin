@@ -176,7 +176,7 @@ fn select_during_equipment(fixture: &HandUseFixture, selected: u8) -> Arc<Select
     handler
 }
 
-fn assert_live_main(
+pub(super) fn assert_live_main(
     fixture: &mut HandUseFixture,
     expected: &ItemStack,
     selected: u8,
@@ -287,10 +287,17 @@ async fn air_selection_callback(phase: SelectionCallback) -> TestResult {
             assert!(handler.fired.load(SeqCst), "real equipment callback");
             assert_eq!(
                 thrown_eggs(&fixture.world.world()),
-                0,
-                "skip a moved selection"
+                usize::from(matches!(phase, SelectionCallback::Equipment)),
+                "gameplay callbacks reject stale admission; publication callbacks follow use"
             );
-            assert!(player.inventory().get_stack(4).are_equal(&eggs));
+            let expected = if matches!(phase, SelectionCallback::Equipment) {
+                let mut remaining = eggs.clone();
+                remaining.decrement(1);
+                remaining
+            } else {
+                eggs.clone()
+            };
+            assert!(player.inventory().get_stack(4).are_equal(&expected));
             assert!(player.inventory().get_stack(8).are_equal(&diamonds));
             assert_eq!(
                 conserved_items(fixture),
@@ -298,7 +305,7 @@ async fn air_selection_callback(phase: SelectionCallback) -> TestResult {
                 "selection consumes nothing"
             );
             let owner = fixture.owner.take_packets();
-            assert_owner_packet(fixture, &owner, Hand::Right, &eggs)?;
+            assert_owner_packet(fixture, &owner, Hand::Right, &expected)?;
             assert_live_main(fixture, &diamonds, 8)
         })
         .await
@@ -338,6 +345,7 @@ async fn authoritative_final_publication_selection_uses_empty_hand_damage() -> T
     player
         .living_entity
         .send_equipment_changes(&[(EquipmentSlot::MAIN_HAND, blocks.clone())]);
+    fixture.owner.player.tick(&fixture.world.server);
     let empty_damage = player
         .living_entity
         .get_attribute_value(&Attributes::ATTACK_DAMAGE) as f32;

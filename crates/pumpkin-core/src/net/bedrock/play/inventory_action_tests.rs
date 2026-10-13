@@ -171,6 +171,7 @@ async fn consuming_last_block_use_item_sends_equipment_to_tracker() {
         .client()
         .handle_inventory_action(&bedrock.player, packet);
 
+    bedrock.player.tick(&fixture.server);
     assert!(bedrock.player.inventory().held_item().is_empty());
     let expected_equipment = CSetEquipment::new(
         bedrock.player.get_entity().entity_id.into(),

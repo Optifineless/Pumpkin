@@ -83,8 +83,8 @@ async fn default_block_use_runs_only_for_mainhand() -> TestResult {
                         .are_equal(&off)
                 );
                 assert!(
-                    fixture.owner.take_packets().contains(&correction),
-                    "valid block use publishes the authoritative hand even when unchanged"
+                    !fixture.owner.take_packets().contains(&correction),
+                    "unchanged block use does not publish an inventory correction"
                 );
                 Ok(())
             })
@@ -124,6 +124,7 @@ async fn offhand_fallback_preserves_distinct_mainhand_item() -> TestResult {
         player
             .living_entity
             .send_equipment_changes(&[(EquipmentSlot::OFF_HAND, off.clone())]);
+        fixture.owner.player.tick(&fixture.world.server);
         fixture.drain_packets();
         let packet = click_block_packet(
             &fixture.owner.player,
