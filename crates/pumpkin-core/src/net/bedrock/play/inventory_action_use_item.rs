@@ -69,9 +69,8 @@ impl BedrockClient {
                 &world,
             ) {
                 player.open_handled_screen(factory.as_ref(), Some(data.block_position));
-                return true;
             }
-            return false;
+            return true;
         }
         if !matches!(data.action_type.0, 0 | 1) {
             return true;
@@ -209,7 +208,7 @@ impl BedrockClient {
         {
             Self::place_admitted_block(context, &mut stack, block)
         } else {
-            false
+            matches!(result, BlockActionResult::Fail)
         };
         Some((stack, denied))
     }
@@ -359,7 +358,7 @@ impl BedrockClient {
         if !change {
             return true;
         }
-        let Some((new_held, equipped)) =
+        let Some((new_held, equipped, mut displaced)) =
             Self::equip_admitted_hand(context.player, context.hand, context.selected, held, slot)
         else {
             Self::sync_live_hands(
@@ -371,6 +370,14 @@ impl BedrockClient {
             return false;
         };
         *held = new_held;
+        // Equippable.swapWithEquipmentSlot returns displaced equipment after the owner operation unlocks.
+        context
+            .player
+            .inventory()
+            .insert_stack_anywhere(&mut displaced);
+        if !displaced.is_empty() {
+            context.player.drop_item(displaced);
+        }
         context.player.enqueue_equipment_change(slot, &equipped);
         true
     }

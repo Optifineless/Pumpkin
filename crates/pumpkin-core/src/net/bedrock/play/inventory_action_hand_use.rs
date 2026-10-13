@@ -111,7 +111,7 @@ impl BedrockClient {
     }
 
     /// Publishes the current selection without retaining a guard across the send.
-    pub(in crate::net::bedrock::play) fn send_live_hotbar_selection(&self, player: &Player) {
+    pub(crate) fn send_live_hotbar_selection(&self, player: &Player) {
         self.try_enqueue_client_packet(&CPlayerHotbar {
             selected_slot: VarUInt(u32::from(player.inventory().get_selected_slot())),
             container_id: 0,
@@ -354,7 +354,7 @@ impl BedrockClient {
         selected: u8,
         before: &ItemStack,
         slot: &EquipmentSlot,
-    ) -> Option<(ItemStack, ItemStack)> {
+    ) -> Option<(ItemStack, ItemStack, ItemStack)> {
         // Equippable.swapWithEquipmentSlot sets the real slot before LivingEntity.detectEquipmentUpdates.
         let inventory = player.inventory();
         let gamemode = player.gamemode.load();
@@ -388,12 +388,21 @@ impl BedrockClient {
         {
             return None;
         }
-        let mut held = equipment.get(slot);
-        if held.is_empty() {
-            held = current.clone();
-            held.decrement_unless_creative(gamemode, 1);
-        }
-        equipment.put(slot, current.clone());
+        let displaced = equipment.get(slot);
+        // Equippable.swapWithEquipmentSlot consumes one from a multi-item source (Java line 145).
+        let (held, installed, displaced_to_inventory) = if current.item_count > 1 {
+            let mut remainder = current.clone();
+            remainder.decrement_unless_creative(gamemode, 1);
+            (remainder, current.copy_with_count(1), displaced)
+        } else {
+            let held = if gamemode == pumpkin_util::GameMode::Creative && displaced.is_empty() {
+                current.clone()
+            } else {
+                displaced
+            };
+            (held, current, ItemStack::EMPTY.clone())
+        };
+        equipment.put(slot, installed.clone());
         let stored = if held.is_empty() {
             ItemStack::EMPTY.clone()
         } else {
@@ -404,6 +413,6 @@ impl BedrockClient {
         } else {
             equipment.put(&EquipmentSlot::OFF_HAND, stored.clone());
         }
-        Some((stored, current))
+        Some((stored, installed, displaced_to_inventory))
     }
 }
