@@ -91,9 +91,9 @@ pub struct GenerationSchedule {
 
 impl GenerationSchedule {
     fn publish_chunk(&self, pos: ChunkPos, chunk: SyncChunk) -> Option<SyncChunk> {
-        // ServerLevel.startTickingChunk / LevelChunk.unpackTicks rebase only on disk load.
-        chunk.block_ticks.unpack(self.game_time.clone());
-        chunk.fluid_ticks.unpack(self.game_time.clone());
+        // Full publication precedes ServerLevel.startTickingChunk; saved delays stay pending.
+        chunk.block_ticks.bind_clock(self.game_time.clone());
+        chunk.fluid_ticks.bind_clock(self.game_time.clone());
         let has_ticks = chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks();
         let previous = self.public_chunk_map.insert(pos, chunk);
         if has_ticks {
@@ -915,6 +915,9 @@ impl GenerationSchedule {
             if let Some(tmp) = holder.chunk {
                 match tmp {
                     Chunk::Level(chunk) => {
+                        let game_time = self.game_time.load(Relaxed);
+                        chunk.block_ticks.freeze_for_unload(game_time);
+                        chunk.fluid_ticks.freeze_for_unload(game_time);
                         // Save chunk to disk if dirty
                         if chunk.is_dirty() {
                             chunks.push((pos, Chunk::Level(chunk)));
@@ -1736,3 +1739,7 @@ impl GenerationSchedule {
 #[cfg(test)]
 #[path = "storage_failure_tests.rs"]
 mod storage_failure_tests;
+
+#[cfg(test)]
+#[path = "scheduled_tick_unload_tests.rs"]
+mod scheduled_tick_unload_tests;

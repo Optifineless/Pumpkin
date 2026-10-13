@@ -199,6 +199,8 @@ pub mod guard_effects;
 mod minecart_stall_tests;
 pub mod natural_spawner;
 pub mod owner_mutex;
+#[cfg(test)]
+mod scheduled_ticks_tests;
 pub mod scoreboard;
 #[cfg(test)]
 mod spawn_plugin_tests;

@@ -2,16 +2,10 @@ use super::*;
 use crate::chunk::format::anvil::{SingleChunkDataSerializer, WORLD_DATA_VERSION};
 use crate::tick::TickPriority;
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
-use std::{
-    future::{Future, poll_fn},
-    ops::Deref,
-    task::Poll,
-    time::Duration,
-};
+use std::ops::Deref;
 
 const CHUNK: Vector2<i32> = Vector2::new(0, 0);
 const BLOCK_POS: BlockPos = BlockPos::new(0, 64, 0);
-const MAX_ASYNC_POLLS: usize = 10_000;
 
 struct TestLevel(Arc<Level>);
 
@@ -41,18 +35,6 @@ fn level(path: &std::path::Path) -> TestLevel {
     ))
 }
 
-async fn bounded<F: Future>(operation: &str, future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    for _ in 0..MAX_ASYNC_POLLS {
-        if let Poll::Ready(result) = poll_fn(|cx| Poll::Ready(future.as_mut().poll(cx))).await {
-            return result;
-        }
-        // Let filesystem and native scheduler workers run between counted polls.
-        tokio::time::sleep(Duration::from_millis(1)).await;
-    }
-    panic!("{operation} remained pending after {MAX_ASYNC_POLLS} polls");
-}
-
 fn active() -> FxHashSet<Vector2<i32>> {
     FxHashSet::from_iter([CHUNK])
 }
@@ -62,7 +44,7 @@ fn insert_empty(level: &Level) -> SyncChunk {
     // SerializableChunkData.parse/read preserves isLightOn for a completed full chunk.
     // Unlit fixtures enter terrain generation, which requires a world portal.
     chunk.light_populated.store(true, Ordering::Relaxed);
-    level.unpack_chunk_ticks(&chunk);
+    level.bind_chunk_tick_clocks(&chunk);
     level.loaded_chunks.insert(CHUNK, chunk.clone());
     chunk
 }
@@ -98,7 +80,7 @@ async fn scheduled_time_long_and_short_ticks_resume_on_first_simulated_tick() {
     assert_eq!(resumed.fluid_ticks.len(), 1);
     assert_eq!(resumed.block_ticks[0].position, BLOCK_POS);
     assert!(!level.chunks_with_scheduled_ticks.contains(&CHUNK));
-    bounded("level shutdown", level.shutdown()).await.unwrap();
+    level.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -114,7 +96,7 @@ async fn scheduled_time_saved_delay_includes_unsimulated_game_ticks() {
     level.get_tick_data(&FxHashSet::default(), 0);
     assert_eq!(saved_delay(&chunk, "block_ticks"), 4000);
     assert_eq!(saved_delay(&chunk, "fluid_ticks"), -995);
-    bounded("level shutdown", level.shutdown()).await.unwrap();
+    level.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -130,24 +112,16 @@ async fn scheduled_time_overdue_save_reloads_through_chunk_load_and_runs_immedia
     assert_eq!(saved_delay(&chunk, "block_ticks"), -1000);
     assert_eq!(saved_delay(&chunk, "fluid_ticks"), -5995);
     chunk.mark_dirty(true);
-    bounded(
-        "overdue chunk save",
-        old.chunk_saver
-            .save_chunks(&old.level_folder, vec![(CHUNK, chunk)]),
-    )
-    .await
-    .unwrap();
-    bounded("old level shutdown", old.shutdown()).await.unwrap();
+    old.chunk_saver
+        .save_chunks(&old.level_folder, vec![(CHUNK, chunk)])
+        .await
+        .unwrap();
+    old.shutdown().await.unwrap();
     drop(old);
 
     let loaded = level(dir.path());
     loaded.set_game_time(20_000);
-    bounded(
-        "overdue chunk load (saved full chunk must be lit)",
-        loaded.get_or_fetch_chunk(CHUNK, |_| ()),
-    )
-    .await
-    .unwrap();
+    loaded.get_or_fetch_chunk(CHUNK, |_| ()).await.unwrap();
     assert!(
         loaded
             .get_tick_data(&FxHashSet::default(), 0)
@@ -157,9 +131,7 @@ async fn scheduled_time_overdue_save_reloads_through_chunk_load_and_runs_immedia
     let due = loaded.get_tick_data(&active(), 0);
     assert_eq!(due.block_ticks.len(), 1);
     assert_eq!(due.fluid_ticks.len(), 1);
-    bounded("loaded level shutdown", loaded.shutdown())
-        .await
-        .unwrap();
+    loaded.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -180,7 +152,7 @@ async fn scheduled_time_marker_survives_schedule_between_empty_check_and_remove(
     assert!(level.chunks_with_scheduled_ticks.contains(&CHUNK));
     level.set_game_time(2);
     assert_eq!(level.get_tick_data(&active(), 0).fluid_ticks.len(), 1);
-    bounded("level shutdown", level.shutdown()).await.unwrap();
+    level.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -222,21 +194,13 @@ async fn scheduled_time_old_fork_and_vanilla_tick_lists_load_with_relative_delay
         .unwrap(),
     );
     chunk.mark_dirty(true);
-    bounded(
-        "old fork and vanilla chunk save",
-        level
-            .chunk_saver
-            .save_chunks(&level.level_folder, vec![(CHUNK, chunk)]),
-    )
-    .await
-    .unwrap();
+    level
+        .chunk_saver
+        .save_chunks(&level.level_folder, vec![(CHUNK, chunk)])
+        .await
+        .unwrap();
     level.set_game_time(1000);
-    bounded(
-        "old fork and vanilla chunk load (saved full chunk must be lit)",
-        level.get_or_fetch_chunk(CHUNK, |_| ()),
-    )
-    .await
-    .unwrap();
+    level.get_or_fetch_chunk(CHUNK, |_| ()).await.unwrap();
     let due = level.get_tick_data(&active(), 0);
     assert_eq!(
         due.block_ticks
@@ -252,7 +216,7 @@ async fn scheduled_time_old_fork_and_vanilla_tick_lists_load_with_relative_delay
     let due = level.get_tick_data(&active(), 0);
     assert_eq!(due.block_ticks[0].position.0.x, 2);
     assert_eq!(due.fluid_ticks.len(), 1);
-    bounded("level shutdown", level.shutdown()).await.unwrap();
+    level.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -262,7 +226,7 @@ async fn scheduled_time_catchup_keeps_future_wheel_slots_and_vanilla_container_o
     insert_empty(&level);
     let other = Vector2::new(1, 0);
     let other_chunk = ChunkData::empty_sync(other.x, other.y);
-    level.unpack_chunk_ticks(&other_chunk);
+    level.bind_chunk_tick_clocks(&other_chunk);
     level.loaded_chunks.insert(other, other_chunk);
     let later = BlockPos::new(1, 64, 0);
     let future = BlockPos::new(2, 64, 0);
@@ -290,5 +254,258 @@ async fn scheduled_time_catchup_keeps_future_wheel_slots_and_vanilla_container_o
         level.get_tick_data(&active, 0).block_ticks[0].position,
         future
     );
-    bounded("level shutdown", level.shutdown()).await.unwrap();
+    level.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn scheduled_time_clean_chunk_resaves_elapsed_and_drained_ticks() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = level(dir.path());
+    old.set_game_time(100);
+    let chunk = insert_empty(&old);
+    old.schedule_block_tick_after(&Block::STONE, BLOCK_POS, 5000, TickPriority::Normal);
+    old.schedule_fluid_tick(&Fluid::WATER, BLOCK_POS, 5, TickPriority::Normal);
+    old.chunk_saver
+        .save_chunks(&old.level_folder, vec![(CHUNK, chunk.clone())])
+        .await
+        .unwrap();
+    assert!(!chunk.dirty.load(Ordering::Relaxed));
+    assert!(!chunk.is_dirty());
+
+    old.set_game_time(1100);
+    old.get_tick_data(&FxHashSet::default(), 0);
+    // No block, light or entity mutation: only the serialized delays have changed.
+    assert!(!chunk.dirty.load(Ordering::Relaxed));
+    old.chunk_saver
+        .save_chunks(&old.level_folder, vec![(CHUNK, chunk)])
+        .await
+        .unwrap();
+    old.shutdown().await.unwrap();
+    drop(old);
+
+    let loaded = level(dir.path());
+    loaded.set_game_time(20_000);
+    let chunk = loaded
+        .get_or_fetch_chunk(CHUNK, Clone::clone)
+        .await
+        .unwrap();
+    assert_eq!(saved_delay(&chunk, "block_ticks"), 4000);
+    assert_eq!(saved_delay(&chunk, "fluid_ticks"), -995);
+    assert_eq!(loaded.get_tick_data(&active(), 0).fluid_ticks.len(), 1);
+    loaded.set_game_time(24_000);
+    assert_eq!(loaded.get_tick_data(&active(), 0).block_ticks.len(), 1);
+    // Collection itself must persist the empty lists even if the callback is a no-op.
+    loaded
+        .chunk_saver
+        .save_chunks(&loaded.level_folder, vec![(CHUNK, chunk)])
+        .await
+        .unwrap();
+    loaded.shutdown().await.unwrap();
+    drop(loaded);
+
+    let restarted = level(dir.path());
+    restarted.get_or_fetch_chunk(CHUNK, |_| ()).await.unwrap();
+    let due = restarted.get_tick_data(&active(), 0);
+    assert!(due.block_ticks.is_empty());
+    assert!(due.fluid_ticks.is_empty());
+    assert!(
+        !restarted
+            .loaded_chunks
+            .get(&CHUNK)
+            .unwrap()
+            .block_ticks
+            .has_ticks()
+    );
+    restarted.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn scheduled_time_overdue_backlog_obeys_each_type_budget_and_container_order() {
+    use crate::tick::MAX_SCHEDULED_TICKS_PER_TICK;
+    const PER_CHUNK: usize = 40_000;
+    let dir = tempfile::tempdir().unwrap();
+    let level = level(dir.path());
+    insert_empty(&level);
+    let other = Vector2::new(1, 0);
+    let chunk = ChunkData::empty_sync(other.x, other.y);
+    level.bind_chunk_tick_clocks(&chunk);
+    level.loaded_chunks.insert(other, chunk);
+    let position = |chunk_x: i32, index: usize| {
+        BlockPos::new(
+            chunk_x * 16 + (index % 16) as i32,
+            (index / 256) as i32,
+            ((index / 16) % 16) as i32,
+        )
+    };
+    for index in 0..PER_CHUNK {
+        let late = index >= PER_CHUNK / 2;
+        let priority = if late {
+            TickPriority::ExtremelyHigh
+        } else {
+            TickPriority::Low
+        };
+        level.schedule_block_tick(
+            &Block::STONE,
+            position(0, index),
+            if late { 2 } else { 1 },
+            priority,
+        );
+        level.schedule_block_tick(&Block::STONE, position(1, index), 1, TickPriority::Normal);
+        level.schedule_fluid_tick(&Fluid::WATER, position(0, index), 1, TickPriority::Normal);
+        level.schedule_fluid_tick(&Fluid::WATER, position(1, index), 1, TickPriority::Low);
+    }
+    level.set_game_time(1000);
+    let active = FxHashSet::from_iter([CHUNK, other]);
+    let first = level.get_tick_data(&active, 0);
+    assert_eq!(first.block_ticks.len(), MAX_SCHEDULED_TICKS_PER_TICK);
+    assert_eq!(first.fluid_ticks.len(), MAX_SCHEDULED_TICKS_PER_TICK);
+    let expected_blocks = (0..PER_CHUNK)
+        .map(|i| position(1, i))
+        .chain((0..PER_CHUNK).map(|i| position(0, i)))
+        .collect::<Vec<_>>();
+    let expected_fluids = (0..PER_CHUNK)
+        .map(|i| position(0, i))
+        .chain((0..PER_CHUNK).map(|i| position(1, i)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tick_positions(&first.block_ticks),
+        expected_blocks[..MAX_SCHEDULED_TICKS_PER_TICK]
+    );
+    assert_eq!(
+        tick_positions(&first.fluid_ticks),
+        expected_fluids[..MAX_SCHEDULED_TICKS_PER_TICK]
+    );
+    let remaining = expected_blocks[MAX_SCHEDULED_TICKS_PER_TICK];
+    assert!(
+        level
+            .loaded_chunks
+            .get(&CHUNK)
+            .unwrap()
+            .block_ticks
+            .is_scheduled(remaining, &Block::STONE)
+    );
+    // Leftovers remain serializable and registered while the next logical tick is pending.
+    assert_eq!(
+        level
+            .loaded_chunks
+            .get(&CHUNK)
+            .unwrap()
+            .block_ticks
+            .to_vec()
+            .len(),
+        2 * PER_CHUNK - MAX_SCHEDULED_TICKS_PER_TICK
+    );
+    level.set_game_time(1001);
+    let second = level.get_tick_data(&active, 0);
+    assert_eq!(
+        tick_positions(&second.block_ticks),
+        expected_blocks[MAX_SCHEDULED_TICKS_PER_TICK..]
+    );
+    assert_eq!(
+        tick_positions(&second.fluid_ticks),
+        expected_fluids[MAX_SCHEDULED_TICKS_PER_TICK..]
+    );
+    assert!(level.chunks_with_scheduled_ticks.is_empty());
+    assert!(level.get_tick_data(&active, 0).block_ticks.is_empty());
+    level.shutdown().await.unwrap();
+}
+
+fn tick_positions<T>(ticks: &[OrderedTick<T>]) -> Vec<BlockPos> {
+    ticks.iter().map(|tick| tick.position).collect()
+}
+
+#[tokio::test]
+async fn scheduled_time_draining_a_clean_chunk_persists_the_empty_queue() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = level(dir.path());
+    let chunk = insert_empty(&old);
+    old.schedule_block_tick(&Block::STONE, BLOCK_POS, 1, TickPriority::Normal);
+    chunk.mark_dirty(true);
+    old.chunk_saver
+        .save_chunks(&old.level_folder, vec![(CHUNK, chunk.clone())])
+        .await
+        .unwrap();
+    assert!(!chunk.is_dirty());
+    old.set_game_time(1);
+    assert_eq!(old.get_tick_data(&active(), 0).block_ticks.len(), 1);
+    assert!(!chunk.dirty.load(Ordering::Relaxed));
+    old.chunk_saver
+        .save_chunks(&old.level_folder, vec![(CHUNK, chunk)])
+        .await
+        .unwrap();
+    old.shutdown().await.unwrap();
+    drop(old);
+    let restarted = level(dir.path());
+    let chunk = restarted
+        .get_or_fetch_chunk(CHUNK, Clone::clone)
+        .await
+        .unwrap();
+    assert!(!chunk.block_ticks.has_ticks());
+    restarted.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn scheduled_time_disk_ticks_stay_frozen_until_first_simulation() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = level(dir.path());
+    let chunk = insert_empty(&old);
+    old.schedule_block_tick(&Block::STONE, BLOCK_POS, 100, TickPriority::Normal);
+    old.schedule_fluid_tick(&Fluid::WATER, BLOCK_POS, 100, TickPriority::Normal);
+    old.chunk_saver
+        .save_chunks(&old.level_folder, vec![(CHUNK, chunk)])
+        .await
+        .unwrap();
+    old.shutdown().await.unwrap();
+    drop(old);
+
+    let loaded = level(dir.path());
+    loaded.set_game_time(1000);
+    // Full but inactive terrain must remain resident while the real scheduler runs.
+    let mut residency =
+        crate::chunk_system::residency::ChunkResidency::new(loaded.chunk_loading.clone());
+    residency.add(CHUNK);
+    let chunk = loaded
+        .get_or_fetch_chunk(CHUNK, Clone::clone)
+        .await
+        .unwrap();
+    // Full/public but inactive. Fresh runtime work still uses the live world clock.
+    let fresh = BlockPos::new(1, 64, 0);
+    loaded.schedule_block_tick(&Block::STONE, fresh, 5, TickPriority::Normal);
+    loaded.set_game_time(1200);
+    let inactive = loaded.get_tick_data(&FxHashSet::default(), 0);
+    assert!(inactive.block_ticks.is_empty());
+    assert!(inactive.fluid_ticks.is_empty());
+    assert_eq!(saved_delay(&chunk, "block_ticks"), 100);
+    assert_eq!(saved_delay(&chunk, "fluid_ticks"), 100);
+    loaded
+        .chunk_saver
+        .save_chunks(&loaded.level_folder, vec![(CHUNK, chunk.clone())])
+        .await
+        .unwrap();
+    let first = loaded.get_tick_data(&active(), 0);
+    assert_eq!(tick_positions(&first.block_ticks), [fresh]);
+    assert!(first.fluid_ticks.is_empty());
+    loaded.set_game_time(1299);
+    let waiting = loaded.get_tick_data(&active(), 0);
+    assert!(waiting.block_ticks.is_empty());
+    assert!(waiting.fluid_ticks.is_empty());
+    loaded.set_game_time(1300);
+    let due = loaded.get_tick_data(&active(), 0);
+    assert_eq!(tick_positions(&due.block_ticks), [BLOCK_POS]);
+    assert_eq!(tick_positions(&due.fluid_ticks), [BLOCK_POS]);
+    // Once activated, later inactivity uses absolute deadlines, without another rebase.
+    loaded.schedule_block_tick(&Block::STONE, BLOCK_POS, 100, TickPriority::Normal);
+    loaded.set_game_time(1500);
+    assert!(
+        loaded
+            .get_tick_data(&FxHashSet::default(), 0)
+            .block_ticks
+            .is_empty()
+    );
+    assert_eq!(
+        tick_positions(&loaded.get_tick_data(&active(), 0).block_ticks),
+        [BLOCK_POS]
+    );
+    drop(residency);
+    loaded.shutdown().await.unwrap();
 }
