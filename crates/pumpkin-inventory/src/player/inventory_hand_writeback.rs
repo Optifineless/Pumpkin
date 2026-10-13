@@ -10,31 +10,7 @@ impl PlayerInventory {
         before: &ItemStack,
         after: ItemStack,
     ) -> bool {
-        // Vanilla ServerPlayerGameMode.useItemOn operates on the original stack reference.
-        // Pumpkin uses clones, so compare and replace under the same inventory guard.
-        if slot < Self::MAIN_SIZE {
-            let mut inventory = self
-                .main_inventory
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let current = &mut inventory[slot];
-            if current.uid != before.uid || !current.are_equal(before) {
-                return false;
-            }
-            *current = after;
-        } else if let Some(equipment_slot) = self.equipment_slots.get(&slot) {
-            let mut equipment = self
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let current = equipment.get(equipment_slot);
-            if current.uid != before.uid || !current.are_equal(before) {
-                return false;
-            }
-            equipment.put(equipment_slot, after);
-        } else {
-            return false;
-        }
-        true
+        // ServerPlayerGameMode.useItemOn retains the source reference; share container ownership.
+        crate::inventory::slot_transaction::exchange(self, slot, before, after)
     }
 }

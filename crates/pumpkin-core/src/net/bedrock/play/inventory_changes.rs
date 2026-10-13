@@ -1,21 +1,19 @@
 use super::{
-    BedrockClient, ContainerName, EquipmentSlot, FullContainerName, Hand, HandSlot, ItemStack,
-    NetworkItemDescriptor, NetworkItemStackDescriptor, Player, ScreenHandler, VarUInt,
-    map_bedrock_slot_to_screen_handler,
+    BedrockClient, ContainerName, EquipmentSlot, FullContainerName, ItemStack,
+    NetworkItemStackDescriptor, Player, ScreenHandler, VarUInt, map_bedrock_slot_to_screen_handler,
 };
 use pumpkin_inventory::{
     player::player_inventory::PlayerInventory, screen_handler::InventoryPlayer,
 };
 use pumpkin_protocol::bedrock::{
     client::inventory_slot::CInventorySlot,
-    server::inventory_transaction::{
-        UseItemTransactionData, WINDOW_ID_ARMOUR, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
-    },
+    server::inventory_transaction::{WINDOW_ID_ARMOUR, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND},
 };
 
 pub(super) struct InventorySnapshot {
     stacks: [ItemStack; PlayerInventory::OFF_HAND_SLOT + 1],
     main_hand: ItemStack,
+    selected: u8,
 }
 
 impl InventorySnapshot {
@@ -37,28 +35,17 @@ impl InventorySnapshot {
                 stacks[*slot] = equipment.get(equipment_slot);
             }
         }
-        let main_hand = stacks[usize::from(inventory.get_selected_slot())].clone();
-        Self { stacks, main_hand }
+        let selected = inventory.get_selected_slot();
+        let main_hand = stacks[usize::from(selected)].clone();
+        Self {
+            stacks,
+            main_hand,
+            selected,
+        }
     }
 }
 
 impl BedrockClient {
-    pub(super) const fn transaction_hand(hand: HandSlot) -> Hand {
-        match hand {
-            HandSlot::Mainhand => Hand::Right,
-            HandSlot::Offhand => Hand::Left,
-        }
-    }
-
-    pub(super) fn matches_hand_descriptor(player: &Player, data: &UseItemTransactionData) -> bool {
-        // handleUseItemOn/handleUseItem trust server stock, never the client's predicted count.
-        let stack = player
-            .inventory()
-            .get_stack_in_hand(Self::transaction_hand(data.hand));
-        let descriptor = NetworkItemDescriptor::from(&stack);
-        descriptor.id == data.item_in_hand.id && descriptor.aux_value == data.item_in_hand.aux_value
-    }
-
     pub(super) fn publish_inventory_changes(
         &self,
         player: &Player,
@@ -72,14 +59,14 @@ impl BedrockClient {
                 .stacks
                 .iter()
                 .zip(&after.stacks)
-                .any(|(a, b)| !a.are_equal(b))
+                .any(|(a, b)| a.uid != b.uid || !a.are_equal(b))
         {
             let mut handler = player
                 .player_screen_handler
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             for (slot, (old, new)) in before.stacks.iter().zip(&after.stacks).enumerate() {
-                if (correct_prediction || !old.are_equal(new))
+                if (correct_prediction || old.uid != new.uid || !old.are_equal(new))
                     && let Some((window, _, index)) = Self::inventory_slot_address(player, slot)
                     && let Some(screen_slot) =
                         map_bedrock_slot_to_screen_handler(window, index as u32)
@@ -94,17 +81,22 @@ impl BedrockClient {
             self.correct_inventory_prediction(player);
         } else {
             for (slot, (old, new)) in before.stacks.iter().zip(&after.stacks).enumerate() {
-                if !old.are_equal(new) {
+                if old.uid != new.uid || !old.are_equal(new) {
                     self.send_changed_inventory_slot(player, slot, new);
                 }
             }
         }
         // LivingEntity.detectEquipmentUpdates refreshes modifiers and publishes on the tick.
-        if !before.main_hand.are_equal(&after.main_hand) {
+        if before.selected != after.selected
+            || before.main_hand.uid != after.main_hand.uid
+            || !before.main_hand.are_equal(&after.main_hand)
+        {
             player.enqueue_equipment_change(&EquipmentSlot::MAIN_HAND, &after.main_hand);
         }
         let offhand = PlayerInventory::OFF_HAND_SLOT;
-        if !before.stacks[offhand].are_equal(&after.stacks[offhand]) {
+        if before.stacks[offhand].uid != after.stacks[offhand].uid
+            || !before.stacks[offhand].are_equal(&after.stacks[offhand])
+        {
             player.enqueue_equipment_change(&EquipmentSlot::OFF_HAND, &after.stacks[offhand]);
         }
     }

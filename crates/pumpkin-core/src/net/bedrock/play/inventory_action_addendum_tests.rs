@@ -67,20 +67,13 @@ fn assert_selection_packets(
         "owner selection correction"
     );
     if accepted {
-        let correction = CInventorySlot {
-            container_id: VarUInt(0),
-            slot: VarUInt(8),
-            full_container_name: Some(FullContainerName {
-                container_name: ContainerName::Inventory,
-                dynamic_id: None,
-            }),
-            storage_item: None,
-            item: NetworkItemStackDescriptor::from(&fixture.owner.player.inventory().get_stack(8)),
-        };
-        assert!(
-            owner.contains(&fixture.owner.client().serialize_packet(&correction)?),
-            "owner stone correction"
-        );
+        assert_owner_inventory_slot(
+            &owner,
+            WINDOW_ID_INVENTORY,
+            8,
+            &fixture.owner.player.inventory().get_stack(8),
+            false,
+        )?;
     } else {
         let content = CInventoryContent {
             container_id: VarUInt(0),
@@ -110,11 +103,15 @@ fn assert_selection_packets(
             ItemStackSerializer::from(held.clone()),
         )],
     );
-    assert!(
+    let encoded = fixture.java_observer.client().serialize_packet(&java)?;
+    assert_eq!(
         fixture
             .java_observer
             .take_packets()
-            .contains(&fixture.java_observer.client().serialize_packet(&java)?)
+            .iter()
+            .filter(|p| **p == encoded)
+            .count(),
+        usize::from(fixture.hand_changed(Hand::Right))
     );
     let bedrock = CMobEquipment {
         target_runtime_id: (fixture.owner.player.entity_id() as u64).into(),
@@ -123,13 +120,18 @@ fn assert_selection_packets(
         selected_slot: selected,
         container_id: 0,
     };
-    assert!(
-        fixture.bedrock_observer.take_packets().contains(
-            &fixture
-                .bedrock_observer
-                .client()
-                .serialize_packet(&bedrock)?
-        )
+    let encoded = fixture
+        .bedrock_observer
+        .client()
+        .serialize_packet(&bedrock)?;
+    assert_eq!(
+        fixture
+            .bedrock_observer
+            .take_packets()
+            .iter()
+            .filter(|p| **p == encoded)
+            .count(),
+        usize::from(fixture.hand_changed(Hand::Right))
     );
     Ok(())
 }

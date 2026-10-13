@@ -138,7 +138,7 @@ impl EventHandler<BlockPlaceEvent> for ReplaceOpposite {
     }
 }
 
-fn attack_damage(player: &Arc<Player>, victim: &Arc<Player>) -> f32 {
+pub(super) fn attack_damage(player: &Arc<Player>, victim: &Arc<Player>) -> f32 {
     player
         .get_entity()
         .on_ground
@@ -164,6 +164,7 @@ async fn placement_opposite(hand: Hand) -> TestResult {
     player
         .living_entity
         .send_equipment_changes(&[(equipment_slot(opposite), initial)]);
+    fixture.owner.player.tick(&fixture.world.server);
     let replacement = if hand == Hand::Right {
         ItemStack::new(3, &Item::EMERALD)
     } else {
@@ -264,10 +265,27 @@ fn assert_both_hand_packets(
         ],
     );
     let encoded = fixture.java_observer.client().serialize_packet(&java)?;
-    assert!(
-        fixture.java_observer.take_packets().contains(&encoded),
-        "Java must publish both changed hands"
-    );
+    let packets = fixture.java_observer.take_packets();
+    if !packets.contains(&encoded) {
+        // A publication callback can change the opposite hand after the first batch.
+        for (slot, stack) in [
+            (EquipmentSlot::MAIN_HAND, &main),
+            (EquipmentSlot::OFF_HAND, &off),
+        ] {
+            let packet = CSetEquipment::new(
+                player.entity_id().into(),
+                vec![(
+                    slot.discriminant(),
+                    ItemStackSerializer::from(stack.clone()),
+                )],
+            );
+            let encoded = fixture.java_observer.client().serialize_packet(&packet)?;
+            assert!(
+                packets.contains(&encoded),
+                "Java must publish each live hand after the callback"
+            );
+        }
+    }
     let packets = fixture.bedrock_observer.take_packets();
     for (hand, stack) in [(Hand::Right, main), (Hand::Left, off)] {
         let packet = CMobEquipment {
@@ -421,62 +439,101 @@ async fn round4c_offhand_use_survives_main_selection_callback() -> TestResult {
                 "unchanged offhand use must complete once"
             );
             assert_eq!(player.inventory().off_hand_item().item_count, 1);
-            assert_eq!(player.inventory().get_stack(4).item, &Item::DIAMOND);
+            assert!(player.inventory().get_stack(4).is_empty());
+            assert_eq!(player.inventory().get_stack(0).item, &Item::DIAMOND);
             Ok(())
         })
         .await
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn round4c_release_prediction_does_not_remove_active_bow() -> TestResult {
-    for hand in [Hand::Right, Hand::Left] {
-        let mut fixture = HandUseFixture::new().await;
-        let player = fixture.owner.player.clone();
-        player.inventory().set_selected_slot(4);
-        let bow = ItemStack::new(1, &Item::BOW);
-        player.inventory().set_stack_in_hand(hand, bow.clone());
-        player.living_entity.set_active_hand(
-            hand,
-            bow.clone(),
-            crate::item::items::bow::BowItem::USE_DURATION,
-        );
-        let (container, slot, _) = hand_address(hand);
-        let mut packet = click_block_packet(
-            &player,
-            HandSlot::Mainhand,
-            BlockPos::new(8, 64, 8),
-            &bow,
-            vec![action(
-                Some(container),
-                slot,
-                NetworkItemDescriptor::from(&bow),
-                NetworkItemDescriptor::default(),
-            )],
-        );
-        packet.transaction_type = VarUInt(4);
-        packet.transaction_data = TransactionData::ReleaseItem(ReleaseItemTransactionData {
-            action_type: VarInt(0),
-            hot_bar_slot: VarInt(4),
-            item_in_hand: NetworkItemDescriptor::from(&bow),
-            head_position: Vector3::new(8.5, 64.0, 8.5),
-        });
-        fixture.drain_packets();
-        fixture
-            .owner
-            .client()
-            .handle_inventory_action(&player, packet);
-        fixture
-            .verify_and_close(|fixture| {
-                assert!(
-                    player.inventory().get_stack_in_hand(hand).are_equal(&bow),
-                    "release prediction is advisory"
-                );
-                assert!(player.living_entity.active_hand.lock().unwrap().is_none());
-                let owner = fixture.owner.take_packets();
-                assert_owner_packet(fixture, &owner, hand, &bow)?;
-                assert_observer_hand(fixture, hand, &bow)
-            })
-            .await?;
+#[path = "inventory_action_release_tests.rs"]
+mod release;
+
+impl EventHandler<PacketSentEvent> for ReplaceOpposite {
+    fn handle_blocking<'a>(
+        &'a self,
+        _: &'a Arc<Server>,
+        event: &'a mut PacketSentEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.packet_id == CSetEquipment::to_id(CURRENT_MC_VERSION)
+            && !self.fired.swap(true, SeqCst)
+        {
+            self.player
+                .inventory()
+                .set_stack_in_hand(self.hand, self.replacement.clone());
+        }
+        Box::pin(async {})
     }
-    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn round4c_pre_use_callback_publishes_opposite_hand() -> TestResult {
+    let mut fixture = HandUseFixture::new().await;
+    let player = fixture.owner.player.clone();
+    player.inventory().set_selected_slot(4);
+    let eggs = ItemStack::new(2, &Item::BROWN_EGG);
+    player.inventory().set_stack(4, eggs.clone());
+    let actions = pre_use_equipment_actions(&player, Hand::Right);
+    let mut replacement = ItemStack::new(3, &Item::EMERALD);
+    replacement.set_data_component(AttributeModifiersImpl {
+        attribute_modifiers: Cow::Owned(vec![Modifier {
+            r#type: &Attributes::ATTACK_DAMAGE,
+            id: "test:pre_use_offhand",
+            amount: 5.0,
+            operation: Operation::AddValue,
+            slot: AttributeModifierSlot::OffHand,
+        }]),
+    });
+    let java = fixture.java_observer.client();
+    java.set_player(fixture.java_observer.player.clone());
+    java.version.store(JavaMinecraftVersion::V_26_2);
+    let control = Arc::new(ReplaceOpposite {
+        player: player.clone(),
+        hand: Hand::Left,
+        replacement: replacement.clone(),
+        fired: AtomicBool::new(false),
+    });
+    fixture
+        .world
+        .server
+        .plugin_manager
+        .register::<PacketSentEvent, _>(control.clone(), EventPriority::Normal, true);
+    let mut packet = click_block_packet(
+        &player,
+        HandSlot::Mainhand,
+        BlockPos::new(8, 64, 8),
+        &eggs,
+        actions,
+    );
+    if let TransactionData::UseItem(data) = &mut packet.transaction_data {
+        data.action_type = VarInt(1);
+    }
+    fixture.drain_packets();
+    fixture
+        .owner
+        .client()
+        .handle_inventory_action(&player, packet);
+    fixture
+        .verify_and_close(|fixture| {
+            assert!(
+                control.fired.load(SeqCst),
+                "real pre-use publication callback"
+            );
+            assert_eq!(thrown_eggs(&fixture.world.world()), 1);
+            assert_eq!(player.inventory().held_item().item_count, 1);
+            assert_eq!(
+                attack_damage(&player, &fixture.java_observer.player),
+                6.0,
+                "real attack must use the pre-use callback's live offhand modifier"
+            );
+            let owner = fixture.owner.take_packets();
+            assert_owner_packet(fixture, &owner, Hand::Left, &replacement)?;
+            assert_both_hand_packets(
+                fixture,
+                &player,
+                player.inventory().held_item(),
+                replacement,
+            )
+        })
+        .await
 }
