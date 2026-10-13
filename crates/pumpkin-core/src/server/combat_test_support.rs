@@ -50,9 +50,13 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
         &advanced_config,
         &advanced_config.networking.management,
     ));
-    let management_hub = Arc::new(crate::net::management::hub::ManagementHub::new(
-        management_settings,
-    ));
+    let management_shutdown = tokio_util::sync::CancellationToken::new();
+    let management_hub = Arc::new(
+        crate::net::management::hub::ManagementHub::new_with_shutdown(
+            management_settings,
+            management_shutdown.clone(),
+        ),
+    );
     let permission_manager = Arc::new(PermissionManager::new());
     let command_dispatcher = ArcSwap::from_pointee(default_dispatcher(
         &permission_manager,
@@ -130,7 +134,7 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
         clock_roots: named_clock_storage::ClockRoots::new(path).unwrap(),
         level_info,
         management_hub,
-        management_shutdown: tokio_util::sync::CancellationToken::new(),
+        management_shutdown,
     };
     Arc::new(server)
 }

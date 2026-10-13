@@ -11,10 +11,13 @@ player and world saves; delivery remains best-effort. Incomplete ordinary HTTP r
 no longer hold final saves: after the five-second management grace, remaining listener
 connections are closed and awaited. Later requests in a stop batch receive a
 server-stopping error. Concurrent shutdown callers share one atomic claim, so
-the stopping notification is queued before session cancellation. Regression
-children now have a parent-side kill deadline and must match one exact test.
-Native API 8 (same version): Server has runtime management shutdown state, and
-ManagementServer exposes listener binding separately from serving; rebuild native
+the stopping notification is queued before session cancellation. The public
+`ManagementHub::broadcast_server_stopping()` completes both steps, so a plugin
+cannot consume the claim and strand the listener or heartbeat before final saves.
+Regression children now have a parent-side kill deadline and must match one exact
+test. Native API 8 (same version): `ManagementHub` shares the server's runtime
+management shutdown token; `Server` has runtime management shutdown state, and
+`ManagementServer` exposes listener binding separately from serving; rebuild native
 plugins. Written by Codex.
 The idle stdin task also stops on cancellation, using umceko's upstream
 [PR #3788](https://github.com/Pumpkin-MC/Pumpkin/pull/3788) approach.

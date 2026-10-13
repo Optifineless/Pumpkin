@@ -102,6 +102,87 @@ async fn management_shutdown_drains_listener_sessions_and_heartbeat() {
 }
 
 #[tokio::test]
+async fn standalone_management_notification_then_shutdown_completes() {
+    const CHILD: &str = "PUMPKIN_MANAGEMENT_STANDALONE_STOP_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        assert_eq!(
+            super::shutdown_child::run_isolated_child_test(
+                "net::management::shutdown_tests::standalone_management_notification_then_shutdown_completes",
+                CHILD,
+            )
+            .await,
+            Ok(()),
+            "parent process could not verify standalone notification shutdown"
+        );
+        return;
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut server = combat_test_support::server(directory.path());
+    let config = &mut Arc::get_mut(&mut server)
+        .unwrap()
+        .advanced_config
+        .networking
+        .management;
+    config.enabled = true;
+    config.address = "127.0.0.1:0".parse().unwrap();
+    config.secret = "a".repeat(40);
+    config.status_heartbeat_interval = 3600;
+    let config = config.clone();
+    server
+        .management_hub
+        .settings
+        .status_heartbeat_interval
+        .store(3600, std::sync::atomic::Ordering::Relaxed);
+    let listener = ManagementServer::bind(&config).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let management_server = server.clone();
+    let management = server.spawn_task(async move {
+        ManagementServer::run(&config, management_server, listener).await;
+    });
+
+    let mut request = format!("ws://{address}/").into_client_request().unwrap();
+    request.headers_mut().insert(
+        "Authorization",
+        format!("Bearer {}", "a".repeat(40)).parse().unwrap(),
+    );
+    let (mut client, _) = connect_async(request).await.unwrap();
+    client
+        .send(Message::Text(
+            r#"{"jsonrpc":"2.0","id":1,"method":"minecraft:server/status"}"#.into(),
+        ))
+        .await
+        .unwrap();
+    let reply = client.next().await.unwrap().unwrap();
+    let reply: serde_json::Value = serde_json::from_str(reply.to_text().unwrap()).unwrap();
+    assert_eq!(reply["id"], 1);
+
+    server.management_hub.broadcast_server_stopping();
+    server.shutdown().await;
+    management.await.unwrap();
+
+    let notification = client.next().await.unwrap().unwrap();
+    let notification: serde_json::Value =
+        serde_json::from_str(notification.to_text().unwrap()).unwrap();
+    assert_eq!(
+        notification["method"],
+        "minecraft:notification/server/stopping"
+    );
+    assert!(matches!(
+        client.next().await,
+        None | Some(Ok(Message::Close(_)))
+    ));
+    assert!(directory.path().join("level.dat").exists());
+    assert!(server.tasks.is_empty());
+    assert_eq!(
+        Arc::strong_count(&server),
+        1,
+        "management listener or heartbeat retained the server after shutdown"
+    );
+    let _rebound = TcpListener::bind(address).await.unwrap();
+}
+
+#[tokio::test]
 async fn management_shutdown_bounds_partial_http_request_drain() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let directory = tempfile::tempdir().unwrap();
