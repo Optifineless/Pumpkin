@@ -5155,8 +5155,8 @@ impl World {
                     block_state_id,
                     &condition,
                 )?;
-                // Mark chunk dirty if it isn't already
-                if replaced_block_state_id != block_state_id && !chunk.is_dirty() {
+                // LevelChunk.setBlockState calls ChunkAccess.markUnsaved for every changed state.
+                if replaced_block_state_id != block_state_id {
                     chunk.mark_dirty(true);
                 }
                 Some(replaced_block_state_id)

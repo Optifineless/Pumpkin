@@ -53,9 +53,11 @@ impl SingleChunkDataSerializer for ChunkData {
 
     #[inline]
     fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
+        // SerializableChunkData.copyOf captures gameTime once for both LevelChunkTicks.pack calls.
+        let current_tick = self.block_ticks.current_tick();
         Ok(self.internal_to_bytes(
-            self.block_ticks.to_vec_for_save(&self.dirty),
-            self.fluid_ticks.to_vec_for_save(&self.dirty),
+            self.block_ticks.to_vec_for_save(current_tick, &self.dirty),
+            self.fluid_ticks.to_vec_for_save(current_tick, &self.dirty),
         ))
     }
 
@@ -77,10 +79,14 @@ impl Dirtiable for ChunkData {
         self: &Arc<Self>,
         dimension: &pumpkin_data::dimension::Dimension,
     ) -> Result<Arc<Self>, ChunkReadingError> {
-        // IOWorker.PendingStore.copyData: reload owns fresh LevelChunkTicks, never a retired Arc.
+        // IOWorker.PendingStore.copyData copies both tick lists at one SerializableChunkData.copyOf time.
         // A load copy must not replace the clock observation of an in-flight save.
+        let current_tick = self.block_ticks.current_tick();
         Self::internal_from_bytes(
-            &self.internal_to_bytes(self.block_ticks.to_vec(), self.fluid_ticks.to_vec()),
+            &self.internal_to_bytes(
+                self.block_ticks.to_vec_at(current_tick),
+                self.fluid_ticks.to_vec_at(current_tick),
+            ),
             Vector2::new(self.x, self.z),
             dimension,
         )
@@ -918,6 +924,14 @@ impl LightContainer {
         }
     }
 
+    pub(crate) fn set_if_changed(&mut self, x: usize, y: usize, z: usize, value: u8) -> bool {
+        if self.get(x, y, z) == value {
+            return false;
+        }
+        self.set(x, y, z, value);
+        true
+    }
+
     #[inline]
     pub fn set_column_y_range(
         &mut self,
@@ -964,6 +978,15 @@ impl Default for LightContainer {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn light_container_reports_only_actual_value_changes() {
+        let mut section = LightContainer::new_empty(15);
+        assert!(!section.set_if_changed(2, 3, 4, 15));
+        assert!(section.set_if_changed(2, 3, 4, 7));
+        assert_eq!(section.get(2, 3, 4), 7);
+        assert!(!section.set_if_changed(2, 3, 4, 7));
+    }
+
     #[test]
     fn discarded_light_is_marked_even_when_saved_chunk_claims_to_be_lit() {
         let mut section = NbtCompound::new();
