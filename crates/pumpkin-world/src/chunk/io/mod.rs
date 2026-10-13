@@ -58,8 +58,11 @@ pub trait Dirtiable {
     fn dirty_version(&self) -> Option<u64> {
         None
     }
-    /// Clears only the version successfully published; newer mutations must remain dirty.
-    fn clear_published(&self, _version: u64) {}
+    /// Acknowledges a published version, returning true only if no newer mutation exists.
+    /// Clock progress can request a later snapshot without invalidating this publication.
+    fn clear_published(&self, _version: u64) -> bool {
+        false
+    }
 }
 
 /// Trait to handle the IO of chunks

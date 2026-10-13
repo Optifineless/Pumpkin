@@ -17,8 +17,8 @@ impl Dirtiable for Chunk {
     fn dirty_version(&self) -> Option<u64> {
         self.versioned.then(|| self.dirty.version())
     }
-    fn clear_published(&self, version: u64) {
-        self.dirty.clear_published(version);
+    fn clear_published(&self, version: u64) -> bool {
+        self.dirty.clear_published(version)
     }
 
     fn is_dirty(&self) -> bool {

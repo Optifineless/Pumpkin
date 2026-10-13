@@ -31,6 +31,7 @@ pub struct ChunkTickScheduler<T> {
     last_tick: AtomicI64,
     game_time: OnceLock<Arc<AtomicI64>>,
     mutation: AtomicU64,
+    // Clock used by the encoded tick image, and last observed queue mutation.
     observed_save_state: Mutex<(i64, u64), SaveObservation>,
 }
 
@@ -354,20 +355,41 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.observe_dirty(inner.as_deref(), Some(self.current_tick()), dirty);
+    }
+
+    /// Observes queue mutations without requesting another elapsed-time snapshot.
+    pub(crate) fn mark_dirty_if_mutated(&self, dirty: &crate::chunk::io::DirtyFlag) {
+        let inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.observe_dirty(inner.as_deref(), None, dirty);
+    }
+
+    fn observe_dirty(
+        &self,
+        inner: Option<&ChunkTickSchedulerInner<&'a T>>,
+        clock: Option<i64>,
+        dirty: &crate::chunk::io::DirtyFlag,
+    ) {
         let mut observed = self
             .observed_save_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let state = (self.current_tick(), self.mutation.load(Ordering::Relaxed));
-        // ScheduledTick.toSavedTick uses trigger - game time. Queue mutations and
-        // elapsed-only changes must reach Pumpkin's versioned publication barrier.
-        let has_runtime_ticks = inner
-            .as_ref()
-            .is_some_and(|inner| inner.queued_ticks.len() > inner.pending_ticks.len());
-        if observed.1 != state.1 || (has_runtime_ticks && observed.0 != state.0) {
+        let mutation = self.mutation.load(Ordering::Relaxed);
+        let has_runtime_ticks =
+            inner.is_some_and(|inner| inner.queued_ticks.len() > inner.pending_ticks.len());
+        if observed.1 != mutation {
             dirty.store(true, Ordering::Relaxed);
         }
-        *observed = state;
+        // ScheduledTick.toSavedTick changes delays as time passes. Request the next
+        // image once; clock progress must not invalidate an image already being written.
+        // ScheduledTick.toSavedTick casts the relative delay to a signed 32-bit t.
+        if has_runtime_ticks && clock.is_some_and(|clock| observed.0 as i32 != clock as i32) {
+            dirty.mark_elapsed_dirty();
+        }
+        observed.1 = mutation;
     }
 
     pub fn schedule_tick(&self, tick: &ScheduledTick<&'a T>, sub_tick_order: i64) {
@@ -483,6 +505,29 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
 
         inner.saved_ticks(current_tick)
     }
+
+    /// Captures relative delays and remembers the clock used by this encoded image.
+    pub(crate) fn to_vec_for_save(
+        &self,
+        dirty: &crate::chunk::io::DirtyFlag,
+    ) -> Vec<SavedTick<&'a T>> {
+        let inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current_tick = self.current_tick();
+        self.observe_dirty(inner.as_deref(), Some(current_tick), dirty);
+        // SerializableChunkData.copyOf -> LevelChunkTicks.pack snapshots game time
+        // with the relative delays. Inspection via to_vec must not advance this clock.
+        let ticks = inner
+            .as_ref()
+            .map_or_else(Vec::new, |inner| inner.saved_ticks(current_tick));
+        self.observed_save_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .0 = current_tick;
+        ticks
+    }
 }
 
 impl<'a, T: std::hash::Hash + Eq + 'static> FromIterator<SavedTick<&'a T>>
@@ -584,6 +629,31 @@ mod tests {
         scheduler.schedule_tick(&tick(5), 0);
         scheduler.step_tick(1);
         assert_eq!(scheduler.to_vec()[0].delay, 4);
+    }
+
+    #[test]
+    fn pending_snapshot_clock_observes_encoded_delay_width_and_coalesces_requests() {
+        let clock = Arc::new(AtomicI64::new(0));
+        let scheduler = ChunkTickScheduler::default();
+        scheduler.bind_clock(clock.clone());
+        scheduler.schedule_tick(&tick(5000), 0);
+        let dirty = crate::chunk::io::DirtyFlag::new(true);
+        scheduler.mark_dirty_if_changed(&dirty);
+        let version = dirty.version();
+        assert_eq!(scheduler.to_vec_for_save(&dirty)[0].delay, 5000);
+        assert!(dirty.clear_published(version));
+        clock.store(1i64 << 32, Ordering::Relaxed);
+        scheduler.mark_dirty_if_changed(&dirty);
+        assert_eq!(scheduler.to_vec()[0].delay, 5000);
+        assert!(!dirty.load(Ordering::Relaxed));
+        clock.store((1i64 << 32) + 1, Ordering::Relaxed);
+        scheduler.mark_dirty_if_changed(&dirty);
+        let elapsed_version = dirty.version();
+        assert!(dirty.load(Ordering::Relaxed));
+        assert_ne!(elapsed_version, version);
+        clock.store((1i64 << 32) + 2, Ordering::Relaxed);
+        scheduler.mark_dirty_if_changed(&dirty);
+        assert_eq!(dirty.version(), elapsed_version);
     }
 
     #[test]

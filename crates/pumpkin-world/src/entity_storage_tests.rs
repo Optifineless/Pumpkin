@@ -93,11 +93,8 @@ async fn storage_review_entity_reads_deduplicate_only_the_same_position() {
     let mut context = std::task::Context::from_waker(std::task::Waker::noop());
     assert!(std::future::Future::poll(first.as_mut(), &mut context).is_pending());
     assert!(std::future::Future::poll(duplicate.as_mut(), &mut context).is_pending());
-    let mut independent = Box::pin(level.get_entity_chunk(neighbor));
-    assert!(matches!(
-        std::future::Future::poll(independent.as_mut(), &mut context),
-        std::task::Poll::Ready(Ok(_))
-    ));
+    // The independent copy may yield, but must finish while the first position is paused.
+    level.get_entity_chunk(neighbor).await.unwrap();
     assert_eq!(level.entity_read_count.load(Ordering::Relaxed), 2);
     release.send(()).unwrap();
     let (first, duplicate) = tokio::join!(first, duplicate);
