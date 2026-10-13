@@ -13,6 +13,7 @@ use super::{
 use pumpkin_config::{
     AdvancedConfiguration, BasicConfiguration, networking::management::ManagementServerConfig,
 };
+use tokio_util::sync::CancellationToken;
 
 pub struct ManagementSettings {
     pub autosave: AtomicBool,
@@ -75,16 +76,26 @@ pub struct ManagementHub {
     sender: broadcast::Sender<String>,
     pub settings: Arc<ManagementSettings>,
     server_stopping: AtomicBool,
+    management_shutdown: CancellationToken,
 }
 
 impl ManagementHub {
     #[must_use]
     pub fn new(settings: Arc<ManagementSettings>) -> Self {
+        Self::new_with_shutdown(settings, CancellationToken::new())
+    }
+
+    #[must_use]
+    pub(crate) fn new_with_shutdown(
+        settings: Arc<ManagementSettings>,
+        management_shutdown: CancellationToken,
+    ) -> Self {
         let (sender, _) = broadcast::channel(1024);
         Self {
             sender,
             settings,
             server_stopping: AtomicBool::new(false),
+            management_shutdown,
         }
     }
 
@@ -118,37 +129,31 @@ impl ManagementHub {
         ));
     }
 
+    /// Queues the stopping notification before draining management sessions.
     pub fn broadcast_server_stopping(&self) {
-        let _ = self.broadcast_server_stopping_with(|| {});
+        self.broadcast_server_stopping_with(|| {});
     }
 
-    pub(crate) fn try_broadcast_server_stopping(&self) -> bool {
-        self.broadcast_server_stopping_with(|| {})
-    }
-
-    pub(crate) fn broadcast_server_stopping_with(&self, after_claim: impl FnOnce()) -> bool {
-        // JsonRpcNotificationService.serverShuttingDown claims once before notifying or closing sessions.
+    fn broadcast_server_stopping_with(&self, after_claim: impl FnOnce()) {
+        // JsonRpcNotificationService.serverShuttingDown notifies before DedicatedServer.stopServer saves.
         if self
             .server_stopping
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            return false;
+            return;
         }
         after_claim();
         self.broadcast(&RpcNotification::new(
             "minecraft:notification/server/stopping",
             None,
         ));
-        true
+        self.management_shutdown.cancel();
     }
 
     #[cfg(test)]
-    pub(crate) fn broadcast_server_stopping_with_adapter(
-        &self,
-        after_claim: impl FnOnce(),
-    ) -> bool {
-        self.broadcast_server_stopping_with(after_claim)
+    pub(crate) fn broadcast_server_stopping_with_adapter(&self, after_claim: impl FnOnce()) {
+        self.broadcast_server_stopping_with(after_claim);
     }
 
     pub fn broadcast_server_saving(&self) {

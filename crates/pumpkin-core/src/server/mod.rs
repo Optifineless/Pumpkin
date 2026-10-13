@@ -336,9 +336,13 @@ impl Server {
             &advanced_config,
             &advanced_config.networking.management,
         ));
-        let management_hub = Arc::new(crate::net::management::hub::ManagementHub::new(
-            management_settings,
-        ));
+        let management_shutdown = tokio_util::sync::CancellationToken::new();
+        let management_hub = Arc::new(
+            crate::net::management::hub::ManagementHub::new_with_shutdown(
+                management_settings,
+                management_shutdown.clone(),
+            ),
+        );
 
         map_manager.reconcile_counter(level_info.load().map_id);
         let watchdog = Arc::new(watchdog::Watchdog::new(basic_config.max_tick_time));
@@ -396,7 +400,7 @@ impl Server {
             clock_roots: named_clock_storage::ClockRoots::new(&world_path)?,
             level_info,
             management_hub,
-            management_shutdown: tokio_util::sync::CancellationToken::new(),
+            management_shutdown,
         };
         let server = Arc::new(server);
 
