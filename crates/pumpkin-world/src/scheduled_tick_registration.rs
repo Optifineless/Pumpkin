@@ -2,8 +2,6 @@ use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use rustc_hash::FxHashSet;
 
 use crate::level::{Level, TickData};
-use crate::tick::{drain_containers, MAX_SCHEDULED_TICKS_PER_TICK};
-use std::sync::atomic::Ordering;
 
 impl Level {
     pub(crate) fn collect_scheduled_ticks(
@@ -11,53 +9,10 @@ impl Level {
         active: &FxHashSet<Vector2<i32>>,
         ticks: &mut TickData,
     ) {
-        let mut positions = std::mem::take(
-            &mut *self
-                .scheduled_tick_collect_positions
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        positions.clear();
-        // LevelTicks.collectTicks snapshots indexed containers before draining them.
-        let registered = self
-            .chunks_with_scheduled_ticks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        positions.extend(registered.iter().copied());
-        drop(registered);
-        let current_tick = self.game_time.load(Ordering::Relaxed);
-        let mut blocks = Vec::new();
-        for &pos in &positions {
-            let empty = self.loaded_chunks.get(&pos).is_none_or(|chunk| {
-                // LevelTicks.tickCheck leaves inactive containers pending.
-                if !active.contains(&pos) {
-                    return false;
-                }
-                blocks.push(chunk.value().clone());
-                
-                !chunk.block_ticks.has_ticks() && !chunk.fluid_ticks.has_ticks()
-            });
-            // Release the chunk guard before taking the registration lock again.
-            if empty {
-                self.unregister_empty_tick_container(pos, active);
-            }
-        }
-        let block_containers: Vec<_> = blocks.iter().map(|chunk| &chunk.block_ticks).collect();
-        let fluid_containers: Vec<_> = blocks.iter().map(|chunk| &chunk.fluid_ticks).collect();
-        ticks.block_ticks = drain_containers(&block_containers, current_tick, MAX_SCHEDULED_TICKS_PER_TICK);
-        ticks.fluid_ticks = drain_containers(&fluid_containers, current_tick, MAX_SCHEDULED_TICKS_PER_TICK);
-        for &pos in &positions { self.unregister_empty_tick_container(pos, active); }
-        positions.clear();
-        let mut buffer = self
-            .scheduled_tick_collect_positions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if positions.capacity() > buffer.capacity() {
-            *buffer = positions;
-        }
+        super::level_ticks::collect(self, active, ticks);
     }
 
-    fn unregister_empty_tick_container(&self, pos: Vector2<i32>, active: &FxHashSet<Vector2<i32>>) {
+    pub(super) fn unregister_empty_tick_container(&self, pos: Vector2<i32>, active: &FxHashSet<Vector2<i32>>) {
         let mut registered = self
             .chunks_with_scheduled_ticks
             .lock()
