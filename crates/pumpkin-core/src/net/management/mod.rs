@@ -155,7 +155,9 @@ async fn ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if state.server.management_shutdown.is_cancelled() {
+    if state.server.management_shutdown.is_cancelled()
+        || state.server.management_hub.is_server_stopping()
+    {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
     match auth::check_auth(&headers, &state.secret, &state.allowed_origins) {
@@ -169,10 +171,17 @@ async fn ws_handler(
                 .unwrap_or_else(|_| StatusCode::UNAUTHORIZED.into_response())
         }
         SecurityCheckResult::Allowed { token_in_sec_ws } => {
+            let notif_rx = state.server.management_hub.subscribe();
+            if state.server.management_shutdown.is_cancelled()
+                || state.server.management_hub.is_server_stopping()
+            {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
             let server = state.server.clone();
+            // Capture the receiver before the upgrade response can race the stopping broadcast.
             let mut response = ws.on_upgrade(move |socket| {
                 // Axum upgrades leave the HTTP serve loop; include sessions in server drainage.
-                let session = server.spawn_task(handle_socket(socket, server.clone()));
+                let session = server.spawn_task(handle_socket(socket, server.clone(), notif_rx));
                 async move {
                     if let Err(e) = session.await {
                         error!("Management session error: {e}");
@@ -190,10 +199,14 @@ async fn ws_handler(
     }
 }
 
-async fn handle_socket(socket: WebSocket, server: Arc<Server>) {
+async fn handle_socket(
+    socket: WebSocket,
+    server: Arc<Server>,
+    notif_rx: tokio::sync::broadcast::Receiver<String>,
+) {
     debug!("Management WebSocket connection opened");
     tokio::select! {
-        () = handle_socket_messages(socket, &server) => {}
+        () = handle_socket_messages(socket, &server, notif_rx) => {}
         () = async {
             server.management_shutdown.cancelled().await;
             tokio::time::sleep(SHUTDOWN_GRACE_PERIOD).await;
@@ -204,9 +217,12 @@ async fn handle_socket(socket: WebSocket, server: Arc<Server>) {
     debug!("Management WebSocket connection closed");
 }
 
-async fn handle_socket_messages(socket: WebSocket, server: &Arc<Server>) {
+async fn handle_socket_messages(
+    socket: WebSocket,
+    server: &Arc<Server>,
+    mut notif_rx: tokio::sync::broadcast::Receiver<String>,
+) {
     let (mut sender, mut receiver) = socket.split();
-    let mut notif_rx = server.management_hub.subscribe();
 
     loop {
         tokio::select! {
@@ -239,10 +255,19 @@ async fn handle_socket_messages(socket: WebSocket, server: &Arc<Server>) {
                 match msg {
                     Message::Text(text) => {
                         let text_str = text.as_str();
-                        if let Some(resp_str) = handle_json_text(text_str, server).await
-                            && sender.send(Message::from(resp_str)).await.is_err() {
-                                break;
-                            }
+                        let (response, stop_requested) = handle_json_text(text_str, server).await;
+                        let send_failed = if let Some(response) = response {
+                            sender.send(Message::from(response)).await.is_err()
+                        } else {
+                            false
+                        };
+                        // ServerStateService.stop submits halt(false) after its acknowledgement.
+                        if stop_requested {
+                            crate::stop_server();
+                        }
+                        if send_failed {
+                            break;
+                        }
                     }
                     Message::Close(_) => break,
                     Message::Ping(p) => {
@@ -258,21 +283,24 @@ async fn handle_socket_messages(socket: WebSocket, server: &Arc<Server>) {
     let _ = sender.close().await;
 }
 
-async fn handle_json_text(text: &str, server: &Arc<Server>) -> Option<String> {
+async fn handle_json_text(text: &str, server: &Arc<Server>) -> (Option<String>, bool) {
     let parsed: Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(e) => {
             let err = RpcResponse::error(Value::Null, RpcError::parse_error(Some(e.to_string())));
-            return serde_json::to_string(&err).ok();
+            return (serde_json::to_string(&err).ok(), false);
         }
     };
 
     match parsed {
         Value::Array(items) => {
             let mut responses = Vec::new();
+            let mut stop_requested = false;
             for item in items {
                 if let Ok(req) = serde_json::from_value::<RpcRequest>(item) {
-                    if let Some(resp) = handlers::dispatch(req, server).await {
+                    let (response, should_stop) = handlers::dispatch(req, server).await;
+                    stop_requested |= should_stop;
+                    if let Some(resp) = response {
                         responses.push(resp);
                     }
                 } else {
@@ -282,11 +310,12 @@ async fn handle_json_text(text: &str, server: &Arc<Server>) -> Option<String> {
                     ));
                 }
             }
-            if responses.is_empty() {
+            let response = if responses.is_empty() {
                 None
             } else {
                 serde_json::to_string(&responses).ok()
-            }
+            };
+            (response, stop_requested)
         }
         Value::Object(_) => {
             let req: RpcRequest = match serde_json::from_value(parsed) {
@@ -296,15 +325,18 @@ async fn handle_json_text(text: &str, server: &Arc<Server>) -> Option<String> {
                         Value::Null,
                         RpcError::invalid_request(Some(e.to_string())),
                     );
-                    return serde_json::to_string(&err).ok();
+                    return (serde_json::to_string(&err).ok(), false);
                 }
             };
-            let resp = handlers::dispatch(req, server).await?;
-            serde_json::to_string(&resp).ok()
+            let (response, stop_requested) = handlers::dispatch(req, server).await;
+            (
+                response.and_then(|response| serde_json::to_string(&response).ok()),
+                stop_requested,
+            )
         }
         _ => {
             let err = RpcResponse::error(Value::Null, RpcError::invalid_request(None));
-            serde_json::to_string(&err).ok()
+            (serde_json::to_string(&err).ok(), false)
         }
     }
 }

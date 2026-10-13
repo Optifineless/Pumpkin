@@ -507,6 +507,7 @@ impl PumpkinServer {
 
         info!("Stopped accepting incoming connections");
 
+        self.server.begin_shutdown();
         self.stop_ticker().await;
 
         // Fence the final player list against a login that completed during cancellation.

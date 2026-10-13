@@ -1,7 +1,7 @@
 use arc_swap::ArcSwap;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64},
+    atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering},
 };
 use tokio::sync::broadcast;
 use tracing::warn;
@@ -74,18 +74,27 @@ impl ManagementSettings {
 pub struct ManagementHub {
     sender: broadcast::Sender<String>,
     pub settings: Arc<ManagementSettings>,
+    server_stopping: AtomicBool,
 }
 
 impl ManagementHub {
     #[must_use]
     pub fn new(settings: Arc<ManagementSettings>) -> Self {
         let (sender, _) = broadcast::channel(1024);
-        Self { sender, settings }
+        Self {
+            sender,
+            settings,
+            server_stopping: AtomicBool::new(false),
+        }
     }
 
     #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
         self.sender.subscribe()
+    }
+
+    pub(crate) fn is_server_stopping(&self) -> bool {
+        self.server_stopping.load(Ordering::Relaxed)
     }
 
     fn broadcast(&self, notification: &RpcNotification) {
@@ -110,10 +119,13 @@ impl ManagementHub {
     }
 
     pub fn broadcast_server_stopping(&self) {
-        self.broadcast(&RpcNotification::new(
-            "minecraft:notification/server/stopping",
-            None,
-        ));
+        // JsonRpcNotificationService.serverShuttingDown notifies once; latch first to close upgrade admission.
+        if !self.server_stopping.swap(true, Ordering::Relaxed) {
+            self.broadcast(&RpcNotification::new(
+                "minecraft:notification/server/stopping",
+                None,
+            ));
+        }
     }
 
     pub fn broadcast_server_saving(&self) {

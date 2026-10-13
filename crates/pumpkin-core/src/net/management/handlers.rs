@@ -96,35 +96,45 @@ const fn u8_to_permission_lvl(lvl: u8) -> PermissionLvl {
     }
 }
 
-pub async fn dispatch(request: RpcRequest, server: &Arc<Server>) -> Option<RpcResponse> {
+pub async fn dispatch(request: RpcRequest, server: &Arc<Server>) -> (Option<RpcResponse>, bool) {
     let id = request.id.clone();
     if let Some(ref req_id) = id
         && !is_valid_request_id(req_id)
     {
-        return Some(RpcResponse::error(
-            Value::Null,
-            RpcError::invalid_request(Some(
-                "Invalid request id - only String, Number and NULL supported".to_string(),
+        return (
+            Some(RpcResponse::error(
+                Value::Null,
+                RpcError::invalid_request(Some(
+                    "Invalid request id - only String, Number and NULL supported".to_string(),
+                )),
             )),
-        ));
+            false,
+        );
     }
 
     let Some(raw_method) = request.method else {
-        return id.map(|req_id| {
-            RpcResponse::error(
-                req_id,
-                RpcError::invalid_request(Some("Missing method name".to_string())),
-            )
-        });
+        return (
+            id.map(|req_id| {
+                RpcResponse::error(
+                    req_id,
+                    RpcError::invalid_request(Some("Missing method name".to_string())),
+                )
+            }),
+            false,
+        );
     };
 
     let method = normalize_method(&raw_method);
     let result = execute_method(&method, request.params.as_ref(), server).await;
+    let stop_requested = method == "minecraft:server/stop" && result.is_ok();
 
-    id.map(|req_id| match result {
-        Ok(val) => RpcResponse::success(req_id, val),
-        Err(err) => RpcResponse::error(req_id, err),
-    })
+    (
+        id.map(|req_id| match result {
+            Ok(val) => RpcResponse::success(req_id, val),
+            Err(err) => RpcResponse::error(req_id, err),
+        }),
+        stop_requested,
+    )
 }
 
 fn normalize_method(method: &str) -> String {
@@ -809,12 +819,7 @@ async fn execute_method(
         }
         "minecraft:server/stop" => {
             check_no_params(params)?;
-            server.management_hub.broadcast_server_stopping();
-            let s = server.clone();
-            tokio::spawn(async move {
-                s.shutdown().await;
-                std::process::exit(0);
-            });
+            // Vanilla ServerStateService.stop acknowledges before halt(false) reaches the shutdown owner.
             Ok(json!(true))
         }
         "minecraft:server/system_message" => {

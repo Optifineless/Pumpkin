@@ -922,11 +922,20 @@ impl Server {
             .remove_player(player);
     }
 
+    /// Notifies management clients and stops its listener before shutdown saves begin.
+    ///
+    /// Mirrors `DedicatedServer.stopServer`, which notifies before `MinecraftServer.stopServer` saves.
+    pub(crate) fn begin_shutdown(&self) {
+        if self.management_shutdown.is_cancelled() {
+            return;
+        }
+        self.management_hub.broadcast_server_stopping();
+        self.management_shutdown.cancel();
+    }
+
     pub async fn shutdown(&self) {
         // Only the ticker owner disarms the watchdog, after joining its OS thread.
-        self.management_hub.broadcast_server_stopping();
-        // DedicatedServer.stopServer notifies clients before stopping connections and saving.
-        self.management_shutdown.cancel();
+        self.begin_shutdown();
 
         self.tasks.close();
         debug!("Awaiting tasks for server");
