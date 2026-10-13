@@ -1,4 +1,5 @@
 pub(crate) use explosion::ExplosionDamageSource;
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
@@ -47,6 +48,8 @@ pub mod raid;
 pub mod random_sequences;
 #[cfg(test)]
 mod shared_state_tests;
+#[cfg(test)]
+mod snapshot_boundary_tests;
 mod spawn_insertion;
 pub mod stopwatches;
 pub mod time;
@@ -837,8 +840,8 @@ impl World {
         };
 
         for block_entity in block_entities {
-            let mut nbt = NbtCompound::new();
-            block_entity.write_internal(&mut nbt);
+            let mut nbt =
+                crate::block::entities::capture::capture_legacy(block_entity.as_ref()).into_nbt();
             if let Some(custom_data) = self
                 .custom_block_entity_data
                 .get(&block_entity.get_position())
@@ -1251,6 +1254,7 @@ impl World {
     ///
     /// **Note:** This function acquires a lock on the `current_players` map, ensuring thread safety.
     pub fn broadcast_packet_all<P: ClientPacket>(&self, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_packet_all");
         let players = self.players.load();
         let recipients_by_version = Self::collect_java_recipients_by_version(players.iter());
         Self::broadcast_java_grouped(packet, recipients_by_version);
@@ -1304,6 +1308,7 @@ impl World {
         je_packet: &J,
         be_packet: &B,
     ) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_editioned");
         let players = self.players.load();
         let je_recipients_by_version = Self::collect_java_recipients_by_version(players.iter());
 
@@ -1952,6 +1957,7 @@ impl World {
     }
 
     pub fn register_block_change(&self, position: BlockPos, block_state_id: BlockStateId) {
+        assert_not_in_snapshot(SB::Mutation, "World::register_block_change");
         self.unsent_block_changes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1962,6 +1968,7 @@ impl World {
     ///
     /// Call [`flush_block_updates`](Self::flush_block_updates) afterward to send the packets.
     pub fn queue_block_updates(&self, changes: &[(BlockPos, BlockStateId)]) {
+        assert_not_in_snapshot(SB::Mutation, "World::queue_block_updates");
         let mut guard = self
             .unsent_block_changes
             .lock()
@@ -5094,6 +5101,7 @@ impl World {
         block_state_id: BlockStateId,
         flags: BlockFlags,
     ) -> BlockStateId {
+        assert_not_in_snapshot(SB::Mutation, "World::set_block_state");
         if !self.is_in_build_limit(*position) {
             return Block::AIR.default_state.id;
         }
@@ -5119,6 +5127,7 @@ impl World {
         flags: BlockFlags,
         condition: impl Fn(BlockStateId) -> bool,
     ) -> Option<BlockStateId> {
+        assert_not_in_snapshot(SB::Mutation, "World::set_block_state_if");
         if !self.is_in_build_limit(*position) {
             return None;
         }
@@ -6156,6 +6165,7 @@ impl World {
     }
 
     pub fn get_block_entity(&self, block_pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
+        assert_not_in_snapshot(SB::WorldRead, "World::get_block_entity");
         let chunk_pos = block_pos.chunk_position();
         if let Some(entity) = self
             .block_entities
@@ -6228,6 +6238,7 @@ impl World {
     }
 
     pub fn add_block_entity(&self, block_entity: Arc<dyn BlockEntity>) {
+        assert_not_in_snapshot(SB::Mutation, "World::add_block_entity");
         self.bind_block_entity_context(block_entity.as_ref());
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
@@ -6263,6 +6274,7 @@ impl World {
     }
 
     pub fn add_block_entity_nbt(&self, block_pos: BlockPos, nbt: &NbtCompound) {
+        assert_not_in_snapshot(SB::Mutation, "World::add_block_entity_nbt");
         let _loads = self.invalidate_pending_block_entity_load(&block_pos);
         if self
             .level
@@ -6282,6 +6294,7 @@ impl World {
     }
 
     pub fn remove_block_entity(&self, block_pos: &BlockPos) {
+        assert_not_in_snapshot(SB::Mutation, "World::remove_block_entity");
         self.remove_loaded_block_entity(block_pos);
     }
 
@@ -6304,6 +6317,7 @@ impl World {
     }
 
     pub fn update_block_entity(&self, block_entity: &Arc<dyn BlockEntity>) {
+        assert_not_in_snapshot(SB::Mutation, "World::update_block_entity");
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
         let block_entity_nbt = block_entity.chunk_data_nbt();
@@ -6778,6 +6792,7 @@ impl World {
 
     /// Broadcasts a packet to all players who currently have the target chunk loaded.
     pub fn broadcast_to_chunk<P: ClientPacket>(&self, chunk_pos: Vector2<i32>, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_to_chunk");
         let players = self.players.load();
 
         let recipients = players.iter().filter(|p| {
@@ -6795,6 +6810,7 @@ impl World {
         chunk_pos: Vector2<i32>,
         packet: &P,
     ) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_to_chunk_bedrock");
         let players = self.players.load();
         let recipients = players.iter().filter_map(|player| {
             if player
@@ -6816,6 +6832,7 @@ impl World {
         je_packet: &J,
         be_packet: &B,
     ) {
+        assert_not_in_snapshot(SB::Packet, "World::broadcast_to_chunk_editioned");
         let players = self.players.load();
         let mut java_recipients = Vec::new();
         let mut bedrock_recipients = Vec::new();

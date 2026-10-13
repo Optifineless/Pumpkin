@@ -1,3 +1,4 @@
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 /// In-memory Java clients for packet and host regression tests.
 #[cfg(any(test, feature = "test"))]
 #[doc(hidden)]
@@ -397,11 +398,13 @@ impl JavaClient {
     }
 
     pub async fn enqueue_packet(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::enqueue_packet");
         self.enqueue_packet_data(packet_data).await;
     }
 
     #[allow(clippy::unused_async)]
     pub async fn enqueue_packet_data(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::enqueue_packet_data");
         self.try_enqueue_packet_data(packet_data);
     }
 
@@ -473,10 +476,12 @@ impl JavaClient {
     }
 
     pub fn try_enqueue_packet(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::try_enqueue_packet");
         self.try_enqueue_packet_data(packet_data);
     }
 
     pub fn try_enqueue_packet_data(&self, packet_data: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::try_enqueue_packet_data");
         let Some((packet_data, packet_len)) = self.reserve_pending_bytes(packet_data) else {
             return;
         };
@@ -485,6 +490,7 @@ impl JavaClient {
 
     /// `false` once the writer is gone. Then the connection is closed.
     fn queue_outgoing(&self, packet: OutgoingPacket, packet_len: usize) -> bool {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::queue_outgoing");
         if self.outgoing_packet_queue_send.send(packet).is_ok() {
             return true;
         }
@@ -611,12 +617,14 @@ impl JavaClient {
     }
 
     pub async fn send_packet_now(&self, packet: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::send_packet_now");
         self.send_packet_now_data(packet).await;
     }
 
     /// Enqueue on the per-connection FIFO and wait until the writer has
     /// `write_frame`d into the `BufWriter`. Never waits for a TCP flush.
     pub async fn send_packet_now_data(&self, packet: Bytes) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::send_packet_now_data");
         self.send_and_wait(packet, OutgoingPacket::high_priority)
             .await;
     }
@@ -627,6 +635,7 @@ impl JavaClient {
         packet: Bytes,
         make: fn(Bytes, oneshot::Sender<()>) -> OutgoingPacket,
     ) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::send_and_wait");
         let Some((packet, packet_len)) = self.reserve_pending_bytes(packet) else {
             return;
         };
@@ -662,18 +671,21 @@ impl JavaClient {
     }
 
     pub fn try_send_packet<P: ClientPacket>(&self, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::try_send_packet");
         if let Ok(data) = self.serialize_packet(packet) {
             self.try_enqueue_packet(data);
         }
     }
 
     pub async fn send_packet<P: ClientPacket>(&self, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::send_packet");
         if let Ok(data) = self.serialize_packet(packet) {
             self.send_packet_now(data).await;
         }
     }
 
     pub async fn enqueue_client_packet<P: ClientPacket>(&self, packet: &P) {
+        assert_not_in_snapshot(SB::Packet, "JavaClient::enqueue_client_packet");
         if let Ok(data) = self.serialize_packet(packet) {
             self.enqueue_packet(data).await;
         }

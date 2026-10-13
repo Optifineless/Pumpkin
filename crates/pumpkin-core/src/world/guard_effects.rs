@@ -6,6 +6,7 @@
 //! plugin dispatch itself is never deferred. Nested mutations append to the outer
 //! batch so a helper cannot flush while its caller still holds an owner guard.
 
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 use std::{cell::RefCell, marker::PhantomData, rc::Rc, sync::Arc};
 
 use bytes::Bytes;
@@ -52,6 +53,7 @@ impl OwnerEffects {
     /// Captures notifications under the owner guard in mutation order.
     /// Start a `GuardEffects` batch before taking that guard; never cross await.
     pub(crate) fn capture(&self, operation: impl FnOnce()) {
+        assert_not_in_snapshot(SB::Effect, "OwnerEffects::capture");
         self.0.capture(operation);
     }
 }
@@ -80,6 +82,7 @@ impl OrderedEffects {
     /// Captures reviewed sends in mutation order and schedules delivery after unlocking.
     /// The caller must start a `GuardEffects` batch before acquiring the owner guard.
     pub(crate) fn capture(self: &Arc<Self>, operation: impl FnOnce()) {
+        assert_not_in_snapshot(SB::Effect, "OrderedEffects::capture");
         let batch = GuardEffects::new();
         operation();
         let effects = batch.take();
@@ -247,6 +250,7 @@ impl Drop for GuardEffects {
 // Finish every recipient and sibling before propagating the first callback panic.
 // A batch abandoned before delivery still follows the separate unwind discard path.
 fn run_committed_effects(effects: Vec<Effect>) {
+    assert_not_in_snapshot(SB::Effect, "GuardEffects::run_committed_effects");
     let mut first_panic = None;
     let mut later_panics = Vec::new();
     for effect in effects {
@@ -276,6 +280,7 @@ fn run_committed_effects(effects: Vec<Effect>) {
 
 /// Returns the effect unchanged when no explicit batch owns this operation.
 pub(crate) fn defer<F: FnOnce() + Send + 'static>(effect: F) -> Result<(), F> {
+    assert_not_in_snapshot(SB::Effect, "GuardEffects::defer");
     BATCHES.with_borrow_mut(|batches| {
         if let Some(batch) = batches.last_mut() {
             batch.push(Box::new(effect));
@@ -291,6 +296,7 @@ pub(crate) fn is_active() -> bool {
 }
 
 pub(crate) fn send(client: Arc<ClientPlatform>, bytes: Bytes) {
+    assert_not_in_snapshot(SB::Effect, "GuardEffects::send");
     let effect = move || match client.as_ref() {
         ClientPlatform::Java(client) => client.try_enqueue_packet(bytes),
         ClientPlatform::Bedrock(client) => client.try_enqueue_packet(bytes),

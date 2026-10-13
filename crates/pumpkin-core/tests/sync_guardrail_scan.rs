@@ -9,9 +9,9 @@ use std::{
 };
 
 #[derive(Clone)]
-struct Token<'a> {
-    text: &'a str,
-    line: usize,
+pub struct Token<'a> {
+    pub text: &'a str,
+    pub line: usize,
 }
 #[derive(Clone)]
 struct Site {
@@ -22,9 +22,9 @@ struct Site {
     enforced: bool,
 }
 #[derive(Default)]
-struct Imports {
+pub struct Imports {
     locks: HashMap<String, Vec<String>>,
-    paths: HashMap<String, Vec<String>>,
+    pub paths: HashMap<String, Vec<String>>,
     globs: Vec<String>,
 }
 
@@ -56,7 +56,8 @@ fn raw_end(b: &[u8], i: usize) -> Option<usize> {
 }
 
 #[rustfmt::skip]
-fn tokenize(s: &str) -> Vec<Token<'_>> {
+#[must_use]
+pub fn tokenize(s: &str) -> Vec<Token<'_>> {
     let b = s.as_bytes();
     let (mut i, mut line, mut out) = (0, 1, Vec::new());
     while i < b.len() {
@@ -156,14 +157,16 @@ fn use_tree(t: &[Token<'_>], i: &mut usize, prefix: String, out: &mut Imports) {
     add_import(out, &path, None);
 }
 #[rustfmt::skip]
-fn imports(t: &[Token<'_>]) -> Imports {
+#[must_use]
+pub fn imports(t: &[Token<'_>]) -> Imports {
     let mut out = Imports::default(); let mut i = 0;
     while i < t.len() { if t[i].text == "use" { let mut end = i + 1; while end < t.len() && t[end].text != ";" { end += 1; }
         let mut cursor = i + 1; use_tree(&t[..end], &mut cursor, String::new(), &mut out); i = end; } i += 1; } out
 }
 
 #[rustfmt::skip]
-fn owners(t: &[Token<'_>]) -> (Vec<usize>, Vec<String>) {
+#[must_use]
+pub fn owners(t: &[Token<'_>]) -> (Vec<usize>, Vec<String>) {
     let mut out = vec![0; t.len()]; let mut names = vec!["<module>".into()]; let mut scopes = Vec::<(usize, usize)>::new();
     let (mut depth, mut current, mut func) = (0usize, 0usize, None);
     for i in 0..t.len() {
@@ -178,7 +181,8 @@ fn owners(t: &[Token<'_>]) -> (Vec<usize>, Vec<String>) {
     }
     (out, names)
 }
-fn path_at(t: &[Token<'_>], i: usize) -> String {
+#[must_use]
+pub fn path_at(t: &[Token<'_>], i: usize) -> String {
     let mut start = i;
     while start >= 2
         && t[start - 1].text == "::"

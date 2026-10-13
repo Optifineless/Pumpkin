@@ -48,6 +48,7 @@ pub mod beehive;
 pub mod brushable_block;
 pub mod calibrated_sculk_sensor;
 pub mod campfire;
+pub mod capture;
 pub mod conduit;
 pub mod copper_golem_statue;
 pub mod crafter;

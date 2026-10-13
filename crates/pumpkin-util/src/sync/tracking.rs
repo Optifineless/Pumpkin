@@ -22,6 +22,7 @@ pub(super) struct Acquisition {
 impl Acquisition {
     #[track_caller]
     pub(super) fn check<C: LockClass + 'static>(identity: usize) -> Self {
+        super::snapshot_scope::check_lock::<C>(identity);
         let new = Self {
             identity,
             class: TypeId::of::<C>(),

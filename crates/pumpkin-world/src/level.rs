@@ -1,3 +1,4 @@
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 #[path = "entity_unload.rs"]
 pub(crate) mod entity_unload;
 pub use entity_unload::EntityUnload;
@@ -855,6 +856,7 @@ impl Level {
         position: &BlockPos,
         block_state_id: BlockStateId,
     ) -> BlockStateId {
+        assert_not_in_snapshot(SB::Mutation, "Level::set_block_state");
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
         self.read_chunk_sync(&chunk_coordinate, |chunk| {
             let replaced_block_state_id = chunk.set_block_absolute_y(
@@ -921,6 +923,7 @@ impl Level {
         coordinates: &Vector2<i32>,
         f: F,
     ) -> Option<R> {
+        assert_not_in_snapshot(SB::WorldRead, "Level::read_chunk_sync");
         self.loaded_chunks.get(coordinates).map(|x| f(x.value()))
     }
 

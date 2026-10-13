@@ -2,6 +2,7 @@ use arc_swap::ArcSwap;
 use futures::future::join_all;
 use loader::{LoaderError, PluginLoader, native::NativePluginLoader};
 use notify::{EventKind, RecursiveMode, Watcher, event::ModifyKind};
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
@@ -1222,6 +1223,7 @@ impl PluginManager {
         server: &Arc<Server>,
         event: &mut E,
     ) {
+        assert_not_in_snapshot(SB::Event, "PluginManager::fire");
         pumpkin_util::sync::assert_no_guards_held("PluginManager::fire");
         self.fire_dyn(server, E::get_name_static(), event).await;
     }
@@ -1232,6 +1234,7 @@ impl PluginManager {
         event_name: &'static str,
         event: &mut (dyn Payload + Send + Sync),
     ) {
+        assert_not_in_snapshot(SB::Event, "PluginManager::fire_dyn");
         pumpkin_util::sync::assert_no_guards_held("PluginManager::fire_dyn");
         let handlers_map = self.handlers.load();
         if handlers_map.is_empty() {
@@ -1268,6 +1271,7 @@ impl PluginManager {
         server: &Arc<Server>,
         event: &mut E,
     ) {
+        assert_not_in_snapshot(SB::Event, "PluginManager::fire_blocking");
         pumpkin_util::sync::assert_no_guards_held("PluginManager::fire_blocking");
         self.fire_blocking_dyn(server, E::get_name_static(), event);
     }
@@ -1278,6 +1282,7 @@ impl PluginManager {
         event_name: &'static str,
         event: &mut (dyn Payload + Send + Sync),
     ) {
+        assert_not_in_snapshot(SB::Event, "PluginManager::fire_blocking_dyn");
         pumpkin_util::sync::assert_no_guards_held("PluginManager::fire_blocking_dyn");
         let handlers_map = self.handlers.load();
         if handlers_map.is_empty() {
