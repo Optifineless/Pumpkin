@@ -55,16 +55,38 @@ async fn observer(
         actor.player.clone(),
         observer.player.clone(),
     ]));
-    // Establish a tracking recipient directly; inventory use remains the real packet entry point.
+    // Pair through the tracker so its Bedrock watcher count matches the recipient set.
+    let chunk = actor.player.get_entity().chunk_pos.load();
+    observer.player.watched_section.store(
+        pumpkin_world::cylindrical_chunk_iterator::Cylindrical::new(
+            chunk,
+            std::num::NonZeroU8::new(2).unwrap(),
+        ),
+    );
+    observer
+        .player
+        .chunk_sender
+        .lock()
+        .unwrap()
+        .mark_sent_out_of_band(chunk);
     let tracked = world
         .entity_tracker
         .entity_map
         .get(&actor.player.entity_id())
         .unwrap()
         .clone();
-    tracked.seen_by.insert(observer.player.gameprofile.id);
+    tracked.update_player(&observer.player, world);
     observer.take_packets();
     observer
+}
+
+fn assert_no_equipment(observer: &mut TestBedrockPlayer) {
+    assert!(
+        observer
+            .take_packets()
+            .iter()
+            .all(|p| packet_payload(p, 31).is_none())
+    );
 }
 
 fn assert_equipment(
@@ -162,7 +184,12 @@ async fn offhand_block_placement_corrects_only_offhand_and_equipment() {
     assert_eq!(fixture.player.inventory().off_hand_item().item_count, 1);
     assert_conserved(before, &fixture.player, 1);
     assert_single_slot(&mut fixture, 119, 0, &Item::TORCH, 1);
-    assert_equipment(&mut observer, 120, &Item::TORCH, 1);
+    assert_no_equipment(&mut observer);
+    fixture.player.tick(&server.server);
+    assert_single_slot(&mut fixture, 119, 0, &Item::TORCH, 1);
+    assert_equipment(&mut observer, 119, &Item::TORCH, 1);
+    fixture.player.tick(&server.server);
+    assert_no_equipment(&mut observer);
     observer.close().await;
     fixture.close().await;
     server.server.shutdown().await;
@@ -203,7 +230,12 @@ async fn offhand_consuming_block_callback_preserves_main_hand() {
     assert_eq!(fixture.player.inventory().off_hand_item().item_count, 1);
     assert_conserved(before, &fixture.player, 1);
     assert_single_slot(&mut fixture, 119, 0, &Item::GLOWSTONE, 1);
-    assert_equipment(&mut observer, 120, &Item::GLOWSTONE, 1);
+    assert_no_equipment(&mut observer);
+    fixture.player.tick(&server.server);
+    assert_single_slot(&mut fixture, 119, 0, &Item::GLOWSTONE, 1);
+    assert_equipment(&mut observer, 119, &Item::GLOWSTONE, 1);
+    fixture.player.tick(&server.server);
+    assert_no_equipment(&mut observer);
     observer.close().await;
     fixture.close().await;
     server.server.shutdown().await;
@@ -241,7 +273,12 @@ async fn offhand_air_use_ignores_predicted_zero_count() {
     assert_eq!(fixture.player.inventory().off_hand_item().item_count, 1);
     assert_conserved(before, &fixture.player, 1);
     assert_single_slot(&mut fixture, 119, 0, &Item::EGG, 1);
-    assert_equipment(&mut observer, 120, &Item::EGG, 1);
+    assert_no_equipment(&mut observer);
+    fixture.player.tick(&server.server);
+    assert_single_slot(&mut fixture, 119, 0, &Item::EGG, 1);
+    assert_equipment(&mut observer, 119, &Item::EGG, 1);
+    fixture.player.tick(&server.server);
+    assert_no_equipment(&mut observer);
     observer.close().await;
     fixture.close().await;
     server.server.shutdown().await;
@@ -314,60 +351,17 @@ async fn main_hand_consumption_updates_only_selected_slot() {
     assert_eq!(fixture.player.inventory().held_item().item_count, 63);
     assert_conserved(before, &fixture.player, 1);
     assert_single_slot(&mut fixture, 0, 3, &Item::STONE, 63);
+    assert_no_equipment(&mut observer);
+    fixture.player.tick(&server.server);
     assert_equipment(&mut observer, 0, &Item::STONE, 63);
+    fixture.player.tick(&server.server);
+    assert_no_equipment(&mut observer);
     observer.close().await;
     fixture.close().await;
     server.server.shutdown().await;
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn noop_after_clear_keeps_attribute_refresh_without_inventory_packets() {
-    use pumpkin_data::attributes::Attributes;
-    let server = DeathTestWorld::new().await;
-    let world = server.world();
-    let mut fixture = TestBedrockPlayer::new(&world).await;
-    fixture.player.permission_lvl.store(PermissionLvl::Four);
-    let mut observer = observer(&world, &fixture).await;
-    let base_damage = fixture
-        .player
-        .living_entity
-        .get_attribute_value(&Attributes::ATTACK_DAMAGE);
-    let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
-    fixture.player.inventory().set_held_item(sword.clone());
-    fixture
-        .player
-        .send_menu_equipment(&[(EquipmentSlot::MAIN_HAND, sword)]);
-    assert!(
-        fixture
-            .player
-            .living_entity
-            .get_attribute_value(&Attributes::ATTACK_DAMAGE)
-            > base_damage
-    );
-    let source = fixture.player.get_command_source(&server.server);
-    assert_eq!(
-        server
-            .server
-            .command_dispatcher
-            .load()
-            .execute_input("clear @s", &source)
-            .unwrap(),
-        1
-    );
-    assert!(fixture.player.inventory().held_item().is_empty());
-    observer.take_packets();
-    send_use(
-        &mut fixture,
-        vec![],
-        TransactionData::Normal(NormalTransactionData),
-    );
-    assert_eq!(
-        fixture
-            .player
-            .living_entity
-            .get_attribute_value(&Attributes::ATTACK_DAMAGE),
-        base_damage
-    );
+fn assert_attack_damage_update(fixture: &mut TestBedrockPlayer, base_damage: f64) {
     let packets = fixture.take_packets();
     assert!(
         packets
@@ -396,12 +390,91 @@ async fn noop_after_clear_keeps_attribute_refresh_without_inventory_packets() {
     f32::read(&mut bytes).unwrap();
     f32::read(&mut bytes).unwrap();
     assert_eq!(String::read(&mut bytes).unwrap(), "minecraft:attack_damage");
-    assert!(
-        observer
-            .take_packets()
-            .iter()
-            .all(|p| packet_payload(p, 31).is_none())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn noop_after_clear_keeps_attribute_refresh_without_inventory_packets() {
+    use pumpkin_data::attributes::Attributes;
+    let server = DeathTestWorld::new().await;
+    let world = server.world();
+    let mut fixture = TestBedrockPlayer::new(&world).await;
+    let mut observer = observer(&world, &fixture).await;
+    let player = fixture.player.clone();
+    player.permission_lvl.store(PermissionLvl::Four);
+    let base_damage = player
+        .living_entity
+        .get_attribute_value(&Attributes::ATTACK_DAMAGE);
+    let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+    player.inventory().set_held_item(sword.clone());
+    player.send_menu_equipment(&[(EquipmentSlot::MAIN_HAND, sword)]);
+    assert_eq!(
+        player
+            .living_entity
+            .get_attribute_value(&Attributes::ATTACK_DAMAGE),
+        base_damage
     );
+    player.tick(&server.server);
+    assert!(
+        player
+            .living_entity
+            .get_attribute_value(&Attributes::ATTACK_DAMAGE)
+            > base_damage
+    );
+    fixture.take_packets();
+    assert_equipment(&mut observer, 0, &Item::DIAMOND_SWORD, 1);
+    let source = player.get_command_source(&server.server);
+    assert_eq!(
+        server
+            .server
+            .command_dispatcher
+            .load()
+            .execute_input("clear @s", &source)
+            .unwrap(),
+        1
+    );
+    assert!(player.inventory().held_item().is_empty());
+    fixture.take_packets();
+    observer.take_packets();
+    send_use(
+        &mut fixture,
+        vec![],
+        TransactionData::Normal(NormalTransactionData),
+    );
+    assert!(
+        player
+            .living_entity
+            .get_attribute_value(&Attributes::ATTACK_DAMAGE)
+            > base_damage,
+        "the transaction must leave modifier refresh to the tick"
+    );
+    assert!(fixture.take_packets().iter().all(|p| {
+        packet_payload(p, 49).is_none()
+            && packet_payload(p, 50).is_none()
+            && packet_payload(p, 29).is_none()
+    }));
+    assert_no_equipment(&mut observer);
+    player.tick(&server.server);
+    assert_eq!(
+        player
+            .living_entity
+            .get_attribute_value(&Attributes::ATTACK_DAMAGE),
+        base_damage
+    );
+    assert_attack_damage_update(&mut fixture, base_damage);
+    // /clear queued the removal; the unchanged Normal transaction queues neither hand.
+    assert_equipment(&mut observer, 0, &Item::AIR, 0);
+    send_use(
+        &mut fixture,
+        vec![],
+        TransactionData::Normal(NormalTransactionData),
+    );
+    player.tick(&server.server);
+    assert!(fixture.take_packets().iter().all(|p| {
+        packet_payload(p, 49).is_none()
+            && packet_payload(p, 50).is_none()
+            && packet_payload(p, 29).is_none()
+    }));
+    assert_no_equipment(&mut observer);
     observer.close().await;
     fixture.close().await;
     server.server.shutdown().await;

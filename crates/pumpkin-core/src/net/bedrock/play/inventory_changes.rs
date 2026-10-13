@@ -3,7 +3,9 @@ use super::{
     NetworkItemDescriptor, NetworkItemStackDescriptor, Player, ScreenHandler, VarUInt,
     map_bedrock_slot_to_screen_handler,
 };
-use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_inventory::{
+    player::player_inventory::PlayerInventory, screen_handler::InventoryPlayer,
+};
 use pumpkin_protocol::bedrock::{
     client::inventory_slot::CInventorySlot,
     server::inventory_transaction::{
@@ -97,52 +99,13 @@ impl BedrockClient {
                 }
             }
         }
-        let mut equipment = Vec::new();
+        // LivingEntity.detectEquipmentUpdates refreshes modifiers and publishes on the tick.
         if !before.main_hand.are_equal(&after.main_hand) {
-            equipment.push((EquipmentSlot::MAIN_HAND, after.main_hand));
+            player.enqueue_equipment_change(&EquipmentSlot::MAIN_HAND, &after.main_hand);
         }
         let offhand = PlayerInventory::OFF_HAND_SLOT;
         if !before.stacks[offhand].are_equal(&after.stacks[offhand]) {
-            equipment.push((EquipmentSlot::OFF_HAND, after.stacks[offhand].clone()));
-        }
-        Self::reconcile_equipment_attributes(player);
-        if !equipment.is_empty() {
-            player.send_menu_equipment(&equipment);
-        }
-    }
-
-    fn reconcile_equipment_attributes(player: &Player) {
-        use pumpkin_data::attributes::Attributes;
-        // LivingEntity.collectEquipmentChanges reconciles modifiers before publishing changes.
-        // Retain the old refresh after external inventory writes, without unchanged equipment.
-        let living = &player.living_entity;
-        let previous: rustc_hash::FxHashMap<_, _> = living
-            .attributes
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .map(|(id, instance)| (*id, instance.value().to_bits()))
-            .collect();
-        living.apply_current_equipment_attribute_modifiers();
-        let changed: Vec<_> = {
-            let attributes = living
-                .attributes
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            Attributes::ALL
-                .iter()
-                .filter(|attribute| {
-                    attributes.get(&attribute.id).is_some_and(|instance| {
-                        previous
-                            .get(&attribute.id)
-                            .is_none_or(|value| *value != instance.value().to_bits())
-                    })
-                })
-                .cloned()
-                .collect()
-        };
-        if !changed.is_empty() {
-            crate::entity::attributes::send_attribute_updates_for_living(living, changed);
+            player.enqueue_equipment_change(&EquipmentSlot::OFF_HAND, &after.stacks[offhand]);
         }
     }
 
