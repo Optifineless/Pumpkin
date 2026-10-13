@@ -4,11 +4,13 @@ This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained fo
 
 Management-enabled shutdown (#173) now stops the listener, WebSocket sessions and
 heartbeat so the final player, world and level.dat saves can finish. The authenticated
-`minecraft:server/stop` RPC sends its success response before requesting that lifecycle;
-WebSocket clients subscribe before the upgrade response, so shutdown cannot miss a
-new session. Clients receive `server/stopping` once before player and world saves.
-Incomplete ordinary HTTP requests no longer hold final saves: after the five-second
-management grace, remaining listener connections are closed and awaited.
+`minecraft:server/stop` RPC signals shutdown before its bounded, best-effort success
+reply. WebSocket clients subscribe before the upgrade response, and pending upgrades
+are counted by the shutdown drain. The server broadcasts `server/stopping` once before
+player and world saves; delivery remains best-effort. Incomplete ordinary HTTP requests
+no longer hold final saves: after the five-second management grace, remaining listener
+connections are closed and awaited. Later requests in a stop batch receive a
+server-stopping error.
 Native API 8 (same version): Server has runtime management shutdown state, and
 ManagementServer exposes listener binding separately from serving; rebuild native
 plugins. Written by Codex.

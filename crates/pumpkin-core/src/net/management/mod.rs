@@ -5,6 +5,8 @@ pub mod hub;
 pub mod rpc;
 
 #[cfg(test)]
+mod shutdown_rpc_tests;
+#[cfg(test)]
 mod shutdown_tests;
 
 use std::{
@@ -46,13 +48,15 @@ use crate::server::Server;
 use self::{
     auth::SecurityCheckResult,
     dto::{PlayerDto, ServerState, VersionDto},
-    rpc::{RpcError, RpcRequest, RpcResponse},
+    rpc::{RpcError, RpcRequest, RpcResponse, is_valid_request_id},
 };
 
 pub struct ManagementServer;
 
 // Bound management HTTP and WebSocket drainage when a peer stops reading or an RPC stalls.
 const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(5);
+const STOP_RPC_REPLY_FLUSH_TIMEOUT: Duration = Duration::from_millis(250);
+const SERVER_STOPPING_ERROR_CODE: i32 = -32000;
 
 struct ForceCloseListener {
     listener: TcpListener,
@@ -286,12 +290,25 @@ async fn ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
+    ws_handler_with_dispatch(&state, &headers, ws, dispatch_request)
+}
+
+fn ws_handler_with_dispatch<D, F>(
+    state: &AppState,
+    headers: &HeaderMap,
+    ws: WebSocketUpgrade,
+    dispatch: D,
+) -> Response
+where
+    D: FnMut(RpcRequest, Arc<Server>) -> F + Send + 'static,
+    F: Future<Output = (Option<RpcResponse>, bool)> + Send + 'static,
+{
     if state.server.management_shutdown.is_cancelled()
         || state.server.management_hub.is_server_stopping()
     {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    match auth::check_auth(&headers, &state.secret, &state.allowed_origins) {
+    match auth::check_auth(headers, &state.secret, &state.allowed_origins) {
         SecurityCheckResult::Denied(reason) => {
             let body = format!(r#"{{"error":"Unauthorized","message":"{reason}"}}"#);
             Response::builder()
@@ -309,10 +326,24 @@ async fn ws_handler(
                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
             }
             let server = state.server.clone();
+            // ManagementServer.stop closes its listener and event loop; reserve this upgrade first.
+            let pending_upgrade = server.tasks.token();
+            if server.management_shutdown.is_cancelled()
+                || server.management_hub.is_server_stopping()
+            {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
             // Capture the receiver before the upgrade response can race the stopping broadcast.
             let mut response = ws.on_upgrade(move |socket| {
                 // Axum upgrades leave the HTTP serve loop; include sessions in server drainage.
-                let session = server.spawn_task(handle_socket(socket, server.clone(), notif_rx));
+                let session = server.spawn_task(handle_socket_with_dispatch(
+                    socket,
+                    server.clone(),
+                    notif_rx,
+                    dispatch,
+                ));
+                // The session is tracked before the pending-upgrade reservation is released.
+                drop(pending_upgrade);
                 async move {
                     if let Err(e) = session.await {
                         error!("Management session error: {e}");
@@ -330,14 +361,18 @@ async fn ws_handler(
     }
 }
 
-async fn handle_socket(
+async fn handle_socket_with_dispatch<D, F>(
     socket: WebSocket,
     server: Arc<Server>,
     notif_rx: tokio::sync::broadcast::Receiver<String>,
-) {
+    dispatch: D,
+) where
+    D: FnMut(RpcRequest, Arc<Server>) -> F,
+    F: Future<Output = (Option<RpcResponse>, bool)>,
+{
     debug!("Management WebSocket connection opened");
     tokio::select! {
-        () = handle_socket_messages(socket, &server, notif_rx) => {}
+        () = handle_socket_messages_with_dispatch(socket, &server, notif_rx, dispatch) => {}
         () = async {
             server.management_shutdown.cancelled().await;
             tokio::time::sleep(SHUTDOWN_GRACE_PERIOD).await;
@@ -348,11 +383,19 @@ async fn handle_socket(
     debug!("Management WebSocket connection closed");
 }
 
-async fn handle_socket_messages(
+async fn dispatch_request(request: RpcRequest, server: Arc<Server>) -> (Option<RpcResponse>, bool) {
+    handlers::dispatch(request, &server).await
+}
+
+async fn handle_socket_messages_with_dispatch<D, F>(
     socket: WebSocket,
     server: &Arc<Server>,
     mut notif_rx: tokio::sync::broadcast::Receiver<String>,
-) {
+    mut dispatch: D,
+) where
+    D: FnMut(RpcRequest, Arc<Server>) -> F,
+    F: Future<Output = (Option<RpcResponse>, bool)>,
+{
     let (mut sender, mut receiver) = socket.split();
 
     loop {
@@ -386,16 +429,31 @@ async fn handle_socket_messages(
                 match msg {
                     Message::Text(text) => {
                         let text_str = text.as_str();
-                        let (response, stop_requested) = handle_json_text(text_str, server).await;
+                        let (response, stop_requested) =
+                            handle_json_text(text_str, server.clone(), &mut dispatch).await;
+                        if stop_requested {
+                            if let Some(response) = response {
+                                match tokio::time::timeout(
+                                    STOP_RPC_REPLY_FLUSH_TIMEOUT,
+                                    sender.send(Message::from(response)),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(_)) => return,
+                                    Err(_) => {
+                                        debug!("Management stop acknowledgement flush timed out");
+                                        return;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         let send_failed = if let Some(response) = response {
                             sender.send(Message::from(response)).await.is_err()
                         } else {
                             false
                         };
-                        // ServerStateService.stop submits halt(false) after its acknowledgement.
-                        if stop_requested {
-                            crate::stop_server();
-                        }
                         if send_failed {
                             break;
                         }
@@ -414,7 +472,15 @@ async fn handle_socket_messages(
     let _ = sender.close().await;
 }
 
-async fn handle_json_text(text: &str, server: &Arc<Server>) -> (Option<String>, bool) {
+async fn handle_json_text<D, F>(
+    text: &str,
+    server: Arc<Server>,
+    mut dispatch: D,
+) -> (Option<String>, bool)
+where
+    D: FnMut(RpcRequest, Arc<Server>) -> F,
+    F: Future<Output = (Option<RpcResponse>, bool)>,
+{
     let parsed: Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(e) => {
@@ -427,12 +493,19 @@ async fn handle_json_text(text: &str, server: &Arc<Server>) -> (Option<String>, 
         Value::Array(items) => {
             let mut responses = Vec::new();
             let mut stop_requested = false;
-            for item in items {
+            let mut items = items.into_iter();
+            while let Some(item) = items.next() {
                 if let Ok(req) = serde_json::from_value::<RpcRequest>(item) {
-                    let (response, should_stop) = handlers::dispatch(req, server).await;
+                    let (response, should_stop) = dispatch(req, server.clone()).await;
                     stop_requested |= should_stop;
+                    signal_stop_if_requested(should_stop);
                     if let Some(resp) = response {
                         responses.push(resp);
+                    }
+                    if should_stop {
+                        // Signal before formatting responses for the rest of the batch.
+                        responses.extend(items.filter_map(stopping_batch_response));
+                        break;
                     }
                 } else {
                     responses.push(RpcResponse::error(
@@ -459,7 +532,8 @@ async fn handle_json_text(text: &str, server: &Arc<Server>) -> (Option<String>, 
                     return (serde_json::to_string(&err).ok(), false);
                 }
             };
-            let (response, stop_requested) = handlers::dispatch(req, server).await;
+            let (response, stop_requested) = dispatch(req, server).await;
+            signal_stop_if_requested(stop_requested);
             (
                 response.and_then(|response| serde_json::to_string(&response).ok()),
                 stop_requested,
@@ -470,4 +544,43 @@ async fn handle_json_text(text: &str, server: &Arc<Server>) -> (Option<String>, 
             (serde_json::to_string(&err).ok(), false)
         }
     }
+}
+
+fn signal_stop_if_requested(stop_requested: bool) {
+    if stop_requested {
+        // Mirrors ServerStateService.stop, which submits halt(false) before returning true.
+        crate::stop_server();
+    }
+}
+
+fn stopping_batch_response(item: Value) -> Option<RpcResponse> {
+    let Ok(request) = serde_json::from_value::<RpcRequest>(item) else {
+        return Some(RpcResponse::error(
+            Value::Null,
+            RpcError::invalid_request(None),
+        ));
+    };
+    let id = request.id?;
+    if !is_valid_request_id(&id) {
+        return Some(RpcResponse::error(
+            Value::Null,
+            RpcError::invalid_request(Some(
+                "Invalid request id - only String, Number and NULL supported".to_string(),
+            )),
+        ));
+    }
+    if request.method.is_none() {
+        return Some(RpcResponse::error(
+            id,
+            RpcError::invalid_request(Some("Missing method name".to_string())),
+        ));
+    }
+    Some(RpcResponse::error(
+        id,
+        RpcError {
+            code: SERVER_STOPPING_ERROR_CODE,
+            message: "Server is stopping".to_string(),
+            data: None,
+        },
+    ))
 }
