@@ -178,6 +178,8 @@ pub struct Server {
     pub(crate) tasks: TaskTracker,
     pub runtime: tokio::runtime::Handle,
     pub management_hub: Arc<crate::net::management::hub::ManagementHub>,
+    /// Stops the management listener, sessions and heartbeat before task drainage.
+    pub(crate) management_shutdown: tokio_util::sync::CancellationToken,
 
     // world stuff which maybe should be put into a struct
     pub level_info: Arc<ArcSwap<LevelData>>,
@@ -393,6 +395,7 @@ impl Server {
             clock_roots: named_clock_storage::ClockRoots::new(&world_path)?,
             level_info,
             management_hub,
+            management_shutdown: tokio_util::sync::CancellationToken::new(),
         };
         let server = Arc::new(server);
 
@@ -922,6 +925,8 @@ impl Server {
     pub async fn shutdown(&self) {
         // Only the ticker owner disarms the watchdog, after joining its OS thread.
         self.management_hub.broadcast_server_stopping();
+        // DedicatedServer.stopServer notifies clients before stopping connections and saving.
+        self.management_shutdown.cancel();
 
         self.tasks.close();
         debug!("Awaiting tasks for server");

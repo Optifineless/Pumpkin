@@ -275,10 +275,10 @@ impl PumpkinServer {
 
         let management = server.advanced_config.networking.management.clone();
 
-        if management.enabled {
+        if let Some(listener) = ManagementServer::bind(&management).await {
             let management_server = server.clone();
             server.spawn_task(async move {
-                ManagementServer::run(&management, management_server).await;
+                ManagementServer::run(&management, management_server, listener).await;
             });
         }
 
@@ -757,7 +757,10 @@ fn setup_stdin_console(server: &Arc<Server>) {
     let server_clone = server.clone();
     server.spawn_task(async move {
         while !SHOULD_STOP.load(Ordering::Relaxed)
-            && let Some(command) = rx.recv().await
+            && let Some(command) = select! {
+                command = rx.recv() => command,
+                () = STOP_INTERRUPT.cancelled() => None,
+            }
         {
             let mut event = ServerCommandEvent::new(command.clone());
             server_clone

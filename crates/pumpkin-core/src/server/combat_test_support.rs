@@ -130,6 +130,7 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
         clock_roots: named_clock_storage::ClockRoots::new(path).unwrap(),
         level_info,
         management_hub,
+        management_shutdown: tokio_util::sync::CancellationToken::new(),
     };
     Arc::new(server)
 }

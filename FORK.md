@@ -2,6 +2,15 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+Management-enabled shutdown (#173) now stops the listener, WebSocket sessions and
+heartbeat so the final player, world and level.dat saves can finish. Clients receive
+`server/stopping` before their sessions close. Native API 8 (same version): Server
+has a runtime management shutdown signal, and ManagementServer exposes listener
+binding separately from serving; rebuild native plugins. Written by Codex.
+The idle stdin task also stops on cancellation, using umceko's upstream
+[PR #3788](https://github.com/Pumpkin-MC/Pumpkin/pull/3788) approach.
+In-game verification: **Not yet**.
+
 Close-event listeners can reopen a menu without closing its predecessor recursively. The closing-menu identity survives callbacks, and an outer close preserves a replacement menu and position. Native API 8 (same version): Player has runtime close ownership state; rebuild native plugins. In-game verification: **Not yet**.
 
 ## Entity unload ownership, #150 split PR-1
