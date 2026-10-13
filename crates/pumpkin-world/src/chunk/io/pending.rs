@@ -32,7 +32,7 @@ impl<P: Dirtiable> Pending<P> {
 }
 
 impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
-    pub(super) fn pending_chunk(
+    pub(super) async fn pending_chunk(
         &self,
         path: &Path,
         pos: Vector2<i32>,
@@ -46,8 +46,18 @@ impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
             .get(path)?
             .get(&(pos.x, pos.y))
             .map(|(_, chunk)| chunk.clone())?;
-        // Copy after releasing storage ownership; decoding takes the scheduler's own guard.
-        Some(chunk.copy_for_load(&self.dimension))
+        // IOWorker.PendingStore.copyData runs on the I/O worker, not a runtime worker.
+        // Release storage ownership before the blocking detach/decode.
+        let dimension = self.dimension.clone();
+        Some(
+            super::run_blocking(move || chunk.copy_for_load(&dimension))
+                .await
+                .unwrap_or_else(|error| {
+                    Err(super::ChunkReadingError::IoError(std::io::Error::other(
+                        error,
+                    )))
+                }),
+        )
     }
 
     pub(super) async fn flush_region(&self, path: &PathBuf) -> Result<(), ChunkWritingError> {
@@ -120,8 +130,7 @@ impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkFileManager<S> {
                         )));
                         continue;
                     };
-                    chunk.clear_published(version);
-                    if !chunk.is_dirty() {
+                    if chunk.clear_published(version) {
                         region.remove(&pos);
                     }
                 }

@@ -53,7 +53,10 @@ impl SingleChunkDataSerializer for ChunkData {
 
     #[inline]
     fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
-        Ok(self.internal_to_bytes())
+        Ok(self.internal_to_bytes(
+            self.block_ticks.to_vec_for_save(&self.dirty),
+            self.fluid_ticks.to_vec_for_save(&self.dirty),
+        ))
     }
 
     #[inline]
@@ -75,8 +78,9 @@ impl Dirtiable for ChunkData {
         dimension: &pumpkin_data::dimension::Dimension,
     ) -> Result<Arc<Self>, ChunkReadingError> {
         // IOWorker.PendingStore.copyData: reload owns fresh LevelChunkTicks, never a retired Arc.
+        // A load copy must not replace the clock observation of an in-flight save.
         Self::internal_from_bytes(
-            &self.internal_to_bytes(),
+            &self.internal_to_bytes(self.block_ticks.to_vec(), self.fluid_ticks.to_vec()),
             Vector2::new(self.x, self.z),
             dimension,
         )
@@ -89,10 +93,16 @@ impl Dirtiable for ChunkData {
         self.fluid_ticks.mark_dirty_if_changed(&self.dirty);
         Some(self.dirty.version())
     }
-    fn clear_published(&self, version: u64) {
-        self.block_ticks.mark_dirty_if_changed(&self.dirty);
-        self.fluid_ticks.mark_dirty_if_changed(&self.dirty);
-        self.dirty.clear_published(version);
+    fn clear_published(&self, version: u64) -> bool {
+        // ChunkMap.save acknowledges a finite SerializableChunkData.copyOf image.
+        self.block_ticks.mark_dirty_if_mutated(&self.dirty);
+        self.fluid_ticks.mark_dirty_if_mutated(&self.dirty);
+        let cleared = self.dirty.clear_published(version);
+        // Preserve the pending path's post-clear mutation recheck without requesting
+        // another elapsed-time image as part of this publication's acknowledgement.
+        self.block_ticks.mark_dirty_if_mutated(&self.dirty);
+        self.fluid_ticks.mark_dirty_if_mutated(&self.dirty);
+        cleared && !self.dirty.load(Ordering::Acquire)
     }
 
     #[inline]
@@ -442,7 +452,11 @@ impl ChunkData {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn internal_to_bytes(&self) -> Bytes {
+    fn internal_to_bytes(
+        &self,
+        block_ticks: Vec<SavedTick<&'static Block>>,
+        fluid_ticks: Vec<SavedTick<&'static Fluid>>,
+    ) -> Bytes {
         use pumpkin_nbt::tag::NbtTag;
 
         fn extract_light_ref(light: Option<&LightContainer>) -> Option<&[u8]> {
@@ -577,13 +591,13 @@ impl ChunkData {
         root_compound.put_list("sections", sections_list);
 
         let mut block_ticks_list = Vec::new();
-        for tick in self.block_ticks.to_vec() {
+        for tick in block_ticks {
             block_ticks_list.push(NbtTag::Compound(tick.to_nbt_compound()));
         }
         root_compound.put_list("block_ticks", block_ticks_list);
 
         let mut fluid_ticks_list = Vec::new();
-        for tick in self.fluid_ticks.to_vec() {
+        for tick in fluid_ticks {
             fluid_ticks_list.push(NbtTag::Compound(tick.to_nbt_compound()));
         }
         root_compound.put_list("fluid_ticks", fluid_ticks_list);
@@ -704,8 +718,8 @@ impl Dirtiable for ChunkEntityData {
     fn dirty_version(&self) -> Option<u64> {
         Some(self.dirty.version())
     }
-    fn clear_published(&self, version: u64) {
-        self.dirty.clear_published(version);
+    fn clear_published(&self, version: u64) -> bool {
+        self.dirty.clear_published(version) && !self.dirty.load(Ordering::Acquire)
     }
 
     #[inline]
@@ -1094,7 +1108,7 @@ mod tests {
         }
         // Exercise the actual chunk writer and reader, not just the standalone tick codec.
         let reloaded = ChunkData::internal_from_bytes(
-            &chunk.internal_to_bytes(),
+            &chunk.internal_to_bytes(chunk.block_ticks.to_vec(), chunk.fluid_ticks.to_vec()),
             Vector2::new(0, 0),
             dimension,
         )

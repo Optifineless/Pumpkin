@@ -338,7 +338,7 @@ where
         let mut regions_chunks: BTreeMap<String, Vec<Vector2<i32>>> = BTreeMap::new();
         for at in chunk_coords {
             let path = P::file_path(folder, &S::get_chunk_key(at));
-            let pending = self.pending_chunk(&path, *at);
+            let pending = self.pending_chunk(&path, *at).await;
             if let Some(chunk) = pending {
                 let data = match chunk {
                     Ok(chunk) => LoadedData::Loaded(chunk),
@@ -621,3 +621,7 @@ mod serialization_failure_tests;
 #[cfg(test)]
 #[path = "heap_stack_tests.rs"]
 mod heap_stack_tests;
+
+#[cfg(test)]
+#[path = "pending_snapshot_tests.rs"]
+mod pending_snapshot_tests;

@@ -28,10 +28,20 @@ impl DirtyFlag {
         self.0.load(Ordering::Acquire)
     }
 
-    pub fn clear_published(&self, version: u64) {
+    /// Requests an elapsed-time snapshot once, without invalidating an in-flight image.
+    pub(crate) fn mark_elapsed_dirty(&self) {
         let _ = self
             .0
-            .compare_exchange(version, version & !1, Ordering::AcqRel, Ordering::Relaxed);
+            .try_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
+                (value & 1 == 0).then_some(value.wrapping_add(2) | 1)
+            });
+    }
+
+    /// Clears the published generation, returning whether it still matched.
+    pub fn clear_published(&self, version: u64) -> bool {
+        self.0
+            .compare_exchange(version, version & !1, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
     }
 }
 
