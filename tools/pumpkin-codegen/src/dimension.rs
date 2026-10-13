@@ -18,6 +18,70 @@ fn parse_hex_color(s: &str) -> Option<i32> {
     }
 }
 
+// Mirrors vanilla 26.3 BedRule.CODEC and EnvironmentAttributes defaults.
+fn bed_rule_tokens(
+    attributes: Option<&serde_json::Value>,
+    attribute: &str,
+    default_can_sleep: &str,
+    default_can_set_spawn: &str,
+    default_destroy_on_use: bool,
+    default_destroy_on_leave: bool,
+) -> TokenStream {
+    let rule = attributes.and_then(|attributes| attributes.get(attribute));
+    let can_sleep = rule
+        .and_then(|rule| rule.get("can_sleep"))
+        .and_then(|value| value.as_str())
+        .unwrap_or(default_can_sleep);
+    let can_set_spawn = rule
+        .and_then(|rule| rule.get("can_set_spawn"))
+        .and_then(|value| value.as_str())
+        .unwrap_or(default_can_set_spawn);
+    let destroy_on_use = rule
+        .and_then(|rule| rule.get("destroy_on_use"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(default_destroy_on_use);
+    let destroy_on_leave = rule
+        .and_then(|rule| rule.get("destroy_on_leave"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(rule.is_none() && default_destroy_on_leave);
+    let error_message = if let Some(message) = rule.and_then(|rule| rule.get("error_message")) {
+        let message = message.to_string();
+        quote! { Some(#message) }
+    } else if rule.is_none() {
+        quote! { Some("{\"translate\":\"block.minecraft.bed.no_sleep\"}") }
+    } else {
+        quote! { None }
+    };
+
+    // Preserve the old generator's output until beds-r2 switches existing callers to vanilla's flags.
+    let explodes = rule
+        .and_then(|rule| rule.get("explodes"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let can_sleep = match can_sleep {
+        "always" => quote!(BedRuleOption::Always),
+        "never" => quote!(BedRuleOption::Never),
+        _ => quote!(BedRuleOption::WhenDark),
+    };
+    let can_set_spawn = match can_set_spawn {
+        "when_dark" => quote!(BedRuleOption::WhenDark),
+        "never" => quote!(BedRuleOption::Never),
+        _ => quote!(BedRuleOption::Always),
+    };
+
+    quote! {
+        BedRule {
+            can_sleep: #can_sleep,
+            can_set_spawn: #can_set_spawn,
+            explodes: #explodes,
+            destroy_on_use: #destroy_on_use,
+            destroy_on_leave: #destroy_on_leave,
+            error_message: #error_message,
+        }
+    }
+}
+
 /// Raw deserialization shape for a single dimension entry from `dimension.json`.
 #[derive(Deserialize)]
 pub struct Dimension {
@@ -165,36 +229,22 @@ pub fn build() -> TokenStream {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let bed_rule_obj = attrs.and_then(|a| a.get("minecraft:gameplay/bed_rule"));
-        let (can_sleep_token, can_set_spawn_token, explodes) = if let Some(b) = bed_rule_obj {
-            let can_sleep = b
-                .get("can_sleep")
-                .and_then(|v| v.as_str())
-                .unwrap_or("when_dark");
-            let can_set_spawn = b
-                .get("can_set_spawn")
-                .and_then(|v| v.as_str())
-                .unwrap_or("always");
-            let explodes = b.get("explodes").and_then(|v| v.as_bool()).unwrap_or(false);
-
-            let sleep_ident = match can_sleep {
-                "always" => quote!(BedRuleOption::Always),
-                "never" => quote!(BedRuleOption::Never),
-                _ => quote!(BedRuleOption::WhenDark),
-            };
-            let spawn_ident = match can_set_spawn {
-                "when_dark" => quote!(BedRuleOption::WhenDark),
-                "never" => quote!(BedRuleOption::Never),
-                _ => quote!(BedRuleOption::Always),
-            };
-            (sleep_ident, spawn_ident, explodes)
-        } else {
-            (
-                quote!(BedRuleOption::WhenDark),
-                quote!(BedRuleOption::Always),
-                false,
-            )
-        };
+        let bed_rule = bed_rule_tokens(
+            attrs,
+            "minecraft:gameplay/bed_rule",
+            "when_dark",
+            "always",
+            false,
+            false,
+        );
+        let straw_bed_rule = bed_rule_tokens(
+            attrs,
+            "minecraft:gameplay/straw_bed_rule",
+            "when_dark",
+            "never",
+            false,
+            true,
+        );
 
         let fixed_time = if let Some(t) = dim.fixed_time {
             quote! { Some(#t) }
@@ -334,11 +384,8 @@ pub fn build() -> TokenStream {
                 snow_golem_melts: #snow_golem_melts,
                 can_start_raid: #can_start_raid,
                 nether_portal_spawns_piglin: #nether_portal_spawns_piglin,
-                bed_rule: BedRule {
-                    can_sleep: #can_sleep_token,
-                    can_set_spawn: #can_set_spawn_token,
-                    explodes: #explodes,
-                },
+                bed_rule: #bed_rule,
+                straw_bed_rule: #straw_bed_rule,
                 timelines: #timelines_literal,
             };
         });
@@ -367,6 +414,9 @@ pub fn build() -> TokenStream {
             pub can_sleep: BedRuleOption,
             pub can_set_spawn: BedRuleOption,
             pub explodes: bool,
+            pub destroy_on_use: bool,
+            pub destroy_on_leave: bool,
+            pub error_message: Option<&'static str>,
         }
 
         impl BedRule {
@@ -426,6 +476,7 @@ pub fn build() -> TokenStream {
             pub can_start_raid: bool,
             pub nether_portal_spawns_piglin: bool,
             pub bed_rule: BedRule,
+            pub straw_bed_rule: BedRule,
             pub timelines: Option<&'static str>,
         }
 
