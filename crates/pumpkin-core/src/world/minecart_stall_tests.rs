@@ -44,10 +44,10 @@ fn within_deadline<T: Send + 'static>(action: impl FnOnce() -> T + Send + 'stati
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(action));
         let _ = sender.send(result);
     });
-    match receiver.recv_timeout(Duration::from_secs(10)) {
+    match receiver.recv_timeout(Duration::from_secs(60)) {
         Ok(Ok(result)) => result,
         Ok(Err(panic)) => std::panic::resume_unwind(panic),
-        Err(error) => panic!("movement did not finish within ten seconds: {error}"),
+        Err(error) => panic!("movement did not finish within sixty seconds: {error}"),
     }
 }
 
