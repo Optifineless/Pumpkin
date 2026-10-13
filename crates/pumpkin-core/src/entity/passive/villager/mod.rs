@@ -36,8 +36,8 @@ use crate::entity::{
     Entity, EntityBase,
     ai::{
         goal::{
-            avoid_entity::AvoidEntityGoal, look_around::RandomLookAroundGoal,
-            look_at_entity::LookAtEntityGoal, open_door::OpenDoorGoal,
+            avoid_entity::AvoidEntityGoal, interact_with_door::InteractWithDoorGoal,
+            look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
             trade_with_player::TradeWithPlayerGoal, wander_around::WanderAroundGoal,
             work_at_job_site::WorkAtJobSiteGoal,
         },
@@ -440,6 +440,9 @@ impl VillagerEntity {
             self_weak: std::sync::Mutex::new(None),
         };
         let mob_arc = Arc::new(villager);
+        // Villager.registerGoals admits both openable and passable doors for its door behavior.
+        mob_arc.set_can_open_doors(true);
+        mob_arc.set_can_pass_doors(true);
         *mob_arc
             .mob_entity
             .brain
@@ -467,7 +470,8 @@ impl VillagerEntity {
                 0,
                 Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
             );
-            goal_selector.add_goal(0, Box::new(OpenDoorGoal::new(true)));
+            // Villager.registerGoals installs InteractWithDoor.create for path waypoint doors.
+            goal_selector.add_goal(0, Box::new(InteractWithDoorGoal::default()));
             // Villagers avoid threats
             goal_selector.add_goal(
                 1,

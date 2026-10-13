@@ -256,6 +256,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Mob equipment is finalized before spawning and restored without re-rolling on reload | Not yet |
 | Villagers, golems, farm animals and bucket-released aquatic mobs keep their species' distance persistence | Not yet |
 | Generated creatures read the generation chunk and enter the world when their chunk is published | Not yet |
+| Villagers open doors at newly reached path nodes and close them after passage; pathfinding treats open doors as traversable and zombies with door breaking enabled can route to wooden doors. Mirrors `InteractWithDoor.create`, `DoorBlock.setOpen`, `WalkNodeEvaluator.getPathTypeFromState` and `Zombie.setCanBreakDoors`. Native `GenericGameEvent` adds `source_entity`: API 8 (same version), rebuild native plugins; the Wasm payload is unchanged. | Not yet |
 | Parched skeletons receive bows; skeleton weapons choose bow or melee attacks with vanilla intervals | Not yet |
 | Spawners preserve configured entities and weighted potentials, and enforce their nearby-mob limit on each attempt | Not yet |
 | Generation spawning uses region light at night and selects variants before saving new mobs; farm-animal babies inherit a parent's variant | Not yet |

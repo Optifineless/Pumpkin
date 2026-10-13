@@ -6961,13 +6961,7 @@ impl World {
     }
 
     pub fn emit_game_event(&self, event_key: impl Into<String>, position: Vector3<f64>) {
-        let mut event = crate::plugin::api::events::world::generic_game::GenericGameEvent::new(
-            event_key.into(),
-            position,
-        );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
+        self.emit_game_event_with_source(event_key, position, None);
     }
 
     pub async fn unload(self: &Arc<Self>) {

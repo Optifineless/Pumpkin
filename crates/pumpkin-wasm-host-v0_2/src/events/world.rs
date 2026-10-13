@@ -503,6 +503,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::generic_game:
         match event {
             Event::GenericGameEvent(data) => Self {
                 event_key: data.event_id,
+                source_entity: None,
                 position: pumpkin_util::math::vector3::Vector3::new(
                     data.pos.0, data.pos.1, data.pos.2,
                 ),
