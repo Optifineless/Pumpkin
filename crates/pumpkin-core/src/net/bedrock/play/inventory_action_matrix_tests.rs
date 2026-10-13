@@ -31,6 +31,9 @@ mod callback;
 #[path = "inventory_action_authoritative_tests.rs"]
 pub(super) mod authoritative;
 
+#[path = "inventory_action_addendum_tests.rs"]
+mod addendum;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]
@@ -382,6 +385,7 @@ async fn run_hand_use(kind: BlockUse, hand: Hand, actions: bool, count: u8) -> T
         Vec::new()
     };
     let mut packet = click_block_packet(
+        &fixture.owner.player,
         match hand {
             Hand::Right => HandSlot::Mainhand,
             Hand::Left => HandSlot::Offhand,
@@ -479,7 +483,13 @@ async fn offhand_item_break_status_uses_offhand() -> TestResult {
         .inventory()
         .set_stack_in_hand(Hand::Left, tool.clone());
     fixture.drain_packets();
-    let packet = click_block_packet(HandSlot::Offhand, position, &tool, Vec::new());
+    let packet = click_block_packet(
+        &fixture.owner.player,
+        HandSlot::Offhand,
+        position,
+        &tool,
+        Vec::new(),
+    );
 
     fixture
         .owner
@@ -539,7 +549,13 @@ async fn offhand_placement_keeps_the_originating_box_contents() -> TestResult {
         .player
         .inventory()
         .set_stack_in_hand(Hand::Left, off.clone());
-    let packet = click_block_packet(HandSlot::Offhand, position, &off, Vec::new());
+    let packet = click_block_packet(
+        &fixture.owner.player,
+        HandSlot::Offhand,
+        position,
+        &off,
+        Vec::new(),
+    );
     fixture.drain_packets();
 
     fixture

@@ -115,6 +115,7 @@ async fn equipment_callback_replacement_survives_click_air_reconciliation() -> T
             ),
         );
         let mut packet = click_block_packet(
+            &fixture.owner.player,
             if hand == Hand::Left {
                 HandSlot::Offhand
             } else {
@@ -226,7 +227,13 @@ async fn placement_callback_selection_publishes_the_live_main_hand() -> TestResu
     fixture.drain_packets();
     fixture.owner.client().handle_inventory_action(
         &player,
-        click_block_packet(HandSlot::Mainhand, position, &blocks, Vec::new()),
+        click_block_packet(
+            &fixture.owner.player,
+            HandSlot::Mainhand,
+            position,
+            &blocks,
+            Vec::new(),
+        ),
     );
     fixture
         .verify_and_close(|fixture| {
@@ -362,6 +369,7 @@ async fn denied_last_item_placement_restores_the_predicted_stack() -> TestResult
             .register::<BlockPlaceEvent, _>(Arc::new(CancelPlacement), EventPriority::Normal, true);
         let (container, slot, _) = hand_address(hand);
         let packet = click_block_packet(
+            &fixture.owner.player,
             if hand == Hand::Left {
                 HandSlot::Offhand
             } else {
@@ -392,6 +400,7 @@ async fn denied_last_item_placement_restores_the_predicted_stack() -> TestResult
                 assert_eq!(actual.uid, original.uid);
                 let owner_packets = fixture.owner.take_packets();
                 assert_owner_packet(fixture, &owner_packets, hand, &actual)?;
+                super::addendum::assert_block_corrections(fixture, &owner_packets, position)?;
                 assert_observer_hand(fixture, hand, &actual)
             })
             .await?;
@@ -454,6 +463,7 @@ async fn predicted_two_egg_air_use_republishes_the_authoritative_hand() -> TestR
             }
             let (container, slot, _) = hand_address(hand);
             let mut packet = click_block_packet(
+                &fixture.owner.player,
                 if hand == Hand::Left {
                     HandSlot::Offhand
                 } else {
