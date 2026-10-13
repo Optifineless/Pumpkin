@@ -120,7 +120,7 @@ mod review_tests {
             result,
             Err(LoaderError::ApiVersionMismatch {
                 plugin_version: 7,
-                server_version: 8
+                server_version: PLUGIN_API_VERSION
             })
         ));
     }
