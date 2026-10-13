@@ -515,3 +515,6 @@ pub mod trial_spawner;
 #[rustfmt::skip]
 #[path = "generated/spawn_variant.rs"]
 pub mod spawn_variant;
+
+#[cfg(all(test, feature = "dimension"))]
+mod dimension_tests;
