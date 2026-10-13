@@ -386,7 +386,7 @@ async fn round4c_equipment_publication_commits_before_callback() -> TestResult {
                 .lock()
                 .unwrap()
                 .get(&EquipmentSlot::HEAD);
-            let expected_damage = if equipped.is_empty() { 1.0 } else { 14.0 };
+            let expected_damage = 14.0;
             assert_eq!(
                 attack_damage(&player, &fixture.java_observer.player),
                 expected_damage,

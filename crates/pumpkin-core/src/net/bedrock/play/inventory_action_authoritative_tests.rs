@@ -220,7 +220,7 @@ async fn air_selection_callback(phase: SelectionCallback) -> TestResult {
     let diamonds = ItemStack::new(3, &Item::DIAMOND);
     player.inventory().set_stack(4, eggs.clone());
     player.inventory().set_stack(8, diamonds.clone());
-    // An unrelated bundled hand transfer still publishes before use; the origin stays advisory.
+    // Predicted transfers stay advisory; committed egg statistics follow claim and spawn.
     let mut actions = Vec::new();
     let handler = match phase {
         SelectionCallback::Equipment => {
@@ -287,15 +287,15 @@ async fn air_selection_callback(phase: SelectionCallback) -> TestResult {
             assert!(handler.fired.load(SeqCst), "real equipment callback");
             assert_eq!(
                 thrown_eggs(&fixture.world.world()),
-                usize::from(matches!(phase, SelectionCallback::Equipment)),
-                "gameplay callbacks reject stale admission; publication callbacks follow use"
+                usize::from(!matches!(phase, SelectionCallback::Interact)),
+                "interaction callbacks reject stale use; committed statistics and publication follow use"
             );
-            let expected = if matches!(phase, SelectionCallback::Equipment) {
+            let expected = if matches!(phase, SelectionCallback::Interact) {
+                eggs.clone()
+            } else {
                 let mut remaining = eggs.clone();
                 remaining.decrement(1);
                 remaining
-            } else {
-                eggs.clone()
             };
             assert!(player.inventory().get_stack(4).are_equal(&expected));
             assert!(player.inventory().get_stack(8).are_equal(&diamonds));
@@ -401,6 +401,83 @@ async fn authoritative_final_publication_selection_uses_empty_hand_damage() -> T
             assert_owner_packet(fixture, &owner, Hand::Right, ItemStack::EMPTY)?;
             assert_live_main(fixture, ItemStack::EMPTY, 4)?;
             Ok(())
+        })
+        .await
+}
+
+struct CountAirInteractions(Arc<AtomicUsize>);
+
+impl EventHandler<PlayerInteractEvent> for CountAirInteractions {
+    fn handle_blocking<'a>(
+        &'a self,
+        _: &'a Arc<Server>,
+        _: &'a mut PlayerInteractEvent,
+    ) -> BoxFuture<'a, ()> {
+        self.0.fetch_add(1, SeqCst);
+        Box::pin(async {})
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pre_use_statistic_selection_rejects_before_interaction_dispatch() -> TestResult {
+    let mut fixture = HandUseFixture::new().await;
+    let player = fixture.owner.player.clone();
+    player.inventory().set_selected_slot(4);
+    let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+    let diamonds = ItemStack::new(3, &Item::DIAMOND);
+    player.inventory().set_stack(4, sword.clone());
+    player.inventory().set_stack(8, diamonds.clone());
+    let selection = Arc::new(SelectDuringEquipment {
+        player: player.clone(),
+        selected: 8,
+        fired: AtomicBool::new(false),
+    });
+    fixture
+        .world
+        .server
+        .plugin_manager
+        .register::<PlayerStatisticIncrementEvent, _>(
+            selection.clone(),
+            EventPriority::Normal,
+            true,
+        );
+    let interactions = Arc::new(AtomicUsize::new(0));
+    fixture
+        .world
+        .server
+        .plugin_manager
+        .register::<PlayerInteractEvent, _>(
+            Arc::new(CountAirInteractions(interactions.clone())),
+            EventPriority::Normal,
+            true,
+        );
+    let mut packet = click_block_packet(
+        &player,
+        HandSlot::Mainhand,
+        BlockPos::new(8, 64, 8),
+        &sword,
+        Vec::new(),
+    );
+    if let TransactionData::UseItem(data) = &mut packet.transaction_data {
+        data.action_type = VarInt(1);
+    }
+    fixture.drain_packets();
+    fixture
+        .owner
+        .client()
+        .handle_inventory_action(&player, packet);
+    fixture
+        .verify_and_close(|fixture| {
+            assert!(selection.fired.load(SeqCst));
+            assert_eq!(
+                interactions.load(SeqCst),
+                0,
+                "stale use must stop before the interaction event"
+            );
+            assert_eq!(player.inventory().get_selected_slot(), 8);
+            assert!(player.inventory().get_stack(4).are_equal(&sword));
+            assert!(player.inventory().get_stack(8).are_equal(&diamonds));
+            assert_live_main(fixture, &diamonds, 8)
         })
         .await
 }
