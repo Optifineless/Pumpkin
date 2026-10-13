@@ -1,9 +1,13 @@
 use pumpkin_data::{BlockDirection, BlockState};
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
-const EPSILON: f64 = 1.0e-7;
+/// Matches vanilla `AABB.EPSILON` and `VoxelShape.clip`'s near-zero ray threshold.
+pub const EPSILON: f64 = 1.0e-7;
 
-// VoxelShape.clip: the ray starts just inside the shape when its 0.001 step is contained.
+/// Probe distance used by vanilla `VoxelShape.clip` to detect a ray starting inside a shape.
+pub const CLIP_START_OFFSET: f64 = 0.001;
+
+// VoxelShape.clip: the ray starts just inside the shape when its probe step is contained.
 pub fn clip_block(
     state: &BlockState,
     pos: &BlockPos,
@@ -15,7 +19,7 @@ pub fn clip_block(
         return None;
     }
     let from = from - pos.0.to_f64();
-    let test = from + movement * 0.001;
+    let test = from + movement * CLIP_START_OFFSET;
     if state.get_block_collision_shapes_at(pos).any(|shape| {
         test.x >= shape.min.x
             && test.x < shape.max.x
@@ -25,7 +29,7 @@ pub fn clip_block(
             && test.z < shape.max.z
     }) {
         let direction = nearest_direction(movement);
-        return Some((0.001, direction.opposite()));
+        return Some((CLIP_START_OFFSET, direction.opposite()));
     }
     state
         .get_block_collision_shapes_at(pos)
@@ -52,8 +56,8 @@ pub(super) fn nearest_direction(movement: Vector3<f64>) -> BlockDirection {
     direction
 }
 
-// AABB.clip / clipPoint: only entering planes strictly inside the ray segment count.
-pub(super) fn clip_box(
+/// Clips against entering planes, matching vanilla `AABB.clip` for a ray segment.
+pub fn clip_box(
     from: Vector3<f64>,
     movement: Vector3<f64>,
     bounds: BoundingBox,
