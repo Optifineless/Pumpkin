@@ -52,6 +52,17 @@ Bedrock inventory requests reject forged hand and legacy slot predictions, Survi
 
 Bedrock click-block and click-air use the hand declared by the packet, including an empty offhand beside an occupied main hand. Hand descriptors check item identity (including mapping metadata), not predicted counts: client stacks and components are never installed. The existing Bedrock component codec does not decode component NBT for comparison. Transactions without slot predictions immediately correct only changed inventory slots; unchanged transactions send no inventory correction. Changed hands enqueue through the shared per-tick equipment publisher, which refreshes modifiers and corrects owner offhand window 119/slot 0 and tracking players once per changed hand, matching `LivingEntity.detectEquipmentUpdates/collectEquipmentChanges/handleEquipmentChanges`. Full corrections remain for discarded slot predictions or rejected hand identities. Mirrors `ServerGamePacketListenerImpl.handleUseItemOn/handleUseItem`, `ServerPlayerGameMode.useItemOn/useItem` and `AbstractContainerMenu.broadcastChanges` ([#169](https://github.com/Optifineless/Pumpkin/pull/169) follow-up). Implemented by Codex (GPT-6.1 Sol). In-game verification: **Not yet**.
 
+## Chest restart regression, #172
+
+The watch/last-unwatch/save/reload regression now drives the real terrain unload
+queue and checks that a final 17-diamond chest snapshot survives region reload.
+The existing #170 `claim_terrain_unload` retains terrain under admission, rechecks
+tickets and holder targets, and removes only the expected chunk incarnation,
+mirroring `ChunkMap.scheduleUnload` identity checks. This PR preserves that
+production implementation and adds only regression coverage. The proven race route
+is already closed on murgicraft; the historical intermittent S6 failure's connection
+to it remains unconfirmed. Written by Codex. In-game verification: **Not yet**.
+
 ## How the code here is written
 
 The changes in this fork are written by AI coding agents, not by hand. The fork owner tests them in-game but does not review the code line by line. Treat every commit that isn't from upstream accordingly.

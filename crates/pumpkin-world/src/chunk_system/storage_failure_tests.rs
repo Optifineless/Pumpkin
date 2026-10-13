@@ -291,3 +291,148 @@ fn shutdown_collects_late_worker_results_before_the_final_save() {
     assert_eq!(written.len(), 1);
     assert_eq!(written[0].0, pos);
 }
+
+fn chest_record(count: i32) -> pumpkin_nbt::compound::NbtCompound {
+    use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+    // Test-only snapshot record; the core S6 scenario covers ChestBlockEntity serialization.
+    let mut chest = NbtCompound::new();
+    chest.put_string("id", "minecraft:chest".into());
+    chest.put_int("x", 8);
+    chest.put_int("y", 64);
+    chest.put_int("z", 8);
+    let mut items = Vec::new();
+    if count > 0 {
+        let mut item = NbtCompound::new();
+        item.put_byte("Slot", 0);
+        item.put_string("id", "minecraft:diamond".into());
+        item.put_int("count", count);
+        items.push(NbtTag::Compound(item));
+    }
+    chest.put_list("Items", items);
+    chest
+}
+
+#[tokio::test]
+async fn last_unwatch_after_unload_decision_preserves_final_chest_snapshot() {
+    use crate::level::Level;
+    use pumpkin_config::world::LevelConfig;
+    use pumpkin_data::{Block, dimension::Dimension};
+    use pumpkin_util::math::position::BlockPos;
+
+    let directory = tempfile::tempdir().unwrap();
+    let level = Level::from_root_folder(
+        &LevelConfig::default(),
+        directory.path().to_owned(),
+        0,
+        Dimension::OVERWORLD,
+    );
+    let (mut schedule, _) = scheduler();
+    schedule.running_task_count = 0;
+    schedule.entity_unloads = level.entity_unloads.clone();
+    schedule.chunk_loading = level.chunk_loading.clone();
+    schedule.public_chunk_map = level.loaded_chunks.clone();
+    let (write, mut writes) = tokio::sync::mpsc::channel(8);
+    schedule.io_write = write;
+    let pos = ChunkPos::new(0, 0);
+    let chest_pos = BlockPos::new(8, 64, 8);
+    let chunk = ChunkData::empty_sync(0, 0);
+    chunk
+        .section
+        .set_block_absolute_y(8, 64, 8, Block::CHEST.default_state.id);
+    chunk
+        .pending_block_entities
+        .lock()
+        .unwrap()
+        .insert(chest_pos, chest_record(0));
+    chunk.mark_dirty(true);
+    level.write_chunks(vec![(pos, chunk.clone())]).await;
+    schedule.publish_chunk(pos, chunk.clone());
+    schedule.chunk_map.insert(
+        pos,
+        ChunkHolder {
+            chunk: Some(Chunk::Level(chunk)),
+            current_stage: StagedChunkEnum::Full,
+            public: true,
+            ..Default::default()
+        },
+    );
+
+    // ChunkMap.scheduleUnload revalidates a queued holder when its save work completes.
+    // Queue the old decision, then establish newer watch authority at the module boundary.
+    schedule.unload_chunks.insert(pos);
+    assert!(!schedule.entity_unloads.lock().unwrap().retains_terrain(pos));
+    level.watch_entity_chunks(&[pos]);
+    assert_eq!(level.unwatch_entity_chunks(&[pos]), vec![pos]);
+    let mut schedule = tokio::task::spawn_blocking(move || {
+        schedule.process_unload_queue();
+        schedule
+    })
+    .await
+    .unwrap();
+    let retained = schedule
+        .chunk_map
+        .get(&pos)
+        .is_some_and(|holder| holder.public)
+        && schedule.unload_chunks.contains(&pos);
+    // World.save_block_entities/add_block_entity_nbt uses this published-chunk lookup on stop.
+    let final_chest = chest_record(17);
+    level.read_chunk_sync(&pos, |chunk| {
+        chunk
+            .pending_block_entities
+            .lock()
+            .unwrap()
+            .insert(chest_pos, final_chest.clone());
+        chunk.mark_dirty(true);
+    });
+    tokio::task::spawn_blocking(move || schedule.finish_storage())
+        .await
+        .unwrap();
+    let chunks = writes
+        .try_recv()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(pos, chunk)| {
+            let Chunk::Level(chunk) = chunk else {
+                panic!("expected full terrain")
+            };
+            (pos, chunk)
+        })
+        .collect();
+    level.write_chunks(chunks).await;
+    level.shutdown().await.unwrap();
+
+    let count = reloaded_chest_count(&level, pos, chest_pos).await;
+    assert_eq!(
+        count, 17,
+        "last unwatch lost the final chest snapshot before restart"
+    );
+    assert!(
+        retained,
+        "retained holder was not preserved in the unload queue"
+    );
+}
+
+async fn reloaded_chest_count(
+    level: &crate::level::Level,
+    pos: ChunkPos,
+    chest_pos: pumpkin_util::math::position::BlockPos,
+) -> i32 {
+    use crate::chunk::{
+        format::anvil::AnvilChunkFile,
+        io::{FileIO, LoadedData, file_manager::ChunkFileManager},
+    };
+    use pumpkin_config::chunk::AnvilChunkConfig;
+    let disk = ChunkFileManager::<AnvilChunkFile<ChunkData>>::new(AnvilChunkConfig::default());
+    let (send, mut receive) = tokio::sync::mpsc::channel(1);
+    disk.fetch_chunks(&level.level_folder, &[pos], send).await;
+    let Some(LoadedData::Loaded(restored)) = receive.recv().await else {
+        panic!("saved terrain missing after restart")
+    };
+    let pending = restored.pending_block_entities.lock().unwrap();
+    pending[&chest_pos]
+        .get_list("Items")
+        .and_then(|items| items.first())
+        .and_then(|item| item.extract_compound())
+        .and_then(|item| item.get_int("count"))
+        .unwrap_or(0)
+}
