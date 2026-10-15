@@ -1,27 +1,29 @@
+#[cfg(debug_assertions)]
 use crate::{
-    block::entities::{
-        BlockEntity,
-        capture::{
-            capture_legacy,
-            tests::{CaptureAction, TestCapture, rejected},
-        },
-        chest::ChestBlockEntity,
-        comparator::ComparatorBlockEntity,
-        map::MapBlockEntity,
+    block::entities::capture::{
+        capture_legacy,
+        tests::{CaptureAction, TestCapture, rejected},
     },
     net::java::combat_test_support::TestPlayer,
     plugin::world::world_save::WorldSaveEvent,
-    server::combat_test_support::{publish_empty_chunk, server, world},
+    server::combat_test_support::{server, world},
+};
+use crate::{
+    block::entities::{
+        BlockEntity, chest::ChestBlockEntity, comparator::ComparatorBlockEntity,
+        map::MapBlockEntity,
+    },
+    server::combat_test_support::publish_empty_chunk,
 };
 #[cfg(debug_assertions)]
 use futures::FutureExt as _;
-use pumpkin_data::{
-    Block, data_component::DataComponent, data_component_impl::DataComponentImpl, item::Item,
-    item_stack::ItemStack,
-};
+#[cfg(debug_assertions)]
+use pumpkin_data::{Block, data_component::DataComponent, data_component_impl::DataComponentImpl};
+use pumpkin_data::{item::Item, item_stack::ItemStack};
 use pumpkin_inventory::Inventory;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::math::position::BlockPos;
+#[cfg(debug_assertions)]
 use pumpkin_world::world::BlockFlags;
 use std::sync::Arc;
 #[cfg(debug_assertions)]
@@ -123,7 +125,9 @@ mod reentry {
     boundary_test!(snapshot_rejects_effect_capture, 6);
 }
 
+#[cfg(debug_assertions)]
 struct ReentrantComponent(Arc<super::World>, bool);
+#[cfg(debug_assertions)]
 impl DataComponentImpl for ReentrantComponent {
     fn write_data(&self) -> NbtTag {
         self.0.get_block_entity(&BlockPos::new(8, 64, 8));
