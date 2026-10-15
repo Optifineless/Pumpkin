@@ -648,8 +648,6 @@ PR #145 Java conservation follow-up: eating and drinking claim the live hand bef
 
 The generated dimensions now include ordinary-bed and straw-bed `BedRule` data, including vanilla `destroy_on_use`, `destroy_on_leave` and error-message fields. The regression checks these values and respawn-anchor rules against vanilla 26.3 `BedRule` and `DimensionTypes.bootstrap`. Existing gameplay readers retain their prior output until `split-102-beds-r2` uses the new fields; this branch adds no gameplay behavior.
 
-
-
 ## Bedrock hand transactions (#141)
 
 Bedrock predicted placement retains the validated originating item through block-entity component application, including a last offhand shulker or a nonempty container remainder. Placement hooks keep their cancellation point; moved or replaced sources reject installation without restoring stale stock, while selection-only changes still pay the retained slot. The public placement entry retains its current hand before placement hooks, matching BlockItem.place / UseOnContext; the internal Bedrock entry receives the validated snapshot. Hand equipment updates to Bedrock observers now encode the current player's selected hotbar index (main hand uses that index; offhand uses container-local slot zero). Non-player defaults and owner offhand container119/slot0 remain unchanged. Real handler tests cover original-byte contents/lock/observer failures, callback replacement and cancellation. In-game verification: Not yet.
