@@ -158,11 +158,12 @@ impl BlockBehaviour for StrawBedBlock {
         let (other_block, other_state) = args.world.get_block_and_state(&other_half_pos);
         if other_block == args.block {
             let other_props = BedProperties::from_state_id(other_state.id);
-            if other_props.part != bed_props.part {
-                args.world.break_block(
+            if other_props.part != bed_props.part && other_props.facing == bed_props.facing {
+                args.world.break_straw_bed_half(
                     &other_half_pos,
-                    None,
+                    other_state.id,
                     BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
+                    crate::world::neighbor_updater::UPDATE_LIMIT,
                 );
             }
         }
@@ -195,21 +196,33 @@ impl StrawBedBlock {
                 bed_head_pos,
             )
         };
-        world.play_block_sound(
-            Sound::BlockStrawBedBreakLeave,
-            SoundCategory::Blocks,
-            head_pos,
-        );
-        world.break_block(
-            &head_pos,
-            None,
-            BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
-        );
-        world.break_block(
-            &foot_pos,
-            None,
-            BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
-        );
+        let mut foot_props = bed_props;
+        foot_props.part = BedPart::Foot;
+        let mut head_props = bed_props;
+        head_props.part = BedPart::Head;
+        let head_state = head_props.to_state_id(&Block::STRAW_BED);
+        // Do not consume an invalid pair left by a PlayerBedLeaveEvent callback.
+        if world.get_block_state_id(&head_pos) != head_state
+            || world.get_block_state_id(&foot_pos) != foot_props.to_state_id(&Block::STRAW_BED)
+        {
+            return;
+        }
+        // StrawBedBlock.destroyBed removes one position; the partner follows its replacement callback.
+        if world
+            .break_straw_bed_half(
+                &head_pos,
+                head_state,
+                BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
+                crate::world::neighbor_updater::UPDATE_LIMIT,
+            )
+            .is_some()
+        {
+            world.play_block_sound(
+                Sound::BlockStrawBedBreakLeave,
+                SoundCategory::Blocks,
+                head_pos,
+            );
+        }
     }
 
     /// Returns the message to show the player when they cannot sleep here, or
