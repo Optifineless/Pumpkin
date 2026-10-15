@@ -1,8 +1,7 @@
 use super::*;
-use pumpkin_util::{
-    math::position::BlockPos,
-    sync::{Mutex, ScreenSelection},
-};
+use pumpkin_util::math::position::BlockPos;
+#[cfg(debug_assertions)]
+use pumpkin_util::sync::{Mutex, ScreenSelection};
 use std::sync::Arc;
 
 pub type CaptureAction = Arc<dyn Fn(&mut NbtCompound) + Send + Sync>;
@@ -25,6 +24,7 @@ impl BlockEntity for TestCapture {
     }
 }
 
+#[cfg(debug_assertions)]
 pub fn rejected(operation: impl FnOnce(), boundary: &str) {
     let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation)).unwrap_err();
     let message = error
