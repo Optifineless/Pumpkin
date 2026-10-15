@@ -87,7 +87,7 @@ async fn snapshot_boundary_case(case: usize) {
         // Install a native BE and enter through the ordinary world save, without handler hooks.
         world.replace_live_block_entity(pos, Arc::new(TestCapture(action)));
         rejected(
-            || world.save_block_entities(pos.chunk_position()),
+            || world.save_block_entities(pos.chunk_position(), false),
             &format!("boundary {boundary}:"),
         );
         // Both scope and transitive markers must be gone after unwinding.
@@ -233,7 +233,7 @@ async fn snapshot_normal_and_final_save_preserve_legacy_fixture_nbt_bytes() {
         expected.put_compound("PumpkinCustomData", custom.clone());
         let bytes = canonical_bytes(expected);
         world.replace_live_block_entity(pos, entity);
-        world.save_block_entities(pos.chunk_position());
+        world.save_block_entities(pos.chunk_position(), false);
         let saved = chunk
             .pending_block_entities
             .lock()
