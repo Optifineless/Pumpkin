@@ -129,6 +129,12 @@ are additive API. API 8 (same version): rebuild native plugins; WIT and saved-da
 formats are unchanged. Implemented by Codex (GPT-6.1 Sol).
 In-game verification: **Not yet**.
 
+Straw-bed wake cleanup preserves blocks and container contents replaced by plugin
+callbacks, and honors cancellation for each half before removal. Committed removal
+keeps normal neighbor work, requested drops and Java/Bedrock destroy effects.
+Mirrors `StrawBedBlock.destroyBed`; implemented by Codex (GPT-6.1 Sol).
+In-game verification: **Not yet**.
+
 ## How the code here is written
 
 The changes in this fork are written by AI coding agents, not by hand. The fork owner tests them in-game but does not review the code line by line. Treat every commit that isn't from upstream accordingly.

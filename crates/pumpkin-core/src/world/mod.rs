@@ -53,6 +53,7 @@ mod shared_state_tests;
 mod snapshot_boundary_tests;
 mod spawn_insertion;
 pub mod stopwatches;
+mod straw_bed;
 pub mod time;
 pub mod villager_poi;
 

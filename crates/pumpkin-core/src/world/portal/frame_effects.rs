@@ -23,7 +23,7 @@ struct RetiredPartner {
 }
 
 impl RetiredBlockEffects {
-    fn capture(world: &World, position: &BlockPos, old: BlockStateId) -> Self {
+    pub(in crate::world) fn capture(world: &World, position: &BlockPos, old: BlockStateId) -> Self {
         let block = Block::from_state_id(old);
         // AbstractBedBlock.getConnectedDirection and DoorBlock/DoublePlantBlock's
         // DoubleBlockHalf lookup, at LevelChunk.setBlockState's removal boundary.
@@ -82,7 +82,7 @@ pub(in crate::world) struct RetiredBlockEntity {
 }
 
 impl RetiredBlockEntity {
-    fn on_block_replaced(self, world: &Arc<World>, position: &BlockPos) {
+    pub(in crate::world) fn on_block_replaced(self, world: &Arc<World>, position: &BlockPos) {
         // LevelChunk.setBlockState/preRemoveSideEffects: use the retired instance,
         // never a replacement installed by an earlier callback in this batch.
         if let Some(entity) = self
