@@ -82,6 +82,17 @@ async fn snapshot_boundary_case(case: usize) {
                 super::guard_effects::OwnerEffects::default().capture(|| {});
             }),
         ),
+        ("World::break_straw_bed_half", {
+            let world = world.clone();
+            Arc::new(move |_| {
+                let _ = world.break_straw_bed_half(
+                    &pos,
+                    Block::STRAW_BED.default_state.id,
+                    BlockFlags::empty(),
+                    super::neighbor_updater::UPDATE_LIMIT,
+                );
+            })
+        }),
     ];
     for (boundary, action) in actions.into_iter().skip(case).take(1) {
         // Install a native BE and enter through the ordinary world save, without handler hooks.
@@ -123,6 +134,7 @@ mod reentry {
     boundary_test!(snapshot_rejects_event, 4);
     boundary_test!(snapshot_rejects_deferred_effect, 5);
     boundary_test!(snapshot_rejects_effect_capture, 6);
+    boundary_test!(snapshot_rejects_straw_cleanup, 7);
 }
 
 #[cfg(debug_assertions)]

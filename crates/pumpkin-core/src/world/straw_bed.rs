@@ -21,6 +21,10 @@ impl World {
         flags: BlockFlags,
         update_limit: u32,
     ) -> Option<BlockStateId> {
+        pumpkin_util::sync::assert_not_in_snapshot(
+            pumpkin_util::sync::SnapshotBoundary::Mutation,
+            "World::break_straw_bed_half",
+        );
         if Block::from_state_id(expected) != &Block::STRAW_BED
             || !self.is_in_build_limit(*position)
             || self.get_block_state_id(position) != expected
