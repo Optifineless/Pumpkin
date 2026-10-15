@@ -101,6 +101,11 @@ fn compare(actual: &BTreeMap<String, String>, manifest: &str) -> Vec<String> {
     errors
 }
 
+fn scan_file(relative_path: &Path, source: &str) -> (Vec<String>, Vec<(String, String)>) {
+    let path = relative_path.to_string_lossy().replace('\\', "/");
+    (scan::sites(&path, source), scan::boundaries(&path, source))
+}
+
 #[test]
 fn lifecycle_sites_match_reviewed_manifest() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -116,15 +121,11 @@ fn lifecycle_sites_match_reviewed_manifest() {
         let mut sites = Vec::new();
         for file in files {
             let source = fs::read_to_string(&file).unwrap();
-            for (key, call) in
-                scan::boundaries(&file.strip_prefix(root).unwrap().to_string_lossy(), &source)
-            {
+            let (file_sites, boundaries) = scan_file(file.strip_prefix(root).unwrap(), &source);
+            for (key, call) in boundaries {
                 actual.insert(key, hex::encode(Sha256::digest(call.as_bytes())));
             }
-            sites.extend(scan::sites(
-                &file.strip_prefix(root).unwrap().to_string_lossy(),
-                &source,
-            ));
+            sites.extend(file_sites);
         }
         let normalized = sites.join("\n");
         actual.insert(

@@ -1,5 +1,6 @@
-use super::{compare, scan};
-use std::collections::BTreeMap;
+use super::{compare, scan, scan_file};
+use sha2::{Digest, Sha256};
+use std::{collections::BTreeMap, path::Path};
 
 #[test]
 fn rejects_new_capture_live_nbt_write_and_aliased_host_api() {
@@ -138,4 +139,48 @@ fn aliases_and_capture_body_changes_have_their_own_records() {
         "fn write_nbt(value: [u8; 3]) { nbt.put_int(\"value\", 2); }",
     );
     assert_ne!(old, new);
+}
+
+const PATH_FIXTURE: &str = "fn mutate() {\n    state.store(7);\n}\nfn capture() {\n    let _scope = SnapshotScope::legacy(identity);\n}\n";
+
+#[test]
+fn family_mutation_identity_and_hash_ignore_path_separators() {
+    let (expected, _) = scan_file(
+        Path::new("crates/pumpkin-core/src/world/path_fixture.rs"),
+        PATH_FIXTURE,
+    );
+    let expected_hash = Sha256::digest(expected.join("\n").as_bytes());
+    for source in [PATH_FIXTURE.to_owned(), PATH_FIXTURE.replace('\n', "\r\n")] {
+        let (actual, _) = scan_file(
+            Path::new(r"crates\pumpkin-core\src\world\path_fixture.rs"),
+            &source,
+        );
+        assert!(actual.iter().any(|site| site == "crates/pumpkin-core/src/world/path_fixture.rs::mutate::mapped-write::store::state.store(7);"));
+        assert_eq!(actual, expected);
+        assert_eq!(Sha256::digest(actual.join("\n").as_bytes()), expected_hash);
+    }
+}
+
+#[test]
+fn snapshot_boundary_identity_and_hash_ignore_path_separators() {
+    let (_, expected) = scan_file(
+        Path::new("crates/pumpkin-core/src/world/path_fixture.rs"),
+        PATH_FIXTURE,
+    );
+    assert_eq!(
+        expected,
+        [(
+            "boundary:crates/pumpkin-core/src/world/path_fixture.rs:5::capture".into(),
+            "let _scope = SnapshotScope::legacy(identity);".into()
+        )]
+    );
+    let expected_hash = Sha256::digest(expected[0].1.as_bytes());
+    for source in [PATH_FIXTURE.to_owned(), PATH_FIXTURE.replace('\n', "\r\n")] {
+        let (_, actual) = scan_file(
+            Path::new(r"crates\pumpkin-core\src\world\path_fixture.rs"),
+            &source,
+        );
+        assert_eq!(actual, expected);
+        assert_eq!(Sha256::digest(actual[0].1.as_bytes()), expected_hash);
+    }
 }
