@@ -63,6 +63,13 @@ classes! {
 /// Rejects arbitrary code execution while an instrumented synchronous guard is held.
 #[inline]
 #[cfg_attr(debug_assertions, track_caller)]
+#[cfg_attr(
+    not(debug_assertions),
+    expect(
+        clippy::missing_const_for_fn,
+        reason = "Debug builds inspect the non-const thread-local guard stack"
+    )
+)]
 pub fn assert_no_guards_held(boundary: &'static str) {
     #[cfg(debug_assertions)]
     tracking::assert_empty(boundary);

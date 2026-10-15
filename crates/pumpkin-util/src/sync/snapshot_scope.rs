@@ -118,6 +118,13 @@ impl Drop for SnapshotScope {
 /// Rejects a mapped boundary before any fast path or callback can run.
 #[inline]
 #[cfg_attr(debug_assertions, track_caller)]
+#[cfg_attr(
+    not(debug_assertions),
+    expect(
+        clippy::missing_const_for_fn,
+        reason = "Debug builds read non-const thread-local capture metadata"
+    )
+)]
 pub fn assert_not_in_snapshot(kind: SnapshotBoundary, boundary: &'static str) {
     #[cfg(debug_assertions)]
     {
@@ -160,6 +167,13 @@ pub struct SnapshotCall {
 }
 impl SnapshotCall {
     #[inline]
+    #[cfg_attr(
+        not(debug_assertions),
+        expect(
+            clippy::missing_const_for_fn,
+            reason = "Debug builds update non-const thread-local capture metadata"
+        )
+    )]
     pub fn enter(call: &'static str) -> Self {
         #[cfg(debug_assertions)]
         let previous = ACTIVE.get();
