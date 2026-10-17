@@ -304,6 +304,12 @@ In-game verification: Not yet. AI implementation: Codex (GPT-6).
 | [#3503](https://github.com/Pumpkin-MC/Pumpkin/issues/3503) Hardcore death cannot enter spectator mode | adapted upstream #3506, normal saved respawn followed by cancellable spectator transition | Not yet |
 | [#3614](https://github.com/Pumpkin-MC/Pumpkin/issues/3614) Armor stand item interactions | adapted upstream #3684 with actual-hand writes, adjusted clicks, disabled slots and equipment-drop fixes | Not yet |
 
+## Murgicraft issues addressed here
+
+| Fork issue | Change | Checked in-game |
+|:--|:--|:--|
+| [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, and remove an empty knot. Also fixes the existing-knot downcast used by player-to-knot transfers. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot` and `Leashable.canHaveALeashAttachedTo`. | Not yet |
+
 ## Known regressions under investigation
 
 Offline Java identities now follow `UUIDUtil.createOfflinePlayerUUID`: MD5 of UTF-8
