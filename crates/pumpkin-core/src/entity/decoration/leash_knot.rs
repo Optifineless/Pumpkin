@@ -10,17 +10,25 @@ use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+const LEASH_SEARCH_SIZE: f32 = 32.0;
 
 pub struct LeashKnotEntity {
     entity: Entity,
     pos: BlockPos,
+    remove_when_empty: AtomicBool,
 }
 
 impl LeashKnotEntity {
     pub const OFFSET_Y: f64 = 0.375;
 
     pub const fn new(entity: Entity, pos: BlockPos) -> Self {
-        Self { entity, pos }
+        Self {
+            entity,
+            pos,
+            remove_when_empty: AtomicBool::new(false),
+        }
     }
 
     pub const fn block_pos(&self) -> BlockPos {
@@ -82,6 +90,21 @@ impl LeashKnotEntity {
         let pos = self.entity.pos.load();
         world.play_sound(Sound::ItemLeadTied, SoundCategory::Neutral, &pos);
     }
+
+    fn has_live_leashed_mobs(&self, world: &World) -> bool {
+        // Leashable.leashableLeashedTo searches a 32-block box centered on the holder bounds.
+        let bounds = self.entity.bounding_box.load();
+        let center = (bounds.min + bounds.max) * 0.5;
+        let half_size = f64::from(LEASH_SEARCH_SIZE) / 2.0;
+        let radius = Vector3::new(half_size, half_size, half_size);
+        let search_box = BoundingBox::new(center - radius, center + radius);
+        let knot_id = self.entity.entity_id;
+        world
+            .get_entities_at_box(&search_box)
+            .iter()
+            .map(|entity_base| entity_base.get_entity())
+            .any(|entity| !entity.is_removed() && leash_holder_id(entity) == Some(knot_id))
+    }
 }
 
 use crate::server::Server;
@@ -138,6 +161,12 @@ impl EntityBase for LeashKnotEntity {
 
             world.play_sound(Sound::ItemLeadUntied, SoundCategory::Neutral, &pos);
             self.entity.remove();
+        } else if self.remove_when_empty.swap(false, Ordering::Relaxed)
+            && !self.has_live_leashed_mobs(&world)
+        {
+            // LeashFenceKnotEntity.notifyLeasheeRemoved discards an empty knot. Run this after
+            // parallel player packet handling so another packet cannot attach to a removed knot.
+            self.entity.remove();
         }
     }
 
@@ -148,9 +177,9 @@ impl EntityBase for LeashKnotEntity {
         let player_id = player.entity_id();
 
         let search_dim = EntityDimensions {
-            width: 32.0,
-            height: 32.0,
-            eye_height: 16.0,
+            width: LEASH_SEARCH_SIZE,
+            height: LEASH_SEARCH_SIZE,
+            eye_height: LEASH_SEARCH_SIZE / 2.0,
         };
         let pos = self.entity.pos.load();
         let search_box = BoundingBox::new_from_pos(pos.x, pos.y, pos.z, &search_dim);
@@ -195,19 +224,15 @@ impl EntityBase for LeashKnotEntity {
         if attached_mob || any_dropped {
             world.emit_game_event(GameEvent::BlockAttach.name(), pos);
             self.play_placement_sound(&world);
-            if any_dropped
-                && !entities
-                    .iter()
-                    .map(|entity_base| entity_base.get_entity())
-                    .any(|ent| leash_holder_id(ent) == Some(knot_id))
-            {
-                self.entity.remove();
+            if any_dropped {
+                self.remove_when_empty.store(true, Ordering::Relaxed);
             }
             true
         } else {
             false
         }
     }
+
     fn cast_any(&self) -> &dyn std::any::Any {
         self
     }

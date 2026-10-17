@@ -27,7 +27,7 @@ impl ItemMetadata for LeadItem {
 impl ItemBehaviour for LeadItem {
     fn use_on_block(
         &self,
-        item: &mut ItemStack,
+        _item: &mut ItemStack,
         player: &Player,
         location: BlockPos,
         _face: BlockDirection,
@@ -85,9 +85,7 @@ impl ItemBehaviour for LeadItem {
         }
 
         if any_leashed {
-            if player.gamemode.load() != pumpkin_util::GameMode::Creative {
-                item.decrement(1);
-            }
+            // LeadItem.bindPlayerMobs transfers existing leashes without consuming a lead.
             world.play_sound(Sound::ItemLeadTied, SoundCategory::Neutral, &center);
             BlockActionResult::Success
         } else {
