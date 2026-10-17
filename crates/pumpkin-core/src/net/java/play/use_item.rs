@@ -1,7 +1,17 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pumpkin_data::data_component_impl::{EnchantmentsImpl, IDSet};
+use pumpkin_data::entity::EntityType;
+use pumpkin_data::tag::Taggable;
 use pumpkin_inventory::Inventory;
 use pumpkin_util::version::JavaMinecraftVersion;
+
+enum SwappableItemUseResult {
+    NotHandled,
+    Pass,
+    Fail,
+    Success,
+}
 
 impl JavaClient {
     pub fn handle_use_item(&self, player: &Arc<Player>, use_item: &SUseItem, server: &Arc<Server>) {
@@ -82,15 +92,29 @@ impl JavaClient {
                 ) {
                     return;
                 }
-                Self::prepare_hand_item_for_use(player, hand, &mut item_in_hand);
-                server
-                    .item_registry
-                    .on_use_with_rotation(&stack_for_use, player, use_yaw, use_pitch, hand);
+                match Self::prepare_hand_item_for_use(player, hand, &mut item_in_hand) {
+                    SwappableItemUseResult::NotHandled => {
+                        server.item_registry.on_use_with_rotation(
+                            &stack_for_use,
+                            player,
+                            use_yaw,
+                            use_pitch,
+                            hand,
+                        );
+                    }
+                    SwappableItemUseResult::Pass
+                    | SwappableItemUseResult::Fail
+                    | SwappableItemUseResult::Success => {}
+                }
             }
         }}
     }
 
-    fn prepare_hand_item_for_use(player: &Arc<Player>, hand: Hand, held: &mut ItemStack) {
+    fn prepare_hand_item_for_use(
+        player: &Arc<Player>,
+        hand: Hand,
+        held: &mut ItemStack,
+    ) -> SwappableItemUseResult {
         let inventory = player.inventory();
 
         let consumable = held.get_data_component::<ConsumableImpl>().is_some();
@@ -109,48 +133,93 @@ impl JavaClient {
                     .set_active_hand(hand, held.clone(), held.get_max_use_time());
             }
         }
-        let equipment_slot = held
+        let Some(equippable) = held
             .get_data_component::<EquippableImpl>()
             .filter(|equippable| equippable.swappable)
-            .map(|equippable| equippable.slot.clone());
-        if let Some(slot) = equipment_slot {
-            let owner = inventory.slot_transaction(0);
-            let guard = owner.lock();
-            let current_hand = inventory.get_stack_in_hand(hand);
-            if current_hand.uid != held.uid || !current_hand.are_equal(held) {
-                return;
-            }
-            // The equipment lock has to be released before touching the hand again:
-            // the off hand lives in the same map, so holding it here would deadlock.
-            let current_equipped = inventory
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(&slot);
-            if current_equipped.are_items_and_components_equal(held) {
-                return;
-            }
+        else {
+            return SwappableItemUseResult::NotHandled;
+        };
+        let slot = equippable.slot.clone();
 
-            let used = held.item.id;
-            let equipped_notification = held.clone();
-            let equipped = if current_equipped.is_empty() {
-                let equipped = held.clone();
-                held.decrement_unless_creative(player.gamemode.load(), 1);
-                equipped
-            } else {
-                std::mem::replace(held, current_equipped)
-            };
-            inventory
-                .entity_equipment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .put(&slot, equipped);
-            inventory.set_stack_in_hand(hand, held.clone());
-            drop(guard);
-            player.enqueue_equipment_change(&slot, &equipped_notification);
-            // Equippable.swapWithEquipmentSlot awards the original item's successful use.
-            player.increment_stat(StatisticCategory::Used, i32::from(used), 1);
+        // Item.use returns Equippable.swapWithEquipmentSlot's PASS/FAIL/SUCCESS directly.
+        if !can_be_equipped_by(equippable, player.get_entity().entity_type) {
+            return SwappableItemUseResult::Pass;
         }
+
+        let owner = inventory.slot_transaction(0);
+        let guard = owner.lock();
+        let current_hand = inventory.get_stack_in_hand(hand);
+        if current_hand.uid != held.uid || !current_hand.are_equal(held) {
+            return SwappableItemUseResult::Fail;
+        }
+        // The equipment lock has to be released before touching the hand again:
+        // the off hand lives in the same map, so holding it here would deadlock.
+        let current_equipped = inventory
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&slot);
+        if current_equipped.are_items_and_components_equal(held)
+            || (!player.is_creative()
+                && current_equipped
+                    .get_data_component::<EnchantmentsImpl>()
+                    .is_some_and(|enchantments| {
+                        enchantments.enchantment.iter().any(|(enchantment, level)| {
+                            *level > 0 && enchantment.effects.prevent_armor_change
+                        })
+                    }))
+        {
+            return SwappableItemUseResult::Fail;
+        }
+
+        let used = held.item.id;
+        let gamemode = player.gamemode.load();
+        let mut displaced = ItemStack::EMPTY.clone();
+        // Equippable.swapWithEquipmentSlot consumes one item for every stack larger than one.
+        let equipped = if held.item_count > 1 {
+            displaced = current_equipped;
+            let equipped = held.copy_with_count(1);
+            held.decrement_unless_creative(gamemode, 1);
+            equipped
+        } else {
+            let equipped = held.clone();
+            if current_equipped.is_empty() {
+                held.decrement_unless_creative(gamemode, 1);
+            } else {
+                *held = current_equipped;
+            }
+            equipped
+        };
+        let equipped_notification = equipped.clone();
+        inventory
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .put(&slot, equipped);
+        inventory.set_stack_in_hand(hand, held.clone());
+        // PlayerInventory insertion only mutates local slots under this same reentrant owner.
+        if !displaced.is_empty() {
+            inventory.insert_stack_anywhere(&mut displaced);
+        }
+        drop(guard);
+
+        // The stacked branch drops displaced equipment only when inventory had no room.
+        if !displaced.is_empty() {
+            player.drop_item(displaced);
+        }
+        player.enqueue_equipment_change(&slot, &equipped_notification);
+        // Equippable.swapWithEquipmentSlot awards the original item's successful use.
+        player.increment_stat(StatisticCategory::Used, i32::from(used), 1);
+        SwappableItemUseResult::Success
+    }
+}
+
+/// Mirrors Equippable.canBeEquippedBy's optional allowed-entity set.
+fn can_be_equipped_by(equippable: &EquippableImpl, entity_type: &'static EntityType) -> bool {
+    match &equippable.allowed_entities {
+        None => true,
+        Some(IDSet::Tag(tag)) => entity_type.is_tagged_with(tag).unwrap_or(false),
+        Some(IDSet::IDs(types)) => types.contains(&entity_type),
     }
 }
 
@@ -188,6 +257,219 @@ mod tests {
             player.living_entity.item_use_time.load(Ordering::Relaxed),
             10
         );
+        assert!(world.level.shutdown().await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn java_use_item_does_not_equip_or_duplicate_llama_carpet_on_player() {
+        use pumpkin_protocol::codec::var_int::VarInt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let server = combat_test_support::server(dir.path());
+        let world = combat_test_support::world(&server, dir.path());
+        let fixture = TestPlayer::new(&world);
+        let player = &fixture.player;
+        let inventory = player.inventory();
+        inventory.set_slot(0, ItemStack::new(2, &Item::BLACK_CARPET));
+        inventory.set_slot(1, ItemStack::new(1, &Item::WHITE_CARPET));
+
+        let black_use = SUseItem {
+            hand: VarInt(0),
+            sequence: VarInt(0),
+            yaw: 0.0,
+            pitch: 0.0,
+        };
+        fixture
+            .client()
+            .handle_use_item(player, &black_use, &server);
+
+        // Put the remaining black carpet away, then use the white carpet as in issue #90.
+        inventory.set_slot(2, inventory.get_slot(0));
+        inventory.set_slot(0, ItemStack::EMPTY.clone());
+        inventory
+            .selected_slot
+            .store(1, std::sync::atomic::Ordering::Relaxed);
+        let white_use = SUseItem {
+            sequence: VarInt(1),
+            ..black_use
+        };
+        fixture
+            .client()
+            .handle_use_item(player, &white_use, &server);
+
+        assert_eq!(inventory.count_item(&Item::BLACK_CARPET), 2);
+        let body = inventory
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&EquipmentSlot::BODY);
+        assert!(body.is_empty());
+        assert_eq!(
+            inventory.get_stack_in_hand(Hand::Right).item,
+            &Item::WHITE_CARPET
+        );
+
+        assert!(world.level.shutdown().await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn java_use_item_equips_only_one_item_from_a_permitted_stack() {
+        use pumpkin_data::data_component::DataComponent;
+        use pumpkin_protocol::codec::var_int::VarInt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let server = combat_test_support::server(dir.path());
+        let world = combat_test_support::world(&server, dir.path());
+        let fixture = TestPlayer::new(&world);
+        let player = &fixture.player;
+        let mut equippable = ItemStack::new(1, &Item::BLACK_CARPET)
+            .get_data_component::<EquippableImpl>()
+            .expect("vanilla carpet has an equippable component")
+            .clone();
+        equippable.allowed_entities = None;
+        let permitted_stack = ItemStack::new_with_component(
+            2,
+            &Item::BLACK_CARPET,
+            vec![(
+                DataComponent::Equippable,
+                Some(Box::new(equippable) as Box<_>),
+            )],
+        );
+        player.inventory().set_slot(0, permitted_stack.clone());
+
+        let use_item = SUseItem {
+            hand: VarInt(0),
+            sequence: VarInt(0),
+            yaw: 0.0,
+            pitch: 0.0,
+        };
+        fixture.client().handle_use_item(player, &use_item, &server);
+
+        let inventory = player.inventory();
+        let hand = inventory.get_stack_in_hand(Hand::Right);
+        let body = inventory
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&EquipmentSlot::BODY);
+        assert_eq!(hand.item_count, 1);
+        assert_eq!(body.item_count, 1);
+        assert_eq!(inventory.count_item(&Item::BLACK_CARPET), 1);
+        assert_eq!(
+            inventory.count_item(&Item::BLACK_CARPET) + u32::from(body.item_count),
+            2
+        );
+
+        // With occupied equipment, the same stack branch keeps one in hand and stores the old item.
+        inventory.set_slot(0, ItemStack::EMPTY.clone());
+        inventory.set_slot(1, permitted_stack);
+        inventory
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .put(&EquipmentSlot::BODY, ItemStack::new(1, &Item::BREAD));
+        inventory
+            .selected_slot
+            .store(1, std::sync::atomic::Ordering::Relaxed);
+        let swap_item = SUseItem {
+            sequence: VarInt(1),
+            ..use_item
+        };
+        fixture
+            .client()
+            .handle_use_item(player, &swap_item, &server);
+
+        let hand = inventory.get_stack_in_hand(Hand::Right);
+        let body = inventory
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&EquipmentSlot::BODY);
+        assert_eq!(hand.item_count, 1);
+        assert_eq!(body.item_count, 1);
+        assert!(inventory.contains_item(&Item::BREAD));
+        assert_eq!(
+            inventory.count_item(&Item::BLACK_CARPET) + u32::from(body.item_count),
+            2
+        );
+
+        assert!(world.level.shutdown().await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn java_use_item_cannot_swap_bound_equipment_in_survival() {
+        use pumpkin_data::data_component::DataComponent;
+        use pumpkin_data::data_component_impl::EnchantmentsImpl;
+        use pumpkin_data::enchantment::Enchantment;
+        use pumpkin_protocol::codec::var_int::VarInt;
+        use std::borrow::Cow;
+
+        let dir = tempfile::tempdir().unwrap();
+        let server = combat_test_support::server(dir.path());
+        let world = combat_test_support::world(&server, dir.path());
+        let fixture = TestPlayer::new(&world);
+        let player = &fixture.player;
+        let mut bound_equippable = ItemStack::new(1, &Item::BLACK_CARPET)
+            .get_data_component::<EquippableImpl>()
+            .expect("vanilla carpet has an equippable component")
+            .clone();
+        bound_equippable.allowed_entities = None;
+        let mut bound_equipment = ItemStack::new_with_component(
+            1,
+            &Item::BLACK_CARPET,
+            vec![(
+                DataComponent::Equippable,
+                Some(Box::new(bound_equippable) as Box<_>),
+            )],
+        );
+        bound_equipment.set_data_component(EnchantmentsImpl {
+            enchantment: Cow::Owned(vec![(&Enchantment::BINDING_CURSE, 1)]),
+        });
+        player
+            .inventory()
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .put(&EquipmentSlot::BODY, bound_equipment);
+
+        let mut held_equippable = ItemStack::new(1, &Item::WHITE_CARPET)
+            .get_data_component::<EquippableImpl>()
+            .expect("vanilla carpet has an equippable component")
+            .clone();
+        held_equippable.allowed_entities = None;
+        player.inventory().set_slot(
+            0,
+            ItemStack::new_with_component(
+                1,
+                &Item::WHITE_CARPET,
+                vec![(
+                    DataComponent::Equippable,
+                    Some(Box::new(held_equippable) as Box<_>),
+                )],
+            ),
+        );
+
+        let use_item = SUseItem {
+            hand: VarInt(0),
+            sequence: VarInt(0),
+            yaw: 0.0,
+            pitch: 0.0,
+        };
+        fixture.client().handle_use_item(player, &use_item, &server);
+
+        let inventory = player.inventory();
+        assert_eq!(
+            inventory.get_stack_in_hand(Hand::Right).item,
+            &Item::WHITE_CARPET
+        );
+        let body = inventory
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&EquipmentSlot::BODY);
+        assert_eq!(body.item, &Item::BLACK_CARPET);
+        assert_eq!(body.get_enchantment_level(&Enchantment::BINDING_CURSE), 1);
+
         assert!(world.level.shutdown().await.is_ok());
     }
 }
