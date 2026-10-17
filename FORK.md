@@ -154,6 +154,13 @@ tickets and holder targets, and removes only the expected chunk incarnation,
 mirroring `ChunkMap.scheduleUnload` identity checks. Written by Codex. In-game
 verification: **Not yet**.
 
+The #191 follow-up closes the ordinary `/save-all` replacement window too: if the
+captured block entity was replaced, save retries from the currently registered
+instance and attaches its current `PumpkinCustomData` before publishing. This keeps
+replacement state for entities whose `chunk_data_nbt()` is `None`, and matches
+`LevelChunk.getBlockEntityNbtForSaving` resolving the current live entity. In-game
+verification: **Not yet**.
+
 ## World normal/frozen service boundary, ticks M1
 
 Normal World ticking and each frozen flush/player batch now require exclusive
