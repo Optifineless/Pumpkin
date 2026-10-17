@@ -2,6 +2,7 @@ use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase, living::LivingEntity};
 use crate::world::World;
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
@@ -26,14 +27,14 @@ impl LeashKnotEntity {
         self.pos
     }
 
-    pub fn get_or_create(world: &Arc<World>, pos: BlockPos) -> Arc<Self> {
+    pub fn get_or_create(world: &Arc<World>, pos: BlockPos) -> Arc<dyn EntityBase> {
         if let Some(existing) = Self::get_knot(world, pos) {
             return existing;
         }
-        Self::create_knot(world, pos)
+        Self::create_knot(world, pos) as Arc<dyn EntityBase>
     }
 
-    pub fn get_knot(world: &Arc<World>, pos: BlockPos) -> Option<Arc<Self>> {
+    pub fn get_knot(world: &Arc<World>, pos: BlockPos) -> Option<Arc<dyn EntityBase>> {
         let center = Vector3::new(
             f64::from(pos.0.x) + 0.5,
             f64::from(pos.0.y) + Self::OFFSET_Y,
@@ -51,10 +52,11 @@ impl LeashKnotEntity {
 
         for entity_base in entities {
             if entity_base.get_entity().entity_type == &EntityType::LEASH_KNOT
-                && let Some(knot) = entity_base.cast_any().downcast_ref::<Arc<Self>>()
+                // LeashFenceKnotEntity.getKnot checks the entity class, then returns that entity.
+                && let Some(knot) = entity_base.cast_any().downcast_ref::<Self>()
                 && knot.pos == pos
             {
-                return Some(knot.clone());
+                return Some(entity_base);
             }
         }
         None
@@ -139,6 +141,7 @@ impl EntityBase for LeashKnotEntity {
         }
     }
 
+    // LeashFenceKnotEntity.interact transfers eligible leashes, then removes an empty knot.
     fn interact(&self, player: &Arc<Player>, _item_stack: &mut ItemStack) -> bool {
         let world = player.world();
         let knot_id = self.entity.entity_id;
@@ -153,42 +156,53 @@ impl EntityBase for LeashKnotEntity {
         let search_box = BoundingBox::new_from_pos(pos.x, pos.y, pos.z, &search_dim);
         let entities = world.get_entities_at_box(&search_box);
 
-        let mut attached_mob = false;
-        let mut player_leashed_mobs = Vec::new();
+        // Leashable.leashableLeashedTo plus canHaveALeashAttachedTo.
+        let player_leashed_mobs: Vec<_> = entities
+            .iter()
+            .map(|entity_base| entity_base.get_entity())
+            .filter(|ent| {
+                leash_holder_id(ent) == Some(player_id)
+                    && can_have_a_leash_attached_to(ent, &self.entity)
+            })
+            .collect();
 
-        for entity_base in &entities {
-            let ent = entity_base.get_entity();
-            if let Ok(guard) = ent.leashed_to.try_lock()
-                && let Some(holder) = guard.as_ref()
-                && holder.get_entity().entity_id == player_id
-            {
-                player_leashed_mobs.push(ent);
-            }
-        }
+        let mut attached_mob = false;
 
         if let Some(self_knot) = Self::get_knot(&world, self.pos) {
             for mob in player_leashed_mobs {
-                mob.leash_to(self_knot.clone() as Arc<dyn EntityBase>);
-                attached_mob = true;
+                mob.leash_to(self_knot.clone());
+                attached_mob |= leash_holder_id(mob) == Some(self_knot.get_entity().entity_id);
             }
         }
 
         let mut any_dropped = false;
-        if !attached_mob {
-            for entity_base in &entities {
-                let ent = entity_base.get_entity();
-                if let Ok(guard) = ent.leashed_to.try_lock()
-                    && let Some(holder) = guard.as_ref()
-                    && holder.get_entity().entity_id == knot_id
-                {
-                    ent.leash_to(player.clone() as Arc<dyn EntityBase>);
-                    any_dropped = true;
-                }
+        if !attached_mob && !player.get_entity().is_sneaking() {
+            let knot_leashed_mobs: Vec<_> = entities
+                .iter()
+                .map(|entity_base| entity_base.get_entity())
+                .filter(|ent| {
+                    leash_holder_id(ent) == Some(knot_id)
+                        && can_have_a_leash_attached_to(ent, player.get_entity())
+                })
+                .collect();
+
+            for mob in knot_leashed_mobs {
+                mob.leash_to(player.clone() as Arc<dyn EntityBase>);
+                any_dropped |= leash_holder_id(mob) == Some(player_id);
             }
         }
 
         if attached_mob || any_dropped {
+            world.emit_game_event(GameEvent::BlockAttach.name(), pos);
             self.play_placement_sound(&world);
+            if any_dropped
+                && !entities
+                    .iter()
+                    .map(|entity_base| entity_base.get_entity())
+                    .any(|ent| leash_holder_id(ent) == Some(knot_id))
+            {
+                self.entity.remove();
+            }
             true
         } else {
             false
@@ -198,3 +212,30 @@ impl EntityBase for LeashKnotEntity {
         self
     }
 }
+
+fn leash_holder_id(entity: &Entity) -> Option<i32> {
+    // Snapshot before leash changes can fire an event or send packets.
+    // Block on contention so the vanilla transfer cannot silently skip this leash.
+    let holder = entity
+        .leashed_to
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    holder.map(|holder| holder.get_entity().entity_id)
+}
+
+fn can_have_a_leash_attached_to(entity: &Entity, holder: &Entity) -> bool {
+    if entity.entity_id == holder.entity_id {
+        return false;
+    }
+
+    let entity_bounds = entity.bounding_box.load();
+    let holder_bounds = holder.bounding_box.load();
+    let difference = (entity_bounds.min + entity_bounds.max) * 0.5
+        - (holder_bounds.min + holder_bounds.max) * 0.5;
+    difference.length_squared() <= Entity::LEASH_SNAP_DISTANCE * Entity::LEASH_SNAP_DISTANCE
+}
+
+#[cfg(test)]
+#[path = "leash_knot_tests.rs"]
+mod tests;
