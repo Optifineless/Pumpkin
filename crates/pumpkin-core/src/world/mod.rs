@@ -34,6 +34,7 @@ pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
 mod entity_persistence;
+mod entity_save;
 mod entity_unload;
 pub mod explosion;
 pub(crate) mod fluid_lookup;
@@ -728,8 +729,12 @@ impl World {
 
     pub async fn shutdown(&self) {
         let entities = self.entities.load_full();
-        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
-            .await;
+        entity_save::save_entities_by_chunk(
+            self,
+            &entities,
+            self.level.live_entity_chunk_positions(),
+        )
+        .await;
 
         let chunks: Vec<Vector2<i32>> = self
             .block_entities
@@ -761,60 +766,6 @@ impl World {
         }
     }
 
-    /// Writes `entities` into the saved data of the chunks they are in. A live chunk is
-    /// rebuilt from scratch, so `snapshot_chunks` lists the live chunks that must be rewritten
-    /// even when nothing is left in them; a chunk that never went live keeps its records.
-    async fn save_entities_by_chunk(
-        &self,
-        entities: &[Arc<dyn EntityBase>],
-        snapshot_chunks: impl IntoIterator<Item = Vector2<i32>>,
-    ) {
-        let mut groups: FxHashMap<Vector2<i32>, Vec<NbtCompound>> = FxHashMap::default();
-        for entity in entities {
-            let base_entity = entity.get_entity();
-            // Entity.save saves passengers only inside their root's record.
-            if base_entity.is_removed() || base_entity.get_vehicle().is_some() {
-                continue;
-            }
-            let nbt = entity_persistence::save_riding_tree(entity);
-            groups
-                .entry(base_entity.chunk_pos.load())
-                .or_default()
-                .push(nbt);
-        }
-        for pos in snapshot_chunks {
-            groups.entry(pos).or_default();
-        }
-
-        for (pos, records) in groups {
-            let chunk = if records.is_empty() {
-                let Some(chunk) = self.level.get_entity_chunk_sync(&pos) else {
-                    continue;
-                };
-                chunk
-            } else {
-                match self.level.get_entity_chunk(pos).await {
-                    Ok(chunk) => chunk,
-                    Err(error) => {
-                        error!("Entity snapshot cannot load chunk {pos:?}: {error}");
-                        continue;
-                    }
-                }
-            };
-            let live = chunk.live.load(Relaxed);
-            if !live && records.is_empty() {
-                continue;
-            }
-            let mut data = chunk
-                .data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            merge_entity_records(&mut data, live, records);
-            drop(data);
-            chunk.mark_dirty(true);
-        }
-    }
-
     /// Serializes the live block entities of a chunk back into that chunk's block
     /// entity data. The live map is the source of truth while a chunk is loaded -
     /// `get_block_entity` takes the saved NBT out of the chunk when it wakes an
@@ -833,16 +784,15 @@ impl World {
             if retire {
                 container_lifecycle::retire_block_entity(&block_entity);
             }
+            let position = block_entity.get_position();
             let mut nbt =
                 crate::block::entities::capture::capture_legacy(block_entity.as_ref()).into_nbt();
-            if let Some(custom_data) = self
-                .custom_block_entity_data
-                .get(&block_entity.get_position())
+            if let Some(custom_data) = self.custom_block_entity_data.get(&position)
                 && !custom_data.is_empty()
             {
                 nbt.put_compound("PumpkinCustomData", custom_data.clone());
             }
-            self.add_block_entity_nbt(block_entity.get_position(), &nbt);
+            self.publish_block_entity_snapshot_if_current(position, &block_entity, &nbt);
         }
     }
 
@@ -6936,8 +6886,12 @@ impl World {
 
     pub async fn save(&self) {
         let entities = self.entities.load_full();
-        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
-            .await;
+        entity_save::save_entities_by_chunk(
+            self,
+            &entities,
+            self.level.live_entity_chunk_positions(),
+        )
+        .await;
 
         let chunks: Vec<Vector2<i32>> = self
             .block_entities
