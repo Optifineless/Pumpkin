@@ -1,14 +1,64 @@
 use super::*;
 use crate::world::chunker::test_support::{self as watcher_steps, Phase, Step};
 use crate::{
-    block::entities::chest::ChestBlockEntity,
+    block::entities::{BlockEntity, chest::ChestBlockEntity},
     entity::{Entity, item::ItemEntity},
 };
 use pumpkin_data::{item::Item, item_stack::ItemStack};
 use pumpkin_inventory::Inventory;
+use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_world::world::BlockFlags;
+use std::sync::{Mutex, mpsc};
 
 const CHEST: BlockPos = BlockPos::new(8, 64, 8);
+
+struct PausedChestCapture {
+    chest: Arc<ChestBlockEntity>,
+    captured: mpsc::Sender<()>,
+    resume: Mutex<Option<mpsc::Receiver<()>>>,
+}
+
+impl BlockEntity for PausedChestCapture {
+    fn container_lock(&self) -> Option<pumpkin_data::data_component_impl::LockImpl> {
+        self.chest.container_lock()
+    }
+
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.chest.write_nbt(nbt);
+        if let Some(resume) = self.resume.lock().unwrap().take() {
+            self.captured.send(()).unwrap();
+            resume.recv().unwrap();
+        }
+    }
+
+    fn from_nbt(nbt: &NbtCompound, position: BlockPos) -> Self {
+        Self {
+            chest: Arc::new(ChestBlockEntity::from_nbt(nbt, position)),
+            captured: mpsc::channel().0,
+            resume: Mutex::new(None),
+        }
+    }
+
+    fn resource_location(&self) -> &'static str {
+        ChestBlockEntity::ID
+    }
+
+    fn get_position(&self) -> BlockPos {
+        self.chest.get_position()
+    }
+
+    fn chunk_data_nbt(&self) -> Option<NbtCompound> {
+        self.chest.chunk_data_nbt()
+    }
+
+    fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
+        Some(self.chest.clone())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
 
 async fn watcher_step(
     scenario: &Scenario,
@@ -296,6 +346,70 @@ async fn s6_stop_restart_preserves_players_entities_chest_and_level_data() {
         assert!(scenario.server.level_info.load().game_rules.keep_inventory);
         assert_contents(&world, &ids);
         scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_does_not_publish_a_replaced_chests_stale_capture() {
+    run(async {
+        let scenario = Scenario::new().await;
+        let player_id = Uuid::new_v4();
+        scenario.join(player_id, "ChestRace").await;
+        let world = scenario.world(&Dimension::OVERWORLD);
+        contents(&world);
+
+        let (captured, wait_for_capture) = mpsc::channel();
+        let (resume_capture, resume_writer) = mpsc::channel();
+        let original = world.get_block_entity(&CHEST).unwrap();
+        let original_chest = original.clone().get_inventory().unwrap();
+        let chest = original
+            .as_any()
+            .downcast_ref::<ChestBlockEntity>()
+            .unwrap();
+        let paused = Arc::new(PausedChestCapture {
+            chest: Arc::new(ChestBlockEntity::from_nbt(
+                &{
+                    let mut nbt = NbtCompound::new();
+                    chest.write_nbt(&mut nbt);
+                    nbt
+                },
+                CHEST,
+            )),
+            captured,
+            resume: Mutex::new(Some(resume_writer)),
+        });
+        paused
+            .clone()
+            .get_inventory()
+            .unwrap()
+            .set_stack(0, original_chest.get_stack(0));
+        world.add_block_entity(paused);
+
+        let replacement = Arc::new(ChestBlockEntity::new(CHEST));
+        replacement.set_stack(0, ItemStack::new(9, &Item::EMERALD));
+        let replacement_world = world.clone();
+        let writer = std::thread::spawn(move || {
+            wait_for_capture.recv().unwrap();
+            replacement_world.add_block_entity(replacement);
+            resume_capture.send(()).unwrap();
+        });
+
+        scenario.stop().await;
+        writer.join().unwrap();
+
+        let scenario = scenario.restart().await;
+        scenario.join(player_id, "ChestRace").await;
+        let world = scenario.world(&Dimension::OVERWORLD);
+        let inventory = world
+            .get_block_entity(&CHEST)
+            .unwrap()
+            .get_inventory()
+            .unwrap();
+        let stack = inventory.get_stack(0);
+        scenario.stop().await;
+        assert_eq!(stack.item, &Item::EMERALD);
+        assert_eq!(stack.item_count, 9);
     })
     .await;
 }

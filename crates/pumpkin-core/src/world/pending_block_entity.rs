@@ -2,6 +2,7 @@ use std::sync::{Arc, MutexGuard, Weak};
 
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 use pumpkin_world::chunk::{ChunkData, io::Dirtiable};
 use rustc_hash::FxHashMap;
 
@@ -51,6 +52,51 @@ impl Drop for PendingBlockEntitySnapshot<'_> {
 }
 
 impl World {
+    /// Publishes a captured live image only while that exact block-entity instance remains current.
+    pub(super) fn publish_block_entity_snapshot_if_current(
+        &self,
+        pos: BlockPos,
+        expected: &Arc<dyn BlockEntity>,
+        nbt: &NbtCompound,
+    ) {
+        assert_not_in_snapshot(
+            SB::WorldRead,
+            "World::publish_block_entity_snapshot_if_current",
+        );
+        let chunk_pos = pos.chunk_position();
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loads.snapshots.remove(&pos);
+
+        // LevelChunk.getBlockEntityNbtForSaving resolves the current instance when it saves.
+        // A capture from an older instance must not replace a newer pending image.
+        let is_current = self
+            .block_entities
+            .get(&chunk_pos)
+            .and_then(|entities| entities.get(&pos).cloned())
+            .is_some_and(|current| Arc::ptr_eq(&current, expected));
+        if !is_current {
+            return;
+        }
+
+        let Some(chunk_entry) = self.level.loaded_chunks.get(&chunk_pos) else {
+            return;
+        };
+        let chunk = chunk_entry.value().clone();
+        chunk
+            .pending_block_entities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(pos, nbt.clone());
+        drop(chunk_entry);
+        drop(loads);
+
+        chunk.mark_dirty(true);
+        self.pending_block_entity_migrations.push(chunk_pos);
+    }
+
     pub(super) fn load_pending_block_entity(&self, pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
         let snapshot = self.pending_block_entity_snapshot(pos)?;
         #[cfg(test)]

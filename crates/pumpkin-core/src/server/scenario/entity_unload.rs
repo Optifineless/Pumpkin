@@ -99,12 +99,11 @@ fn pending(world: &World, pos: Vector2<i32>) -> bool {
 }
 
 fn observed_mob(world: &Arc<World>) -> Arc<ObservedMob> {
-    let inner = crate::entity::r#type::from_type(
-        &EntityType::COW,
-        Vector3::new(10.5, 64.0, 10.5),
-        world,
-        Uuid::new_v4(),
-    );
+    observed_mob_at(world, Vector3::new(10.5, 64.0, 10.5))
+}
+
+fn observed_mob_at(world: &Arc<World>, position: Vector3<f64>) -> Arc<ObservedMob> {
+    let inner = crate::entity::r#type::from_type(&EntityType::COW, position, world, Uuid::new_v4());
     inner.get_mob().unwrap().get_mob_entity().set_no_ai(true);
     inner
         .get_entity()
@@ -116,6 +115,60 @@ fn observed_mob(world: &Arc<World>) -> Arc<ObservedMob> {
     });
     world.add_entity_silent(mob.clone());
     mob
+}
+
+#[tokio::test]
+async fn ordinary_save_does_not_replace_retired_entity_with_its_old_live_image() {
+    run(async {
+        let scenario = Scenario::new().await;
+        let owner = scenario.join(Uuid::new_v4(), "SaveRace").await;
+        let world = owner.player.world();
+        let pos = Vector2::new(10, 0);
+        let storage = world.level.get_entity_chunk(pos).await.unwrap();
+        world.make_chunk_entities_live(&storage, None);
+        let mob = observed_mob_at(&world, Vector3::new(160.5, 64.0, 8.5));
+        mob.get_living_entity().unwrap().set_health(8.0);
+        let entity_id = mob.get_entity().entity_uuid;
+        let server = scenario.server.clone();
+        let retiring_world = world.clone();
+        let witness = mob.clone();
+        *mob.completion.lock().unwrap() = Some(Box::new(move || {
+            witness.get_living_entity().unwrap().set_health(3.0);
+            retiring_world.level.request_entity_unloads([pos]);
+            // Level.tick -> PersistentEntitySectionManager.storeChunkSections.
+            retiring_world.tick(&server);
+        }));
+
+        world.save().await;
+        let saved = world.level.get_entity_chunk(pos).await.unwrap();
+        let saved_health = saved
+            .data
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|record| record.get_uuid("UUID") == Some(entity_id))
+            .and_then(|record| record.get_float("Health"));
+        assert_eq!(
+            saved_health,
+            Some(3.0),
+            "ordinary save replaced the retired image"
+        );
+        assert!(mob.get_entity().is_removed());
+
+        let scenario = scenario.restart().await;
+        let owner = scenario.join(Uuid::new_v4(), "SaveReload").await;
+        let world = owner.player.world();
+        scenario.command("tp SaveReload 163.5 64 3.5");
+        owner.loaded(&scenario.server);
+        settled(&scenario, &owner, "entity save reload watcher tasks").await;
+        scenario.ticks(1).await;
+        let reloaded = world
+            .get_entity_by_uuid(entity_id)
+            .expect("retired entity did not reload from chunk storage");
+        assert_eq!(reloaded.get_living_entity().unwrap().health.load(), 3.0);
+        scenario.stop().await;
+    })
+    .await;
 }
 
 #[tokio::test]
