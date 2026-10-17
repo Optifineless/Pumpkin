@@ -547,6 +547,8 @@ Combat task 4 verification follow-up: **Not yet** play tested. Pearl impacts tel
 
 In-game verification: **Not yet**. Off-hand XP bottles, eyes, eggs, pearls, boats, rockets and knowledge books consume only the requested hand. Raising blocking items no longer awards `Used`. Flower pots resolve contents by name, planting reuses parsed criteria, and glass bottles inherit the passing block hook. Hive release preserves newly arriving occupants; shears apply the smoke/angry-bee harvest behavior. Sign distance checks release the editor lock and preserve a replacement editor.
 
+- Fork issue #90: Java air-use equips only swappable items allowed for the player entity type; stacked equippables install one and leave the remainder in hand, while displaced equipment goes to inventory or drops if full. Survival swaps respect `PREVENT_ARMOR_CHANGE`. Mirrors vanilla 26.3 `Item.use`, `Equippable.swapWithEquipmentSlot/canBeEquippedBy` and `LivingEntity.isEquippableInSlot`. In-game verification: **Not yet**.
+
 Block interactions returning `Fail` stop before item `useOn`, preserving cancellable plugin harvest/cauldron events; vanilla `ServerPlayerGameMode.useItemOn` continues to item use after a non-consuming block result. This applies to all block `Fail` results in the Java handler.
 
 Bedrock block-use cloned-hand writeback and held-item type validation are addressed by #141; validation precedes transaction actions, including last-item use. See the #141 bullet under Native plugin API 8 for rebuild requirements. Full validation of inventory action contents remains separate. Java entity interactions still need `isWithinEntityInteractionRange(3.0)` admission (finding 12). Mob capture bucket data and `FILLED_BUCKET` advancement remain a follow-up (finding 4).
