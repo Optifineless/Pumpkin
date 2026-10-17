@@ -1,14 +1,112 @@
 use super::*;
 use crate::world::chunker::test_support::{self as watcher_steps, Phase, Step};
 use crate::{
-    block::entities::chest::ChestBlockEntity,
+    block::entities::{
+        BlockEntity, chest::ChestBlockEntity, chiseled_bookshelf::ChiseledBookshelfBlockEntity,
+    },
     entity::{Entity, item::ItemEntity},
 };
 use pumpkin_data::{item::Item, item_stack::ItemStack};
 use pumpkin_inventory::Inventory;
+use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_world::world::BlockFlags;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, mpsc};
 
 const CHEST: BlockPos = BlockPos::new(8, 64, 8);
+const BOOKSHELF: BlockPos = BlockPos::new(8, 64, 8);
+
+struct PausedChestCapture {
+    chest: Arc<ChestBlockEntity>,
+    captured: mpsc::Sender<()>,
+    resume: Mutex<Option<mpsc::Receiver<()>>>,
+}
+
+impl BlockEntity for PausedChestCapture {
+    fn container_lock(&self) -> Option<pumpkin_data::data_component_impl::LockImpl> {
+        self.chest.container_lock()
+    }
+
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.chest.write_nbt(nbt);
+        if let Some(resume) = self.resume.lock().unwrap().take() {
+            self.captured.send(()).unwrap();
+            resume.recv().unwrap();
+        }
+    }
+
+    fn from_nbt(nbt: &NbtCompound, position: BlockPos) -> Self {
+        Self {
+            chest: Arc::new(ChestBlockEntity::from_nbt(nbt, position)),
+            captured: mpsc::channel().0,
+            resume: Mutex::new(None),
+        }
+    }
+
+    fn resource_location(&self) -> &'static str {
+        ChestBlockEntity::ID
+    }
+
+    fn get_position(&self) -> BlockPos {
+        self.chest.get_position()
+    }
+
+    fn chunk_data_nbt(&self) -> Option<NbtCompound> {
+        self.chest.chunk_data_nbt()
+    }
+
+    fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
+        Some(self.chest.clone())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct PausedBookshelfCapture {
+    bookshelf: Arc<ChiseledBookshelfBlockEntity>,
+    captured: crossbeam::channel::Sender<()>,
+    resume: crossbeam::channel::Receiver<()>,
+    pause: AtomicBool,
+}
+
+impl BlockEntity for PausedBookshelfCapture {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.bookshelf.write_nbt(nbt);
+        if self.pause.swap(false, Ordering::Relaxed) {
+            self.captured.send(()).unwrap();
+            self.resume.recv().unwrap();
+        }
+    }
+
+    fn from_nbt(nbt: &NbtCompound, position: BlockPos) -> Self {
+        let (captured, _capture_receiver) = crossbeam::channel::bounded(1);
+        let (_resume_sender, resume) = crossbeam::channel::bounded(1);
+        Self {
+            bookshelf: Arc::new(ChiseledBookshelfBlockEntity::from_nbt(nbt, position)),
+            captured,
+            resume,
+            pause: AtomicBool::new(false),
+        }
+    }
+
+    fn resource_location(&self) -> &'static str {
+        ChiseledBookshelfBlockEntity::ID
+    }
+
+    fn get_position(&self) -> BlockPos {
+        self.bookshelf.get_position()
+    }
+
+    fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
+        Some(self.bookshelf.clone())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
 
 async fn watcher_step(
     scenario: &Scenario,
@@ -296,6 +394,230 @@ async fn s6_stop_restart_preserves_players_entities_chest_and_level_data() {
         assert!(scenario.server.level_info.load().game_rules.keep_inventory);
         assert_contents(&world, &ids);
         scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn save_all_replacement_keeps_block_entity_custom_data_after_reload() {
+    run(async {
+        let scenario = Scenario::new().await;
+        let player = scenario.join(Uuid::new_v4(), "SaveCustomRace").await;
+        let world = player.player.world();
+        world.set_block_state(
+            &CHEST,
+            Block::CHEST.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+        world.set_block_entity_custom_data(
+            &CHEST,
+            "test:plugin",
+            "marker",
+            pumpkin_nbt::tag::NbtTag::String("survives".into()),
+        );
+
+        let (captured, wait_for_capture) = mpsc::channel();
+        let (resume_capture, resume_writer) = mpsc::channel();
+        let old = Arc::new(ChestBlockEntity::new(CHEST));
+        let paused = Arc::new(PausedChestCapture {
+            chest: old,
+            captured,
+            resume: Mutex::new(Some(resume_writer)),
+        });
+        world.add_block_entity(paused);
+
+        let save_world = world.clone();
+        let save = tokio::spawn(async move { save_world.save().await });
+        tokio::task::spawn_blocking(move || wait_for_capture.recv().unwrap())
+            .await
+            .unwrap();
+
+        let replacement = Arc::new(ChestBlockEntity::new(CHEST));
+        replacement.set_stack(0, ItemStack::new(9, &Item::EMERALD));
+        world.add_block_entity(replacement);
+        resume_capture.send(()).unwrap();
+        save.await.unwrap();
+
+        let chunk = world
+            .level
+            .loaded_chunks
+            .get(&CHEST.chunk_position())
+            .unwrap()
+            .clone();
+        let saved = chunk
+            .pending_block_entities
+            .lock()
+            .unwrap()
+            .get(&CHEST)
+            .cloned()
+            .expect("World::save left no chest save image");
+        let mut namespace = NbtCompound::new();
+        namespace.put_string("marker", "survives".into());
+        let mut expected_custom = NbtCompound::new();
+        expected_custom.put_compound("test:plugin", namespace);
+        assert_eq!(
+            saved.get_compound("PumpkinCustomData").cloned(),
+            Some(expected_custom),
+            "replacement save image lost block-entity custom data"
+        );
+
+        // Preserve the World::save image through shutdown so reload tests that exact image.
+        world
+            .block_entities
+            .get_mut(&CHEST.chunk_position())
+            .unwrap()
+            .remove(&CHEST);
+        let scenario = scenario.restart().await;
+        let player = scenario.join(Uuid::new_v4(), "LoadCustomRace").await;
+        let world = player.player.world();
+        assert!(world.get_block_entity(&CHEST).is_some());
+        assert_eq!(
+            world.get_block_entity_custom_data(&CHEST, "test:plugin", "marker"),
+            Some(pumpkin_nbt::tag::NbtTag::String("survives".into()))
+        );
+        scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stale_capture_retries_default_none_block_entity_state() {
+    run(async {
+        let scenario = Scenario::new().await;
+        let player = scenario.join(Uuid::new_v4(), "SaveBookshelfRace").await;
+        let world = player.player.world();
+        world.set_block_state(
+            &BOOKSHELF,
+            Block::CHISELED_BOOKSHELF.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+
+        let (captured, wait_for_capture) = crossbeam::channel::bounded(1);
+        let (resume_capture, resume_writer) = crossbeam::channel::bounded(1);
+        let old = Arc::new(ChiseledBookshelfBlockEntity::new(BOOKSHELF));
+        old.set_book(0, ItemStack::new(1, &Item::BOOK));
+        let paused = Arc::new(PausedBookshelfCapture {
+            bookshelf: old,
+            captured,
+            resume: resume_writer,
+            pause: AtomicBool::new(true),
+        });
+        world.add_block_entity(paused);
+
+        let save_world = world.clone();
+        let save = tokio::spawn(async move { save_world.save().await });
+        tokio::task::spawn_blocking(move || wait_for_capture.recv().unwrap())
+            .await
+            .unwrap();
+
+        let replacement = Arc::new(ChiseledBookshelfBlockEntity::new(BOOKSHELF));
+        replacement.set_book(4, ItemStack::new(1, &Item::BOOK));
+        world.add_block_entity(replacement);
+        resume_capture.send(()).unwrap();
+        save.await.unwrap();
+
+        let chunk = world
+            .level
+            .loaded_chunks
+            .get(&BOOKSHELF.chunk_position())
+            .unwrap()
+            .clone();
+        let saved = chunk
+            .pending_block_entities
+            .lock()
+            .unwrap()
+            .get(&BOOKSHELF)
+            .cloned()
+            .expect("default-None block entity had no fresh save image");
+        assert_eq!(
+            saved
+                .get_list("Items")
+                .map(<[pumpkin_nbt::tag::NbtTag]>::len),
+            Some(1),
+            "World::save did not capture the replacement bookshelf inventory"
+        );
+
+        // Preserve the World::save image through shutdown so reload tests that exact image.
+        world
+            .block_entities
+            .get_mut(&BOOKSHELF.chunk_position())
+            .unwrap()
+            .remove(&BOOKSHELF);
+        let scenario = scenario.restart().await;
+        let player = scenario.join(Uuid::new_v4(), "LoadBookshelfRace").await;
+        let world = player.player.world();
+        let bookshelf = world
+            .get_block_entity(&BOOKSHELF)
+            .expect("reloaded bookshelf missing after save-all race");
+        let inventory = bookshelf.get_inventory().unwrap();
+        let saved_book = inventory.get_stack(4);
+        assert_eq!(saved_book.item, &Item::BOOK);
+        assert_eq!(saved_book.item_count, 1);
+        scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_does_not_publish_a_replaced_chests_stale_capture() {
+    run(async {
+        let scenario = Scenario::new().await;
+        let player_id = Uuid::new_v4();
+        scenario.join(player_id, "ChestRace").await;
+        let world = scenario.world(&Dimension::OVERWORLD);
+        contents(&world);
+
+        let (captured, wait_for_capture) = mpsc::channel();
+        let (resume_capture, resume_writer) = mpsc::channel();
+        let original = world.get_block_entity(&CHEST).unwrap();
+        let original_chest = original.clone().get_inventory().unwrap();
+        let chest = original
+            .as_any()
+            .downcast_ref::<ChestBlockEntity>()
+            .unwrap();
+        let paused = Arc::new(PausedChestCapture {
+            chest: Arc::new(ChestBlockEntity::from_nbt(
+                &{
+                    let mut nbt = NbtCompound::new();
+                    chest.write_nbt(&mut nbt);
+                    nbt
+                },
+                CHEST,
+            )),
+            captured,
+            resume: Mutex::new(Some(resume_writer)),
+        });
+        paused
+            .clone()
+            .get_inventory()
+            .unwrap()
+            .set_stack(0, original_chest.get_stack(0));
+        world.add_block_entity(paused);
+
+        let replacement = Arc::new(ChestBlockEntity::new(CHEST));
+        replacement.set_stack(0, ItemStack::new(9, &Item::EMERALD));
+        let replacement_world = world.clone();
+        let writer = std::thread::spawn(move || {
+            wait_for_capture.recv().unwrap();
+            replacement_world.add_block_entity(replacement);
+            resume_capture.send(()).unwrap();
+        });
+
+        scenario.stop().await;
+        writer.join().unwrap();
+
+        let scenario = scenario.restart().await;
+        scenario.join(player_id, "ChestRace").await;
+        let world = scenario.world(&Dimension::OVERWORLD);
+        let inventory = world
+            .get_block_entity(&CHEST)
+            .unwrap()
+            .get_inventory()
+            .unwrap();
+        let stack = inventory.get_stack(0);
+        scenario.stop().await;
+        assert_eq!(stack.item, &Item::EMERALD);
+        assert_eq!(stack.item_count, 9);
     })
     .await;
 }

@@ -75,14 +75,26 @@ Bedrock click-block and click-air use the hand declared by the packet, including
 
 ## Chest restart regression, #172
 
-The watch/last-unwatch/save/reload regression now drives the real terrain unload
-queue and checks that a final 17-diamond chest snapshot survives region reload.
-The existing #170 `claim_terrain_unload` retains terrain under admission, rechecks
+Deterministic regressions exercise two stale-publication windows through real
+container, entity-unload, save and reload paths. A captured chest image is discarded
+if its live instance was replaced before publication, mirroring
+`LevelChunk.getBlockEntityNbtForSaving`. An ordinary entity save drops a captured
+live image after retirement has marked the entity removed, leaving the tick-owned
+retirement record authoritative, mirroring
+`PersistentEntitySectionManager.storeChunkSections/unloadEntity`. The stop path
+joins the ticker and packet/server tasks before world shutdown captures and saves
+the final chest state. The earlier terrain unpublication route is already closed
+by #170 `claim_terrain_unload`, which retains terrain under admission, rechecks
 tickets and holder targets, and removes only the expected chunk incarnation,
-mirroring `ChunkMap.scheduleUnload` identity checks. This PR preserves that
-production implementation and adds only regression coverage. The proven race route
-is already closed on murgicraft; the historical intermittent S6 failure's connection
-to it remains unconfirmed. Written by Codex. In-game verification: **Not yet**.
+mirroring `ChunkMap.scheduleUnload` identity checks. Written by Codex. In-game
+verification: **Not yet**.
+
+The #191 follow-up closes the ordinary `/save-all` replacement window too: if the
+captured block entity was replaced, save retries from the currently registered
+instance and attaches its current `PumpkinCustomData` before publishing. This keeps
+replacement state for entities whose `chunk_data_nbt()` is `None`, and matches
+`LevelChunk.getBlockEntityNbtForSaving` resolving the current live entity. In-game
+verification: **Not yet**.
 
 ## World normal/frozen service boundary, ticks M1
 
