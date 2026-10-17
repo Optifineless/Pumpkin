@@ -785,14 +785,8 @@ impl World {
                 container_lifecycle::retire_block_entity(&block_entity);
             }
             let position = block_entity.get_position();
-            let mut nbt =
-                crate::block::entities::capture::capture_legacy(block_entity.as_ref()).into_nbt();
-            if let Some(custom_data) = self.custom_block_entity_data.get(&position)
-                && !custom_data.is_empty()
-            {
-                nbt.put_compound("PumpkinCustomData", custom_data.clone());
-            }
-            self.publish_block_entity_snapshot_if_current(position, &block_entity, &nbt);
+            let nbt = self.capture_block_entity_snapshot(position, &block_entity);
+            self.publish_block_entity_snapshot_if_current(position, &block_entity, nbt);
         }
     }
 

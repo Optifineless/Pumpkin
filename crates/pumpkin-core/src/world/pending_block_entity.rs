@@ -8,7 +8,15 @@ use rustc_hash::FxHashMap;
 
 use super::portal::frame_effects::RetiredBlockEntity;
 use super::{World, remove_pending_block_entity};
-use crate::block::entities::{BlockEntity, block_entity_from_nbt};
+use crate::block::entities::{BlockEntity, block_entity_from_nbt, capture::capture_legacy};
+
+const MAX_REPLACEMENT_SNAPSHOT_RETRIES: usize = 2;
+
+enum SnapshotPublication {
+    Published,
+    Replaced(Arc<dyn BlockEntity>),
+    Missing,
+}
 
 #[cfg(test)]
 pub(super) type PublicationHook = Arc<dyn Fn() + Send + Sync>;
@@ -57,8 +65,46 @@ impl World {
         &self,
         pos: BlockPos,
         expected: &Arc<dyn BlockEntity>,
-        nbt: &NbtCompound,
+        mut nbt: NbtCompound,
     ) {
+        let mut expected = expected.clone();
+        for retry in 0..=MAX_REPLACEMENT_SNAPSHOT_RETRIES {
+            match self.try_publish_block_entity_snapshot(pos, &expected, &nbt) {
+                SnapshotPublication::Published | SnapshotPublication::Missing => return,
+                SnapshotPublication::Replaced(current) => {
+                    if retry == MAX_REPLACEMENT_SNAPSHOT_RETRIES {
+                        return;
+                    }
+                    // LevelChunk.getBlockEntityNbtForSaving resolves the replacement's live state.
+                    expected = current;
+                    nbt = self.capture_block_entity_snapshot(pos, &expected);
+                }
+            }
+        }
+    }
+
+    pub(super) fn capture_block_entity_snapshot(
+        &self,
+        pos: BlockPos,
+        block_entity: &Arc<dyn BlockEntity>,
+    ) -> NbtCompound {
+        let mut nbt = capture_legacy(block_entity.as_ref()).into_nbt();
+        let custom_data = self
+            .custom_block_entity_data
+            .get(&pos)
+            .map(|custom_data| custom_data.clone());
+        if let Some(custom_data) = custom_data.filter(|custom_data| !custom_data.is_empty()) {
+            nbt.put_compound("PumpkinCustomData", custom_data);
+        }
+        nbt
+    }
+
+    fn try_publish_block_entity_snapshot(
+        &self,
+        pos: BlockPos,
+        expected: &Arc<dyn BlockEntity>,
+        nbt: &NbtCompound,
+    ) -> SnapshotPublication {
         assert_not_in_snapshot(
             SB::WorldRead,
             "World::publish_block_entity_snapshot_if_current",
@@ -70,19 +116,18 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         loads.snapshots.remove(&pos);
 
-        // LevelChunk.getBlockEntityNbtForSaving resolves the current instance when it saves.
-        // A capture from an older instance must not replace a newer pending image.
-        let is_current = self
+        let current = self
             .block_entities
             .get(&chunk_pos)
-            .and_then(|entities| entities.get(&pos).cloned())
-            .is_some_and(|current| Arc::ptr_eq(&current, expected));
-        if !is_current {
-            return;
+            .and_then(|entities| entities.get(&pos).cloned());
+        match current {
+            Some(current) if Arc::ptr_eq(&current, expected) => {}
+            Some(current) => return SnapshotPublication::Replaced(current),
+            None => return SnapshotPublication::Missing,
         }
 
         let Some(chunk_entry) = self.level.loaded_chunks.get(&chunk_pos) else {
-            return;
+            return SnapshotPublication::Missing;
         };
         let chunk = chunk_entry.value().clone();
         chunk
@@ -95,6 +140,7 @@ impl World {
 
         chunk.mark_dirty(true);
         self.pending_block_entity_migrations.push(chunk_pos);
+        SnapshotPublication::Published
     }
 
     pub(super) fn load_pending_block_entity(&self, pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
