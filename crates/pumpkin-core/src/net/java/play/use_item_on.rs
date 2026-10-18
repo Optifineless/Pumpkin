@@ -1,6 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::item::registry::should_try_block_placement;
+use pumpkin_protocol::java::client::play::CBlockEntityData;
 
 impl JavaClient {
     #[allow(clippy::too_many_lines)]
@@ -35,9 +36,24 @@ impl JavaClient {
             return Err(BlockPlacingError::InvalidHand);
         };
 
+        let world = player.world();
+        // ServerGamePacketListenerImpl.handleUseItemOn checks the clicked cell before gameMode.useItemOn.
+        if world.is_in_spawn_protection(player, &position) {
+            let position_text = format!("{}, {}, {}", position.0.x, position.0.y, position.0.z);
+            player.send_system_message_raw(
+                &TextComponent::translate_cross(
+                    translation::java::BUILD_SPAWN_PROTECTION,
+                    translation::java::BUILD_SPAWN_PROTECTION,
+                    [TextComponent::text(position_text)],
+                )
+                .color_named(pumpkin_util::text::color::NamedColor::Red),
+                true,
+            );
+            Self::correct_spawn_protected_use(player, &world, position, face, hand);
+            return Ok(());
+        }
+
         if player.gamemode.load() == GameMode::Spectator {
-            let entity = &player.get_entity();
-            let world = entity.world.load_full();
             let block = world.get_block(&position);
 
             let event = PlayerInteractEvent::new(
@@ -75,8 +91,6 @@ impl JavaClient {
         let held_item_empty = held_item.is_empty();
         let off_hand_item_empty = off_hand_item.is_empty();
 
-        let entity = &player.get_entity();
-        let world = entity.world.load_full();
         let block = world.get_block(&position);
 
         let event = PlayerInteractEvent::new(
@@ -203,6 +217,42 @@ impl JavaClient {
         }
 
         Ok(())
+    }
+
+    pub(super) fn correct_spawn_protected_use(
+        player: &Player,
+        world: &World,
+        clicked: BlockPos,
+        face: BlockDirection,
+        hand: Hand,
+    ) {
+        let offset = face.to_offset();
+        let adjacent = BlockPos::new(
+            clicked.0.x.wrapping_add(offset.x),
+            clicked.0.y.wrapping_add(offset.y),
+            clicked.0.z.wrapping_add(offset.z),
+        );
+        for position in [clicked, adjacent] {
+            let state_id = world.get_block_state_id(&position);
+            player.try_send_client_packet(&CBlockUpdate::new(
+                position,
+                VarInt(i32::from(state_id.as_u16())),
+            ));
+        }
+        for position in [clicked, adjacent] {
+            if let Some(block_entity) = world.get_block_entity(&position)
+                && let Some(nbt) = block_entity.chunk_data_nbt()
+            {
+                let bytes = pumpkin_nbt::Nbt::from(nbt).write_unnamed();
+                player.try_send_client_packet(&CBlockEntityData::new(
+                    position,
+                    VarInt(block_entity.get_id() as i32),
+                    bytes.as_ref().into(),
+                ));
+            }
+        }
+        let slot = super::hand_use_result::hand_slot(player, hand);
+        player.sync_hand_slot(slot, player.inventory().get_slot(slot));
     }
 
     #[expect(clippy::too_many_arguments)]

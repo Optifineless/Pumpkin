@@ -46,6 +46,9 @@ mod round4d;
 #[path = "inventory_action_publication_tests.rs"]
 mod publication;
 
+#[path = "inventory_action_spawn_protection_tests.rs"]
+mod spawn_protection;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]

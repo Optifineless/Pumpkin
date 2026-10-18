@@ -41,6 +41,10 @@ impl JavaClient {
             return;
         }
 
+        if self.reject_spawn_protected_bucket_use(player, &item_in_hand, hand, use_item, server) {
+            return;
+        }
+
         let mut consume_event =
             crate::plugin::api::events::player::player_item_consume::PlayerItemConsumeEvent::new(
                 player.clone(),
@@ -108,6 +112,46 @@ impl JavaClient {
                 }
             }
         }}
+    }
+
+    fn reject_spawn_protected_bucket_use(
+        &self,
+        player: &Arc<Player>,
+        stack: &ItemStack,
+        hand: Hand,
+        use_item: &SUseItem,
+        server: &Arc<Server>,
+    ) -> bool {
+        // BucketItem.use checks mayInteract on the bucket-mode ray hit before bucket effects.
+        let is_bucket = server
+            .item_registry
+            .get_pumpkin_item(stack.item.id)
+            .is_some_and(|behaviour| {
+                let behaviour = behaviour.as_any();
+                behaviour.is::<crate::item::items::bucket::EmptyBucketItem>()
+                    || behaviour.is::<crate::item::items::bucket::FilledBucketItem>()
+            });
+        if !is_bucket {
+            return false;
+        }
+
+        let (yaw, pitch) = if self.version.load() >= JavaMinecraftVersion::V_1_21 {
+            (use_item.yaw, use_item.pitch)
+        } else {
+            player.rotation()
+        };
+        let world = player.world();
+        let Some((position, face)) =
+            crate::item::items::bucket::bucket_use_hit(&world, player, stack, yaw, pitch)
+        else {
+            return false;
+        };
+        if !world.is_in_spawn_protection(player, &position) {
+            return false;
+        }
+
+        Self::correct_spawn_protected_use(player, &world, position, face, hand);
+        true
     }
 
     fn prepare_hand_item_for_use(

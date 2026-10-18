@@ -9,6 +9,17 @@ still consumes tipped and spectral arrows. Mirrors vanilla 26.3
 `BowItem.releaseUsing`, `ProjectileWeaponItem.draw/useAmmo` and
 `AbstractArrow` construction. Fixes #92. In-game verification: **Not yet**.
 
+## Spawn protection bypass through block use (#19)
+
+Java and Bedrock block use now reject a protected clicked block before interaction
+events and block/item hooks, then correct the clicked block, adjacent block,
+block-entity data and used hand. Bucket pickup and emptying check the same
+protected clicked position before their effects. Spawn protection follows the
+vanilla operator-list membership, radius and shared respawn-dimension rules.
+Mirrors vanilla 26.3 `DedicatedServer.isUnderSpawnProtection`,
+`ServerGamePacketListenerImpl.handleUseItemOn`, `BucketItem.use` and
+`ServerLevel.mayInteract`. In-game verification: **Not yet**.
+
 Management-enabled shutdown (#173) now stops the listener, WebSocket sessions and
 heartbeat so the final player, world and level.dat saves can finish. The authenticated
 `minecraft:server/stop` RPC signals shutdown before its bounded, best-effort success
