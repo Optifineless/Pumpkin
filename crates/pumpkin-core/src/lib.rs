@@ -920,4 +920,7 @@ mod inventory_transaction_block_use_tests;
 mod inventory_transaction_crossbow_tests;
 
 #[cfg(test)]
+mod inventory_transaction_bow_tests;
+
+#[cfg(test)]
 mod inventory_transaction_use_tests;

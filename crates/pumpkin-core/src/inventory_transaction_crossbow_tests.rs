@@ -305,6 +305,54 @@ async fn inventory_transactions_crossbow_paid_and_creative_load_preserve_stack_c
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn inventory_transactions_crossbow_multishot_paid_center_only_is_survival_recoverable() {
+    run(|fixture| {
+        use crate::entity::projectile::arrow::{ArrowEntity, ArrowPickup};
+
+        let world = fixture.world();
+        let player = TestPlayer::new(&world);
+        let mut weapon = ItemStack::new(1, &Item::CROSSBOW);
+        weapon.add_enchantment(&Enchantment::MULTISHOT, 1);
+        player.player.inventory.set_stack(0, weapon);
+        player
+            .player
+            .inventory
+            .set_stack(1, ItemStack::new(3, &Item::ARROW));
+        let observed = player.player.inventory.get_stack(0);
+
+        CrossbowItem.normal_use(&Item::CROSSBOW, &player.player);
+        release(&player.player, &observed);
+        assert_eq!(player.player.inventory.get_stack(1).item_count, 2);
+        let projectiles = charged(&player.player.inventory.get_stack(0));
+        assert_eq!(projectiles.len(), 3);
+        assert_eq!(
+            projectiles
+                .iter()
+                .map(|projectile| {
+                    projectile
+                        .get_data_component::<IntangibleProjectileImpl>()
+                        .is_some()
+                })
+                .collect::<Vec<_>>(),
+            [false, true, true]
+        );
+
+        CrossbowItem.normal_use(&Item::CROSSBOW, &player.player);
+        let entities = world.entities.load();
+        assert_eq!(entities.len(), 3);
+        for (entity, expected) in entities.iter().zip([
+            ArrowPickup::Allowed,
+            ArrowPickup::CreativeOnly,
+            ArrowPickup::CreativeOnly,
+        ]) {
+            let arrow = entity.cast_any().downcast_ref::<ArrowEntity>().unwrap();
+            assert_eq!(arrow.pickup.load(), expected);
+        }
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn inventory_transactions_crossbow_intangible_fired_arrow_cannot_be_recovered() {
     run(|fixture| {
         use crate::entity::projectile::arrow::{ArrowEntity, ArrowPickup};

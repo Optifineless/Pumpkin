@@ -4,6 +4,11 @@ This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained fo
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 
+Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity
+still consumes tipped and spectral arrows. Mirrors vanilla 26.3
+`BowItem.releaseUsing`, `ProjectileWeaponItem.draw/useAmmo` and
+`AbstractArrow` construction. Fixes #92. In-game verification: **Not yet**.
+
 Management-enabled shutdown (#173) now stops the listener, WebSocket sessions and
 heartbeat so the final player, world and level.dat saves can finish. The authenticated
 `minecraft:server/stop` RPC signals shutdown before its bounded, best-effort success

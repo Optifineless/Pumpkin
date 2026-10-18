@@ -11,6 +11,9 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
+use pumpkin_inventory::{
+    Inventory, inventory::slot_transaction, player::player_inventory::PlayerInventory,
+};
 use pumpkin_protocol::IdOr;
 use pumpkin_protocol::java::client::play::CSoundEffect;
 use pumpkin_util::{GameMode, Hand};
@@ -84,7 +87,30 @@ impl BowItem {
             return;
         }
 
-        // Check arrows again
+        // BowItem.releaseUsing draws through ProjectileWeaponItem.draw/useAmmo before shooting.
+        let inventory = player.inventory();
+        let hand = *player
+            .living_entity
+            .active_hand
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .unwrap_or(&Hand::Right);
+        let weapon_slot = match hand {
+            Hand::Right => usize::from(inventory.get_selected_slot()),
+            Hand::Left => PlayerInventory::OFF_HAND_SLOT,
+        };
+        let owner = inventory.slot_transaction(weapon_slot);
+        let guard = owner.lock();
+        let current_weapon = inventory.get_stack(weapon_slot);
+        if !owner.is_live()
+            || current_weapon.item != &Item::BOW
+            || current_weapon.uid != weapon.uid
+            || !current_weapon.are_equal(weapon)
+        {
+            return;
+        }
+
         let arrow_slot = player.find_arrow();
         let gamemode = player.gamemode.load();
 
@@ -94,51 +120,39 @@ impl BowItem {
 
         let projectile = arrow_slot.map_or_else(
             || ItemStack::new(1, &Item::ARROW),
-            |slot| {
-                let stack = player.inventory.get_slot(slot);
-                stack.copy_with_count(1)
-            },
+            |slot| inventory.get_stack(slot),
         );
-        let infinite_projectile = projectile.item.id == Item::ARROW.id;
+
+        let (projectiles, payment) = ProjectileWeaponItem::draw_with_ammo_cost(
+            &current_weapon,
+            &projectile,
+            gamemode == GameMode::Creative,
+        );
+        let ammo_update = if payment > 0 {
+            let Some(slot) = arrow_slot else {
+                return;
+            };
+            if slot_transaction::withdraw(inventory.as_ref(), slot, &projectile, payment).is_empty()
+            {
+                return;
+            }
+            Some((slot, inventory.get_stack(slot)))
+        } else {
+            None
+        };
+        drop(guard);
+        if let Some((slot, remaining)) = ammo_update {
+            player.sync_hand_slot(slot, remaining);
+        }
 
         // Calculate power and fire
         let power = Self::get_power_for_time(use_ticks);
 
-        // Check for Infinity enchantment
-        let has_infinity = weapon
-            .get_data_component::<pumpkin_data::data_component_impl::EnchantmentsImpl>()
-            .is_some_and(|enchantments| {
-                enchantments
-                    .enchantment
-                    .iter()
-                    .any(|(e, _)| **e == pumpkin_data::Enchantment::INFINITY)
-            });
-
         let is_crit = (power - 1.0).abs() < f32::EPSILON;
-        Self::shoot(
-            player,
-            weapon,
-            std::slice::from_ref(&projectile),
-            power,
-            1.0,
-            is_crit,
-        );
-
-        // Consume arrow (if not creative and no Infinity)
-        if let Some(slot) = arrow_slot
-            && gamemode != GameMode::Creative
-            && !(has_infinity && infinite_projectile)
-        {
-            player.consume_arrow(slot);
-        }
+        Self::shoot(player, &current_weapon, &projectiles, power, 1.0, is_crit);
 
         // BowItem.releaseUsing / ProjectileWeaponItem.shoot use getUsedItemHand.
-        let hand = *player
-            .living_entity
-            .active_hand
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let slot = if hand == Some(Hand::Left) {
+        let slot = if hand == Hand::Left {
             EquipmentSlot::OFF_HAND
         } else {
             EquipmentSlot::MAIN_HAND
