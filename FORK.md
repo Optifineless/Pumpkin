@@ -53,6 +53,14 @@ creation and empty cleanup safe during concurrent interactions, and clean up
 released leash links. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact`,
 `LeashFenceKnotEntity.getOrCreateKnot`, `LeadItem.bindPlayerMobs` and
 `Leashable` leash methods. In-game verification: **Not yet**.
+Leash fence knots (follow-up to #192, fixes #37; PR #199 review) use vanilla's
+centered leash search area, reject attachments outside each mob's snap distance,
+and settle snaps, conversion handoffs and knot removal exactly once. Removed knots
+reject attachments, and snap/elastic distances follow each mob's vanilla values;
+the public `Entity::leash_to` signature remains unchanged. Mirrors vanilla 26.3
+`LeashFenceKnotEntity.interact`, `LeashFenceKnotEntity.getOrCreateKnot`,
+`LeadItem.bindPlayerMobs` and `Leashable` leash methods. In-game verification:
+**Not yet**.
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 

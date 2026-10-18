@@ -3367,19 +3367,30 @@ impl Entity {
 
             if distance > self.leash_snap_distance() {
                 // Too far: snap/break leash and drop lead item
-                self.unleash();
-                let lead_item =
-                    pumpkin_data::item_stack::ItemStack::new(1, &pumpkin_data::item::Item::LEAD);
-                self.world
-                    .load()
-                    .drop_stack(&self.block_pos.load(), lead_item);
-            } else if distance > Self::LEASH_ELASTIC_DISTANCE {
-                // Elastic pull force towards leash holder
-                let dir = (holder_pos - self_pos).normalize();
-                let pull_strength = (distance - Self::LEASH_ELASTIC_DISTANCE) * 0.11;
-                let current_vel = self.velocity.load();
-                self.velocity.store(current_vel + dir * pull_strength);
-                self.velocity_dirty.store(true, Relaxed);
+                if self.unleash_if_leashed() {
+                    let lead_item = pumpkin_data::item_stack::ItemStack::new(
+                        1,
+                        &pumpkin_data::item::Item::LEAD,
+                    );
+                    self.world
+                        .load()
+                        .drop_stack(&self.block_pos.load(), lead_item);
+                }
+            } else {
+                let elastic_distance = self.leash_elastic_distance();
+                let elastic_threshold = elastic_distance
+                    - f64::from(holder_entity.entity_dimension.load().width)
+                    - f64::from(self.entity_dimension.load().width);
+                if distance > elastic_threshold {
+                    // Elastic pull force towards leash holder.
+                    let pull_strength = (distance - elastic_distance) * 0.11;
+                    if pull_strength > 0.0 {
+                        let dir = (holder_pos - self_pos).normalize();
+                        let current_vel = self.velocity.load();
+                        self.velocity.store(current_vel + dir * pull_strength);
+                        self.velocity_dirty.store(true, Relaxed);
+                    }
+                }
             }
         }
     }

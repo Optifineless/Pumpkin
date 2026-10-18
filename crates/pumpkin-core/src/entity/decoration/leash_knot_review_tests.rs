@@ -14,10 +14,7 @@ use pumpkin_protocol::{
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::{Hand, math::vector3::Vector3};
 use pumpkin_world::chunk::ChunkData;
-use std::{
-    sync::{Arc, Barrier},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 fn right_click(target_id: i32) -> SInteract {
     SInteract {
@@ -55,6 +52,30 @@ fn player_near_fence(player: &TestPlayer) {
         .set_pos(Vector3::new(0.0, 64.0, 0.0));
 }
 
+fn start_fence_tie(
+    player: Arc<Player>,
+    pos: BlockPos,
+    server: Arc<Server>,
+) -> tokio::task::JoinHandle<bool> {
+    let client = player.client.clone();
+    tokio::task::spawn_blocking(move || {
+        if let ClientPlatform::Java(client) = client.as_ref() {
+            let packet = SUseItemOn {
+                hand: VarInt(0),
+                position: pos,
+                face: VarInt(BlockDirection::Up as i32),
+                cursor_pos: Vector3::new(0.5, 0.5, 0.5),
+                inside_block: false,
+                is_against_world_border: false,
+                sequence: VarInt(1),
+            };
+            client.handle_use_item_on(&player, &packet, &server).is_ok()
+        } else {
+            false
+        }
+    })
+}
+
 fn make_fence(world: &World, pos: BlockPos) {
     world
         .level
@@ -63,6 +84,39 @@ fn make_fence(world: &World, pos: BlockPos) {
     world
         .level
         .set_block_state(&pos, Block::OAK_FENCE.default_state.id);
+}
+
+fn lead_count(world: &World) -> u32 {
+    world
+        .entities
+        .load()
+        .iter()
+        .filter_map(|e| e.get_item_entity())
+        .filter_map(|i| {
+            let stack = i.get_item_stack().lock().unwrap();
+            (stack.item == &Item::LEAD).then_some(u32::from(stack.item_count))
+        })
+        .sum()
+}
+
+async fn wait_for_pause_signal(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<()>,
+    wait: Duration,
+) -> bool {
+    tokio::time::timeout(wait, receiver.recv())
+        .await
+        .is_ok_and(|signal| signal.is_some())
+}
+
+#[test]
+fn public_leash_to_keeps_its_unit_return_signature() {
+    let _: fn(&Entity, Arc<dyn EntityBase>) = Entity::leash_to;
+}
+
+#[tokio::test]
+async fn cleanup_pause_signal_timeout_returns_false() {
+    let (_sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    assert!(!wait_for_pause_signal(&mut receiver, Duration::from_millis(1)).await);
 }
 
 struct CancelPlayerLeash {
@@ -105,7 +159,7 @@ impl EventHandler<crate::plugin::api::events::entity::entity_spawn::EntitySpawnE
             Box::pin(async move {
                 let _ = entered.send(());
                 if !*resume.borrow() {
-                    let _ = resume.changed().await;
+                    let _ = tokio::time::timeout(Duration::from_secs(30), resume.changed()).await;
                 }
             })
         } else {
@@ -125,8 +179,7 @@ async fn knot_interaction_finds_player_leashed_mob_below_fence() {
     let knot = LeashKnotEntity::create_knot(&world, pos);
     let cow = fixture.mob(&EntityType::COW);
     cow.get_entity().set_pos(Vector3::new(0.0, 62.0, 0.0));
-    let _ = cow
-        .get_entity()
+    cow.get_entity()
         .leash_to(player.player.clone() as Arc<dyn EntityBase>);
 
     player.client().handle_interact(
@@ -156,8 +209,7 @@ async fn lead_item_rebinds_player_leashed_mob_below_fence() {
     make_fence(&world, pos);
     let cow = fixture.mob(&EntityType::COW);
     cow.get_entity().set_pos(Vector3::new(0.0, 62.0, 0.0));
-    let _ = cow
-        .get_entity()
+    cow.get_entity()
         .leash_to(player.player.clone() as Arc<dyn EntityBase>);
 
     use_on_fence(&player, pos, &fixture.server);
@@ -184,10 +236,10 @@ async fn lower_leash_survives_transfer_of_another_mob() {
     let upper = fixture.mob(&EntityType::SHEEP);
     upper.get_entity().set_pos(Vector3::new(0.0, 64.0, 0.0));
     let knot = LeashKnotEntity::create_knot(&world, pos);
-    let _ = lower
+    lower
         .get_entity()
         .leash_to(knot.clone() as Arc<dyn EntityBase>);
-    let _ = upper
+    upper
         .get_entity()
         .leash_to(knot.clone() as Arc<dyn EntityBase>);
     fixture
@@ -241,8 +293,7 @@ async fn lead_item_leaves_mob_with_player_when_fence_is_out_of_snap_range() {
     make_fence(&world, pos);
     let cow = fixture.mob(&EntityType::COW);
     cow.get_entity().set_pos(Vector3::new(14.0, 64.0, 0.0));
-    let _ = cow
-        .get_entity()
+    cow.get_entity()
         .leash_to(player.player.clone() as Arc<dyn EntityBase>);
 
     use_on_fence(&player, pos, &fixture.server);
@@ -266,7 +317,7 @@ async fn knot_interaction_respects_happy_ghasts_extended_leash_range() {
     let knot = LeashKnotEntity::create_knot(&world, pos);
     let ghast = fixture.mob(&EntityType::HAPPY_GHAST);
     ghast.get_entity().set_pos(Vector3::new(13.0, 64.0, 0.0));
-    let _ = ghast
+    ghast
         .get_entity()
         .leash_to(player.player.clone() as Arc<dyn EntityBase>);
 
@@ -309,6 +360,53 @@ async fn happy_ghast_player_leash_uses_extended_range() {
         Some(player.player.entity_id())
     );
     assert_eq!(player.player.inventory().held_item().item_count, 0);
+    assert!((ghast.get_entity().velocity.load().x + 0.335).abs() < 0.002);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cow_snaps_at_13_blocks_and_uses_elastic_6_at_8_blocks() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let snap_holder = TestPlayer::new(&world);
+    snap_holder
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(0.0, 64.0, 20.0));
+    let snapping_cow = fixture.mob(&EntityType::COW);
+    snapping_cow
+        .get_entity()
+        .set_pos(Vector3::new(13.0, 64.0, 20.0));
+    snapping_cow.get_entity().velocity.store(Vector3::default());
+    snapping_cow
+        .get_entity()
+        .leash_to(snap_holder.player.clone() as Arc<dyn EntityBase>);
+    snapping_cow.get_entity().tick_leash();
+
+    assert_eq!(leash_holder_id(snapping_cow.get_entity()), None);
+    assert_eq!(lead_count(&world), 1);
+
+    let elastic_holder = TestPlayer::new(&world);
+    elastic_holder
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(0.0, 64.0, 40.0));
+    let elastic_cow = fixture.mob(&EntityType::COW);
+    elastic_cow
+        .get_entity()
+        .set_pos(Vector3::new(8.0, 64.0, 40.0));
+    elastic_cow.get_entity().velocity.store(Vector3::default());
+    elastic_cow
+        .get_entity()
+        .leash_to(elastic_holder.player.clone() as Arc<dyn EntityBase>);
+    elastic_cow.get_entity().tick_leash();
+
+    assert_eq!(
+        leash_holder_id(elastic_cow.get_entity()),
+        Some(elastic_holder.player.entity_id())
+    );
+    assert_eq!(lead_count(&world), 1);
+    assert!((elastic_cow.get_entity().velocity.load().x + 0.2203).abs() < 0.001);
     fixture.server.shutdown().await;
 }
 
@@ -327,8 +425,7 @@ async fn shears_on_knot_cut_leashes_and_notify_empty_cleanup() {
     let cow = fixture.mob(&EntityType::COW);
     cow.get_entity().set_pos(Vector3::new(0.0, 64.0, 0.0));
     let knot = LeashKnotEntity::create_knot(&world, pos);
-    let _ = cow
-        .get_entity()
+    cow.get_entity()
         .leash_to(knot.clone() as Arc<dyn EntityBase>);
 
     player.client().handle_interact(
@@ -361,10 +458,10 @@ async fn simultaneous_first_fence_ties_publish_one_knot() {
     cow_a.get_entity().set_pos(Vector3::new(-1.0, 64.0, 0.0));
     let cow_b = fixture.mob(&EntityType::COW);
     cow_b.get_entity().set_pos(Vector3::new(1.0, 64.0, 0.0));
-    let _ = cow_a
+    cow_a
         .get_entity()
         .leash_to(player_a.clone() as Arc<dyn EntityBase>);
-    let _ = cow_b
+    cow_b
         .get_entity()
         .leash_to(player_b.clone() as Arc<dyn EntityBase>);
 
@@ -383,29 +480,8 @@ async fn simultaneous_first_fence_ties_publish_one_knot() {
             true,
         );
 
-    let start_tie = |player: Arc<Player>| {
-        let client = player.client.clone();
-        let actor = player;
-        let server = fixture.server.clone();
-        let packet = SUseItemOn {
-            hand: VarInt(0),
-            position: pos,
-            face: VarInt(BlockDirection::Up as i32),
-            cursor_pos: Vector3::new(0.5, 0.5, 0.5),
-            inside_block: false,
-            is_against_world_border: false,
-            sequence: VarInt(1),
-        };
-        std::thread::spawn(move || {
-            if let ClientPlatform::Java(client) = client.as_ref() {
-                client.handle_use_item_on(&actor, &packet, &server).is_ok()
-            } else {
-                false
-            }
-        })
-    };
-    let worker_a = start_tie(player_a);
-    let worker_b = start_tie(player_b);
+    let worker_a = start_fence_tie(player_a, pos, fixture.server.clone());
+    let worker_b = start_fence_tie(player_b, pos, fixture.server.clone());
     let first_spawn_paused = matches!(
         tokio::time::timeout(Duration::from_secs(30), entered_rx.recv()).await,
         Ok(Some(()))
@@ -415,11 +491,17 @@ async fn simultaneous_first_fence_ties_publish_one_knot() {
         Ok(Some(()))
     );
     let _ = resume_tx.send(true);
-    let result_a = worker_a.join();
-    let result_b = worker_b.join();
+    let result_a = tokio::time::timeout(Duration::from_secs(30), worker_a)
+        .await
+        .expect("first fence tie worker should finish after the spawn pause is released")
+        .expect("first fence tie worker should not panic");
+    let result_b = tokio::time::timeout(Duration::from_secs(30), worker_b)
+        .await
+        .expect("second fence tie worker should finish after the spawn pause is released")
+        .expect("second fence tie worker should not panic");
 
     assert!(first_spawn_paused && second_spawn_paused);
-    assert!(matches!(result_a, Ok(true)) && matches!(result_b, Ok(true)));
+    assert!(result_a && result_b);
     let knot = LeashKnotEntity::get_knot(&world, pos).expect("concurrent ties publish a knot");
     assert_eq!(
         leash_holder_id(cow_a.get_entity()),
@@ -470,16 +552,15 @@ async fn attachment_between_empty_check_and_removal_keeps_knot_alive() {
     );
 
     let sheep = fixture.mob(&EntityType::SHEEP);
-    let _ = sheep
+    sheep
         .get_entity()
         .leash_to(attacher.player.clone() as Arc<dyn EntityBase>);
     let (scanned_tx, mut scanned_rx) = tokio::sync::mpsc::unbounded_channel();
-    let cleanup_gate = Arc::new(Barrier::new(2));
-    knot.set_empty_cleanup_barrier({
-        let cleanup_gate = cleanup_gate.clone();
+    let (release_cleanup_tx, release_cleanup_rx) = crossbeam::channel::bounded(1);
+    knot.set_test_pause({
         Arc::new(move || {
             let _ = scanned_tx.send(());
-            cleanup_gate.wait();
+            let _ = release_cleanup_rx.recv_timeout(Duration::from_secs(30));
         })
     });
 
@@ -488,10 +569,8 @@ async fn attachment_between_empty_check_and_removal_keeps_knot_alive() {
     let cleanup = tokio::task::spawn_blocking(move || {
         cleanup_knot.tick(cleanup_knot.as_ref(), &cleanup_server);
     });
-    let reached_removal_boundary = matches!(
-        tokio::time::timeout(Duration::from_secs(30), scanned_rx.recv()).await,
-        Ok(Some(()))
-    );
+    let reached_removal_boundary =
+        wait_for_pause_signal(&mut scanned_rx, Duration::from_secs(30)).await;
     if reached_removal_boundary {
         attacher.client().handle_interact(
             &attacher.player,
@@ -499,13 +578,16 @@ async fn attachment_between_empty_check_and_removal_keeps_knot_alive() {
             &fixture.server,
         );
     }
-    cleanup_gate.wait();
-    cleanup.await.expect("the knot tick should finish");
+    let _ = release_cleanup_tx.send(());
+    let cleanup_result = tokio::time::timeout(Duration::from_secs(30), cleanup).await;
 
     assert!(
         reached_removal_boundary,
         "empty cleanup did not reach the barrier"
     );
+    cleanup_result
+        .expect("the knot tick should finish before its bounded cleanup wait")
+        .expect("the knot tick should finish");
     assert_eq!(
         leash_holder_id(sheep.get_entity()),
         Some(knot.get_entity().entity_id)

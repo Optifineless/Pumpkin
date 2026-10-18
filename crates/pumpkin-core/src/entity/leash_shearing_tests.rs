@@ -1,6 +1,32 @@
 use super::*;
-use crate::entity::death_test_world::DeathTestWorld;
+use crate::entity::{EntityBase, death_test_world::DeathTestWorld};
+use crate::{
+    plugin::{
+        BoxFuture, EventHandler, EventPriority,
+        api::events::entity::entity_unleash::EntityUnleashEvent,
+    },
+    server::Server,
+};
 use pumpkin_data::entity::EntityType;
+use pumpkin_util::math::vector3::Vector3;
+use std::sync::Arc;
+
+struct CancelEntityUnleash {
+    entity_id: i32,
+}
+
+impl EventHandler<EntityUnleashEvent> for CancelEntityUnleash {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut EntityUnleashEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.entity_id == self.entity_id {
+            event.cancelled = true;
+        }
+        Box::pin(async {})
+    }
+}
 
 fn leads(world: &crate::world::World) -> u32 {
     world
@@ -90,5 +116,54 @@ async fn simultaneous_leash_snips_drop_one_lead() {
         }
     });
     assert_eq!(leads(&fixture.world()), 1);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn snapping_leash_drops_lead_only_after_unleash_succeeds() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let cancel_holder = fixture.player("CancelSnap");
+    let cancelled_cow = fixture.mob(&EntityType::COW);
+    cancel_holder
+        .get_entity()
+        .set_pos(Vector3::new(0.0, 64.0, 0.0));
+    cancelled_cow
+        .get_entity()
+        .set_pos(Vector3::new(13.0, 64.2, 0.0));
+    cancelled_cow.get_entity().leash_to(cancel_holder.clone());
+    fixture
+        .server
+        .plugin_manager
+        .register::<EntityUnleashEvent, _>(
+            Arc::new(CancelEntityUnleash {
+                entity_id: cancelled_cow.get_entity().entity_id,
+            }),
+            EventPriority::Normal,
+            true,
+        );
+
+    for _ in 0..3 {
+        cancelled_cow.get_entity().tick_leash();
+    }
+    assert!(cancelled_cow.get_entity().is_leashed());
+    assert_eq!(leads(&world), 0);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn snapping_leash_without_cancelling_listener_drops_one_lead() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let holder = fixture.player("OrdinarySnap");
+    let cow = fixture.mob(&EntityType::COW);
+    holder.get_entity().set_pos(Vector3::new(0.0, 64.0, 0.0));
+    cow.get_entity().set_pos(Vector3::new(13.0, 64.2, 0.0));
+    cow.get_entity().leash_to(holder);
+
+    cow.get_entity().tick_leash();
+
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(leads(&world), 1);
     fixture.server.shutdown().await;
 }

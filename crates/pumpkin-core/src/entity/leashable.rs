@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 const LEASH_SEARCH_SIZE: f64 = 32.0;
 const EXTENDED_LEASH_SNAP_DISTANCE: f64 = 16.0;
+const EXTENDED_LEASH_ELASTIC_DISTANCE: f64 = 10.0;
 
 /// The outcome distinguishes plugin cancellation from a knot closing before the leash link commits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,12 +42,17 @@ pub fn leash_distance(entity: &Entity, holder: &Entity) -> f64 {
 }
 
 impl Entity {
-    /// Mirrors `Leashable.setLeashedTo`, committing the link only while a knot can accept it.
+    /// Attaches this entity to a leash holder.
+    pub fn leash_to(&self, holder: Arc<dyn EntityBase>) {
+        let _ = self.leash_to_with_result(holder);
+    }
+
+    /// Mirrors `Leashable.setLeashedTo`, reporting why the link could not be committed.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "the knot reservation borrows the holder while the pointer is replaced"
     )]
-    pub fn leash_to(&self, holder: Arc<dyn EntityBase>) -> LeashToResult {
+    pub(crate) fn leash_to_with_result(&self, holder: Arc<dyn EntityBase>) -> LeashToResult {
         let holder_entity_id = holder.get_entity().entity_id;
         let world = self.world.load();
         if let Some(server) = world.server.upgrade()
@@ -131,10 +137,20 @@ impl Entity {
     #[must_use]
     pub(crate) fn leash_snap_distance(&self) -> f64 {
         if self.entity_type == &EntityType::HAPPY_GHAST || self.entity_type == &EntityType::GHAST {
-            // HappyGhast#leashSnapDistance and Ghast#leashSnapDistance override the 12-block default.
+            // HappyGhast and Ghast override the 12-block Leashable default.
             EXTENDED_LEASH_SNAP_DISTANCE
         } else {
             Self::LEASH_SNAP_DISTANCE
+        }
+    }
+
+    /// Returns the vanilla `Leashable.leashElasticDistance` value for this entity type.
+    #[must_use]
+    pub(crate) fn leash_elastic_distance(&self) -> f64 {
+        if self.entity_type == &EntityType::HAPPY_GHAST || self.entity_type == &EntityType::GHAST {
+            EXTENDED_LEASH_ELASTIC_DISTANCE
+        } else {
+            Self::LEASH_ELASTIC_DISTANCE
         }
     }
 }

@@ -712,7 +712,8 @@ impl MobEntity {
         if (item_stack.item.registry_key == "lead"
             || item_stack.item.registry_key == "minecraft:lead")
             && can_have_a_leash_attached_to(entity, player.get_entity())
-            && entity.leash_to(player.clone() as Arc<dyn EntityBase>) == LeashToResult::Attached
+            && entity.leash_to_with_result(player.clone() as Arc<dyn EntityBase>)
+                == LeashToResult::Attached
         {
             if player.gamemode.load() != pumpkin_util::GameMode::Creative {
                 item_stack.decrement(1);

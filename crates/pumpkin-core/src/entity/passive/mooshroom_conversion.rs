@@ -156,7 +156,7 @@ impl MooshroomEntity {
             .take();
         if let Some(holder) = holder {
             // Mob.convertTo carries the holder across conversion; retry if knot cleanup won first.
-            let result = cow_living.entity.leash_to(holder.clone());
+            let mut result = cow_living.entity.leash_to_with_result(holder.clone());
             if result == LeashToResult::HolderUnavailable
                 && let Some(knot) = holder.cast_any().downcast_ref::<LeashKnotEntity>()
             {
@@ -166,12 +166,14 @@ impl MooshroomEntity {
                     .has_tag(&pumpkin_data::tag::Block::MINECRAFT_FENCES)
                 {
                     let replacement = LeashKnotEntity::get_or_create(&world, pos);
-                    if cow_living.entity.leash_to(replacement) != LeashToResult::Attached {
-                        LeashKnotEntity::notify_leashee_removed_from(holder.as_ref());
-                    }
-                } else {
-                    LeashKnotEntity::notify_leashee_removed_from(holder.as_ref());
+                    result = cow_living.entity.leash_to_with_result(replacement);
                 }
+            }
+            LeashKnotEntity::notify_leashee_removed_from(holder.as_ref());
+            if result != LeashToResult::Attached {
+                let lead_item =
+                    pumpkin_data::item_stack::ItemStack::new(1, &pumpkin_data::item::Item::LEAD);
+                world.drop_stack(&cow_living.entity.block_pos.load(), lead_item);
             }
         }
 

@@ -2,16 +2,50 @@ use super::*;
 use pumpkin_protocol::{packet::MultiVersionJavaPacket, ser::NetworkReadExt};
 
 use crate::{
-    entity::{death_test_world::DeathTestWorld, shearable::Shearable},
+    entity::{
+        death_test_world::DeathTestWorld, decoration::leash_knot::LeashKnotEntity,
+        shearable::Shearable,
+    },
     plugin::{
         BoxFuture, EventHandler, EventPriority,
         api::events::entity::entity_transform::EntityTransformEvent,
     },
     server::Server,
 };
-use pumpkin_data::{item::Item, item_stack::ItemStack, sound::SoundCategory};
+use pumpkin_data::{
+    Block, entity::EntityType, item::Item, item_stack::ItemStack, sound::SoundCategory,
+};
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use pumpkin_world::chunk::ChunkData;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
+
+fn make_fence(world: &crate::world::World, pos: BlockPos) {
+    world
+        .level
+        .loaded_chunks
+        .insert(Vector2::new(0, 0), Arc::new(ChunkData::empty(0, 0)));
+    world
+        .level
+        .set_block_state(&pos, Block::OAK_FENCE.default_state.id);
+}
+
+fn lead_count(world: &crate::world::World) -> u32 {
+    world
+        .entities
+        .load()
+        .iter()
+        .filter_map(|entity| entity.get_item_entity())
+        .map(|item| {
+            let stack = item.get_item_stack().lock().unwrap();
+            if stack.item == &Item::LEAD {
+                u32::from(stack.item_count)
+            } else {
+                0
+            }
+        })
+        .sum()
+}
 
 struct ConversionControl {
     cancel: AtomicBool,
@@ -179,5 +213,116 @@ async fn mooshroom_conversion_preserves_combat_hurt_animation() {
             .load(Ordering::Relaxed),
         7
     );
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mooshroom_conversion_racing_invalid_knot_settles_leash_once() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let pos = BlockPos::new(0, 64, 0);
+    make_fence(&world, pos);
+    let knot = LeashKnotEntity::create_knot(&world, pos);
+    let mooshroom = fixture.mob(&EntityType::MOOSHROOM);
+    mooshroom.get_entity().set_pos(Vector3::new(0.5, 64.0, 0.5));
+    mooshroom
+        .get_entity()
+        .leash_to(knot.clone() as Arc<dyn crate::entity::EntityBase>);
+
+    world
+        .level
+        .set_block_state(&pos, Block::AIR.default_state.id);
+    let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (resume_tx, resume_rx) = crossbeam::channel::bounded(1);
+    knot.set_test_pause(Arc::new(move || {
+        let _ = entered_tx.send(());
+        let _ = resume_rx.recv_timeout(std::time::Duration::from_secs(30));
+    }));
+    let cleanup_knot = knot.clone();
+    let cleanup_server = fixture.server.clone();
+    let cleanup = tokio::task::spawn_blocking(move || {
+        cleanup_knot.tick(cleanup_knot.as_ref(), &cleanup_server);
+    });
+
+    let reached_invalidation = matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(30), entered_rx.recv()).await,
+        Ok(Some(()))
+    );
+    let converted = reached_invalidation
+        && mooshroom
+            .get_mob()
+            .unwrap()
+            .as_shearable()
+            .unwrap()
+            .shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS));
+    let _ = resume_tx.send(());
+    let cleanup_result = tokio::time::timeout(std::time::Duration::from_secs(30), cleanup).await;
+
+    assert!(
+        reached_invalidation,
+        "invalid-knot tick did not reach the barrier"
+    );
+    assert!(
+        converted,
+        "mooshroom should convert while knot removal is paused"
+    );
+    cleanup_result
+        .expect("invalid-knot tick should finish within its bounded wait")
+        .expect("invalid-knot tick should finish");
+
+    let entities = world.entities.load_full();
+    let cow = entities
+        .iter()
+        .find(|entity| entity.get_entity().entity_type == &EntityType::COW)
+        .unwrap();
+    let cow_has_live_holder = cow
+        .get_entity()
+        .leashed_to
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|holder| holder.get_entity().is_alive());
+    let leads = lead_count(&world);
+    assert!(
+        (cow_has_live_holder && leads == 0) || (!cow_has_live_holder && leads == 1),
+        "conversion must leave a live leash holder or drop exactly one lead"
+    );
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mooshroom_conversion_rebinds_removed_knot_to_live_knot() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let pos = BlockPos::new(0, 64, 0);
+    make_fence(&world, pos);
+    let removed_knot = LeashKnotEntity::create_knot(&world, pos);
+    let mooshroom = fixture.mob(&EntityType::MOOSHROOM);
+    mooshroom
+        .get_entity()
+        .leash_to(removed_knot.clone() as Arc<dyn crate::entity::EntityBase>);
+    removed_knot.get_entity().remove();
+
+    assert!(
+        mooshroom
+            .get_mob()
+            .unwrap()
+            .as_shearable()
+            .unwrap()
+            .shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS))
+    );
+
+    let entities = world.entities.load_full();
+    let cow = entities
+        .iter()
+        .find(|entity| entity.get_entity().entity_type == &EntityType::COW)
+        .unwrap();
+    let holder = cow.get_entity().leashed_to.lock().unwrap().clone().unwrap();
+    assert_ne!(
+        holder.get_entity().entity_id,
+        removed_knot.get_entity().entity_id
+    );
+    assert!(holder.get_entity().is_alive());
+    assert_eq!(lead_count(&world), 0);
     fixture.server.shutdown().await;
 }

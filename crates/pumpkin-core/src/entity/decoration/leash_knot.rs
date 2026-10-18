@@ -41,7 +41,7 @@ pub struct LeashKnotEntity {
     remove_when_empty: AtomicBool,
     attachment_state: AtomicU64,
     #[cfg(test)]
-    empty_cleanup_barrier: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    test_pause: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl LeashKnotEntity {
@@ -54,7 +54,7 @@ impl LeashKnotEntity {
             remove_when_empty: AtomicBool::new(false),
             attachment_state: AtomicU64::new(0),
             #[cfg(test)]
-            empty_cleanup_barrier: Mutex::new(None),
+            test_pause: Mutex::new(None),
         }
     }
 
@@ -138,7 +138,8 @@ impl LeashKnotEntity {
         let mut state = self.attachment_state.load(Ordering::Acquire);
         loop {
             let attachment_count = state & KNOT_ATTACHMENT_COUNT_MASK;
-            if state & (KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
+            if self.entity.is_removed()
+                || state & (KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
                 || attachment_count == KNOT_ATTACHMENT_COUNT_MASK
             {
                 return None;
@@ -213,22 +214,22 @@ impl LeashKnotEntity {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_empty_cleanup_barrier(&self, barrier: Arc<dyn Fn() + Send + Sync>) {
+    pub(crate) fn set_test_pause(&self, pause: Arc<dyn Fn() + Send + Sync>) {
         *self
-            .empty_cleanup_barrier
+            .test_pause
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(barrier);
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(pause);
     }
 
     #[cfg(test)]
-    fn wait_at_empty_cleanup_barrier(&self) {
-        let barrier = self
-            .empty_cleanup_barrier
+    fn wait_at_test_pause(&self) {
+        let pause = self
+            .test_pause
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        if let Some(barrier) = barrier {
-            barrier();
+        if let Some(pause) = pause {
+            pause();
         }
     }
 
@@ -256,7 +257,7 @@ impl LeashKnotEntity {
         }
 
         #[cfg(test)]
-        self.wait_at_empty_cleanup_barrier();
+        self.wait_at_test_pause();
 
         if self
             .attachment_state
@@ -299,6 +300,8 @@ impl EntityBase for LeashKnotEntity {
             if !self.try_begin_invalid_removal() {
                 return;
             }
+            #[cfg(test)]
+            self.wait_at_test_pause();
             let knot_id = self.entity.entity_id;
             let bounds = self.entity.bounding_box.load();
             let center = (bounds.min + bounds.max) * 0.5;
@@ -318,8 +321,7 @@ impl EntityBase for LeashKnotEntity {
                     })
                     .unwrap_or(false);
 
-                if is_attached_to_knot {
-                    ent.unleash();
+                if is_attached_to_knot && ent.unleash_if_leashed() {
                     let lead_item = pumpkin_data::item_stack::ItemStack::new(
                         1,
                         &pumpkin_data::item::Item::LEAD,
@@ -382,7 +384,7 @@ impl EntityBase for LeashKnotEntity {
                 .collect();
 
             for mob in knot_leashed_mobs {
-                mob.leash_to(player.clone() as Arc<dyn EntityBase>);
+                mob.leash_to_with_result(player.clone() as Arc<dyn EntityBase>);
                 any_dropped |= leash_holder_id(mob) == Some(player_id);
             }
         }
@@ -417,7 +419,7 @@ impl LeashKnotEntity {
             if !can_have_a_leash_attached_to(mob, holder.get_entity()) {
                 return false;
             }
-            match mob.leash_to(holder.clone()) {
+            match mob.leash_to_with_result(holder.clone()) {
                 LeashToResult::Attached => return true,
                 LeashToResult::HolderUnavailable if attempt == 0 => {
                     *holder = Self::get_or_create(world, pos);
