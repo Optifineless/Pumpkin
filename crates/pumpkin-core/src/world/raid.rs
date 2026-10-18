@@ -669,6 +669,10 @@ pub struct Raids {
     pub tick_counter: u64,
 }
 
+#[cfg(test)]
+#[path = "raid_banner_tests.rs"]
+mod banner_tests;
+
 impl Raids {
     #[must_use]
     pub fn get(&self, raid_id: i32) -> Option<&Raid> {

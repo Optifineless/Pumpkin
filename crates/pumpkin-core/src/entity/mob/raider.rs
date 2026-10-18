@@ -1,7 +1,12 @@
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crossbeam::atomic::AtomicCell;
-use pumpkin_data::data_component_impl::EquipmentSlot;
+use pumpkin_data::data_component::DataComponent;
+use pumpkin_data::data_component_impl::{
+    BannerPatternLayer, BannerPatternsImpl, EquipmentSlot, ItemNameImpl, Rarity, RarityImpl,
+    TooltipDisplayImpl,
+};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -9,7 +14,6 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
 
 use crate::entity::ai::goal::{Controls, Goal};
 use crate::entity::ai::pathfinder::NavigatorGoal;
@@ -18,18 +22,54 @@ use crate::entity::mob::patrol::{PatrolData, PatrollingMonster};
 
 #[must_use]
 pub fn create_ominous_banner() -> ItemStack {
-    use pumpkin_data::data_component::DataComponent;
-    use pumpkin_data::data_component_impl::{CustomNameImpl, DataComponentImpl};
     let mut stack = ItemStack::new(1, &Item::WHITE_BANNER);
-    stack.patch.push((
-        DataComponent::CustomName,
-        Some(
-            CustomNameImpl {
-                name: TextComponent::translate("block.minecraft.ominous_banner", []),
-            }
-            .to_dyn(),
-        ),
-    ));
+    stack.set_data_component(BannerPatternsImpl {
+        layers: vec![
+            BannerPatternLayer {
+                pattern: "minecraft:rhombus".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::Cyan,
+            },
+            BannerPatternLayer {
+                pattern: "minecraft:stripe_bottom".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::LightGray,
+            },
+            BannerPatternLayer {
+                pattern: "minecraft:stripe_center".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::Gray,
+            },
+            BannerPatternLayer {
+                pattern: "minecraft:border".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::LightGray,
+            },
+            BannerPatternLayer {
+                pattern: "minecraft:stripe_middle".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::Black,
+            },
+            BannerPatternLayer {
+                pattern: "minecraft:half_horizontal".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::LightGray,
+            },
+            BannerPatternLayer {
+                pattern: "minecraft:circle".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::LightGray,
+            },
+            BannerPatternLayer {
+                pattern: "minecraft:border".to_owned(),
+                color: pumpkin_data::dye_color::DyeColor::Black,
+            },
+        ],
+    });
+    stack.set_data_component(ItemNameImpl {
+        name: Cow::Borrowed("block.minecraft.ominous_banner"),
+    });
+    stack.set_data_component(TooltipDisplayImpl {
+        hide_tooltip: false,
+        hide_additional_tooltip: false,
+        hidden_components: vec![DataComponent::BannerPatterns],
+    });
+    stack.set_data_component(RarityImpl {
+        rarity: Rarity::Uncommon,
+    });
     stack
 }
 

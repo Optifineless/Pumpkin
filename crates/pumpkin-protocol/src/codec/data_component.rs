@@ -13,6 +13,9 @@ mod book_components;
 mod mob_visibility;
 
 #[cfg(test)]
+#[path = "banner_pattern_tests.rs"]
+mod banner_pattern_tests;
+#[cfg(test)]
 #[path = "component_crash_tests.rs"]
 mod component_crash_tests;
 #[cfg(test)]
@@ -411,10 +414,10 @@ impl DataComponentCodec<Self> for ItemNameImpl {
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let name = seq.get_str()?;
-        Ok(Self {
-            name: Cow::Owned(name.into()),
-        })
+        let tag = seq.get_nbt_with_version(&pumpkin_util::version::JavaMinecraftVersion::V_26_2)?;
+        tag.as_ref()
+            .and_then(Self::read_data)
+            .ok_or_else(|| ReadingError::Message("Invalid item name component".into()))
     }
 }
 
@@ -1661,18 +1664,42 @@ impl DataComponentCodec<Self> for CustomModelDataImpl {
 
 impl DataComponentCodec<Self> for TooltipDisplayImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_bool(false)?;
-        seq.write_var_int(&VarInt(0))
+        let hidden_count = i32::try_from(self.hidden_components.len())
+            .map_err(|_| WritingError::Message("Too many hidden tooltip components".into()))?;
+        seq.write_bool(self.hide_tooltip)?;
+        seq.write_bool(self.hide_additional_tooltip)?;
+        seq.write_var_int(&VarInt(hidden_count))?;
+        for component in &self.hidden_components {
+            seq.write_var_int(&VarInt(i32::from(component.to_id())))?;
+        }
+        Ok(())
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _hide_tooltip = seq.get_bool()?;
-        let len = seq.get_var_int()?.0 as usize;
-        let _ = crate::ser::collection_capacity(len)?;
-        for _ in 0..len {
-            let _comp_id = seq.get_var_int()?;
+        let hide_tooltip = seq.get_bool()?;
+        let hide_additional_tooltip = seq.get_bool()?;
+        let hidden_count = usize::try_from(seq.get_var_int()?.0)
+            .map_err(|_| ReadingError::Message("Negative hidden tooltip component count".into()))?;
+        if hidden_count > MAX_REGISTRY_HOLDERS as usize {
+            return Err(ReadingError::Message(
+                "Too many hidden tooltip components".into(),
+            ));
         }
-        Ok(Self)
+        let mut hidden_components =
+            Vec::with_capacity(crate::ser::collection_capacity(hidden_count)?);
+        for _ in 0..hidden_count {
+            let id = u8::try_from(seq.get_var_int()?.0)
+                .map_err(|_| ReadingError::Message("Invalid hidden tooltip component id".into()))?;
+            let component = DataComponent::try_from_id(id).ok_or_else(|| {
+                ReadingError::Message("Invalid hidden tooltip component id".into())
+            })?;
+            hidden_components.push(component);
+        }
+        Ok(Self {
+            hide_tooltip,
+            hide_additional_tooltip,
+            hidden_components,
+        })
     }
 }
 
@@ -2443,28 +2470,64 @@ impl DataComponentCodec<Self> for NoteBlockSoundImpl {
 
 impl DataComponentCodec<Self> for BannerPatternsImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt::from(self.layers.len() as i32))?;
+        let layer_count = i32::try_from(self.layers.len())
+            .map_err(|_| WritingError::Message("Too many banner pattern layers".into()))?;
+        seq.write_var_int(&VarInt(layer_count))?;
         for layer in &self.layers {
-            seq.write_var_int(&VarInt(0))?;
+            let pattern_id = banner_pattern_registry_id(&layer.pattern).ok_or_else(|| {
+                WritingError::Message(format!(
+                    "Unknown banner pattern registry entry `{}`",
+                    layer.pattern
+                ))
+            })?;
+            seq.write_var_int(&VarInt(pattern_id))?;
             seq.write_var_int(&VarInt::from(layer.color.id() as i32))?;
         }
         Ok(())
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let len = seq.get_var_int()?.0 as usize;
-        let mut layers = Vec::with_capacity(crate::ser::collection_capacity(len)?);
-        for _ in 0..len {
-            let _pattern = seq.get_var_int()?.0;
-            let color_id = seq.get_var_int()?.0 as u8;
-            let color = pumpkin_data::dye_color::DyeColor::by_id(color_id).unwrap_or_default();
-            layers.push(pumpkin_data::data_component_impl::BannerPatternLayer {
-                pattern: String::new(),
-                color,
-            });
+        let layer_count = usize::try_from(seq.get_var_int()?.0)
+            .map_err(|_| ReadingError::Message("Negative banner pattern layer count".into()))?;
+        let mut layers = Vec::with_capacity(crate::ser::collection_capacity(layer_count)?);
+        for _ in 0..layer_count {
+            let pattern_id = seq.get_var_int()?.0;
+            let pattern = banner_pattern_name(pattern_id).ok_or_else(|| {
+                ReadingError::Message(format!(
+                    "Unknown synced banner pattern registry id {pattern_id}"
+                ))
+            })?;
+            let color_id = u8::try_from(seq.get_var_int()?.0)
+                .map_err(|_| ReadingError::Message("Invalid banner pattern dye id".into()))?;
+            let color = pumpkin_data::dye_color::DyeColor::by_id(color_id)
+                .ok_or_else(|| ReadingError::Message("Invalid banner pattern dye id".into()))?;
+            layers.push(pumpkin_data::data_component_impl::BannerPatternLayer { pattern, color });
         }
         Ok(Self { layers })
     }
+}
+
+// Banner patterns use Holder references in vanilla 26.3. Login sends this vanilla registry
+// prefix in source order and appends datapack entries after it; resolve the shared prefix by
+// resource key instead of treating BannerPattern's generated enum discriminant as a wire ID.
+fn banner_pattern_registry_id(pattern: &str) -> Option<i32> {
+    let pattern = pattern.strip_prefix("minecraft:").unwrap_or(pattern);
+    let registry = pumpkin_data::registry::REGISTRY_V_26_3
+        .iter()
+        .find(|registry| registry.registry_id == "banner_pattern")?;
+    let id = registry
+        .entries
+        .iter()
+        .position(|entry| entry.name == pattern)?;
+    i32::try_from(id).ok()
+}
+
+fn banner_pattern_name(id: i32) -> Option<String> {
+    let id = usize::try_from(id).ok()?;
+    let registry = pumpkin_data::registry::REGISTRY_V_26_3
+        .iter()
+        .find(|registry| registry.registry_id == "banner_pattern")?;
+    Some(format!("minecraft:{}", registry.entries.get(id)?.name))
 }
 
 impl DataComponentCodec<Self> for BaseColorImpl {

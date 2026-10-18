@@ -67,6 +67,12 @@ signature remains unchanged. Mirrors vanilla 26.3
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 
+Pillager patrol and raid captains now carry the vanilla 26.3 ominous banner
+components. Java equipment packets resolve banner pattern holders through the
+synced registry; unsupported saved pattern identifiers remain saved and fail
+safely on Java encoding. Older plain captain banners load unchanged. Fixes #165.
+Implemented by Codex (GPT-6 Luna). In-game verification: **Not yet**.
+
 ## Door and trapdoor placement (#22, #23)
 
 Door hinge scoring checks full-block obstructions beside the door at both lower and upper levels, while preserving adjacent-door precedence and the click-position tie-break. Mirrors vanilla 26.3 `DoorBlock.getHinge`. Fixes [#22](https://github.com/Optifineless/Pumpkin/issues/22). In-game verification: **Not yet**.
