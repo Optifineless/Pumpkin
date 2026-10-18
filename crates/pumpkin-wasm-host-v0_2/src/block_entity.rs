@@ -48,6 +48,7 @@ use crate::pumpkin::{
 use pumpkin_core::block::entities::BlockEntity as InternalBlockEntity;
 use pumpkin_core::block::entities::furnace_like_block_entity::CookingBlockEntityBase;
 use pumpkin_core::block::entities::sign::{DyeColor as InternalDyeColor, Text as InternalText};
+use pumpkin_wasm_host_common::block_entity_mutation::with_block_entity_mutation;
 use pumpkin_wasm_host_common::state::PluginHostState;
 use pumpkin_wasm_host_common::state::{self, FromResource};
 
@@ -141,6 +142,10 @@ fn replace_sign_text_messages(target: &InternalText, source: &InternalText) {
 #[cfg(test)]
 #[path = "sign_text_tests.rs"]
 mod sign_text_tests;
+
+#[cfg(test)]
+#[path = "../../pumpkin-wasm-host-common/src/block_entity_mutation_tests.rs"]
+mod block_entity_mutation_tests;
 
 impl HostBlockEntity for PluginHostState {
     fn resource_location(&mut self, res: Resource<BlockEntity>) -> wasmtime::Result<String> {
@@ -426,14 +431,15 @@ impl HostSignBlockEntity for PluginHostState {
         text: SignText,
     ) -> wasmtime::Result<()> {
         let sign = self.get(&res)?;
-        let new_text = from_wasm_sign_text(text);
-        sign.front_text.has_glowing_text.store(
-            new_text.has_glowing_text.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        sign.front_text.set_color(new_text.get_color());
-        replace_sign_text_messages(&sign.front_text, &new_text);
-        Ok(())
+        with_block_entity_mutation(self, sign, || {
+            let new_text = from_wasm_sign_text(text);
+            sign.front_text.has_glowing_text.store(
+                new_text.has_glowing_text.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            sign.front_text.set_color(new_text.get_color());
+            replace_sign_text_messages(&sign.front_text, &new_text);
+        })
     }
 
     fn get_back_text(&mut self, res: Resource<SignBlockEntity>) -> wasmtime::Result<SignText> {
@@ -446,14 +452,15 @@ impl HostSignBlockEntity for PluginHostState {
         text: SignText,
     ) -> wasmtime::Result<()> {
         let sign = self.get(&res)?;
-        let new_text = from_wasm_sign_text(text);
-        sign.back_text.has_glowing_text.store(
-            new_text.has_glowing_text.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        sign.back_text.set_color(new_text.get_color());
-        replace_sign_text_messages(&sign.back_text, &new_text);
-        Ok(())
+        with_block_entity_mutation(self, sign, || {
+            let new_text = from_wasm_sign_text(text);
+            sign.back_text.has_glowing_text.store(
+                new_text.has_glowing_text.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            sign.back_text.set_color(new_text.get_color());
+            replace_sign_text_messages(&sign.back_text, &new_text);
+        })
     }
 
     fn is_waxed(&mut self, res: Resource<SignBlockEntity>) -> wasmtime::Result<bool> {
@@ -461,8 +468,10 @@ impl HostSignBlockEntity for PluginHostState {
     }
 
     fn set_waxed(&mut self, res: Resource<SignBlockEntity>, waxed: bool) -> wasmtime::Result<()> {
-        self.get(&res)?.is_waxed.store(waxed, Ordering::Relaxed);
-        Ok(())
+        let sign = self.get(&res)?;
+        with_block_entity_mutation(self, sign, || {
+            sign.is_waxed.store(waxed, Ordering::Relaxed);
+        })
     }
 
     fn drop(&mut self, rep: Resource<SignBlockEntity>) -> wasmtime::Result<()> {
@@ -490,8 +499,8 @@ impl HostJukeboxBlockEntity for PluginHostState {
     }
 
     fn stop_playing(&mut self, res: Resource<JukeboxBlockEntity>) -> wasmtime::Result<()> {
-        self.get(&res)?.stop_playing();
-        Ok(())
+        let entity = self.get(&res)?;
+        with_block_entity_mutation(self, entity, || entity.stop_playing())
     }
 
     fn start_playing(
@@ -499,8 +508,8 @@ impl HostJukeboxBlockEntity for PluginHostState {
         res: Resource<JukeboxBlockEntity>,
         length_in_ticks: u64,
     ) -> wasmtime::Result<()> {
-        self.get(&res)?.start_playing(length_in_ticks);
-        Ok(())
+        let entity = self.get(&res)?;
+        with_block_entity_mutation(self, entity, || entity.start_playing(length_in_ticks))
     }
 
     fn drop(&mut self, rep: Resource<JukeboxBlockEntity>) -> wasmtime::Result<()> {
@@ -570,8 +579,8 @@ impl HostMapBlockEntity for PluginHostState {
     }
 
     fn set_map_id(&mut self, res: Resource<MapBlockEntity>, map_id: i32) -> wasmtime::Result<()> {
-        self.get(&res)?.set_map_id(map_id);
-        Ok(())
+        let entity = self.get(&res)?;
+        with_block_entity_mutation(self, entity, || entity.set_map_id(map_id))
     }
 
     fn get_colors(&mut self, res: Resource<MapBlockEntity>) -> wasmtime::Result<Vec<u8>> {
@@ -583,8 +592,8 @@ impl HostMapBlockEntity for PluginHostState {
         res: Resource<MapBlockEntity>,
         colors: Vec<u8>,
     ) -> wasmtime::Result<()> {
-        self.get(&res)?.set_colors(&colors);
-        Ok(())
+        let entity = self.get(&res)?;
+        with_block_entity_mutation(self, entity, || entity.set_colors(&colors))
     }
 
     fn set_pixel(
@@ -594,8 +603,10 @@ impl HostMapBlockEntity for PluginHostState {
         y: u32,
         color: u8,
     ) -> wasmtime::Result<()> {
-        self.get(&res)?.set_pixel(x as usize, y as usize, color);
-        Ok(())
+        let entity = self.get(&res)?;
+        with_block_entity_mutation(self, entity, || {
+            entity.set_pixel(x as usize, y as usize, color);
+        })
     }
 
     fn get_pixel(&mut self, res: Resource<MapBlockEntity>, x: u32, y: u32) -> wasmtime::Result<u8> {
@@ -616,8 +627,11 @@ impl HostMapBlockEntity for PluginHostState {
         res: Resource<MapBlockEntity>,
         frame_data: Vec<u8>,
     ) -> wasmtime::Result<()> {
-        let server_opt = self.server.as_deref();
-        self.get(&res)?.stream_frame(&frame_data, server_opt);
+        let map = self.get(&res)?;
+        with_block_entity_mutation(self, map, || map.set_colors(&frame_data))?;
+        if let Some(server) = self.server.as_deref() {
+            map.broadcast_map_data(server);
+        }
         Ok(())
     }
 
@@ -647,14 +661,15 @@ impl HostHangingSignBlockEntity for PluginHostState {
         text: SignText,
     ) -> wasmtime::Result<()> {
         let sign = self.get(&res)?;
-        let new_text = from_wasm_sign_text(text);
-        sign.front_text.has_glowing_text.store(
-            new_text.has_glowing_text.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        sign.front_text.set_color(new_text.get_color());
-        replace_sign_text_messages(&sign.front_text, &new_text);
-        Ok(())
+        with_block_entity_mutation(self, sign, || {
+            let new_text = from_wasm_sign_text(text);
+            sign.front_text.has_glowing_text.store(
+                new_text.has_glowing_text.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            sign.front_text.set_color(new_text.get_color());
+            replace_sign_text_messages(&sign.front_text, &new_text);
+        })
     }
 
     fn get_back_text(
@@ -670,14 +685,15 @@ impl HostHangingSignBlockEntity for PluginHostState {
         text: SignText,
     ) -> wasmtime::Result<()> {
         let sign = self.get(&res)?;
-        let new_text = from_wasm_sign_text(text);
-        sign.back_text.has_glowing_text.store(
-            new_text.has_glowing_text.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        sign.back_text.set_color(new_text.get_color());
-        replace_sign_text_messages(&sign.back_text, &new_text);
-        Ok(())
+        with_block_entity_mutation(self, sign, || {
+            let new_text = from_wasm_sign_text(text);
+            sign.back_text.has_glowing_text.store(
+                new_text.has_glowing_text.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            sign.back_text.set_color(new_text.get_color());
+            replace_sign_text_messages(&sign.back_text, &new_text);
+        })
     }
 
     fn is_waxed(&mut self, res: Resource<HangingSignBlockEntity>) -> wasmtime::Result<bool> {
@@ -689,8 +705,10 @@ impl HostHangingSignBlockEntity for PluginHostState {
         res: Resource<HangingSignBlockEntity>,
         waxed: bool,
     ) -> wasmtime::Result<()> {
-        self.get(&res)?.is_waxed.store(waxed, Ordering::Relaxed);
-        Ok(())
+        let sign = self.get(&res)?;
+        with_block_entity_mutation(self, sign, || {
+            sign.is_waxed.store(waxed, Ordering::Relaxed);
+        })
     }
 
     fn drop(&mut self, rep: Resource<HangingSignBlockEntity>) -> wasmtime::Result<()> {

@@ -271,6 +271,10 @@ impl World {
         if !self.is_in_build_limit(*position) {
             return BlockStateId::AIR;
         }
+        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
+            tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
+            return self.get_block_state_id(position);
+        };
         let old = self
             .write_block_state_if(position, state, |_| true)
             .unwrap_or(BlockStateId::AIR);

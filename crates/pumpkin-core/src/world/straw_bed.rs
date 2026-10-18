@@ -47,6 +47,10 @@ impl World {
         if event.cancelled {
             return None;
         }
+        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
+            tracing::warn!("Straw bed break rejected while chunk is unloading at {position:?}");
+            return None;
+        };
         // StrawBedBlock.destroyBed removes one half; callbacks must not authorize a newer block.
         // The existing atomic chunk write releases its guards before any completion effects.
         self.write_block_state_if(position, BlockStateId::AIR, |current| current == expected)?;

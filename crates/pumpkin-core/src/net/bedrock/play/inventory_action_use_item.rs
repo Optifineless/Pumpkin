@@ -109,6 +109,18 @@ impl BedrockClient {
             face: BlockDirection::try_from(i32::from(data.block_face))
                 .unwrap_or(BlockDirection::Up),
         };
+        let _mutation = if data.action_type.0 == 0 {
+            let Some(mutation) = context
+                .world
+                .block_entity_mutation_permit(data.block_position)
+            else {
+                self.correct_rejected_block_use(player, data);
+                return false;
+            };
+            Some(mutation)
+        } else {
+            None
+        };
         // ServerPlayerGameMode.useItemOn/useItem dispatch the retained server hand.
         if data.action_type.0 == 0 {
             self.use_admitted_item_on(&context)

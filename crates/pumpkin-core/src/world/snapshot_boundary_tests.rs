@@ -219,16 +219,7 @@ async fn snapshot_rejects_transitive_encode() {
 
 #[tokio::test]
 async fn snapshot_normal_and_final_save_preserve_legacy_fixture_nbt_bytes() {
-    let fixture = super::spawn_test_support::Fixture::new();
-    let world = &fixture.world;
     let pos = BlockPos::new(8, 64, 8);
-    publish_empty_chunk(world, pos.chunk_position());
-    let chunk = world
-        .level
-        .loaded_chunks
-        .get(&pos.chunk_position())
-        .unwrap()
-        .clone();
     let chest = ChestBlockEntity::new(pos);
     chest.set_stack(0, ItemStack::new(17, &Item::DIAMOND));
     let fixtures: Vec<Arc<dyn BlockEntity>> = vec![
@@ -238,8 +229,17 @@ async fn snapshot_normal_and_final_save_preserve_legacy_fixture_nbt_bytes() {
     ];
     let mut custom = NbtCompound::new();
     custom.put_string("fixture", "legacy custom data".into());
-    world.custom_block_entity_data.insert(pos, custom.clone());
     for entity in fixtures {
+        let fixture = super::spawn_test_support::Fixture::new();
+        let world = &fixture.world;
+        publish_empty_chunk(world, pos.chunk_position());
+        let chunk = world
+            .level
+            .loaded_chunks
+            .get(&pos.chunk_position())
+            .unwrap()
+            .clone();
+        world.custom_block_entity_data.insert(pos, custom.clone());
         let mut expected = NbtCompound::new();
         entity.write_internal(&mut expected);
         expected.put_compound("PumpkinCustomData", custom.clone());
@@ -264,7 +264,28 @@ async fn snapshot_normal_and_final_save_preserve_legacy_fixture_nbt_bytes() {
             .clone();
         assert_eq!(canonical_bytes(saved), bytes);
         assert!(!world.block_entities.contains_key(&pos.chunk_position()));
+        fixture.finish().await;
     }
+}
+
+#[tokio::test]
+async fn shutdown_waits_for_admitted_block_entity_mutations_before_closing_admission() {
+    let fixture = super::spawn_test_support::Fixture::new();
+    let world = &fixture.world;
+    let pos = BlockPos::new(8, 64, 8);
+    let admitted = world
+        .block_entity_mutation_permit(pos)
+        .expect("fixture world should admit the first mutation");
+
+    assert!(!world.try_stop_block_entity_mutations());
+    let nested = world
+        .block_entity_mutation_permit(pos)
+        .expect("an admitted callback must finish its nested block-entity registration");
+    drop(nested);
+    drop(admitted);
+
+    assert!(world.try_stop_block_entity_mutations());
+    assert!(world.block_entity_mutation_permit(pos).is_none());
     fixture.finish().await;
 }
 

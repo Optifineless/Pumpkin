@@ -8,8 +8,16 @@ use pumpkin_data::{item::Item, item_stack::ItemStack};
 use pumpkin_inventory::Inventory;
 use pumpkin_world::world::BlockFlags;
 
+mod block_entity_break;
 mod block_entity_capture;
+mod block_entity_eviction;
+mod block_entity_native_mutation;
+mod block_entity_registration;
 mod block_entity_retirement;
+mod block_entity_round5;
+mod block_entity_round5_admission;
+mod block_entity_round5_support;
+mod block_entity_save_unload;
 mod block_entity_support;
 
 use block_entity_support::CHEST;
