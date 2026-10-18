@@ -36,6 +36,7 @@ pub(super) struct PausedChestCapture {
     pub(super) chest: Arc<ChestBlockEntity>,
     pub(super) captured: mpsc::Sender<()>,
     pub(super) resume: Mutex<Option<mpsc::Receiver<()>>>,
+    pub(super) pause: AtomicBool,
 }
 
 impl BlockEntity for PausedChestCapture {
@@ -45,10 +46,12 @@ impl BlockEntity for PausedChestCapture {
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         self.chest.write_nbt(nbt);
-        let resume = self.resume.lock().unwrap().take();
-        if let Some(resume) = resume {
-            self.captured.send(()).unwrap();
-            wait_for_std_barrier(&resume, "chest capture resume");
+        if self.pause.swap(false, Ordering::AcqRel) {
+            let resume = self.resume.lock().unwrap().take();
+            if let Some(resume) = resume {
+                self.captured.send(()).unwrap();
+                wait_for_std_barrier(&resume, "chest capture resume");
+            }
         }
     }
 
@@ -57,6 +60,7 @@ impl BlockEntity for PausedChestCapture {
             chest: Arc::new(ChestBlockEntity::from_nbt(nbt, position)),
             captured: mpsc::channel().0,
             resume: Mutex::new(None),
+            pause: AtomicBool::new(false),
         }
     }
 
@@ -130,13 +134,16 @@ pub(super) struct GatedBookshelfCapture {
     pub(super) capture_id: usize,
     pub(super) captured: crossbeam::channel::Sender<usize>,
     pub(super) resume: crossbeam::channel::Receiver<()>,
+    pub(super) pause: AtomicBool,
 }
 
 impl BlockEntity for GatedBookshelfCapture {
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         self.bookshelf.write_nbt(nbt);
-        self.captured.send(self.capture_id).unwrap();
-        wait_for_crossbeam_barrier(&self.resume, "gated bookshelf capture resume");
+        if self.pause.swap(false, Ordering::AcqRel) {
+            self.captured.send(self.capture_id).unwrap();
+            wait_for_crossbeam_barrier(&self.resume, "gated bookshelf capture resume");
+        }
     }
 
     fn from_nbt(nbt: &NbtCompound, position: BlockPos) -> Self {
@@ -145,6 +152,7 @@ impl BlockEntity for GatedBookshelfCapture {
             capture_id: 0,
             captured: crossbeam::channel::bounded(1).0,
             resume: crossbeam::channel::bounded(1).1,
+            pause: AtomicBool::new(false),
         }
     }
 

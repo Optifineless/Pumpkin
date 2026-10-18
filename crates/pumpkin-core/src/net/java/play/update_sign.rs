@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::world::BlockEntityMutationPermit;
 
 impl JavaClient {
     pub fn handle_sign_update(&self, player: &Player, sign_data: &SUpdateSign<'_>) {
@@ -45,6 +46,17 @@ impl JavaClient {
                 return;
             }
         }
+
+        // ServerGamePacketListenerImpl.updateSignText changes the text before publishing it.
+        let Some(_mutation): Option<BlockEntityMutationPermit<'_>> =
+            world.block_entity_mutation_permit(sign_data.location)
+        else {
+            tracing::warn!(
+                "Sign edit rejected while chunk is unloading at {:?}",
+                sign_data.location
+            );
+            return;
+        };
 
         let text = sign_entity.get_text(sign_data.is_front_text);
 

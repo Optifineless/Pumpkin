@@ -1,4 +1,5 @@
 use super::util::write_compound_nbt;
+use crate::block::entities::block_entity_from_nbt;
 use pumpkin_protocol::codec::bit_set::BitSet;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::ser::NetworkWriteExt;
@@ -183,9 +184,10 @@ pub fn write_chunk_data(
     let block_entities = chunk
         .pending_block_entities
         .lock()
-        .map_err(|_| WritingError::Message("block_entities lock poisoned".into()))?;
+        .map_err(|_| WritingError::Message("block_entities lock poisoned".into()))?
+        .clone();
     write.write_var_int(&VarInt(block_entities.len() as i32))?;
-    for (pos, nbt) in block_entities.iter() {
+    for (pos, nbt) in &block_entities {
         let local_xz = ((get_local_cord(pos.0.x) & 0xF) << 4) | (get_local_cord(pos.0.z) & 0xF);
 
         write.write_u8(local_xz as u8)?;
@@ -200,16 +202,12 @@ pub fn write_chunk_data(
         });
         write.write_var_int(&VarInt(id as i32))?;
 
-        let mut client_nbt = nbt.clone();
-        client_nbt.child_tags.remove("id");
-        client_nbt.child_tags.remove("x");
-        client_nbt.child_tags.remove("y");
-        client_nbt.child_tags.remove("z");
-        client_nbt.child_tags.remove("LootTable");
-        client_nbt.child_tags.remove("LootTableSeed");
-        client_nbt.child_tags.remove("PumpkinCustomData");
-        client_nbt.child_tags.remove("BukkitValues");
-        write_compound_nbt(&mut write, &client_nbt, *version)?;
+        // ClientboundLevelChunkPacketData.BlockEntityInfo.create uses getUpdateTag, not saved NBT.
+        // Decode and call the per-type packet projection after releasing the pending-map guard.
+        let client_nbt = block_entity_from_nbt(nbt)
+            .and_then(|entity| entity.chunk_data_nbt())
+            .filter(|nbt| !nbt.is_empty());
+        write.write_compound_nbt_with_version(client_nbt.as_ref(), version)?;
     }
 
     {

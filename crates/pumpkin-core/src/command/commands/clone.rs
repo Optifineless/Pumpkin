@@ -197,6 +197,14 @@ impl CommandExecutor for CloneExecutor {
 
         let mut count = 0;
         for block in &blocks_to_clone {
+            // CloneCommands.clone restores block-entity NBT after setting destination terrain.
+            let Some(_mutation) = world.block_entity_mutation_permit(block.dest_pos) else {
+                tracing::warn!(
+                    "Clone block placement rejected while chunk is unloading at {:?}",
+                    block.dest_pos
+                );
+                return Err(FAILED_ERROR.create_without_context());
+            };
             world.set_block_state(&block.dest_pos, block.state_id, BlockFlags::NOTIFY_ALL);
 
             if let Some(nbt) = &block.block_entity_nbt {

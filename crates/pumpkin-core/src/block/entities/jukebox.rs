@@ -264,6 +264,9 @@ impl JukeboxBlockEntity {
     /// Stop playing the current song
     pub fn stop_playing(&self) {
         let guard = self.transaction.lock();
+        if !self.transaction.is_live() {
+            return;
+        }
         self.ticks_since_song_started.store(0, Ordering::Relaxed);
         self.song_length_ticks.store(0, Ordering::Relaxed);
         drop(guard);

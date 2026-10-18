@@ -45,6 +45,7 @@ pub mod map;
 pub(crate) mod neighbor_updater;
 mod particle_senders;
 mod pending_block_entity;
+pub(crate) use pending_block_entity::BlockEntityMutationPermit;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -349,6 +350,10 @@ pub struct World {
     /// A map of active entities within the world, keyed by their unique UUID.
     /// This does not include players.
     pub entities: ArcSwap<Vec<Arc<dyn EntityBase>>>,
+    entity_activation_state: pumpkin_util::sync::Mutex<
+        entity_save::EntityActivationState,
+        entity_save::EntityActivationLock,
+    >,
     pending_entity_activations: crossbeam::queue::SegQueue<entity_unload::EntityActivation>,
     pub(crate) ticking_experience_orbs: arc_swap::ArcSwapOption<Vec<Arc<dyn EntityBase>>>,
     dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
@@ -404,9 +409,12 @@ pub struct World {
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
     pub block_entities: DashMap<Vector2<i32>, FxHashMap<BlockPos, Arc<dyn BlockEntity>>>,
-    pending_block_entity_loads: std::sync::Mutex<pending_block_entity::PendingBlockEntityLoads>,
+    pending_block_entity_loads: pumpkin_util::sync::Mutex<
+        pending_block_entity::PendingBlockEntityLoads,
+        pending_block_entity::PendingBlockEntityLoadsLock,
+    >,
     #[cfg(test)]
-    lazy_block_entity_hook: std::sync::Mutex<Option<pending_block_entity::PublicationHook>>,
+    pub(crate) persistence_test_hooks: pending_block_entity::PersistenceTestHooks,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
@@ -542,6 +550,7 @@ impl World {
             level_info,
             players: ArcSwap::new(Arc::new(Vec::new())),
             entities: ArcSwap::new(Arc::new(Vec::new())),
+            entity_activation_state: pumpkin_util::sync::Mutex::default(),
             pending_entity_activations: crossbeam::queue::SegQueue::new(),
             dragon_parts: DashMap::new(),
             spawn_uuids: std::sync::Mutex::default(),
@@ -582,9 +591,9 @@ impl World {
             force_change_task: pumpkin_util::sync::Mutex::new(None),
             server,
             block_entities: DashMap::new(),
-            pending_block_entity_loads: std::sync::Mutex::default(),
+            pending_block_entity_loads: pumpkin_util::sync::Mutex::default(),
             #[cfg(test)]
-            lazy_block_entity_hook: std::sync::Mutex::new(None),
+            persistence_test_hooks: pending_block_entity::PersistenceTestHooks::default(),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
@@ -595,6 +604,7 @@ impl World {
     }
 
     pub fn update_active_chunks(self: &Arc<Self>) {
+        self.prune_completed_block_entity_unloads();
         let sim_dist = self.server.upgrade().map_or(10, |s| {
             s.advanced_config.networking.java.simulation_distance.get()
         }) as i32;
@@ -728,13 +738,12 @@ impl World {
     }
 
     pub async fn shutdown(&self) {
-        let entities = self.entities.load_full();
-        entity_save::save_entities_by_chunk(
-            self,
-            &entities,
-            self.level.live_entity_chunk_positions(),
-        )
-        .await;
+        // ServerLevel.close closes admission after synchronous block-entity callbacks drain.
+        while !self.try_stop_block_entity_mutations() {
+            tokio::task::yield_now().await;
+        }
+
+        entity_save::save_entities_by_chunk(self).await;
 
         let chunks: Vec<Vector2<i32>> = self
             .block_entities
@@ -742,11 +751,12 @@ impl World {
             .map(|chunk_block_entities| *chunk_block_entities.key())
             .collect();
         for chunk_pos in &chunks {
-            self.begin_block_entity_unload(*chunk_pos);
+            while !self.begin_block_entity_unload(*chunk_pos) {
+                tokio::task::yield_now().await;
+            }
         }
         for chunk_pos in chunks {
-            self.save_block_entities(chunk_pos, true);
-            self.seal_block_entity_unload(chunk_pos);
+            self.finish_block_entity_unload_capture(chunk_pos);
         }
 
         // Save portal POI to disk
@@ -4467,13 +4477,22 @@ impl World {
         self: &Arc<Self>,
         chunk: &Arc<ChunkEntityData>,
         player: Option<&Arc<Player>>,
-    ) {
-        let Some(entity_nbts) = self.level.activate_entity_chunk(chunk) else {
-            return;
+    ) -> bool {
+        let chunk_pos = Vector2::new(chunk.x, chunk.z);
+        let Some(_mutation) = self.block_entity_activation_permit(chunk_pos) else {
+            return false;
         };
+        let _activation = self.begin_entity_activation();
+        let Some(entity_nbts) = self.level.activate_entity_chunk(chunk) else {
+            return true;
+        };
+        self.reopen_block_entities_after_activation(chunk_pos);
+        #[cfg(test)]
+        self.run_entity_activation_hook();
         for entity_nbt in &entity_nbts {
             self.restore_entity_tree(entity_nbt, player);
         }
+        true
     }
 
     /// Gets a `Player` by an entity id
@@ -5050,6 +5069,11 @@ impl World {
         if !self.is_in_build_limit(*position) {
             return Block::AIR.default_state.id;
         }
+        // LevelChunk.setBlockState installs an EntityBlock entity after committing terrain.
+        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
+            tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
+            return self.get_block_state_id(position);
+        };
         let replaced_block_state_id = self
             .write_block_state_if(position, block_state_id, |_| true)
             .unwrap_or(Block::AIR.default_state.id);
@@ -5076,6 +5100,11 @@ impl World {
         if !self.is_in_build_limit(*position) {
             return None;
         }
+        // Keep LevelChunk.setBlockState callbacks in the same unload admission window as the write.
+        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
+            tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
+            return None;
+        };
         let replaced_block_state_id =
             self.write_block_state_if(position, block_state_id, condition)?;
         Some(self.on_block_state_set(
@@ -5320,6 +5349,9 @@ impl World {
         if event.cancelled {
             return None;
         }
+
+        // Level.destroyBlock must admit removal before callbacks retire or drop the container.
+        let _mutation = self.block_entity_mutation_permit(*position)?;
 
         if event.drop {
             flags.remove(BlockFlags::SKIP_DROPS);
@@ -6189,20 +6221,45 @@ impl World {
         assert_not_in_snapshot(SB::Mutation, "World::add_block_entity");
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
-        if !self.block_entity_addition_allowed(block_pos) {
+        let Some(mutation) = self.block_entity_mutation_permit(block_pos) else {
+            tracing::warn!(
+                "Block entity addition rejected while chunk is unloading at {block_pos:?}"
+            );
             return;
-        }
-        self.retire_replaced_container(&block_entity);
+        };
         self.bind_block_entity_context(block_entity.as_ref());
-        // LevelChunk.addAndRegisterBlockEntity publishes its client NBT after registration.
+        // LevelChunk.getBlockEntityNbtForSaving owns full persistence; packet NBT stays client-only.
         let stamp = self.next_block_entity_capture_stamp();
         let block_entity_nbt = block_entity.chunk_data_nbt();
-        let entity_id = block_entity.resource_location().to_string();
+        let persistent_nbt = self.capture_block_entity_snapshot(block_pos, &block_entity);
         let registered = block_entity.clone();
 
         if !self.replace_live_block_entity(block_pos, block_entity) {
+            tracing::warn!(
+                "Block entity addition rejected while chunk is unloading at {block_pos:?}"
+            );
             return;
         }
+
+        #[cfg(test)]
+        {
+            let hook = self
+                .persistence_test_hooks
+                .registration
+                .lock()
+                .unwrap()
+                .clone();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+        if !self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(&registered)) {
+            tracing::warn!("Block entity persistence image rejected for {block_pos:?}");
+        }
+        self.level.read_chunk_sync(&chunk_pos, |chunk| {
+            chunk.mark_dirty(true);
+        });
+        drop(mutation);
 
         if let Some(nbt) = &block_entity_nbt {
             let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
@@ -6214,27 +6271,33 @@ impl World {
                     bytes.as_ref().into(),
                 ),
             );
-            let mut full_nbt = nbt.clone();
-            full_nbt.put_string("id", entity_id);
-            full_nbt.put_int("x", block_pos.0.x);
-            full_nbt.put_int("y", block_pos.0.y);
-            full_nbt.put_int("z", block_pos.0.z);
-            self.publish_block_entity_nbt(block_pos, &full_nbt, stamp, Some(&registered));
         }
-
-        self.level.read_chunk_sync(&chunk_pos, |chunk| {
-            chunk.mark_dirty(true);
-        });
     }
 
     pub fn add_block_entity_nbt(&self, block_pos: BlockPos, nbt: &NbtCompound) {
         assert_not_in_snapshot(SB::Mutation, "World::add_block_entity_nbt");
+        let Some(_mutation) = self.block_entity_mutation_permit(block_pos) else {
+            tracing::warn!(
+                "Block entity NBT addition rejected while chunk is unloading at {block_pos:?}"
+            );
+            return;
+        };
         let stamp = self.next_block_entity_capture_stamp();
-        self.publish_block_entity_nbt(block_pos, nbt, stamp, None);
+        if !self.publish_block_entity_nbt(block_pos, nbt, stamp, None) {
+            tracing::warn!(
+                "Block entity NBT addition rejected while chunk is unloading at {block_pos:?}"
+            );
+        }
     }
 
     pub fn remove_block_entity(&self, block_pos: &BlockPos) {
         assert_not_in_snapshot(SB::Mutation, "World::remove_block_entity");
+        let Some(_mutation) = self.block_entity_mutation_permit(*block_pos) else {
+            tracing::warn!(
+                "Block entity removal rejected while chunk is unloading at {block_pos:?}"
+            );
+            return;
+        };
         self.retire_container(block_pos);
         self.remove_loaded_block_entity(block_pos);
     }
@@ -6261,11 +6324,29 @@ impl World {
         assert_not_in_snapshot(SB::Mutation, "World::update_block_entity");
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
-        // ChunkAccess.setBlockEntityNbt stores this serialized update after its live-instance check.
+        let Some(mutation) = self.block_entity_mutation_permit(block_pos) else {
+            tracing::warn!(
+                "Block entity update rejected while chunk is unloading at {block_pos:?}"
+            );
+            return;
+        };
+        // LevelChunk.getBlockEntityNbtForSaving persists complete state; chunk_data_nbt is packet-only.
         let stamp = self.next_block_entity_capture_stamp();
         let block_entity_nbt = block_entity.chunk_data_nbt();
+        let persistent_nbt = self.capture_block_entity_snapshot(block_pos, block_entity);
 
-        if let Some(nbt) = &block_entity_nbt {
+        let published =
+            self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(block_entity));
+        self.level.read_chunk_sync(&chunk_pos, |chunk| {
+            chunk.mark_dirty(true);
+        });
+        drop(mutation);
+        if !published {
+            tracing::warn!(
+                "Block entity update rejected for detached or replaced entity at {block_pos:?}"
+            );
+        }
+        if published && let Some(nbt) = &block_entity_nbt {
             let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
             self.broadcast_to_chunk(
                 chunk_pos,
@@ -6275,17 +6356,7 @@ impl World {
                     bytes.as_ref().into(),
                 ),
             );
-            let mut full_nbt = nbt.clone();
-            full_nbt.put_string("id", block_entity.resource_location().to_string());
-            let pos = block_entity.get_position();
-            full_nbt.put_int("x", pos.0.x);
-            full_nbt.put_int("y", pos.0.y);
-            full_nbt.put_int("z", pos.0.z);
-            self.publish_block_entity_nbt(block_pos, &full_nbt, stamp, Some(block_entity));
         }
-        self.level.read_chunk_sync(&chunk_pos, |chunk| {
-            chunk.mark_dirty(true);
-        });
     }
 
     #[must_use]
@@ -6875,13 +6946,7 @@ impl World {
     }
 
     pub async fn save(&self) {
-        let entities = self.entities.load_full();
-        entity_save::save_entities_by_chunk(
-            self,
-            &entities,
-            self.level.live_entity_chunk_positions(),
-        )
-        .await;
+        entity_save::save_entities_by_chunk(self).await;
 
         let chunks: Vec<Vector2<i32>> = self
             .block_entities
@@ -6994,6 +7059,10 @@ impl World {
         key: &str,
         value: pumpkin_nbt::tag::NbtTag,
     ) {
+        let Some(_mutation) = self.block_entity_mutation_permit(*pos) else {
+            tracing::warn!("Block entity data update rejected while chunk is unloading at {pos:?}");
+            return;
+        };
         let mut entry = self.custom_block_entity_data.entry(*pos).or_default();
         let mut namespace_data = entry
             .child_tags
@@ -7026,6 +7095,12 @@ impl World {
     }
 
     pub fn remove_block_entity_custom_data(&self, pos: &BlockPos, namespace: &str, key: &str) {
+        let Some(_mutation) = self.block_entity_mutation_permit(*pos) else {
+            tracing::warn!(
+                "Block entity data removal rejected while chunk is unloading at {pos:?}"
+            );
+            return;
+        };
         if let Some(mut entry) = self.custom_block_entity_data.get_mut(pos) {
             let Some(pumpkin_nbt::tag::NbtTag::Compound(mut namespace_data)) =
                 entry.child_tags.remove(namespace)
