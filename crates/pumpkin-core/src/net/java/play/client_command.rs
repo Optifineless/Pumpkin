@@ -198,7 +198,10 @@ mod tests {
 
 // ServerGamePacketListenerImpl.handleClientCommand uses normal saved-spawn validation first.
 async fn respawn_after_death(player: &Arc<Player>, hardcore: bool) -> bool {
-    player.world().respawn_player(player, false, hardcore).await
+    player
+        .world()
+        .respawn_player_with_outcome(player, false, hardcore)
+        .await
 }
 
 #[cfg(test)]

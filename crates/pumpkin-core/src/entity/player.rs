@@ -4138,7 +4138,7 @@ impl Player {
     }
 
     pub async fn respawn(self: &Arc<Self>) {
-        self.world().respawn_player(self, false, false).await;
+        self.world().respawn_player(self, false).await;
         // The client rebuilt its attribute state on respawn, so send the held
         // weapon modifiers again.
         crate::entity::attributes::send_attribute_updates_for_living(

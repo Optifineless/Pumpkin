@@ -412,7 +412,7 @@ mod tests {
         // Stop at the production respawn event, before waiting for a nonexistent network writer.
         tokio::time::timeout(Duration::from_secs(60), async {
             tokio::select! {
-                _ = old_world.respawn_player(&player, false, false) => {}
+                _ = old_world.respawn_player_with_outcome(&player, false, false) => {}
                 () = reached.notified() => {}
             }
         })

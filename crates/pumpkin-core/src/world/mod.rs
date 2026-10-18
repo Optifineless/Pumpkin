@@ -4088,8 +4088,18 @@ impl World {
         }
     }
 
+    /// Respawns `player` into this world (or its resolved respawn dimension).
+    ///
+    /// Kept with its native plugin API 8 signature; internal callers use
+    /// [`Self::respawn_player_with_outcome`].
+    pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        let _ = self.respawn_player_with_outcome(player, alive, false).await;
+    }
+
+    /// Returns `false` when the respawn was abandoned because the player's session
+    /// ended or the destination rejected it.
     #[allow(clippy::too_many_lines)]
-    pub async fn respawn_player(
+    pub(crate) async fn respawn_player_with_outcome(
         self: &Arc<Self>,
         player: &Arc<Player>,
         alive: bool,
