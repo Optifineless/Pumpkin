@@ -597,7 +597,6 @@ crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#3
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#10
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#11
-crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#12
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#2
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#3
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#4
@@ -872,3 +871,17 @@ crates/pumpkin-wasm-host-common/src/equipment_tests.rs::wasm_non_player_main_han
 # wraps non-reentrant std locks; replacing this mutex directly would self-deadlock.
 # Owners contain no stack storage, acquire in Arc identity order, and release before effects.
 crates/pumpkin-inventory/src/inventory/slot_transaction.rs::default::parking_lot::ReentrantMutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_break.rs::paused_chest_unload::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_registration.rs::delayed_initial_registration_cannot_overwrite_a_retried_full_save::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_save_unload.rs::new::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/world/entity_unload_terrain_tests.rs::from_nbt::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/world/entity_unload_terrain_tests.rs::new::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-wasm-host-common/src/block_entity_mutation_tests.rs::block_entity_host_mutations_reject_sealed_shutdown_before_final_capture::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-wasm-host-common/src/block_entity_mutation_tests.rs::from_nbt::std::sync::Mutex::new#1

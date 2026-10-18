@@ -189,8 +189,8 @@ async fn stale_capture_retries_default_none_block_entity_state() {
         .unwrap();
 
         let replacement = Arc::new(ChiseledBookshelfBlockEntity::new(BOOKSHELF));
+        world.add_block_entity(replacement.clone());
         replacement.set_book(4, ItemStack::new(1, &Item::BOOK));
-        world.add_block_entity(replacement);
         resume_capture.send(()).unwrap();
         save.await.unwrap();
 

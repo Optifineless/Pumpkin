@@ -51,7 +51,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use uuid::Uuid;
 
 /// Bound cooperative I/O and task progress by polls, never by elapsed time.
-const MAX_POLLS: usize = 1_000_000;
+const MAX_POLLS: usize = 4_000_000;
 const MAX_OUTGOING_PER_POLL: usize = 4096;
 const VIEW_RADIUS: i32 = 2;
 pub const SPAWN: Vector3<f64> = Vector3::new(3.5, 64.0, 3.5);

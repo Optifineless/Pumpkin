@@ -8,6 +8,7 @@ use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::{CMapItemData, MapPatch};
 use pumpkin_util::math::position::BlockPos;
 
+use super::mutation_context::BlockEntityMutationContext;
 use crate::block::entities::BlockEntity;
 
 pub const MAP_BLOCK_ENTITY_ID: &str = "minecraft:map";
@@ -17,9 +18,14 @@ pub struct MapBlockEntity {
     map_id: AtomicI32,
     colors: Mutex<Box<[u8; 128 * 128]>>,
     dirty: AtomicBool,
+    mutation_context: BlockEntityMutationContext,
 }
 
 impl MapBlockEntity {
+    pub(crate) fn bind_world(&self, world: &std::sync::Arc<crate::world::World>) {
+        self.mutation_context.bind_world(world, self.position);
+    }
+
     #[must_use]
     pub fn new(position: BlockPos, map_id: i32) -> Self {
         Self {
@@ -27,6 +33,7 @@ impl MapBlockEntity {
             map_id: AtomicI32::new(map_id),
             colors: Mutex::new(Box::new([0; 128 * 128])),
             dirty: AtomicBool::new(true),
+            mutation_context: BlockEntityMutationContext::default(),
         }
     }
 
@@ -36,8 +43,10 @@ impl MapBlockEntity {
     }
 
     pub fn set_map_id(&self, map_id: i32) {
-        self.map_id.store(map_id, Ordering::Relaxed);
-        self.dirty.store(true, Ordering::Relaxed);
+        self.mutation_context.mutate(|| {
+            self.map_id.store(map_id, Ordering::Relaxed);
+            self.dirty.store(true, Ordering::Relaxed);
+        });
     }
 
     pub fn get_colors(&self) -> Vec<u8> {
@@ -49,42 +58,46 @@ impl MapBlockEntity {
     }
 
     pub fn set_colors(&self, new_colors: &[u8]) {
-        let mut colors = self
-            .colors
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if new_colors.len() == 128 * 128 * 3 {
-            // RGB -> map color byte conversion
-            for i in 0..(128 * 128) {
-                let r = new_colors[i * 3];
-                let g = new_colors[i * 3 + 1];
-                let b = new_colors[i * 3 + 2];
-                colors[i] = rgb_to_map_color(r, g, b);
-            }
-        } else if new_colors.len() == 128 * 128 * 4 {
-            // RGBA -> map color byte conversion
-            for i in 0..(128 * 128) {
-                let r = new_colors[i * 4];
-                let g = new_colors[i * 4 + 1];
-                let b = new_colors[i * 4 + 2];
-                colors[i] = rgb_to_map_color(r, g, b);
-            }
-        } else {
-            let len = new_colors.len().min(128 * 128);
-            colors[..len].copy_from_slice(&new_colors[..len]);
-        }
-        self.dirty.store(true, Ordering::Relaxed);
-    }
-
-    pub fn set_pixel(&self, x: usize, y: usize, color: u8) {
-        if x < 128 && y < 128 {
+        self.mutation_context.mutate(|| {
             let mut colors = self
                 .colors
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            colors[y * 128 + x] = color;
+            if new_colors.len() == 128 * 128 * 3 {
+                // RGB -> map color byte conversion
+                for i in 0..(128 * 128) {
+                    let r = new_colors[i * 3];
+                    let g = new_colors[i * 3 + 1];
+                    let b = new_colors[i * 3 + 2];
+                    colors[i] = rgb_to_map_color(r, g, b);
+                }
+            } else if new_colors.len() == 128 * 128 * 4 {
+                // RGBA -> map color byte conversion
+                for i in 0..(128 * 128) {
+                    let r = new_colors[i * 4];
+                    let g = new_colors[i * 4 + 1];
+                    let b = new_colors[i * 4 + 2];
+                    colors[i] = rgb_to_map_color(r, g, b);
+                }
+            } else {
+                let len = new_colors.len().min(128 * 128);
+                colors[..len].copy_from_slice(&new_colors[..len]);
+            }
             self.dirty.store(true, Ordering::Relaxed);
-        }
+        });
+    }
+
+    pub fn set_pixel(&self, x: usize, y: usize, color: u8) {
+        self.mutation_context.mutate(|| {
+            if x < 128 && y < 128 {
+                let mut colors = self
+                    .colors
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                colors[y * 128 + x] = color;
+                self.dirty.store(true, Ordering::Relaxed);
+            }
+        });
     }
 
     pub fn get_pixel(&self, x: usize, y: usize) -> u8 {

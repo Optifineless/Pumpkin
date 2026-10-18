@@ -111,6 +111,13 @@ async fn stop_seal_rejects_a_replacement_before_the_final_chest_capture() {
             .set_stack(0, original_chest.get_stack(0));
         let paused_entity: Arc<dyn BlockEntity> = paused.clone();
         world.add_block_entity(paused_entity.clone());
+        let retained_inventory = paused.clone().get_inventory().unwrap();
+        world.save().await;
+        let saved_stack = retained_inventory.get_stack(0);
+        let moved = retained_inventory.remove_stack_specific(0, 1);
+        assert_eq!(moved.item, &Item::DIAMOND);
+        assert_eq!(moved.item_count, 1, "ordinary save retired the chest");
+        retained_inventory.set_stack(0, saved_stack);
         paused.pause.store(true, Ordering::Release);
 
         let replacement_chest = Arc::new(ChestBlockEntity::new(CHEST));
@@ -123,15 +130,24 @@ async fn stop_seal_rejects_a_replacement_before_the_final_chest_capture() {
             let replacement_was_admitted = replacement_world
                 .get_block_entity(&CHEST)
                 .is_some_and(|current| Arc::ptr_eq(&current, &replacement_entity));
+            let moved = retained_inventory.remove_stack_specific(0, 1);
+            let remaining = retained_inventory.get_stack(0);
             resume_capture.send(()).unwrap();
-            replacement_was_admitted
+            (replacement_was_admitted, moved, remaining)
         });
 
         scenario.stop().await;
+        let (replacement_was_admitted, moved, remaining) = writer.join().unwrap();
         assert!(
-            !writer.join().unwrap(),
+            !replacement_was_admitted,
             "server stop admitted a chest replacement after sealing mutations"
         );
+        assert!(
+            moved.is_empty(),
+            "retired chest allowed a late item transfer"
+        );
+        assert_eq!(remaining.item, &Item::DIAMOND);
+        assert_eq!(remaining.item_count, 17);
 
         let scenario = scenario.restart().await;
         scenario.join(player_id, "ChestRace").await;

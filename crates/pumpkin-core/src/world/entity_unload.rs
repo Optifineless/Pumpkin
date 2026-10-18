@@ -9,6 +9,9 @@ use super::{World, entity_persistence, guard_effects::GuardEffects, merge_entity
 use crate::entity::{RemovalReason, player::Player};
 
 #[cfg(test)]
+#[path = "entity_unload_terrain_tests.rs"]
+mod terrain_tests;
+#[cfg(test)]
 #[path = "entity_unload_tests.rs"]
 mod tests;
 
@@ -52,6 +55,7 @@ impl World {
     }
 
     pub(super) fn process_entity_chunk_lifecycle(self: &Arc<Self>) {
+        let mut deferred = Vec::new();
         while let Some(activation) = self.pending_entity_activations.pop() {
             let pos = Vector2::new(activation.storage.x, activation.storage.z);
             if !self.level.is_chunk_watched(&pos) {
@@ -65,7 +69,12 @@ impl World {
             {
                 continue;
             }
-            self.make_chunk_entities_live(&activation.storage, player.as_ref());
+            if !self.make_chunk_entities_live(&activation.storage, player.as_ref()) {
+                deferred.push(activation);
+            }
+        }
+        for activation in deferred {
+            self.pending_entity_activations.push(activation);
         }
         for request in self.level.pending_entity_unloads() {
             self.retire_entity_chunk(&request);
@@ -116,7 +125,7 @@ impl World {
         for member in &members {
             super::container_lifecycle::retire_entity_container(member);
         }
-        self.store_retired_entities(request, &members, was_live);
+        Self::store_retired_entities(request, &members, was_live);
         // Collect then dispatch: no admission/storage guard reaches these object calls.
         for member in &members {
             self.spawn_state.load().remove_entity(self, member.as_ref());
@@ -126,6 +135,7 @@ impl World {
             self.entity_tracker.remove_entity(member.as_ref(), self);
         }
         self.finish_block_entity_unload_capture(request.position);
+        self.level.finish_entity_unload(request);
         self.level.clean_entity_chunks([request.position]);
         drop(effects);
     }
@@ -170,7 +180,6 @@ impl World {
     }
 
     fn store_retired_entities(
-        &self,
         request: &EntityUnload,
         members: &[Arc<dyn crate::entity::EntityBase>],
         was_live: bool,
@@ -191,6 +200,5 @@ impl World {
                 storage.dirty.store(true, Ordering::Relaxed);
             }
         }
-        self.level.finish_entity_unload(request);
     }
 }

@@ -128,6 +128,19 @@ async fn save_entity_snapshot(
 }
 
 impl World {
+    #[cfg(test)]
+    pub(super) fn run_entity_activation_hook(&self) {
+        let hook = self
+            .persistence_test_hooks
+            .activation
+            .lock()
+            .unwrap()
+            .take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
     pub(super) fn entity_activation_generation(&self) -> u64 {
         self.entity_activation_state
             .lock()

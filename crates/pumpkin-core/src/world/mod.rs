@@ -413,7 +413,7 @@ pub struct World {
         pending_block_entity::PendingBlockEntityLoadsLock,
     >,
     #[cfg(test)]
-    lazy_block_entity_hook: std::sync::Mutex<Option<pending_block_entity::PublicationHook>>,
+    pub(crate) persistence_test_hooks: pending_block_entity::PersistenceTestHooks,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
@@ -592,7 +592,7 @@ impl World {
             block_entities: DashMap::new(),
             pending_block_entity_loads: pumpkin_util::sync::Mutex::default(),
             #[cfg(test)]
-            lazy_block_entity_hook: std::sync::Mutex::new(None),
+            persistence_test_hooks: pending_block_entity::PersistenceTestHooks::default(),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
@@ -603,6 +603,7 @@ impl World {
     }
 
     pub fn update_active_chunks(self: &Arc<Self>) {
+        self.prune_completed_block_entity_unloads();
         let sim_dist = self.server.upgrade().map_or(10, |s| {
             s.advanced_config.networking.java.simulation_distance.get()
         }) as i32;
@@ -4498,14 +4499,22 @@ impl World {
         self: &Arc<Self>,
         chunk: &Arc<ChunkEntityData>,
         player: Option<&Arc<Player>>,
-    ) {
+    ) -> bool {
+        let chunk_pos = Vector2::new(chunk.x, chunk.z);
+        let Some(_mutation) = self.block_entity_activation_permit(chunk_pos) else {
+            return false;
+        };
         let _activation = self.begin_entity_activation();
         let Some(entity_nbts) = self.level.activate_entity_chunk(chunk) else {
-            return;
+            return true;
         };
+        self.reopen_block_entities_after_activation(chunk_pos);
+        #[cfg(test)]
+        self.run_entity_activation_hook();
         for entity_nbt in &entity_nbts {
             self.restore_entity_tree(entity_nbt, player);
         }
+        true
     }
 
     /// Gets a `Player` by an entity id
@@ -5362,6 +5371,9 @@ impl World {
         if event.cancelled {
             return None;
         }
+
+        // Level.destroyBlock must admit removal before callbacks retire or drop the container.
+        let _mutation = self.block_entity_mutation_permit(*position)?;
 
         if event.drop {
             flags.remove(BlockFlags::SKIP_DROPS);
@@ -6237,12 +6249,6 @@ impl World {
             );
             return;
         };
-        if !self.block_entity_addition_allowed(block_pos) {
-            tracing::warn!(
-                "Block entity addition rejected while chunk is unloading at {block_pos:?}"
-            );
-            return;
-        }
         self.bind_block_entity_context(block_entity.as_ref());
         // LevelChunk.getBlockEntityNbtForSaving owns full persistence; packet NBT stays client-only.
         let stamp = self.next_block_entity_capture_stamp();
@@ -6257,6 +6263,18 @@ impl World {
             return;
         }
 
+        #[cfg(test)]
+        {
+            let hook = self
+                .persistence_test_hooks
+                .registration
+                .lock()
+                .unwrap()
+                .clone();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
         if !self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(&registered)) {
             tracing::warn!("Block entity persistence image rejected for {block_pos:?}");
         }

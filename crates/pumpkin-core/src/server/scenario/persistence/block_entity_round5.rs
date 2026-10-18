@@ -210,7 +210,11 @@ async fn replacement_incarnation_resets_an_older_published_stamp() {
             .cloned()
             .expect("replacement registration left no persistent image");
         let restored = ChestBlockEntity::from_nbt(&saved, CHEST);
-        assert_eq!(restored.get_stack(0).item, &Item::EMERALD);
+        assert_eq!(
+            restored.get_stack(0).item,
+            &Item::EMERALD,
+            "the predecessor's watermark rejected the new incarnation's initial image"
+        );
         assert_eq!(restored.get_stack(0).item_count, 5);
 
         // Preserve the registration image before stop captures the live replacement again.

@@ -4,6 +4,7 @@
 #![allow(unused_labels, deprecated)]
 
 pub mod args;
+pub mod block_entity_mutation;
 pub mod concurrent_store;
 pub mod logging;
 pub mod plugin;

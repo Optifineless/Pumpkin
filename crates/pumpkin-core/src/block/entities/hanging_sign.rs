@@ -9,6 +9,7 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use std::sync::Mutex;
 
+/// Live edits use the sign setters; direct public field writes bypass retirement admission.
 pub struct HangingSignBlockEntity {
     pub front_text: Text,
     pub back_text: Text,

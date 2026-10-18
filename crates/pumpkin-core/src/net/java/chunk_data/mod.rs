@@ -2,6 +2,9 @@ pub mod light;
 pub mod util;
 pub mod v1_18;
 
+#[cfg(test)]
+mod block_entity_packet_tests;
+
 pub use light::ChunkLightExt;
 
 use pumpkin_data::packet::clientbound::play::LEVEL_CHUNK_WITH_LIGHT;

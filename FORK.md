@@ -116,13 +116,18 @@ images; `chunk_data_nbt()` remains packet data. Capture stamps reset with the li
 instance, and ordinary saves keep retrying until they capture the current one.
 Unload and stop close mutation admission before their final capture. Block placement,
 replacement, sign edits, block interactions, jigsaw edits and custom block-entity data
-are fenced at their mutation entry points. Concurrent replacements retire the exact
-predecessor before swapping. Regression scenarios exercise deferred chest loot,
+are fenced at their mutation entry points, including native sign/map setters and
+both Wasm host versions. Terrain stays retained through the final capture, and its
+incarnation remains sealed until activation or reload. Concurrent replacements retire
+the exact predecessor before swapping. Chunk packets project full saved images through
+each block entity's client serializer. Regression scenarios exercise deferred chest loot,
 late chest placement, sign edits during unload, replacement churn and concurrent
 container replacement through save or unload and reload. Entity saves also retry
 when saved records are activated into the live registry during serialization. The
-saved NBT layout and native plugin API are unchanged (API 8, same version). In-game verification:
-**Not yet**.
+saved NBT layout, plugin method signatures and WIT are unchanged. The private native
+layouts and hidden host coordination use API 8 (same version); rebuild native plugins.
+Direct public field writes bypass the supported native setters' admission contract.
+In-game verification: **Not yet**.
 
 ## World normal/frozen service boundary, ticks M1
 

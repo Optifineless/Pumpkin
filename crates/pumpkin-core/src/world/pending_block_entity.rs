@@ -4,11 +4,14 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_util::sync::{LockClass, MutexGuard, SnapshotBoundary as SB, assert_not_in_snapshot};
 use pumpkin_world::chunk::{ChunkData, io::Dirtiable};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use super::portal::frame_effects::RetiredBlockEntity;
 use super::{World, remove_pending_block_entity};
 use crate::block::entities::{BlockEntity, block_entity_from_nbt, capture::capture_legacy};
+
+#[path = "block_entity_admission.rs"]
+mod admission;
 
 enum SnapshotPublication {
     Published,
@@ -27,15 +30,30 @@ impl LockClass for PendingBlockEntityLoadsLock {
 #[cfg(test)]
 pub(super) type PublicationHook = Arc<dyn Fn() + Send + Sync>;
 
+// Test hooks copy/take their callbacks before invocation; none retains its slot mutex.
+#[cfg(test)]
+#[derive(Default)]
+pub struct PersistenceTestHooks {
+    pub(crate) lazy: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) activation: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) registration: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) publication: std::sync::Mutex<Option<PublicationHook>>,
+}
+
+struct BlockEntityUnload {
+    captures: usize,
+    completed: bool,
+    terrain: Weak<ChunkData>,
+}
+
 #[derive(Default)]
 pub(super) struct PendingBlockEntityLoads {
     pub(super) snapshots: FxHashMap<BlockPos, Weak<()>>,
     // The watermark is reset when the registered Arc changes, so stamps order one live incarnation.
     next_capture_stamp: u64,
     published_capture_stamps: FxHashMap<BlockPos, u64>,
-    // Admission first stops pending promotion; sealing also stops live replacement and publication.
-    unloading: FxHashMap<Vector2<i32>, usize>,
-    sealed_unloading: FxHashSet<Vector2<i32>>,
+    // Retirement closes mutation and pending-promotion admission before the final capture.
+    unloading: FxHashMap<Vector2<i32>, BlockEntityUnload>,
     active_mutations: FxHashMap<Vector2<i32>, usize>,
     stop_admission: bool,
 }
@@ -111,11 +129,6 @@ impl World {
                 | SnapshotPublication::Missing
                 | SnapshotPublication::Older => return,
                 SnapshotPublication::Replaced(current) => {
-                    if retiring {
-                        // LevelChunk.clearAllBlockEntities retires each live container on unload.
-                        // A replacement joining this final capture needs the same retirement first.
-                        super::container_lifecycle::retire_block_entity(&current);
-                    }
                     expected = current;
                 }
             }
@@ -193,6 +206,19 @@ impl World {
         drop(chunk_entry);
         drop(loads);
 
+        #[cfg(test)]
+        {
+            let hook = self
+                .persistence_test_hooks
+                .publication
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+
         self.pending_block_entity_migrations.push(chunk_pos);
         SnapshotPublication::Published
     }
@@ -218,8 +244,7 @@ impl World {
             .pending_block_entity_loads
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if loads.sealed_unloading.contains(&chunk_pos)
-            || loads.unloading.contains_key(&chunk_pos)
+        if loads.unloading.contains_key(&chunk_pos)
             || loads
                 .published_capture_stamps
                 .get(&pos)
@@ -258,85 +283,11 @@ impl World {
         published.is_some()
     }
 
-    pub(super) fn block_entity_addition_allowed(&self, pos: BlockPos) -> bool {
-        let chunk_pos = pos.chunk_position();
-        let loads = self
-            .pending_block_entity_loads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        !loads.sealed_unloading.contains(&chunk_pos) && !loads.unloading.contains_key(&chunk_pos)
-    }
-
-    pub(crate) fn block_entity_mutation_permit(
-        &self,
-        pos: BlockPos,
-    ) -> Option<BlockEntityMutationPermit<'_>> {
-        let chunk_pos = pos.chunk_position();
-        let mut loads = self
-            .pending_block_entity_loads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if loads.stop_admission
-            || loads.unloading.contains_key(&chunk_pos)
-            || loads.sealed_unloading.contains(&chunk_pos)
-        {
-            return None;
-        }
-        *loads.active_mutations.entry(chunk_pos).or_default() += 1;
-        Some(BlockEntityMutationPermit {
-            world: self,
-            chunk_pos,
-        })
-    }
-
-    pub(super) fn begin_block_entity_unload(&self, chunk_pos: Vector2<i32>) -> bool {
-        let mut loads = self
-            .pending_block_entity_loads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if loads.active_mutations.contains_key(&chunk_pos) {
-            return false;
-        }
-        *loads.unloading.entry(chunk_pos).or_default() += 1;
-        loads.sealed_unloading.insert(chunk_pos);
-        loads
-            .snapshots
-            .retain(|pos, _| pos.chunk_position() != chunk_pos);
-        true
-    }
-
-    pub(super) fn try_stop_block_entity_mutations(&self) -> bool {
-        let mut loads = self
-            .pending_block_entity_loads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !loads.active_mutations.is_empty() {
-            return false;
-        }
-        // Closing under the same gate makes this atomic with the last permit admission.
-        loads.stop_admission = true;
-        true
-    }
-
-    pub(super) fn finish_block_entity_unload(&self, chunk_pos: Vector2<i32>) {
-        let mut loads = self
-            .pending_block_entity_loads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(count) = loads.unloading.get_mut(&chunk_pos) {
-            *count -= 1;
-            if *count == 0 {
-                loads.unloading.remove(&chunk_pos);
-                loads.sealed_unloading.remove(&chunk_pos);
-            }
-        }
-    }
-
     pub(super) fn load_pending_block_entity(&self, pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
         let snapshot = self.pending_block_entity_snapshot(pos)?;
         #[cfg(test)]
         {
-            let hook = self.lazy_block_entity_hook.lock().unwrap().clone();
+            let hook = self.persistence_test_hooks.lazy.lock().unwrap().clone();
             if let Some(hook) = hook {
                 hook();
             }
@@ -357,7 +308,8 @@ impl World {
             .pending_block_entity_loads
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if loads.stop_admission || loads.unloading.contains_key(&chunk_pos) {
+        if loads.stop_admission || !self.block_entity_terrain_admits_mutation(&mut loads, chunk_pos)
+        {
             return None;
         }
         let chunk = self.level.loaded_chunks.get(&chunk_pos)?.clone();
@@ -483,9 +435,12 @@ impl World {
         loads
             .published_capture_stamps
             .retain(|pos, _| pos.chunk_position() != chunk_pos);
+        if let Some(unloading) = loads.unloading.get_mut(&chunk_pos) {
+            unloading.captures -= 1;
+            unloading.completed = true;
+        }
         drop(loads);
         drop(retired);
-        self.finish_block_entity_unload(chunk_pos);
     }
 
     pub(super) fn replace_live_block_entity(
@@ -509,9 +464,7 @@ impl World {
                 .pending_block_entity_loads
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if loads.sealed_unloading.contains(&chunk_pos)
-                || loads.unloading.contains_key(&chunk_pos)
-            {
+            if loads.unloading.contains_key(&chunk_pos) {
                 return false;
             }
             let current = self
