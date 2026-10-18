@@ -763,8 +763,12 @@ impl World {
             .iter()
             .map(|chunk_block_entities| *chunk_block_entities.key())
             .collect();
+        for chunk_pos in &chunks {
+            self.begin_block_entity_unload(*chunk_pos);
+        }
         for chunk_pos in chunks {
             self.save_block_entities(chunk_pos, true);
+            self.seal_block_entity_unload(chunk_pos);
         }
 
         // Save portal POI to disk
@@ -807,8 +811,7 @@ impl World {
                 container_lifecycle::retire_block_entity(&block_entity);
             }
             let position = block_entity.get_position();
-            let nbt = self.capture_block_entity_snapshot(position, &block_entity);
-            self.publish_block_entity_snapshot_if_current(position, &block_entity, nbt);
+            self.publish_block_entity_snapshot_if_current(position, &block_entity, retire);
         }
     }
 
@@ -6206,34 +6209,39 @@ impl World {
 
     pub fn add_block_entity(&self, block_entity: Arc<dyn BlockEntity>) {
         assert_not_in_snapshot(SB::Mutation, "World::add_block_entity");
-        self.retire_replaced_container(&block_entity);
-        self.bind_block_entity_context(block_entity.as_ref());
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
+        if !self.block_entity_addition_allowed(block_pos) {
+            return;
+        }
+        self.retire_replaced_container(&block_entity);
+        self.bind_block_entity_context(block_entity.as_ref());
+        // LevelChunk.addAndRegisterBlockEntity publishes its client NBT after registration.
+        let stamp = self.next_block_entity_capture_stamp();
         let block_entity_nbt = block_entity.chunk_data_nbt();
         let entity_id = block_entity.resource_location().to_string();
+        let registered = block_entity.clone();
+
+        if !self.replace_live_block_entity(block_pos, block_entity) {
+            return;
+        }
 
         if let Some(nbt) = &block_entity_nbt {
             let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
             self.broadcast_to_chunk(
                 chunk_pos,
                 &CBlockEntityData::new(
-                    block_entity.get_position(),
-                    VarInt(block_entity.get_id() as i32),
+                    registered.get_position(),
+                    VarInt(registered.get_id() as i32),
                     bytes.as_ref().into(),
                 ),
             );
-        }
-
-        self.replace_live_block_entity(block_pos, block_entity);
-
-        if let Some(nbt) = block_entity_nbt {
-            let mut full_nbt = nbt;
+            let mut full_nbt = nbt.clone();
             full_nbt.put_string("id", entity_id);
             full_nbt.put_int("x", block_pos.0.x);
             full_nbt.put_int("y", block_pos.0.y);
             full_nbt.put_int("z", block_pos.0.z);
-            self.add_block_entity_nbt(block_pos, &full_nbt);
+            self.publish_block_entity_nbt(block_pos, &full_nbt, stamp, Some(&registered));
         }
 
         self.level.read_chunk_sync(&chunk_pos, |chunk| {
@@ -6243,22 +6251,8 @@ impl World {
 
     pub fn add_block_entity_nbt(&self, block_pos: BlockPos, nbt: &NbtCompound) {
         assert_not_in_snapshot(SB::Mutation, "World::add_block_entity_nbt");
-        let _loads = self.invalidate_pending_block_entity_load(&block_pos);
-        if self
-            .level
-            .read_chunk_sync(&block_pos.chunk_position(), |chunk| {
-                chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(block_pos, nbt.clone());
-                chunk.mark_dirty(true);
-            })
-            .is_some()
-        {
-            self.pending_block_entity_migrations
-                .push(block_pos.chunk_position());
-        }
+        let stamp = self.next_block_entity_capture_stamp();
+        self.publish_block_entity_nbt(block_pos, nbt, stamp, None);
     }
 
     pub fn remove_block_entity(&self, block_pos: &BlockPos) {
@@ -6289,6 +6283,8 @@ impl World {
         assert_not_in_snapshot(SB::Mutation, "World::update_block_entity");
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
+        // ChunkAccess.setBlockEntityNbt stores this serialized update after its live-instance check.
+        let stamp = self.next_block_entity_capture_stamp();
         let block_entity_nbt = block_entity.chunk_data_nbt();
 
         if let Some(nbt) = &block_entity_nbt {
@@ -6307,7 +6303,7 @@ impl World {
             full_nbt.put_int("x", pos.0.x);
             full_nbt.put_int("y", pos.0.y);
             full_nbt.put_int("z", pos.0.z);
-            self.add_block_entity_nbt(block_pos, &full_nbt);
+            self.publish_block_entity_nbt(block_pos, &full_nbt, stamp, Some(block_entity));
         }
         self.level.read_chunk_sync(&chunk_pos, |chunk| {
             chunk.mark_dirty(true);

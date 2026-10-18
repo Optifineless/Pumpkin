@@ -4,7 +4,7 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 use pumpkin_world::chunk::{ChunkData, io::Dirtiable};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::portal::frame_effects::RetiredBlockEntity;
 use super::{World, remove_pending_block_entity};
@@ -16,6 +16,7 @@ enum SnapshotPublication {
     Published,
     Replaced(Arc<dyn BlockEntity>),
     Missing,
+    Older,
 }
 
 #[cfg(test)]
@@ -24,7 +25,12 @@ pub(super) type PublicationHook = Arc<dyn Fn() + Send + Sync>;
 #[derive(Default)]
 pub(super) struct PendingBlockEntityLoads {
     pub(super) snapshots: FxHashMap<BlockPos, Weak<()>>,
+    // Stamps are allocated under this gate before serialization and tracked per published position.
+    next_capture_stamp: u64,
+    published_capture_stamps: FxHashMap<BlockPos, u64>,
+    // Admission first stops pending promotion; sealing also stops live replacement and publication.
     unloading: FxHashMap<Vector2<i32>, usize>,
+    sealed_unloading: FxHashSet<Vector2<i32>>,
 }
 
 struct PendingBlockEntitySnapshot<'a> {
@@ -60,24 +66,28 @@ impl Drop for PendingBlockEntitySnapshot<'_> {
 }
 
 impl World {
-    /// Publishes a captured live image only while that exact block-entity instance remains current.
+    /// Mirrors LevelChunk.getBlockEntityNbtForSaving: serialize the live instance and publish it only if current.
     pub(super) fn publish_block_entity_snapshot_if_current(
         &self,
         pos: BlockPos,
         expected: &Arc<dyn BlockEntity>,
-        mut nbt: NbtCompound,
+        retiring: bool,
     ) {
         let mut expected = expected.clone();
         for retry in 0..=MAX_REPLACEMENT_SNAPSHOT_RETRIES {
-            match self.try_publish_block_entity_snapshot(pos, &expected, &nbt) {
-                SnapshotPublication::Published | SnapshotPublication::Missing => return,
+            let stamp = self.next_block_entity_capture_stamp();
+            let nbt = self.capture_block_entity_snapshot(pos, &expected);
+            match self.try_publish_block_entity_snapshot(pos, &expected, &nbt, stamp, retiring) {
+                SnapshotPublication::Older
+                    if retiring && retry < MAX_REPLACEMENT_SNAPSHOT_RETRIES => {}
+                SnapshotPublication::Published
+                | SnapshotPublication::Missing
+                | SnapshotPublication::Older => return,
                 SnapshotPublication::Replaced(current) => {
                     if retry == MAX_REPLACEMENT_SNAPSHOT_RETRIES {
                         return;
                     }
-                    // LevelChunk.getBlockEntityNbtForSaving resolves the replacement's live state.
                     expected = current;
-                    nbt = self.capture_block_entity_snapshot(pos, &expected);
                 }
             }
         }
@@ -104,6 +114,8 @@ impl World {
         pos: BlockPos,
         expected: &Arc<dyn BlockEntity>,
         nbt: &NbtCompound,
+        stamp: u64,
+        retiring: bool,
     ) -> SnapshotPublication {
         assert_not_in_snapshot(
             SB::WorldRead,
@@ -114,6 +126,12 @@ impl World {
             .pending_block_entity_loads
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if retiring {
+            // LevelChunk.clearAllBlockEntities runs after this final snapshot; no later additions may join it.
+            loads.sealed_unloading.insert(chunk_pos);
+        } else if loads.unloading.contains_key(&chunk_pos) {
+            return SnapshotPublication::Missing;
+        }
         loads.snapshots.remove(&pos);
 
         let current = self
@@ -125,6 +143,13 @@ impl World {
             Some(current) => return SnapshotPublication::Replaced(current),
             None => return SnapshotPublication::Missing,
         }
+        if loads
+            .published_capture_stamps
+            .get(&pos)
+            .is_some_and(|published| stamp < *published)
+        {
+            return SnapshotPublication::Older;
+        }
 
         let Some(chunk_entry) = self.level.loaded_chunks.get(&chunk_pos) else {
             return SnapshotPublication::Missing;
@@ -135,12 +160,121 @@ impl World {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(pos, nbt.clone());
+        loads.published_capture_stamps.insert(pos, stamp);
         drop(chunk_entry);
         drop(loads);
 
         chunk.mark_dirty(true);
         self.pending_block_entity_migrations.push(chunk_pos);
         SnapshotPublication::Published
+    }
+
+    pub(super) fn next_block_entity_capture_stamp(&self) -> u64 {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loads.next_capture_stamp = loads.next_capture_stamp.saturating_add(1);
+        loads.next_capture_stamp
+    }
+
+    pub(super) fn publish_block_entity_nbt(
+        &self,
+        pos: BlockPos,
+        nbt: &NbtCompound,
+        stamp: u64,
+        expected: Option<&Arc<dyn BlockEntity>>,
+    ) -> bool {
+        let chunk_pos = pos.chunk_position();
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if loads.sealed_unloading.contains(&chunk_pos)
+            || loads
+                .published_capture_stamps
+                .get(&pos)
+                .is_some_and(|published| stamp < *published)
+        {
+            return false;
+        }
+        if let Some(expected) = expected {
+            let current = self
+                .block_entities
+                .get(&chunk_pos)
+                .and_then(|entities| entities.get(&pos).cloned());
+            if !current
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, expected))
+            {
+                return false;
+            }
+        }
+        loads.snapshots.remove(&pos);
+        let published = self.level.read_chunk_sync(&chunk_pos, |chunk| {
+            chunk
+                .pending_block_entities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(pos, nbt.clone());
+            chunk.mark_dirty(true);
+        });
+        if published.is_some() {
+            loads.published_capture_stamps.insert(pos, stamp);
+        }
+        drop(loads);
+        if published.is_some() {
+            self.pending_block_entity_migrations.push(chunk_pos);
+        }
+        published.is_some()
+    }
+
+    pub(super) fn block_entity_addition_allowed(&self, pos: BlockPos) -> bool {
+        let chunk_pos = pos.chunk_position();
+        let loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Before sealing, only replacements at an already captured position may join the retiring image.
+        !loads.sealed_unloading.contains(&chunk_pos)
+            && (!loads.unloading.contains_key(&chunk_pos)
+                || self
+                    .block_entities
+                    .get(&chunk_pos)
+                    .is_some_and(|entities| entities.contains_key(&pos)))
+    }
+
+    pub(super) fn begin_block_entity_unload(&self, chunk_pos: Vector2<i32>) {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *loads.unloading.entry(chunk_pos).or_default() += 1;
+        loads
+            .snapshots
+            .retain(|pos, _| pos.chunk_position() != chunk_pos);
+    }
+
+    pub(super) fn seal_block_entity_unload(&self, chunk_pos: Vector2<i32>) {
+        self.pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .sealed_unloading
+            .insert(chunk_pos);
+    }
+
+    pub(super) fn finish_block_entity_unload(&self, chunk_pos: Vector2<i32>) {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(count) = loads.unloading.get_mut(&chunk_pos) {
+            *count -= 1;
+            if *count == 0 {
+                loads.unloading.remove(&chunk_pos);
+                loads.sealed_unloading.remove(&chunk_pos);
+            }
+        }
     }
 
     pub(super) fn load_pending_block_entity(&self, pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
@@ -270,49 +404,56 @@ impl World {
     }
 
     pub(super) fn unload_block_entities(&self, chunk_pos: Vector2<i32>) {
-        let mut loads = self
-            .pending_block_entity_loads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *loads.unloading.entry(chunk_pos).or_default() += 1;
-        loads
-            .snapshots
-            .retain(|pos, _| pos.chunk_position() != chunk_pos);
-        drop(loads);
+        self.begin_block_entity_unload(chunk_pos);
         // LevelChunk.clearAllBlockEntities retires publication with the chunk. Serialization
         // stays outside the gate because native BlockEntity implementations can call back.
         self.save_block_entities(chunk_pos, true);
+        self.seal_block_entity_unload(chunk_pos);
         let mut loads = self
             .pending_block_entity_loads
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let retired = self.block_entities.remove(&chunk_pos);
-        if let Some(count) = loads.unloading.get_mut(&chunk_pos) {
-            *count -= 1;
-            if *count == 0 {
-                loads.unloading.remove(&chunk_pos);
-            }
-        }
+        loads
+            .published_capture_stamps
+            .retain(|pos, _| pos.chunk_position() != chunk_pos);
         drop(loads);
         drop(retired);
+        self.finish_block_entity_unload(chunk_pos);
     }
 
-    pub(super) fn replace_live_block_entity(&self, pos: BlockPos, entity: Arc<dyn BlockEntity>) {
-        let retired = {
-            let _loads = self.invalidate_pending_block_entity_load(&pos);
-            self.block_entities
-                .entry(pos.chunk_position())
-                .or_default()
-                .insert(pos, entity)
-        };
+    pub(super) fn replace_live_block_entity(
+        &self,
+        pos: BlockPos,
+        entity: Arc<dyn BlockEntity>,
+    ) -> bool {
+        let loads = self.invalidate_pending_block_entity_load(&pos);
+        let chunk_pos = pos.chunk_position();
+        if loads.sealed_unloading.contains(&chunk_pos)
+            || (loads.unloading.contains_key(&chunk_pos)
+                && !self
+                    .block_entities
+                    .get(&chunk_pos)
+                    .is_some_and(|entities| entities.contains_key(&pos)))
+        {
+            return false;
+        }
+        let retired = self
+            .block_entities
+            .entry(chunk_pos)
+            .or_default()
+            .insert(pos, entity);
+        drop(loads);
         drop(retired);
+        true
     }
 
     pub(super) fn remove_loaded_block_entity(&self, pos: &BlockPos) -> RetiredBlockEntity {
         {
             // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
-            let _loads = self.invalidate_pending_block_entity_load(pos);
+            let mut loads = self.invalidate_pending_block_entity_load(pos);
             let chunk_pos = pos.chunk_position();
+            loads.published_capture_stamps.remove(pos);
             let retired = self
                 .block_entities
                 .get_mut(&chunk_pos)

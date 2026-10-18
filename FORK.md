@@ -98,6 +98,13 @@ replacement state for entities whose `chunk_data_nbt()` is `None`, and matches
 `LevelChunk.getBlockEntityNbtForSaving` resolving the current live entity. In-game
 verification: **Not yet**.
 
+The #191 round-three follow-up orders block-entity NBT publications by capture
+stamp, so an older save of the same live chest cannot overwrite a newer image.
+Chunk unload and server shutdown seal replacement admission before the final
+capture is published; a same-position replacement already in flight is captured,
+and later saves or replacements cannot overwrite that final image. The saved NBT
+layout and meaning are unchanged. In-game verification: **Not yet**.
+
 ## World normal/frozen service boundary, ticks M1
 
 Normal World ticking and each frozen flush/player batch now require exclusive

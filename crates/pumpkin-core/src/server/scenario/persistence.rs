@@ -29,7 +29,8 @@ impl BlockEntity for PausedChestCapture {
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         self.chest.write_nbt(nbt);
-        if let Some(resume) = self.resume.lock().unwrap().take() {
+        let resume = self.resume.lock().unwrap().take();
+        if let Some(resume) = resume {
             self.captured.send(()).unwrap();
             resume.recv().unwrap();
         }
@@ -88,6 +89,46 @@ impl BlockEntity for PausedBookshelfCapture {
             captured,
             resume,
             pause: AtomicBool::new(false),
+        }
+    }
+
+    fn resource_location(&self) -> &'static str {
+        ChiseledBookshelfBlockEntity::ID
+    }
+
+    fn get_position(&self) -> BlockPos {
+        self.bookshelf.get_position()
+    }
+
+    fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
+        Some(self.bookshelf.clone())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct GatedBookshelfCapture {
+    bookshelf: Arc<ChiseledBookshelfBlockEntity>,
+    capture_id: usize,
+    captured: crossbeam::channel::Sender<usize>,
+    resume: crossbeam::channel::Receiver<()>,
+}
+
+impl BlockEntity for GatedBookshelfCapture {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.bookshelf.write_nbt(nbt);
+        self.captured.send(self.capture_id).unwrap();
+        self.resume.recv().unwrap();
+    }
+
+    fn from_nbt(nbt: &NbtCompound, position: BlockPos) -> Self {
+        Self {
+            bookshelf: Arc::new(ChiseledBookshelfBlockEntity::from_nbt(nbt, position)),
+            capture_id: 0,
+            captured: crossbeam::channel::bounded(1).0,
+            resume: crossbeam::channel::bounded(1).1,
         }
     }
 
@@ -481,6 +522,62 @@ async fn save_all_replacement_keeps_block_entity_custom_data_after_reload() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn overlapping_same_arc_saves_keep_newer_chest_contents_after_reload() {
+    run(async {
+        let scenario = Scenario::new().await;
+        let player = scenario.join(Uuid::new_v4(), "OverlappingSave").await;
+        let world = player.player.world();
+        world.set_block_state(
+            &CHEST,
+            Block::CHEST.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+
+        let (captured, wait_for_capture) = mpsc::channel();
+        let (resume_capture, resume_writer) = mpsc::channel();
+        let chest = Arc::new(ChestBlockEntity::new(CHEST));
+        chest.set_stack(0, ItemStack::new(3, &Item::DIAMOND));
+        let paused = Arc::new(PausedChestCapture {
+            chest: chest.clone(),
+            captured,
+            resume: Mutex::new(Some(resume_writer)),
+        });
+        world.add_block_entity(paused);
+
+        let older_world = world.clone();
+        let older_save = tokio::spawn(async move { older_world.save().await });
+        tokio::task::spawn_blocking(move || wait_for_capture.recv().unwrap())
+            .await
+            .unwrap();
+
+        chest.set_stack(0, ItemStack::new(7, &Item::EMERALD));
+        world.clone().save().await;
+        resume_capture.send(()).unwrap();
+        older_save.await.unwrap();
+
+        // Keep shutdown from taking a later snapshot and masking the World::save ordering.
+        world
+            .block_entities
+            .get_mut(&CHEST.chunk_position())
+            .unwrap()
+            .remove(&CHEST);
+        let scenario = scenario.restart().await;
+        let player = scenario.join(Uuid::new_v4(), "ReloadOverlappingSave").await;
+        let world = player.player.world();
+        let inventory = world
+            .get_block_entity(&CHEST)
+            .expect("reloaded chest missing after overlapping saves")
+            .get_inventory()
+            .unwrap();
+        let stack = inventory.get_stack(0);
+        assert_eq!(stack.item, &Item::EMERALD);
+        assert_eq!(stack.item_count, 7);
+        scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stale_capture_retries_default_none_block_entity_state() {
     run(async {
         let scenario = Scenario::new().await;
@@ -553,6 +650,78 @@ async fn stale_capture_retries_default_none_block_entity_state() {
         let saved_book = inventory.get_stack(4);
         assert_eq!(saved_book.item, &Item::BOOK);
         assert_eq!(saved_book.item_count, 1);
+        scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retiring_bookshelf_replacement_churn_saves_the_admitted_current_entity() {
+    run(async {
+        let scenario = Scenario::new().await;
+        let player_id = Uuid::new_v4();
+        let player = scenario.join(player_id, "RetiringBookshelf").await;
+        let world = player.player.world();
+        world.set_block_state(
+            &BOOKSHELF,
+            Block::CHISELED_BOOKSHELF.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+
+        let (captured, wait_for_capture) = crossbeam::channel::bounded(1);
+        let (resume_capture, resume_writer) = crossbeam::channel::bounded(1);
+        let admitted = Arc::new(ChiseledBookshelfBlockEntity::new(BOOKSHELF));
+        admitted.set_book(2, ItemStack::new(1, &Item::BOOK));
+        let make_capture = |capture_id, bookshelf| {
+            Arc::new(GatedBookshelfCapture {
+                bookshelf,
+                capture_id,
+                captured: captured.clone(),
+                resume: resume_writer.clone(),
+            })
+        };
+        let second = make_capture(1, admitted);
+        let second_entity: Arc<dyn BlockEntity> = second.clone();
+        let second_identity = second_entity.clone();
+        let third_entity: Arc<dyn BlockEntity> =
+            make_capture(2, Arc::new(ChiseledBookshelfBlockEntity::new(BOOKSHELF)));
+        let fourth_entity: Arc<dyn BlockEntity> =
+            make_capture(3, Arc::new(ChiseledBookshelfBlockEntity::new(BOOKSHELF)));
+        let first = make_capture(0, Arc::new(ChiseledBookshelfBlockEntity::new(BOOKSHELF)));
+        world.add_block_entity(first);
+
+        let writer_world = world.clone();
+        let writer = std::thread::spawn(move || {
+            assert_eq!(wait_for_capture.recv().unwrap(), 0);
+            writer_world.add_block_entity(second_entity);
+            resume_capture.send(()).unwrap();
+
+            assert_eq!(wait_for_capture.recv().unwrap(), 1);
+            writer_world.add_block_entity(third_entity);
+            let replacement_was_admitted = writer_world
+                .get_block_entity(&BOOKSHELF)
+                .is_some_and(|current| !Arc::ptr_eq(&current, &second_identity));
+            resume_capture.send(()).unwrap();
+
+            if replacement_was_admitted {
+                assert_eq!(wait_for_capture.recv().unwrap(), 2);
+                writer_world.add_block_entity(fourth_entity);
+                resume_capture.send(()).unwrap();
+            }
+        });
+
+        scenario.stop().await;
+        writer.join().unwrap();
+        let scenario = scenario.restart().await;
+        let player = scenario.join(player_id, "RetiringBookshelf").await;
+        let world = player.player.world();
+        let bookshelf = world
+            .get_block_entity(&BOOKSHELF)
+            .expect("reloaded chiseled bookshelf missing after stop");
+        let inventory = bookshelf.get_inventory().unwrap();
+        let stack = inventory.get_stack(2);
+        assert_eq!(stack.item, &Item::BOOK);
+        assert_eq!(stack.item_count, 1);
         scenario.stop().await;
     })
     .await;
