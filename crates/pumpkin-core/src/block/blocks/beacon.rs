@@ -15,7 +15,13 @@ use crate::block::entities::{BlockEntity, beacon::BeaconBlockEntity};
 use crate::block::registry::BlockActionResult;
 use crate::block::{BlockBehaviour, GetScreenHandlerFactoryArgs, NormalUseArgs};
 
-struct BeaconScreenFactory(Arc<dyn BlockEntity>);
+struct BeaconScreenFactory {
+    world: std::sync::Weak<crate::world::World>,
+    entity: Arc<dyn BlockEntity>,
+}
+
+// Container.DEFAULT_DISTANCE_BUFFER.
+const DEFAULT_DISTANCE_BUFFER: f64 = 4.0;
 
 struct BeaconPropertyDelegate(Arc<dyn BlockEntity>);
 
@@ -53,8 +59,29 @@ impl ScreenHandlerFactory for BeaconScreenFactory {
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
         let beacon_data: Arc<dyn PropertyDelegate> =
-            Arc::new(BeaconPropertyDelegate(self.0.clone()));
-        let concrete_handler = create_beacon_handler(sync_id, player_inventory, beacon_data);
+            Arc::new(BeaconPropertyDelegate(self.entity.clone()));
+        let mut concrete_handler = create_beacon_handler(sync_id, player_inventory, beacon_data);
+        let world = self.world.clone();
+        let entity = self.entity.clone();
+        // BeaconMenu.stillValid: a broken or replaced beacon closes the menu, so the payment
+        // is returned instead of being spent on a detached block entity.
+        concrete_handler.validity_check = Some(Box::new(move |player| {
+            let Some(player) = player
+                .as_any()
+                .downcast_ref::<crate::entity::player::Player>()
+            else {
+                return false;
+            };
+            let Some(world) = world.upgrade() else {
+                return false;
+            };
+            Arc::ptr_eq(&world, &player.world())
+                && world
+                    .get_block_entity(&entity.get_position())
+                    .is_some_and(|live| Arc::ptr_eq(&live, &entity))
+                && player
+                    .can_interact_with_block_at(&entity.get_position(), DEFAULT_DISTANCE_BUFFER)
+        }));
         let concrete_arc = Arc::new(ScreenMutex::new(concrete_handler));
 
         Some(concrete_arc as SharedScreenHandler)
@@ -101,6 +128,9 @@ impl BlockBehaviour for BeaconBlock {
     ) -> Option<Box<dyn ScreenHandlerFactory>> {
         let block_entity = args.world.get_block_entity(args.position)?;
         block_entity.as_any().downcast_ref::<BeaconBlockEntity>()?;
-        Some(Box::new(BeaconScreenFactory(block_entity)))
+        Some(Box::new(BeaconScreenFactory {
+            world: Arc::downgrade(args.world),
+            entity: block_entity,
+        }))
     }
 }

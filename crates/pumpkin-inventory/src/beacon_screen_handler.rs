@@ -70,12 +70,16 @@ pub fn create_beacon_handler(
     BeaconScreenHandler::new(sync_id, player_inventory, beacon_data)
 }
 
+type ValidityCheck = Box<dyn Fn(&dyn InventoryPlayer) -> bool + Send + Sync>;
+
 /// Screen handler specifically for Beacon blocks.
 pub struct BeaconScreenHandler {
     /// This menu's one-slot payment inventory.
     pub inventory: Arc<dyn Inventory>,
     /// The block entity's synchronized levels and selected effects.
     pub beacon_data: Arc<dyn PropertyDelegate>,
+    /// `BeaconMenu.stillValid`; `None` keeps the menu valid.
+    pub validity_check: Option<ValidityCheck>,
     /// Core screen handler behavior (slots, sync ID, listeners).
     behaviour: ScreenHandlerBehaviour,
 }
@@ -95,6 +99,7 @@ impl BeaconScreenHandler {
         let mut handler = Self {
             inventory: inventory.clone(),
             beacon_data,
+            validity_check: None,
             behaviour: ScreenHandlerBehaviour::new(sync_id, Some(WindowType::Beacon)),
         };
         handler.behaviour.container_slots = Self::SLOT_COUNT;
@@ -153,6 +158,12 @@ impl ScreenHandler for BeaconScreenHandler {
 
     fn get_behaviour_mut(&mut self) -> &mut ScreenHandlerBehaviour {
         &mut self.behaviour
+    }
+
+    fn can_use(&self, player: &dyn InventoryPlayer) -> bool {
+        self.validity_check
+            .as_ref()
+            .is_none_or(|check| check(player))
     }
 
     fn on_closed(&mut self, player: &dyn InventoryPlayer) {

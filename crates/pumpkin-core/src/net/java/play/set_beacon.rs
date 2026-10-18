@@ -35,6 +35,12 @@ impl JavaClient {
                 return;
             };
 
+            // ServerGamePacketListenerImpl.handleSetBeaconPacket re-checks stillValid before
+            // updateEffects; the next player tick closes the menu and returns the payment.
+            if !beacon_handler.can_use(player.as_ref()) {
+                return;
+            }
+
             if beacon_handler.has_valid_payment() {
                 let levels = beacon_handler
                     .beacon_data

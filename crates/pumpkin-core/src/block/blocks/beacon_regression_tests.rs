@@ -521,3 +521,35 @@ async fn beacon_open_menu_payment_stays_transient_across_chunk_save_and_reload()
     assert_eq!(emerald_count(&fixture.player.player), 1);
     fixture.finish().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn beacon_broken_while_open_keeps_payment_and_invalidates_menu() {
+    let fixture = Fixture::new(4);
+    fixture.use_beacon();
+    let payment = beacon_payment(&fixture.player.player);
+    payment.set_stack(0, ItemStack::new(1, &Item::EMERALD));
+
+    // Another player breaks the beacon while this menu is still open.
+    fixture.world.set_block_state(
+        &fixture.pos,
+        Block::AIR.default_state.id,
+        BlockFlags::NOTIFY_ALL,
+    );
+    assert!(fixture.world.get_block_entity(&fixture.pos).is_none());
+
+    // BeaconMenu.stillValid fails, so the selection must not spend the payment.
+    set_beacon(&fixture.player, Some(0), None);
+    assert_eq!(payment.get_stack(0).item_count, 1);
+    assert_eq!(fixture.beacon.primary_effect.load(Ordering::Relaxed), -1);
+    assert!(
+        !current_screen(&fixture.player.player)
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .can_use(fixture.player.player.as_ref())
+    );
+
+    // The invalid menu closes through the normal path and hands the payment back.
+    fixture.player.player.close_handled_screen();
+    assert_eq!(emerald_count(&fixture.player.player), 1);
+    fixture.finish().await;
+}
