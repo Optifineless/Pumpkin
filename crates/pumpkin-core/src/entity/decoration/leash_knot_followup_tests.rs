@@ -66,6 +66,7 @@ async fn can_be_leashed_matches_implemented_vanilla_species_overrides() {
         (&EntityType::TURTLE, false),
         (&EntityType::BAT, false),
         (&EntityType::COD, false),
+        (&EntityType::GLOW_SQUID, true),
         (&EntityType::VILLAGER, false),
         (&EntityType::WANDERING_TRADER, false),
         (&EntityType::CREEPER, false),
@@ -136,6 +137,7 @@ async fn panda_does_not_accept_a_lead_in_real_player_interaction() {
     let fixture = DeathTestWorld::new().await;
     let world = fixture.world();
     let player = TestPlayer::new(&world);
+    player_near_fence(&player);
     player
         .player
         .inventory()
@@ -150,6 +152,32 @@ async fn panda_does_not_accept_a_lead_in_real_player_interaction() {
 
     assert!(!panda.get_entity().is_leashed());
     assert_eq!(player.player.inventory().held_item().item_count, 1);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn glow_squid_accepts_a_lead_in_real_player_interaction() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let player = TestPlayer::new(&world);
+    player_near_fence(&player);
+    player
+        .player
+        .inventory()
+        .set_stack_in_hand(Hand::Right, ItemStack::new(1, &Item::LEAD));
+    let glow_squid = fixture.mob(&EntityType::GLOW_SQUID);
+
+    player.client().handle_interact(
+        &player.player,
+        &right_click(glow_squid.get_entity().entity_id),
+        &fixture.server,
+    );
+
+    assert_eq!(
+        leash_holder_id(glow_squid.get_entity()),
+        Some(player.player.entity_id())
+    );
+    assert_eq!(player.player.inventory().held_item().item_count, 0);
     fixture.server.shutdown().await;
 }
 

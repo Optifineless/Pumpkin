@@ -26,6 +26,11 @@ impl GlowSquidEntity {
 }
 
 impl Mob for GlowSquidEntity {
+    // GlowSquid inherits Squid.canBeLeashed.
+    fn can_be_leashed(&self) -> bool {
+        true
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }
