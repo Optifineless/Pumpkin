@@ -253,6 +253,10 @@ pub mod command_suggestion;
 pub mod configuration_acknowledged;
 pub mod confirm_teleport;
 pub mod container_slot_state_changed;
+#[cfg(test)]
+#[path = "container_slot_state_changed_tests.rs"]
+mod container_slot_state_changed_tests;
+
 pub mod cookie_response;
 pub mod debug_sample_subscription;
 pub mod debug_subscription_request;
@@ -262,6 +266,9 @@ pub mod interact;
 pub mod jigsaw_generate;
 pub mod keep_alive;
 pub mod lock_difficulty;
+#[cfg(test)]
+#[path = "loom_shift_click_tests.rs"]
+mod loom_shift_click_tests;
 pub mod move_vehicle;
 pub mod paddle_boat;
 pub mod pick_item;

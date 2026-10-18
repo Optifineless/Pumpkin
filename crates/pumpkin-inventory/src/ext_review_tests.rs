@@ -4,11 +4,12 @@ use crate::{
     anvil::anvil_screen_handler::AnvilScreenHandler,
     crafting::crafting_screen_handler::CraftingTableScreenHandler,
     entity_equipment::EntityEquipment,
+    loom_screen_handler::LoomScreenHandler,
     player::player_inventory::PlayerInventory,
     screen_handler::{InventoryPlayer, ScreenHandler},
 };
 use pumpkin_data::{
-    data_component_impl::{BundleContentsImpl, EquipmentSlot},
+    data_component_impl::{BannerPatternsImpl, BundleContentsImpl, EquipmentSlot},
     item::Item,
     item_stack::ItemStack,
     screen::WindowType,
@@ -40,6 +41,7 @@ pub struct Player {
     menu_callbacks: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
     cursor_probe:
         Mutex<Option<Arc<pumpkin_util::sync::Mutex<ItemStack, pumpkin_util::sync::Cursor>>>>,
+    loom_output_probe: Option<Arc<SimpleInventory>>,
 }
 
 impl Player {
@@ -56,6 +58,7 @@ impl Player {
             properties: Mutex::default(),
             menu_callbacks: Mutex::default(),
             cursor_probe: Mutex::default(),
+            loom_output_probe: None,
         }
     }
 
@@ -147,7 +150,14 @@ impl InventoryPlayer for Player {
     fn enqueue_set_held_item_packet(&self, _packet: &CSetSelectedSlot) {}
     fn enqueue_equipment_change(&self, _slot: &EquipmentSlot, _stack: &ItemStack) {}
     fn award_experience(&self, _amount: i32) {}
-    fn increment_stat(&self, _category: StatisticCategory, _stat_id: i32, _amount: i32) {}
+    fn increment_stat(&self, _category: StatisticCategory, _stat_id: i32, _amount: i32) {
+        if let Some(output) = &self.loom_output_probe {
+            self.properties
+                .lock()
+                .unwrap()
+                .push((-1, i16::from(!output.get_stack(0).is_empty())));
+        }
+    }
     fn play_block_sound(&self, _sound: Sound, _pitch: f32) {}
 }
 
@@ -333,6 +343,58 @@ fn ext_review_r06_anvil_partial_shift_click_matches_vanilla_on_take() {
     assert!(handler.inventory.get_stack(2).is_empty());
     assert_eq!(player.experience_level(), 9);
     assert!(player.drops.lock().unwrap().is_empty());
+}
+
+#[test]
+fn loom_shift_click_crafts_every_available_banner() {
+    let mut player = Player::new(1);
+    let mut menu = LoomScreenHandler::new(1, &player.inventory);
+    menu.input_inventory
+        .set_stack(0, ItemStack::new(3, &Item::WHITE_BANNER));
+    menu.input_inventory
+        .set_stack(1, ItemStack::new(3, &Item::RED_DYE));
+    menu.input_inventory
+        .set_stack(2, ItemStack::new(1, &Item::FLOWER_BANNER_PATTERN));
+    menu.slots_changed();
+    assert!(menu.on_button_click(&player, 0));
+
+    let preview = menu.output_inventory.get_stack(0);
+    assert_eq!(preview.item, &Item::WHITE_BANNER);
+    assert_eq!(preview.item_count, 1);
+    assert_eq!(
+        preview
+            .get_data_component::<BannerPatternsImpl>()
+            .unwrap()
+            .layers
+            .len(),
+        1
+    );
+
+    player.loom_output_probe = Some(menu.output_inventory.clone());
+
+    menu.on_slot_click(3, 0, SlotActionType::QuickMove, &player);
+
+    let patterned_banners: u32 = (0..player.inventory.size())
+        .map(|slot| player.inventory.get_stack(slot))
+        .filter(|stack| stack.are_items_and_components_equal(&preview))
+        .map(|stack| u32::from(stack.item_count))
+        .sum();
+    assert_eq!(patterned_banners, 3);
+    assert!(menu.input_inventory.get_stack(0).is_empty());
+    assert!(menu.input_inventory.get_stack(1).is_empty());
+    assert_eq!(menu.input_inventory.get_stack(2).item_count, 1);
+    assert!(menu.output_inventory.get_stack(0).is_empty());
+    assert!(menu.get_behaviour().cursor_stack.lock().unwrap().is_empty());
+    assert!(player.drops.lock().unwrap().is_empty());
+    let take_previews = player
+        .properties
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(property, _)| *property == -1)
+        .map(|(_, has_preview)| *has_preview)
+        .collect::<Vec<_>>();
+    assert_eq!(take_previews, [1, 1, 0]);
 }
 
 #[test]

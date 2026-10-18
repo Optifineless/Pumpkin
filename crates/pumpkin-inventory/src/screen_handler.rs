@@ -531,8 +531,9 @@ pub trait ScreenHandler: Send + Sync {
         }
 
         for (idx, value) in prop_vec {
-            self.update_tracked_properties(idx as i32, value);
+            // Compare against the previously sent value before recording the new property value.
             self.check_property_updates(idx as i32, value);
+            self.update_tracked_properties(idx as i32, value);
         }
 
         self.sync_state();
@@ -557,9 +558,7 @@ pub trait ScreenHandler: Send + Sync {
         {
             let old_value = *old_value;
             if old_value != value {
-                behaviour
-                    .tracked_property_values
-                    .insert(idx as usize, value);
+                behaviour.tracked_property_values[idx as usize] = value;
                 if let Some(ref sync_handler) = behaviour.sync_handler {
                     sync_handler.update_property(behaviour, idx, value);
                 }
@@ -639,8 +638,9 @@ pub trait ScreenHandler: Send + Sync {
         }
 
         for (idx, value) in prop_vec {
-            self.update_tracked_properties(idx as i32, value);
+            // Compare against the previously sent value before recording the new property value.
             self.check_property_updates(idx as i32, value);
+            self.update_tracked_properties(idx as i32, value);
         }
     }
 

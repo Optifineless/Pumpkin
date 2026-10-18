@@ -20,11 +20,12 @@ use pumpkin_data::translation;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockDirection, BlockStateId, FacingExt};
 use pumpkin_inventory::Inventory;
+use pumpkin_inventory::PropertyDelegate;
 use pumpkin_inventory::crafting::crafting_screen_handler::match_crafting_recipe;
 use pumpkin_inventory::generic_container_screen_handler::create_crafter_3x3;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{
-    InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
+    InventoryPlayer, ScreenHandler, ScreenHandlerFactory, ScreenProperty, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
@@ -35,6 +36,38 @@ use pumpkin_world::world::BlockFlags;
 
 struct CrafterScreenFactory(Arc<dyn Inventory>);
 
+struct CrafterMenuData(Arc<dyn Inventory>);
+
+impl PropertyDelegate for CrafterMenuData {
+    fn get_property(&self, index: i32) -> i32 {
+        let Some(crafter) = self.0.as_any().downcast_ref::<CrafterBlockEntity>() else {
+            return 0;
+        };
+
+        match index {
+            0..=8 => i32::from(crafter.is_slot_disabled(index as usize)),
+            9 => i32::from(crafter.is_triggered()),
+            _ => 0,
+        }
+    }
+
+    fn set_property(&self, index: i32, value: i32) {
+        let Some(crafter) = self.0.as_any().downcast_ref::<CrafterBlockEntity>() else {
+            return;
+        };
+
+        match index {
+            0..=8 => crafter.set_slot_state(index as usize, value == 0),
+            9 => crafter.set_triggered(value != 0),
+            _ => {}
+        }
+    }
+
+    fn get_properties_size(&self) -> i32 {
+        10
+    }
+}
+
 impl ScreenHandlerFactory for CrafterScreenFactory {
     fn create_screen_handler(
         &self,
@@ -42,7 +75,12 @@ impl ScreenHandlerFactory for CrafterScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let handler = create_crafter_3x3(sync_id, player_inventory, self.0.clone(), player);
+        let mut handler = create_crafter_3x3(sync_id, player_inventory, self.0.clone(), player);
+        // CrafterMenu exposes nine disabled flags and its powered state as container data.
+        let menu_data: Arc<dyn PropertyDelegate> = Arc::new(CrafterMenuData(self.0.clone()));
+        for index in 0..10 {
+            handler.add_property(ScreenProperty::new(menu_data.clone(), index));
+        }
         let screen_handler_arc = Arc::new(ScreenMutex::new(handler));
 
         Some(screen_handler_arc as SharedScreenHandler)

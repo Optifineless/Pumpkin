@@ -223,28 +223,9 @@ impl LoomScreenHandler {
     }
 
     fn setup_result_slot(&self, pattern: &str) {
-        let mut banner_stack = self.input_inventory.get_stack(0);
+        let banner_stack = self.input_inventory.get_stack(0);
         let dye_stack = self.input_inventory.get_stack(1);
-
-        let result = if !banner_stack.is_empty()
-            && !dye_stack.is_empty()
-            && let Some(pattern_color) = get_dye_color(&dye_stack)
-        {
-            banner_stack.item_count = 1;
-
-            let mut existing_layers = banner_stack
-                .get_data_component::<BannerPatternsImpl>()
-                .cloned()
-                .unwrap_or_default();
-            existing_layers.layers.push(BannerPatternLayer {
-                pattern: pattern.to_string(),
-                color: pattern_color,
-            });
-            banner_stack.set_data_component(existing_layers);
-            banner_stack
-        } else {
-            ItemStack::EMPTY.clone()
-        };
+        let result = create_loom_result(&banner_stack, &dye_stack, pattern);
 
         let current_result = self.output_inventory.get_stack(0);
         if !current_result.are_items_and_components_equal(&result) {
@@ -488,6 +469,73 @@ impl LoomResultSlot {
             id: AtomicU8::new(0),
         }
     }
+
+    fn refresh_after_take(&self) {
+        let banner_stack = self.input_inventory.get_stack(0);
+        let dye_stack = self.input_inventory.get_stack(1);
+        if banner_stack.is_empty() || dye_stack.is_empty() {
+            self.selected_pattern_index
+                .store(LoomScreenHandler::PATTERN_NOT_SET, Ordering::Relaxed);
+            self.inventory
+                .set_stack(self.index, ItemStack::EMPTY.clone());
+            return;
+        }
+
+        let patterns = get_selectable_patterns(&self.input_inventory.get_stack(2));
+        let selected = self.selected_pattern_index.load(Ordering::Relaxed);
+        let pattern = if patterns.len() == 1 {
+            self.selected_pattern_index.store(0, Ordering::Relaxed);
+            patterns.first()
+        } else {
+            usize::try_from(selected)
+                .ok()
+                .and_then(|index| patterns.get(index))
+        };
+        let Some(pattern) = pattern else {
+            self.inventory
+                .set_stack(self.index, ItemStack::EMPTY.clone());
+            return;
+        };
+
+        let layers_count = banner_stack
+            .get_data_component::<BannerPatternsImpl>()
+            .map_or(0, |patterns| patterns.layers.len());
+        if layers_count >= 6 {
+            self.selected_pattern_index
+                .store(LoomScreenHandler::PATTERN_NOT_SET, Ordering::Relaxed);
+            self.inventory
+                .set_stack(self.index, ItemStack::EMPTY.clone());
+            return;
+        }
+
+        let result = create_loom_result(&banner_stack, &dye_stack, pattern);
+        let current_result = self.inventory.get_stack(self.index);
+        if !current_result.are_items_and_components_equal(&result) {
+            self.inventory.set_stack(self.index, result);
+        }
+    }
+}
+
+fn create_loom_result(banner_stack: &ItemStack, dye_stack: &ItemStack, pattern: &str) -> ItemStack {
+    if banner_stack.is_empty() || dye_stack.is_empty() {
+        return ItemStack::EMPTY.clone();
+    }
+
+    let Some(pattern_color) = get_dye_color(dye_stack) else {
+        return ItemStack::EMPTY.clone();
+    };
+    let mut result = banner_stack.clone();
+    result.item_count = 1;
+    let mut existing_layers = result
+        .get_data_component::<BannerPatternsImpl>()
+        .cloned()
+        .unwrap_or_default();
+    existing_layers.layers.push(BannerPatternLayer {
+        pattern: pattern.to_string(),
+        color: pattern_color,
+    });
+    result.set_data_component(existing_layers);
+    result
 }
 
 impl Slot for LoomResultSlot {
@@ -508,11 +556,6 @@ impl Slot for LoomResultSlot {
     }
 
     fn on_take_item(&self, player: &dyn InventoryPlayer, stack: &ItemStack) {
-        player.increment_stat(
-            StatisticCategory::Crafted,
-            stack.item.id as i32,
-            stack.item_count as i32,
-        );
         self.input_inventory.remove_stack_specific(0, 1);
         self.input_inventory.remove_stack_specific(1, 1);
         if self.input_inventory.get_stack(0).is_empty()
@@ -521,7 +564,14 @@ impl Slot for LoomResultSlot {
             self.selected_pattern_index
                 .store(LoomScreenHandler::PATTERN_NOT_SET, Ordering::Relaxed);
         }
+        // LoomMenu's input container refreshes the next preview as soon as inputs are consumed.
+        self.refresh_after_take();
         self.mark_dirty();
+        player.increment_stat(
+            StatisticCategory::Crafted,
+            stack.item.id as i32,
+            stack.item_count as i32,
+        );
     }
 
     fn get_stack(&self) -> ItemStack {

@@ -390,6 +390,10 @@ In-game verification: Not yet. AI implementation: Codex (GPT-6).
 | [#3874](https://github.com/Pumpkin-MC/Pumpkin/issues/3874) Fill cannot create snow golems | synchronous BlockInput placement through existing block callbacks | Not yet |
 | [#3276](https://github.com/Pumpkin-MC/Pumpkin/issues/3276) Reload runs load functions while frozen | upstream PR #3394 approach | Not yet |
 | [#3503](https://github.com/Pumpkin-MC/Pumpkin/issues/3503) Hardcore death cannot enter spectator mode | adapted upstream #3506, normal saved respawn followed by cancellable spectator transition | Not yet |
+| [#67](https://github.com/Pumpkin-MC/Pumpkin/issues/67) Java crafter slot toggles never disable empty slots | validate the current Crafter menu packet and synchronize its nine disabled flags and powered property; the existing saved `disabled_slots` format is unchanged | Not yet |
+| [#69](https://github.com/Pumpkin-MC/Pumpkin/issues/69) Shift-clicking loom output crafts only one of the available banners | refresh the Loom preview immediately after consuming inputs, before awarding crafted statistics and repeating the quick-move click | Not yet |
+
+G10 implementation: Codex (GPT-6 Luna).
 | [#3614](https://github.com/Pumpkin-MC/Pumpkin/issues/3614) Armor stand item interactions | adapted upstream #3684 with actual-hand writes, adjusted clicks, disabled slots and equipment-drop fixes | Not yet |
 
 ## Murgicraft issues addressed here
