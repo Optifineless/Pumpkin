@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rustc_hash::FxHashSet;
 
 use super::World;
-use crate::entity::{EntityBase, player::Player};
+use crate::entity::{EntityBase, decoration::leash_knot::LeashKnotEntity, player::Player};
 
 type ExistingMount = (Arc<dyn EntityBase>, Arc<dyn EntityBase>);
 
@@ -111,11 +111,13 @@ impl World {
         use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
         let accepted = AtomicBool::new(false);
         let rejected_index = AtomicUsize::new(0);
+        let rejected_for_knot = AtomicBool::new(false);
         for member in members {
             member.init_data_tracker();
         }
+        // LeashFenceKnotEntity.getOrCreateKnot requires one live knot per fence position.
         self.entities.rcu(|current| {
-            let duplicate = members.iter().position(|member| {
+            let duplicate_uuid = members.iter().position(|member| {
                 let uuid = member.get_entity().entity_uuid;
                 current
                     .iter()
@@ -126,6 +128,31 @@ impl World {
                         .iter()
                         .any(|player| player.get_entity().entity_uuid == uuid)
             });
+            let duplicate_knot = members.iter().position(|member| {
+                let entity = member.get_entity();
+                if entity.entity_type != &pumpkin_data::entity::EntityType::LEASH_KNOT {
+                    return false;
+                }
+                let Some(candidate) = member.cast_any().downcast_ref::<LeashKnotEntity>() else {
+                    return false;
+                };
+                current.iter().any(|other| {
+                    let other_entity = other.get_entity();
+                    other_entity.entity_type == &pumpkin_data::entity::EntityType::LEASH_KNOT
+                        && other
+                            .cast_any()
+                            .downcast_ref::<LeashKnotEntity>()
+                            .is_some_and(|existing| {
+                                !existing.is_removed_or_removing()
+                                    && existing.block_pos() == candidate.block_pos()
+                            })
+                })
+            });
+            let duplicate = duplicate_uuid.or(duplicate_knot);
+            rejected_for_knot.store(
+                duplicate_uuid.is_none() && duplicate_knot.is_some(),
+                Relaxed,
+            );
             accepted.store(duplicate.is_none(), Relaxed);
             if let Some(index) = duplicate {
                 rejected_index.store(index, Relaxed);
@@ -136,6 +163,9 @@ impl World {
             next
         });
         if !accepted.load(Relaxed) {
+            if rejected_for_knot.load(Relaxed) {
+                return false;
+            }
             let entity = members[rejected_index.load(Relaxed)].get_entity();
             tracing::warn!(
                 entity_type = entity.entity_type.resource_name,

@@ -1,5 +1,7 @@
 # Reviewed baseline of raw synchronization and blocking bridge sites.
 # New entries require a justification comment; see rules B1 and B3.
+# Test-only hook pauses knot cleanup after its empty scan to make the attachment race deterministic.
+crates/pumpkin-core/src/entity/decoration/leash_knot.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::<module>::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::plugin_method::block_on#1
 crates/pumpkin-api-macros/src/lib.rs::with_runtime::block_on#1

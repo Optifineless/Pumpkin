@@ -1,5 +1,9 @@
 use crate::entity::player::Player;
-use crate::entity::{Entity, EntityBase, living::LivingEntity};
+use crate::entity::{
+    Entity, EntityBase,
+    leashable::{LeashToResult, can_have_a_leash_attached_to, leash_search_box},
+    living::LivingEntity,
+};
 use crate::world::World;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::game_event::GameEvent;
@@ -10,14 +14,34 @@ use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(test)]
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-const LEASH_SEARCH_SIZE: f32 = 32.0;
+const KNOT_EMPTY_CLEANUP: u64 = 1 << 63;
+const KNOT_INVALID_REMOVAL: u64 = 1 << 62;
+const KNOT_REMOVED: u64 = 1 << 61;
+const KNOT_ATTACHMENT_COUNT_MASK: u64 = (1 << 16) - 1;
+const KNOT_GENERATION_INCREMENT: u64 = 1 << 16;
+const KNOT_GENERATION_MASK: u64 =
+    !(KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED | KNOT_ATTACHMENT_COUNT_MASK);
+
+/// Reserves the knot link update against concurrent empty-knot removal.
+pub(crate) struct KnotAttachment<'a>(&'a AtomicU64);
+
+impl Drop for KnotAttachment<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
+}
 
 pub struct LeashKnotEntity {
     entity: Entity,
     pos: BlockPos,
     remove_when_empty: AtomicBool,
+    attachment_state: AtomicU64,
+    #[cfg(test)]
+    empty_cleanup_barrier: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl LeashKnotEntity {
@@ -28,6 +52,9 @@ impl LeashKnotEntity {
             entity,
             pos,
             remove_when_empty: AtomicBool::new(false),
+            attachment_state: AtomicU64::new(0),
+            #[cfg(test)]
+            empty_cleanup_barrier: Mutex::new(None),
         }
     }
 
@@ -39,7 +66,8 @@ impl LeashKnotEntity {
         if let Some(existing) = Self::get_knot(world, pos) {
             return existing;
         }
-        Self::create_knot(world, pos) as Arc<dyn EntityBase>
+        let created = Self::create_knot(world, pos);
+        Self::get_knot(world, pos).unwrap_or(created as Arc<dyn EntityBase>)
     }
 
     pub fn get_knot(world: &Arc<World>, pos: BlockPos) -> Option<Arc<dyn EntityBase>> {
@@ -63,6 +91,7 @@ impl LeashKnotEntity {
                 // LeashFenceKnotEntity.getKnot checks the entity class, then returns that entity.
                 && let Some(knot) = entity_base.cast_any().downcast_ref::<Self>()
                 && knot.pos == pos
+                && !knot.is_removed_or_removing()
             {
                 return Some(entity_base);
             }
@@ -79,9 +108,10 @@ impl LeashKnotEntity {
 
         let entity = Entity::new(world.clone(), raw_pos, &EntityType::LEASH_KNOT);
         let knot = Arc::new(Self::new(entity, pos));
-        world.spawn_entity(knot.clone() as Arc<dyn EntityBase>);
-
-        world.play_sound(Sound::ItemLeadTied, SoundCategory::Neutral, &raw_pos);
+        if !world.spawn_entity(knot.clone() as Arc<dyn EntityBase>) {
+            // A concurrent getOrCreateKnot may have published the knot first.
+            knot.attachment_state.store(KNOT_REMOVED, Ordering::Release);
+        }
 
         knot
     }
@@ -95,15 +125,155 @@ impl LeashKnotEntity {
         // Leashable.leashableLeashedTo searches a 32-block box centered on the holder bounds.
         let bounds = self.entity.bounding_box.load();
         let center = (bounds.min + bounds.max) * 0.5;
-        let half_size = f64::from(LEASH_SEARCH_SIZE) / 2.0;
-        let radius = Vector3::new(half_size, half_size, half_size);
-        let search_box = BoundingBox::new(center - radius, center + radius);
         let knot_id = self.entity.entity_id;
         world
-            .get_entities_at_box(&search_box)
+            .get_entities_at_box(&leash_search_box(center))
             .iter()
             .map(|entity_base| entity_base.get_entity())
             .any(|entity| !entity.is_removed() && leash_holder_id(entity) == Some(knot_id))
+    }
+
+    /// Reserves only the leash pointer mutation; callers release it before callbacks or packets.
+    pub(crate) fn try_begin_attachment(&self) -> Option<KnotAttachment<'_>> {
+        let mut state = self.attachment_state.load(Ordering::Acquire);
+        loop {
+            let attachment_count = state & KNOT_ATTACHMENT_COUNT_MASK;
+            if state & (KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
+                || attachment_count == KNOT_ATTACHMENT_COUNT_MASK
+            {
+                return None;
+            }
+            let flags = state & (KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED);
+            let generation = (state & KNOT_GENERATION_MASK).wrapping_add(KNOT_GENERATION_INCREMENT)
+                & KNOT_GENERATION_MASK;
+            let next = flags | generation | (attachment_count + 1);
+            match self.attachment_state.compare_exchange_weak(
+                state,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(KnotAttachment(&self.attachment_state)),
+                Err(actual) => state = actual,
+            }
+        }
+    }
+
+    fn try_begin_empty_cleanup(&self) -> Option<u64> {
+        let mut state = self.attachment_state.load(Ordering::Acquire);
+        loop {
+            if state & (KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
+                || state & KNOT_ATTACHMENT_COUNT_MASK != 0
+            {
+                return None;
+            }
+            let cleanup_state = state | KNOT_EMPTY_CLEANUP;
+            match self.attachment_state.compare_exchange_weak(
+                state,
+                cleanup_state,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(cleanup_state),
+                Err(actual) => state = actual,
+            }
+        }
+    }
+
+    fn try_begin_invalid_removal(&self) -> bool {
+        let mut state = self.attachment_state.load(Ordering::Acquire);
+        loop {
+            if state & (KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
+                || state & KNOT_ATTACHMENT_COUNT_MASK != 0
+            {
+                return false;
+            }
+            let removal_state = state | KNOT_INVALID_REMOVAL;
+            match self.attachment_state.compare_exchange_weak(
+                state,
+                removal_state,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => state = actual,
+            }
+        }
+    }
+
+    pub(crate) fn is_removed_or_removing(&self) -> bool {
+        self.entity.is_removed()
+            || self.attachment_state.load(Ordering::Acquire) & (KNOT_INVALID_REMOVAL | KNOT_REMOVED)
+                != 0
+    }
+
+    fn reopen_after_empty_check(&self) {
+        self.attachment_state
+            .fetch_and(!KNOT_EMPTY_CLEANUP, Ordering::AcqRel);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_empty_cleanup_barrier(&self, barrier: Arc<dyn Fn() + Send + Sync>) {
+        *self
+            .empty_cleanup_barrier
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(barrier);
+    }
+
+    #[cfg(test)]
+    fn wait_at_empty_cleanup_barrier(&self) {
+        let barrier = self
+            .empty_cleanup_barrier
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(barrier) = barrier {
+            barrier();
+        }
+    }
+
+    pub(crate) fn notify_leashee_removed(&self) {
+        // Leashable.dropLeash and setLeashedTo notify their former holder after changing the link.
+        self.remove_when_empty.store(true, Ordering::Release);
+    }
+
+    /// Notifies a knot when a leash link changes away from its holder.
+    pub(crate) fn notify_leashee_removed_from(holder: &dyn EntityBase) {
+        if let Some(knot) = holder.cast_any().downcast_ref::<Self>() {
+            knot.notify_leashee_removed();
+        }
+    }
+
+    /// Removes an empty knot after excluding concurrent leash pointer updates.
+    pub(crate) fn remove_if_empty(&self, world: &World) {
+        let Some(cleanup_state) = self.try_begin_empty_cleanup() else {
+            self.remove_when_empty.store(true, Ordering::Release);
+            return;
+        };
+        if self.has_live_leashed_mobs(world) {
+            self.reopen_after_empty_check();
+            return;
+        }
+
+        #[cfg(test)]
+        self.wait_at_empty_cleanup_barrier();
+
+        if self
+            .attachment_state
+            .compare_exchange(
+                cleanup_state,
+                cleanup_state | KNOT_REMOVED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            self.entity.remove();
+        } else {
+            // A link commit advanced the generation after the empty scan; leave its holder alive.
+            self.reopen_after_empty_check();
+            self.remove_when_empty.store(true, Ordering::Release);
+        }
     }
 }
 
@@ -126,14 +296,13 @@ impl EntityBase for LeashKnotEntity {
         let world = self.entity.world.load();
         let block = world.get_block(&self.pos);
         if !block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_FENCES) {
+            if !self.try_begin_invalid_removal() {
+                return;
+            }
             let knot_id = self.entity.entity_id;
-            let search_dim = EntityDimensions {
-                width: 32.0,
-                height: 32.0,
-                eye_height: 16.0,
-            };
-            let pos = self.entity.pos.load();
-            let search_box = BoundingBox::new_from_pos(pos.x, pos.y, pos.z, &search_dim);
+            let bounds = self.entity.bounding_box.load();
+            let center = (bounds.min + bounds.max) * 0.5;
+            let search_box = leash_search_box(center);
             let entities = world.get_entities_at_box(&search_box);
 
             for entity_base in entities {
@@ -159,48 +328,45 @@ impl EntityBase for LeashKnotEntity {
                 }
             }
 
+            let pos = self.entity.pos.load();
             world.play_sound(Sound::ItemLeadUntied, SoundCategory::Neutral, &pos);
             self.entity.remove();
-        } else if self.remove_when_empty.swap(false, Ordering::Relaxed)
-            && !self.has_live_leashed_mobs(&world)
-        {
+        } else if self.remove_when_empty.swap(false, Ordering::AcqRel) {
             // LeashFenceKnotEntity.notifyLeasheeRemoved discards an empty knot. Run this after
             // parallel player packet handling so another packet cannot attach to a removed knot.
-            self.entity.remove();
+            self.remove_if_empty(&world);
         }
     }
 
     // LeashFenceKnotEntity.interact transfers eligible leashes, then removes an empty knot.
-    fn interact(&self, player: &Arc<Player>, _item_stack: &mut ItemStack) -> bool {
+    fn interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
+        if crate::entity::leash_shearing::shear_leashes_by_player(&self.entity, player, item_stack)
+        {
+            return true;
+        }
+
         let world = player.world();
         let knot_id = self.entity.entity_id;
         let player_id = player.entity_id();
 
-        let search_dim = EntityDimensions {
-            width: LEASH_SEARCH_SIZE,
-            height: LEASH_SEARCH_SIZE,
-            eye_height: LEASH_SEARCH_SIZE / 2.0,
-        };
-        let pos = self.entity.pos.load();
-        let search_box = BoundingBox::new_from_pos(pos.x, pos.y, pos.z, &search_dim);
+        let bounds = self.entity.bounding_box.load();
+        let center = (bounds.min + bounds.max) * 0.5;
+        let search_box = leash_search_box(center);
         let entities = world.get_entities_at_box(&search_box);
 
         // Leashable.leashableLeashedTo plus canHaveALeashAttachedTo.
         let player_leashed_mobs: Vec<_> = entities
             .iter()
             .map(|entity_base| entity_base.get_entity())
-            .filter(|ent| {
-                leash_holder_id(ent) == Some(player_id)
-                    && can_have_a_leash_attached_to(ent, &self.entity)
-            })
+            .filter(|ent| leash_holder_id(ent) == Some(player_id))
             .collect();
 
         let mut attached_mob = false;
 
-        if let Some(self_knot) = Self::get_knot(&world, self.pos) {
+        if !player_leashed_mobs.is_empty() {
+            let mut self_knot = Self::get_or_create(&world, self.pos);
             for mob in player_leashed_mobs {
-                mob.leash_to(self_knot.clone());
-                attached_mob |= leash_holder_id(mob) == Some(self_knot.get_entity().entity_id);
+                attached_mob |= Self::attach_to_knot(&world, self.pos, mob, &mut self_knot);
             }
         }
 
@@ -222,6 +388,7 @@ impl EntityBase for LeashKnotEntity {
         }
 
         if attached_mob || any_dropped {
+            let pos = self.entity.pos.load();
             world.emit_game_event(GameEvent::BlockAttach.name(), pos);
             self.play_placement_sound(&world);
             if any_dropped {
@@ -238,7 +405,32 @@ impl EntityBase for LeashKnotEntity {
     }
 }
 
-fn leash_holder_id(entity: &Entity) -> Option<i32> {
+impl LeashKnotEntity {
+    /// Attaches a mob to a live knot, retrying once if empty-knot cleanup won before the link commit.
+    pub(crate) fn attach_to_knot(
+        world: &Arc<World>,
+        pos: BlockPos,
+        mob: &Entity,
+        holder: &mut Arc<dyn EntityBase>,
+    ) -> bool {
+        for attempt in 0..=1 {
+            if !can_have_a_leash_attached_to(mob, holder.get_entity()) {
+                return false;
+            }
+            match mob.leash_to(holder.clone()) {
+                LeashToResult::Attached => return true,
+                LeashToResult::HolderUnavailable if attempt == 0 => {
+                    *holder = Self::get_or_create(world, pos);
+                }
+                LeashToResult::Cancelled | LeashToResult::HolderUnavailable => return false,
+            }
+        }
+        false
+    }
+}
+
+/// Returns a snapshot of the entity's current leash holder ID.
+pub(crate) fn leash_holder_id(entity: &Entity) -> Option<i32> {
     // Snapshot before leash changes can fire an event or send packets.
     // Block on contention so the vanilla transfer cannot silently skip this leash.
     let holder = entity
@@ -249,18 +441,10 @@ fn leash_holder_id(entity: &Entity) -> Option<i32> {
     holder.map(|holder| holder.get_entity().entity_id)
 }
 
-fn can_have_a_leash_attached_to(entity: &Entity, holder: &Entity) -> bool {
-    if entity.entity_id == holder.entity_id {
-        return false;
-    }
-
-    let entity_bounds = entity.bounding_box.load();
-    let holder_bounds = holder.bounding_box.load();
-    let difference = (entity_bounds.min + entity_bounds.max) * 0.5
-        - (holder_bounds.min + holder_bounds.max) * 0.5;
-    difference.length_squared() <= Entity::LEASH_SNAP_DISTANCE * Entity::LEASH_SNAP_DISTANCE
-}
-
 #[cfg(test)]
 #[path = "leash_knot_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "leash_knot_review_tests.rs"]
+mod review_tests;

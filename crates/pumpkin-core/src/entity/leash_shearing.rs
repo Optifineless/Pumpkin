@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
+use super::{Entity, leashable::leash_search_box, player::Player};
 use pumpkin_data::{
     game_event::GameEvent,
     item::Item,
     item_stack::ItemStack,
     sound::{Sound, SoundCategory},
 };
-use pumpkin_util::math::{boundingbox::BoundingBox, vector3::Vector3};
-
-use super::{Entity, player::Player};
-
-// Leashable.leashableInArea uses a 32-block-wide box centered on the holder's bounds.
-const LEASH_SEARCH_SIZE: f64 = 32.0;
 
 impl Entity {
     // Leashable.dropLeash preserves the fork's events and atomically claims the link.
@@ -69,6 +64,11 @@ impl Entity {
             &je_packet,
             &be_packet,
         );
+        if let Some(old_holder) = &old_holder {
+            super::decoration::leash_knot::LeashKnotEntity::notify_leashee_removed_from(
+                old_holder.as_ref(),
+            );
+        }
         true
     }
 
@@ -78,12 +78,7 @@ impl Entity {
         let world = self.world.load_full();
         let bounds = self.bounding_box.load();
         let center = (bounds.min + bounds.max) * 0.5;
-        let radius = Vector3::new(
-            LEASH_SEARCH_SIZE / 2.0,
-            LEASH_SEARCH_SIZE / 2.0,
-            LEASH_SEARCH_SIZE / 2.0,
-        );
-        let others = world.get_entities_at_box(&BoundingBox::new(center - radius, center + radius));
+        let others = world.get_entities_at_box(&leash_search_box(center));
         let mut dropped = drop_lead(self);
         for other in others {
             let raw = other.get_entity();

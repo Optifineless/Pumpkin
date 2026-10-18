@@ -9,6 +9,7 @@ use crate::entity::ai::control::look_control::{LookControl, LookControlTrait};
 use crate::entity::ai::control::move_control::MoveControl;
 use crate::entity::ai::goal::goal_selector::GoalSelector;
 use crate::entity::ai::sensing::Sensing;
+use crate::entity::leashable::{LeashToResult, can_have_a_leash_attached_to};
 use crate::entity::player::Player;
 use crate::entity::predicate::EntityPredicate;
 use crate::server::Server;
@@ -708,18 +709,15 @@ impl MobEntity {
         }
 
         // If holding a lead, leash the mob to the player
-        if item_stack.item.registry_key == "lead"
-            || item_stack.item.registry_key == "minecraft:lead"
+        if (item_stack.item.registry_key == "lead"
+            || item_stack.item.registry_key == "minecraft:lead")
+            && can_have_a_leash_attached_to(entity, player.get_entity())
+            && entity.leash_to(player.clone() as Arc<dyn EntityBase>) == LeashToResult::Attached
         {
-            let diff = entity.pos.load() - player.get_entity().pos.load();
-            let dist_sq = diff.length_squared();
-            if dist_sq <= Entity::LEASH_SNAP_DISTANCE * Entity::LEASH_SNAP_DISTANCE {
-                entity.leash_to(player.clone() as Arc<dyn EntityBase>);
-                if player.gamemode.load() != pumpkin_util::GameMode::Creative {
-                    item_stack.decrement(1);
-                }
-                return true;
+            if player.gamemode.load() != pumpkin_util::GameMode::Creative {
+                item_stack.decrement(1);
             }
+            return true;
         }
 
         false

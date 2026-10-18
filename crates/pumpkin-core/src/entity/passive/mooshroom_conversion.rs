@@ -1,5 +1,9 @@
 use super::{cow::CowEntity, mooshroom::MooshroomEntity};
-use crate::entity::{Entity, EntityBase, ageable::AgeableMob};
+use crate::entity::{
+    Entity, EntityBase, ageable::AgeableMob, decoration::leash_knot::LeashKnotEntity,
+    leashable::LeashToResult,
+};
+use pumpkin_data::tag::Taggable;
 use pumpkin_data::{cow_variant::CowVariant, entity::EntityType};
 use std::sync::{Arc, atomic::Ordering};
 
@@ -129,7 +133,7 @@ impl MooshroomEntity {
     // ConversionType.SINGLE / convertCommon, after cancellable spawn and transform preflight.
     pub(super) fn finish_conversion(&self, cow: &Arc<CowEntity>) {
         let mooshroom_entity = self.get_entity();
-        let world = mooshroom_entity.world.load();
+        let world = mooshroom_entity.world.load_full();
         // These send packets about the cow, so they wait until clients know it exists.
         let cow_living = &cow.mob_entity.living_entity;
         cow_living.set_absorption(self.mob_entity.living_entity.get_absorption());
@@ -151,7 +155,24 @@ impl MooshroomEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
         if let Some(holder) = holder {
-            cow_living.entity.leash_to(holder);
+            // Mob.convertTo carries the holder across conversion; retry if knot cleanup won first.
+            let result = cow_living.entity.leash_to(holder.clone());
+            if result == LeashToResult::HolderUnavailable
+                && let Some(knot) = holder.cast_any().downcast_ref::<LeashKnotEntity>()
+            {
+                let pos = knot.block_pos();
+                if world
+                    .get_block(&pos)
+                    .has_tag(&pumpkin_data::tag::Block::MINECRAFT_FENCES)
+                {
+                    let replacement = LeashKnotEntity::get_or_create(&world, pos);
+                    if cow_living.entity.leash_to(replacement) != LeashToResult::Attached {
+                        LeashKnotEntity::notify_leashee_removed_from(holder.as_ref());
+                    }
+                } else {
+                    LeashKnotEntity::notify_leashee_removed_from(holder.as_ref());
+                }
+            }
         }
 
         // Vanilla `ConversionType.SINGLE` moves the first passenger and the vehicle over to the cow.

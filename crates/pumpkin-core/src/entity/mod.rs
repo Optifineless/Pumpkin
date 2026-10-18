@@ -111,6 +111,7 @@ mod riding_retirement;
 pub(crate) mod spawn_mount;
 
 mod leash_shearing;
+pub(crate) mod leashable;
 mod server_entity;
 pub mod shearable;
 pub mod spawn_util;
@@ -3338,56 +3339,6 @@ impl Entity {
     pub const LEASH_SNAP_DISTANCE: f64 = 12.0;
     pub const LEASH_ELASTIC_DISTANCE: f64 = 6.0;
 
-    pub fn leash_to(&self, holder: Arc<dyn EntityBase>) {
-        let holder_entity_id = holder.get_entity().entity_id;
-        let world = self.world.load();
-        if let Some(server) = world.server.upgrade()
-            && let Some(player) = holder.get_player()
-            && let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
-        {
-            let mut event =
-                crate::plugin::api::events::player::player_leash_entity::PlayerLeashEntityEvent {
-                    player: player_arc,
-                    entity_id: self.entity_id,
-                    holder_id: holder_entity_id,
-                    cancelled: false,
-                };
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
-        }
-
-        *self
-            .leashed_to
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(holder);
-
-        let je_packet = pumpkin_protocol::java::client::play::CSetEntityLink::new(
-            self.entity_id,
-            holder_entity_id,
-            true,
-        );
-        let be_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::ActorLink {
-                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
-                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(
-                    holder_entity_id as i64,
-                ),
-                link_type: 1, // Leash link
-                immediate: true,
-                rider_initiated: false,
-                vehicle_angular_velocity: 0.0,
-            },
-        };
-
-        self.world.load().broadcast_to_chunk_editioned(
-            self.chunk_pos.load(),
-            &je_packet,
-            &be_packet,
-        );
-    }
-
     pub fn unleash(&self) {
         self.unleash_if_leashed();
     }
@@ -3411,10 +3362,10 @@ impl Entity {
 
             let self_pos = self.pos.load();
             let holder_pos = holder_entity.pos.load();
-            let diff = self_pos - holder_pos;
-            let distance = diff.length();
+            // Leashable.tickLeash measures leashDistanceTo between bounding-box centers.
+            let distance = leashable::leash_distance(self, holder_entity);
 
-            if distance > Self::LEASH_SNAP_DISTANCE {
+            if distance > self.leash_snap_distance() {
                 // Too far: snap/break leash and drop lead item
                 self.unleash();
                 let lead_item =
