@@ -34,6 +34,16 @@ instrument; Glowstone is assigned Pling. Mob-head instruments retain their
 above-block override and Harp fallback. Mirrors vanilla 26.3
 `NoteBlockInstrument.Type.BASE_BLOCK`, `NoteBlock.setInstrument` and
 `NoteBlock.triggerEvent`. In-game verification: **Not yet**.
+## Fence and wall connections (#52, #53)
+
+Fence and wall solid-face connections honor `Block.isExceptionForConnection`, so
+melons, leaves, barriers, pumpkins and shulker boxes do not create generic links.
+Same-family connections and aligned fence gates remain valid. Wall arm heights
+and the center post use the block above's downward collision face; the post also
+honors `minecraft:wall_post_override` and vanilla's corner and tall-wall rules.
+Follows vanilla 26.3 methods: `FenceBlock.connectsTo`, `WallBlock.connectsTo`,
+`WallBlock.updateSides` and `WallBlock.shouldRaisePost`. In-game verification:
+**Not yet**. Written by Codex (GPT-6 Luna).
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 

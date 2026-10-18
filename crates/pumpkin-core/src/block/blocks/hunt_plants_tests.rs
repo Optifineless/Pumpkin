@@ -187,6 +187,9 @@ fn packet(pos: BlockPos, face: BlockDirection) -> SUseItemOn {
     }
 }
 
+#[path = "fences_walls_tests.rs"]
+mod fences_walls_tests;
+
 #[derive(Default)]
 struct Events {
     breaks: Mutex<Vec<(String, bool)>>,

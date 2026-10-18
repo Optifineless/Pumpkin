@@ -67,7 +67,7 @@ fn connects_to(from: &Block, to: &Block, to_state: &BlockState, direction: Block
         return true;
     }
 
-    if to_state.is_side_solid(direction.opposite()) {
+    if !is_exception_for_connection(to) && to_state.is_side_solid(direction.opposite()) {
         return true;
     }
 
@@ -81,4 +81,15 @@ fn connects_to(from: &Block, to: &Block, to_state: &BlockState, direction: Block
     }
 
     *from != Block::NETHER_BRICK_FENCE && to.has_tag(&tag::Block::C_FENCES_WOODEN)
+}
+
+/// Mirrors `Block.isExceptionForConnection` for generic solid-face links.
+pub(super) fn is_exception_for_connection(block: &Block) -> bool {
+    block.has_tag(&tag::Block::MINECRAFT_LEAVES)
+        || block == &Block::BARRIER
+        || block == &Block::MELON
+        || block == &Block::PUMPKIN
+        || block == &Block::CARVED_PUMPKIN
+        || block == &Block::JACK_O_LANTERN
+        || block.has_tag(&tag::Block::MINECRAFT_SHULKER_BOXES)
 }

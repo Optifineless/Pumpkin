@@ -10,10 +10,10 @@ use pumpkin_data::block_properties::WestWall;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
+use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 
 type FenceGateProperties = pumpkin_data::block_properties::OakFenceGateLikeProperties;
-type FenceLikeProperties = pumpkin_data::block_properties::OakFenceLikeProperties;
 type WallProperties = pumpkin_data::block_properties::ResinBrickWallLikeProperties;
 
 #[pumpkin_block_from_tag("minecraft:walls")]
@@ -46,7 +46,8 @@ pub fn compute_wall_state(
     block: &Block,
     block_pos: &BlockPos,
 ) -> BlockStateId {
-    let (block_above, block_above_state) = world.get_block_and_state(&block_pos.up());
+    let block_above_pos = block_pos.up();
+    let (block_above, block_above_state) = world.get_block_and_state(&block_above_pos);
 
     for direction in HorizontalFacing::all() {
         let other_block_pos = block_pos.offset(direction.to_offset());
@@ -55,37 +56,7 @@ pub fn compute_wall_state(
         let connected = is_connected(block, direction, other_block, other_block_state);
 
         let shape = if connected {
-            let raise = if block_above_state.is_full_cube() {
-                true
-            } else if block_above.has_tag(&tag::Block::MINECRAFT_WALLS) {
-                let other_props = WallProperties::from_state_id(block_above_state.id);
-                match direction {
-                    HorizontalFacing::North => other_props.north != NorthWall::None,
-                    HorizontalFacing::South => other_props.south != SouthWall::None,
-                    HorizontalFacing::East => other_props.east != EastWall::None,
-                    HorizontalFacing::West => other_props.west != WestWall::None,
-                }
-            } else if block_above.has_tag(&tag::Block::C_GLASS_PANES)
-                || block_above.has_tag(&tag::Block::MINECRAFT_FENCES)
-                || block_above == &Block::IRON_BARS
-            {
-                let other_props = FenceLikeProperties::from_state_id(block_above_state.id);
-                match direction {
-                    HorizontalFacing::North => other_props.north,
-                    HorizontalFacing::South => other_props.south,
-                    HorizontalFacing::East => other_props.east,
-                    HorizontalFacing::West => other_props.west,
-                }
-            } else if block_above.has_tag(&tag::Block::MINECRAFT_FENCE_GATES) {
-                let other_props = FenceGateProperties::from_state_id(block_above_state.id);
-                // gate is perp to connected direction
-                let perpendicular_gate = direction == other_props.facing.rotate_clockwise()
-                    || direction == other_props.facing.rotate_counter_clockwise();
-
-                perpendicular_gate && !other_props.open
-            } else {
-                false
-            };
+            let raise = is_wall_side_covered(block_above_state, &block_above_pos, direction);
             if raise {
                 WallShape::Tall
             } else {
@@ -103,37 +74,7 @@ pub fn compute_wall_state(
         }
     }
 
-    let connected_north_south = wall_props.north != NorthWall::None
-        && wall_props.south != SouthWall::None
-        && wall_props.east == EastWall::None
-        && wall_props.west == WestWall::None;
-    let connected_east_west = wall_props.north == NorthWall::None
-        && wall_props.south == SouthWall::None
-        && wall_props.east != EastWall::None
-        && wall_props.west != WestWall::None;
-    let cross = wall_props.north != NorthWall::None
-        && wall_props.south != SouthWall::None
-        && wall_props.east != EastWall::None
-        && wall_props.west != WestWall::None;
-
-    wall_props.up = if !(cross || connected_north_south || connected_east_west) {
-        true
-    } else if block_above.has_tag(&tag::Block::MINECRAFT_WALLS) {
-        let other_props = WallProperties::from_state_id(block_above_state.id);
-        other_props.up
-    } else if block_above.has_tag(&tag::Block::MINECRAFT_FENCE_GATES) {
-        let other_props = FenceGateProperties::from_state_id(block_above_state.id);
-        if other_props.open {
-            false
-        } else {
-            match other_props.facing {
-                HorizontalFacing::East | HorizontalFacing::West => connected_east_west,
-                HorizontalFacing::South | HorizontalFacing::North => connected_north_south,
-            }
-        }
-    } else {
-        false
-    };
+    wall_props.up = should_raise_post(wall_props, block_above, block_above_state, &block_above_pos);
     wall_props.to_state_id(block)
 }
 
@@ -143,11 +84,13 @@ fn is_connected(
     other_block: &Block,
     other_block_state: &BlockState,
 ) -> bool {
+    let solid_face_connection = !super::fences::is_exception_for_connection(other_block)
+        && ((other_block_state.is_solid() && other_block_state.is_full_cube())
+            || other_block_state.is_side_solid(BlockDirection::from_cardinal_direction(
+                direction.opposite(),
+            )));
     let mut connected = other_block == block
-        || (other_block_state.is_solid() && other_block_state.is_full_cube())
-        || other_block_state.is_side_solid(BlockDirection::from_cardinal_direction(
-            direction.opposite(),
-        ))
+        || solid_face_connection
         || other_block.has_tag(&tag::Block::MINECRAFT_WALLS)
         || other_block == &Block::IRON_BARS
         || other_block.has_tag(&tag::Block::C_GLASS_PANES);
@@ -162,6 +105,107 @@ fn is_connected(
         }
     }
     connected
+}
+
+/// Mirrors `WallBlock.updateSides` and `WallBlock.isCovered` using collision faces.
+fn is_wall_side_covered(
+    block_above_state: &BlockState,
+    block_above_pos: &BlockPos,
+    direction: HorizontalFacing,
+) -> bool {
+    // WallBlock.updateSides tests the top footprint of each tall side arm.
+    let side_test = match direction {
+        HorizontalFacing::North => NORTH_SIDE_TEST_SHAPE,
+        HorizontalFacing::South => SOUTH_SIDE_TEST_SHAPE,
+        HorizontalFacing::East => EAST_SIDE_TEST_SHAPE,
+        HorizontalFacing::West => WEST_SIDE_TEST_SHAPE,
+    };
+    collision_face_covers(block_above_state, block_above_pos, &side_test)
+}
+
+const NORTH_SIDE_TEST_SHAPE: BoundingBox =
+    BoundingBox::new_array([7.0 / 16.0, 0.0, 0.0], [9.0 / 16.0, 1.0, 9.0 / 16.0]);
+const SOUTH_SIDE_TEST_SHAPE: BoundingBox =
+    BoundingBox::new_array([7.0 / 16.0, 0.0, 7.0 / 16.0], [9.0 / 16.0, 1.0, 1.0]);
+const EAST_SIDE_TEST_SHAPE: BoundingBox =
+    BoundingBox::new_array([7.0 / 16.0, 0.0, 7.0 / 16.0], [1.0, 1.0, 9.0 / 16.0]);
+const WEST_SIDE_TEST_SHAPE: BoundingBox =
+    BoundingBox::new_array([0.0, 0.0, 7.0 / 16.0], [9.0 / 16.0, 1.0, 9.0 / 16.0]);
+const POST_TEST_SHAPE: BoundingBox =
+    BoundingBox::new_array([7.0 / 16.0, 0.0, 7.0 / 16.0], [9.0 / 16.0, 1.0, 9.0 / 16.0]);
+
+fn should_raise_post(
+    wall_props: WallProperties,
+    block_above: &Block,
+    block_above_state: &BlockState,
+    block_above_pos: &BlockPos,
+) -> bool {
+    if block_above.has_tag(&tag::Block::MINECRAFT_WALLS)
+        && WallProperties::from_state_id(block_above_state.id).up
+    {
+        return true;
+    }
+
+    let north_none = wall_props.north == NorthWall::None;
+    let south_none = wall_props.south == SouthWall::None;
+    let east_none = wall_props.east == EastWall::None;
+    let west_none = wall_props.west == WestWall::None;
+    let has_corner = north_none && south_none && east_none && west_none
+        || north_none != south_none
+        || east_none != west_none;
+    if has_corner {
+        return true;
+    }
+
+    let has_high_wall = wall_props.north == NorthWall::Tall && wall_props.south == SouthWall::Tall
+        || wall_props.east == EastWall::Tall && wall_props.west == WestWall::Tall;
+    if has_high_wall {
+        return false;
+    }
+
+    block_above.has_tag(&tag::Block::MINECRAFT_WALL_POST_OVERRIDE)
+        || collision_face_covers(block_above_state, block_above_pos, &POST_TEST_SHAPE)
+}
+
+fn collision_face_covers(
+    covering_state: &BlockState,
+    covering_pos: &BlockPos,
+    test_shape: &BoundingBox,
+) -> bool {
+    let downward_face: Vec<_> = covering_state
+        .get_block_collision_shapes_at(covering_pos)
+        .filter(|shape| shape.min.y == 0.0 && shape.max.y > 0.0)
+        .collect();
+    rectangle_is_covered(test_shape, &downward_face)
+}
+
+fn rectangle_is_covered(test: &BoundingBox, covers: &[BoundingBox]) -> bool {
+    let mut x_edges = vec![test.min.x, test.max.x];
+    let mut z_edges = vec![test.min.z, test.max.z];
+    for cover in covers {
+        let min_x = cover.min.x.max(test.min.x);
+        let max_x = cover.max.x.min(test.max.x);
+        let min_z = cover.min.z.max(test.min.z);
+        let max_z = cover.max.z.min(test.max.z);
+        if min_x < max_x && min_z < max_z {
+            x_edges.extend([min_x, max_x]);
+            z_edges.extend([min_z, max_z]);
+        }
+    }
+    x_edges.sort_by(f64::total_cmp);
+    x_edges.dedup_by(|left, right| left.total_cmp(right).is_eq());
+    z_edges.sort_by(f64::total_cmp);
+    z_edges.dedup_by(|left, right| left.total_cmp(right).is_eq());
+
+    x_edges.windows(2).all(|x| {
+        z_edges.windows(2).all(|z| {
+            let x = f64::midpoint(x[0], x[1]);
+            let z = f64::midpoint(z[0], z[1]);
+            covers.iter().any(|cover| {
+                cover.min.x < x && x < cover.max.x && cover.min.z < z && z < cover.max.z
+            })
+        })
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
