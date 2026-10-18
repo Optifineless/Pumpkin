@@ -73,6 +73,23 @@ impl MapManager {
         // Never replace a cached record, even when a plugin supplies an already-used ID.
         self.maps.entry(id).or_insert(map).clone()
     }
+
+    pub fn create_fresh_map(
+        &self,
+        id: i32,
+        dimension: Dimension,
+        origin_x: i32,
+        origin_z: i32,
+        scale: i8,
+    ) -> Arc<Mutex<MapData>> {
+        // Mirrors MapItemSavedData.createFresh; MapData::new keeps explicit-center semantics.
+        let size = i64::from(MAP_SIZE) * (1i64 << scale as u32);
+        let center = |origin: i32| {
+            let area = (i64::from(origin) + i64::from(HALF_MAP_SIZE)).div_euclid(size);
+            (area * size + size / 2 - i64::from(HALF_MAP_SIZE)) as i32
+        };
+        self.create_map(id, dimension, center(origin_x), center(origin_z), scale)
+    }
 }
 
 pub struct MapData {
@@ -129,6 +146,10 @@ impl MapData {
             return;
         }
         let world = player.world();
+        // MapItem.update returns before sampling when the held map belongs to another dimension.
+        if world.dimension.minecraft_name != self.dimension.minecraft_name {
+            return;
+        }
         let scale = 1 << self.scale;
         let center_x = self.center_x;
         let center_z = self.center_z;

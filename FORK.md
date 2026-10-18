@@ -2,6 +2,30 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Empty map centers (#45)
+
+New empty maps center on the scale-aligned tile that contains the player's block
+position, matching vanilla 26.3 `EmptyMapItem.use`, `MapItem.create` and
+`MapItemSavedData.createFresh`. Existing map centers and saved map data keep
+their current meaning. Written by Codex (GPT-6 Luna). In-game verification:
+**Not yet**.
+
+Play test: Use empty maps at X/Z positions 10 and 30; expect both maps to show
+the same 128 by 128 area. Use one just beyond -64; expect it to show the tile
+centered at -128.
+
+## Cross-dimension map sampling (#46)
+
+Held maps only sample terrain when the player's world matches the map dimension.
+Map decorations and periodic map packets continue to update while the map is
+carried elsewhere, matching vanilla 26.3 `MapItem.update` and
+`MapItemSavedData.tickCarriedBy`. Written by Codex (GPT-6 Luna). In-game
+verification: **Not yet**.
+
+Play test: Hold an Overworld map in either hand and enter the Nether; expect its
+pixels to stay unchanged and existing markers to remain visible. Return to the
+Overworld and explore new ground; expect the map to fill in normally.
+
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 
 Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity

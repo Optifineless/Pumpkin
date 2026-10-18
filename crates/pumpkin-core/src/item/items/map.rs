@@ -40,11 +40,12 @@ impl ItemBehaviour for MapItem {
         if found {
             let expected = hand_stack.clone();
             let map_id = server.next_map_id();
-            let _ = server.map_manager.create_map(
+            let position = player.position();
+            let _ = server.map_manager.create_fresh_map(
                 map_id,
                 player.world().dimension.clone(),
-                player.position().x as i32,
-                player.position().z as i32,
+                position.x.floor() as i32,
+                position.z.floor() as i32,
                 0, // Default scale
             );
 
@@ -77,3 +78,7 @@ impl ItemBehaviour for MapItem {
         self
     }
 }
+
+#[cfg(test)]
+#[path = "map_tests.rs"]
+mod tests;
