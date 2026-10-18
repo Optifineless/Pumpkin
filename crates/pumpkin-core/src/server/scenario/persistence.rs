@@ -10,6 +10,9 @@ use pumpkin_world::world::BlockFlags;
 
 mod block_entity_capture;
 mod block_entity_retirement;
+mod block_entity_round5;
+mod block_entity_round5_admission;
+mod block_entity_round5_support;
 mod block_entity_support;
 
 use block_entity_support::CHEST;

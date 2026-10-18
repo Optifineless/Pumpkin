@@ -7,7 +7,7 @@ use pumpkin_data::{item::Item, item_stack::ItemStack};
 use pumpkin_inventory::Inventory;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_world::world::BlockFlags;
-use std::sync::{Arc, Mutex, atomic::AtomicBool, mpsc};
+use std::sync::{Arc, Mutex, atomic::AtomicBool, atomic::Ordering, mpsc};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn save_all_replacement_keeps_block_entity_custom_data_after_reload() {
@@ -34,8 +34,10 @@ async fn save_all_replacement_keeps_block_entity_custom_data_after_reload() {
             chest: old,
             captured,
             resume: Mutex::new(Some(resume_writer)),
+            pause: AtomicBool::new(false),
         });
-        world.add_block_entity(paused);
+        world.add_block_entity(paused.clone());
+        paused.pause.store(true, Ordering::Release);
 
         let save_world = world.clone();
         let save = tokio::spawn(async move { save_world.save().await });
@@ -113,8 +115,10 @@ async fn overlapping_same_arc_saves_keep_newer_chest_contents_after_reload() {
             chest: chest.clone(),
             captured,
             resume: Mutex::new(Some(resume_writer)),
+            pause: AtomicBool::new(false),
         });
-        world.add_block_entity(paused);
+        world.add_block_entity(paused.clone());
+        paused.pause.store(true, Ordering::Release);
 
         let older_world = world.clone();
         let older_save = tokio::spawn(async move { older_world.save().await });
@@ -171,9 +175,10 @@ async fn stale_capture_retries_default_none_block_entity_state() {
             bookshelf: old,
             captured,
             resume: resume_writer,
-            pause: AtomicBool::new(true),
+            pause: AtomicBool::new(false),
         });
-        world.add_block_entity(paused);
+        world.add_block_entity(paused.clone());
+        paused.pause.store(true, Ordering::Release);
 
         let save_world = world.clone();
         let save = tokio::spawn(async move { save_world.save().await });

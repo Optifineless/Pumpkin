@@ -549,14 +549,14 @@ crates/pumpkin-core/src/server/scenario/persistence/block_entity_capture.rs::ove
 crates/pumpkin-core/src/server/scenario/persistence/block_entity_support.rs::from_nbt::std::sync::Mutex::new#1
 # The save-all race fixture takes its receiver, then releases the mutex before channel send/receive.
 crates/pumpkin-core/src/server/scenario/persistence/block_entity_capture.rs::save_all_replacement_keeps_block_entity_custom_data_after_reload::std::sync::Mutex::new#1
-# The shutdown race fixture takes its receiver, then releases the mutex before channel send/receive.
-crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::stop_does_not_publish_a_replaced_chests_stale_capture::std::sync::Mutex::new#1
-# The replacement capture owns a one-shot resume receiver; the guard is dropped before barrier waiting.
-crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::stop_does_not_publish_a_replaced_chests_stale_capture::std::sync::Mutex::new#2
-# The unload fixture owns a one-shot receiver and drops its guard before every capture barrier.
-crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::chunk_unload_retires_replacement_before_item_command_can_mutate_it::std::sync::Mutex::new#1
-# The replacement capture owns a one-shot resume receiver; the guard is dropped before barrier waiting.
-crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::chunk_unload_retires_replacement_before_item_command_can_mutate_it::std::sync::Mutex::new#2
+# The stop-seal fixture takes its one-shot receiver, then releases the mutex before channel send/receive.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::stop_seal_rejects_a_replacement_before_the_final_chest_capture::std::sync::Mutex::new#1
+# The unload-seal fixture takes its one-shot receiver and drops the guard before barrier waiting.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::chunk_unload_retires_the_current_chest_before_item_command_mutation::std::sync::Mutex::new#1
+# The deferred-loot fixture owns a one-shot resume receiver; its guard drops before the save barrier.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_round5.rs::packet_update_cannot_replace_a_full_deferred_loot_image::std::sync::Mutex::new#1
+# The late-placement fixture owns a one-shot receiver and drops the guard before the unload barrier.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_round5_admission.rs::unload_admission_rejects_a_new_chest_before_terrain_commit::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/recipe.rs::new::std::sync::RwLock::new#1
 crates/pumpkin-core/src/server/scenario/lifecycle.rs::s2_disconnect_during_respawn_does_not_republish_closed_instance::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scenario/mod.rs::<module>::tokio::sync::Mutex::const_new#1
@@ -594,7 +594,6 @@ crates/pumpkin-core/src/world/map/cache.rs::request_load::std::sync::Mutex::new#
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#2
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#3
-crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#4
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#10
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#11

@@ -8,7 +8,7 @@ use pumpkin_world::generation::structure::template::BlockPlacer;
 use pumpkin_world::level::Level;
 
 use crate::block::entities::block_entity_name;
-use crate::world::World;
+use crate::world::{BlockEntityMutationPermit, World};
 
 impl World {
     pub fn clear_synced_block_events_in_box(&self, min: &BlockPos, max: &BlockPos) {
@@ -32,6 +32,7 @@ pub struct WorldBlockPlacer<'a> {
     world: &'a Arc<World>,
     pub block_entity_nbts: Vec<NbtCompound>,
     pub changed_positions: Vec<(BlockPos, BlockStateId)>,
+    mutation_permits: Vec<BlockEntityMutationPermit<'a>>,
 }
 
 impl<'a> WorldBlockPlacer<'a> {
@@ -41,6 +42,7 @@ impl<'a> WorldBlockPlacer<'a> {
             world,
             block_entity_nbts: Vec::new(),
             changed_positions: Vec::new(),
+            mutation_permits: Vec::new(),
         }
     }
 
@@ -62,6 +64,12 @@ impl BlockPlacer for WorldBlockPlacer<'_> {
 
     fn set_block_state(&mut self, pos: &Vector3<i32>, state: &BlockState) {
         let block_pos = BlockPos::new(pos.x, pos.y, pos.z);
+        let Some(mutation) = self.world.block_entity_mutation_permit(block_pos) else {
+            tracing::warn!(
+                "Structure block placement rejected while chunk is unloading at {block_pos:?}"
+            );
+            return;
+        };
         let replaced = Level::set_block_state(&self.world.level, &block_pos, state.id);
         if replaced.to_block() != state.id.to_block()
             && block_entity_name(Block::from_state_id(replaced)).is_some()
@@ -76,6 +84,7 @@ impl BlockPlacer for WorldBlockPlacer<'_> {
             self.world.remove_block_entity(&block_pos);
         }
         self.changed_positions.push((block_pos, state.id));
+        self.mutation_permits.push(mutation);
     }
 
     fn add_block_entity(&mut self, nbt: NbtCompound) {

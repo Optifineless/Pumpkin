@@ -111,6 +111,19 @@ the final unload or shutdown capture. Tests cover the actual `/item replace bloc
 command during chunk unload and a retained-handle transfer during server stop,
 then reload the captured chest contents. In-game verification: **Not yet**.
 
+The #191 round-five follow-up publishes only complete persistent block-entity
+images; `chunk_data_nbt()` remains packet data. Capture stamps reset with the live
+instance, and ordinary saves keep retrying until they capture the current one.
+Unload and stop close mutation admission before their final capture. Block placement,
+replacement, sign edits, block interactions, jigsaw edits and custom block-entity data
+are fenced at their mutation entry points. Concurrent replacements retire the exact
+predecessor before swapping. Regression scenarios exercise deferred chest loot,
+late chest placement, sign edits during unload, replacement churn and concurrent
+container replacement through save or unload and reload. Entity saves also retry
+when saved records are activated into the live registry during serialization. The
+saved NBT layout and native plugin API are unchanged (API 8, same version). In-game verification:
+**Not yet**.
+
 ## World normal/frozen service boundary, ticks M1
 
 Normal World ticking and each frozen flush/player batch now require exclusive

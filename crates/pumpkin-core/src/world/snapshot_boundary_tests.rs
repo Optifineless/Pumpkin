@@ -268,6 +268,27 @@ async fn snapshot_normal_and_final_save_preserve_legacy_fixture_nbt_bytes() {
     fixture.finish().await;
 }
 
+#[tokio::test]
+async fn shutdown_waits_for_admitted_block_entity_mutations_before_closing_admission() {
+    let fixture = super::spawn_test_support::Fixture::new();
+    let world = &fixture.world;
+    let pos = BlockPos::new(8, 64, 8);
+    let admitted = world
+        .block_entity_mutation_permit(pos)
+        .expect("fixture world should admit the first mutation");
+
+    assert!(!world.try_stop_block_entity_mutations());
+    let nested = world
+        .block_entity_mutation_permit(pos)
+        .expect("an admitted callback must finish its nested block-entity registration");
+    drop(nested);
+    drop(admitted);
+
+    assert!(world.try_stop_block_entity_mutations());
+    assert!(world.block_entity_mutation_permit(pos).is_none());
+    fixture.finish().await;
+}
+
 // NbtCompound uses randomized HashMap order. Compare known fixture bytes with
 // compound keys sorted; primitive payloads still use the production Java codec.
 fn canonical_bytes(nbt: NbtCompound) -> Vec<u8> {

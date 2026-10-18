@@ -10,7 +10,8 @@ impl JavaClient {
             return;
         }
         let pos = command.pos;
-        let block_entity = player.world().get_block_entity(&pos);
+        let world = player.world();
+        let block_entity = world.get_block_entity(&pos);
         if let Some(block_entity) = block_entity {
             if block_entity.resource_location() != CommandBlockEntity::ID {
                 warn!("Client tried to change Command block but not Command block entity found");
@@ -41,7 +42,12 @@ impl JavaClient {
             props.conditional = command.is_conditional();
 
             let new_state_id = props.to_state_id(&block_type);
-            player.world().set_block_state(
+            // ServerGamePacketListenerImpl.handleSetCommandBlock updates terrain and the entity.
+            let Some(mutation) = world.block_entity_mutation_permit(pos) else {
+                warn!("Command block update rejected while chunk is unloading at {pos:?}");
+                return;
+            };
+            world.set_block_state(
                 &command.pos,
                 new_state_id,
                 BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
@@ -72,7 +78,8 @@ impl JavaClient {
                 track_output: command.track_output().into(),
                 success_count: AtomicU32::new(0),
             };
-            player.world().add_block_entity(Arc::new(command_block));
+            world.add_block_entity(Arc::new(command_block));
+            drop(mutation);
 
             player.send_system_message(&TextComponent::text(format!(
                 "Command set: {}",
