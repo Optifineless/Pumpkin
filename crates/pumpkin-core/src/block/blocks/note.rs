@@ -198,6 +198,7 @@ const fn convert_instrument_to_sound(instrument: NoteblockInstrument) -> Sound {
     }
 }
 
+// Mirrors vanilla 26.3 `NoteBlockInstrument.Type.BASE_BLOCK`.
 const fn is_base_block(instrument: NoteblockInstrument) -> bool {
     matches!(
         instrument,
@@ -216,5 +217,10 @@ const fn is_base_block(instrument: NoteblockInstrument) -> bool {
             | NoteblockInstrument::Didgeridoo
             | NoteblockInstrument::Bit
             | NoteblockInstrument::Banjo
+            | NoteblockInstrument::Pling
+            | NoteblockInstrument::Trumpet
+            | NoteblockInstrument::TrumpetExposed
+            | NoteblockInstrument::TrumpetOxidized
+            | NoteblockInstrument::TrumpetWeathered
     )
 }

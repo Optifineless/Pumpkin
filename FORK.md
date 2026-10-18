@@ -26,6 +26,15 @@ Play test: Hold an Overworld map in either hand and enter the Nether; expect its
 pixels to stay unchanged and existing markers to remain visible. Return to the
 Overworld and explore new ground; expect the map to fill in normally.
 
+## Note block instrument classification (#17)
+
+Pling and copper support instruments remain selected when a note block is
+placed or its vertical support changes. Diamond blocks retain vanilla's Harp
+instrument; Glowstone is assigned Pling. Mob-head instruments retain their
+above-block override and Harp fallback. Mirrors vanilla 26.3
+`NoteBlockInstrument.Type.BASE_BLOCK`, `NoteBlock.setInstrument` and
+`NoteBlock.triggerEvent`. In-game verification: **Not yet**.
+
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 
 Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity
