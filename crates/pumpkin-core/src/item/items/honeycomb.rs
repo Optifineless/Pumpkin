@@ -58,9 +58,22 @@ pub(crate) fn try_wax_block(world: &Arc<World>, location: BlockPos, block: &Bloc
     let new_block = replacement.to_block();
 
     let old_state_id = world.get_block_state_id(&location);
+    // `block` was captured before plugin events ran; another player may have waxed,
+    // mined or replaced it since. Only wax the state we read, so one honeycomb buys
+    // one change and nothing is written over a different block.
+    if Block::from_state_id(old_state_id).id != block.id {
+        return false;
+    }
     let new_state_id = waxed_state_id(block, old_state_id, new_block);
 
-    world.set_block_state(&location, new_state_id, BlockFlags::NOTIFY_ALL);
+    if world
+        .set_block_state_if(&location, new_state_id, BlockFlags::NOTIFY_ALL, |current| {
+            current == old_state_id
+        })
+        .is_none()
+    {
+        return false;
+    }
     world.sync_world_event(WorldEvent::ParticlesWaxOn, location, 0);
     true
 }
