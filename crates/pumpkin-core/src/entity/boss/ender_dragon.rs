@@ -14,6 +14,8 @@ use crate::entity::{
     player::Player,
 };
 
+#[cfg(test)]
+mod collision_tests;
 pub mod flight_history;
 pub mod phase;
 
@@ -605,6 +607,10 @@ impl EnderDragonEntity {
         let zm = f64::midpoint(dragon_bbox.min.z, dragon_bbox.max.z);
 
         for player in world.players.load().iter() {
+            // EnderDragon.tick uses EntitySelector.NO_CREATIVE_OR_SPECTATOR for contact effects.
+            if player.is_creative() || player.is_spectator() {
+                continue;
+            }
             if player
                 .living_entity
                 .entity
@@ -629,7 +635,15 @@ impl EnderDragonEntity {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .is_sitting()
                 {
-                    player.damage(self, 5.0, DamageType::MOB_ATTACK);
+                    // EnderDragon.knockBack uses mobAttack(this) through the target's hurtServer.
+                    player.damage_with_context(
+                        player.as_ref(),
+                        5.0,
+                        DamageType::MOB_ATTACK,
+                        None,
+                        Some(self),
+                        Some(self),
+                    );
                 }
             }
         }
