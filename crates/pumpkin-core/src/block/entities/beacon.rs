@@ -1,18 +1,15 @@
 use pumpkin_data::data_component_impl::IDSetContent;
 use pumpkin_data::tag::Taggable;
-use std::any::Any;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use pumpkin_data::effect::StatusEffect;
-use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 
-use crate::block::entities::BlockEntity;
+use crate::block::entities::{BlockEntity, PropertyDelegate};
 use crate::world::World;
-use pumpkin_inventory::{Clearable, Inventory};
 
 pub struct BeaconBlockEntity {
     pub position: BlockPos,
@@ -20,9 +17,6 @@ pub struct BeaconBlockEntity {
     pub secondary_effect: AtomicI32,
     pub levels: AtomicI32,
     pub dirty: AtomicBool,
-    pub(crate) transaction:
-        std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
-    pub payment: Arc<Mutex<ItemStack>>,
 
     // Vanilla Parity Fields
     pub custom_name: Mutex<Option<String>>,
@@ -40,15 +34,13 @@ impl BeaconBlockEntity {
     pub const NUM_DATA_VALUES: usize = 3;
 
     #[must_use]
-    pub fn new(position: BlockPos) -> Self {
+    pub const fn new(position: BlockPos) -> Self {
         Self {
             position,
             primary_effect: AtomicI32::new(-1),
             secondary_effect: AtomicI32::new(-1),
             levels: AtomicI32::new(0),
             dirty: AtomicBool::new(false),
-            transaction: std::sync::Arc::default(),
-            payment: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
             custom_name: Mutex::new(None),
             lock_key: Mutex::new(None),
             last_check_y: AtomicI32::new(position.0.y - 1),
@@ -59,8 +51,10 @@ impl BeaconBlockEntity {
     pub fn get_data(&self, id: usize) -> i32 {
         match id {
             Self::DATA_LEVELS => self.levels.load(Ordering::Relaxed),
-            Self::DATA_PRIMARY => self.primary_effect.load(Ordering::Relaxed),
-            Self::DATA_SECONDARY => self.secondary_effect.load(Ordering::Relaxed),
+            Self::DATA_PRIMARY => Self::encode_effect(self.primary_effect.load(Ordering::Relaxed)),
+            Self::DATA_SECONDARY => {
+                Self::encode_effect(self.secondary_effect.load(Ordering::Relaxed))
+            }
             _ => 0,
         }
     }
@@ -68,52 +62,86 @@ impl BeaconBlockEntity {
     pub fn set_data(&self, id: usize, value: i32) {
         match id {
             Self::DATA_LEVELS => self.levels.store(value, Ordering::Relaxed),
-            Self::DATA_PRIMARY => self.primary_effect.store(value, Ordering::Relaxed),
-            Self::DATA_SECONDARY => self.secondary_effect.store(value, Ordering::Relaxed),
+            Self::DATA_PRIMARY => self
+                .primary_effect
+                .store(Self::decode_effect(value), Ordering::Relaxed),
+            Self::DATA_SECONDARY => self
+                .secondary_effect
+                .store(Self::decode_effect(value), Ordering::Relaxed),
             _ => {}
         }
         self.mark_dirty();
     }
 
+    const fn encode_effect(effect_id: i32) -> i32 {
+        if effect_id < 0 {
+            0
+        } else {
+            Self::encode_effect_id(Some(effect_id))
+        }
+    }
+
+    /// Mirrors `BeaconMenu.encodeEffect`: zero means no effect; otherwise use registry ID + 1.
+    #[must_use]
+    pub const fn encode_effect_id(effect_id: Option<i32>) -> i32 {
+        match effect_id {
+            Some(effect_id) => effect_id + 1,
+            None => 0,
+        }
+    }
+
+    const fn decode_effect(encoded: i32) -> i32 {
+        if encoded <= 0 { -1 } else { encoded - 1 }
+    }
+
+    pub fn mark_dirty(&self) {
+        self.dirty.store(true, Ordering::Relaxed);
+    }
+
     #[must_use]
     pub const fn is_valid_primary_effect(effect_id: i32, levels: i32) -> bool {
         match effect_id {
-            // Speed (1), Haste (3)
-            1 | 3 => levels >= 1,
-            // Resistance (11), Jump Boost (8)
-            11 | 8 => levels >= 2,
-            // Strength (5)
-            5 => levels >= 3,
+            // Speed (0), Haste (2)
+            0 | 2 => levels >= 1,
+            // Resistance (10), Jump Boost (7)
+            10 | 7 => levels >= 2,
+            // Strength (4)
+            4 => levels >= 3,
             _ => false,
         }
     }
 
     #[must_use]
     pub const fn is_valid_secondary_effect(
-        primary_id: i32,
-        secondary_id: i32,
+        primary_id: Option<i32>,
+        secondary_id: Option<i32>,
         levels: i32,
     ) -> bool {
-        if secondary_id <= 0 {
-            return true;
+        match secondary_id {
+            None => true,
+            Some(secondary_id) => {
+                let matches_primary = match primary_id {
+                    Some(primary_id) => secondary_id == primary_id,
+                    None => false,
+                };
+                levels >= 4 && (secondary_id == 9 || matches_primary)
+            }
         }
-        if levels < 4 {
-            return false;
-        }
-        // Regeneration (10) or identical to primary
-        secondary_id == 10 || secondary_id == primary_id
     }
 
     #[must_use]
-    pub fn validate_effects(primary: Option<i32>, secondary: Option<i32>, levels: i32) -> bool {
-        let primary_id = primary.unwrap_or(0);
-        let secondary_id = secondary.unwrap_or(0);
-
-        if primary_id > 0 && !Self::is_valid_primary_effect(primary_id, levels) {
+    pub const fn validate_effects(
+        primary: Option<i32>,
+        secondary: Option<i32>,
+        levels: i32,
+    ) -> bool {
+        if let Some(primary_id) = primary
+            && !Self::is_valid_primary_effect(primary_id, levels)
+        {
             return false;
         }
 
-        if secondary_id > 0 && !Self::is_valid_secondary_effect(primary_id, secondary_id, levels) {
+        if !Self::is_valid_secondary_effect(primary, secondary, levels) {
             return false;
         }
 
@@ -167,7 +195,7 @@ impl BeaconBlockEntity {
         let primary_id = self.primary_effect.load(Ordering::Relaxed);
         let secondary_id = self.secondary_effect.load(Ordering::Relaxed);
 
-        if primary_id <= 0 {
+        if primary_id < 0 {
             return;
         }
 
@@ -228,6 +256,26 @@ impl BeaconBlockEntity {
     }
 }
 
+impl PropertyDelegate for BeaconBlockEntity {
+    fn get_property(&self, index: i32) -> i32 {
+        if (0..Self::NUM_DATA_VALUES as i32).contains(&index) {
+            self.get_data(index as usize)
+        } else {
+            0
+        }
+    }
+
+    fn set_property(&self, index: i32, value: i32) {
+        if (0..Self::NUM_DATA_VALUES as i32).contains(&index) {
+            self.set_data(index as usize, value);
+        }
+    }
+
+    fn get_properties_size(&self) -> i32 {
+        Self::NUM_DATA_VALUES as i32
+    }
+}
+
 impl BlockEntity for BeaconBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -272,8 +320,6 @@ impl BlockEntity for BeaconBlockEntity {
             secondary_effect: AtomicI32::new(secondary),
             levels: AtomicI32::new(levels),
             dirty: AtomicBool::new(false),
-            transaction: std::sync::Arc::default(),
-            payment: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
             custom_name: Mutex::new(custom_name),
             lock_key: Mutex::new(lock_key),
             last_check_y: AtomicI32::new(position.0.y - 1),
@@ -361,94 +407,5 @@ impl BlockEntity for BeaconBlockEntity {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
-    }
-}
-
-impl Inventory for BeaconBlockEntity {
-    fn slot_transaction(
-        &self,
-        _slot: usize,
-    ) -> std::sync::Arc<pumpkin_inventory::inventory::slot_transaction::Transaction> {
-        self.transaction.clone()
-    }
-
-    fn update_slot_storage(&self, slot: usize, update: &mut dyn FnMut(&mut ItemStack)) {
-        if slot == 0 {
-            let mut payment = self
-                .payment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            update(&mut payment);
-        }
-    }
-
-    fn size(&self) -> usize {
-        1
-    }
-
-    fn is_empty(&self) -> bool {
-        self.payment
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
-    }
-
-    fn get_stack(&self, slot: usize) -> ItemStack {
-        if slot == 0 {
-            self.payment
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone()
-        } else {
-            ItemStack::EMPTY.clone()
-        }
-    }
-
-    fn remove_stack(&self, slot: usize) -> ItemStack {
-        let mut removed = ItemStack::EMPTY.clone();
-        self.update_slot(slot, &mut |stack| {
-            removed = std::mem::replace(stack, ItemStack::EMPTY.clone());
-        });
-        if !removed.is_empty() {
-            self.on_slot_changed(slot);
-        }
-        removed
-    }
-
-    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        let mut removed = ItemStack::EMPTY.clone();
-        self.update_slot(slot, &mut |stack| {
-            if !stack.is_empty() && amount > 0 {
-                removed = stack.split(amount);
-            }
-        });
-        if !removed.is_empty() {
-            self.on_slot_changed(slot);
-        }
-        removed
-    }
-
-    fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let mut replacement = Some(stack);
-        self.update_slot(slot, &mut |current| {
-            if let Some(stack) = replacement.take() {
-                *current = stack;
-            }
-        });
-        self.on_slot_changed(slot);
-    }
-
-    fn mark_dirty(&self) {
-        self.dirty.store(true, Ordering::Relaxed);
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl Clearable for BeaconBlockEntity {
-    fn clear(&self) {
-        pumpkin_inventory::inventory::slot_transaction::clear(self);
     }
 }

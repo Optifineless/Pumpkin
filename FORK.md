@@ -327,6 +327,7 @@ In-game verification: Not yet. AI implementation: Codex (GPT-6).
 | Fork issue | Change | Checked in-game |
 |:--|:--|:--|
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also fixes the existing-knot downcast used by player-to-knot transfers. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved` and `LeadItem.bindPlayerMobs`; species-specific `canBeLeashed` eligibility is not yet ported. | Not yet |
+| [#63](https://github.com/Optifineless/Pumpkin/issues/63) Right-clicking a beacon cannot open its payment menu | Beacon interactions open a per-viewer menu for powered and unpowered beacons. The menu accepts only singleton items from `minecraft:beacon_payment_items`, validates effect selections, syncs levels and encoded effects, and returns unpaid payment on close, replacement or disconnect. Payment remains transient and is not added to beacon saves. Implemented by Codex (GPT-6 Luna). | Not yet |
 
 ## Known regressions under investigation
 

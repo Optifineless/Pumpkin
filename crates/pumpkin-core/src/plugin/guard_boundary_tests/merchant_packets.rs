@@ -2,6 +2,7 @@ use super::*;
 use crate::entity::{Entity, EntityBase, passive::villager::VillagerEntity};
 use pumpkin_data::entity::EntityType;
 use pumpkin_inventory::{
+    beacon_screen_handler::BeaconScreenHandler,
     merchant::merchant_screen_handler::MerchantScreenHandler, screen_handler::ScreenHandlerFactory,
 };
 use pumpkin_protocol::{
@@ -190,14 +191,16 @@ async fn guard_boundary_beacon_payment_sync_reenters_menu() {
         pumpkin_util::math::position::BlockPos::new(0, 80, 0),
     ));
     beacon.levels.store(1, Ordering::Relaxed);
-    beacon.set_stack(0, ItemStack::new(1, &Item::EMERALD));
-    let screen: SharedScreenHandler = Arc::new(ScreenMutex::new(
-        pumpkin_inventory::beacon_screen_handler::create_beacon_handler(
-            1,
-            &fixture.player.player.inventory,
-            beacon.clone(),
-        ),
-    ));
+    let beacon_data: Arc<dyn pumpkin_inventory::window_property::PropertyDelegate> = beacon.clone();
+    let handler = pumpkin_inventory::beacon_screen_handler::create_beacon_handler(
+        1,
+        &fixture.player.player.inventory,
+        beacon_data,
+    );
+    handler
+        .inventory
+        .set_stack(0, ItemStack::new(1, &Item::EMERALD));
+    let screen: SharedScreenHandler = Arc::new(ScreenMutex::new(handler));
     *fixture.player.player.current_screen_handler.lock().unwrap() = screen.clone();
     attach(&fixture, &screen);
     fixture.translating();
@@ -217,7 +220,17 @@ async fn guard_boundary_beacon_payment_sync_reenters_menu() {
             secondary_effect: None,
         },
     );
-    assert!(beacon.get_stack(0).is_empty());
+    assert!(
+        screen
+            .lock()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<BeaconScreenHandler>()
+            .unwrap()
+            .inventory
+            .get_stack(0)
+            .is_empty()
+    );
     assert!(calls.load(Ordering::Relaxed) > 0);
     fixture.close().await;
 }

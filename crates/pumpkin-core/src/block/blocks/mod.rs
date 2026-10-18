@@ -145,4 +145,6 @@ pub mod dried_ghast;
 pub mod growing_plant;
 
 #[cfg(test)]
+mod beacon_regression_tests;
+#[cfg(test)]
 mod hunt_plants_tests;
