@@ -14,9 +14,11 @@ use crate::entity::{
     player::Player,
 };
 
+mod collision;
 #[cfg(test)]
 mod collision_tests;
 pub mod flight_history;
+mod parts;
 pub mod phase;
 
 use flight_history::DragonFlightHistory;
@@ -250,14 +252,15 @@ impl EnderDragonEntity {
 
         let mut parts = Vec::new();
         // EnderDragon.recreateFromPacket uses the eight IDs reserved by from_type.
-        for i in 1..=PART_COUNT {
+        for (index, (width, height)) in parts::PART_SIZES.into_iter().enumerate() {
             let part_entity = Entity::from_uuid_with_id(
-                base_id + i,
+                base_id + index as i32 + 1,
                 uuid::Uuid::new_v4(),
                 world.clone(),
-                entity.pos.load(),
+                Vector3::default(),
                 &EntityType::ENDER_DRAGON,
             );
+            parts::set_dimensions(&part_entity, width, height);
             let part = Arc::new(EnderDragonPart::new(part_entity, dragon_uuid));
             parts.push(part);
         }
@@ -599,56 +602,6 @@ impl EnderDragonEntity {
             .cloned()
     }
 
-    fn handle_player_collisions(&self) {
-        let world = self.mob_entity.living_entity.entity.world.load();
-
-        let dragon_bbox = self.mob_entity.living_entity.entity.bounding_box.load();
-        let xm = f64::midpoint(dragon_bbox.min.x, dragon_bbox.max.x);
-        let zm = f64::midpoint(dragon_bbox.min.z, dragon_bbox.max.z);
-
-        for player in world.players.load().iter() {
-            // EnderDragon.tick uses EntitySelector.NO_CREATIVE_OR_SPECTATOR for contact effects.
-            if player.is_creative() || player.is_spectator() {
-                continue;
-            }
-            if player
-                .living_entity
-                .entity
-                .bounding_box
-                .load()
-                .intersects(&dragon_bbox)
-            {
-                let player_pos = player.get_entity().pos.load();
-                let xd = player_pos.x - xm;
-                let zd = player_pos.z - zm;
-                let dd = (xd * xd + zd * zd).max(0.1);
-
-                player
-                    .living_entity
-                    .entity
-                    .apply_knockback(4.0, xd / dd, zd / dd);
-                player.get_entity().send_velocity();
-
-                if !self
-                    .phase
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .is_sitting()
-                {
-                    // EnderDragon.knockBack uses mobAttack(this) through the target's hurtServer.
-                    player.damage_with_context(
-                        player.as_ref(),
-                        5.0,
-                        DamageType::MOB_ATTACK,
-                        None,
-                        Some(self),
-                        Some(self),
-                    );
-                }
-            }
-        }
-    }
-
     fn tick_crystal_healing(&self) {
         let world = self.mob_entity.living_entity.entity.world.load();
         let pos = self.mob_entity.living_entity.entity.pos.load();
@@ -704,91 +657,6 @@ impl EnderDragonEntity {
         }
     }
 
-    fn tick_parts(&self) {
-        let history = self
-            .flight_history
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let p5 = history.get(5);
-        let p10 = history.get(10);
-        let p0 = history.get(0);
-
-        let tilt = (p5.y - p10.y) as f32 * 10.0 * (std::f32::consts::PI / 180.0);
-        let cc_tilt = tilt.cos() as f64;
-        let ss_tilt = tilt.sin() as f64;
-
-        let yaw = self.mob_entity.living_entity.entity.yaw.load();
-        let rot1 = yaw * (std::f32::consts::PI / 180.0);
-        let ss1 = rot1.sin() as f64;
-        let cc1 = rot1.cos() as f64;
-
-        let pos = self.mob_entity.living_entity.entity.pos.load();
-
-        // Body
-        self.parts[2]
-            .entity
-            .set_pos(Vector3::new(pos.x + ss1 * 0.5, pos.y, pos.z - cc1 * 0.5));
-
-        // Wings
-        self.parts[6].entity.set_pos(Vector3::new(
-            pos.x + cc1 * 4.5,
-            pos.y + 2.0,
-            pos.z + ss1 * 4.5,
-        ));
-        self.parts[7].entity.set_pos(Vector3::new(
-            pos.x - cc1 * 4.5,
-            pos.y + 2.0,
-            pos.z - ss1 * 4.5,
-        ));
-
-        let head_y_offset = if self
-            .phase
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_sitting()
-        {
-            -1.0
-        } else {
-            p5.y - p0.y
-        };
-
-        let yaw_accel = *self
-            .yaw_rot_accel
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let rot2 = (yaw - yaw_accel * 0.01) * (std::f32::consts::PI / 180.0);
-        let ss2 = rot2.sin() as f64;
-        let cc2 = rot2.cos() as f64;
-
-        // Head & Neck
-        self.parts[0].entity.set_pos(Vector3::new(
-            pos.x + ss2 * 6.5 * cc_tilt,
-            pos.y + head_y_offset + ss_tilt * 6.5,
-            pos.z - cc2 * 6.5 * cc_tilt,
-        ));
-        self.parts[1].entity.set_pos(Vector3::new(
-            pos.x + ss2 * 5.5 * cc_tilt,
-            pos.y + head_y_offset + ss_tilt * 5.5,
-            pos.z - cc2 * 5.5 * cc_tilt,
-        ));
-
-        // Tails
-        for i in 0..3 {
-            let pi = history.get(12 + i * 2);
-            let rot = yaw * (std::f32::consts::PI / 180.0)
-                + (pi.y_rot - p5.y_rot).rem_euclid(360.0).to_radians();
-            let ss = rot.sin() as f64;
-            let cc = rot.cos() as f64;
-            let dd = (i + 1) as f64 * 2.0;
-
-            self.parts[3 + i as usize].entity.set_pos(Vector3::new(
-                pos.x - (ss1 * 1.5 + ss * dd) * cc_tilt,
-                pos.y + (pi.y - p5.y) - (dd + 1.5) * ss_tilt + 1.5,
-                pos.z + (cc1 * 1.5 + cc * dd) * cc_tilt,
-            ));
-        }
-    }
-
     pub fn ai_step(&self) {
         if self.mob_entity.living_entity.entity.is_removed() {
             return;
@@ -838,7 +706,6 @@ impl EnderDragonEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
         } else {
-            self.handle_player_collisions();
             self.tick_block_breaking();
         }
 
@@ -858,8 +725,6 @@ impl EnderDragonEntity {
                 self.steer_toward(pos, target, phase.get_fly_speed(), phase.get_turn_speed());
             }
         }
-
-        self.tick_parts();
     }
 
     pub fn hurt(&self, damage: f32) {
@@ -883,6 +748,14 @@ impl Mob for EnderDragonEntity {
 
     fn mob_tick(&self, _caller: &dyn EntityBase) {
         self.ai_step();
+    }
+
+    fn post_tick(&self) {
+        // Vanilla aiStep moves before positioning parts and applying contact effects.
+        // Pumpkin's shared LivingEntity travel finishes after mob_tick returns.
+        if !self.mob_entity.living_entity.entity.is_removed() {
+            self.tick_parts();
+        }
     }
 
     fn on_damage(

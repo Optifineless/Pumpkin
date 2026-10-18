@@ -72,6 +72,13 @@ Ender Dragon contact ignores Creative and Spectator players and sends Survival d
 Door hinge scoring checks full-block obstructions beside the door at both lower and upper levels, while preserving adjacent-door precedence and the click-position tie-break. Mirrors vanilla 26.3 `DoorBlock.getHinge`. Fixes [#22](https://github.com/Optifineless/Pumpkin/issues/22). In-game verification: **Not yet**.
 
 An adjacent side placement makes a trapdoor face the horizontal block face that was clicked. Replacing the clicked block and clicking a vertical face retain vanilla's opposite-player-facing branch. Mirrors vanilla 26.3 `TrapDoorBlock.getStateForPlacement`. Fixes [#23](https://github.com/Optifineless/Pumpkin/issues/23). In-game verification: **Not yet**.
+Ender Dragon wing contact pushes any living entity and can deal 5 mob-attack
+damage; head/neck contact deals 10. Part dimensions and contact ordering mirror
+vanilla 26.3 `EnderDragon.aiStep/knockBack/hurt` and `EnderDragonPart`, including
+Creative/Spectator, hurt-timer and team exclusions. Each effect rechecks the live
+target's world, presence, life and eligibility after earlier callbacks (#201),
+preserving PR #194. Implemented by Codex (GPT-6.1 Sol). In-game verification:
+**Not yet**. Saved formats, native layouts and reserved part IDs are unchanged.
 
 Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity
 still consumes tipped and spectral arrows. Mirrors vanilla 26.3

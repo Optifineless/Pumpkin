@@ -64,13 +64,10 @@ pub enum EnderDragonPhase {
 impl EnderDragonPhase {
     #[must_use]
     pub const fn is_sitting(self) -> bool {
+        // AbstractDragonSittingPhase and DragonHoverPhase override isSitting.
         matches!(
             self,
-            Self::LandingApproach
-                | Self::Landing
-                | Self::SitAttacking
-                | Self::SitBreathing
-                | Self::TakingOff
+            Self::SitAttacking | Self::SitBreathing | Self::Hovering
         )
     }
 
