@@ -219,6 +219,60 @@ async fn enchanting_table_book_offers_convert_to_one_stored_enchantment() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn enchanting_table_book_stack_enchants_one_book() {
+    let fixture = Fixture::new();
+    fixture.set_block(TABLE_POS, &Block::ENCHANTING_TABLE);
+    add_fifteen_bookshelves(&fixture, TABLE_POS);
+    fixture
+        .player
+        .player
+        .enchantment_seed
+        .store(0, Ordering::Relaxed);
+    fixture
+        .player
+        .player
+        .experience_level
+        .store(30, Ordering::Relaxed);
+    let (sync_id, menu) = fixture.open_table(TABLE_POS);
+
+    let inventory = &fixture.player.player.inventory;
+    inventory.set_stack(0, ItemStack::new(64, &Item::BOOK));
+    inventory.set_stack(1, ItemStack::new(3, &Item::LAPIS_LAZULI));
+    fixture.move_inventory_stack_to_table(sync_id, 0);
+    fixture.move_inventory_stack_to_table(sync_id, 1);
+
+    // EnchantmentMenu's item slot holds one item; the rest of the stack stays with the player.
+    let table_inventory = {
+        let guard = menu.lock().unwrap();
+        guard
+            .as_any()
+            .downcast_ref::<EnchantingTableScreenHandler>()
+            .unwrap()
+            .inventory
+            .clone()
+    };
+    assert_eq!(table_inventory.get_stack(0).item_count, 1);
+    assert_eq!(inventory.get_stack(0).item, &Item::BOOK);
+    assert_eq!(inventory.get_stack(0).item_count, 63);
+    let (_, book_ids, _, _) = table_values(&menu);
+    assert!(book_ids[2] >= 0);
+
+    fixture
+        .player
+        .player
+        .on_container_button_click(&SContainerButtonClick {
+            window_id: VarInt(i32::from(sync_id)),
+            button_id: VarInt(2),
+        });
+
+    let enchanted = table_inventory.get_stack(0);
+    assert_eq!(enchanted.item, &Item::ENCHANTED_BOOK);
+    assert_eq!(enchanted.item_count, 1);
+    assert_eq!(inventory.get_stack(0).item_count, 63);
+    fixture.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn enchanting_table_middle_offer_uses_vanilla_requirement_and_option_payment() {
     let fixture = Fixture::new();
     fixture.set_block(TABLE_POS, &Block::ENCHANTING_TABLE);

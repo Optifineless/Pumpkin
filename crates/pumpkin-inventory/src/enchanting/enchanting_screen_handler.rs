@@ -17,6 +17,32 @@ use crate::{
     window_property::{EnchantmentTable, WindowProperty},
 };
 
+/// The item slot. `EnchantmentMenu` overrides `getMaxStackSize` to 1, so one click never
+/// enchants (or turns into enchanted books) more than one item.
+struct EnchantItemSlot(NormalSlot);
+
+impl Slot for EnchantItemSlot {
+    fn get_inventory(&self) -> Arc<dyn Inventory> {
+        self.0.get_inventory()
+    }
+
+    fn get_index(&self) -> usize {
+        self.0.get_index()
+    }
+
+    fn set_id(&self, id: usize) {
+        self.0.set_id(id);
+    }
+
+    fn mark_dirty(&self) {
+        self.0.mark_dirty();
+    }
+
+    fn get_max_item_count(&self) -> u8 {
+        1
+    }
+}
+
 struct LapisSlot(NormalSlot);
 
 fn is_lapis(stack: &ItemStack) -> bool {
@@ -84,7 +110,10 @@ impl EnchantingTableScreenHandler {
         };
 
         // Enchanting slots: 0 is item, 1 is lapis
-        handler.add_slot(Arc::new(NormalSlot::new(inventory.clone(), 0)));
+        handler.add_slot(Arc::new(EnchantItemSlot(NormalSlot::new(
+            inventory.clone(),
+            0,
+        ))));
         handler.add_slot(Arc::new(LapisSlot::new(inventory.clone())));
 
         let player_inventory: Arc<dyn Inventory> = player_inventory.clone();
