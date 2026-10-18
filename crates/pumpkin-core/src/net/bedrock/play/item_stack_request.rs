@@ -314,12 +314,14 @@ impl BedrockClient {
                                     } else {
                                         super::inventory_commit::commit(
                                             &*screen_handler,
+                                            player.as_ref(),
                                             &[(&destination, &expected_destination, &dest_stack)],
                                         )
                                     }
                                 } else {
                                     super::inventory_commit::commit(
                                         &*screen_handler,
+                                        player.as_ref(),
                                         &[
                                             (&source, &expected_source, &source_stack),
                                             (&destination, &expected_destination, &dest_stack),
@@ -389,6 +391,7 @@ impl BedrockClient {
 
                             if !super::inventory_commit::commit(
                                 &*screen_handler,
+                                player.as_ref(),
                                 &[(&slot1, &stack1, &stack2), (&slot2, &stack2, &stack1)],
                             ) {
                                 result = 1;
@@ -454,6 +457,7 @@ impl BedrockClient {
 
                                 if !super::inventory_commit::commit(
                                     &*screen_handler,
+                                    player.as_ref(),
                                     &[(&source, &expected_source, &source_stack)],
                                 ) {
                                     result = 1;
@@ -539,6 +543,7 @@ impl BedrockClient {
 
                                 if !super::inventory_commit::commit(
                                     &*screen_handler,
+                                    player.as_ref(),
                                     &[(&source, &expected_source, &source_stack)],
                                 ) {
                                     result = 1;
@@ -782,7 +787,11 @@ impl BedrockClient {
 
         // Send Bedrock specific responses and updates
         // Publish the committed request before callbacks can make further inventory edits.
+        let rejected = responses.iter().any(|response| response.result != 0);
         self.try_enqueue_client_packet(&CItemStackResponse { responses });
+        if rejected {
+            self.correct_inventory_prediction(player);
+        }
         for commit in crafting_effects {
             commit.finish(player.as_ref());
             inventory_updated = true;

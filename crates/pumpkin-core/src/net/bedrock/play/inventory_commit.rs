@@ -1,5 +1,8 @@
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_inventory::{inventory::slot_transaction, screen_handler::ScreenHandler};
+use pumpkin_inventory::{
+    inventory::slot_transaction,
+    screen_handler::{InventoryPlayer, ScreenHandler},
+};
 use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo;
 
 use super::item_stack_request::map_bedrock_container_slot;
@@ -53,6 +56,7 @@ pub(super) fn virtual_destination(
 // AbstractContainerMenu.doClick: one action consumes precisely the stock it observed.
 pub(super) fn commit(
     handler: &dyn ScreenHandler,
+    player: &dyn InventoryPlayer,
     changes: &[(&ItemStackRequestSlotInfo, &ItemStack, &ItemStack)],
 ) -> bool {
     let slots = changes
@@ -95,6 +99,15 @@ pub(super) fn commit(
             if current.uid != expected.uid || !current.are_equal(expected) {
                 return false;
             }
+            // A swap also takes stock when only the physical stack identity changes.
+            if !expected.is_empty()
+                && (replacement.uid != expected.uid
+                    || !expected.are_items_and_components_equal(replacement)
+                    || replacement.item_count < expected.item_count)
+                && !slot.can_take_items(player)
+            {
+                return false;
+            }
             if !replacement.is_empty()
                 && (expected.is_empty()
                     || !expected.are_items_and_components_equal(replacement)
@@ -121,13 +134,12 @@ pub(super) fn commit(
     }
     for ((_, expected, replacement), slot) in changes.iter().zip(&slots) {
         if let Some(slot) = slot {
-            let committed = slot_transaction::exchange(
-                slot.get_inventory().as_ref(),
-                slot.get_index(),
-                expected,
-                (*replacement).clone(),
-            );
-            debug_assert!(committed);
+            let inventory = slot.get_inventory();
+            // The owners already exclude writers; do not reacquire them through exchange.
+            inventory.update_slot_storage(slot.get_index(), &mut |current| {
+                *current = (*replacement).clone();
+                inventory.on_slot_replaced(slot.get_index(), expected, current);
+            });
         }
     }
     drop(guards);

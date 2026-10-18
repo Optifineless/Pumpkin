@@ -64,6 +64,15 @@ signature remains unchanged. Mirrors vanilla 26.3
 `LeashFenceKnotEntity.interact`, `LeashFenceKnotEntity.getOrCreateKnot`,
 `LeadItem.bindPlayerMobs` and `Leashable` leash methods. In-game verification:
 **Not yet**.
+## Binding Curse armor removal (#198)
+
+Java inventory clicks and Bedrock stack requests keep armor with the generated
+`prevent_armor_change` enchantment effect equipped outside Creative, mirroring
+vanilla 26.3 `ArmorSlot.mayPickup` and `EnchantmentHelper.has`. Bedrock checks
+removal under the same inventory owners as the write and corrects rejected client
+predictions after release. Packet regressions cover cursed armor, ordinary armor
+and Creative removal. Implemented by Codex (GPT-6.1 Sol).
+In-game verification: **Not yet**.
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 

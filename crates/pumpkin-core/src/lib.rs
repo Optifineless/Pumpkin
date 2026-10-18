@@ -59,6 +59,8 @@ pub mod enchantment;
 pub mod entity;
 pub mod error;
 #[cfg(test)]
+mod inventory_binding_curse_tests;
+#[cfg(test)]
 mod inventory_transaction_followup_tests;
 #[cfg(test)]
 mod inventory_transaction_tests;
