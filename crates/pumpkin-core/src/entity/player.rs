@@ -6069,23 +6069,7 @@ impl EntityBase for Player {
             let yaw = yaw.unwrap_or_else(|| self.living_entity.entity.yaw.load());
             let pitch = pitch.unwrap_or_else(|| self.living_entity.entity.pitch.load());
             // cancellation must also suppress the watcher broadcast.
-            let Some(position) = self.request_teleport(position, yaw, pitch) else {
-                return;
-            };
-            let entity = self.get_entity();
-            let chunk_pos = entity.chunk_pos.load();
-            entity.world.load().broadcast_to_chunk_except(
-                chunk_pos,
-                &[self.living_entity.entity.entity_uuid],
-                &CEntityPositionSync::new(
-                    self.living_entity.entity.entity_id.into(),
-                    position,
-                    Vector3::new(0.0, 0.0, 0.0),
-                    yaw,
-                    pitch,
-                    entity.on_ground.load(Ordering::SeqCst),
-                ),
-            );
+            let _ = self.teleport_same_world(position, yaw, pitch);
         } else if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id) {
             self.spawn_task(async move {
                 player_arc.teleport_world(world, position, yaw, pitch).await;

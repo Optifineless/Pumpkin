@@ -44,7 +44,8 @@ impl Player {
     fn player_damage_type_disabled(&self, damage_type: DamageType) -> bool {
         let world = self.world();
         let rules = &world.level_info.load().game_rules;
-        !self.has_client_loaded()
+        // ThrownEnderpearl.onHit applies this after ServerPlayer.teleport, before its load handshake.
+        (!self.has_client_loaded() && damage_type != DamageType::ENDER_PEARL)
             || (damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_DROWNING)
                 && !rules.drowning_damage)
             || (damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FALL) && !rules.fall_damage)

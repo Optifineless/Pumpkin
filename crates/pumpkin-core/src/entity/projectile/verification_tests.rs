@@ -91,7 +91,7 @@ async fn verification_ender_pearl_clears_fall_distance_before_landing_damage() {
     player.living_entity.fall_distance.store(20.0);
 
     let pearl = ender_pearl::EnderPearlEntity::new_shot(
-        Entity::new(world.clone(), Vector3::default(), &EntityType::ENDER_PEARL),
+        Entity::new(world, Vector3::default(), &EntityType::ENDER_PEARL),
         player.get_entity(),
     );
     pearl.get_entity().set_pos(Vector3::new(5.5, 64.2, 8.5));

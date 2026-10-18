@@ -90,35 +90,35 @@ impl EntityBase for EnderPearlEntity {
                 living.health.load() > 0.0 && owner.get_entity().pose.load() != EntityPose::Sleeping
             })
         {
-            let should_spawn_endermite = rand::random::<f32>() < ENDERMITE_SPAWN_CHANCE;
-            if world.should_spawn_monsters() && should_spawn_endermite {
-                let entity = Entity::new(
+            if let Some(player) = owner.get_player() {
+                // ThrownEnderpearl.onHit spawns the endermite before attempting ServerPlayer.teleport.
+                let should_spawn_endermite = rand::random::<f32>() < ENDERMITE_SPAWN_CHANCE;
+                if world.should_spawn_monsters() && should_spawn_endermite {
+                    let entity = Entity::new(
+                        world.clone(),
+                        owner.get_entity().pos.load(),
+                        &EntityType::ENDERMITE,
+                    );
+                    let endermite = EndermiteEntity::new(entity);
+                    world.spawn_entity(endermite);
+                }
+
+                // ThrownEnderpearl.onHit damages a ServerPlayer only when teleport returns it.
+                player.teleport_for_ender_pearl(teleport_pos, world.clone());
+            } else if !owner.get_entity().is_removed() {
+                // ThrownEnderpearl.onHit resets non-player owners only after a successful teleport.
+                owner.teleport(
+                    teleport_pos,
+                    Some(owner.get_entity().yaw.load()),
+                    Some(owner.get_entity().pitch.load()),
                     world.clone(),
-                    owner.get_entity().pos.load(),
-                    &EntityType::ENDERMITE,
                 );
-                let endermite = EndermiteEntity::new(entity);
-                world.spawn_entity(endermite);
+                if !owner.get_entity().is_removed()
+                    && let Some(living) = owner.get_living_entity()
+                {
+                    living.reset_fall_distance_and_impulse_context();
+                }
             }
-
-            owner.teleport(
-                teleport_pos,
-                Some(owner.get_entity().yaw.load()),
-                Some(owner.get_entity().pitch.load()),
-                world.clone(),
-            );
-
-            // ThrownEnderpearl.onHit resets the teleported owner's fall distance before damage.
-            if let Some(living) = owner.get_living_entity() {
-                living.fall_distance.store(0.0);
-            }
-
-            // Deal 5 damage to owner
-            owner.damage(
-                owner.as_ref(),
-                5.0,
-                pumpkin_data::damage::DamageType::ENDER_PEARL,
-            );
 
             world.play_sound(
                 Sound::EntityPlayerTeleport,
