@@ -7,6 +7,7 @@ mod experience_orb;
 mod inventory_sync;
 mod known_movement;
 mod mace;
+mod map_tracking;
 mod melee;
 mod menu_close;
 use known_movement::KnownMovement;
@@ -276,14 +277,13 @@ use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_protocol::java::client::play::{
     Animation, CAcknowledgeBlockChange, CActionBar, CAwardStats, CBlockUpdate, CChangeDifficulty,
     CCloseContainer, CCombatDeath, CCustomPayload, CDisguisedChatMessage, CEntityAnimation,
-    CEntityPositionSync, CEntityVelocity, CGameEvent, CHurtAnimation, CItemCooldown, CMapItemData,
-    COpenBook, COpenScreen, COpenSignEditor, CParticle, CPlayServerLinks, CPlayerAbilities,
-    CPlayerInfoUpdate, CPlayerPosition, CPlayerSpawnPosition, CRespawn, CSetCamera,
-    CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem, CSetExperience,
-    CSetHealth, CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound, CSubtitle,
-    CSystemChatMessage, CTabList, CTitleAnimation, CTitleText, CUnloadChunk, CUpdateMobEffect,
-    CUpdateTime, GameEvent, MapIcon, MapPatch, PlayerAction, PlayerInfoFlags, PlayerSpawnData,
-    PreviousMessage, Statistic,
+    CEntityPositionSync, CEntityVelocity, CGameEvent, CHurtAnimation, CItemCooldown, COpenBook,
+    COpenScreen, COpenSignEditor, CParticle, CPlayServerLinks, CPlayerAbilities, CPlayerInfoUpdate,
+    CPlayerPosition, CPlayerSpawnPosition, CRespawn, CSetCamera, CSetContainerContent,
+    CSetContainerProperty, CSetContainerSlot, CSetCursorItem, CSetExperience, CSetHealth,
+    CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound, CSubtitle, CSystemChatMessage,
+    CTabList, CTitleAnimation, CTitleText, CUnloadChunk, CUpdateMobEffect, CUpdateTime, GameEvent,
+    PlayerAction, PlayerInfoFlags, PlayerSpawnData, PreviousMessage, Statistic,
 };
 use pumpkin_protocol::java::server::play::{
     SClickSlot, SContainerButtonClick, SRenameItem, SlotActionType,
@@ -4697,82 +4697,7 @@ impl Player {
     }
 
     pub fn tick_maps(&self, server: &Server) {
-        use pumpkin_data::data_component_impl::MapIdImpl;
-        use pumpkin_data::item::Item;
-
-        for hand in Hand::all() {
-            let stack = self.inventory().get_stack_in_hand(hand);
-
-            if stack.item.id == Item::FILLED_MAP.id
-                && let Some(map_id_comp) = stack.get_data_component::<MapIdImpl>()
-            {
-                let map_id = map_id_comp.id;
-                if let Some(map_data_arc) = server.map_manager.get_map(map_id)
-                    && let Ok(mut map_data) = map_data_arc.try_lock()
-                {
-                    map_data.update(self);
-
-                    let tick_count = self.tick_counter.load(Ordering::Relaxed);
-                    if map_data.dirty || tick_count % 10 == 0 {
-                        let scale = 1 << map_data.scale;
-                        let pos = self.position();
-                        let dx = pos.x - map_data.center_x as f64;
-                        let dz = pos.z - map_data.center_z as f64;
-
-                        let raw_x = dx / scale as f64 * 2.0;
-                        let raw_z = dz / scale as f64 * 2.0;
-                        let is_off_map = !(-127.0..=127.0).contains(&raw_x)
-                            || !(-127.0..=127.0).contains(&raw_z);
-
-                        let icon_x = raw_x.clamp(-128.0, 127.0) as i8;
-                        let icon_z = raw_z.clamp(-128.0, 127.0) as i8;
-
-                        let yaw = self.living_entity.entity.yaw.load();
-                        let icon_direction =
-                            ((((yaw * 16.0 / 360.0).round() as i32 + 8) % 16 + 16) % 16) as i8;
-
-                        let decoration_type = if is_off_map {
-                            &pumpkin_data::map_decoration::MapDecorationType::PLAYER_OFF_MAP
-                        } else {
-                            &pumpkin_data::map_decoration::MapDecorationType::PLAYER
-                        };
-
-                        let mut icons = vec![MapIcon {
-                            icon_type: VarInt(decoration_type.id as i32),
-                            x: icon_x,
-                            z: icon_z,
-                            direction: icon_direction,
-                            display_name: None,
-                        }];
-                        icons.extend(map_data.decorations.iter().map(|decoration| MapIcon {
-                            icon_type: VarInt(decoration.icon_type),
-                            x: decoration.x,
-                            z: decoration.z,
-                            direction: decoration.direction,
-                            display_name: decoration.display_name.clone(),
-                        }));
-
-                        let data = map_data.dirty.then(|| MapPatch {
-                            columns: 128,
-                            rows: 128,
-                            x: 0,
-                            z: 0,
-                            data: &*map_data.colors,
-                        });
-
-                        self.try_send_client_packet(&CMapItemData {
-                            map_id: VarInt(map_id),
-                            scale: map_data.scale,
-                            tracking_position: true,
-                            locked: map_data.locked,
-                            icons: Some(&icons),
-                            data,
-                        });
-                        map_data.dirty = false;
-                    }
-                }
-            }
-        }
+        map_tracking::tick_maps(self, server);
     }
 
     /// Sets the player's experience level and notifies the client.
