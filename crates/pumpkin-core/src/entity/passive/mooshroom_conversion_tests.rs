@@ -3,12 +3,14 @@ use pumpkin_protocol::{packet::MultiVersionJavaPacket, ser::NetworkReadExt};
 
 use crate::{
     entity::{
-        death_test_world::DeathTestWorld, decoration::leash_knot::LeashKnotEntity,
+        death_test_world::DeathTestWorld,
+        decoration::leash_knot::{LeashKnotEntity, leash_holder_id},
         shearable::Shearable,
     },
     plugin::{
         BoxFuture, EventHandler, EventPriority,
         api::events::entity::entity_transform::EntityTransformEvent,
+        api::events::player::player_leash_entity::PlayerLeashEntityEvent,
     },
     server::Server,
 };
@@ -60,6 +62,22 @@ impl EventHandler<EntityTransformEvent> for ConversionControl {
         self.calls.fetch_add(1, Ordering::Relaxed);
         event.cancelled = self.cancel.load(Ordering::Relaxed);
         Box::pin(async {})
+    }
+}
+
+struct RemovePlayerDuringLeash;
+
+impl EventHandler<PlayerLeashEntityEvent> for RemovePlayerDuringLeash {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut PlayerLeashEntityEvent,
+    ) -> BoxFuture<'a, ()> {
+        let world = event.player.world();
+        let player = event.player.clone();
+        Box::pin(async move {
+            world.remove_player(&player, false).await;
+        })
     }
 }
 
@@ -324,5 +342,183 @@ async fn mooshroom_conversion_rebinds_removed_knot_to_live_knot() {
     );
     assert!(holder.get_entity().is_alive());
     assert_eq!(lead_count(&world), 0);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mooshroom_conversion_settles_knot_removed_after_attachment_check() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let pos = BlockPos::new(0, 64, 0);
+    make_fence(&world, pos);
+    let knot = LeashKnotEntity::create_knot(&world, pos);
+    let mooshroom = fixture.mob(&EntityType::MOOSHROOM);
+    mooshroom
+        .get_entity()
+        .leash_to(knot.clone() as Arc<dyn crate::entity::EntityBase>);
+    world
+        .level
+        .set_block_state(&pos, Block::AIR.default_state.id);
+
+    let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (resume_tx, resume_rx) = crossbeam::channel::bounded(1);
+    knot.set_attachment_check_pause(Arc::new(move || {
+        let _ = entered_tx.send(());
+        let _ = resume_rx.recv_timeout(std::time::Duration::from_secs(30));
+    }));
+
+    let conversion_mooshroom = mooshroom.clone();
+    let conversion = tokio::task::spawn_blocking(move || {
+        conversion_mooshroom
+            .get_mob()
+            .unwrap()
+            .as_shearable()
+            .unwrap()
+            .shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS))
+    });
+    let reached_attachment_check =
+        tokio::time::timeout(std::time::Duration::from_secs(30), entered_rx.recv())
+            .await
+            .is_ok_and(|signal| signal.is_some());
+    if reached_attachment_check {
+        knot.get_entity().remove();
+    }
+    let _ = resume_tx.send(());
+    let conversion_result = tokio::time::timeout(std::time::Duration::from_secs(30), conversion)
+        .await
+        .expect("mooshroom conversion should finish within its bounded wait")
+        .expect("mooshroom conversion should not panic");
+
+    assert!(
+        reached_attachment_check,
+        "attachment check seam was not reached"
+    );
+    assert!(conversion_result, "mooshroom should convert");
+    let cow = world
+        .entities
+        .load_full()
+        .iter()
+        .find(|entity| entity.get_entity().entity_type == &EntityType::COW)
+        .unwrap()
+        .clone();
+    assert_eq!(
+        leash_holder_id(cow.get_entity()),
+        Some(knot.get_entity().entity_id)
+    );
+    assert!(knot.get_entity().is_removed());
+
+    cow.get_entity().tick_leash();
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(lead_count(&world), 1);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mooshroom_conversion_revalidates_player_removed_during_leash_event() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let holder = fixture.player("HolderLeavingDuringConversion");
+    let mooshroom = fixture.mob(&EntityType::MOOSHROOM);
+    mooshroom
+        .get_entity()
+        .leash_to(holder.clone() as Arc<dyn crate::entity::EntityBase>);
+    fixture
+        .server
+        .plugin_manager
+        .register::<PlayerLeashEntityEvent, _>(
+            Arc::new(RemovePlayerDuringLeash),
+            EventPriority::Normal,
+            true,
+        );
+
+    assert!(
+        mooshroom
+            .get_mob()
+            .unwrap()
+            .as_shearable()
+            .unwrap()
+            .shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS))
+    );
+
+    assert!(world.get_player_by_uuid(holder.gameprofile.id).is_none());
+    let cow = world
+        .entities
+        .load_full()
+        .iter()
+        .find(|entity| entity.get_entity().entity_type == &EntityType::COW)
+        .unwrap()
+        .clone();
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(lead_count(&world), 1);
+    cow.get_entity().tick_leash();
+    assert_eq!(lead_count(&world), 1);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn player_logout_drops_one_lead_on_the_leashee_tick() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let holder = fixture.player("LoggedOutHolder");
+    let cow = fixture.mob(&EntityType::COW);
+    holder.get_entity().set_pos(cow.get_entity().pos.load());
+    cow.get_entity()
+        .leash_to(holder.clone() as Arc<dyn crate::entity::EntityBase>);
+
+    holder.remove().await;
+    assert!(world.get_player_by_uuid(holder.gameprofile.id).is_none());
+    cow.get_entity().tick_leash();
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(lead_count(&world), 1);
+    cow.get_entity().tick_leash();
+    assert_eq!(lead_count(&world), 1);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dying_leashee_settles_one_lead_and_death_removal_does_not_duplicate_it() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let holder = fixture.player("DyingLeasheeHolder");
+    let cow = fixture.mob(&EntityType::COW);
+    holder.get_entity().set_pos(cow.get_entity().pos.load());
+    cow.get_entity()
+        .leash_to(holder.clone() as Arc<dyn crate::entity::EntityBase>);
+
+    holder.remove().await;
+    let living = cow.get_living_entity().unwrap();
+    living.set_health(0.0);
+    living.on_death(pumpkin_data::damage::DamageType::GENERIC, None, None);
+    cow.get_entity().tick_leash();
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(lead_count(&world), 1);
+
+    for _ in 0..20 {
+        living.tick(&*cow, &fixture.server);
+    }
+    assert!(cow.get_entity().is_removed());
+    cow.get_entity().tick_leash();
+    assert_eq!(lead_count(&world), 1);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dead_living_holder_settles_one_lead_on_the_leashee_tick() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let holder = fixture.mob(&EntityType::MOOSHROOM);
+    let cow = fixture.mob(&EntityType::COW);
+    cow.get_entity()
+        .leash_to(holder.clone() as Arc<dyn crate::entity::EntityBase>);
+
+    let living_holder = holder.get_living_entity().unwrap();
+    living_holder.set_health(0.0);
+    living_holder.on_death(pumpkin_data::damage::DamageType::GENERIC, None, None);
+    cow.get_entity().tick_leash();
+
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(lead_count(&world), 1);
+    cow.get_entity().tick_leash();
+    assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;
 }

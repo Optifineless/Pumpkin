@@ -41,6 +41,32 @@ pub fn leash_distance(entity: &Entity, holder: &Entity) -> f64 {
     difference.length()
 }
 
+/// Checks whether a leash holder is still present and usable in its world.
+#[must_use]
+pub fn is_live_holder(holder: &dyn EntityBase) -> bool {
+    let entity = holder.get_entity();
+    if entity.is_removed()
+        || !entity.is_alive()
+        || holder
+            .get_living_entity()
+            .is_some_and(|living| !living.is_alive())
+    {
+        return false;
+    }
+
+    let Some(player) = holder.get_player() else {
+        return true;
+    };
+
+    entity
+        .world
+        .load()
+        .players
+        .load()
+        .iter()
+        .any(|current| std::ptr::eq(current.as_ref(), player))
+}
+
 impl Entity {
     /// Attaches this entity to a leash holder.
     pub fn leash_to(&self, holder: Arc<dyn EntityBase>) {
@@ -54,7 +80,7 @@ impl Entity {
     )]
     pub(crate) fn leash_to_with_result(&self, holder: Arc<dyn EntityBase>) -> LeashToResult {
         let holder_entity_id = holder.get_entity().entity_id;
-        let world = self.world.load();
+        let world = self.world.load_full();
         if let Some(server) = world.server.upgrade()
             && let Some(player) = holder.get_player()
             && let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
@@ -70,6 +96,11 @@ impl Entity {
             if event.cancelled {
                 return LeashToResult::Cancelled;
             }
+        }
+
+        // PlayerLeashEntityEvent may disconnect or replace this player before commit.
+        if holder.get_player().is_some() && !is_live_holder(holder.as_ref()) {
+            return LeashToResult::HolderUnavailable;
         }
 
         let (old_holder, attachment) = {
@@ -116,7 +147,7 @@ impl Entity {
             },
         };
 
-        self.world.load().broadcast_to_chunk_editioned(
+        self.world.load_full().broadcast_to_chunk_editioned(
             self.chunk_pos.load(),
             &je_packet,
             &be_packet,

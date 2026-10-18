@@ -19,12 +19,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 const KNOT_EMPTY_CLEANUP: u64 = 1 << 63;
-const KNOT_INVALID_REMOVAL: u64 = 1 << 62;
 const KNOT_REMOVED: u64 = 1 << 61;
 const KNOT_ATTACHMENT_COUNT_MASK: u64 = (1 << 16) - 1;
 const KNOT_GENERATION_INCREMENT: u64 = 1 << 16;
-const KNOT_GENERATION_MASK: u64 =
-    !(KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED | KNOT_ATTACHMENT_COUNT_MASK);
+const KNOT_GENERATION_MASK: u64 = !(KNOT_EMPTY_CLEANUP | KNOT_REMOVED | KNOT_ATTACHMENT_COUNT_MASK);
 
 /// Reserves the knot link update against concurrent empty-knot removal.
 pub(crate) struct KnotAttachment<'a>(&'a AtomicU64);
@@ -42,6 +40,8 @@ pub struct LeashKnotEntity {
     attachment_state: AtomicU64,
     #[cfg(test)]
     test_pause: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    attachment_check_pause: AtomicBool,
 }
 
 impl LeashKnotEntity {
@@ -55,6 +55,8 @@ impl LeashKnotEntity {
             attachment_state: AtomicU64::new(0),
             #[cfg(test)]
             test_pause: Mutex::new(None),
+            #[cfg(test)]
+            attachment_check_pause: AtomicBool::new(false),
         }
     }
 
@@ -139,12 +141,14 @@ impl LeashKnotEntity {
         loop {
             let attachment_count = state & KNOT_ATTACHMENT_COUNT_MASK;
             if self.entity.is_removed()
-                || state & (KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
+                || state & KNOT_REMOVED != 0
                 || attachment_count == KNOT_ATTACHMENT_COUNT_MASK
             {
                 return None;
             }
-            let flags = state & (KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED);
+            #[cfg(test)]
+            self.wait_at_attachment_check_pause();
+            let flags = state & (KNOT_EMPTY_CLEANUP | KNOT_REMOVED);
             let generation = (state & KNOT_GENERATION_MASK).wrapping_add(KNOT_GENERATION_INCREMENT)
                 & KNOT_GENERATION_MASK;
             let next = flags | generation | (attachment_count + 1);
@@ -163,7 +167,7 @@ impl LeashKnotEntity {
     fn try_begin_empty_cleanup(&self) -> Option<u64> {
         let mut state = self.attachment_state.load(Ordering::Acquire);
         loop {
-            if state & (KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
+            if state & (KNOT_EMPTY_CLEANUP | KNOT_REMOVED) != 0
                 || state & KNOT_ATTACHMENT_COUNT_MASK != 0
             {
                 return None;
@@ -181,15 +185,15 @@ impl LeashKnotEntity {
         }
     }
 
-    fn try_begin_invalid_removal(&self) -> bool {
+    fn try_mark_invalid_removed(&self) -> bool {
         let mut state = self.attachment_state.load(Ordering::Acquire);
         loop {
-            if state & (KNOT_EMPTY_CLEANUP | KNOT_INVALID_REMOVAL | KNOT_REMOVED) != 0
+            if state & (KNOT_EMPTY_CLEANUP | KNOT_REMOVED) != 0
                 || state & KNOT_ATTACHMENT_COUNT_MASK != 0
             {
                 return false;
             }
-            let removal_state = state | KNOT_INVALID_REMOVAL;
+            let removal_state = state | KNOT_REMOVED;
             match self.attachment_state.compare_exchange_weak(
                 state,
                 removal_state,
@@ -204,8 +208,7 @@ impl LeashKnotEntity {
 
     pub(crate) fn is_removed_or_removing(&self) -> bool {
         self.entity.is_removed()
-            || self.attachment_state.load(Ordering::Acquire) & (KNOT_INVALID_REMOVAL | KNOT_REMOVED)
-                != 0
+            || self.attachment_state.load(Ordering::Acquire) & KNOT_REMOVED != 0
     }
 
     fn reopen_after_empty_check(&self) {
@@ -215,6 +218,16 @@ impl LeashKnotEntity {
 
     #[cfg(test)]
     pub(crate) fn set_test_pause(&self, pause: Arc<dyn Fn() + Send + Sync>) {
+        self.attachment_check_pause.store(false, Ordering::Relaxed);
+        *self
+            .test_pause
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(pause);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_attachment_check_pause(&self, pause: Arc<dyn Fn() + Send + Sync>) {
+        self.attachment_check_pause.store(true, Ordering::Relaxed);
         *self
             .test_pause
             .lock()
@@ -223,6 +236,24 @@ impl LeashKnotEntity {
 
     #[cfg(test)]
     fn wait_at_test_pause(&self) {
+        if self.attachment_check_pause.load(Ordering::Relaxed) {
+            return;
+        }
+        let pause = self
+            .test_pause
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(pause) = pause {
+            pause();
+        }
+    }
+
+    #[cfg(test)]
+    fn wait_at_attachment_check_pause(&self) {
+        if !self.attachment_check_pause.load(Ordering::Relaxed) {
+            return;
+        }
         let pause = self
             .test_pause
             .lock()
@@ -294,10 +325,10 @@ impl EntityBase for LeashKnotEntity {
     }
 
     fn tick(&self, _caller: &dyn EntityBase, _server: &Server) {
-        let world = self.entity.world.load();
+        let world = self.entity.world.load_full();
         let block = world.get_block(&self.pos);
         if !block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_FENCES) {
-            if !self.try_begin_invalid_removal() {
+            if !self.try_mark_invalid_removed() {
                 return;
             }
             #[cfg(test)]
@@ -321,7 +352,10 @@ impl EntityBase for LeashKnotEntity {
                     })
                     .unwrap_or(false);
 
-                if is_attached_to_knot && ent.unleash_if_leashed() {
+                if is_attached_to_knot
+                    && ent.unleash_if_leashed()
+                    && world.level_info.load().game_rules.entity_drops
+                {
                     let lead_item = pumpkin_data::item_stack::ItemStack::new(
                         1,
                         &pumpkin_data::item::Item::LEAD,

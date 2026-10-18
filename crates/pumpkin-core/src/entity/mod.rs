@@ -3355,8 +3355,29 @@ impl Entity {
             let holder_entity = holder.get_entity();
 
             // Drop leash if entity or holder is removed or dead
-            if !self.is_alive() || !holder_entity.is_alive() {
+            if !self.is_alive() {
                 self.unleash();
+                return;
+            }
+
+            if !leashable::is_live_holder(holder.as_ref()) {
+                if self.unleash_if_leashed()
+                    && self
+                        .world
+                        .load_full()
+                        .level_info
+                        .load()
+                        .game_rules
+                        .entity_drops
+                {
+                    let lead_item = pumpkin_data::item_stack::ItemStack::new(
+                        1,
+                        &pumpkin_data::item::Item::LEAD,
+                    );
+                    self.world
+                        .load_full()
+                        .drop_stack(&self.block_pos.load(), lead_item);
+                }
                 return;
             }
 
@@ -3373,7 +3394,7 @@ impl Entity {
                         &pumpkin_data::item::Item::LEAD,
                     );
                     self.world
-                        .load()
+                        .load_full()
                         .drop_stack(&self.block_pos.load(), lead_item);
                 }
             } else {

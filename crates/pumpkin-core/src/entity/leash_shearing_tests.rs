@@ -167,3 +167,24 @@ async fn snapping_leash_without_cancelling_listener_drops_one_lead() {
     assert_eq!(leads(&world), 1);
     fixture.server.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removed_holder_unlinks_without_dropping_when_entity_drops_are_disabled() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let holder = fixture.mob(&EntityType::COW);
+    let cow = fixture.mob(&EntityType::COW);
+    cow.get_entity().leash_to(holder.clone());
+    holder.get_entity().remove();
+    fixture.server.level_info.rcu(|info| {
+        let mut next = (**info).clone();
+        next.game_rules.entity_drops = false;
+        next
+    });
+
+    cow.get_entity().tick_leash();
+
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(leads(&world), 0);
+    fixture.server.shutdown().await;
+}

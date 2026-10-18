@@ -11,7 +11,7 @@ use pumpkin_data::{
 impl Entity {
     // Leashable.dropLeash preserves the fork's events and atomically claims the link.
     pub(super) fn unleash_if_leashed(&self) -> bool {
-        let world = self.world.load();
+        let world = self.world.load_full();
         if let Some(server) = world.server.upgrade() {
             let mut event =
                 crate::plugin::api::events::entity::entity_unleash::EntityUnleashEvent::new(
@@ -59,7 +59,7 @@ impl Entity {
             },
         };
 
-        self.world.load().broadcast_to_chunk_editioned(
+        self.world.load_full().broadcast_to_chunk_editioned(
             self.chunk_pos.load(),
             &je_packet,
             &be_packet,
