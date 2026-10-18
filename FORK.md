@@ -20,6 +20,14 @@ Mirrors vanilla 26.3 `DedicatedServer.isUnderSpawnProtection`,
 `ServerGamePacketListenerImpl.handleUseItemOn`, `BucketItem.use` and
 `ServerLevel.mayInteract`. In-game verification: **Not yet**.
 
+## Glow ink on blank signs (#50)
+
+Glow ink now applies only when the selected sign face has visible text, respecting
+the player's text-filtering setting. Blank opposite faces do not qualify, and
+honeycomb can still wax a blank sign. Mirrors vanilla 26.3
+`SignBlock.useItemOn` and `SignApplicator.canApplyToSign`. In-game verification:
+**Not yet**.
+
 Management-enabled shutdown (#173) now stops the listener, WebSocket sessions and
 heartbeat so the final player, world and level.dat saves can finish. The authenticated
 `minecraft:server/stop` RPC signals shutdown before its bounded, best-effort success

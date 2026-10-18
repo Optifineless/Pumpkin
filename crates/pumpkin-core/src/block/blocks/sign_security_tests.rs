@@ -19,6 +19,8 @@ use pumpkin_util::{GameMode, permission::PermissionLvl};
 const PAYLOAD: &str =
     r#"{"text":"x","click_event":{"action":"run_command","command":"gamemode creative @s"}}"#;
 
+#[path = "sign_glow_ink_tests.rs"]
+mod sign_glow_ink_tests;
 #[path = "sign_load_tests.rs"]
 mod sign_load_tests;
 

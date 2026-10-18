@@ -29,6 +29,11 @@ impl GlowingInkSacItem {
         block_entity: &Arc<dyn BlockEntity>,
         text: &Text,
     ) -> BlockActionResult {
+        // Mirrors SignApplicator.canApplyToSign for the selected face.
+        if !text.has_message(args.player.is_text_filtering_enabled()) {
+            return BlockActionResult::PassToDefaultBlockAction;
+        }
+
         let changed = !text.has_glowing_text.swap(true, Ordering::Relaxed);
 
         if !changed {
