@@ -74,7 +74,7 @@ impl MapManager {
         self.maps.entry(id).or_insert(map).clone()
     }
 
-    pub fn create_fresh_map(
+    pub(crate) fn create_fresh_map(
         &self,
         id: i32,
         dimension: Dimension,
@@ -83,6 +83,8 @@ impl MapManager {
         scale: i8,
     ) -> Arc<Mutex<MapData>> {
         // Mirrors MapItemSavedData.createFresh; MapData::new keeps explicit-center semantics.
+        // Saved map data clamps scale the same way; a negative shift count would panic.
+        let scale = scale.clamp(0, MAX_SCALE);
         let size = i64::from(MAP_SIZE) * (1i64 << scale as u32);
         let center = |origin: i32| {
             let area = (i64::from(origin) + i64::from(HALF_MAP_SIZE)).div_euclid(size);
