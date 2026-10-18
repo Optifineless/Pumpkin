@@ -419,6 +419,7 @@ In-game verification: Not yet. AI implementation: Codex (GPT-6).
 
 | Upstream issue | Fixed by | Checked in-game |
 |:--|:--|:--|
+| [#70](https://github.com/Pumpkin-MC/Pumpkin/issues/70) Ender pearl teleports keep old fall distance | Pearl teleport resets the owner's fall distance before applying the 5 pearl damage, so a later landing cannot add stale fall damage | Not yet |
 | [#3092](https://github.com/Pumpkin-MC/Pumpkin/issues/3092) XP orbs do not absorb, [#3624](https://github.com/Pumpkin-MC/Pumpkin/issues/3624) XP orbs sink in water | vanilla 26.3 orb award/merge, motion, collection, damage, metadata, persistence and Mending port; upstream #3644's buoyancy approach checked, with 26.3's eye-in-water eligibility | Not yet |
 | [#3511](https://github.com/Pumpkin-MC/Pumpkin/issues/3511) Player saves truncate the last good file | durable temporary replacement, backup recovery and retained retries | Not yet |
 | [#3512](https://github.com/Pumpkin-MC/Pumpkin/issues/3512) Older snapshots overwrite disconnect saves | ordered snapshots, a tick barrier during disconnect capture/removal and a UUID gate through final publication | Not yet |

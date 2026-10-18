@@ -101,7 +101,6 @@ impl EntityBase for EnderPearlEntity {
                 world.spawn_entity(endermite);
             }
 
-            // In vanilla, teleport handles everything including sound
             owner.teleport(
                 teleport_pos,
                 Some(owner.get_entity().yaw.load()),
@@ -109,18 +108,22 @@ impl EntityBase for EnderPearlEntity {
                 world.clone(),
             );
 
-            // Play teleport sound at new position
-            world.play_sound(
-                Sound::EntityPlayerTeleport,
-                SoundCategory::Players,
-                &teleport_pos,
-            );
+            // ThrownEnderpearl.onHit resets the teleported owner's fall distance before damage.
+            if let Some(living) = owner.get_living_entity() {
+                living.fall_distance.store(0.0);
+            }
 
             // Deal 5 damage to owner
             owner.damage(
                 owner.as_ref(),
                 5.0,
                 pumpkin_data::damage::DamageType::ENDER_PEARL,
+            );
+
+            world.play_sound(
+                Sound::EntityPlayerTeleport,
+                SoundCategory::Players,
+                &teleport_pos,
             );
         }
 
