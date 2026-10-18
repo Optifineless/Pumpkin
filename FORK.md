@@ -48,6 +48,19 @@ still consumes tipped and spectral arrows. Mirrors vanilla 26.3
 `BowItem.releaseUsing`, `ProjectileWeaponItem.draw/useAmmo` and
 `AbstractArrow` construction. Fixes #92. In-game verification: **Not yet**.
 
+Lantern survival and delayed cleanup use the support side selected by the stored
+`HANGING` state, and ladder placement retains replaced water as `WATERLOGGED`.
+Mirrors vanilla 26.3 `LanternBlock.canSurvive/getConnectedDirection/updateShape`
+and `LadderBlock.getStateForPlacement/updateShape`. Fixes #51 and #54.
+In-game verification: **Not yet**.
+
+Play test: hang a lantern below a ceiling with a separate floor beneath it, then
+remove only the ceiling; expect the lantern to drop. Place a standing lantern on
+a floor with a separate ceiling above it, then remove only the floor; expect the
+lantern to drop. Place a ladder against a wall into source water; expect the
+ladder to retain water, then place one against the wall in dry air and expect
+the ordinary facing and item consumption.
+
 ## Spawn protection bypass through block use (#19)
 
 Java and Bedrock block use now reject a protected clicked block before interaction

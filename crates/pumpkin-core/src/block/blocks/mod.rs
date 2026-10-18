@@ -150,3 +150,9 @@ mod hunt_plants_tests;
 mod note_tests;
 #[cfg(test)]
 mod placement_orientation_tests;
+
+#[cfg(test)]
+mod ladder_tests;
+
+#[cfg(test)]
+mod lanterns_tests;

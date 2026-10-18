@@ -1,11 +1,12 @@
 use crate::block::{
-    BlockBehaviour, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs, OnScheduledTickArgs,
+    BlockBehaviour, BlockIsReplacing, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
+    OnScheduledTickArgs,
 };
 use crate::entity::EntityBase;
 use crate::world::World;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{Facing, LadderLikeProperties};
-use pumpkin_data::{Block, BlockDirection, FacingExt, HorizontalFacingExt};
+use pumpkin_data::{Block, BlockDirection, FacingExt, HorizontalFacingExt, fluid::Fluid};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -31,6 +32,8 @@ impl BlockBehaviour for LadderBlock {
             }
         }
         let mut props = LadderLikeProperties::default(args.block);
+        // Mirrors LadderBlock.getStateForPlacement's replaced-fluid check.
+        props.waterlogged = matches!(args.replacing, BlockIsReplacing::Water(_));
 
         let directions = args.player.get_entity().get_entity_facing_order();
         for dir in directions {
@@ -72,6 +75,16 @@ impl BlockBehaviour for LadderBlock {
             )
         {
             return BlockStateId::AIR;
+        }
+
+        // Mirrors LadderBlock.updateShape's water tick scheduling.
+        if props.waterlogged {
+            args.world.schedule_fluid_tick(
+                &Fluid::WATER,
+                *args.position,
+                Fluid::WATER.flow_speed as u8,
+                TickPriority::Normal,
+            );
         }
         args.state_id
     }
