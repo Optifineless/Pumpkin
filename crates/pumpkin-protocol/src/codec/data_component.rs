@@ -1666,8 +1666,8 @@ impl DataComponentCodec<Self> for TooltipDisplayImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
         let hidden_count = i32::try_from(self.hidden_components.len())
             .map_err(|_| WritingError::Message("Too many hidden tooltip components".into()))?;
+        // TooltipDisplay.STREAM_CODEC: hideTooltip, then the hidden component type IDs.
         seq.write_bool(self.hide_tooltip)?;
-        seq.write_bool(self.hide_additional_tooltip)?;
         seq.write_var_int(&VarInt(hidden_count))?;
         for component in &self.hidden_components {
             seq.write_var_int(&VarInt(i32::from(component.to_id())))?;
@@ -1677,7 +1677,6 @@ impl DataComponentCodec<Self> for TooltipDisplayImpl {
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let hide_tooltip = seq.get_bool()?;
-        let hide_additional_tooltip = seq.get_bool()?;
         let hidden_count = usize::try_from(seq.get_var_int()?.0)
             .map_err(|_| ReadingError::Message("Negative hidden tooltip component count".into()))?;
         if hidden_count > MAX_REGISTRY_HOLDERS as usize {
@@ -1697,7 +1696,6 @@ impl DataComponentCodec<Self> for TooltipDisplayImpl {
         }
         Ok(Self {
             hide_tooltip,
-            hide_additional_tooltip,
             hidden_components,
         })
     }
@@ -2480,7 +2478,8 @@ impl DataComponentCodec<Self> for BannerPatternsImpl {
                     layer.pattern
                 ))
             })?;
-            seq.write_var_int(&VarInt(pattern_id))?;
+            // ByteBufCodecs.holder writes a registry reference as id + 1; 0 means an inline pattern.
+            seq.write_var_int(&VarInt(pattern_id + 1))?;
             seq.write_var_int(&VarInt::from(layer.color.id() as i32))?;
         }
         Ok(())
@@ -2491,7 +2490,13 @@ impl DataComponentCodec<Self> for BannerPatternsImpl {
             .map_err(|_| ReadingError::Message("Negative banner pattern layer count".into()))?;
         let mut layers = Vec::with_capacity(crate::ser::collection_capacity(layer_count)?);
         for _ in 0..layer_count {
-            let pattern_id = seq.get_var_int()?.0;
+            let holder_id = seq.get_var_int()?.0;
+            if holder_id <= 0 {
+                return Err(ReadingError::Message(
+                    "Inline or invalid banner pattern holder".into(),
+                ));
+            }
+            let pattern_id = holder_id - 1;
             let pattern = banner_pattern_name(pattern_id).ok_or_else(|| {
                 ReadingError::Message(format!(
                     "Unknown synced banner pattern registry id {pattern_id}"

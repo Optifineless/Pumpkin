@@ -64,7 +64,6 @@ pub fn create_ominous_banner() -> ItemStack {
     });
     stack.set_data_component(TooltipDisplayImpl {
         hide_tooltip: false,
-        hide_additional_tooltip: false,
         hidden_components: vec![DataComponent::BannerPatterns],
     });
     stack.set_data_component(RarityImpl {

@@ -57,7 +57,6 @@ fn assert_ominous_banner(stack: &ItemStack) {
     );
     let tooltip = stack.get_data_component::<TooltipDisplayImpl>().unwrap();
     assert!(!tooltip.hide_tooltip);
-    assert!(!tooltip.hide_additional_tooltip);
     assert_eq!(
         tooltip
             .hidden_components

@@ -142,11 +142,12 @@ fn banner_patterns_equipment_packet_uses_synced_registry_ids() {
     let mut stack = ItemStack::new(1, &Item::WHITE_BANNER);
     stack.set_data_component(ominous_patterns());
     let bytes = equipment_packet_bytes(stack);
+    // ByteBufCodecs.holder: a registry reference is written as id + 1 (0 is an inline value).
     assert_eq!(
         read_equipment_banner_pattern_layers(&bytes),
         OMINOUS_LAYERS
             .iter()
-            .map(|(_, pattern_id, _, color_id)| (*pattern_id, *color_id))
+            .map(|(_, pattern_id, _, color_id)| (*pattern_id + 1, *color_id))
             .collect::<Vec<_>>()
     );
 }
@@ -167,19 +168,14 @@ fn banner_patterns_codec_round_trips_names_and_colors() {
 fn banner_patterns_tooltip_display_codec_preserves_hidden_component_state() {
     let tooltip = TooltipDisplayImpl {
         hide_tooltip: false,
-        hide_additional_tooltip: false,
         hidden_components: vec![DataComponent::BannerPatterns],
     };
     let mut bytes = Vec::new();
     tooltip.serialize(&mut bytes).unwrap();
+    // TooltipDisplay.STREAM_CODEC: one hideTooltip bool, then the component type collection.
     assert_eq!(
         bytes,
-        vec![
-            0,
-            0,
-            1,
-            i32::from(DataComponent::BannerPatterns.to_id()) as u8
-        ]
+        vec![0, 1, i32::from(DataComponent::BannerPatterns.to_id()) as u8]
     );
 
     let mut read = bytes.as_slice();
@@ -222,7 +218,7 @@ fn banner_patterns_plain_white_and_unrelated_pattern_controls_are_preserved() {
         .unwrap();
     assert_eq!(
         read_equipment_banner_pattern_layers(&bytes),
-        vec![(i32::try_from(flower_id).unwrap(), 14)]
+        vec![(i32::try_from(flower_id).unwrap() + 1, 14)]
     );
     let decoded = decode_equipment_stack(&bytes);
     assert_eq!(
@@ -250,4 +246,19 @@ fn banner_patterns_unknown_saved_identifier_fails_java_encoding_safely() {
         .write_packet_data(&mut bytes, &CURRENT_MC_VERSION)
         .unwrap_err();
     assert!(error.to_string().contains("murgicraft:unknown_pattern"));
+}
+
+#[test]
+fn banner_patterns_reject_inline_or_negative_holders() {
+    for holder in [0, -1, i32::MIN] {
+        let mut bytes = Vec::new();
+        bytes.write_var_int(&VarInt(1)).unwrap();
+        bytes.write_var_int(&VarInt(holder)).unwrap();
+        bytes.write_var_int(&VarInt(0)).unwrap();
+        let mut read = bytes.as_slice();
+        assert!(
+            BannerPatternsImpl::deserialize(&mut read).is_err(),
+            "{holder}"
+        );
+    }
 }

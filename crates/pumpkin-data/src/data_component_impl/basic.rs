@@ -365,7 +365,6 @@ impl DataComponentImpl for CustomModelDataImpl {
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct TooltipDisplayImpl {
     pub hide_tooltip: bool,
-    pub hide_additional_tooltip: bool,
     pub hidden_components: Vec<crate::data_component::DataComponent>,
 }
 
@@ -374,7 +373,6 @@ impl std::fmt::Debug for TooltipDisplayImpl {
         formatter
             .debug_struct("TooltipDisplayImpl")
             .field("hide_tooltip", &self.hide_tooltip)
-            .field("hide_additional_tooltip", &self.hide_additional_tooltip)
             .field(
                 "hidden_components",
                 &self
@@ -391,7 +389,6 @@ impl std::fmt::Debug for TooltipDisplayImpl {
 #[allow(non_upper_case_globals)]
 pub const TooltipDisplayImpl: TooltipDisplayImpl = TooltipDisplayImpl {
     hide_tooltip: false,
-    hide_additional_tooltip: false,
     hidden_components: Vec::new(),
 };
 
@@ -411,9 +408,6 @@ impl TooltipDisplayImpl {
             .collect();
         Some(Self {
             hide_tooltip: compound.get_bool("hide_tooltip").unwrap_or(false),
-            hide_additional_tooltip: compound
-                .get_bool("hide_additional_tooltip")
-                .unwrap_or(false),
             hidden_components,
         })
     }
@@ -423,9 +417,6 @@ impl DataComponentImpl for TooltipDisplayImpl {
         let mut compound = NbtCompound::new();
         if self.hide_tooltip {
             compound.put_bool("hide_tooltip", true);
-        }
-        if self.hide_additional_tooltip {
-            compound.put_bool("hide_additional_tooltip", true);
         }
         if !self.hidden_components.is_empty() {
             compound.put_list(
@@ -441,9 +432,6 @@ impl DataComponentImpl for TooltipDisplayImpl {
 
     fn get_hash(&self) -> i32 {
         let mut hash = i32::from(self.hide_tooltip);
-        hash = hash
-            .wrapping_mul(31)
-            .wrapping_add(i32::from(self.hide_additional_tooltip));
         for component in &self.hidden_components {
             hash = hash
                 .wrapping_mul(31)
