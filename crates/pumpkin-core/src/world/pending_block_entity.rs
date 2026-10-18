@@ -42,6 +42,7 @@ pub struct PersistenceTestHooks {
 
 struct BlockEntityUnload {
     captures: usize,
+    capture_thread: std::thread::ThreadId,
     completed: bool,
     terrain: Weak<ChunkData>,
 }
@@ -284,7 +285,11 @@ impl World {
     }
 
     pub(super) fn load_pending_block_entity(&self, pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
+        let mutation = self.reserve_block_entity_mutation(*pos)?;
         let snapshot = self.pending_block_entity_snapshot(pos)?;
+        // A read keeps the legacy invalidation/retry contract during decoding.
+        // A writer restoring its predecessor already owns an outer permit.
+        drop(mutation);
         #[cfg(test)]
         {
             let hook = self.persistence_test_hooks.lazy.lock().unwrap().clone();
@@ -308,8 +313,7 @@ impl World {
             .pending_block_entity_loads
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if loads.stop_admission || !self.block_entity_terrain_admits_mutation(&mut loads, chunk_pos)
-        {
+        if loads.stop_admission || loads.unloading.contains_key(&chunk_pos) {
             return None;
         }
         let chunk = self.level.loaded_chunks.get(&chunk_pos)?.clone();

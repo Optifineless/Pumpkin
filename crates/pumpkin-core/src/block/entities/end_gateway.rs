@@ -199,6 +199,7 @@ impl EndGatewayBlockEntity {
         current_level: &Arc<World>,
         portal_entry_pos: BlockPos,
     ) -> Option<Vector3<f64>> {
+        let _mutation = current_level.block_entity_mutation_permit(portal_entry_pos)?;
         let exit_portal_opt = self.exit_portal.lock().ok().and_then(|opt| *opt);
         if exit_portal_opt.is_none()
             && current_level.dimension == pumpkin_data::dimension::Dimension::THE_END

@@ -172,14 +172,14 @@ impl CommandExecutor for CloneExecutor {
         if self.clone_mode == CloneMode::Move {
             add_chunks(min_x, max_x, min_z, max_z);
         }
-        let mut _mutations = Vec::with_capacity(touched_chunks.len());
+        let mut mutations = Vec::with_capacity(touched_chunks.len());
         for (cx, cz) in touched_chunks {
             let pos = BlockPos::new(cx << 4, dest_min_y, cz << 4);
             let Some(mutation) = world.block_entity_mutation_permit(pos) else {
                 tracing::warn!("Clone rejected while chunk ({cx}, {cz}) is unloading");
                 return Err(FAILED_ERROR.create_without_context());
             };
-            _mutations.push(mutation);
+            mutations.push(mutation);
         }
 
         let mut blocks_to_clone = Vec::new();
@@ -274,6 +274,7 @@ impl CommandExecutor for CloneExecutor {
             true,
         );
 
+        drop(mutations);
         Ok(count)
     }
 }

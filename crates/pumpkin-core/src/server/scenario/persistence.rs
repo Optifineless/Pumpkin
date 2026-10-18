@@ -17,6 +17,7 @@ mod block_entity_retirement;
 mod block_entity_round5;
 mod block_entity_round5_admission;
 mod block_entity_round5_support;
+mod block_entity_round7_explosion;
 mod block_entity_save_unload;
 mod block_entity_support;
 

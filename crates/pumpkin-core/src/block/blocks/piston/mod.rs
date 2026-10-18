@@ -11,6 +11,9 @@ pub mod piston;
 pub mod piston_extension;
 pub mod piston_head;
 
+#[cfg(test)]
+mod retired_chunk_tests;
+
 const MAX_MOVABLE_BLOCKS: usize = 12;
 
 pub struct PistonHandler<'a> {

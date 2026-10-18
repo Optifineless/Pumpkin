@@ -104,7 +104,8 @@ pub(super) fn frame_mutation_permits(
     lower_corner: BlockPos,
 ) -> Option<Vec<BlockEntityMutationPermit<'_>>> {
     let mut permits = Vec::new();
-    // Both frame axes and fallback clearing fit inside this horizontal footprint.
+    // PortalForcer frames/fallback clearing and EndPlatformFeature.createEndPlatform
+    // share this horizontal footprint; reserve it before either starts writing.
     for chunk_x in ((lower_corner.0.x - 2) >> 4)..=((lower_corner.0.x + 2) >> 4) {
         for chunk_z in ((lower_corner.0.z - 2) >> 4)..=((lower_corner.0.z + 2) >> 4) {
             let position = BlockPos::new(chunk_x << 4, lower_corner.0.y, chunk_z << 4);

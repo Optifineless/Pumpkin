@@ -28,8 +28,12 @@ use std::{
 use tracing::{debug, error, info, trace, warn};
 
 mod active_chunks;
+#[cfg(test)]
+mod block_entity_capture_window_tests;
 mod block_entity_context;
 pub mod brightness;
+#[cfg(test)]
+mod bucket_retirement_tests;
 pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
@@ -3979,6 +3983,9 @@ impl World {
 
     pub(crate) fn run_explosion(self: &Arc<Self>, explosion: &Explosion) {
         let position = explosion.pos;
+        let Some(_mutation) = self.block_entity_mutation_permit(position.to_block_pos()) else {
+            return;
+        };
         let power = explosion.power;
         let mut event = crate::plugin::api::events::entity::entity_explode::EntityExplodeEvent::new(
             explosion.source_id(),
@@ -6276,7 +6283,7 @@ impl World {
 
     pub fn add_block_entity_nbt(&self, block_pos: BlockPos, nbt: &NbtCompound) {
         assert_not_in_snapshot(SB::Mutation, "World::add_block_entity_nbt");
-        let Some(_mutation) = self.block_entity_mutation_permit(block_pos) else {
+        let Some(_mutation) = self.reserve_block_entity_mutation(block_pos) else {
             tracing::warn!(
                 "Block entity NBT addition rejected while chunk is unloading at {block_pos:?}"
             );

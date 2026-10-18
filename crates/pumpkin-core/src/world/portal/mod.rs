@@ -108,6 +108,8 @@ impl PortalType {
                         let job_world = dest_world.clone();
                         residency::run_portal_job(&job_world, move || {
                             let _residency = residency;
+                            let mutations =
+                                frame_effects::frame_mutation_permits(&dest_world, platform_pos)?;
                             // Generate/regenerate the obsidian platform (5x5 obsidian at Y=48, and 5x5x3 air above it)
                             for dx in -2..=2 {
                                 for dz in -2..=2 {
@@ -130,6 +132,7 @@ impl PortalType {
                                     }
                                 }
                             }
+                            drop(mutations);
 
                             Some(TeleportTransition {
                                 new_world: dest_world,

@@ -153,6 +153,29 @@ layouts and hidden host coordination use API 8 (same version); rebuild native pl
 Direct public field writes bypass the supported native setters' admission contract.
 In-game verification: **Not yet**.
 
+The #191 round-seven stopgap reopens completed block-entity retirement when the
+same terrain is still loaded. Writers restore the captured entity before replacing
+its block, and a fresh retirement generation retains terrain until the next entity
+phase captures the reopened state. This also works after entity storage has been
+cleaned; new roots request storage through the existing asynchronous unload path.
+Mutation admission temporarily excludes captures across the whole world so nested
+physics callbacks cannot lose blocks at another chunk boundary. Off-tick entry
+points wait at most 250 ms for an active capture; capture callbacks never wait on
+their own thread, and Wasm reports rejected writes or explosions as errors. End
+platform construction preflights its footprint before transit. Native API remains
+8 (same version); rebuild native plugins for the private admission layout change.
+Saved NBT and WIT are unchanged. Vanilla 26.3 `LevelChunk.setBlockState`,
+`getBlockEntityNbtForSaving` and `ChunkMap.scheduleUnload` provide the ordering;
+the full terrain-lifetime redesign remains issue #224. Written by Codex.
+In-game verification: **Not yet**.
+
+Play test: put items in a chest at the edge of simulation distance, return after
+it stops ticking, then explode it; expect one chest and its contents exactly once.
+Push a block across that edge with a piston and collect water there with a bucket;
+expect the block to move and the water to disappear only when the bucket fills.
+Place and fill a chest there, save, leave the area and return, then restart; expect
+the contents to remain. Record these border interactions and the reload.
+
 ## World normal/frozen service boundary, ticks M1
 
 Normal World ticking and each frozen flush/player batch now require exclusive

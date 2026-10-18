@@ -177,7 +177,7 @@ async fn entity_unload_retains_terrain_until_final_block_entity_serialization_fi
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn entity_unload_keeps_old_terrain_sealed_until_deferred_reactivation() {
+async fn entity_unload_reopens_resident_terrain_before_deferred_reactivation() {
     let fixture = super::super::spawn_test_support::Fixture::new();
     let world = &fixture.world;
     super::super::spawn_test_support::publish(
@@ -221,8 +221,8 @@ async fn entity_unload_keeps_old_terrain_sealed_until_deferred_reactivation() {
     );
     assert_eq!(
         late_state,
-        Block::AIR.default_state.id,
-        "late placement crossed the completed terrain seal"
+        Block::CHEST.default_state.id,
+        "completed retirement refused resident terrain before reactivation"
     );
     assert!(storage.live.load(Ordering::Acquire));
     world.set_block_state(
