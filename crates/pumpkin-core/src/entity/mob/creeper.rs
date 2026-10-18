@@ -225,7 +225,7 @@ impl Mob for CreeperEntity {
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
         if item_stack.item.id != Item::FLINT_AND_STEEL.id {
-            return self.mob_entity.mob_interact(player, item_stack);
+            return self.mob_entity.mob_interact(self, player, item_stack);
         }
 
         let entity = &self.mob_entity.living_entity.entity;

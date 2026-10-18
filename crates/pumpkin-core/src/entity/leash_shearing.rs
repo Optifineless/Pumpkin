@@ -8,6 +8,12 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
 };
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ShearLeashResult {
+    pub attempted: bool,
+    pub detached: bool,
+}
+
 impl Entity {
     // Leashable.dropLeash preserves the fork's events and atomically claims the link.
     pub(super) fn unleash_if_leashed(&self) -> bool {
@@ -73,13 +79,20 @@ impl Entity {
     }
 
     /// Cuts this entity's incoming and nearby outgoing leash connections.
-    pub(crate) fn shear_off_all_leash_connections(&self, player: Option<&Player>) -> bool {
+    pub(crate) fn shear_off_all_leash_connections(
+        &self,
+        player: Option<&Player>,
+    ) -> ShearLeashResult {
         // Entity.dropAllLeashConnections / shearOffAllLeashConnections.
         let world = self.world.load_full();
         let bounds = self.bounding_box.load();
         let center = (bounds.min + bounds.max) * 0.5;
         let others = world.get_entities_at_box(&leash_search_box(center));
-        let mut dropped = drop_lead(self);
+        let mut result = ShearLeashResult {
+            attempted: self.is_leashed(),
+            detached: drop_lead(self),
+        };
+        result.attempted |= result.detached;
         for other in others {
             let raw = other.get_entity();
             let attached = raw
@@ -89,10 +102,11 @@ impl Entity {
                 .as_ref()
                 .is_some_and(|holder| holder.get_entity().entity_id == self.entity_id);
             if attached {
-                dropped |= drop_lead(raw);
+                result.attempted = true;
+                result.detached |= drop_lead(raw);
             }
         }
-        if dropped {
+        if result.detached {
             world.emit_game_event(GameEvent::Shear.name(), self.pos.load());
             let source = if player.is_some() {
                 SoundCategory::Players
@@ -103,7 +117,7 @@ impl Entity {
             };
             world.play_sound(Sound::ItemShearsSnip, source, &self.pos.load());
         }
-        dropped
+        result
     }
 }
 
@@ -141,10 +155,16 @@ pub(super) fn shear_leashes_by_player(
     player: &Arc<Player>,
     tool: &mut ItemStack,
 ) -> bool {
-    if tool.item != &Item::SHEARS || !entity.shear_off_all_leash_connections(Some(player)) {
+    if tool.item != &Item::SHEARS {
         return false;
     }
-    player.damage_detached_item(tool, 1);
+    let result = entity.shear_off_all_leash_connections(Some(player));
+    if !result.attempted {
+        return false;
+    }
+    if result.detached {
+        player.damage_detached_item(tool, 1);
+    }
     true
 }
 

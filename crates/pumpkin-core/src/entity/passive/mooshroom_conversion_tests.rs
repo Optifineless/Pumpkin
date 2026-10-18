@@ -407,7 +407,8 @@ async fn mooshroom_conversion_settles_knot_removed_after_attachment_check() {
     );
     assert!(knot.get_entity().is_removed());
 
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert!(!cow.get_entity().is_leashed());
     assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;
@@ -450,7 +451,8 @@ async fn mooshroom_conversion_revalidates_player_removed_during_leash_event() {
         .clone();
     assert!(!cow.get_entity().is_leashed());
     assert_eq!(lead_count(&world), 1);
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;
 }
@@ -511,10 +513,12 @@ async fn player_logout_drops_one_lead_on_the_leashee_tick() {
 
     holder.remove().await;
     assert!(world.get_player_by_uuid(holder.gameprofile.id).is_none());
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert!(!cow.get_entity().is_leashed());
     assert_eq!(lead_count(&world), 1);
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;
 }
@@ -533,7 +537,8 @@ async fn dying_leashee_settles_one_lead_and_death_removal_does_not_duplicate_it(
     let living = cow.get_living_entity().unwrap();
     living.set_health(0.0);
     living.on_death(pumpkin_data::damage::DamageType::GENERIC, None, None);
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert!(!cow.get_entity().is_leashed());
     assert_eq!(lead_count(&world), 1);
 
@@ -541,7 +546,8 @@ async fn dying_leashee_settles_one_lead_and_death_removal_does_not_duplicate_it(
         living.tick(&*cow, &fixture.server);
     }
     assert!(cow.get_entity().is_removed());
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;
 }
@@ -558,11 +564,13 @@ async fn dead_living_holder_settles_one_lead_on_the_leashee_tick() {
     let living_holder = holder.get_living_entity().unwrap();
     living_holder.set_health(0.0);
     living_holder.on_death(pumpkin_data::damage::DamageType::GENERIC, None, None);
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
 
     assert!(!cow.get_entity().is_leashed());
     assert_eq!(lead_count(&world), 1);
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;
 }

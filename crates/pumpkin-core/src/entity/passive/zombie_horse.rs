@@ -121,6 +121,11 @@ impl Animal for ZombieHorseEntity {
 }
 
 impl Mob for ZombieHorseEntity {
+    // ZombieHorse.canBeLeashed allows tamed horses or horses not controlled by a mob.
+    fn can_be_leashed(&self) -> bool {
+        self.is_tame() || !crate::entity::leashable::has_mob_control_passenger(self.get_entity())
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

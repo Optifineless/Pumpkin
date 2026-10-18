@@ -176,6 +176,11 @@ impl NeutralMob for WolfEntity {
 }
 
 impl Mob for WolfEntity {
+    // Wolf.canBeLeashed delegates to NeutralMob.isAngry.
+    fn can_be_leashed(&self) -> bool {
+        !self.is_angry()
+    }
+
     // Wolf.getMaxHeadXRot.
     fn get_max_look_pitch_change(&self) -> f32 {
         if self.is_in_sitting_pose() {

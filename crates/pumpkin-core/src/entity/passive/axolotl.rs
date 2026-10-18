@@ -246,6 +246,11 @@ impl Animal for AxolotlEntity {
 }
 
 impl Mob for AxolotlEntity {
+    // Axolotl.canBeLeashed explicitly allows this WaterAnimal subclass.
+    fn can_be_leashed(&self) -> bool {
+        true
+    }
+
     fn spawned_from_bucket(&self) -> bool {
         self.is_from_bucket()
     }

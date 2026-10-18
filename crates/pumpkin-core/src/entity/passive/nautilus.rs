@@ -90,6 +90,21 @@ impl NautilusEntity {
         self.is_tame.load(Ordering::Relaxed)
     }
 
+    /// AbstractNautilus.isAggravated checks both anger and attack-target memories.
+    pub(crate) fn is_aggravated(&self) -> bool {
+        let has_aggravated_memory = {
+            let brain = self
+                .mob_entity
+                .brain
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            brain.has_memory_value(crate::entity::ai::brain::memory::types::ANGRY_AT.id())
+                || brain
+                    .has_memory_value(crate::entity::ai::brain::memory::types::ATTACK_TARGET.id())
+        };
+        has_aggravated_memory || self.mob_entity.get_target().is_some()
+    }
+
     pub fn set_tame(&self, tame: bool, owner: Option<Uuid>) {
         self.is_tame.store(tame, Ordering::Relaxed);
         self.owner.store(owner);
@@ -228,6 +243,11 @@ impl CustomSound for NautilusEntity {
 }
 
 impl Mob for NautilusEntity {
+    // Nautilus.canBeLeashed delegates to AbstractNautilus.isAggravated.
+    fn can_be_leashed(&self) -> bool {
+        !self.is_aggravated()
+    }
+
     fn requires_custom_persistence(&self) -> bool {
         // AbstractNautilus.requiresCustomPersistence.
         self.get_entity().has_vehicle() || self.get_entity().is_leashed() || self.is_tame()

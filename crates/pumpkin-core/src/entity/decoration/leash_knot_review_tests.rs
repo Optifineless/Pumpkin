@@ -14,7 +14,13 @@ use pumpkin_protocol::{
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::{Hand, math::vector3::Vector3};
 use pumpkin_world::chunk::ChunkData;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 fn right_click(target_id: i32) -> SInteract {
     SInteract {
@@ -145,6 +151,35 @@ struct PauseKnotSpawn {
     resume: tokio::sync::watch::Receiver<bool>,
 }
 
+struct CountKnotSpawns(Arc<AtomicUsize>);
+
+impl EventHandler<crate::plugin::api::events::entity::entity_spawn::EntitySpawnEvent>
+    for CountKnotSpawns
+{
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut crate::plugin::api::events::entity::entity_spawn::EntitySpawnEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.entity_type == EntityType::LEASH_KNOT.id.to_string() {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+        Box::pin(async {})
+    }
+}
+
+fn track_knot_spawns(server: &Arc<Server>) -> Arc<AtomicUsize> {
+    let count = Arc::new(AtomicUsize::new(0));
+    server
+        .plugin_manager
+        .register::<crate::plugin::api::events::entity::entity_spawn::EntitySpawnEvent, _>(
+            Arc::new(CountKnotSpawns(count.clone())),
+            EventPriority::Normal,
+            true,
+        );
+    count
+}
+
 impl EventHandler<crate::plugin::api::events::entity::entity_spawn::EntitySpawnEvent>
     for PauseKnotSpawn
 {
@@ -207,6 +242,7 @@ async fn lead_item_rebinds_player_leashed_mob_below_fence() {
         .set_stack_in_hand(Hand::Right, ItemStack::new(1, &Item::LEAD));
     let pos = BlockPos::new(0, 64, 0);
     make_fence(&world, pos);
+    let knot_spawns = track_knot_spawns(&fixture.server);
     let cow = fixture.mob(&EntityType::COW);
     cow.get_entity().set_pos(Vector3::new(0.0, 62.0, 0.0));
     cow.get_entity()
@@ -220,6 +256,7 @@ async fn lead_item_rebinds_player_leashed_mob_below_fence() {
         Some(knot.get_entity().entity_id)
     );
     assert_eq!(player.player.inventory().held_item().item_count, 1);
+    assert_eq!(knot_spawns.load(Ordering::Relaxed), 1);
     fixture.server.shutdown().await;
 }
 
@@ -291,6 +328,7 @@ async fn lead_item_leaves_mob_with_player_when_fence_is_out_of_snap_range() {
         .set_stack_in_hand(Hand::Right, ItemStack::new(1, &Item::LEAD));
     let pos = BlockPos::new(0, 64, 0);
     make_fence(&world, pos);
+    let knot_spawns = track_knot_spawns(&fixture.server);
     let cow = fixture.mob(&EntityType::COW);
     cow.get_entity().set_pos(Vector3::new(14.0, 64.0, 0.0));
     cow.get_entity()
@@ -303,6 +341,7 @@ async fn lead_item_leaves_mob_with_player_when_fence_is_out_of_snap_range() {
         Some(player.player.entity_id())
     );
     assert!(LeashKnotEntity::get_knot(&world, pos).is_none());
+    assert_eq!(knot_spawns.load(Ordering::Relaxed), 0);
     fixture.server.shutdown().await;
 }
 
@@ -326,7 +365,9 @@ async fn knot_interaction_respects_happy_ghasts_extended_leash_range() {
         &right_click(knot.get_entity().entity_id),
         &fixture.server,
     );
-    ghast.get_entity().tick_leash();
+    ghast
+        .get_entity()
+        .tick_leash_with_living(ghast.get_living_entity().unwrap());
 
     assert_eq!(
         leash_holder_id(ghast.get_entity()),
@@ -353,7 +394,9 @@ async fn happy_ghast_player_leash_uses_extended_range() {
         &right_click(ghast.get_entity().entity_id),
         &fixture.server,
     );
-    ghast.get_entity().tick_leash();
+    ghast
+        .get_entity()
+        .tick_leash_with_living(ghast.get_living_entity().unwrap());
 
     assert_eq!(
         leash_holder_id(ghast.get_entity()),
@@ -381,7 +424,9 @@ async fn cow_snaps_at_13_blocks_and_uses_elastic_6_at_8_blocks() {
     snapping_cow
         .get_entity()
         .leash_to(snap_holder.player.clone() as Arc<dyn EntityBase>);
-    snapping_cow.get_entity().tick_leash();
+    snapping_cow
+        .get_entity()
+        .tick_leash_with_living(snapping_cow.get_living_entity().unwrap());
 
     assert_eq!(leash_holder_id(snapping_cow.get_entity()), None);
     assert_eq!(lead_count(&world), 1);
@@ -399,7 +444,9 @@ async fn cow_snaps_at_13_blocks_and_uses_elastic_6_at_8_blocks() {
     elastic_cow
         .get_entity()
         .leash_to(elastic_holder.player.clone() as Arc<dyn EntityBase>);
-    elastic_cow.get_entity().tick_leash();
+    elastic_cow
+        .get_entity()
+        .tick_leash_with_living(elastic_cow.get_living_entity().unwrap());
 
     assert_eq!(
         leash_holder_id(elastic_cow.get_entity()),
@@ -525,3 +572,6 @@ async fn simultaneous_first_fence_ties_publish_one_knot() {
     assert_eq!(knot_count, 1);
     fixture.server.shutdown().await;
 }
+
+#[path = "leash_knot_followup_tests.rs"]
+mod followup;

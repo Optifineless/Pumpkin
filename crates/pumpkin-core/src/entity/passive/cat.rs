@@ -421,7 +421,7 @@ impl Mob for CatEntity {
                     return true;
                 }
 
-                let parent_interaction = self.mob_entity.mob_interact(player, item_stack);
+                let parent_interaction = self.mob_entity.mob_interact(self, player, item_stack);
                 if !parent_interaction {
                     self.set_sitting(!self.is_sitting());
                     return true;
@@ -452,6 +452,6 @@ impl Mob for CatEntity {
             return true;
         }
 
-        self.mob_entity.mob_interact(player, item_stack)
+        self.mob_entity.mob_interact(self, player, item_stack)
     }
 }

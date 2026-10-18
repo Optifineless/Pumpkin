@@ -2,7 +2,7 @@ use crate::block::registry::BlockActionResult;
 use crate::entity::player::Player;
 use crate::entity::{
     decoration::leash_knot::{LeashKnotEntity, leash_holder_id},
-    leashable::leash_search_box,
+    leashable::{can_have_a_leash_attached_to_position, leash_search_box},
 };
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
@@ -45,6 +45,7 @@ impl ItemBehaviour for LeadItem {
             f64::from(location.0.y) + 0.5,
             f64::from(location.0.z) + 0.5,
         );
+        let knot_center = LeashKnotEntity::bounding_box_center_at(location);
 
         // LeadItem.bindPlayerMobs uses Leashable.leashableInArea's centered 32-block cube.
         let search_box = leash_search_box(center);
@@ -54,8 +55,10 @@ impl ItemBehaviour for LeadItem {
 
         let player_leashed_mobs: Vec<_> = entities
             .iter()
-            .map(|entity_base| entity_base.get_entity())
-            .filter(|entity| leash_holder_id(entity) == Some(player_id))
+            .filter(|entity_base| {
+                leash_holder_id(entity_base.get_entity()) == Some(player_id)
+                    && can_have_a_leash_attached_to_position(entity_base.as_ref(), knot_center)
+            })
             .collect();
         if player_leashed_mobs.is_empty() {
             return BlockActionResult::Pass;
@@ -67,7 +70,8 @@ impl ItemBehaviour for LeadItem {
             existing_knot.unwrap_or_else(|| LeashKnotEntity::get_or_create(&world, location));
         let mut any_leashed = false;
         for mob in player_leashed_mobs {
-            any_leashed |= LeashKnotEntity::attach_to_knot(&world, location, mob, &mut knot);
+            any_leashed |=
+                LeashKnotEntity::attach_to_knot(&world, location, mob.as_ref(), &mut knot);
         }
 
         if any_leashed {

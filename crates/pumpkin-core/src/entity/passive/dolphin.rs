@@ -105,6 +105,11 @@ impl DolphinEntity {
 }
 
 impl Mob for DolphinEntity {
+    // Dolphin.canBeLeashed overrides WaterAnimal's default rejection.
+    fn can_be_leashed(&self) -> bool {
+        true
+    }
+
     fn mob_init_data_tracker(&self) {
         // Entity.defineSynchedData uses Dolphin.getMaxAirSupply, including before the first tick.
         self.get_entity().set_synced_data(

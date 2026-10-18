@@ -38,6 +38,11 @@ impl SquidEntity {
 }
 
 impl Mob for SquidEntity {
+    // Squid.canBeLeashed overrides WaterAnimal's default rejection.
+    fn can_be_leashed(&self) -> bool {
+        true
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }

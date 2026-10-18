@@ -22,6 +22,7 @@ use pumpkin_data::attributes::Attributes;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::entity::MobCategory;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
@@ -687,7 +688,12 @@ impl MobEntity {
             >= DAYLIGHT_BRIGHTNESS
     }
 
-    pub fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
+    pub fn mob_interact<M: EntityBase + ?Sized>(
+        &self,
+        caller: &M,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+    ) -> bool {
         let entity = &self.living_entity.entity;
 
         // If already leashed to player, right-clicking unleashes the mob
@@ -711,7 +717,7 @@ impl MobEntity {
         // If holding a lead, leash the mob to the player
         if (item_stack.item.registry_key == "lead"
             || item_stack.item.registry_key == "minecraft:lead")
-            && can_have_a_leash_attached_to(entity, player.get_entity())
+            && can_have_a_leash_attached_to(caller, player.as_ref())
             && entity.leash_to_with_result(player.clone() as Arc<dyn EntityBase>)
                 == LeashToResult::Attached
         {
@@ -726,6 +732,18 @@ impl MobEntity {
 }
 
 pub trait Mob: EntityBase + Send + Sync {
+    /// Mirrors vanilla `Mob.canBeLeashed`, with parent-class exclusions represented by type data.
+    fn can_be_leashed(&self) -> bool {
+        let entity_type = self.get_entity().entity_type;
+        entity_type.category != &MobCategory::MONSTER
+            && entity_type.category != &MobCategory::AMBIENT
+            && entity_type.category != &MobCategory::UNDERGROUND_WATER_CREATURE
+            && entity_type.category != &MobCategory::WATER_CREATURE
+            && entity_type.category != &MobCategory::WATER_AMBIENT
+            && entity_type != &EntityType::VILLAGER
+            && entity_type != &EntityType::WANDERING_TRADER
+    }
+
     /// Plays the species sound after a successful hit, as in Mob.playAttackSound.
     fn play_attack_sound(&self) {}
 
@@ -1259,7 +1277,7 @@ pub trait Mob: EntityBase + Send + Sync {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        self.get_mob_entity().mob_interact(player, item_stack)
+        self.get_mob_entity().mob_interact(self, player, item_stack)
     }
 
     fn tame(&self, player: &Arc<Player>) {
@@ -1467,7 +1485,10 @@ impl<T: Mob + Send + 'static> EntityBase for T {
     #[allow(clippy::too_many_lines)]
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         let mob_entity = self.get_mob_entity();
-        mob_entity.living_entity.entity.tick_leash();
+        mob_entity
+            .living_entity
+            .entity
+            .tick_leash_with_living(&mob_entity.living_entity);
         sun_burn::tick(self);
 
         if mob_entity.breeding_cooldown.load(Relaxed) > 0 {

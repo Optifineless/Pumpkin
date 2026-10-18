@@ -136,6 +136,11 @@ impl Animal for TurtleEntity {
 }
 
 impl Mob for TurtleEntity {
+    // Turtle.canBeLeashed rejects all turtles.
+    fn can_be_leashed(&self) -> bool {
+        false
+    }
+
     fn finalize_spawn(
         &self,
         world: &Arc<crate::world::World>,

@@ -32,6 +32,12 @@ impl ZombieNautilusEntity {
     }
 }
 impl Mob for ZombieNautilusEntity {
+    // ZombieNautilus.canBeLeashed also rejects mobs controlled by a mob passenger.
+    fn can_be_leashed(&self) -> bool {
+        !self.nautilus.is_aggravated()
+            && !crate::entity::leashable::has_mob_control_passenger(self.get_entity())
+    }
+
     // ZombieNautilus inherits AbstractNautilus.isPushedByFluid and travelInWater.
     fn mob_is_pushed_by_fluids(&self) -> bool {
         self.nautilus.mob_is_pushed_by_fluids()

@@ -258,7 +258,8 @@ async fn invalid_fence_unleash_cancellation_is_settled_after_plugin_allows_it() 
     knot.tick(knot.as_ref(), &fixture.server);
     assert!(knot.get_entity().is_removed());
     assert!(saw_permanently_removed.load(Ordering::Relaxed));
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert_eq!(lead_count(&world), 0);
     assert_eq!(
         holder_entity_id(cow.get_entity()),
@@ -266,7 +267,8 @@ async fn invalid_fence_unleash_cancellation_is_settled_after_plugin_allows_it() 
     );
 
     cancel.store(false, Ordering::Relaxed);
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert!(!cow.get_entity().is_leashed());
     assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;
@@ -294,7 +296,8 @@ async fn invalid_fence_with_contended_leash_link_is_settled_after_release() {
         holder_entity_id(cow.get_entity()),
         Some(knot.get_entity().entity_id)
     );
-    cow.get_entity().tick_leash();
+    cow.get_entity()
+        .tick_leash_with_living(cow.get_living_entity().unwrap());
     assert!(!cow.get_entity().is_leashed());
     assert_eq!(lead_count(&world), 1);
     fixture.server.shutdown().await;

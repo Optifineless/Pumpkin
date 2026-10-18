@@ -109,7 +109,7 @@ pub trait Animal: Mob {
             }
         }
 
-        mob_entity.mob_interact(player, item_stack)
+        mob_entity.mob_interact(self, player, item_stack)
     }
 }
 

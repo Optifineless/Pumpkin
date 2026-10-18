@@ -47,6 +47,18 @@ pub struct LeashKnotEntity {
 impl LeashKnotEntity {
     pub const OFFSET_Y: f64 = 0.375;
 
+    /// Center used by leash-distance checks for a knot that has not been spawned yet.
+    #[must_use]
+    pub fn bounding_box_center_at(pos: BlockPos) -> Vector3<f64> {
+        Vector3::new(
+            f64::from(pos.0.x) + 0.5,
+            f64::from(pos.0.y)
+                + Self::OFFSET_Y
+                + f64::from(EntityType::LEASH_KNOT.dimension[1]) * 0.5,
+            f64::from(pos.0.z) + 0.5,
+        )
+    }
+
     pub const fn new(entity: Entity, pos: BlockPos) -> Self {
         Self {
             entity,
@@ -393,8 +405,10 @@ impl EntityBase for LeashKnotEntity {
         // Leashable.leashableLeashedTo plus canHaveALeashAttachedTo.
         let player_leashed_mobs: Vec<_> = entities
             .iter()
-            .map(|entity_base| entity_base.get_entity())
-            .filter(|ent| leash_holder_id(ent) == Some(player_id))
+            .filter(|entity_base| {
+                leash_holder_id(entity_base.get_entity()) == Some(player_id)
+                    && can_have_a_leash_attached_to(entity_base.as_ref(), self.get_entity())
+            })
             .collect();
 
         let mut attached_mob = false;
@@ -402,7 +416,8 @@ impl EntityBase for LeashKnotEntity {
         if !player_leashed_mobs.is_empty() {
             let mut self_knot = Self::get_or_create(&world, self.pos);
             for mob in player_leashed_mobs {
-                attached_mob |= Self::attach_to_knot(&world, self.pos, mob, &mut self_knot);
+                attached_mob |=
+                    Self::attach_to_knot(&world, self.pos, mob.as_ref(), &mut self_knot);
             }
         }
 
@@ -410,16 +425,16 @@ impl EntityBase for LeashKnotEntity {
         if !attached_mob && !player.get_entity().is_sneaking() {
             let knot_leashed_mobs: Vec<_> = entities
                 .iter()
-                .map(|entity_base| entity_base.get_entity())
                 .filter(|ent| {
-                    leash_holder_id(ent) == Some(knot_id)
-                        && can_have_a_leash_attached_to(ent, player.get_entity())
+                    leash_holder_id(ent.get_entity()) == Some(knot_id)
+                        && can_have_a_leash_attached_to(ent.as_ref(), player.get_entity())
                 })
                 .collect();
 
             for mob in knot_leashed_mobs {
-                mob.leash_to_with_result(player.clone() as Arc<dyn EntityBase>);
-                any_dropped |= leash_holder_id(mob) == Some(player_id);
+                mob.get_entity()
+                    .leash_to_with_result(player.clone() as Arc<dyn EntityBase>);
+                any_dropped |= leash_holder_id(mob.get_entity()) == Some(player_id);
             }
         }
 
@@ -446,14 +461,15 @@ impl LeashKnotEntity {
     pub(crate) fn attach_to_knot(
         world: &Arc<World>,
         pos: BlockPos,
-        mob: &Entity,
+        mob: &dyn EntityBase,
         holder: &mut Arc<dyn EntityBase>,
     ) -> bool {
+        let entity = mob.get_entity();
         for attempt in 0..=1 {
-            if !can_have_a_leash_attached_to(mob, holder.get_entity()) {
+            if !can_have_a_leash_attached_to(mob, holder.as_ref()) {
                 return false;
             }
-            match mob.leash_to_with_result(holder.clone()) {
+            match entity.leash_to_with_result(holder.clone()) {
                 LeashToResult::Attached => return true,
                 LeashToResult::HolderUnavailable if attempt == 0 => {
                     *holder = Self::get_or_create(world, pos);

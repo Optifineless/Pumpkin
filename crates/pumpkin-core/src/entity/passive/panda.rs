@@ -254,6 +254,11 @@ impl Animal for PandaEntity {
 }
 
 impl Mob for PandaEntity {
+    // Panda.canBeLeashed rejects all pandas.
+    fn can_be_leashed(&self) -> bool {
+        false
+    }
+
     // PandaMoveControl.tick / Panda.canPerformAction.
     fn can_tick_move_control(&self) -> bool {
         let scared = self.get_main_gene() == PandaGene::Worried

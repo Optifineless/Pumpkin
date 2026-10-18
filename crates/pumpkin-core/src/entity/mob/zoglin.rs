@@ -138,6 +138,11 @@ impl ZoglinEntity {
 }
 
 impl Mob for ZoglinEntity {
+    // Zoglin.canBeLeashed explicitly allows this otherwise hostile mob.
+    fn can_be_leashed(&self) -> bool {
+        true
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }

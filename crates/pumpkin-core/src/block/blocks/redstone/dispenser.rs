@@ -983,7 +983,11 @@ impl DispenserBlock {
                 continue;
             }
             // ShearsDispenseItemBehavior.tryShearEntity snips leashes even on dying mobs.
-            if entity.get_entity().shear_off_all_leash_connections(None) {
+            if entity
+                .get_entity()
+                .shear_off_all_leash_connections(None)
+                .detached
+            {
                 return true;
             }
             // Vanilla `LivingEntity.isAlive` also needs health left, so mobs in their death animation are skipped.
