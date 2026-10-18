@@ -477,7 +477,9 @@ async fn handle_socket_messages_with_dispatch<D, F>(
     }
     if server.management_shutdown.is_cancelled() {
         // JsonRpcNotificationService.serverShuttingDown queues stopping before closure.
-        loop {
+        // Drain only what was queued at cancellation: a producer that keeps broadcasting
+        // must not keep this tracked task (and so the final world saves) waiting.
+        for _ in 0..notif_rx.len() {
             match notif_rx.try_recv() {
                 Ok(notification) => {
                     if sender.send(Message::from(notification)).await.is_err() {
