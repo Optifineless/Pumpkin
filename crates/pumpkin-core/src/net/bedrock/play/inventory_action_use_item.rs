@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{server::Server, world::World};
 use pumpkin_data::Block;
+use pumpkin_inventory::Inventory;
 use pumpkin_protocol::bedrock::server::inventory_transaction::UseItemTransactionData;
 
 // UseOnContext retains the admitted hand/stack and hit result through useItemOn callbacks.
@@ -60,6 +61,19 @@ impl BedrockClient {
         let Some(server) = world.server.upgrade() else {
             return false;
         };
+        // Mirrors Java ServerGamePacketListenerImpl.handleUseItemOn before block-use hooks.
+        if data.action_type.0 == 0 && world.is_in_spawn_protection(player, &data.block_position) {
+            self.correct_spawn_protected_block_use(
+                player,
+                data,
+                selected,
+                match data.hand {
+                    HandSlot::Mainhand => Hand::Right,
+                    HandSlot::Offhand => Hand::Left,
+                },
+            );
+            return true;
+        }
         if player.is_spectator() {
             if let Some(factory) = server.block_registry.get_screen_handler_factory(
                 block,
@@ -101,6 +115,41 @@ impl BedrockClient {
         } else {
             self.use_admitted_item(&context)
         }
+    }
+
+    fn correct_spawn_protected_block_use(
+        &self,
+        player: &Player,
+        data: &UseItemTransactionData,
+        selected: u8,
+        hand: Hand,
+    ) {
+        let face =
+            BlockDirection::try_from(i32::from(data.block_face)).unwrap_or(BlockDirection::Up);
+        self.correct_denied_placement(player, data.block_position, face);
+
+        let world = player.world();
+        let offset = face.to_offset();
+        let adjacent = pumpkin_util::math::position::BlockPos::new(
+            data.block_position.0.x.wrapping_add(offset.x),
+            data.block_position.0.y.wrapping_add(offset.y),
+            data.block_position.0.z.wrapping_add(offset.z),
+        );
+        for position in [data.block_position, adjacent] {
+            let state_id = world.get_block_state_id(&position);
+            if let Some(block_entity) = world.get_block_entity(&position)
+                && let Some(actor_data) = block_entity.bedrock_block_actor_data(state_id)
+            {
+                self.try_enqueue_client_packet(
+                    &pumpkin_protocol::bedrock::client::block_actor_data::CBlockActorData::new(
+                        position, actor_data,
+                    ),
+                );
+            }
+        }
+
+        let slot = super::hand_inventory_slot(hand, selected);
+        player.sync_hand_slot(slot, player.inventory().get_stack(slot));
     }
 
     fn use_admitted_item_on(&self, context: &AdmittedItemUse<'_>) -> bool {

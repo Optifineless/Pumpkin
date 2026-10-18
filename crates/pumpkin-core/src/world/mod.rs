@@ -52,6 +52,7 @@ mod shared_state_tests;
 #[cfg(test)]
 mod snapshot_boundary_tests;
 mod spawn_insertion;
+mod spawn_protection;
 pub mod stopwatches;
 mod straw_bed;
 pub mod time;
@@ -723,29 +724,6 @@ impl World {
             level_info.spawn_yaw,
             level_info.spawn_pitch,
         )
-    }
-
-    #[must_use]
-    pub fn is_in_spawn_protection(&self, player: &Player, position: &BlockPos) -> bool {
-        if player.permission_lvl.load() == pumpkin_util::permission::PermissionLvl::Four {
-            return false;
-        }
-
-        let Some(server) = self.server.upgrade() else {
-            return false;
-        };
-
-        let radius = server.basic_config.spawn_protection;
-        if radius == 0 {
-            return false;
-        }
-
-        let radius = i32::try_from(radius).unwrap_or(i32::MAX);
-        let spawn = self.get_spawn_location().0;
-        let dx = (spawn.0.x - position.0.x).abs();
-        let dz = (spawn.0.z - position.0.z).abs();
-
-        dx <= radius && dz <= radius
     }
 
     pub async fn shutdown(&self) {

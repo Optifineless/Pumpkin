@@ -63,6 +63,34 @@ fn get_start_and_end_pos(player: &Player, yaw: f32, pitch: f32) -> (Vector3<f64>
     (start_pos, end_pos)
 }
 
+/// Finds the block hit that `BucketItem.use` inspects for this bucket's fluid mode.
+pub(crate) fn bucket_use_hit(
+    world: &Arc<World>,
+    player: &Player,
+    stack: &ItemStack,
+    yaw: f32,
+    pitch: f32,
+) -> Option<(BlockPos, BlockDirection)> {
+    let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
+    let is_empty_bucket = stack.item == &Item::BUCKET;
+
+    world.raycast(start_pos, end_pos, |pos, world_inner| {
+        let state_id = world_inner.get_block_state_id(pos);
+        if state_id == Block::AIR.default_state.id {
+            return false;
+        }
+
+        if is_empty_bucket {
+            let block = Block::from_state_id(state_id);
+            (block.id != Block::WATER.id && block.id != Block::LAVA.id)
+                || ((block.id == Block::WATER.id && state_id == Block::WATER.default_state.id)
+                    || (block.id == Block::LAVA.id && state_id == Block::LAVA.default_state.id))
+        } else {
+            Fluid::from_state_id(state_id).is_none()
+        }
+    })
+}
+
 const fn get_mob_for_bucket(item: &Item) -> Option<(&'static EntityType, Sound)> {
     if item.id == Item::AXOLOTL_BUCKET.id {
         Some((&EntityType::AXOLOTL, Sound::ItemBucketEmptyAxolotl))
@@ -420,25 +448,14 @@ impl ItemBehaviour for EmptyBucketItem {
         hand: Hand,
     ) -> bool {
         let world = player.world();
-        let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
-
-        let checker = |pos: &BlockPos, world_inner: &Arc<World>| {
-            let state_id = world_inner.get_block_state_id(pos);
-
-            let block = Block::from_state_id(state_id);
-
-            if state_id == Block::AIR.default_state.id {
-                return false;
-            }
-
-            (block.id != Block::WATER.id && block.id != Block::LAVA.id)
-                || ((block.id == Block::WATER.id && state_id == Block::WATER.default_state.id)
-                    || (block.id == Block::LAVA.id && state_id == Block::LAVA.default_state.id))
-        };
-
-        let Some((block_pos, direction)) = world.raycast(start_pos, end_pos, checker) else {
+        let Some((block_pos, direction)) = bucket_use_hit(&world, player, stack, yaw, pitch) else {
             return false;
         };
+
+        // BucketItem.use checks ServerLevel.mayInteract before pickup effects.
+        if world.is_in_spawn_protection(player, &block_pos) {
+            return false;
+        }
 
         let Some((pickup_pos, item)) = bucket_pickup_target(&world, block_pos, direction) else {
             return false;
@@ -580,18 +597,14 @@ impl ItemBehaviour for FilledBucketItem {
     ) -> bool {
         let item = stack.item;
         let world = player.world();
-        let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
-        let checker = |pos: &BlockPos, world_inner: &Arc<World>| {
-            let state_id = world_inner.get_block_state_id(pos);
-            if Fluid::from_state_id(state_id).is_some() {
-                return false;
-            }
-            state_id != Block::AIR.default_state.id
-        };
-
-        let Some((pos, direction)) = world.raycast(start_pos, end_pos, checker) else {
+        let Some((pos, direction)) = bucket_use_hit(&world, player, stack, yaw, pitch) else {
             return false;
         };
+
+        // BucketItem.use checks ServerLevel.mayInteract before emptying effects.
+        if world.is_in_spawn_protection(player, &pos) {
+            return false;
+        }
 
         // BucketItem.use resolves eligibility, then plugin cancellation, before placement.
         let Some(destination) = bucket_destination(
@@ -700,8 +713,8 @@ mod sound_tests;
 mod tests {
     use super::*;
     use crate::{
-        net::java::combat_test_support::TestPlayer, server::combat_test_support,
-        world::spawn_test_support,
+        entity::death_test_world::DeathTestWorld, net::java::combat_test_support::TestPlayer,
+        server::combat_test_support, world::spawn_test_support,
     };
     use pumpkin_data::{
         biome::Biome,
@@ -710,7 +723,77 @@ mod tests {
     use pumpkin_inventory::Inventory;
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_protocol::{codec::var_int::VarInt, java::server::play::SUseItem};
-    use pumpkin_util::text::TextComponent;
+    use pumpkin_util::{PermissionLvl, math::position::BlockPos, text::TextComponent};
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+
+    struct CountPlayerInteract(Arc<AtomicUsize>);
+
+    impl
+        crate::plugin::EventHandler<
+            crate::plugin::api::events::player::player_interact_event::PlayerInteractEvent,
+        > for CountPlayerInteract
+    {
+        fn handle_blocking<'a>(
+            &'a self,
+            _: &'a Arc<crate::server::Server>,
+            _: &'a mut crate::plugin::api::events::player::player_interact_event::PlayerInteractEvent,
+        ) -> crate::plugin::BoxFuture<'a, ()> {
+            self.0.fetch_add(1, Relaxed);
+            Box::pin(async {})
+        }
+    }
+
+    fn enable_spawn_protection(fixture: &DeathTestWorld, spawn: BlockPos) {
+        fixture.server.level_info.rcu(|info| {
+            let mut next = (**info).clone();
+            next.spawn_x = spawn.0.x;
+            next.spawn_y = spawn.0.y;
+            next.spawn_z = spawn.0.z;
+            next
+        });
+        fixture
+            .server
+            .data
+            .operator_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ops
+            .push(pumpkin_config::op::Op::new(
+                Uuid::new_v4(),
+                "spawn-protection-test-op".to_owned(),
+                PermissionLvl::Zero,
+                false,
+            ));
+    }
+
+    fn register_interaction_counter(fixture: &DeathTestWorld) -> Arc<AtomicUsize> {
+        let interactions = Arc::new(AtomicUsize::new(0));
+        fixture
+            .server
+            .plugin_manager
+            .register::<
+                crate::plugin::api::events::player::player_interact_event::PlayerInteractEvent,
+                _,
+            >(
+                Arc::new(CountPlayerInteract(interactions.clone())),
+                crate::plugin::EventPriority::Normal,
+                true,
+            );
+        interactions
+    }
+
+    fn use_bucket(player: &TestPlayer, fixture: &DeathTestWorld, sequence: i32) {
+        player.client().handle_use_item(
+            &player.player,
+            &SUseItem {
+                hand: VarInt(0),
+                sequence: VarInt(sequence),
+                yaw: 0.0,
+                pitch: 0.0,
+            },
+            &fixture.server,
+        );
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[expect(
@@ -771,5 +854,67 @@ mod tests {
         );
         assert!(fish.get_mob().unwrap().spawned_from_bucket());
         assert!(world.level.shutdown().await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn bucket_use_matches_vanilla_spawn_protection() {
+        use pumpkin_data::item_stack::ItemStack;
+
+        let fixture = DeathTestWorld::new().await;
+        let world = fixture.world();
+        spawn_test_support::publish(
+            &world,
+            spawn_test_support::proto(&Biome::PLAINS, &Block::STONE),
+        );
+        let player = TestPlayer::new(&world);
+        player
+            .player
+            .get_entity()
+            .set_pos(Vector3::new(8.5, 64.0, 8.5));
+        player.player.permission_lvl.store(PermissionLvl::Zero);
+
+        let spawn = BlockPos::new(8, 64, 8);
+        enable_spawn_protection(&fixture, spawn);
+
+        let clicked = BlockPos::new(8, 65, 11);
+        let destination = BlockPos::new(8, 65, 10);
+        world.set_block_state(
+            &clicked,
+            Block::STONE.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+        let interactions = register_interaction_counter(&fixture);
+        let water_bucket = ItemStack::new(1, &Item::WATER_BUCKET);
+        player.player.inventory().set_stack(0, water_bucket.clone());
+        use_bucket(&player, &fixture, 1);
+
+        assert_eq!(world.get_block(&destination), &Block::AIR);
+        assert!(
+            player
+                .player
+                .inventory()
+                .held_item()
+                .are_equal(&water_bucket)
+        );
+
+        let empty_bucket = ItemStack::new(1, &Item::BUCKET);
+        world.set_block_state(
+            &clicked,
+            Block::WATER.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+        player.player.inventory().set_stack(0, empty_bucket.clone());
+        use_bucket(&player, &fixture, 2);
+
+        assert_eq!(world.get_block(&clicked), &Block::WATER);
+        assert!(
+            player
+                .player
+                .inventory()
+                .held_item()
+                .are_equal(&empty_bucket)
+        );
+        assert_eq!(interactions.load(Relaxed), 0);
+        fixture.server.shutdown().await;
     }
 }

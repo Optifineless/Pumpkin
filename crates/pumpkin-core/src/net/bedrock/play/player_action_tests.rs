@@ -58,6 +58,20 @@ async fn egg_attack(mode: GameMode, protected: bool, cancelled: bool, allowed: b
             .register::<BlockDamageEvent, _>(Arc::new(CancelDamage), EventPriority::Normal, true);
     }
     if protected {
+        // DedicatedServer.isUnderSpawnProtection requires a nonempty ops list.
+        fixture
+            .server
+            .data
+            .operator_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ops
+            .push(pumpkin_config::op::Op::new(
+                uuid::Uuid::new_v4(),
+                "spawn-protection-test-op".to_owned(),
+                PermissionLvl::Zero,
+                false,
+            ));
         assert!(world.is_in_spawn_protection(&player.player, &position));
     }
     player.client().handle_player_action(
