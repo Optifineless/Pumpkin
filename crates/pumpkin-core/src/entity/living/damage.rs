@@ -12,7 +12,10 @@
 //! be overwritten by a pending server velocity packet.
 //! Ownership spans serial segments; plugin dispatch releases it and resumed stages read live state.
 
-use super::LivingEntity;
+use super::{
+    LivingEntity,
+    damage_transaction::{DamageToken, PendingHurt},
+};
 use crate::entity::{EntityBase, equipment_damage::EquippedItem};
 use pumpkin_data::{
     damage::DamageType,
@@ -30,6 +33,53 @@ pub(super) struct HurtContext<'a> {
     pub position: Option<Vector3<f64>>,
     pub source: Option<&'a dyn EntityBase>,
     pub cause: Option<&'a dyn EntityBase>,
+}
+
+struct HurtRequest<'a, F> {
+    caller: &'a dyn EntityBase,
+    amount: f32,
+    damage_type: DamageType,
+    position: Option<Vector3<f64>>,
+    source: Option<&'a dyn EntityBase>,
+    cause: Option<&'a dyn EntityBase>,
+    expected_lifecycle: Option<u64>,
+    before_hurt: F,
+}
+
+struct AdmittedHurt<'a> {
+    caller: &'a dyn EntityBase,
+    amount: f32,
+    context: HurtContext<'a>,
+    _owner: DamageToken,
+    _pending: PendingHurt,
+}
+
+impl<'a, F: FnOnce()> HurtRequest<'a, F> {
+    fn admit(self, living: &LivingEntity) -> Option<AdmittedHurt<'a>> {
+        let owner = living.damage_owner.enter();
+        let lifecycle = living.damage_owner.lifecycle();
+        if self
+            .expected_lifecycle
+            .is_some_and(|expected| expected != lifecycle)
+        {
+            return None;
+        }
+        let pending = living.damage_owner.pending_hurt();
+        (self.before_hurt)();
+        Some(AdmittedHurt {
+            caller: self.caller,
+            amount: self.amount,
+            context: HurtContext {
+                lifecycle,
+                damage_type: self.damage_type,
+                position: self.position,
+                source: self.source,
+                cause: self.cause,
+            },
+            _owner: owner,
+            _pending: pending,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -61,16 +111,56 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        let _owner = self.damage_owner.enter();
-        let _pending = self.damage_owner.pending_hurt();
-        // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
-        let context = HurtContext {
-            lifecycle: self.damage_owner.lifecycle(),
+        self.hurt_server_inner(HurtRequest {
+            caller,
+            amount,
             damage_type,
             position,
             source,
             cause,
+            expected_lifecycle: None,
+            before_hurt: || {},
+        })
+    }
+
+    /// Resets pearl fall state and damages only the captured life under damage admission.
+    pub(crate) fn hurt_ender_pearl_for_lifecycle(
+        &self,
+        caller: &dyn EntityBase,
+        lifecycle: u64,
+    ) -> bool {
+        // ThrownEnderpearl.onHit resets fall distance and applies 5 damage after ServerPlayer.teleport.
+        self.hurt_server_inner(HurtRequest {
+            caller,
+            amount: 5.0,
+            damage_type: DamageType::ENDER_PEARL,
+            position: None,
+            source: None,
+            cause: None,
+            expected_lifecycle: Some(lifecycle),
+            before_hurt: || {
+                if self.is_alive() {
+                    self.reset_fall_distance_and_impulse_context();
+                }
+            },
+        })
+    }
+
+    fn hurt_server_inner<F>(&self, request: HurtRequest<'_, F>) -> bool
+    where
+        F: FnOnce(),
+    {
+        let Some(request) = request.admit(self) else {
+            return false;
         };
+        let caller = request.caller;
+        let amount = request.amount;
+        let context = request.context;
+        let damage_type = context.damage_type;
+        let position = context.position;
+        let source = context.source;
+        let cause = context.cause;
+        // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
         let amount = if let Some(player) = caller.get_player() {
             let Some(amount) = player.admit_incoming_damage(amount, damage_type, cause, source)
             else {

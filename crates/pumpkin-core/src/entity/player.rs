@@ -10,6 +10,7 @@ mod mace;
 mod map_tracking;
 mod melee;
 mod menu_close;
+use super::player_teleport::TeleportWorldOutcome;
 use known_movement::KnownMovement;
 pub mod statistics;
 
@@ -3511,7 +3512,6 @@ impl Player {
     }
 
     /// Teleports the player to a different world or dimension with an optional position, yaw, and pitch.
-    #[expect(clippy::too_many_lines)]
     pub async fn teleport_world(
         self: &Arc<Self>,
         new_world: Arc<World>,
@@ -3519,14 +3519,67 @@ impl Player {
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) {
+        let _ = self
+            .teleport_world_inner(
+                new_world,
+                position,
+                yaw,
+                pitch,
+                None::<fn(&Arc<Self>)>,
+                None::<fn(&Arc<World>)>,
+            )
+            .await;
+    }
+
+    /// Runs a hook at placement and another after destination publication.
+    pub(super) async fn teleport_world_with_commit<F, G>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        position: Vector3<f64>,
+        yaw: Option<f32>,
+        pitch: Option<f32>,
+        commit_hook: F,
+        after_commit_hook: G,
+    ) -> TeleportWorldOutcome
+    where
+        F: FnOnce(&Arc<Self>) + Send,
+        G: FnOnce(&Arc<World>) + Send,
+    {
+        self.teleport_world_inner(
+            new_world,
+            position,
+            yaw,
+            pitch,
+            Some(commit_hook),
+            Some(after_commit_hook),
+        )
+        .await
+    }
+
+    #[expect(clippy::too_many_lines)]
+    async fn teleport_world_inner<F, G>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        position: Vector3<f64>,
+        yaw: Option<f32>,
+        pitch: Option<f32>,
+        mut commit_hook: Option<F>,
+        mut after_commit_hook: Option<G>,
+    ) -> TeleportWorldOutcome
+    where
+        F: FnOnce(&Arc<Self>) + Send,
+        G: FnOnce(&Arc<World>) + Send,
+    {
+        let defer_arrival_publication = commit_hook.is_some();
         let current_world = self.living_entity.entity.world.load_full();
         let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
         let pitch = pitch.unwrap_or(new_world.level_info.load().spawn_pitch);
 
         let Some(server) = new_world.server.upgrade() else {
-            return;
+            return TeleportWorldOutcome::NotCommitted;
         };
 
+        let mut outcome = TeleportWorldOutcome::NotCommitted;
         send_cancellable! {{
             server;
             PlayerChangeWorldEvent {
@@ -3548,13 +3601,15 @@ impl Player {
 
                 self.set_client_loaded(false);
                 let Some(player) = current_world.remove_player(self, false).await else {
-                    return;
+                    return TeleportWorldOutcome::NotCommitted;
                 };
-               new_world.players.rcu(|current_list| {
-                    let mut new_list = (**current_list).clone();
-                    new_list.push(player.clone());
-                    new_list
-                });
+                if !defer_arrival_publication {
+                    new_world.players.rcu(|current_list| {
+                        let mut new_list = (**current_list).clone();
+                        new_list.push(player.clone());
+                        new_list
+                    });
+                }
                 self.unload_watched_chunks(&current_world).await;
 
                 self.change_world_chunks(&current_world.level, &new_world);
@@ -3627,8 +3682,11 @@ impl Player {
                 player.get_entity().set_rotation(yaw, pitch);
                 player.get_entity().last_pos.store(position);
 
-                // Registered after positioning, so spawns carry the new position.
-                new_world.add_arriving_player(&player);
+                if !defer_arrival_publication {
+                    outcome = TeleportWorldOutcome::Committed;
+                    // Registered after positioning, so spawns carry the new position.
+                    new_world.add_arriving_player(&player);
+                }
 
                 self.send_abilities_update();
 
@@ -3641,6 +3699,23 @@ impl Player {
                 self.send_health();
 
                 new_world.send_world_info(&player);
+                if defer_arrival_publication {
+                    // World.sendWorldInfo resets health; ThrownEnderpearl.onHit applies damage after ServerPlayer.teleport.
+                    if let Some(commit_hook) = commit_hook.take() {
+                        commit_hook(&player);
+                    }
+                    outcome = TeleportWorldOutcome::Committed;
+                    new_world.players.rcu(|current_list| {
+                        let mut new_list = (**current_list).clone();
+                        new_list.push(player.clone());
+                        new_list
+                    });
+                    // Keep the player out of destination ticks until pearl effects are committed.
+                    new_world.add_arriving_player(&player);
+                    if let Some(after_commit_hook) = after_commit_hook.take() {
+                        after_commit_hook(&new_world);
+                    }
+                }
                 new_world.send_center_chunk(&player).await;
 
                 // cancellation leaves the current position untouched.
@@ -3655,6 +3730,7 @@ impl Player {
                 server.plugin_manager.fire(&server, &mut changed_world_event).await;
             }
         }}
+        outcome
     }
 
     /// `yaw` and `pitch` are in degrees.

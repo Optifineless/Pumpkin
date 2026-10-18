@@ -7,6 +7,12 @@ use crate::{entity::EntityBase, world::World};
 use pumpkin_data::damage::DamageType;
 use pumpkin_protocol::java::client::play::CEntityPositionSync;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum TeleportWorldOutcome {
+    NotCommitted,
+    Committed,
+}
+
 impl Player {
     /// Resolves the plugin-approved destination before any teleport side effects.
     pub(super) fn accept_teleport_destination(
@@ -54,7 +60,11 @@ impl Player {
     }
 
     /// Teleports a pearl's player owner and applies pearl effects only after success.
-    pub(crate) fn teleport_for_ender_pearl(&self, position: Vector3<f64>, world: Arc<World>) {
+    pub(crate) fn teleport_for_ender_pearl(
+        &self,
+        position: Vector3<f64>,
+        world: Arc<World>,
+    ) -> bool {
         let current_world = self.world();
         let yaw = self.get_entity().yaw.load();
         let pitch = self.get_entity().pitch.load();
@@ -66,31 +76,58 @@ impl Player {
             {
                 self.finish_ender_pearl_teleport();
             }
-            return;
+            return false;
         }
 
         let Some(player) = current_world.get_player_by_uuid(self.gameprofile.id) else {
-            return;
+            return false;
         };
-        let source_world = current_world;
         let task_player = player.clone();
-        let _ = player.spawn_task(async move {
-            task_player
-                .teleport_world(world, position, Some(yaw), Some(pitch))
-                .await;
-            let arrived_world = task_player.world();
-            if !Arc::ptr_eq(&source_world, &arrived_world)
-                && arrived_world
-                    .get_player_by_uuid(task_player.gameprofile.id)
-                    .is_some_and(|player| Arc::ptr_eq(&player, &task_player))
-            {
-                task_player.finish_ender_pearl_teleport();
-            }
-        });
+        let expected_player = task_player.clone();
+        let life = task_player.living_entity.damage_lifecycle();
+        let sound_world = world.clone();
+        player
+            .spawn_task(async move {
+                let outcome = task_player
+                    .teleport_world_with_commit(
+                        world,
+                        position,
+                        Some(yaw),
+                        Some(pitch),
+                        move |player| {
+                            // ThrownEnderpearl.onHit applies these after ServerPlayer.teleport succeeds.
+                            if Arc::ptr_eq(player, &expected_player) {
+                                player.finish_ender_pearl_teleport_for_lifecycle(life);
+                            }
+                        },
+                        move |published_world| {
+                            // ThrownEnderpearl.onHit plays sound after transfer effects; publish first so the owner can hear it.
+                            published_world.play_sound(
+                                pumpkin_data::sound::Sound::EntityPlayerTeleport,
+                                pumpkin_data::sound::SoundCategory::Players,
+                                &position,
+                            );
+                        },
+                    )
+                    .await;
+                if outcome == TeleportWorldOutcome::NotCommitted {
+                    sound_world.play_sound(
+                        pumpkin_data::sound::Sound::EntityPlayerTeleport,
+                        pumpkin_data::sound::SoundCategory::Players,
+                        &position,
+                    );
+                }
+            })
+            .is_some()
     }
 
     fn finish_ender_pearl_teleport(&self) {
         self.living_entity.reset_fall_distance_and_impulse_context();
         self.damage(self, 5.0, DamageType::ENDER_PEARL);
+    }
+
+    fn finish_ender_pearl_teleport_for_lifecycle(&self, lifecycle: u64) {
+        self.living_entity
+            .hurt_ender_pearl_for_lifecycle(self, lifecycle);
     }
 }
