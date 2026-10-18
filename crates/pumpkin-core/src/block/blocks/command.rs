@@ -70,7 +70,7 @@ impl CommandBlock {
         command_entity.success_count.load(Ordering::Relaxed) > 0
     }
 
-    fn mark_condition_met(
+    pub(crate) fn mark_condition_met(
         world: &World,
         command_block: &CommandBlockEntity,
         pos: &BlockPos,

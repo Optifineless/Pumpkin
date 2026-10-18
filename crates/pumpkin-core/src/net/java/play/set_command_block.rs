@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::block::blocks::command::CommandBlock;
 
 impl JavaClient {
     pub fn handle_set_command_block(&self, player: &Arc<Player>, command: &SSetCommandBlock<'_>) {
@@ -52,7 +53,7 @@ impl JavaClient {
                 cmd = &cmd[1..];
             }
 
-            let command_block = CommandBlockEntity {
+            let command_block = Arc::new(CommandBlockEntity {
                 position: pos,
                 powered: old_command_block.powered.load(Ordering::SeqCst).into(),
                 condition_met: old_command_block
@@ -71,8 +72,8 @@ impl JavaClient {
                 ),
                 track_output: command.track_output().into(),
                 success_count: AtomicU32::new(0),
-            };
-            player.world().add_block_entity(Arc::new(command_block));
+            });
+            player.world().add_block_entity(command_block.clone());
 
             player.send_system_message(&TextComponent::text(format!(
                 "Command set: {}",
@@ -81,7 +82,9 @@ impl JavaClient {
 
             // The automatic flag means always active
             if command.is_automatic() && block_type != Block::CHAIN_COMMAND_BLOCK {
-                player.world().schedule_block_tick(
+                let world = player.world();
+                CommandBlock::mark_condition_met(&world, &command_block, &pos);
+                world.schedule_block_tick(
                     &block_type,
                     pos,
                     1,
@@ -91,3 +94,6 @@ impl JavaClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
