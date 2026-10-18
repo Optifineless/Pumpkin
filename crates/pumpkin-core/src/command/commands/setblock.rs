@@ -42,6 +42,9 @@ impl CommandExecutor for SetBlockExecutor {
         let block = BlockStateArgumentType::get(context, "block")?;
         let world = context.source.world();
         let pos = BlockPosArgumentType::get_loaded_block_pos(context, "pos")?;
+        let _mutation = world
+            .block_entity_mutation_permit(pos)
+            .ok_or_else(|| ERROR_FAILED.create_without_context())?;
         // SetBlockCommand.setBlock checks keep, destroys with drops, then calls BlockInput.place.
         if matches!(self.0, Mode::Keep) && !world.get_block_state(&pos).is_air() {
             return Err(ERROR_FAILED.create_without_context());

@@ -9,6 +9,9 @@ use super::{World, entity_persistence, guard_effects::GuardEffects, merge_entity
 use crate::entity::{RemovalReason, player::Player};
 
 #[cfg(test)]
+#[path = "entity_unload_recapture_tests.rs"]
+mod recapture_tests;
+#[cfg(test)]
 #[path = "entity_unload_terrain_tests.rs"]
 mod terrain_tests;
 #[cfg(test)]
@@ -89,6 +92,13 @@ impl World {
             .cloned()
             .collect();
         if request.storage.is_none() && !members.is_empty() {
+            // Reopened terrain can spawn roots after its previous entity storage was cleaned.
+            // Request FRESH storage through the existing async unload path, then retry next tick.
+            let world = self.clone();
+            let pos = request.position;
+            self.level.spawn_task(async move {
+                world.remove_entities_in_chunks([pos]).await;
+            });
             return;
         }
         let ids: FxHashSet<_> = members
