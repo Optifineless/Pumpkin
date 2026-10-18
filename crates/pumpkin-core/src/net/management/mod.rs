@@ -5,7 +5,9 @@ pub mod hub;
 pub mod rpc;
 
 #[cfg(test)]
-mod shutdown_child;
+mod notification_flood_tests;
+#[cfg(test)]
+pub(crate) mod shutdown_child;
 #[cfg(test)]
 mod shutdown_rpc_tests;
 #[cfg(test)]
@@ -401,9 +403,11 @@ async fn handle_socket_messages_with_dispatch<D, F>(
     let (mut sender, mut receiver) = socket.split();
 
     loop {
+        if server.management_shutdown.is_cancelled() {
+            break;
+        }
+        // Connection.channelRead0 handles input independently from sendNotification.
         tokio::select! {
-            // JsonRpcNotificationService.serverShuttingDown queues stopping before closure.
-            biased;
             notif = notif_rx.recv() => {
                 match notif {
                     Ok(notif_str) => {
@@ -468,6 +472,20 @@ async fn handle_socket_messages_with_dispatch<D, F>(
                     }
                     _ => {}
                 }
+            }
+        }
+    }
+    if server.management_shutdown.is_cancelled() {
+        // JsonRpcNotificationService.serverShuttingDown queues stopping before closure.
+        loop {
+            match notif_rx.try_recv() {
+                Ok(notification) => {
+                    if sender.send(Message::from(notification)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+                Err(_) => break,
             }
         }
     }

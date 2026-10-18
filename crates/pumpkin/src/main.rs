@@ -151,52 +151,55 @@ async fn main() {
     });
     let plugin_wait_time = pumpkin_server.init_plugins().await;
 
-    let time_elapsed = time.elapsed().saturating_sub(plugin_wait_time);
+    if !pumpkin_core::SHOULD_STOP.load(Ordering::Relaxed) {
+        let time_elapsed = time.elapsed().saturating_sub(plugin_wait_time);
 
-    info!(
-        "Started server; took {}",
-        TextComponent::text(format!("{}ms", time_elapsed.as_millis()))
-            .color_named(NamedColor::Gold)
-            .to_pretty_console()
-    );
-    let advanced_config = &pumpkin_server.server.advanced_config;
-    info!(
-        "Server is now running. Connect using port: {}{}{}",
-        if advanced_config.networking.java.enabled {
-            format!(
-                "{} {}",
-                TextComponent::text("Java Edition:")
-                    .color_named(NamedColor::Yellow)
-                    .to_pretty_console(),
-                TextComponent::text(format!("{}", advanced_config.networking.java.address))
+        info!(
+            "Started server; took {}",
+            TextComponent::text(format!("{}ms", time_elapsed.as_millis()))
+                .color_named(NamedColor::Gold)
+                .to_pretty_console()
+        );
+        let advanced_config = &pumpkin_server.server.advanced_config;
+        info!(
+            "Server is now running. Connect using port: {}{}{}",
+            if advanced_config.networking.java.enabled {
+                format!(
+                    "{} {}",
+                    TextComponent::text("Java Edition:")
+                        .color_named(NamedColor::Yellow)
+                        .to_pretty_console(),
+                    TextComponent::text(format!("{}", advanced_config.networking.java.address))
+                        .color_named(NamedColor::DarkBlue)
+                        .to_pretty_console()
+                )
+            } else {
+                TextComponent::text(String::new()).to_pretty_console()
+            },
+            if advanced_config.networking.java.enabled && advanced_config.networking.bedrock.enabled
+            {
+                " | " // Separator if both are enabled
+            } else {
+                ""
+            },
+            if advanced_config.networking.bedrock.enabled {
+                format!(
+                    "{} {}",
+                    TextComponent::text("Bedrock Edition:")
+                        .color_named(NamedColor::Gold)
+                        .to_pretty_console(),
+                    TextComponent::text(format!(
+                        "{}",
+                        advanced_config.networking.bedrock.nethernet.address
+                    ))
                     .color_named(NamedColor::DarkBlue)
                     .to_pretty_console()
-            )
-        } else {
-            TextComponent::text(String::new()).to_pretty_console()
-        },
-        if advanced_config.networking.java.enabled && advanced_config.networking.bedrock.enabled {
-            " | " // Separator if both are enabled
-        } else {
-            ""
-        },
-        if advanced_config.networking.bedrock.enabled {
-            format!(
-                "{} {}",
-                TextComponent::text("Bedrock Edition:")
-                    .color_named(NamedColor::Gold)
-                    .to_pretty_console(),
-                TextComponent::text(format!(
-                    "{}",
-                    advanced_config.networking.bedrock.nethernet.address
-                ))
-                .color_named(NamedColor::DarkBlue)
-                .to_pretty_console()
-            )
-        } else {
-            TextComponent::text(String::new()).to_pretty_console()
-        }
-    );
+                )
+            } else {
+                TextComponent::text(String::new()).to_pretty_console()
+            }
+        );
+    }
 
     pumpkin_server.start().await;
 

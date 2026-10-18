@@ -167,6 +167,17 @@ The idle stdin task also stops on cancellation, using umceko's upstream
 [PR #3788](https://github.com/Pumpkin-MC/Pumpkin/pull/3788) approach.
 In-game verification: **Not yet**.
 
+Management scheduling and startup gates ([#179](https://github.com/Optifineless/Pumpkin/issues/179))
+keep incoming RPCs and pings serviceable during notification floods, while retaining
+the existing bounded shutdown flush and single stopping-notification owner. A stop
+accepted during plugin initialization skips hot-reload setup and startup announcements
+once initialization returns, then uses the normal shutdown owner. Pending plugin
+initialization is allowed to finish; indefinitely blocked plugins are not cancelled.
+Vanilla 26.3 `Connection.channelRead0/sendNotification` and `ManagementServer` provide
+the transport comparison; the plugin startup gate is a fork lifecycle safeguard.
+No plugin API or saved-data change. Written by Codex (GPT-6.1 Sol).
+In-game verification: **Not yet**.
+
 Close-event listeners can reopen a menu without closing its predecessor recursively. The closing-menu identity survives callbacks, and an outer close preserves a replacement menu and position. Native API 8 (same version): Player has runtime close ownership state; rebuild native plugins. In-game verification: **Not yet**.
 
 ## Entity unload ownership, #150 split PR-1
