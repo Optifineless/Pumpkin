@@ -145,7 +145,7 @@ impl BowAttackGoal {
                 return;
             }
         }
-        world_full.spawn_entity(arrow);
+        crate::entity::projectile::spawn_projectile(&world_full, arrow, Some(entity));
     }
 }
 

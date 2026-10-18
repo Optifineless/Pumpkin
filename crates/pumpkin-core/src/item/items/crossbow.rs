@@ -2,7 +2,7 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 
 use crate::entity::EntityBase;
-use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item};
+use crate::entity::equipment_damage::EquippedItem;
 use crate::entity::player::Player;
 use crate::item::items::projectile_weapon::ProjectileWeaponItem;
 use crate::item::{ItemBehaviour, ItemMetadata};
@@ -200,7 +200,16 @@ impl CrossbowItem {
             SoundCategory::Players,
             &player.position(),
         );
-        ProjectileWeaponItem::shoot_projectiles(
+        let equipment = match hand {
+            Hand::Right => EquipmentSlot::MAIN_HAND,
+            Hand::Left => EquipmentSlot::OFF_HAND,
+        };
+        let equipped = EquippedItem {
+            stack: held.clone(),
+            slot: equipment,
+            inventory_index: Some(slot),
+        };
+        let admitted = ProjectileWeaponItem::shoot_projectiles_with_callback(
             &world,
             player.get_entity(),
             &held,
@@ -209,19 +218,63 @@ impl CrossbowItem {
             1.0,
             false,
             player.gamemode.load() == GameMode::Creative,
+            |projectile| ProjectileWeaponItem::hurt_shooting_weapon(player, &equipped, projectile),
         );
-        let equipment = match hand {
-            Hand::Right => EquipmentSlot::MAIN_HAND,
-            Hand::Left => EquipmentSlot::OFF_HAND,
-        };
-        damage_equipped_item(
-            player,
-            &EquippedItem {
-                stack: held,
-                slot: equipment,
-                inventory_index: Some(slot),
-            },
-            1,
-        );
+        let rejected: Vec<_> = projectiles
+            .into_iter()
+            .zip(admitted)
+            .filter_map(|(projectile, admitted)| (!admitted).then_some(projectile))
+            .collect();
+        if !rejected.is_empty() {
+            Self::restore_projectiles(player, slot, &held, rejected);
+        }
+    }
+
+    fn restore_projectiles(
+        player: &Player,
+        slot: usize,
+        expected: &ItemStack,
+        rejected: Vec<ItemStack>,
+    ) {
+        let inventory = player.inventory();
+        let owner = inventory.slot_transaction(slot);
+        let guard = owner.lock();
+        let mut current = inventory.get_stack(slot);
+        let restore = owner.is_live()
+            && !current.is_empty()
+            && current.uid == expected.uid
+            && current.item == expected.item
+            && current
+                .get_data_component::<ChargedProjectilesImpl>()
+                .is_none_or(|charged| charged.projectiles.is_empty());
+        if restore {
+            // Restore only this attempt's rejected rounds, preserving unrelated callback edits.
+            current
+                .patch
+                .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
+            current.set_data_component(ChargedProjectilesImpl {
+                projectiles: rejected
+                    .iter()
+                    .map(|projectile| {
+                        let mut nbt = pumpkin_nbt::compound::NbtCompound::new();
+                        projectile.write_item_stack(&mut nbt);
+                        nbt
+                    })
+                    .collect(),
+            });
+            inventory.set_stack(slot, current);
+        }
+        drop(guard);
+        if restore {
+            player.sync_hand_slot(slot, inventory.get_stack(slot));
+        } else {
+            // A replaced or broken weapon cannot own the refund. Free multishot/Creative
+            // copies must never become physical ammunition in the player's inventory.
+            for projectile in rejected {
+                if projectile.get_data_component::<pumpkin_data::data_component_impl::IntangibleProjectileImpl>().is_none() {
+                    crate::item::item_utils::give_or_drop(player, projectile);
+                }
+            }
+        }
     }
 }

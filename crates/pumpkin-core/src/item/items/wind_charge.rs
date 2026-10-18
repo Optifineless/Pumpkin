@@ -67,7 +67,11 @@ impl ItemBehaviour for WindChargeItem {
         let (yaw, pitch) = player.rotation();
         wind_charge.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
 
-        if !world.spawn_entity(Arc::new(WindChargeEntity::new_normal(wind_charge))) {
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(WindChargeEntity::new_normal(wind_charge)),
+            Some(player.get_entity()),
+        ) {
             crate::item::item_utils::give_or_drop(player, receipt);
             return false;
         }

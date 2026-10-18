@@ -2,6 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::enchantment::EnchantmentHelper;
+use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item};
+use crate::entity::player::Player;
 use crate::entity::projectile::arrow::{ArrowEntity, ArrowPickup};
 use crate::entity::{Entity, EntityBase};
 use crate::world::World;
@@ -168,8 +170,35 @@ impl ProjectileWeaponItem {
         is_crit: bool,
         is_creative: bool,
     ) {
+        Self::shoot_projectiles_with_callback(
+            world,
+            shooter,
+            weapon,
+            projectiles,
+            power,
+            uncertainty,
+            is_crit,
+            is_creative,
+            |_| true,
+        );
+    }
+
+    // ProjectileWeaponItem.shoot applies wear after each spawn and stops if the weapon breaks.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn shoot_projectiles_with_callback(
+        world: &Arc<World>,
+        shooter: &Entity,
+        weapon: &ItemStack,
+        projectiles: &[ItemStack],
+        power: f32,
+        uncertainty: f32,
+        is_crit: bool,
+        is_creative: bool,
+        mut on_spawn: impl FnMut(&ItemStack) -> bool,
+    ) -> Vec<bool> {
+        let mut admitted = vec![false; projectiles.len()];
         if projectiles.is_empty() {
-            return;
+            return admitted;
         }
 
         let max_angle = EnchantmentHelper::process_projectile_spread(weapon, 0.0);
@@ -191,33 +220,59 @@ impl ProjectileWeaponItem {
             let angle = angle_offset + direction * (i.div_ceil(2) as f32) * angle_step;
             direction = -direction;
 
-            if projectile.item == &Item::FIREWORK_ROCKET {
-                crate::entity::projectile::firework_rocket::FireworkRocketEntity::shoot(
+            let spawned = if projectile.item == &Item::FIREWORK_ROCKET {
+                crate::entity::projectile::firework_rocket::FireworkRocketEntity::shoot_with_result(
                     world,
                     shooter,
                     projectile,
                     pitch,
                     yaw + angle,
                     uncertainty,
+                )
+            } else {
+                let arrow = Self::create_projectile(
+                    world.clone(),
+                    shooter,
+                    weapon,
+                    projectile,
+                    is_crit,
+                    is_creative,
                 );
-                continue;
+                arrow.set_velocity_from_rotation(pitch, yaw + angle, 0.0, power, uncertainty);
+                // BowItem.shoot uses shootFromRotation, which adds the shooter's movement;
+                // CrossbowItem.shootProjectile calls shoot directly and does not.
+                if weapon.item.id != Item::CROSSBOW.id {
+                    Self::add_shooter_movement(&arrow.entity, shooter);
+                }
+                let arrow_arc: Arc<dyn EntityBase> = Arc::new(arrow);
+                crate::entity::projectile::spawn_projectile(world, arrow_arc, Some(shooter))
+            };
+            admitted[i] = spawned;
+            if spawned && !on_spawn(projectile) {
+                break;
             }
-            let arrow = Self::create_projectile(
-                world.clone(),
-                shooter,
-                weapon,
-                projectile,
-                is_crit,
-                is_creative,
-            );
-            arrow.set_velocity_from_rotation(pitch, yaw + angle, 0.0, power, uncertainty);
-            // BowItem.shoot uses shootFromRotation, which adds the shooter's movement;
-            // CrossbowItem.shootProjectile calls shoot directly and does not.
-            if weapon.item.id != Item::CROSSBOW.id {
-                Self::add_shooter_movement(&arrow.entity, shooter);
-            }
-            let arrow_arc: Arc<dyn EntityBase> = Arc::new(arrow);
-            world.spawn_entity(arrow_arc);
         }
+        admitted
+    }
+
+    pub(crate) fn hurt_shooting_weapon(
+        player: &Player,
+        weapon: &EquippedItem,
+        projectile: &ItemStack,
+    ) -> bool {
+        // CrossbowItem.getDurabilityUse costs three for rockets; arrows cost one.
+        let amount =
+            if weapon.stack.item == &Item::CROSSBOW && projectile.item == &Item::FIREWORK_ROCKET {
+                3
+            } else {
+                1
+            };
+        damage_equipped_item(player, weapon, amount);
+        weapon.inventory_index.is_some_and(|index| {
+            let current = player.inventory().get_slot(index);
+            !current.is_empty()
+                && current.uid == weapon.stack.uid
+                && current.item == weapon.stack.item
+        })
     }
 }

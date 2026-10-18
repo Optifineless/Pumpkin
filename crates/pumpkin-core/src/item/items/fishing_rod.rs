@@ -123,8 +123,13 @@ impl ItemBehaviour for FishingRodItem {
             .fishing_bobber
             .store(hook.get_entity().entity_id, Relaxed);
         apply_on_projectile_spawned(hook.get_entity(), &rod, None, None);
-        if !world.spawn_entity(hook.clone()) {
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            hook.clone(),
+            Some(player.get_entity()),
+        ) {
             hook.clear_owner();
+            return;
         }
         player.increment_stat(StatisticCategory::Used, i32::from(Item::FISHING_ROD.id), 1);
         cause_use_vibration(&rod, player, GameEvent::ItemInteractStart);

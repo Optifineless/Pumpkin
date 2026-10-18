@@ -923,4 +923,13 @@ mod inventory_transaction_crossbow_tests;
 mod inventory_transaction_bow_tests;
 
 #[cfg(test)]
+pub(crate) mod projectile_item_event_tests;
+
+#[cfg(test)]
+mod projectile_item_refund_tests;
+
+#[cfg(test)]
+mod projectile_item_dispenser_tests;
+
+#[cfg(test)]
 mod inventory_transaction_use_tests;

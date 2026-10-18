@@ -33,6 +33,10 @@ impl ItemBehaviour for FireworkRocketItem {
         _block: &Block,
         _server: &Server,
     ) -> BlockActionResult {
+        // FireworkRocketItem.useOn consumes the source before any reentrant launch callback.
+        let Some((slot, receipt)) = crate::item::item_utils::claim_item_stack(player, item) else {
+            return BlockActionResult::Fail;
+        };
         let world = player.world();
         let entity = Entity::new(
             world.clone(),
@@ -45,8 +49,23 @@ impl ItemBehaviour for FireworkRocketItem {
         );
         let entity =
             FireworkRocketEntity::with_item(entity, item.clone(), Some(player.get_entity()), false);
-        world.spawn_entity(Arc::new(entity));
-        item.decrement_unless_creative(player.gamemode.load(), 1);
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(entity),
+            Some(player.get_entity()),
+        ) {
+            let excess = pumpkin_inventory::inventory::slot_transaction::refund(
+                player.inventory().as_ref(),
+                slot,
+                item,
+                receipt,
+            );
+            crate::item::item_utils::give_or_drop(player, excess);
+            player.sync_hand_slot(slot, player.inventory().get_slot(slot));
+            return BlockActionResult::Fail;
+        }
+        // Payment is authoritative; leave the clone unchanged so packet writeback cannot pay twice.
+        player.sync_hand_slot(slot, player.inventory().get_slot(slot));
         BlockActionResult::Success
     }
 
@@ -98,7 +117,11 @@ impl ItemBehaviour for FireworkRocketItem {
                 Some(player.get_entity()),
                 true,
             );
-            if !world.spawn_entity(Arc::new(rocket)) {
+            if !crate::entity::projectile::spawn_projectile(
+                &world,
+                Arc::new(rocket),
+                Some(player.get_entity()),
+            ) {
                 crate::item::item_utils::give_or_drop(player, receipt);
                 return false;
             }

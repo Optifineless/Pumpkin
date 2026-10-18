@@ -68,7 +68,11 @@ impl ItemBehaviour for ExperienceBottleItem {
             bottle.get_entity(),
             player.get_entity(),
         );
-        if !world.spawn_entity(Arc::new(bottle)) {
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(bottle),
+            Some(player.get_entity()),
+        ) {
             crate::item::item_utils::give_or_drop(player, receipt);
             return false;
         }

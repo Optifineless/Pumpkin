@@ -89,7 +89,11 @@ impl ItemBehaviour for SplashPotionItem {
         splash.set_item_stack(stack.clone());
         let (yaw, pitch) = player.rotation();
         splash.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !world.spawn_entity(Arc::new(splash)) {
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(splash),
+            Some(player.get_entity()),
+        ) {
             crate::item::item_utils::give_or_drop(player, receipt);
             return false;
         }
@@ -144,7 +148,11 @@ impl ItemBehaviour for LingeringPotionItem {
         ling.set_item_stack(stack.clone());
         let (yaw, pitch) = player.rotation();
         ling.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !world.spawn_entity(Arc::new(ling)) {
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(ling),
+            Some(player.get_entity()),
+        ) {
             crate::item::item_utils::give_or_drop(player, receipt);
             return false;
         }

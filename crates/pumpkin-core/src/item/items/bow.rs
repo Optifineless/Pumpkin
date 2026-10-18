@@ -2,6 +2,7 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 
 use crate::entity::EntityBase;
+use crate::entity::equipment_damage::EquippedItem;
 use crate::entity::player::Player;
 use crate::entity::projectile::arrow::ArrowEntity;
 use crate::item::items::projectile_weapon::ProjectileWeaponItem;
@@ -19,6 +20,12 @@ use pumpkin_protocol::java::client::play::CSoundEffect;
 use pumpkin_util::{GameMode, Hand};
 
 pub struct BowItem;
+
+struct BowDraw {
+    projectiles: Vec<ItemStack>,
+    ammo: ItemStack,
+    payment: Option<(usize, ItemStack)>,
+}
 
 impl ItemMetadata for BowItem {
     fn ids() -> Box<[u16]> {
@@ -100,22 +107,70 @@ impl BowItem {
             Hand::Right => usize::from(inventory.get_selected_slot()),
             Hand::Left => PlayerInventory::OFF_HAND_SLOT,
         };
+        let Some(drawn) = Self::draw_for_release(player, weapon, weapon_slot) else {
+            return;
+        };
+        if let Some((slot, _)) = &drawn.payment {
+            player.sync_hand_slot(*slot, inventory.get_stack(*slot));
+        }
+
+        // Calculate power and fire
+        let power = Self::get_power_for_time(use_ticks);
+
+        let is_crit = (power - 1.0).abs() < f32::EPSILON;
+        let equipment = if hand == Hand::Left {
+            EquipmentSlot::OFF_HAND
+        } else {
+            EquipmentSlot::MAIN_HAND
+        };
+        let equipped = EquippedItem {
+            stack: weapon.clone(),
+            slot: equipment,
+            inventory_index: Some(weapon_slot),
+        };
+        let admitted = Self::shoot_with_results(
+            player,
+            weapon,
+            &drawn.projectiles,
+            power,
+            1.0,
+            is_crit,
+            Some(&equipped),
+        );
+        if !admitted.first().copied().unwrap_or(false)
+            && let Some((slot, receipt)) = drawn.payment
+        {
+            let excess = slot_transaction::refund(inventory.as_ref(), slot, &drawn.ammo, receipt);
+            crate::item::item_utils::give_or_drop(player, excess);
+            player.sync_hand_slot(slot, inventory.get_stack(slot));
+        }
+        if admitted.contains(&true) {
+            player.increment_stat(StatisticCategory::Used, i32::from(Item::BOW.id), 1);
+        }
+    }
+
+    fn draw_for_release(
+        player: &Player,
+        weapon: &ItemStack,
+        weapon_slot: usize,
+    ) -> Option<BowDraw> {
+        let inventory = player.inventory();
         let owner = inventory.slot_transaction(weapon_slot);
-        let guard = owner.lock();
+        let _guard = owner.lock();
         let current_weapon = inventory.get_stack(weapon_slot);
         if !owner.is_live()
             || current_weapon.item != &Item::BOW
             || current_weapon.uid != weapon.uid
             || !current_weapon.are_equal(weapon)
         {
-            return;
+            return None;
         }
 
         let arrow_slot = player.find_arrow();
         let gamemode = player.gamemode.load();
 
         if arrow_slot.is_none() && gamemode != GameMode::Creative {
-            return;
+            return None;
         }
 
         let projectile = arrow_slot.map_or_else(
@@ -129,36 +184,21 @@ impl BowItem {
             gamemode == GameMode::Creative,
         );
         let ammo_update = if payment > 0 {
-            let Some(slot) = arrow_slot else {
-                return;
-            };
-            if slot_transaction::withdraw(inventory.as_ref(), slot, &projectile, payment).is_empty()
-            {
-                return;
+            let slot = arrow_slot?;
+            let receipt =
+                slot_transaction::withdraw(inventory.as_ref(), slot, &projectile, payment);
+            if receipt.is_empty() {
+                return None;
             }
-            Some((slot, inventory.get_stack(slot)))
+            Some((slot, receipt))
         } else {
             None
         };
-        drop(guard);
-        if let Some((slot, remaining)) = ammo_update {
-            player.sync_hand_slot(slot, remaining);
-        }
-
-        // Calculate power and fire
-        let power = Self::get_power_for_time(use_ticks);
-
-        let is_crit = (power - 1.0).abs() < f32::EPSILON;
-        Self::shoot(player, &current_weapon, &projectiles, power, 1.0, is_crit);
-
-        // BowItem.releaseUsing / ProjectileWeaponItem.shoot use getUsedItemHand.
-        let slot = if hand == Hand::Left {
-            EquipmentSlot::OFF_HAND
-        } else {
-            EquipmentSlot::MAIN_HAND
-        };
-        player.damage_item_in_slot(&slot, 1);
-        player.increment_stat(StatisticCategory::Used, i32::from(Item::BOW.id), 1);
+        Some(BowDraw {
+            projectiles,
+            ammo: projectile,
+            payment: ammo_update,
+        })
     }
 
     /// Check if player has arrows in their inventory
@@ -205,15 +245,35 @@ impl BowItem {
         uncertainty: f32,
         is_crit: bool,
     ) {
+        Self::shoot_with_results(
+            player,
+            weapon,
+            projectiles,
+            power,
+            uncertainty,
+            is_crit,
+            None,
+        );
+    }
+
+    fn shoot_with_results(
+        player: &Player,
+        weapon: &ItemStack,
+        projectiles: &[ItemStack],
+        power: f32,
+        uncertainty: f32,
+        is_crit: bool,
+        equipped: Option<&EquippedItem>,
+    ) -> Vec<bool> {
         if power < 0.1 || projectiles.is_empty() {
-            return;
+            return vec![false; projectiles.len()];
         }
 
         let world = player.world();
         let is_creative = player.gamemode.load() == GameMode::Creative;
         let speed = power * ProjectileWeaponItem::ARROW_SPEED_MULTIPLIER;
 
-        ProjectileWeaponItem::shoot_projectiles(
+        let admitted = ProjectileWeaponItem::shoot_projectiles_with_callback(
             &world,
             player.get_entity(),
             weapon,
@@ -222,7 +282,16 @@ impl BowItem {
             uncertainty,
             is_crit,
             is_creative,
+            |projectile| {
+                equipped.is_none_or(|equipped| {
+                    ProjectileWeaponItem::hurt_shooting_weapon(player, equipped, projectile)
+                })
+            },
         );
+
+        if !admitted.contains(&true) {
+            return admitted;
+        }
 
         let sound_pitch = 1.0 / (rand::random::<f32>() * 0.4 + 1.2) + power * 0.5;
         let sound_packet = CSoundEffect::new(
@@ -235,6 +304,7 @@ impl BowItem {
         );
         let chunk_pos = player.get_entity().chunk_pos.load();
         world.broadcast_to_chunk(chunk_pos, &sound_packet);
+        admitted
     }
 
     /// Fire an arrow from the bow with explicit critical flag

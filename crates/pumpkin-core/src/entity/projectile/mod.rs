@@ -38,6 +38,8 @@ pub mod fireball;
 pub mod firework_rocket;
 pub mod fishing_bobber;
 mod hurting;
+pub(crate) mod launch;
+pub(crate) use launch::spawn_projectile;
 pub mod lingering_potion;
 pub mod llama_spit;
 pub mod ownership;

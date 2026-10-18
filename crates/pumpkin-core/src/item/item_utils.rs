@@ -183,6 +183,41 @@ pub(crate) fn claim_item_in_hand(
         })
 }
 
+/// Claims an observed inventory stack for item hooks without a hand parameter.
+pub(crate) fn claim_item_stack(
+    player: &Player,
+    expected: &ItemStack,
+) -> Option<(usize, ItemStack)> {
+    if expected.is_empty() {
+        return None;
+    }
+    let inventory = player.inventory();
+    let owner = inventory.slot_transaction(0);
+    let _guard = owner.lock();
+    if !owner.is_live() {
+        return None;
+    }
+    let source = (0..inventory.size()).find(|slot| {
+        let current = inventory.get_stack(*slot);
+        current.uid == expected.uid && current.are_equal(expected)
+    })?;
+    let receipt = if player.gamemode.load() == pumpkin_util::GameMode::Creative {
+        ItemStack::EMPTY.clone()
+    } else {
+        let receipt = pumpkin_inventory::inventory::slot_transaction::withdraw(
+            inventory.as_ref(),
+            source,
+            expected,
+            1,
+        );
+        if receipt.is_empty() {
+            return None;
+        }
+        receipt
+    };
+    Some((source, receipt))
+}
+
 /// Delivers the result of an admitted one-item hand claim without replacing concurrent edits.
 // ItemUtils.createFilledResult replaces the last paid input, otherwise adds the output.
 pub(crate) fn finish_claimed_result(

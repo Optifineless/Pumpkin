@@ -84,6 +84,7 @@ impl RangedCrossbowAttackGoal {
             .as_ref()
             .ok()
             .map(|eq| eq.get(&EquipmentSlot::MAIN_HAND));
+        drop(equipment_guard);
 
         let arrow_entity = Entity::new(world.clone(), mob_pos, &EntityType::ARROW);
         let projectile = ItemStack::new(1, &Item::ARROW);
@@ -142,7 +143,7 @@ impl RangedCrossbowAttackGoal {
                 return;
             }
         }
-        world_full.spawn_entity(arrow);
+        crate::entity::projectile::spawn_projectile(&world_full, arrow, Some(entity));
 
         if let Some(crossbow_mob) = mob.as_crossbow_attack_mob() {
             crossbow_mob.on_crossbow_attack_performed();

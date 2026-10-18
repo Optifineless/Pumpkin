@@ -72,7 +72,11 @@ impl ItemBehaviour for EnderPearlItem {
         pearl
             .thrown
             .set_velocity_from(pitch, yaw, ROLL, POWER, DIVERGENCE);
-        if !world.spawn_entity(Arc::new(pearl)) {
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(pearl),
+            Some(player.get_entity()),
+        ) {
             crate::item::item_utils::give_or_drop(player, receipt);
             return false;
         }
