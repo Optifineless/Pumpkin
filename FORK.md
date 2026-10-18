@@ -44,6 +44,9 @@ honors `minecraft:wall_post_override` and vanilla's corner and tall-wall rules.
 Follows vanilla 26.3 methods: `FenceBlock.connectsTo`, `WallBlock.connectsTo`,
 `WallBlock.updateSides` and `WallBlock.shouldRaisePost`. In-game verification:
 **Not yet**. Written by Codex (GPT-6 Luna).
+## Enchanting table fixes (#64, #65, #66)
+
+Ordinary books now receive enchanting offers, are converted to enchanted books with stored enchantments, and keep at most one randomly selected result from a multi-enchantment book roll. The middle offer uses vanilla's level requirement; non-Creative payment remains two levels and two lapis. Bookshelf providers are checked against the transmitter at the matching height, so an obstruction at one height does not hide a shelf at the other. Mirrors vanilla 26.3 `EnchantmentHelper.getAvailableEnchantmentResults`, `EnchantmentMenu.getEnchantmentList/clickMenuButton`, and `EnchantingTableBlock.BOOKSHELF_OFFSETS/isValidBookShelf`. In-game verification: **Not yet**.
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 

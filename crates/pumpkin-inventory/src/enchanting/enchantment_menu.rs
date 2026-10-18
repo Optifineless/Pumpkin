@@ -1,5 +1,6 @@
 use pumpkin_data::{
     Enchantment,
+    data_component_impl::StoredEnchantmentsImpl,
     item::Item,
     item_stack::ItemStack,
     sound::Sound,
@@ -8,6 +9,7 @@ use pumpkin_data::{
 
 use super::enchanting_screen_handler::EnchantingTableScreenHandler;
 use crate::screen_handler::{InventoryPlayer, ScreenHandler};
+use std::borrow::Cow;
 
 /// An enchantment proposal whose inputs must still match after the plugin callback.
 pub struct EnchantmentProposal {
@@ -100,8 +102,16 @@ impl EnchantingTableScreenHandler {
         }
         let mut item = proposal.item.clone();
         let mut lapis = proposal.lapis.clone();
-        for (enchantment, level) in proposal.enchantments {
-            item.add_enchantment(enchantment, level as u16);
+        if item.item == &Item::BOOK {
+            // EnchantmentMenu.clickMenuButton transmutes BOOK and stores its rolled enchantments.
+            item.item = &Item::ENCHANTED_BOOK;
+            item.set_data_component(StoredEnchantmentsImpl {
+                enchantment: Cow::Owned(proposal.enchantments),
+            });
+        } else {
+            for (enchantment, level) in proposal.enchantments {
+                item.add_enchantment(enchantment, level as u16);
+            }
         }
         if !player.is_creative() {
             lapis.decrement((proposal.option + 1) as u8);

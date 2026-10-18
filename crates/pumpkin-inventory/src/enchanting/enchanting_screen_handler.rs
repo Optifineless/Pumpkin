@@ -159,9 +159,10 @@ impl EnchantingTableScreenHandler {
         let b = self.bookshelf_count;
         let level = random.next_bounded_i32(8) + 1 + (b >> 1) + random.next_bounded_i32(b + 1);
 
+        // EnchantmentHelper.getEnchantmentCost uses selected * 2 / 3 + 1 for slot 1.
         match slot {
             0 => (level / 3).max(1),
-            1 => (level * 2 / 3 + 7).max(1),
+            1 => (level * 2 / 3 + 1).max(1),
             2 => level.max(b * 2).max(1),
             _ => 0,
         }
@@ -189,8 +190,9 @@ impl EnchantingTableScreenHandler {
 
         let mut available = Vec::new();
         for enchant in Enchantment::all() {
+            // EnchantmentHelper.getAvailableEnchantmentResults admits primary items or a regular book.
             if enchant.has_tag(&EnchantmentTag::MINECRAFT_IN_ENCHANTING_TABLE)
-                && enchant.can_enchant(item.item)
+                && (enchant.is_primary_item(item.item) || item.item == &Item::BOOK)
             {
                 for l in (1..=enchant.max_level).rev() {
                     if enchant_level >= enchant.min_cost.calculate(l)
@@ -253,6 +255,11 @@ impl EnchantingTableScreenHandler {
                 }
                 current_level /= 2;
             }
+        }
+
+        if item.item == &Item::BOOK && result.len() > 1 {
+            let removed_index = random.next_bounded_i32(result.len() as i32) as usize;
+            result.remove(removed_index);
         }
 
         result
