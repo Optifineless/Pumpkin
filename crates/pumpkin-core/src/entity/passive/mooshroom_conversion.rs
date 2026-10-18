@@ -170,7 +170,9 @@ impl MooshroomEntity {
                 }
             }
             LeashKnotEntity::notify_leashee_removed_from(holder.as_ref());
-            if result != LeashToResult::Attached {
+            // Leashable.tickLeash: a leash that cannot be kept drops a lead only with ENTITY_DROPS.
+            if result != LeashToResult::Attached && world.level_info.load().game_rules.entity_drops
+            {
                 let lead_item =
                     pumpkin_data::item_stack::ItemStack::new(1, &pumpkin_data::item::Item::LEAD);
                 world.drop_stack(&cow_living.entity.block_pos.load(), lead_item);

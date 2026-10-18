@@ -456,6 +456,50 @@ async fn mooshroom_conversion_revalidates_player_removed_during_leash_event() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mooshroom_conversion_unkept_leash_drops_nothing_without_entity_drops() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    let holder = fixture.player("HolderLeavingWithoutDrops");
+    let mooshroom = fixture.mob(&EntityType::MOOSHROOM);
+    mooshroom
+        .get_entity()
+        .leash_to(holder.clone() as Arc<dyn crate::entity::EntityBase>);
+    fixture
+        .server
+        .plugin_manager
+        .register::<PlayerLeashEntityEvent, _>(
+            Arc::new(RemovePlayerDuringLeash),
+            EventPriority::Normal,
+            true,
+        );
+    fixture.server.level_info.rcu(|info| {
+        let mut next = (**info).clone();
+        next.game_rules.entity_drops = false;
+        next
+    });
+
+    assert!(
+        mooshroom
+            .get_mob()
+            .unwrap()
+            .as_shearable()
+            .unwrap()
+            .shear(SoundCategory::Players, &ItemStack::new(1, &Item::SHEARS))
+    );
+
+    let cow = world
+        .entities
+        .load_full()
+        .iter()
+        .find(|entity| entity.get_entity().entity_type == &EntityType::COW)
+        .unwrap()
+        .clone();
+    assert!(!cow.get_entity().is_leashed());
+    assert_eq!(lead_count(&world), 0);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn player_logout_drops_one_lead_on_the_leashee_tick() {
     let fixture = DeathTestWorld::new().await;
     let world = fixture.world();
