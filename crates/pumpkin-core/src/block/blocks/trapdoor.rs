@@ -85,12 +85,15 @@ impl BlockBehaviour for TrapDoorBlock {
         let powered = block_receives_redstone_power(args.world, args.position);
 
         let player_facing = args.player.get_entity().get_horizontal_facing();
-
-        // Correct facing logic using Option unwrap
-        let facing = args
-            .direction
-            .to_horizontal_facing()
-            .unwrap_or(player_facing);
+        // TrapDoorBlock.getStateForPlacement uses the clicked face only for adjacent horizontal placement.
+        let facing = if args.position == &args.use_item_on.position {
+            player_facing.opposite()
+        } else {
+            args.direction
+                .opposite()
+                .to_horizontal_facing()
+                .unwrap_or_else(|| player_facing.opposite())
+        };
 
         trapdoor_props.facing = facing;
 

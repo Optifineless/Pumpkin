@@ -148,3 +148,5 @@ pub mod growing_plant;
 mod hunt_plants_tests;
 #[cfg(test)]
 mod note_tests;
+#[cfg(test)]
+mod placement_orientation_tests;

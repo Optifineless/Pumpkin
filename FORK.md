@@ -37,6 +37,12 @@ above-block override and Harp fallback. Mirrors vanilla 26.3
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 
+## Door and trapdoor placement (#22, #23)
+
+Door hinge scoring checks full-block obstructions beside the door at both lower and upper levels, while preserving adjacent-door precedence and the click-position tie-break. Mirrors vanilla 26.3 `DoorBlock.getHinge`. Fixes [#22](https://github.com/Optifineless/Pumpkin/issues/22). In-game verification: **Not yet**.
+
+An adjacent side placement makes a trapdoor face the horizontal block face that was clicked. Replacing the clicked block and clicking a vertical face retain vanilla's opposite-player-facing branch. Mirrors vanilla 26.3 `TrapDoorBlock.getStateForPlacement`. Fixes [#23](https://github.com/Optifineless/Pumpkin/issues/23). In-game verification: **Not yet**.
+
 Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity
 still consumes tipped and spectral arrows. Mirrors vanilla 26.3
 `BowItem.releaseUsing`, `ProjectileWeaponItem.draw/useAmmo` and

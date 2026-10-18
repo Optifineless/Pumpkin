@@ -107,12 +107,12 @@ fn get_hinge(
     let left_dir = facing.rotate_counter_clockwise();
     let left_pos = pos.offset(left_dir.to_offset());
     let (_left_block, left_state) = world.get_block_and_state(&left_pos);
-    let top_facing = top_pos.offset(facing.to_offset());
-    let top_state = world.get_block_state(&top_facing);
+    let top_left = top_pos.offset(left_dir.to_offset());
+    let top_left_state = world.get_block_state(&top_left);
     let right_dir = facing.rotate_clockwise();
     let right_pos = pos.offset(right_dir.to_offset());
     let (_right_block, right_state) = world.get_block_and_state(&right_pos);
-    let top_right = top_pos.offset(facing.to_offset());
+    let top_right = top_pos.offset(right_dir.to_offset());
     let top_right_state = world.get_block_state(&top_right);
 
     let has_left_door = world
@@ -125,7 +125,7 @@ fn get_hinge(
         .has_tag(&tag::Block::MINECRAFT_DOORS)
         && DoorProperties::from_state_id(right_state.id).half == DoubleBlockHalf::Lower;
 
-    let score = -(left_state.is_full_cube() as i32) - (top_state.is_full_cube() as i32)
+    let score = -(left_state.is_full_cube() as i32) - (top_left_state.is_full_cube() as i32)
         + right_state.is_full_cube() as i32
         + top_right_state.is_full_cube() as i32;
 
