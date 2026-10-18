@@ -105,6 +105,12 @@ capture is published; a same-position replacement already in flight is captured,
 and later saves or replacements cannot overwrite that final image. The saved NBT
 layout and meaning are unchanged. In-game verification: **Not yet**.
 
+The #191 round-four follow-up keeps the loaded-chunk eviction fence until a new
+block-entity image is marked dirty, and retires each replacement inventory before
+the final unload or shutdown capture. Tests cover the actual `/item replace block`
+command during chunk unload and a retained-handle transfer during server stop,
+then reload the captured chest contents. In-game verification: **Not yet**.
+
 ## World normal/frozen service boundary, ticks M1
 
 Normal World ticking and each frozen flush/player batch now require exclusive
