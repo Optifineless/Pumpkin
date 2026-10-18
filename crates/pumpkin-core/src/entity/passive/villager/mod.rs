@@ -50,6 +50,7 @@ use crate::world::villager_poi::profession_for_block;
 
 pub mod data;
 mod golem_spawning;
+pub(crate) mod hostiles;
 mod reward_trade_xp;
 pub use data::{
     BREEDING_FOOD_THRESHOLD, GossipType, VillagerData, VillagerProfession, VillagerType,
@@ -468,27 +469,14 @@ impl VillagerEntity {
                 Box::new(crate::entity::ai::goal::swim::SwimGoal::default()),
             );
             goal_selector.add_goal(0, Box::new(OpenDoorGoal::new(true)));
-            // Villagers avoid threats
+            // VillagerHostilesSensor excludes zombified piglins, unlike Zombie.class.
             goal_selector.add_goal(
                 1,
-                Box::new(AvoidEntityGoal::new(&EntityType::ZOMBIE, 8.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(
-                    &EntityType::ZOMBIE_VILLAGER,
-                    8.0,
-                    0.5,
-                    0.5,
-                )),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::HUSK, 8.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::DROWNED, 8.0, 0.5, 0.5)),
+                Box::new(
+                    AvoidEntityGoal::new(&EntityType::ZOMBIE, 8.0, 0.5, 0.5).with_selector(
+                        |target| target.get_entity().entity_type != &EntityType::ZOMBIFIED_PIGLIN,
+                    ),
+                ),
             );
             goal_selector.add_goal(
                 1,

@@ -36,6 +36,9 @@ mod movement;
 mod random_teleport;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod visibility;
+#[cfg(test)]
+mod visibility_tests;
 pub(crate) mod waypoint_icon;
 
 #[cfg(test)]

@@ -37,7 +37,7 @@ impl LivingEntity {
         self.apply_and_send_equipment_attribute_modifiers(&self.snapshot_equipped_stacks());
     }
 
-    fn snapshot_equipped_stacks(&self) -> Vec<(EquipmentSlot, ItemStack)> {
+    pub(super) fn snapshot_equipped_stacks(&self) -> Vec<(EquipmentSlot, ItemStack)> {
         // Player.getItemBySlot reads the selected hotbar stack from PlayerInventory.
         let main_hand = (self.entity.entity_type == &EntityType::PLAYER)
             .then(|| {
@@ -47,18 +47,23 @@ impl LivingEntity {
                     .get_player_by_uuid(self.entity.entity_uuid)
             })
             .flatten()
+            .filter(|player| std::ptr::eq(&raw const player.living_entity, self))
             .map(|player| player.inventory.held_item());
-        let guard = self
-            .entity_equipment
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut equipment: Vec<_> = guard
-            .equipment
-            .iter()
-            .map(|(slot, stack)| (slot.clone(), stack.clone()))
-            .collect();
-        if let Some(stack) = main_hand {
+        let mut equipment: Vec<_> = {
+            let guard = self
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            guard
+                .equipment
+                .iter()
+                .map(|(slot, stack)| (slot.clone(), stack.clone()))
+                .collect()
+        };
+        if self.entity.entity_type == &EntityType::PLAYER {
             equipment.retain(|(slot, _)| *slot != EquipmentSlot::MAIN_HAND);
+        }
+        if let Some(stack) = main_hand {
             equipment.push((EquipmentSlot::MAIN_HAND, stack));
         }
         equipment.sort_unstable_by_key(|(slot, _)| slot.discriminant());

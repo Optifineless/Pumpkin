@@ -171,7 +171,8 @@ impl VillagerEntity {
             .get_attribute_value(&Attributes::FOLLOW_RANGE);
         let visible = TargetPredicate::create_non_attackable().set_base_max_distance(range);
         nearby.iter().any(|other| {
-            let Some(distance) = hostile_distance(other.get_entity().entity_type) else {
+            let Some(distance) = super::hostiles::hostile_distance(other.get_entity().entity_type)
+            else {
                 return false;
             };
             entity
@@ -364,15 +365,4 @@ impl VillagerEntity {
 
 const fn gossip_ready(last: i64, timestamp: i64) -> bool {
     timestamp < last || timestamp >= last + GOSSIP_INTERVAL
-}
-
-fn hostile_distance(entity_type: &EntityType) -> Option<f64> {
-    // VillagerHostilesSensor.ACCEPTABLE_DISTANCE_FROM_HOSTILES (Java lines 11-22).
-    match entity_type.resource_name {
-        "drowned" | "husk" | "vex" | "zombie" | "zombie_villager" => Some(8.0),
-        "evoker" | "illusioner" | "ravager" => Some(12.0),
-        "pillager" => Some(15.0),
-        "vindicator" | "zoglin" => Some(10.0),
-        _ => None,
-    }
 }

@@ -547,8 +547,10 @@ pub mod combat;
 mod custom_name_tests;
 pub mod entity_variant;
 pub mod instrument;
+mod mob_visibility;
 mod text_component_codec;
 pub use instrument::InstrumentImpl;
+pub use mob_visibility::MobVisibilityImpl;
 pub mod food;
 pub mod utility;
 
@@ -564,6 +566,7 @@ pub use utility::*;
 #[must_use]
 pub fn read_data(id: DataComponent, data: &NbtTag) -> Option<Box<dyn DataComponentImpl>> {
     match id {
+        DataComponent::MobVisibility => Some(MobVisibilityImpl::read_data(data)?.to_dyn()),
         DataComponent::MaxStackSize => Some(MaxStackSizeImpl::read_data(data)?.to_dyn()),
         DataComponent::CustomData => Some(CustomDataImpl::read_data(data)?.to_dyn()),
         DataComponent::Enchantments => Some(EnchantmentsImpl::read_data(data)?.to_dyn()),

@@ -5,7 +5,7 @@ use pumpkin_util::text::TextComponent;
 use std::borrow::Cow;
 
 #[path = "instrument_hash.rs"]
-mod hash;
+pub(super) mod hash;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum InstrumentImpl {

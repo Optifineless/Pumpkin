@@ -2,7 +2,7 @@ use super::super::Digest;
 use pumpkin_nbt::tag::NbtTag;
 
 // HashOps.createMap/createList/createNumeric/createString for Instrument.DIRECT_CODEC.
-pub(super) fn hash_tag(tag: &NbtTag) -> u32 {
+pub(in crate::data_component_impl) fn hash_tag(tag: &NbtTag) -> u32 {
     let mut digest = Digest::new();
     match tag {
         NbtTag::End => digest.update(&[1]),

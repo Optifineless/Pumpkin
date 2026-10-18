@@ -172,6 +172,9 @@ impl Default for GoalSelector {
 }
 
 #[cfg(test)]
+mod avoidance_tests;
+
+#[cfg(test)]
 mod spawn_tests {
     use super::*;
     use crate::{

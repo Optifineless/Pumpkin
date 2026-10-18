@@ -185,57 +185,22 @@ impl WanderingTraderEntity {
             // Priority 1: TradeWithPlayerGoal
             goal_selector.add_goal(1, Box::new(TradeWithPlayerGoal::new()));
 
-            // Priority 1: AvoidEntityGoals
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::ZOMBIE, 8.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::DROWNED, 8.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::HUSK, 8.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(
-                    &EntityType::ZOMBIE_VILLAGER,
-                    8.0,
-                    0.5,
-                    0.5,
-                )),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::EVOKER, 12.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::VINDICATOR, 8.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::VEX, 8.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::PILLAGER, 15.0, 0.5, 0.5)),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(
-                    &EntityType::ILLUSIONER,
-                    12.0,
-                    0.5,
-                    0.5,
-                )),
-            );
-            goal_selector.add_goal(
-                1,
-                Box::new(AvoidEntityGoal::new(&EntityType::ZOGLIN, 10.0, 0.5, 0.5)),
-            );
+            // WanderingTrader.registerGoals: reuse the sensor's hostile kinds/distances, with
+            // Vindicator's own 8-block range and no separate Zombie subclass goals.
+            for &(kind, distance) in super::villager::hostiles::HOSTILE_DISTANCES {
+                if matches!(
+                    kind.resource_name,
+                    "drowned" | "husk" | "zombie_villager" | "ravager"
+                ) {
+                    continue;
+                }
+                let distance = if kind == &EntityType::VINDICATOR {
+                    8.0
+                } else {
+                    distance
+                };
+                goal_selector.add_goal(1, Box::new(AvoidEntityGoal::new(kind, distance, 0.5, 0.5)));
+            }
 
             // Priority 1: PanicGoal (EscapeDangerGoal)
             goal_selector.add_goal(1, EscapeDangerGoal::new(0.5));

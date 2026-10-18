@@ -130,6 +130,8 @@ pub struct ItemComponents {
     pub map_decorations: Option<serde_json::Value>,
     #[serde(rename = "minecraft:minimum_attack_charge")]
     pub minimum_attack_charge: Option<f32>,
+    #[serde(rename = "minecraft:mob_visibility")]
+    pub mob_visibility: Option<MobVisibilityComponent>,
     #[serde(rename = "minecraft:ominous_bottle_amplifier")]
     pub ominous_bottle_amplifier: Option<i32>,
     #[serde(rename = "minecraft:piercing_weapon")]
@@ -204,6 +206,12 @@ pub struct UseRemainderComponent {
     pub id: String,
 }
 
+#[derive(Deserialize)]
+pub struct MobVisibilityComponent {
+    pub targeting_entity_types: StringOrList,
+    pub visibility: f32,
+}
+
 impl ToTokens for ItemComponents {
     /// Emits a sequence of `(DataComponent, &impl DataComponentImpl)` tuple expressions for code generation.
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -213,6 +221,26 @@ impl ToTokens for ItemComponents {
                 size: #max_stack_size,
             }),
         });
+
+        if let Some(component) = &self.mob_visibility {
+            let targeting_entity_types =
+                registry_set_tokens(&component.targeting_entity_types, |name| {
+                    let name = format_ident!(
+                        "{}",
+                        name.strip_prefix("minecraft:")
+                            .unwrap_or(name)
+                            .to_shouty_snake_case()
+                    );
+                    quote! { &crate::entity_type::EntityType::#name }
+                });
+            let visibility = float_literal(component.visibility);
+            tokens.extend(quote! {
+                (MobVisibility, &MobVisibilityImpl {
+                    targeting_entity_types: #targeting_entity_types,
+                    visibility: #visibility,
+                }),
+            });
+        }
 
         if let Some(use_cooldown) = &self.use_cooldown {
             let seconds = LitFloat::new(&format!("{:.1}", use_cooldown.seconds), Span::call_site());

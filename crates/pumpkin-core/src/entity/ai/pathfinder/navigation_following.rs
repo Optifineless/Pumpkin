@@ -28,6 +28,12 @@ impl NavigationKind {
 }
 
 impl PathNavigation {
+    // Cancel Pumpkin's queued moveTo adapter and any recomputation of the route it replaced.
+    pub(super) const fn clear_pending_goal(&mut self) {
+        self.current_goal = None;
+        self.has_delayed_recomputation = false;
+    }
+
     const fn kind(&self) -> NavigationKind {
         match &self.evaluator {
             EvaluatorKind::Walk(_) => NavigationKind::Ground,
@@ -296,3 +302,7 @@ pub(super) fn wall_target_reached(pos: Vector3<f64>, target: BlockPos, width: f3
 #[cfg(test)]
 #[path = "navigation_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "navigation_goal_tests.rs"]
+mod goal_tests;

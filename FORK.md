@@ -73,6 +73,42 @@ a floor with a separate ceiling above it, then remove only the floor; expect the
 lantern to drop. Place a ladder against a wall into source water; expect the
 ladder to retain water, then place one against the wall in dry air and expect
 the ordinary facing and item consumption.
+## Mob visibility, avoidance and navigation follow-up (#2)
+
+The 26.3 `mob_visibility` item component is parsed, saved, generated and encoded
+through the normal item paths. Target ranges share
+`LivingEntity.getVisibilityPercent`: sneaking, invisible armor cover and matching
+equipped-item components apply before the two-block minimum. Player MAIN_HAND
+comes from the selected hotbar stack, including before equipment publication.
+`TargetingConditions.test` and piglin targetability preserve Java `Math.max` NaN
+propagation. The ownership audit is in
+[inventory-equipment-ownership.md](.fork/inventory-equipment-ownership.md).
+
+`AvoidEntityGoal.canUse` retains nearest valid threat selection and now matches
+Zombie subclasses and trader llamas. Cats stop avoiding players when tamed;
+ocelots stop when trusting. `Wolf.WolfAvoidEntityGoal.canUse` first selects the
+nearest valid llama and finds its escape path, then checks that the wolf is
+untamed and calls `avoidLlama`: that llama's strength must be at least a random
+integer from zero through four. A failed strength roll does not select a farther
+llama. Wolf avoidance clears its combat target on start and tick. Villager Zombie
+avoidance excludes zombified piglins. Wandering traders reuse the shared hostile
+table while retaining their seven vanilla class goals, eight-block Vindicator
+range and lack of Ravager avoidance.
+
+Direct paths and cancellation clear Pumpkin's queued coordinate request and
+delayed recomputation, so an old target cannot replace a new route or restart a
+cancelled one. Completed coordinate requests already consumed their pending goal;
+that behavior remains. The default destination test now uses solid rendering
+below the target, preserving the existing ground-navigation check. Navigation
+target positions and wall-climber fallback behavior retain their vanilla meaning.
+
+Mirrors vanilla 26.3 `LivingEntity.getVisibilityPercent`, `PlayerEquipment.get`,
+`MobVisibility.CODEC/STREAM_CODEC`, `TargetingConditions.test`,
+`VillagerHostilesSensor`, species avoidance overrides and
+`PathNavigation.moveTo/isStableDestination`. Deferred cancellation also covers
+Pumpkin's queued-movement adapter. No public plugin API or event changes.
+Native API 8 is retained; rebuild native plugins for the private avoidance state.
+Implemented by Codex. In-game verification: **Not yet**.
 
 ## Spawn protection bypass through block use (#19)
 

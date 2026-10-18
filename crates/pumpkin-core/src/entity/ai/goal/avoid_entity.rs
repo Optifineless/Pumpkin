@@ -21,6 +21,7 @@ pub struct AvoidEntityGoal {
     fast_speed: f64,
     target: Option<Arc<dyn EntityBase>>,
     path: Option<Path>,
+    selector: fn(&dyn EntityBase) -> bool,
 }
 
 impl AvoidEntityGoal {
@@ -39,7 +40,18 @@ impl AvoidEntityGoal {
             fast_speed,
             target: None,
             path: None,
+            selector: |_| true,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_selector(mut self, selector: fn(&dyn EntityBase) -> bool) -> Self {
+        self.selector = selector;
+        self
+    }
+
+    pub(crate) fn target(&self) -> Option<&Arc<dyn EntityBase>> {
+        self.target.as_ref()
     }
 
     /// Selects the nearest visible, attackable threat inside `AvoidEntityGoal`'s search box.
@@ -80,7 +92,8 @@ impl AvoidEntityGoal {
 impl Goal for AvoidEntityGoal {
     fn can_start(&mut self, mob: &dyn Mob) -> bool {
         let Some(target) = Self::find_threat(mob, self.flee_distance, |target| {
-            target.get_entity().entity_type == self.flee_type
+            matches_class(self.flee_type, target.get_entity().entity_type)
+                && (self.selector)(target)
         }) else {
             return false;
         };
@@ -160,6 +173,20 @@ impl Goal for AvoidEntityGoal {
 
     fn controls(&self) -> Controls {
         self.goal_control
+    }
+}
+
+// AvoidEntityGoal.canUse queries getEntitiesOfClass, including subclasses.
+fn matches_class(class: &EntityType, candidate: &EntityType) -> bool {
+    if class == &EntityType::ZOMBIE {
+        matches!(
+            candidate.resource_name,
+            "zombie" | "drowned" | "husk" | "zombie_villager" | "zombified_piglin"
+        )
+    } else if class == &EntityType::LLAMA {
+        candidate == &EntityType::LLAMA || candidate == &EntityType::TRADER_LLAMA
+    } else {
+        class == candidate
     }
 }
 

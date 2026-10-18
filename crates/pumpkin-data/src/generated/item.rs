@@ -19956,6 +19956,15 @@ impl Item {
         components: &[
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::CREEPER,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
+            (
                 ItemName,
                 &ItemNameImpl {
                     name: Cow::Borrowed("block.minecraft.creeper_head"),
@@ -59672,6 +59681,16 @@ impl Item {
         components: &[
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::PIGLIN,
+                        &crate::entity_type::EntityType::PIGLIN_BRUTE,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
+            (
                 ItemName,
                 &ItemNameImpl {
                     name: Cow::Borrowed("block.minecraft.piglin_head"),
@@ -72819,6 +72838,15 @@ impl Item {
         registry_key: "skeleton_skull",
         components: &[
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
+            (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::SKELETON,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
             (
                 ItemName,
                 &ItemNameImpl {
@@ -91839,6 +91867,15 @@ impl Item {
         registry_key: "zombie_head",
         components: &[
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
+            (
+                MobVisibility,
+                &MobVisibilityImpl {
+                    targeting_entity_types: IDSet::IDs(Cow::Borrowed(&[
+                        &crate::entity_type::EntityType::ZOMBIE,
+                    ])),
+                    visibility: 0.5f32,
+                },
+            ),
             (
                 ItemName,
                 &ItemNameImpl {

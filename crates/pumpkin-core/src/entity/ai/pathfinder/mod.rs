@@ -454,7 +454,7 @@ pub trait PathNavigationTrait: Send + Sync {
         pos: &BlockPos,
         _entity: &dyn EntityBase,
     ) -> bool {
-        world.get_block_state(&pos.down()).is_solid()
+        world.get_block_state(&pos.down()).is_solid_render()
     }
 }
 
@@ -566,6 +566,7 @@ impl PathNavigation {
         }) {
             return;
         }
+        self.clear_pending_goal();
         // PathNavigation.moveTo coordinates queues createPath with reach range 1.
         self.pending_reach_range = 1;
         self.current_goal = Some(goal);
@@ -583,7 +584,7 @@ impl PathNavigation {
 
     pub fn stop(&mut self) {
         self.is_idle.store(true, Ordering::Relaxed);
-        self.current_goal = None;
+        self.clear_pending_goal();
         self.path = None;
         self.next_ground_y = None;
     }
@@ -1038,6 +1039,7 @@ impl PathNavigationTrait for GroundPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {
@@ -1286,6 +1288,7 @@ impl PathNavigationTrait for FlyingPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {
@@ -1503,6 +1506,7 @@ impl PathNavigationTrait for WaterBoundPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {
@@ -1970,6 +1974,7 @@ impl PathNavigationTrait for AmphibiousPathNavigation {
     }
 
     fn move_to_path(&mut self, path: Option<Path>, speed: f64, entity: &LivingEntity) -> bool {
+        self.inner.clear_pending_goal();
         if let Some(new_path) = path {
             self.inner.path = Some(new_path);
             if self.is_done() {

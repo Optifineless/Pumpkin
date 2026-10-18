@@ -9,6 +9,9 @@ mod item_components;
 #[path = "book_components.rs"]
 mod book_components;
 
+#[path = "mob_visibility.rs"]
+mod mob_visibility;
+
 #[cfg(test)]
 #[path = "component_crash_tests.rs"]
 mod component_crash_tests;
@@ -965,6 +968,7 @@ pub fn deserialize(
 ) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
     let _scope = crate::ser::decode_budget::DecodeScope::component()?;
     match id {
+        DataComponent::MobVisibility => Ok(MobVisibilityImpl::deserialize(seq)?.to_dyn()),
         DataComponent::CustomData => Ok(CustomDataImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MaxStackSize => Ok(MaxStackSizeImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MaxDamage => Ok(MaxDamageImpl::deserialize(seq)?.to_dyn()),
@@ -1119,6 +1123,7 @@ pub fn serialize(
     seq: &mut impl NetworkWriteExt,
 ) -> Result<(), WritingError> {
     match id {
+        DataComponent::MobVisibility => get::<MobVisibilityImpl>(value).serialize(seq),
         DataComponent::CustomData => get::<CustomDataImpl>(value).serialize(seq),
         DataComponent::MaxStackSize => get::<MaxStackSizeImpl>(value).serialize(seq),
         DataComponent::MaxDamage => get::<MaxDamageImpl>(value).serialize(seq),
