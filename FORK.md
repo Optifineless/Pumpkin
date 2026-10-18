@@ -334,6 +334,7 @@ In-game verification: Not yet. AI implementation: Codex (GPT-6).
 
 | Fork issue | Change | Checked in-game |
 |:--|:--|:--|
+| [#21](https://github.com/Optifineless/Pumpkin/issues/21) Waxing copper slabs preserves top, bottom and double types and compatible waterlogging; shared waxed block conversion retains other matching state properties. Mirrors vanilla 26.3 `HoneycombItem.getWaxed` and `Block.withPropertiesOf`. | Not yet |
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also fixes the existing-knot downcast used by player-to-knot transfers. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved` and `LeadItem.bindPlayerMobs`; species-specific `canBeLeashed` eligibility is not yet ported. | Not yet |
 
 ## Known regressions under investigation
