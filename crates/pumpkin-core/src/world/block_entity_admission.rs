@@ -152,3 +152,7 @@ impl World {
             });
     }
 }
+
+#[cfg(test)]
+#[path = "clone_move_admission_tests.rs"]
+mod clone_move_admission_tests;

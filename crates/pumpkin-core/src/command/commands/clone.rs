@@ -158,6 +158,30 @@ impl CommandExecutor for CloneExecutor {
             }
         }
 
+        // Vanilla clones inside one tick, so no chunk retires mid-command. Admit every touched chunk
+        // before the first write, so MOVE never copies a container whose source it cannot clear.
+        let mut touched_chunks = std::collections::BTreeSet::new();
+        let mut add_chunks = |min_x: i32, max_x: i32, min_z: i32, max_z: i32| {
+            for cx in (min_x >> 4)..=(max_x >> 4) {
+                for cz in (min_z >> 4)..=(max_z >> 4) {
+                    touched_chunks.insert((cx, cz));
+                }
+            }
+        };
+        add_chunks(dest_min_x, dest_max_x, dest_min_z, dest_max_z);
+        if self.clone_mode == CloneMode::Move {
+            add_chunks(min_x, max_x, min_z, max_z);
+        }
+        let mut _mutations = Vec::with_capacity(touched_chunks.len());
+        for (cx, cz) in touched_chunks {
+            let pos = BlockPos::new(cx << 4, dest_min_y, cz << 4);
+            let Some(mutation) = world.block_entity_mutation_permit(pos) else {
+                tracing::warn!("Clone rejected while chunk ({cx}, {cz}) is unloading");
+                return Err(FAILED_ERROR.create_without_context());
+            };
+            _mutations.push(mutation);
+        }
+
         let mut blocks_to_clone = Vec::new();
 
         for x in 0..size_x {
@@ -198,13 +222,6 @@ impl CommandExecutor for CloneExecutor {
         let mut count = 0;
         for block in &blocks_to_clone {
             // CloneCommands.clone restores block-entity NBT after setting destination terrain.
-            let Some(_mutation) = world.block_entity_mutation_permit(block.dest_pos) else {
-                tracing::warn!(
-                    "Clone block placement rejected while chunk is unloading at {:?}",
-                    block.dest_pos
-                );
-                return Err(FAILED_ERROR.create_without_context());
-            };
             world.set_block_state(&block.dest_pos, block.state_id, BlockFlags::NOTIFY_ALL);
 
             if let Some(nbt) = &block.block_entity_nbt {
