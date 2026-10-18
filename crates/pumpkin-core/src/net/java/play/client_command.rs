@@ -6,10 +6,10 @@ use std::sync::{LazyLock, Mutex};
 use pumpkin_data::game_rules::GameRule;
 use pumpkin_protocol::java::client::play::CGameRuleValues;
 
-static RESPAWNING_PLAYERS: LazyLock<Mutex<HashSet<uuid::Uuid>>> =
+static RESPAWNING_PLAYERS: LazyLock<Mutex<HashSet<usize>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
-struct RespawnClaim(uuid::Uuid);
+struct RespawnClaim(usize);
 
 impl Drop for RespawnClaim {
     fn drop(&mut self) {
@@ -21,15 +21,19 @@ impl Drop for RespawnClaim {
 }
 
 /// Claims a player's respawn flow so duplicate status packets cannot spawn overlapping tasks.
-fn try_claim_respawn(player_id: uuid::Uuid) -> Option<RespawnClaim> {
+fn try_claim_respawn(player: &Arc<Player>) -> Option<RespawnClaim> {
+    try_claim_respawn_instance(Arc::as_ptr(player) as usize)
+}
+
+fn try_claim_respawn_instance(instance: usize) -> Option<RespawnClaim> {
     let inserted = RESPAWNING_PLAYERS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert(player_id);
+        .insert(instance);
     if !inserted {
         return None;
     }
-    Some(RespawnClaim(player_id))
+    Some(RespawnClaim(instance))
 }
 
 impl JavaClient {
@@ -44,13 +48,18 @@ impl JavaClient {
                 let Some(server) = player.world().server.upgrade() else {
                     return;
                 };
-                let Some(respawn_claim) = try_claim_respawn(player.gameprofile.id) else {
+                let Some(respawn_claim) = try_claim_respawn(player) else {
                     return;
                 };
                 let player_c = player.clone();
                 let is_hardcore = server.basic_config.hardcore;
                 server.spawn_task(async move {
-                    respawn_after_death(&player_c, is_hardcore).await;
+                    if !respawn_after_death(&player_c, is_hardcore).await
+                        || player_c.client.closed()
+                        || player_c.get_entity().is_removed()
+                    {
+                        return;
+                    }
 
                     {
                         // PlayerList.respawn initializes inventoryMenu before sending its state.
@@ -145,25 +154,23 @@ mod tests {
     };
 
     use super::*;
-    use uuid::Uuid;
-
     #[test]
     fn duplicate_respawn_claims_do_not_release_the_original_claim() {
-        let player_id = Uuid::from_u128(1);
-        let claim = try_claim_respawn(player_id).expect("first respawn should be claimed");
+        let instance = 1;
+        let claim = try_claim_respawn_instance(instance).expect("first respawn should be claimed");
 
-        assert!(try_claim_respawn(player_id).is_none());
-        assert!(try_claim_respawn(player_id).is_none());
+        assert!(try_claim_respawn_instance(instance).is_none());
+        assert!(try_claim_respawn_instance(instance).is_none());
 
         drop(claim);
-        assert!(try_claim_respawn(player_id).is_some());
+        assert!(try_claim_respawn_instance(instance).is_some());
     }
 
     #[test]
     fn concurrent_respawn_claims_allow_only_one_in_flight_respawn() {
         const WORKERS: usize = 32;
 
-        let player_id = Uuid::from_u128(2);
+        let instance = 2;
         let start = Arc::new(Barrier::new(WORKERS));
         let all_claimed = Arc::new(Barrier::new(WORKERS));
         let winners = Arc::new(AtomicUsize::new(0));
@@ -175,7 +182,7 @@ mod tests {
                 let winners = Arc::clone(&winners);
                 scope.spawn(move || {
                     start.wait();
-                    let claim = try_claim_respawn(player_id);
+                    let claim = try_claim_respawn_instance(instance);
                     if claim.is_some() {
                         winners.fetch_add(1, Ordering::Relaxed);
                     }
@@ -190,11 +197,8 @@ mod tests {
 }
 
 // ServerGamePacketListenerImpl.handleClientCommand uses normal saved-spawn validation first.
-async fn respawn_after_death(player: &Arc<Player>, hardcore: bool) {
-    player.world().respawn_player(player, false).await;
-    if hardcore {
-        player.set_gamemode(GameMode::Spectator);
-    }
+async fn respawn_after_death(player: &Arc<Player>, hardcore: bool) -> bool {
+    player.world().respawn_player(player, false, hardcore).await
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ mod equipment_updates;
 mod experience_orb;
 mod inventory_sync;
 mod known_movement;
+mod lifecycle;
 mod mace;
 mod map_tracking;
 mod melee;
@@ -1106,6 +1107,7 @@ impl Player {
 
     /// Removes the [`Player`] out of the current [`World`].
     pub async fn remove(self: &Arc<Self>) {
+        self.mark_departing();
         if !self
             .current_screen_handler
             .lock()
@@ -1126,8 +1128,6 @@ impl Player {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         if let Some(vehicle) = vehicle {
-            self.root_vehicle_uuid
-                .store(Some(vehicle.get_entity().entity_uuid));
             vehicle
                 .get_entity()
                 .remove_passenger_on_disconnect(self.entity_id());
@@ -4138,7 +4138,7 @@ impl Player {
     }
 
     pub async fn respawn(self: &Arc<Self>) {
-        self.world().respawn_player(self, false).await;
+        self.world().respawn_player(self, false, false).await;
         // The client rebuilt its attribute state on respawn, so send the held
         // weapon modifiers again.
         crate::entity::attributes::send_attribute_updates_for_living(
@@ -4348,6 +4348,11 @@ impl Player {
         // Stop elytra flight and reset sneaking when switching to spectator mode
         if gamemode == GameMode::Spectator {
             let entity = self.get_entity();
+            self.stop_riding_for_spectator();
+            // Vehicle exit hooks can synchronously change the mode again.
+            if self.gamemode.load() != gamemode {
+                return true;
+            }
             if entity.is_fall_flying() {
                 entity.set_fall_flying(false);
             }
