@@ -42,11 +42,16 @@ impl EnderDragonEntity {
             && !entity.is_removed()
             && Arc::ptr_eq(&entity.world.load_full(), world)
             && target.get_player().is_none_or(|player| {
-                !player.is_creative() && !player.is_spectator()
-            })
-            // A disconnect can detach a player before its removal mark is published.
-            && world.get_entity_by_id(entity.entity_id).is_some_and(|live| {
-                std::ptr::eq(live.get_entity(), entity)
+                !player.is_creative()
+                    && !player.is_spectator()
+                    // A disconnect can detach a player before its removal mark is published.
+                    // Scan only the player list: an id lookup over every entity per
+                    // candidate made dense crowds quadratic each tick.
+                    && world
+                        .players
+                        .load()
+                        .iter()
+                        .any(|live| std::ptr::eq(live.get_entity(), entity))
             })
     }
 
