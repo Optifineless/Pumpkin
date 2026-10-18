@@ -13,6 +13,63 @@ enum SwappableItemUseResult {
     Success,
 }
 
+struct ItemUseHit {
+    bottle_use: bool,
+    position: Option<pumpkin_util::math::position::BlockPos>,
+}
+
+fn item_use_hit(
+    world: &Arc<World>,
+    player: &Player,
+    stack: &ItemStack,
+    yaw: f32,
+    pitch: f32,
+) -> ItemUseHit {
+    let bottle_use = stack.item == &Item::GLASS_BOTTLE;
+    let position = if bottle_use {
+        let main_hand = player.inventory().get_stack_in_hand(Hand::Right);
+        crate::item::items::glass_bottle::GlassBottleItem::use_hit(
+            world, player, &main_hand, yaw, pitch,
+        )
+    } else {
+        world
+            .raycast(
+                player.eye_position(),
+                player.eye_position().add(
+                    &(Vector3::rotation_vector(f64::from(pitch), f64::from(yaw))
+                        * player.block_interaction_range()),
+                ),
+                |pos, world| {
+                    let block = world.get_block(pos);
+                    block != &Block::AIR && block != &Block::WATER && block != &Block::LAVA
+                },
+            )
+            .map(|(position, _)| position)
+    };
+    ItemUseHit {
+        bottle_use,
+        position,
+    }
+}
+
+fn item_interact_event(
+    player: &Arc<Player>,
+    world: &World,
+    position: Option<pumpkin_util::math::position::BlockPos>,
+) -> PlayerInteractEvent {
+    position.map_or_else(
+        || PlayerInteractEvent::new(player, InteractAction::RightClickAir, &Block::AIR, None),
+        |hit_pos| {
+            PlayerInteractEvent::new(
+                player,
+                InteractAction::RightClickBlock,
+                world.get_block(&hit_pos),
+                Some(hit_pos),
+            )
+        },
+    )
+}
+
 impl JavaClient {
     pub fn handle_use_item(&self, player: &Arc<Player>, use_item: &SUseItem, server: &Arc<Server>) {
         if !player.has_client_loaded() {
@@ -57,43 +114,42 @@ impl JavaClient {
             return;
         }
 
-        let hit_result = player.world().raycast(
-            player.eye_position(),
-            player.eye_position().add(
-                &(Vector3::rotation_vector(f64::from(use_item.pitch), f64::from(use_item.yaw))
-                    * 4.5),
-            ),
-            |pos, world| {
-                let block = world.get_block(pos);
-                block != &Block::AIR && block != &Block::WATER && block != &Block::LAVA
-            },
-        );
-
-        let event = if let Some((hit_pos, _hit_dir)) = hit_result {
-            PlayerInteractEvent::new(
-                player,
-                InteractAction::RightClickBlock,
-                player.world().get_block(&hit_pos),
-                Some(hit_pos),
-            )
-        } else {
-            PlayerInteractEvent::new(player, InteractAction::RightClickAir, &Block::AIR, None)
-        };
         let (use_yaw, use_pitch) = if self.version.load() >= JavaMinecraftVersion::V_1_21 {
             (use_item.yaw, use_item.pitch)
         } else {
             player.rotation()
         };
+        let stack_for_interact = inventory.get_stack_in_hand(hand);
+        let world = player.world();
+        let hit = item_use_hit(&world, player, &stack_for_interact, use_yaw, use_pitch);
+        let event = item_interact_event(player, &world, hit.position);
 
         send_cancellable_blocking! {{
             server;
             event;
             'after: {
+                if hit.bottle_use {
+                    if crate::entity::item_use::item_use_allowed(&stack_for_interact, |group| {
+                        player.is_on_cooldown(group)
+                    }) {
+                        crate::item::items::glass_bottle::GlassBottleItem::use_packet_snapshot(
+                            player,
+                            hand,
+                            &stack_for_interact,
+                            hit.position,
+                        );
+                    }
+                    return;
+                }
                 item_in_hand = inventory.get_stack_in_hand(hand);
                 let stack_for_use = item_in_hand.clone();
                 if stack_for_use.is_empty() || !crate::entity::item_use::item_use_allowed(
                     &stack_for_use, |group| player.is_on_cooldown(group),
                 ) {
+                    return;
+                }
+                // Do not use a bottle installed by the interaction callback for this packet.
+                if stack_for_use.item == &Item::GLASS_BOTTLE {
                     return;
                 }
                 match Self::prepare_hand_item_for_use(player, hand, &mut item_in_hand) {
