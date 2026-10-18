@@ -84,6 +84,11 @@ impl World {
                 | SnapshotPublication::Missing
                 | SnapshotPublication::Older => return,
                 SnapshotPublication::Replaced(current) => {
+                    if retiring {
+                        // LevelChunk.clearAllBlockEntities retires each live container on unload.
+                        // A replacement joining this final capture needs the same retirement first.
+                        super::container_lifecycle::retire_block_entity(&current);
+                    }
                     if retry == MAX_REPLACEMENT_SNAPSHOT_RETRIES {
                         return;
                     }
@@ -161,10 +166,12 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(pos, nbt.clone());
         loads.published_capture_stamps.insert(pos, stamp);
+        // Keep the chunk entry as the eviction fence until this image is dirty. The matching
+        // vanilla eviction point is ChunkMap.scheduleUnload.
+        chunk.mark_dirty(true);
         drop(chunk_entry);
         drop(loads);
 
-        chunk.mark_dirty(true);
         self.pending_block_entity_migrations.push(chunk_pos);
         SnapshotPublication::Published
     }
@@ -403,7 +410,8 @@ impl World {
         loads
     }
 
-    pub(super) fn unload_block_entities(&self, chunk_pos: Vector2<i32>) {
+    /// Retires and removes a chunk's live block entities after its unload capture.
+    pub(crate) fn unload_block_entities(&self, chunk_pos: Vector2<i32>) {
         self.begin_block_entity_unload(chunk_pos);
         // LevelChunk.clearAllBlockEntities retires publication with the chunk. Serialization
         // stays outside the gate because native BlockEntity implementations can call back.
