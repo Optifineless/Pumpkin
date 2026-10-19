@@ -52,6 +52,9 @@ use crate::{
 const FOOT: BlockPos = BlockPos::new(5, 64, 5);
 const HEAD: BlockPos = BlockPos::new(6, 64, 5);
 
+#[path = "bed_pair_review_tests.rs"]
+mod review;
+
 enum TestRecords {}
 impl LockClass for TestRecords {
     const NAME: &'static str = "bed test records";
@@ -155,6 +158,30 @@ async fn finish(fixture: PlayerFixture) {
     tokio::time::timeout(std::time::Duration::from_secs(20), fixture.finish())
         .await
         .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g05_head_loot_cancellation_observes_the_bed() {
+    let fixture = PlayerFixture::new();
+    let client = place(&fixture, &Item::RED_BED);
+    let seen = Arc::new(AtomicBool::new(false));
+    let observed = seen.clone();
+    register::<BlockDropItemEvent>(&fixture.world, move |event| {
+        assert_eq!(event.block_pos, HEAD);
+        if event.world.get_block(&event.block_pos) == &Block::RED_BED {
+            observed.store(true, Relaxed);
+            event.cancelled = true;
+        }
+    });
+    destroy(&client, &fixture.world, HEAD);
+    assert!(
+        seen.load(Relaxed),
+        "loot listeners must observe the original bed"
+    );
+    assert_eq!(drops(&fixture.world, &Item::RED_BED), 0);
+    assert!(fixture.world.get_block(&FOOT).is_air());
+    assert!(fixture.world.get_block(&HEAD).is_air());
+    finish(fixture).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -424,7 +451,7 @@ async fn b1019_g05_physics_callback_preserves_new_bed_pair() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1019_g05_loot_callback_retires_only_the_unchanged_orphan() {
+async fn b1019_g05_loot_callback_preserves_replacements_without_stale_drops() {
     for replacement in 0..3 {
         let fixture = PlayerFixture::new();
         let client = place(&fixture, &Item::RED_BED);
@@ -437,7 +464,7 @@ async fn b1019_g05_loot_callback_retires_only_the_unchanged_orphan() {
         let world = fixture.world.clone();
         register::<BlockDropItemEvent>(&fixture.world, move |event| {
             assert_eq!(event.block_pos, HEAD);
-            assert!(world.get_block(&HEAD).is_air());
+            assert_eq!(world.get_block(&HEAD), &Block::RED_BED);
             let flags = BlockFlags::NOTIFY_LISTENERS
                 | BlockFlags::UPDATE_KNOWN_SHAPE
                 | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK;
@@ -471,7 +498,7 @@ async fn b1019_g05_loot_callback_retires_only_the_unchanged_orphan() {
                 assert_eq!(fixture.world.get_block_state_id(&FOOT), new_foot);
             }
         }
-        assert_eq!(drops(&fixture.world, &Item::RED_BED), 1);
+        assert_eq!(drops(&fixture.world, &Item::RED_BED), 0);
         finish(fixture).await;
     }
 }

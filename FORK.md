@@ -24,7 +24,19 @@ Malformed use pairs with mismatched facing are rejected to avoid removing an
 unrelated half; this is stricter than the supplied vanilla opposite-part check.
 Removal uses the existing per-position chunk and block-entity publication owners;
 arbitrary raw native writes and global two-position atomicity remain legacy limits.
+PR #230 review: bed loot listeners again observe the bed before removal, preserving
+conditional `BlockDropItemEvent` cancellation. A nonblocking operation snapshot
+rejects recursive and concurrent duplicate breaks; changed cells retain callback
+replacements and discard uncommitted loot. Callbacks and item spawning hold no
+publication guard. API 8 (same version): `World` gains private runtime bed-break
+admission state under its existing publication gate; rebuild native plugins.
+Saved fields and Wasm WIT are unchanged.
 In-game verification: Not yet.
+
+Play test: place ordinary and straw beds, break either half in Survival and expect
+one bed item; repeat in Creative and expect none. With a plugin that cancels bed
+loot by checking the event's world and position, break the head and expect no item.
+Record the breaks and resulting drops on the candidate build.
 
 ## Empty map centers (#45)
 

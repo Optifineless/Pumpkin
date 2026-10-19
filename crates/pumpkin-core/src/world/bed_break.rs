@@ -30,6 +30,7 @@ impl World {
         update_limit: u32,
         expected: BlockStateId,
     ) -> Option<BlockStateId> {
+        let snapshot = self.reserve_bed_break(*position, expected)?;
         let block = Block::from_state_id(expected);
         let retired = RetiredBlockEffects::capture(self, position, expected);
         let mut event = BlockBreakEvent::new(
@@ -56,12 +57,8 @@ impl World {
             // A cancelled Creative partner event must not be retried by the foot's shape cascade.
             flags.insert(BlockFlags::UPDATE_KNOWN_SHAPE);
         }
-        // LevelChunk.setBlockState commits the admitted half before its neighbor callbacks.
-        let (_, _, entity) = self.remove_bed_states_if(&[(*position, expected)]).pop()?;
-        if !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK) {
-            entity.on_block_replaced(self, position);
-        }
-        if event.drop {
+        // Keep the existing BlockDropItemEvent's live pre-removal context, without a guard.
+        let loot = event.drop.then(|| {
             let tool = cause.and_then(|player| {
                 let stack = player.inventory().held_item();
                 (!stack.is_empty()).then_some(stack)
@@ -73,18 +70,43 @@ impl World {
                 killed_by_player: Some(cause.is_some()),
                 ..Default::default()
             };
-            crate::block::drop_loot(self, block, position, true, &params);
+            (
+                crate::block::block_drops(self, block, position, &params),
+                params,
+            )
+        });
+        // Revalidate after callbacks; an occupied-state edit must not leave both a bed and loot.
+        let entity = self.remove_reserved_bed(&snapshot);
+        let current_chunk = snapshot.chunk_is_current();
+        drop(snapshot);
+        let committed = entity.is_some();
+        if !committed && !current_chunk {
+            return None;
+        }
+        if let Some(entity) = entity {
+            if !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK) {
+                entity.on_block_replaced(self, position);
+            }
+            if let Some((items, params)) = loot {
+                for stack in items {
+                    self.drop_stack(position, stack);
+                }
+                crate::block::drop_experience(self, block, position, params.tool.as_ref());
+            }
         }
         let mut completion_flags = flags;
         if WhiteBedLikeProperties::from_state_id(expected).part == BedPart::Head {
             completion_flags.insert(BlockFlags::SKIP_DROPS);
         }
-        // A loot listener can replace the committed cell before Level.setBlock's completion.
+        // A loot or spawn listener can replace the cell before Level.setBlock's completion.
         // Retire only its captured orphan, retaining a listener's replacement bed pair.
         if self.get_block_state_id(position) != BlockStateId::AIR
             && let Some((partner, state)) = retired.orphaned_bed_partner(self, position, expected)
         {
             self.break_bed_block(&partner, None, None, completion_flags, update_limit, state);
+        }
+        if !committed {
+            return None;
         }
         self.on_block_state_set_with_block_entity(
             position,
