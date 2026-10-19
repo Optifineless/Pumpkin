@@ -15,6 +15,23 @@ Codex (GPT-6.1 Sol). In-game verification: Not yet.
 Play test: drop the last selected spear without changing slots or picking it up;
 expect fist damage/recharge and an empty hand for a nearby observer. Capture both
 views and the single ground item; repeat with partial/whole stacks and cancellation.
+## Server-wide tab-list membership (#117)
+
+Login initializes and announces online players across all dimensions. Dimension
+changes retain tab entries; only real logout removes them globally. Gamemode,
+listed status, latency, order and display updates reach every dimension, while
+entity tracking remains world scoped and Java initialization precedes spawning.
+Ordered owner notifications keep concurrent logout behind pending initialization.
+Retains weak player handles in the existing admission session table, so a
+world detach cannot withdraw an online identity; no separate online cache or
+saved format changes. Adapts the roster routing from JulesB40's upstream PR #3432,
+with metadata and lifecycle packet regressions added by Codex (GPT-6.1 Sol).
+Native API 8 and Wasm WIT are unchanged. In-game verification: Not yet.
+
+Play test: keep three clients in the Overworld and Nether, join and reconnect,
+then move between dimensions; expect every tab to retain all online players and
+remove a player only on disconnect. Capture tabs and player-info packets during
+login, a portal trip, metadata changes and logout.
 
 ## Empty map centers (#45)
 

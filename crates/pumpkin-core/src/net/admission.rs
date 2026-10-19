@@ -1,17 +1,26 @@
 use crate::{
+    entity::player::Player,
     net::{ClientPlatform, DisconnectReason, GameProfile},
     server::Server,
 };
 use pumpkin_util::text::TextComponent;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 use uuid::Uuid;
 
 #[derive(Default)]
 pub(crate) struct AdmissionReservations {
-    identities: Mutex<HashMap<Uuid, String>>,
+    identities: Mutex<HashMap<Uuid, AdmittedSession>>,
+    effects: crate::world::guard_effects::OwnerEffects,
+}
+
+struct AdmittedSession {
+    name: String,
+    player: Option<Weak<Player>>,
+    ready: bool,
+    initialized: bool,
 }
 
 /// Holds exclusive access to a player's UUID and name until disconnect cleanup and saves finish.
@@ -21,6 +30,108 @@ pub struct AdmissionReservation {
 }
 
 impl AdmissionReservations {
+    pub(crate) fn attach(&self, player: &Arc<Player>) {
+        let mut identities = self
+            .identities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(session) = identities.get_mut(&player.gameprofile.id) {
+            session.player = Some(Arc::downgrade(player));
+        }
+    }
+
+    fn matches(session: &AdmittedSession, player: &Player) -> bool {
+        session
+            .player
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .is_some_and(|live| std::ptr::eq(live.as_ref(), player))
+    }
+
+    fn online(identities: &HashMap<Uuid, AdmittedSession>) -> Vec<Arc<Player>> {
+        identities
+            .values()
+            .filter(|session| session.ready)
+            .filter_map(|session| session.player.as_ref()?.upgrade())
+            .collect()
+    }
+
+    // Capture only serialized, deferred effects while the admission owner is held.
+    pub(crate) fn activate(&self, player: &Player, capture: impl FnOnce(Vec<Arc<Player>>)) {
+        let mut identities = self
+            .identities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(session) = identities.get_mut(&player.gameprofile.id) else {
+            return;
+        };
+        if !Self::matches(session, player) {
+            return;
+        }
+        session.ready = true;
+        session.initialized = false;
+        let online = Self::online(&identities);
+        self.effects.capture(|| capture(online));
+    }
+
+    pub(crate) fn finish_initialization(&self, player: &Player) {
+        let mut identities = self
+            .identities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(session) = identities.get_mut(&player.gameprofile.id)
+            && session.ready
+            && Self::matches(session, player)
+        {
+            session.initialized = true;
+        }
+    }
+
+    pub(crate) fn can_track(&self, player: &Player) -> bool {
+        !player.client.closed()
+            && self
+                .identities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&player.gameprofile.id)
+                .is_none_or(|session| session.initialized && Self::matches(session, player))
+    }
+
+    pub(crate) fn publish_info(&self, player: &Player, capture: impl FnOnce(Vec<Arc<Player>>)) {
+        let identities = self
+            .identities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !identities
+            .get(&player.gameprofile.id)
+            .is_some_and(|session| session.ready && Self::matches(session, player))
+        {
+            return;
+        }
+        let online = Self::online(&identities);
+        self.effects.capture(|| capture(online));
+    }
+
+    pub(crate) fn retire(&self, player: &Player, capture: impl FnOnce(Vec<Arc<Player>>)) {
+        let mut identities = self
+            .identities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(session) = identities.get_mut(&player.gameprofile.id) else {
+            return;
+        };
+        if !Self::matches(session, player) {
+            return;
+        }
+        session.player = None;
+        session.initialized = false;
+        if !std::mem::take(&mut session.ready) {
+            return;
+        }
+        let online = Self::online(&identities);
+        self.effects.capture(|| capture(online));
+    }
+
     /// Checks every transport's admission policy and reserves its UUID and name before player-data access.
     pub(crate) fn admit(
         self: &Arc<Self>,
@@ -57,11 +168,19 @@ impl AdmissionReservations {
         if identities.contains_key(&uuid)
             || identities
                 .values()
-                .any(|reserved_name| reserved_name.eq_ignore_ascii_case(name))
+                .any(|session| session.name.eq_ignore_ascii_case(name))
         {
             return None;
         }
-        identities.insert(uuid, name.to_owned());
+        identities.insert(
+            uuid,
+            AdmittedSession {
+                name: name.to_owned(),
+                player: None,
+                ready: false,
+                initialized: false,
+            },
+        );
         Some(AdmissionReservation {
             reservations: self.clone(),
             uuid,

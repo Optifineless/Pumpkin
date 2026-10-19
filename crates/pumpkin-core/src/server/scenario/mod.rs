@@ -10,6 +10,7 @@ mod old_saves;
 mod ownership;
 mod ownership_tests;
 mod persistence;
+mod player_list;
 pub mod riding_lock_probe;
 mod transfer;
 

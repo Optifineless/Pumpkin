@@ -133,13 +133,11 @@ use pumpkin_protocol::{
     bedrock::{
         client::{
             block_event::CBlockEvent as CBedrockBlockEvent,
-            common::BuildPlatform,
             creative_content::{
                 CCreativeContent, CreativeCategory, CreativeGroupInfoPayload,
                 CreativeItemEntryPayload,
             },
             level_sound_event::CLevelSoundEvent,
-            player_list::{CPlayerList, PlayerListEntry, Skin},
             remove_actor::CRemoveActor,
             start_game::{Experiments, GamePublishSetting, LevelSettings},
             update_attributes::{AttributeData, CUpdateAttributes},
@@ -151,11 +149,9 @@ use pumpkin_protocol::{
     },
     codec::{var_int::VarInt, var_long::VarLong, var_uint::VarUInt, var_ulong::VarULong},
     java::{
-        self,
         client::play::{
             CBlockEntityData, CDamageEvent, CEntityStatus, CGameEvent, CLogin, CMultiBlockUpdate,
-            CPlayerInfoUpdate, CRemoveEntities, CRemovePlayerInfo, CSetSelectedSlot, CSoundEffect,
-            CSpawnEntity, GameEvent, InitChat, PlayerAction, PlayerInfoFlags,
+            CRemoveEntities, CSetSelectedSlot, CSoundEffect, GameEvent,
         },
         server::play::SChatMessage,
     },
@@ -444,13 +440,6 @@ impl PartialEq for World {
 impl Eq for World {}
 
 impl World {
-    const TAB_LIST_ADD_FLAGS: u8 = PlayerInfoFlags::ADD_PLAYER.bits()
-        | PlayerInfoFlags::UPDATE_LISTED.bits()
-        | PlayerInfoFlags::UPDATE_GAME_MODE.bits()
-        | PlayerInfoFlags::UPDATE_LATENCY.bits()
-        | PlayerInfoFlags::UPDATE_LIST_PRIORITY.bits()
-        | PlayerInfoFlags::UPDATE_HAT.bits();
-
     pub async fn get_block_state_id_async(&self, position: &BlockPos) -> BlockStateId {
         if !self.is_in_build_limit(*position) {
             return Block::AIR.default_state.id;
@@ -3196,70 +3185,10 @@ impl World {
         // --- MULTIPLAYER BROADCASTING ---
 
         let gameprofile = &player.gameprofile;
-        let velocity = player.get_entity().velocity.load();
-
-        // 1. Broadcast the new Bedrock player to everyone else (Java + Bedrock)
-        let bedrock_player_list = CPlayerList {
-            action: CPlayerList::ACTION_ADD,
-            entries: vec![PlayerListEntry {
-                uuid: gameprofile.id,
-                entity_unique_id: VarLong(runtime_id as i64),
-                username: gameprofile.name.clone(),
-                xuid: String::new(),
-                platform_chat_id: String::new(),
-                build_platform: BuildPlatform::Unknown,
-                skin: (**player.bedrock_skin.load()).clone(),
-                is_teacher: false,
-                is_host: false,
-                is_sub_client: false,
-                player_color: [0, 0, 0, 0],
-            }],
-        };
-
-        let gamemode = player.gamemode.load();
-        self.broadcast_packet_except_editioned(
-            &[gameprofile.id],
-            &CPlayerInfoUpdate::new(
-                (PlayerInfoFlags::ADD_PLAYER
-                    | PlayerInfoFlags::UPDATE_GAME_MODE
-                    | PlayerInfoFlags::UPDATE_LISTED
-                    | PlayerInfoFlags::UPDATE_LATENCY
-                    | PlayerInfoFlags::UPDATE_LIST_PRIORITY
-                    | PlayerInfoFlags::UPDATE_HAT)
-                    .bits(),
-                &[pumpkin_protocol::java::client::play::Player {
-                    uuid: gameprofile.id,
-                    actions: &[
-                        PlayerAction::AddPlayer {
-                            name: &gameprofile.name,
-                            properties: &gameprofile.properties.load(),
-                        },
-                        PlayerAction::UpdateGameMode(VarInt(gamemode as i32)),
-                        PlayerAction::UpdateListed(true),
-                        PlayerAction::UpdateLatency(VarInt(0)),
-                        PlayerAction::UpdateListOrder(VarInt(0)),
-                        PlayerAction::UpdateHat(true),
-                    ],
-                }],
-            ),
-            &bedrock_player_list,
-        );
-
-        // Bedrock gets `AddPlayer` from the tracker.
-        self.broadcast_packet_except(
-            &[gameprofile.id],
-            &CSpawnEntity::new(
-                (runtime_id as i32).into(),
-                gameprofile.id,
-                i32::from(EntityType::PLAYER.id).into(),
-                position,
-                pitch,
-                yaw,
-                yaw,
-                0.into(),
-                velocity,
-            ),
-        );
+        if let Some(server) = self.server.upgrade() {
+            server.initialize_player_list(&player);
+        }
+        self.add_arriving_player(&player);
 
         self.send_player_equipment(&player);
         player
@@ -3276,17 +3205,6 @@ impl World {
             &actor_data,
         );
 
-        // 2. Spawn existing players for our new Bedrock client
-        let players = self.players.load();
-
-        for existing_player in players
-            .iter()
-            .filter(|p| p.gameprofile.id != gameprofile.id)
-        {
-            client
-                .send_packet(&existing_player.bedrock_player_list())
-                .await;
-        }
         // Actors come from the tracker, in range only.
         self.pair_new_player_with_tracked_entities(&player);
 
@@ -3384,6 +3302,7 @@ impl World {
             ))
             .await;
 
+        server.initialize_player_list(player);
         self.pair_new_player_with_tracked_entities(player);
 
         // Send the current ticking state to the new player so they are in sync.
@@ -3468,181 +3387,12 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .mark_sent_out_of_band(center_chunk);
 
-        let velocity = player.living_entity.entity.velocity.load();
-
         debug!("Sending player teleport to {}", player.gameprofile.name);
         // cancellation leaves the current position untouched.
         let _ = player.request_teleport(position, yaw, pitch);
 
+        self.add_arriving_player(player);
         let gameprofile = &player.gameprofile;
-        let bedrock_player_list = CPlayerList {
-            action: CPlayerList::ACTION_ADD,
-            entries: vec![PlayerListEntry {
-                uuid: gameprofile.id,
-                entity_unique_id: VarLong(entity_id as i64),
-                username: gameprofile.name.clone(),
-                xuid: String::new(),
-                platform_chat_id: String::new(),
-                build_platform: BuildPlatform::Unknown,
-                skin: (**player.bedrock_skin.load()).clone(),
-                is_teacher: false,
-                is_host: false,
-                is_sub_client: false,
-                player_color: [0, 0, 0, 0],
-            }],
-        };
-
-        let player_actions = [
-            PlayerAction::AddPlayer {
-                name: &gameprofile.name,
-                properties: &gameprofile.properties.load(),
-            },
-            PlayerAction::UpdateGameMode(VarInt(gamemode as i32)),
-            PlayerAction::UpdateListed(true),
-            PlayerAction::UpdateLatency(VarInt(0)),
-            PlayerAction::UpdateListOrder(VarInt(0)),
-            PlayerAction::UpdateHat(true),
-        ];
-        let java_player = [pumpkin_protocol::java::client::play::Player {
-            uuid: gameprofile.id,
-            actions: &player_actions,
-        }];
-        let player_info_update = CPlayerInfoUpdate::new(Self::TAB_LIST_ADD_FLAGS, &java_player);
-
-        self.broadcast_editioned(&player_info_update, &bedrock_player_list);
-
-        // If the player has a custom tab_list_name, send an update for it
-        if let Some(tab_list_name) = player.get_tab_list_name() {
-            let actions = [PlayerAction::UpdateDisplayName(Some(&tab_list_name))];
-            let java_player = [pumpkin_protocol::java::client::play::Player {
-                uuid: gameprofile.id,
-                actions: &actions,
-            }];
-            self.broadcast_packet_all(&CPlayerInfoUpdate::new(
-                PlayerInfoFlags::UPDATE_DISPLAY_NAME.bits(),
-                &java_player,
-            ));
-        }
-
-        // Here, we send all the infos of players who already joined.
-        let mut players_tab_list_names = Vec::new();
-        {
-            let players = self.players.load();
-            let mut data_to_process = Vec::new();
-            for p in players
-                .iter()
-                .filter(|p| p.gameprofile.id != player.gameprofile.id)
-            {
-                let props_guard = p.gameprofile.properties.load();
-                data_to_process.push((props_guard, p));
-            }
-
-            let mut current_player_data = Vec::new();
-            for (properties, player) in &data_to_process {
-                let chat_session = player
-                    .chat_session
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let tab_list_name = player.get_tab_list_name();
-
-                let mut player_actions = vec![PlayerAction::AddPlayer {
-                    name: &player.gameprofile.name,
-                    properties,
-                }];
-
-                if base_config.allow_chat_reports {
-                    let initialized = chat_session.session_id != uuid::Uuid::nil()
-                        && !chat_session.public_key.is_empty()
-                        && !chat_session.signature.is_empty();
-                    player_actions.push(PlayerAction::InitializeChat(initialized.then(|| {
-                        InitChat {
-                            session_id: chat_session.session_id,
-                            expires_at: chat_session.expires_at,
-                            public_key: chat_session.public_key.clone(),
-                            signature: chat_session.signature.clone(),
-                        }
-                    })));
-                }
-
-                player_actions.extend([
-                    PlayerAction::UpdateGameMode(VarInt(player.gamemode.load() as i32)),
-                    PlayerAction::UpdateListed(player.tab_list_listed.load(Ordering::Relaxed)),
-                    PlayerAction::UpdateLatency(VarInt(
-                        player.tab_list_latency.load(Ordering::Relaxed),
-                    )),
-                    PlayerAction::UpdateListOrder(VarInt(
-                        player.tab_list_order.load(Ordering::Relaxed),
-                    )),
-                    PlayerAction::UpdateHat(true),
-                ]);
-                drop(chat_session);
-
-                current_player_data.push((&player.gameprofile.id, player_actions));
-
-                // Collect tab_list_names for sending later
-                if tab_list_name.is_some() {
-                    players_tab_list_names.push((player.gameprofile.id, tab_list_name));
-                }
-            }
-
-            let mut action_flags = PlayerInfoFlags::ADD_PLAYER
-                | PlayerInfoFlags::UPDATE_LISTED
-                | PlayerInfoFlags::UPDATE_LATENCY
-                | PlayerInfoFlags::UPDATE_LIST_PRIORITY
-                | PlayerInfoFlags::UPDATE_GAME_MODE
-                | PlayerInfoFlags::UPDATE_HAT;
-            if base_config.allow_chat_reports {
-                action_flags |= PlayerInfoFlags::INITIALIZE_CHAT;
-            }
-
-            let entries = current_player_data
-                .iter()
-                .map(|(id, actions)| java::client::play::Player {
-                    uuid: **id,
-                    actions,
-                })
-                .collect::<Vec<_>>();
-
-            debug!("Sending player info to {}", player.gameprofile.name);
-            client
-                .enqueue_client_packet(&CPlayerInfoUpdate::new(action_flags.bits(), &entries))
-                .await;
-
-            // Send tab_list_names for existing players with custom names
-            for (player_id, tab_list_name) in &players_tab_list_names {
-                if let Some(name) = tab_list_name {
-                    let actions = [PlayerAction::UpdateDisplayName(Some(name))];
-                    let java_player = [pumpkin_protocol::java::client::play::Player {
-                        uuid: *player_id,
-                        actions: &actions,
-                    }];
-                    client
-                        .enqueue_client_packet(&CPlayerInfoUpdate::new(
-                            PlayerInfoFlags::UPDATE_DISPLAY_NAME.bits(),
-                            &java_player,
-                        ))
-                        .await;
-                }
-            }
-        };
-
-        let gameprofile = &player.gameprofile;
-
-        // Spawn the player for every Java client
-        // Bedrock gets `AddPlayer` from the tracker.
-        let spawn_entity = CSpawnEntity::new(
-            entity_id.into(),
-            gameprofile.id,
-            i32::from(EntityType::PLAYER.id).into(),
-            position,
-            pitch,
-            yaw,
-            yaw,
-            0.into(),
-            velocity,
-        );
-
-        self.broadcast_packet_except(&[player.gameprofile.id], &spawn_entity);
 
         // Broadcast metadata to Java players so they can correctly interact with the new player
         let skin_parts = player.config.load().skin_parts;
@@ -3670,10 +3420,6 @@ impl World {
             .iter()
             .filter(|c| c.gameprofile.id != id)
         {
-            Self::with_player_list_entry(existing_player, |java, bedrock| {
-                player.client.try_enqueue_packet_editioned(java, bedrock);
-            });
-
             let config = existing_player.config.load();
             let mut buf = Vec::new();
             {
@@ -4818,61 +4564,14 @@ impl World {
     ///
     /// * `player`: An `Arc<Player>` reference to the player object.
     pub fn add_player(&self, player: &Arc<Player>) -> Result<(), String> {
-        self.players.rcu(|current_list| {
-            let mut new_list = (**current_list).clone();
-            new_list.push(player.clone());
-            new_list
-        });
+        self.add_pending_player(player);
         self.entity_tracker
             .add_entity(&(player.clone() as Arc<dyn EntityBase>), self);
         Ok(())
     }
 
-    /// Tab-list add entry for `player` from its stored state, as Java and Bedrock packets.
-    fn with_player_list_entry<R>(
-        player: &Player,
-        f: impl FnOnce(&CPlayerInfoUpdate<'_>, &CPlayerList) -> R,
-    ) -> R {
-        let profile = &player.gameprofile;
-        let properties = profile.properties.load();
-        let actions = [
-            PlayerAction::AddPlayer {
-                name: &profile.name,
-                properties: &properties,
-            },
-            PlayerAction::UpdateGameMode(VarInt(player.gamemode.load() as i32)),
-            PlayerAction::UpdateListed(player.tab_list_listed.load(Ordering::Relaxed)),
-            PlayerAction::UpdateLatency(VarInt(player.tab_list_latency.load(Ordering::Relaxed))),
-            PlayerAction::UpdateListOrder(VarInt(player.tab_list_order.load(Ordering::Relaxed))),
-            PlayerAction::UpdateHat(true),
-        ];
-        let entry = [pumpkin_protocol::java::client::play::Player {
-            uuid: profile.id,
-            actions: &actions,
-        }];
-        f(
-            &CPlayerInfoUpdate::new(Self::TAB_LIST_ADD_FLAGS, &entry),
-            &player.bedrock_player_list(),
-        )
-    }
-
-    /// Publishes a player from another world -> tab list first, Java drops spawns without it.
+    /// Registers destination entity tracking; online tab entries survive dimension changes.
     pub fn add_arriving_player(&self, player: &Arc<Player>) {
-        let id = player.gameprofile.id;
-        Self::with_player_list_entry(player, |java, bedrock| {
-            self.broadcast_packet_except_editioned(&[id], java, bedrock);
-        });
-        for existing in self
-            .players
-            .load()
-            .iter()
-            .filter(|p| p.gameprofile.id != id)
-        {
-            Self::with_player_list_entry(existing, |java, bedrock| {
-                player.client.try_enqueue_packet_editioned(java, bedrock);
-            });
-        }
-
         self.entity_tracker
             .add_entity(&(player.clone() as Arc<dyn EntityBase>), self);
     }
@@ -4927,11 +4626,10 @@ impl World {
         let mut removed_player: Option<Arc<Player>> = None;
 
         self.players.rcu(|current_list| {
+            removed_player = None;
             let mut new_list = (**current_list).clone();
             // Find the player before we filter them out
-            let pos = new_list
-                .iter()
-                .position(|p| p.gameprofile.id == player.gameprofile.id);
+            let pos = new_list.iter().position(|p| Arc::ptr_eq(p, player));
             if let Some(pos) = pos {
                 removed_player = Some(new_list.remove(pos));
             }
@@ -4940,27 +4638,11 @@ impl World {
         if let Some(ref player) = removed_player {
             self.entity_tracker
                 .remove_entity(player.as_ref() as &dyn EntityBase, self);
-            let uuid = player.gameprofile.id;
             let entity_id = player.entity_id();
 
-            let bedrock_remove_player = CPlayerList {
-                action: CPlayerList::ACTION_REMOVE,
-                entries: vec![PlayerListEntry {
-                    uuid,
-                    entity_unique_id: VarLong(entity_id as i64),
-                    username: player.gameprofile.name.clone(),
-                    xuid: String::new(),
-                    platform_chat_id: String::new(),
-                    build_platform: BuildPlatform::Unknown,
-                    skin: Skin::steve(),
-                    is_teacher: false,
-                    is_host: false,
-                    is_sub_client: false,
-                    player_color: [0, 0, 0, 0],
-                }],
-            };
-
-            self.broadcast_editioned(&CRemovePlayerInfo::new(&[uuid]), &bedrock_remove_player);
+            if fire_event && let Some(server) = self.server.upgrade() {
+                server.remove_player_list_entry(player);
+            }
 
             self.broadcast_editioned(
                 &CRemoveEntities::new(&[entity_id.into()]),

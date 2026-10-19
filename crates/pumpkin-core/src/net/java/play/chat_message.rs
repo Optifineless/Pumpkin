@@ -186,18 +186,21 @@ impl JavaClient {
         *previous = new_session;
         drop(previous);
 
-        server.broadcast_packet_all(&CPlayerInfoUpdate::new(
-            PlayerInfoFlags::INITIALIZE_CHAT.bits(),
-            &[pumpkin_protocol::java::client::play::Player {
-                uuid: player.gameprofile.id,
-                actions: &[PlayerAction::InitializeChat(Some(InitChat {
-                    session_id: session.session_id,
-                    expires_at: session.expires_at,
-                    public_key: session.public_key.clone(),
-                    signature: session.key_signature.clone(),
-                }))],
-            }],
-        ));
+        server.broadcast_player_info(
+            player,
+            &CPlayerInfoUpdate::new(
+                PlayerInfoFlags::INITIALIZE_CHAT.bits(),
+                &[pumpkin_protocol::java::client::play::Player {
+                    uuid: player.gameprofile.id,
+                    actions: &[PlayerAction::InitializeChat(Some(InitChat {
+                        session_id: session.session_id,
+                        expires_at: session.expires_at,
+                        public_key: session.public_key.clone(),
+                        signature: session.key_signature.clone(),
+                    }))],
+                }],
+            ),
+        );
     }
 
     /// Runs vanilla checks for a valid player session
