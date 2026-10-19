@@ -838,6 +838,18 @@ Callback reconciliation retains changed attribute identities in the existing equ
 
 PR #141 round 6: Java and Bedrock placements claim the pinned source after cancellable placement callbacks and before installing the block. Moved or replaced stacks reject placement and correct predicted blocks; a changed target refunds the claim without overwriting callback stock. Block-entity components come only from the claimed source, and Creative keeps its item. Mirrors vanilla 26.3 `BlockItem.place/placeBlock/updateBlockEntityComponents` and `ServerGamePacketListenerImpl.handleUseItemOn`; Pumpkin claims before effects to preserve vanilla's same-stack payment across callbacks. API 8 (same version); native plugins calling `BlockRegistry::place_block` must stop performing an additional payment. Saved data and Wasm WIT are unchanged. In-game verification: **Not yet**.
 
+## Pitcher-crop bonemeal admission (#10)
+
+Pitcher-crop bonemeal now shares vanilla 26.3 `PitcherCropBlock.canGrow` checks
+for age, light, upper build height and available space. It resolves clicks on
+either half, rechecks after `BlockFertilizeEvent`, and keeps an obstructing block
+and the bone meal unchanged when growth is rejected. In-game verification: Not yet.
+
+Play test: Bone meal an age-two pitcher crop with open space above it; expect a
+two-block crop and one bone meal used. Put a diamond block above an age-two crop
+and bone meal it; expect the diamond, crop age and bone-meal count to stay the
+same. Bone meal the upper half of an age-three crop; expect it to reach age four.
+
 ## PR #177 glass-bottle source-water pickup
 
 Glass bottles use the nearest block-outline or source-fluid hit with the main-hand collision context and the player's block interaction range. Only a source-water block can be collected; flowing water and waterlogged-only fluid remain unchanged. The cancellable pre-use event sees the same hit used by the bottle action. World-border and spawn protection are checked before effects; the neutral fill sound, `FLUID_PICKUP`, statistic and exact-slot bottle transaction follow vanilla 26.3 order. Dragon-breath pickup keeps precedence, and overflow potion drops use the player's drop position through `create_filled_result`. Mirrors `BottleItem.use/turnBottleIntoItem`, `Item.getPlayerPOVHitResult`, `BlockGetter.clip` and `ServerLevel.mayInteract`. No public plugin API changes. In-game verification: **Not yet**.

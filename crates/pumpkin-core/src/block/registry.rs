@@ -565,6 +565,10 @@ impl BlockRegistry {
                 if event.cancelled {
                     return false;
                 }
+                // PitcherCropBlock rechecks its height, light and second half after listeners run.
+                if block == &Block::PITCHER_CROP && !behaviour.is_valid_bonemeal_target(args) {
+                    return false;
+                }
             }
             behaviour.perform_bonemeal(args);
         }
