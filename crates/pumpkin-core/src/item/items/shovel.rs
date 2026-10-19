@@ -83,6 +83,9 @@ impl ItemBehaviour for ShovelItem {
             let mut campfire_props =
                 CampfireLikeProperties::from_state_id(world.get_block_state(&location).id);
             if campfire_props.lit {
+                if player.gamemode.load() != GameMode::Creative {
+                    let _ = item.damage_item(1);
+                }
                 world.sync_world_event(WorldEvent::SoundExtinguishFire, location, 0);
 
                 campfire_props.lit = false;

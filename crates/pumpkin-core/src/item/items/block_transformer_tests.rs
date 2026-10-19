@@ -13,13 +13,13 @@ use crate::{
 use pumpkin_data::{
     Block,
     biome::Biome,
-    block_properties::{Axis, PaleOakWoodLikeProperties},
+    block_properties::{Axis, CampfireLikeProperties, PaleOakWoodLikeProperties},
     data_component_impl::BlocksAttacksImpl,
     item::Item,
     item_stack::ItemStack,
 };
 use pumpkin_protocol::{VarInt, java::server::play::SUseItemOn};
-use pumpkin_util::{Hand, math::position::BlockPos, math::vector3::Vector3};
+use pumpkin_util::{GameMode, Hand, math::position::BlockPos, math::vector3::Vector3};
 
 fn fixture() -> (
     tempfile::TempDir,
@@ -264,6 +264,59 @@ async fn b1019_g04_java_shovel_creates_grass_paths_in_both_hands() {
             "successful iron shovels lose one durability"
         );
     }
+
+    world.level.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn java_shovel_extinguishes_campfires_with_survival_durability_only() {
+    let (_directory, server, world, player) = fixture();
+
+    let survival_position = BlockPos::new(0, 64, 1);
+    let mut survival_lit = CampfireLikeProperties::default(&Block::CAMPFIRE);
+    survival_lit.lit = true;
+    world.set_block_state(
+        &survival_position,
+        survival_lit.to_state_id(&Block::CAMPFIRE),
+        BlockFlags::NOTIFY_ALL,
+    );
+    hold(&player, Hand::Right, &Item::IRON_SHOVEL);
+    use_on(&player, &server, survival_position, Hand::Right, 1, 1);
+    assert!(
+        !CampfireLikeProperties::from_state_id(world.get_block_state_id(&survival_position)).lit
+    );
+    assert_eq!(damage(&player, Hand::Right), 1);
+
+    let creative_position = BlockPos::new(1, 64, 1);
+    let mut creative_lit = CampfireLikeProperties::default(&Block::SOUL_CAMPFIRE);
+    creative_lit.lit = true;
+    world.set_block_state(
+        &creative_position,
+        creative_lit.to_state_id(&Block::SOUL_CAMPFIRE),
+        BlockFlags::NOTIFY_ALL,
+    );
+    player.player.gamemode.store(GameMode::Creative);
+    hold(&player, Hand::Right, &Item::IRON_SHOVEL);
+    use_on(&player, &server, creative_position, Hand::Right, 1, 2);
+    assert!(
+        !CampfireLikeProperties::from_state_id(world.get_block_state_id(&creative_position)).lit
+    );
+    assert_eq!(damage(&player, Hand::Right), 0);
+
+    let unlit_position = BlockPos::new(2, 64, 1);
+    let mut unlit = CampfireLikeProperties::default(&Block::CAMPFIRE);
+    unlit.lit = false;
+    let unlit_state = unlit.to_state_id(&Block::CAMPFIRE);
+    world.set_block_state(&unlit_position, unlit_state, BlockFlags::NOTIFY_ALL);
+    player.player.gamemode.store(GameMode::Survival);
+    hold(&player, Hand::Right, &Item::IRON_SHOVEL);
+    use_on(&player, &server, unlit_position, Hand::Right, 1, 3);
+    assert_eq!(
+        world.get_block_state_id(&unlit_position),
+        unlit_state,
+        "an unlit campfire is the no-op negative control"
+    );
+    assert_eq!(damage(&player, Hand::Right), 0);
 
     world.level.shutdown().await.unwrap();
 }
