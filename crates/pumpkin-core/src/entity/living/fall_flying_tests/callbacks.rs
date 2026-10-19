@@ -78,6 +78,75 @@ async fn b1019_g15_fall_distance_uses_accepted_glide_motion() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g15_start_flight_requires_a_usable_glider_before_fall_distance_clamp() {
+    use pumpkin_protocol::java::server::play::{
+        Action, SPlayerCommand, SPlayerPosition, SPlayerRotation,
+    };
+
+    for has_glider in [false, true] {
+        let f = Fixture::new();
+        if !has_glider {
+            remove_chest(&f.owner.player, &f.server, SlotActionType::QuickMove);
+        }
+
+        let player = &f.owner.player;
+        let position = player.position();
+        dispatch(
+            player,
+            &f.server,
+            &SPlayerPosition {
+                position: position + Vector3::new(0.0, -8.0, 0.0),
+                collision: 0,
+            },
+        );
+        assert_eq!(player.living_entity.fall_distance.load(), 8.0);
+        dispatch(
+            player,
+            &f.server,
+            &SPlayerRotation {
+                yaw: 0.0,
+                pitch: 0.0,
+                ground: false,
+            },
+        );
+        assert_eq!(player.get_known_movement(), Vector3::default());
+        dispatch(
+            player,
+            &f.server,
+            &SPlayerCommand {
+                entity_id: player.entity_id().into(),
+                action: Action::StartFlyingElytra,
+                jump_boost: VarInt(0),
+            },
+        );
+        let started_flying = player.get_entity().is_fall_flying();
+        f.tick(1);
+        let fall_distance_after_tick = player.living_entity.fall_distance.load();
+        dispatch(
+            player,
+            &f.server,
+            &SPlayerPosition {
+                position: player.position(),
+                collision: 1,
+            },
+        );
+
+        assert_eq!(
+            player.living_entity.health.load(),
+            if has_glider { 20.0 } else { 15.0 },
+            "a rejected glide start must preserve the full eight-block fall"
+        );
+        assert_eq!(started_flying, has_glider, "start packet admission");
+        assert_eq!(
+            fall_distance_after_tick,
+            if has_glider { 1.0 } else { 8.0 },
+            "only a valid glide start may clamp fall distance"
+        );
+        f.close().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g15_saved_fall_flying_retains_meaning_and_restarts_runtime_cadence() {
     let mut f = Fixture::new();
     f.start();
