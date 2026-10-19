@@ -2,6 +2,41 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Specialized container menus (#273, #276, #284, #285, #286)
+
+Beacons enforce the main-hand lowercase lock predicate, retain Spectator access,
+and display their complete custom name. Nonempty legacy uppercase `Lock` strings
+remain compatible through save/reload and migrate to canonical predicates; empty
+or absent old locks default to unlocked. Native legacy name/key writes still
+replace their loaded metadata. Name and lock item components survive placement
+and drops. Existing saved effects and `Levels` keep their meaning.
+
+Beacon shift-click deposits only an eligible singleton into an empty payment
+slot; other stacks move between inventory and hotbar through the existing owner
+transactions. Closing detaches unused payment once and schedules its normal drop
+after menu guards release, even when inventory has room. Bedrock crafter open,
+direct-open and close mappings use dedicated container type 36 for supported
+Bedrock 1.26.51/protocol 2193. Java opening and other window mappings are unchanged.
+Mirrors vanilla 26.3 `BeaconBlockEntity.createMenu/loadAdditional/saveAdditional`,
+`LockCode.canUnlock`, and `BeaconMenu.quickMoveStack/removed`; Bedrock wire type
+comes from Cloudburst `ContainerType.CRAFTER`, independently of Java.
+
+API 8 (same version): `BeaconBlockEntity` gains private component metadata state;
+rebuild native plugins. Existing public legacy field types and constructor remain
+source compatible. Observed legacy field replacements supersede loaded canonical
+metadata. WIT and the native API version are unchanged. The broader upstream
+beacon port #3860 and component port #3507 were reviewed; beam scanning, saved
+level behavior and pending Bedrock request transactions are outside this change.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: try a named locked beacon with no key, a wrong/offhand key and the
+matching main-hand key; expect denial then its styled title. Shift-click ordinary
+items, stacked payments and single payments; expect inventory/hotbar fallback or
+one payment deposit. Close an unpaid menu with room and full inventory; expect one
+ground item and no duplicate on closing again. Open/reopen a crafter on Bedrock;
+expect its dedicated window and original contents. Record the key/title cases,
+slot movements, close/drop sequence and Bedrock crafter screen before opening a PR.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so
@@ -908,7 +943,7 @@ G10 implementation: Codex (GPT-6 Luna).
 | [#159](https://github.com/Optifineless/Pumpkin/issues/159) Always Active command blocks capture the predecessor predicate before the first scheduled activation and publish that state with the replacement block entity. New activations mirror vanilla 26.3 `CommandBlockEntity.setAutomatic/onModeSwitch/scheduleTick`, invoked in `ServerGamePacketListenerImpl.handleSetCommandBlock`; `CommandBlock.tick` consumes the captured predicate for this tick before refreshing the next repeating predicate. Unchanged automatic saves and switches away from repeating preserve any queued predicate without scheduling a new activation. The reporter's sustained Always Active repeating silence remains unconfirmed and is not established as fixed by this scoped repair. | Not yet |
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also fixes the existing-knot downcast used by player-to-knot transfers. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved` and `LeadItem.bindPlayerMobs`; species-specific `canBeLeashed` eligibility is not yet ported. | Not yet |
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also applies species `canBeLeashed` rules before transfers, avoids publishing fence knots for ineligible leashes, treats cancelled knot shearing as handled without durability loss, and skips leash distance physics across worlds. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved`, `LeadItem.bindPlayerMobs`, `Leashable.canHaveALeashAttachedTo/canBeLeashed/tickLeash`, and `Mob.canBeLeashed`. | Not yet |
-| [#63](https://github.com/Optifineless/Pumpkin/issues/63) Right-clicking a beacon cannot open its payment menu | Beacon interactions open a per-viewer menu for powered and unpowered beacons. The menu accepts only singleton items from `minecraft:beacon_payment_items`, validates effect selections, syncs levels and encoded effects, and returns unpaid payment on close, replacement or disconnect. Payment remains transient and is not added to beacon saves. Paid selections refresh the saved block-entity image after releasing the menu lock; effect pairs are committed and captured together, following vanilla 26.3 `BeaconMenu.updateEffects`. Native API 8 stays at the same version; rebuild native plugins for the added runtime fields. Implemented by Codex (GPT-6 Luna), with the PR #213 round 3 persistence fix by Codex (GPT-6.1 Sol). | Not yet |
+| [#63](https://github.com/Optifineless/Pumpkin/issues/63) Right-clicking a beacon cannot open its payment menu | Beacon interactions open a per-viewer menu for powered and unpowered beacons. The menu accepts only singleton items from `minecraft:beacon_payment_items`, validates effect selections, syncs levels and encoded effects, and drops unpaid payment on close, replacement or disconnect. Payment remains transient and is not added to beacon saves. Paid selections refresh the saved block-entity image after releasing the menu lock; effect pairs are committed and captured together, following vanilla 26.3 `BeaconMenu.updateEffects`. Native API 8 stays at the same version; rebuild native plugins for the added runtime fields. Implemented by Codex (GPT-6 Luna), with the PR #213 round 3 persistence fix by Codex (GPT-6.1 Sol). | Not yet |
 
 PR #227 owner-review follow-up. No native plugin API or saved-data meaning changes. Bedrock axe transformation sounds and particles remain a backlog item because no existing Bedrock transformation mapping is available. In-game verification: **Not yet**.
 

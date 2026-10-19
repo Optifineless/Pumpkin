@@ -6,12 +6,15 @@ use pumpkin_data::{item_stack::ItemStack, screen::WindowType};
 
 use crate::{
     player::player_inventory::PlayerInventory,
-    screen_handler::{
-        InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour, ScreenProperty, offer_or_drop_stack,
-    },
+    screen_handler::{InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour, ScreenProperty},
     slot::NormalSlot,
     window_property::PropertyDelegate,
 };
+
+const INV_SLOT_START: i32 = 1;
+const INV_SLOT_END: i32 = 28;
+const USE_ROW_SLOT_START: i32 = 28;
+const USE_ROW_SLOT_END: i32 = 37;
 
 /// Whether an item belongs to the vanilla beacon payment tag.
 #[must_use]
@@ -174,55 +177,39 @@ impl ScreenHandler for BeaconScreenHandler {
         self.inventory.on_close();
         let payment = self.inventory.remove_stack(Self::PAYMENT_SLOT);
         if !payment.is_empty() {
-            offer_or_drop_stack(player, payment);
+            // BeaconMenu.removed always drops unused payment; the player defers the spawn.
+            player.drop_item(payment, false);
         }
     }
 
-    /// Quick move logic specifically for the beacon UI.
-    ///
-    /// - From beacon payment slot (0): Move to player inventory
-    /// - From player inventory (1+): Move to beacon payment slot
+    /// Mirrors `BeaconMenu.quickMoveStack` through the existing backing-owner transfer.
     fn quick_move(&mut self, player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
-        let mut stack_left = ItemStack::EMPTY.clone();
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
-
-        if slot.has_stack() {
-            let mut slot_stack = slot.get_stack();
-            stack_left = slot_stack.clone();
-
-            if slot_index == Self::PAYMENT_SLOT as i32 {
-                // Move from the single beacon slot to the player inventory (slots 1 to end)
-                if !self.transfer_item(
-                    player,
-                    slot.as_ref(),
-                    &mut slot_stack,
-                    (1, self.get_behaviour().slots.len() as i32, true),
-                    &mut stack_left,
-                ) {
-                    return ItemStack::EMPTY.clone();
-                }
-            } else {
-                if slot_stack.item_count != 1 || !is_beacon_payment_item(&slot_stack) {
-                    return ItemStack::EMPTY.clone();
-                }
-
-                // Move from player inventory into the beacon payment slot (slot 0)
-                if !self.transfer_item(
-                    player,
-                    slot.as_ref(),
-                    &mut slot_stack,
-                    (
-                        Self::PAYMENT_SLOT as i32,
-                        Self::PAYMENT_SLOT as i32 + 1,
-                        false,
-                    ),
-                    &mut stack_left,
-                ) {
-                    return ItemStack::EMPTY.clone();
-                }
-            }
+        if !slot.has_stack() {
+            return ItemStack::EMPTY.clone();
         }
-
-        stack_left
+        let mut stack = slot.get_stack();
+        let mut clicked = stack.clone();
+        let payment = &self.get_behaviour().slots[Self::PAYMENT_SLOT];
+        let range = if slot_index == Self::PAYMENT_SLOT as i32 {
+            (INV_SLOT_START, USE_ROW_SLOT_END, true)
+        } else if !payment.has_stack() && payment.can_insert(&stack) && stack.item_count == 1 {
+            (
+                Self::PAYMENT_SLOT as i32,
+                Self::PAYMENT_SLOT as i32 + 1,
+                false,
+            )
+        } else if (INV_SLOT_START..INV_SLOT_END).contains(&slot_index) {
+            (USE_ROW_SLOT_START, USE_ROW_SLOT_END, false)
+        } else if (USE_ROW_SLOT_START..USE_ROW_SLOT_END).contains(&slot_index) {
+            (INV_SLOT_START, INV_SLOT_END, false)
+        } else {
+            (INV_SLOT_START, USE_ROW_SLOT_END, false)
+        };
+        if !self.transfer_item(player, slot.as_ref(), &mut stack, range, &mut clicked) {
+            return ItemStack::EMPTY.clone();
+        }
+        // These concrete slots only mark dirty on take; transfer already notifies their owners.
+        clicked
     }
 }

@@ -1,7 +1,6 @@
 use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
 
-use pumpkin_data::translation;
 use pumpkin_inventory::beacon_screen_handler::create_beacon_handler;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{
@@ -56,8 +55,21 @@ impl ScreenHandlerFactory for BeaconScreenFactory {
         &self,
         sync_id: u8,
         player_inventory: &Arc<PlayerInventory>,
-        _player: &dyn InventoryPlayer,
+        player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
+        let player = player
+            .as_any()
+            .downcast_ref::<crate::entity::player::Player>()?;
+        let world = self.world.upgrade()?;
+        // BeaconBlockEntity.createMenu checks the main-hand key after the open callback.
+        if !crate::block::entities::container_lock::can_open_named(
+            self.entity.as_ref(),
+            player,
+            &world,
+            self.get_display_name(),
+        ) {
+            return None;
+        }
         let beacon_data: Arc<dyn PropertyDelegate> =
             Arc::new(BeaconPropertyDelegate(self.entity.clone()));
         let mut concrete_handler = create_beacon_handler(sync_id, player_inventory, beacon_data);
@@ -65,7 +77,7 @@ impl ScreenHandlerFactory for BeaconScreenFactory {
         let world = self.world.clone();
         let entity = self.entity.clone();
         // BeaconMenu.stillValid: a broken or replaced beacon closes the menu, so the payment
-        // is returned instead of being spent on a detached block entity.
+        // is dropped instead of being spent on a detached block entity.
         concrete_handler.validity_check = Some(Box::new(move |player| {
             let Some(player) = player
                 .as_any()
@@ -89,10 +101,10 @@ impl ScreenHandlerFactory for BeaconScreenFactory {
     }
 
     fn get_display_name(&self) -> TextComponent {
-        pumpkin_macros::translate_cross!(
-            translation::java::CONTAINER_BEACON,
-            translation::bedrock::CONTAINER_BEACON
-        )
+        self.entity
+            .as_any()
+            .downcast_ref::<BeaconBlockEntity>()
+            .map_or_else(TextComponent::empty, BeaconBlockEntity::menu_display_name)
     }
 }
 

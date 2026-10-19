@@ -158,3 +158,6 @@ mod ladder_tests;
 
 #[cfg(test)]
 mod lanterns_tests;
+
+#[cfg(test)]
+mod crafter_window_tests;

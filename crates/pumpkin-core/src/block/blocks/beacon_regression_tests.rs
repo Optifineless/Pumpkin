@@ -300,7 +300,7 @@ async fn beacon_click_validation_and_set_beacon_packet_sync_properties() {
     assert_eq!(payment.get_stack(0).item_count, 1);
     assert_eq!(cursor_stack(&fixture.player.player).item_count, 1);
 
-    // Quick move accepts only a singleton eligible stack, matching BeaconMenu.
+    // A multi-count payment uses the normal hotbar-to-main fallback.
     payment.remove_stack(0);
     fixture
         .player
@@ -314,7 +314,12 @@ async fn beacon_click_validation_and_set_beacon_packet_sync_properties() {
         0,
         SlotActionType::QuickMove,
     );
-    assert_eq!(fixture.player.player.inventory.get_stack(0).item_count, 2);
+    assert!(fixture.player.player.inventory.get_stack(0).is_empty());
+    assert_eq!(
+        fixture.player.player.inventory.get_stack(9).item,
+        &Item::DIAMOND
+    );
+    assert_eq!(fixture.player.player.inventory.get_stack(9).item_count, 2);
     assert!(payment.get_stack(0).is_empty());
     payment.set_stack(0, ItemStack::new(1, &Item::EMERALD));
 
@@ -400,18 +405,20 @@ async fn simultaneous_beacon_menus_own_separate_payment_inventories() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn beacon_unpaid_payment_returns_once_on_close_replacement_and_disconnect() {
+async fn beacon_unpaid_payment_drops_once_on_close_replacement_and_disconnect() {
     let fixture = Fixture::new(1);
     fixture.use_beacon();
     beacon_payment(&fixture.player.player).set_stack(0, ItemStack::new(1, &Item::EMERALD));
     fixture.player.player.close_handled_screen();
     fixture.player.player.close_handled_screen();
-    let after_close = emerald_count(&fixture.player.player);
+    let after_close = menu_close::ground_emerald_count(&fixture.world);
+    assert_eq!(emerald_count(&fixture.player.player), 0);
 
     fixture.use_beacon();
     beacon_payment(&fixture.player.player).set_stack(0, ItemStack::new(1, &Item::EMERALD));
-    fixture.use_beacon(); // Opening the replacement closes and returns the first menu's item.
-    let after_replacement = emerald_count(&fixture.player.player);
+    fixture.use_beacon(); // Opening the replacement closes and drops the first menu's item.
+    let after_replacement = menu_close::ground_emerald_count(&fixture.world);
+    assert_eq!(emerald_count(&fixture.player.player), 0);
     assert!(
         beacon_payment(&fixture.player.player)
             .get_stack(0)
@@ -420,7 +427,8 @@ async fn beacon_unpaid_payment_returns_once_on_close_replacement_and_disconnect(
 
     beacon_payment(&fixture.player.player).set_stack(0, ItemStack::new(1, &Item::EMERALD));
     fixture.player.player.remove().await;
-    let after_disconnect = emerald_count(&fixture.player.player);
+    let after_disconnect = menu_close::ground_emerald_count(&fixture.world);
+    assert_eq!(emerald_count(&fixture.player.player), 0);
     assert_eq!(
         (after_close, after_replacement, after_disconnect),
         (1, 2, 3)
@@ -523,7 +531,8 @@ async fn beacon_open_menu_payment_stays_transient_across_chunk_save_and_reload()
             .get_stack(0)
             .is_empty()
     );
-    assert_eq!(emerald_count(&fixture.player.player), 1);
+    assert_eq!(menu_close::ground_emerald_count(&fixture.world), 1);
+    assert_eq!(emerald_count(&fixture.player.player), 0);
     fixture.finish().await;
 }
 
@@ -553,9 +562,10 @@ async fn beacon_broken_while_open_keeps_payment_and_invalidates_menu() {
             .can_use(fixture.player.player.as_ref())
     );
 
-    // The invalid menu closes through the normal path and hands the payment back.
+    // The invalid menu closes through the normal path and drops the payment.
     fixture.player.player.close_handled_screen();
-    assert_eq!(emerald_count(&fixture.player.player), 1);
+    assert_eq!(menu_close::ground_emerald_count(&fixture.world), 1);
+    assert_eq!(emerald_count(&fixture.player.player), 0);
     fixture.finish().await;
 }
 
@@ -564,3 +574,12 @@ mod persistence;
 
 #[path = "beacon_followup_tests.rs"]
 mod followups;
+
+#[path = "beacon_menu_close_tests.rs"]
+mod menu_close;
+
+#[path = "beacon_shift_click_tests.rs"]
+mod shift_click;
+
+#[path = "beacon_menu_access_tests.rs"]
+mod menu_access;

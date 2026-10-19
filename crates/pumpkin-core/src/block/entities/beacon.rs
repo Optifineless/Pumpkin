@@ -1,4 +1,4 @@
-use pumpkin_data::data_component_impl::IDSetContent;
+use pumpkin_data::data_component_impl::{CustomNameImpl, IDSetContent, LockImpl};
 use pumpkin_data::tag::Taggable;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,10 +12,20 @@ use pumpkin_util::sync::LockClass;
 use crate::block::entities::{BlockEntity, PropertyDelegate};
 use crate::world::World;
 
+#[path = "beacon_menu.rs"]
+mod menu;
+
 enum BeaconEffects {}
 
 impl LockClass for BeaconEffects {
     const NAME: &'static str = "beacon effects";
+    const LEVEL: u8 = 40;
+}
+
+enum BeaconMenuMetadata {}
+
+impl LockClass for BeaconMenuMetadata {
+    const NAME: &'static str = "beacon menu metadata";
     const LEVEL: u8 = 40;
 }
 
@@ -32,6 +42,9 @@ pub struct BeaconBlockEntity {
     // Vanilla Parity Fields
     pub custom_name: Mutex<Option<String>>,
     pub lock_key: Mutex<Option<String>>,
+    canonical_name: pumpkin_util::sync::Mutex<Option<(String, CustomNameImpl)>, BeaconMenuMetadata>,
+    canonical_lock:
+        pumpkin_util::sync::Mutex<Option<(Option<String>, LockImpl)>, BeaconMenuMetadata>,
     pub last_check_y: AtomicI32,
 }
 
@@ -94,6 +107,8 @@ impl BeaconBlockEntity {
             checking_beam: AtomicBool::new(false),
             custom_name: Mutex::new(None),
             lock_key: Mutex::new(None),
+            canonical_name: pumpkin_util::sync::Mutex::new(None),
+            canonical_lock: pumpkin_util::sync::Mutex::new(None),
             last_check_y: AtomicI32::new(position.0.y - 1),
         }
     }
@@ -353,6 +368,18 @@ impl PropertyDelegate for BeaconBlockEntity {
 }
 
 impl BlockEntity for BeaconBlockEntity {
+    fn container_lock(&self) -> Option<LockImpl> {
+        self.menu_lock(false)
+    }
+
+    fn collect_item_components(&self, stack: &mut pumpkin_data::item_stack::ItemStack) {
+        self.collect_menu_components(stack);
+    }
+
+    fn apply_item_components(&self, stack: &pumpkin_data::item_stack::ItemStack) {
+        self.apply_menu_components(stack);
+    }
+
     fn resource_location(&self) -> &'static str {
         Self::ID
     }
@@ -384,11 +411,11 @@ impl BlockEntity for BeaconBlockEntity {
             .or_else(|| nbt.get_int("secondary_effect"))
             .unwrap_or(-1);
         let levels = nbt.get_int("Levels").unwrap_or(0);
-        let custom_name = nbt
-            .get_string("CustomName")
-            .or_else(|| nbt.get_string("custom_name"))
-            .map(std::string::ToString::to_string);
+        let (custom_name, canonical_name) = menu::read_custom_name(nbt);
         let lock_key = nbt.get_string("Lock").map(std::string::ToString::to_string);
+        let canonical_lock = super::container_lock::ContainerLock::from_nbt(nbt)
+            .get()
+            .map(|lock| (lock_key.clone(), lock));
 
         Self {
             position,
@@ -401,6 +428,8 @@ impl BlockEntity for BeaconBlockEntity {
             checking_beam: AtomicBool::new(false),
             custom_name: Mutex::new(custom_name),
             lock_key: Mutex::new(lock_key),
+            canonical_name: pumpkin_util::sync::Mutex::new(canonical_name),
+            canonical_lock: pumpkin_util::sync::Mutex::new(canonical_lock),
             last_check_y: AtomicI32::new(position.0.y - 1),
         }
     }
@@ -423,20 +452,7 @@ impl BlockEntity for BeaconBlockEntity {
         }
         nbt.put_int("Levels", self.levels.load(Ordering::Relaxed));
 
-        if let Some(name) = &*self
-            .custom_name
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-        {
-            nbt.put_string("CustomName", name.clone());
-        }
-        if let Some(lock) = &*self
-            .lock_key
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-        {
-            nbt.put_string("Lock", lock.clone());
-        }
+        self.write_menu_nbt(nbt, false);
     }
 
     fn tick(&self, world: &Arc<World>) {
@@ -470,16 +486,7 @@ impl BlockEntity for BeaconBlockEntity {
             }
         }
         nbt.put_int("Levels", self.levels.load(Ordering::Relaxed));
-        if let Ok(name) = self.custom_name.try_lock()
-            && let Some(ref name) = *name
-        {
-            nbt.put_string("CustomName", name.clone());
-        }
-        if let Ok(lock) = self.lock_key.try_lock()
-            && let Some(ref lock) = *lock
-        {
-            nbt.put_string("Lock", lock.clone());
-        }
+        self.write_menu_nbt(&mut nbt, true);
         Some(nbt)
     }
 

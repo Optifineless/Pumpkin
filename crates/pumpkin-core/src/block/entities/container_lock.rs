@@ -48,6 +48,15 @@ pub fn can_open(
     world: &World,
     name: &'static str,
 ) -> bool {
+    can_open_named(entity, player, world, TextComponent::translate(name, []))
+}
+
+pub(crate) fn can_open_named(
+    entity: &dyn BlockEntity,
+    player: &Player,
+    world: &World,
+    name: TextComponent,
+) -> bool {
     // RandomizableContainerBlockEntity.canOpen and LockCode.canUnlock.
     let spectator = player.gamemode.load() == GameMode::Spectator;
     if spectator {
@@ -59,7 +68,7 @@ pub fn can_open(
     if !allowed {
         // BaseContainerBlockEntity.sendChestLockedNotifications.
         player.send_system_message_raw(
-            &TextComponent::translate("container.isLocked", [TextComponent::translate(name, [])]),
+            &TextComponent::translate("container.isLocked", [name]),
             true,
         );
         world.play_sound(

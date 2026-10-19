@@ -126,6 +126,11 @@ async fn beacon_paid_selection_preserves_contended_persistent_fields_on_reload()
         let fixture = Fixture::new(4);
         *fixture.beacon.custom_name.lock().unwrap() = Some("Named beacon".into());
         *fixture.beacon.lock_key.lock().unwrap() = Some("saved lock".into());
+        let mut key = ItemStack::new(1, &Item::PAPER);
+        key.set_data_component(pumpkin_data::data_component_impl::CustomNameImpl {
+            name: pumpkin_util::text::TextComponent::text("saved lock"),
+        });
+        fixture.player.player.inventory.set_stack(0, key);
         fixture.use_beacon();
         let payment = pay(&fixture.player.player);
         let beacon = fixture.beacon.clone();

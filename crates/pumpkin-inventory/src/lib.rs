@@ -67,6 +67,8 @@ pub mod viewer;
 pub mod window_property;
 
 #[cfg(test)]
+mod beacon_menu_tests;
+#[cfg(test)]
 mod ext_review_tests;
 #[cfg(test)]
 mod merchant_callback_tests;

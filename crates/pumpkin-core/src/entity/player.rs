@@ -4753,6 +4753,7 @@ impl Player {
             let window_type = handler.window_type();
             let bedrock_window_type = match window_type {
                 Some(WindowType::Crafting) => 1,
+                Some(WindowType::Crafter3x3) => 36,
                 Some(WindowType::Furnace) => 2,
                 Some(WindowType::Enchantment) => 3,
                 Some(WindowType::BrewingStand) => 4,
@@ -4933,6 +4934,7 @@ impl Player {
 
             let bedrock_window_type = match window_type {
                 WindowType::Crafting => 1,
+                WindowType::Crafter3x3 => 36,
                 WindowType::Furnace => 2,
                 WindowType::Enchantment => 3,
                 WindowType::BrewingStand => 4,
@@ -5003,6 +5005,7 @@ impl Player {
 
         let bedrock_window_type = match window_type {
             WindowType::Crafting => 1,
+            WindowType::Crafter3x3 => 36,
             WindowType::Furnace => 2,
             WindowType::Enchantment => 3,
             WindowType::BrewingStand => 4,
