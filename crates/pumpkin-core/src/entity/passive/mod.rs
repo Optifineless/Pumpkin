@@ -63,6 +63,7 @@ mod rabbit_stroll;
 mod rabbit_review_tests;
 
 mod dolphin_movement;
+mod dolphin_swim_with_player;
 
 #[cfg(test)]
 mod movement_integration_tests;
@@ -72,3 +73,6 @@ mod movement_timing_tests;
 
 #[cfg(test)]
 mod movement_review_tests;
+
+#[cfg(test)]
+mod dolphin_swim_with_player_tests;

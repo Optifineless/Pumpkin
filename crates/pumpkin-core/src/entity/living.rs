@@ -794,7 +794,7 @@ impl LivingEntity {
     }
 
     pub fn add_effect(&self, effect: Effect) {
-        self.add_effect_impl(effect);
+        self.add_effect_impl(effect, || true);
     }
 
     /// Sends an effect packet to every player tracking this entity, mirroring

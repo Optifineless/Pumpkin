@@ -125,8 +125,11 @@ fn absorption_on_effect_started(current: f32, amplifier: u8, maximum: f32) -> f3
 }
 
 impl LivingEntity {
-    pub(super) fn add_effect_impl(&self, effect: Effect) {
-        let _owner = self.own_damage();
+    pub(crate) fn add_effect_if(&self, effect: Effect, still_valid: impl FnOnce() -> bool) {
+        self.add_effect_impl(effect, still_valid);
+    }
+
+    pub(super) fn add_effect_impl(&self, effect: Effect, still_valid: impl FnOnce() -> bool) {
         // LivingEntity.addEffect / canBeAffected checks immunities before updating.
         // WitherBoss.addEffect and EnderDragon.addEffect reject the whole operation.
         if self.entity.entity_type == &EntityType::WITHER
@@ -148,6 +151,12 @@ impl LivingEntity {
                 .fire_blocking(&server, &mut effect_event);
         }
         if effect_event.cancelled {
+            return;
+        }
+
+        // Revalidate after event dispatch, then own only the synchronous state commit.
+        let owner = self.own_damage();
+        if !still_valid() {
             return;
         }
 
@@ -184,11 +193,13 @@ impl LivingEntity {
                 }
             }
         };
+        drop(owner);
         if let Some(updated) = updated {
             self.on_effect_updated(&updated);
         }
         // LivingEntity.addEffect invokes the incoming effect's start hook even without an upgrade.
         if incoming_type == &StatusEffect::ABSORPTION {
+            let _owner = self.own_damage();
             self.set_absorption(absorption_on_effect_started(
                 self.absorption.load(),
                 incoming_amplifier,
@@ -198,73 +209,69 @@ impl LivingEntity {
     }
 
     fn on_effect_updated(&self, effect: &Effect) {
-        let _owner = self.own_damage();
-        // LivingEntity.onEffectAdded / onEffectUpdated reapplies modifiers only on a change.
+        // LivingEntity.onEffectAdded / onEffectUpdated mutates before publishing packets.
+        let touched_attrs = {
+            let _owner = self.own_damage();
+            let mut touched_attrs = Vec::new();
 
-        // Effects that modify attributes (ex. speed) should also update the
-        // entity's attribute instances (server-side) and then notify clients.
-        if !effect.effect_type.attribute_modifiers.is_empty() {
-            // Apply each attribute modifier into the local AttributeInstance
-            for m in effect.effect_type.attribute_modifiers {
-                let id = m.id.to_string();
-                let op = match m.operation {
+            // Effects that modify attributes (ex. speed) reapply their local modifiers.
+            for modifier in effect.effect_type.attribute_modifiers {
+                let id = modifier.id.to_string();
+                let operation = match modifier.operation {
                     Operation::AddValue => ModifierOperation::Add,
                     Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
                     Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
                 };
-                let scaled_amount = m.base_value * (f64::from(effect.amplifier) + 1.);
-                let mod_inst = Modifier {
+                let amount = modifier.base_value * (f64::from(effect.amplifier) + 1.);
+                let modifier_instance = Modifier {
                     id,
-                    amount: scaled_amount,
-                    operation: op,
+                    amount,
+                    operation,
                     // Vanilla `MobEffect.addAttributeModifiers` adds these as permanent.
                     permanent: true,
                 };
 
-                self.update_attribute(m.attribute, |inst| {
-                    inst.add_or_replace_modifier(mod_inst.clone());
+                self.update_attribute(modifier.attribute, |instance| {
+                    instance.add_or_replace_modifier(modifier_instance.clone());
                 });
-            }
-
-            // Recompute packet modifiers from active effects for each affected attribute
-            let mut touched_attrs: Vec<pumpkin_data::attributes::Attributes> = Vec::new();
-            for m in effect.effect_type.attribute_modifiers {
-                if !touched_attrs.iter().any(|a| a.id == m.attribute.id) {
-                    touched_attrs.push(m.attribute.clone());
+                if !touched_attrs
+                    .iter()
+                    .any(|attribute: &pumpkin_data::attributes::Attributes| {
+                        attribute.id == modifier.attribute.id
+                    })
+                {
+                    touched_attrs.push(modifier.attribute.clone());
                 }
             }
 
-            if !touched_attrs.is_empty() {
-                crate::entity::attributes::send_attribute_updates_for_living(self, touched_attrs);
+            // LivingEntity.onAttributeUpdated clamps limits after an upgrade or hidden-effect restore.
+            for modifier in effect.effect_type.attribute_modifiers {
+                if modifier.attribute == &Attributes::MAX_HEALTH {
+                    let maximum = self.get_max_health();
+                    if self.health.load() > maximum {
+                        self.set_health(maximum);
+                    }
+                } else if modifier.attribute == &Attributes::MAX_ABSORPTION {
+                    let maximum = self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32;
+                    if self.absorption.load() > maximum {
+                        self.set_absorption(maximum);
+                    }
+                }
             }
+            touched_attrs
+        };
+
+        if !touched_attrs.is_empty() {
+            crate::entity::attributes::send_attribute_updates_for_living(self, touched_attrs);
         }
-
-        // LivingEntity.onAttributeUpdated clamps limits after an upgrade or hidden-effect restore.
-        for modifier in effect.effect_type.attribute_modifiers {
-            if modifier.attribute == &Attributes::MAX_HEALTH {
-                let maximum = self.get_max_health();
-                if self.health.load() > maximum {
-                    self.set_health(maximum);
-                }
-            } else if modifier.attribute == &Attributes::MAX_ABSORPTION {
-                let maximum = self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32;
-                if self.absorption.load() > maximum {
-                    self.set_absorption(maximum);
-                }
-            }
-        }
-
-        // Apply invisible effect
         if effect.effect_type == &StatusEffect::INVISIBILITY {
             self.entity.set_invisible(true);
         }
-
-        // Apply glowing effect
         if effect.effect_type == &StatusEffect::GLOWING {
             self.entity.set_glowing(true);
         }
 
-        // Broadcast effect to nearby players
+        // Packet publication stays outside combat ownership.
         self.broadcast_effect(effect);
         self.sync_effect_particles();
     }
