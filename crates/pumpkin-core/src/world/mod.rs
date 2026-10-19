@@ -2083,6 +2083,10 @@ impl World {
 
     pub fn tick_environment(self: &Arc<Self>) {
         self.tick_weather_and_sleep();
+        self.worldborder
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tick();
         let mut save_clocks = false;
         {
             let mut level_time = self

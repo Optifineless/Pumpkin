@@ -58,14 +58,7 @@ impl ExperienceOrbEntity {
                 .worldborder
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let limit = f64::from(border.portal_teleport_boundary);
-            let half = border.new_diameter / 2.0;
-            (
-                (border.center_x - half).max(-limit),
-                (border.center_z - half).max(-limit),
-                (border.center_x + half).min(limit),
-                (border.center_z + half).min(limit),
-            )
+            border.bounds(0.0)
         };
         let mut free = vec![allowed];
         for collision in collisions {
