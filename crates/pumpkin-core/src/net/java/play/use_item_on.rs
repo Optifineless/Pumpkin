@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::block::registry::PlacementOutcome;
 use crate::item::registry::should_try_block_placement;
 use pumpkin_protocol::java::client::play::CBlockEntityData;
 
@@ -22,6 +23,7 @@ impl JavaClient {
 
         let mut placed = false;
         let mut placement_attempted = false;
+        let mut placement_refused = false;
 
         if !player.can_interact_with_block_at(&position, 1.0) {
             // TODO: maybe log?
@@ -176,7 +178,7 @@ impl JavaClient {
             let item_id = item.item.id;
             if let Some(block) = Block::from_item_id(item_id) {
                 placement_attempted = true;
-                placed = Self::run_is_block_place(
+                let outcome = Self::run_is_block_place(
                     player,
                     block,
                     server,
@@ -186,6 +188,8 @@ impl JavaClient {
                     source_slot,
                     &before,
                 )?;
+                placed = matches!(outcome, PlacementOutcome::Placed(..));
+                placement_refused = matches!(outcome, PlacementOutcome::Refused);
             }
         }
 
@@ -214,6 +218,19 @@ impl JavaClient {
         }
         if matches!(item_result, BlockActionResult::SuccessServer) {
             player.swing_hand(hand, true);
+        }
+
+        // BlockItem.useOn falls back to Item.use only after non-consuming placement/transform.
+        if placement_refused {
+            Self::consume_after_refused_placement(
+                player,
+                server,
+                hand,
+                source_slot,
+                &before,
+                position,
+                state_before,
+            );
         }
 
         Ok(())
@@ -333,8 +350,8 @@ impl JavaClient {
         face: BlockDirection,
         source_slot: usize,
         stack: &ItemStack,
-    ) -> Result<bool, BlockPlacingError> {
-        match server.block_registry.place_block_with_stack(
+    ) -> Result<PlacementOutcome, BlockPlacingError> {
+        match server.block_registry.place_block_with_outcome(
             player,
             block,
             server,
@@ -344,8 +361,7 @@ impl JavaClient {
             stack,
             source_slot,
         ) {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => Ok(false),
+            Ok(outcome) => Ok(outcome),
             Err(crate::block::registry::BlockPlacingError::InvalidGamemode) => {
                 Err(BlockPlacingError::InvalidGamemode)
             }

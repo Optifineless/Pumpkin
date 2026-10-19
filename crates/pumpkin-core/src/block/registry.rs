@@ -523,6 +523,13 @@ pub enum BlockPlacingError {
     BlockOutOfWorld,
 }
 
+// Keep ordinary BlockItem.place refusal distinct from a denied interaction.
+pub(crate) enum PlacementOutcome {
+    Placed(BlockPos, BlockStateId),
+    Refused,
+    Denied,
+}
+
 pub(crate) fn can_replace_with_other_block(block: &Block, state: &BlockState) -> bool {
     // Vanilla SnowLayerBlock.canBeReplaced: only a single layer gives way to another item.
     if block == &Block::SNOW {
@@ -646,7 +653,6 @@ impl BlockRegistry {
         )
     }
 
-    #[expect(clippy::too_many_lines)]
     #[expect(
         clippy::too_many_arguments,
         reason = "Carries BlockItem.place's retained UseOnContext item through placement."
@@ -662,6 +668,38 @@ impl BlockRegistry {
         stack: &ItemStack,
         source_slot: usize,
     ) -> Result<Option<(BlockPos, BlockStateId)>, BlockPlacingError> {
+        self.place_block_with_outcome(
+            player,
+            placed_block,
+            server,
+            use_item_on,
+            location,
+            face,
+            stack,
+            source_slot,
+        )
+        .map(|outcome| match outcome {
+            PlacementOutcome::Placed(position, state) => Some((position, state)),
+            PlacementOutcome::Refused | PlacementOutcome::Denied => None,
+        })
+    }
+
+    #[expect(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Carries BlockItem.place's retained UseOnContext item through placement."
+    )]
+    pub(crate) fn place_block_with_outcome(
+        &self,
+        player: &Arc<Player>,
+        placed_block: &'static Block,
+        server: &Arc<Server>,
+        use_item_on: &SUseItemOn,
+        location: BlockPos,
+        face: BlockDirection,
+        stack: &ItemStack,
+        source_slot: usize,
+    ) -> Result<PlacementOutcome, BlockPlacingError> {
         let entity = &player.get_entity();
 
         match player.gamemode.load() {
@@ -762,7 +800,7 @@ impl BlockRegistry {
                         previous_block_state.id,
                     ),
                     None => {
-                        return Ok(None);
+                        return Ok(PlacementOutcome::Refused);
                     }
                 }
             };
@@ -775,7 +813,7 @@ impl BlockRegistry {
                     player.gameprofile.name.clone(),
                 )],
             ));
-            return Ok(None);
+            return Ok(PlacementOutcome::Denied);
         }
 
         if !self.can_place_at(
@@ -789,7 +827,7 @@ impl BlockRegistry {
             Some(final_face),
             Some(use_item_on),
         ) {
-            return Ok(None);
+            return Ok(PlacementOutcome::Refused);
         }
 
         let new_state = self.on_place(
@@ -805,7 +843,7 @@ impl BlockRegistry {
 
         // BlockItem.place treats a null placement state as a failed placement.
         if !placed_block.is_air() && new_state == BlockStateId::AIR {
-            return Ok(None);
+            return Ok(PlacementOutcome::Refused);
         }
 
         // Mirror vanilla obstruction checks: only entities that block building should prevent
@@ -832,7 +870,7 @@ impl BlockRegistry {
             .plugin_manager
             .fire_blocking(server, &mut can_build_event);
         if can_build_event.cancelled || !can_build_event.buildable {
-            return Ok(None);
+            return Ok(PlacementOutcome::Denied);
         }
 
         let mut event = crate::plugin::block::block_place::BlockPlaceEvent::new(
@@ -844,7 +882,7 @@ impl BlockRegistry {
         );
         server.plugin_manager.fire_blocking(server, &mut event);
         if event.cancelled {
-            return Ok(None);
+            return Ok(PlacementOutcome::Denied);
         }
 
         let Some(claimed_stack) = Self::install_claimed_block(
@@ -856,7 +894,7 @@ impl BlockRegistry {
             new_state,
             previous_state,
         ) else {
-            return Ok(None);
+            return Ok(PlacementOutcome::Denied);
         };
         self.finish_block_placement(
             player,
@@ -868,7 +906,7 @@ impl BlockRegistry {
             &claimed_stack,
         );
 
-        Ok(Some((final_block_pos, new_state)))
+        Ok(PlacementOutcome::Placed(final_block_pos, new_state))
     }
     #[allow(clippy::expect_used)]
     pub fn register<T: BlockBehaviour + BlockMetadata + 'static>(&mut self, block: T) {

@@ -218,20 +218,16 @@ impl JavaClient {
         let inventory = player.inventory();
 
         let consumable = held.get_data_component::<ConsumableImpl>().is_some();
-        if (consumable || held.get_data_component::<BlocksAttacksImpl>().is_some())
+        if consumable {
+            Self::start_consuming(player, hand, held);
+        } else if held.get_data_component::<BlocksAttacksImpl>().is_some()
             && held
                 .get_data_component::<FoodImpl>()
                 .is_none_or(|food| player.can_eat(food.can_always_eat))
         {
-            if consumable && held.get_max_use_time() == 0 {
-                player
-                    .living_entity
-                    .consume_instantly(player.as_ref(), hand, held);
-            } else {
-                player
-                    .living_entity
-                    .set_active_hand(hand, held.clone(), held.get_max_use_time());
-            }
+            player
+                .living_entity
+                .set_active_hand(hand, held.clone(), held.get_max_use_time());
         }
         let Some(equippable) = held
             .get_data_component::<EquippableImpl>()
