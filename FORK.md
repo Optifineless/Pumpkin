@@ -2,6 +2,21 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Minecart placement centers once (#129)
+
+Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
+retain the vanilla rail height and ascending-rail offset. Positive and negative
+coordinates now place carts over the clicked rail. Mirrors vanilla 26.3
+`MinecartItem.useOn`. Upstream draft PR #3794 contains the same placement
+correction within broader minecart physics work; this fork change is limited to
+placement. Native API 8, Wasm WIT and saved data are unchanged.
+In-game verification: Not yet.
+
+Play test: place each minecart item on isolated flat rails at positive and
+negative coordinates, then place one on an ascending rail; expect centered
+carts, with the ascending cart 0.5 blocks higher. Capture the rail and cart
+positions, and verify Survival consumes one item while Creative consumes none.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

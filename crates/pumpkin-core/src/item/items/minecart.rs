@@ -82,7 +82,7 @@ impl ItemBehaviour for MinecartItem {
         let pos = location.to_f64();
         let entity = Entity::new(
             world.clone(),
-            Vector3::new(pos.x + 0.5, pos.y + 0.0625 + height, pos.z + 0.5),
+            Vector3::new(pos.x, pos.y + 0.0625 + height, pos.z),
             entity_type,
         );
         let minecart_entity = Arc::new(MinecartEntity::new(entity));
