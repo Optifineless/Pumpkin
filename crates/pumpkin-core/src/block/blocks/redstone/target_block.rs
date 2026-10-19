@@ -1,5 +1,4 @@
 use pumpkin_data::block_properties::TargetProperties;
-use pumpkin_data::entity::EntityType;
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::tick::TickPriority;
@@ -9,6 +8,13 @@ use crate::block::{
     BlockBehaviour, EmitsRedstonePowerArgs, GetRedstonePowerArgs, OnPlaceArgs, OnProjectileHitArgs,
     OnScheduledTickArgs, OnStateReplacedArgs,
 };
+use crate::entity::{
+    EntityBase,
+    projectile::{arrow::ArrowEntity, trident::TridentEntity},
+};
+
+#[cfg(test)]
+mod tests;
 
 fn get_redstone_strength(hit_pos: &Vector3<f64>) -> u8 {
     let dist_x = ((hit_pos.x - hit_pos.x.floor()) - 0.5).abs();
@@ -36,12 +42,8 @@ impl BlockBehaviour for TargetBlock {
         true
     }
 
+    // TargetBlock.ownSignal supplies weak output; vanilla inherits zero from getDirectSignal.
     fn get_weak_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
-        let props = TargetProperties::from_state_id(args.state.id);
-        props.r#power
-    }
-
-    fn get_strong_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
         let props = TargetProperties::from_state_id(args.state.id);
         props.r#power
     }
@@ -68,10 +70,7 @@ impl BlockBehaviour for TargetBlock {
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
             );
-            let entity_type = args.projectile.get_entity().entity_type;
-            let delay = if entity_type == &EntityType::ARROW
-                || entity_type == &EntityType::SPECTRAL_ARROW
-            {
+            let delay = if is_arrow_family(args.projectile) {
                 20
             } else {
                 8
@@ -108,4 +107,9 @@ impl BlockBehaviour for TargetBlock {
         props.r#power = 0;
         props.to_state_id(args.block)
     }
+}
+
+// TargetBlock.updateRedstoneOutput checks AbstractArrow, which includes ThrownTrident.
+fn is_arrow_family(projectile: &dyn EntityBase) -> bool {
+    projectile.cast_any().is::<ArrowEntity>() || projectile.cast_any().is::<TridentEntity>()
 }
