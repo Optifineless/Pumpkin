@@ -2,6 +2,37 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Villager persistence, breeding slice 1
+
+Villagers load vanilla 26.3 registry-name `VillagerData`, the finalized flag and
+byte `FoodLevel`, while accepting the earlier fork's numeric fields and int food.
+Saves use the vanilla form. Unknown registry names and out-of-range legacy food
+remain preserved with a warning. Inventory retains eight usable slots and saves
+nonempty stacks in order; unsupported and excess entries retain their raw NBT.
+Gossip UUIDs use the shared four-int UUID codec, malformed targets are skipped
+with a warning, and the fork's saved `LastGossipShare` is restored. Offers, restock
+state, home and Brain memories keep their existing persistence. Each save captures
+state under separate locks and encodes after releasing the guards.
+
+Checked against vanilla 26.3 `VillagerData.CODEC`,
+`Villager.readAdditionalSaveData/addAdditionalSaveData`, `InventoryCarrier`,
+`SimpleContainer` and `GossipContainer.GossipEntry.CODEC`. Pickup, breeding, goals,
+biological age and the separate zombie-villager data serializer are unchanged.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Eight bounded server scenarios exercise chunk activation and two real shutdown/
+restart saves, including unknown registry names and both finalized-flag cases.
+All eight fail on `95cb23667` (the short gossip target panics) and pass with this
+change. Raw-entry comparisons use canonical NBT bytes because the existing NBT
+parser discards compound-key order; tag types, values and list order are retained.
+
+API 8 (same version): `VillagerEntity` gains persistence state and its public
+inventory now holds `VillagerInventory`, whose usable slots are a fixed array of
+eight stacks. Native plugins must be rebuilt; Wasm WIT is unchanged.
+
+Play test: Import villagers with professions, trades, food and player reputation,
+restart the server twice, and expect the same villagers, trades and discounts.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
