@@ -20,6 +20,16 @@ impl TridentItem {
         if !paid || player.gamemode.load() == GameMode::Creative {
             return;
         }
+        let damageable = {
+            let stack = trident
+                .item_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            stack.is_damageable() && !stack.is_unbreakable()
+        };
+        if !damageable {
+            return;
+        }
         // TridentItem.releaseUsing / ItemStack.hurtWithoutBreaking retain a usable trident.
         let mut amount = 1;
         if let Some(server) = player.world().server.upgrade()

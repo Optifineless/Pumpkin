@@ -195,11 +195,6 @@ impl CrossbowItem {
             return;
         }
         let world = player.world();
-        world.play_sound(
-            Sound::ItemCrossbowShoot,
-            SoundCategory::Players,
-            &player.position(),
-        );
         let equipment = match hand {
             Hand::Right => EquipmentSlot::MAIN_HAND,
             Hand::Left => EquipmentSlot::OFF_HAND,
@@ -220,6 +215,13 @@ impl CrossbowItem {
             player.gamemode.load() == GameMode::Creative,
             |projectile| ProjectileWeaponItem::hurt_shooting_weapon(player, &equipped, projectile),
         );
+        if admitted.iter().any(|&ok| ok) {
+            world.play_sound(
+                Sound::ItemCrossbowShoot,
+                SoundCategory::Players,
+                &player.position(),
+            );
+        }
         let rejected: Vec<_> = projectiles
             .into_iter()
             .zip(admitted)

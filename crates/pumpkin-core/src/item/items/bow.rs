@@ -137,7 +137,7 @@ impl BowItem {
             is_crit,
             Some(&equipped),
         );
-        if !admitted.first().copied().unwrap_or(false)
+        if !admitted.contains(&true)
             && let Some((slot, receipt)) = drawn.payment
         {
             let excess = slot_transaction::refund(inventory.as_ref(), slot, &drawn.ammo, receipt);
