@@ -99,6 +99,7 @@ pub struct Raid {
     pub heroes_of_the_village: HashSet<Uuid>,
     pub players_in_raid: HashSet<Uuid>,
     pub wave_spawn_pos: Option<BlockPos>,
+    pub(super) loot_tick_active: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Raid {
@@ -136,6 +137,7 @@ impl Raid {
             heroes_of_the_village: HashSet::new(),
             players_in_raid: HashSet::new(),
             wave_spawn_pos: None,
+            loot_tick_active: None,
         }
     }
 
@@ -245,6 +247,9 @@ impl Raid {
 
     pub fn stop(&mut self, world: &World) {
         self.active = false;
+        if let Some(active) = &self.loot_tick_active {
+            active.store(false, std::sync::atomic::Ordering::Release);
+        }
         self.status = RaidStatus::Stopped;
         self.remove_all_players(world);
     }
@@ -354,6 +359,10 @@ impl Raid {
                         let living = &mob.get_mob_entity().living_entity;
                         if let Ok(mut equipment) = living.entity_equipment.try_lock() {
                             equipment.put(&EquipmentSlot::HEAD, banner.clone());
+                            drop(equipment);
+                            // Raid.setLeader preserves the captain's head banner.
+                            mob.get_mob_entity()
+                                .set_guaranteed_drop(&EquipmentSlot::HEAD);
                         }
                         living.send_equipment_changes(&[(EquipmentSlot::HEAD, banner)]);
                         self.group_to_leader_map.insert(group_number, uuid);
@@ -667,6 +676,7 @@ pub struct Raids {
     pub raid_map: HashMap<i32, Raid>,
     pub next_id: i32,
     pub tick_counter: u64,
+    pub(super) loot_tick_view: Vec<super::raid_loot::RaidLootState>,
 }
 
 impl Raids {

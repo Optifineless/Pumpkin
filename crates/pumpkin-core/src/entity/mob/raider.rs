@@ -261,6 +261,9 @@ impl Goal for ObtainRaidLeaderBannerGoal {
                     if let Ok(mut equipment) = living.entity_equipment.try_lock() {
                         equipment.put(&EquipmentSlot::HEAD, banner.clone());
                         drop(equipment);
+                        // Replacement leadership preserves the captain's head banner.
+                        mob.get_mob_entity()
+                            .set_guaranteed_drop(&EquipmentSlot::HEAD);
                         living.send_equipment_changes(&[(EquipmentSlot::HEAD, banner)]);
                     }
                     cand.get_entity().remove();

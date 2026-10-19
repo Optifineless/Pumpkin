@@ -359,9 +359,12 @@ impl LivingEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .get(&slot);
-            if !mob_equipment_drop_eligible(&item, player_killed, preserved)
-                || rng.random::<f32>() >= modified_chance
-            {
+            if !mob_equipment_drop_eligible(&item, player_killed, preserved) || {
+                let draw = rng.random::<f32>();
+                #[cfg(test)]
+                let draw = captain_banner_tests::equipment_draw(draw);
+                draw >= modified_chance
+            } {
                 continue;
             }
             let mut item = self
@@ -525,3 +528,6 @@ impl LivingEntity {
     reason = "Regression tests require existing entities and successful locks"
 )]
 mod tests;
+
+#[cfg(test)]
+mod captain_banner_tests;

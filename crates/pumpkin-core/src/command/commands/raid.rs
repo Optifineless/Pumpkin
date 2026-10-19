@@ -225,6 +225,8 @@ impl CommandExecutor for SpawnLeaderExecutor {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             equipment.put(&EquipmentSlot::HEAD, banner.clone());
             drop(equipment);
+            mob.get_mob_entity()
+                .set_guaranteed_drop(&EquipmentSlot::HEAD);
             living.send_equipment_changes(&[(EquipmentSlot::HEAD, banner)]);
         }
 

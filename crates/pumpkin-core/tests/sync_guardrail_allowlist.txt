@@ -1,5 +1,8 @@
 # Reviewed baseline of raw synchronization and blocking bridge sites.
 # New entries require a justification comment; see rules B1 and B3.
+# Test-only death-event order recorder; guards drop before returning from a
+# callback or invoking another event, and never span an await.
+crates/pumpkin-core/src/entity/death_loot/captain_banner_tests.rs::b1020b_g01_captain_banner_keeps_death_event_order_and_spawn_cancellation::std::sync::Mutex::new#1
 # Follow-up recapture test only: owns a one-shot completion-race callback slot.
 # Its mutex guard drops before invoking the callback or awaiting the storage fetch.
 crates/pumpkin-core/src/world/entity_unload_recapture_tests.rs::entity_unload_coalesces_storage_recapture_across_ticks_and_generations::std::sync::Mutex::new#1

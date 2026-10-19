@@ -2,6 +2,41 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Captain banner drops and ominous bottles (#279, #280)
+
+Patrol finalization, raid-wave leadership, replacement leadership and
+`/raid spawnleader` preserve captain head banners with vanilla's 2.0 drop chance.
+The registered pillager loot table now admits the raider predicate and ominous
+bottle amplifier modifier. Death snapshots require the patrol-leader flag and
+the actual canonical head stack, and include both raid membership and a raid at
+the position. Amplifiers use the existing named loot stream and integer provider,
+clamped to 0..4. An unsaved raid tick view keeps positional loot queries valid
+during callbacks while the tick owns the raid map, and stops become visible
+before their callbacks. Mirrors vanilla 26.3 `PatrollingMonster.finalizeSpawn`,
+`Raid.setLeader`, `Raider.isCaptain/hasRaid`, `RaiderPredicate.matches` and
+`SetOminousBottleAmplifierFunction.run`. Existing drop gates, plugin events and
+saved tags retain their meaning. The canonical banner provider is shared with
+PR #221; its appearance and codecs remain that PR's responsibility.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): public `EntityLootState` adds two optional raider snapshot
+fields; `Raid` and `Raids` gain private runtime tick-view state. Rebuild native
+plugins. Exhaustive loot-state literals must supply the fields or use
+`..Default::default()`. External raid struct literals cease to compile; use
+`Raid::new` or `Raids::default()` instead. Constructor/default callers remain
+source compatible. Native API version, trait vtables, Wasm WIT and save formats
+are unchanged.
+
+Play test: kill a patrol captain outside a raid; expect one captain banner and
+one ominous bottle. Kill raid-wave and replacement captains; expect the banner
+and no bottle during the raid. Kill an ordinary pillager or a leader wearing a
+plain white banner; expect no bottle. Disable mob drops and repeat; expect no
+equipment or bottle drops. Capture each death, ground items and bottle level.
+Existing patrol finalization has no automatic spawn caller on this base; these
+changes fix its equipment assignment without adding a separate spawn feature.
+The existing banner-pickup goal also accepts arbitrary dropped items; nearby
+raiders can consume bottles. Its item filter is outside these equipment/loot fixes.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

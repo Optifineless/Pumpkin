@@ -79,6 +79,7 @@ fn entity_predicate_with_ancestors<'a>(
                     .and_then(Value::as_bool)
                     .is_none_or(|expected| expected == sheared)
             }
+            "type_specific/raider" => raider_predicate(value, entity)?,
             "vehicle" => match entity.vehicle.as_deref() {
                 Some(vehicle) => entity_predicate_with_ancestors(value, vehicle, &ancestors)?,
                 None => false,
@@ -113,6 +114,20 @@ fn entity_predicate_with_ancestors<'a>(
     }
     Some(true)
 }
+
+fn raider_predicate(value: &Value, entity: &EntityLootState) -> Option<bool> {
+    value.as_object()?;
+    let (Some(has_raid), Some(is_captain)) = (entity.raider_has_raid, entity.raider_is_captain)
+    else {
+        return Some(false);
+    };
+    // RaiderPredicate's effective defaults are has_raid=false and is_captain=true.
+    Some(
+        has_raid == value.get("has_raid").map_or(Some(false), Value::as_bool)?
+            && is_captain == value.get("is_captain").map_or(Some(true), Value::as_bool)?,
+    )
+}
+
 pub(in crate::world::loot) fn enchantment_level(stack: Option<&ItemStack>, name: &str) -> i32 {
     let name = name.trim_start_matches("minecraft:");
     stack
