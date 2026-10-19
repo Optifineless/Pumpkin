@@ -2,6 +2,14 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Sponge fluid traversal and depth (#80, #81)
+
+Sponge absorption follows vanilla 26.3 `SpongeBlock.removeWaterBreadthFirstSearch` and `BlockPos.breadthFirstTraversal`: connected water uses graph depth six and at most 64 absorbed blocks. Waterlogged hosts keep their block while losing water; kelp and seagrass use their normal loot handling and are removed. The cancellable sponge event remains before mutation, with current states rechecked after callbacks. No saved-data or public API change.
+
+In-game verification: Not yet.
+
+Play test: Place a dry sponge beside a waterlogged slab, kelp, seagrass and a seven-block water line. Expect the slab to stay dry, kelp to drop normally, seagrass to be removed, the first six water blocks to disappear, and the seventh to remain.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
