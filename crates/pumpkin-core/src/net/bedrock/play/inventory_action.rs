@@ -58,7 +58,7 @@ impl BedrockClient {
         }
     }
 
-    fn correct_inventory_prediction(&self, player: &Player) {
+    pub(super) fn correct_inventory_prediction(&self, player: &Player) {
         let effects = crate::world::guard_effects::GuardEffects::new();
         let equipment = {
             let handler = player
