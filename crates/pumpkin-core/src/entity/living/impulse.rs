@@ -102,6 +102,12 @@ impl LivingEntity {
     pub fn protect_mace_landing(&self) {
         self.impulse.mace_impact(self.entity.pos.load());
     }
+
+    /// Clears fall state after a successful pearl teleport, as ThrownEnderpearl.onHit does.
+    pub(crate) fn reset_fall_distance_and_impulse_context(&self) {
+        self.fall_distance.store(0.0);
+        self.impulse.reset();
+    }
 }
 
 #[cfg(test)]

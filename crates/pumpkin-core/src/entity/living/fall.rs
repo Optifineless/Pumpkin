@@ -34,14 +34,19 @@ impl LivingEntity {
     ) -> bool {
         self.damage_lifecycle() == lifecycle
             && self.entity.pos.load() == position
-            && self.fall_session_current(caller, world)
+            && self.fall_session_current(caller, world, false)
     }
 
-    pub(super) fn fall_session_current(&self, caller: &dyn EntityBase, world: &World) -> bool {
+    pub(super) fn fall_session_current(
+        &self,
+        caller: &dyn EntityBase,
+        world: &World,
+        ender_pearl_transfer: bool,
+    ) -> bool {
         std::ptr::eq(self.entity.world.load_full().as_ref(), world)
             && !self.entity.is_removed()
             && caller.get_player().is_none_or(|player| {
-                player.has_client_loaded()
+                (player.has_client_loaded() || ender_pearl_transfer)
                     && !player.client.closed()
                     && world
                         .get_player_by_uuid(player.gameprofile.id)
@@ -66,7 +71,7 @@ impl LivingEntity {
         let landing = {
             let _owner = self.own_damage();
             let world = self.entity.world.load_full();
-            if !self.fall_session_current(caller, &world) {
+            if !self.fall_session_current(caller, &world, false) {
                 return;
             }
             let particle_distance = self.fall_distance.load();
@@ -107,7 +112,7 @@ impl LivingEntity {
             let _owner = self.own_damage();
             if self.damage_owner.landing_is_current(landing.claim)
                 && self.damage_lifecycle() == landing.lifecycle
-                && self.fall_session_current(caller, &landing.world)
+                && self.fall_session_current(caller, &landing.world, false)
                 && !self.damage_owner.landing_has_descent()
                 && self.fall_distance.load() == landing.distance
             {

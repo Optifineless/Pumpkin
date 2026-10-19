@@ -419,7 +419,7 @@ impl Drop for DamageToken {
             return;
         }
         debug_assert_eq!(self.scope.depth.get(), 0, "nested damage token still alive");
-        SCOPES.with(|current| {
+        let released = SCOPES.with(|current| {
             let mut current = current.borrow_mut();
             let scope = current.pop();
             debug_assert!(
@@ -427,10 +427,15 @@ impl Drop for DamageToken {
                     .as_ref()
                     .is_some_and(|scope| Rc::ptr_eq(scope, &self.scope))
             );
-            if current.is_empty() {
-                self.scope.owner.release();
-            }
+            current.is_empty()
         });
+        if released {
+            #[cfg(test)]
+            test_hooks::reach(test_hooks::Point::OwnerReleasing);
+            self.scope.owner.release();
+            #[cfg(test)]
+            test_hooks::reach(test_hooks::Point::OwnerReleased);
+        }
         SPARE_SCOPE.with(|spare| *spare.borrow_mut() = Some(self.scope.clone()));
         // Reacquire an outer, different entity only after releasing this one.
         drop(self.suspended.take());

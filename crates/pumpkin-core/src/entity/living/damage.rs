@@ -12,7 +12,10 @@
 //! be overwritten by a pending server velocity packet.
 //! Ownership spans serial segments; plugin dispatch releases it and resumed stages read live state.
 
-use super::LivingEntity;
+use super::{
+    LivingEntity,
+    damage_transaction::{DamageToken, PendingHurt},
+};
 use crate::entity::{EntityBase, equipment_damage::EquippedItem};
 use pumpkin_data::{
     damage::DamageType,
@@ -21,16 +24,73 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{Arc, atomic::Ordering::Relaxed};
 
 #[derive(Clone, Copy)]
 pub(super) struct HurtContext<'a> {
     pub lifecycle: u64,
+    pub ender_pearl_transfer: bool,
     pub damage_type: DamageType,
     pub position: Option<Vector3<f64>>,
     pub source: Option<&'a dyn EntityBase>,
     pub cause: Option<&'a dyn EntityBase>,
     pub fall_world: Option<&'a crate::world::World>,
+}
+
+struct HurtRequest<'a, F> {
+    caller: &'a dyn EntityBase,
+    amount: f32,
+    damage_type: DamageType,
+    position: Option<Vector3<f64>>,
+    source: Option<&'a dyn EntityBase>,
+    cause: Option<&'a dyn EntityBase>,
+    expected_lifecycle: Option<u64>,
+    ender_pearl_transfer: bool,
+    before_hurt: F,
+}
+
+struct AdmittedHurt<'a> {
+    caller: &'a dyn EntityBase,
+    amount: f32,
+    context: HurtContext<'a>,
+    fall_world: Option<Arc<crate::world::World>>,
+    // Struct fields drop in order: retire admission before releasing the serial owner.
+    _pending: PendingHurt,
+    _owner: DamageToken,
+}
+
+impl<'a, F: FnOnce()> HurtRequest<'a, F> {
+    fn admit(self, living: &LivingEntity) -> Option<AdmittedHurt<'a>> {
+        let owner = living.damage_owner.enter();
+        let lifecycle = living.damage_owner.lifecycle();
+        if self
+            .expected_lifecycle
+            .is_some_and(|expected| expected != lifecycle)
+        {
+            return None;
+        }
+        let pending = living.damage_owner.pending_hurt();
+        (self.before_hurt)();
+        Some(AdmittedHurt {
+            caller: self.caller,
+            amount: self.amount,
+            fall_world: self
+                .damage_type
+                .has_tag(&tag::DamageType::MINECRAFT_IS_FALL)
+                .then(|| living.entity.world.load_full()),
+            context: HurtContext {
+                lifecycle,
+                ender_pearl_transfer: self.ender_pearl_transfer,
+                damage_type: self.damage_type,
+                position: self.position,
+                source: self.source,
+                cause: self.cause,
+                fall_world: None,
+            },
+            _owner: owner,
+            _pending: pending,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -39,6 +99,8 @@ mod boundary_tests;
 mod callback_tests;
 #[cfg(test)]
 mod instant_tests;
+#[cfg(test)]
+mod owner_exit_tests;
 #[cfg(test)]
 mod ownership_immunity_tests;
 #[cfg(test)]
@@ -62,28 +124,74 @@ impl LivingEntity {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        let _owner = self.damage_owner.enter();
-        let _pending = self.damage_owner.pending_hurt();
-        // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
-        let fall_world = damage_type
-            .has_tag(&tag::DamageType::MINECRAFT_IS_FALL)
-            .then(|| self.entity.world.load_full());
-        let context = HurtContext {
-            lifecycle: self.damage_owner.lifecycle(),
+        self.hurt_server_inner(HurtRequest {
+            caller,
+            amount,
             damage_type,
             position,
             source,
             cause,
-            fall_world: fall_world.as_deref(),
+            expected_lifecycle: None,
+            ender_pearl_transfer: false,
+            before_hurt: || {},
+        })
+    }
+
+    /// Resets pearl fall state and damages only the captured life under damage admission.
+    pub(crate) fn hurt_ender_pearl_for_lifecycle(
+        &self,
+        caller: &dyn EntityBase,
+        lifecycle: u64,
+        was_loaded: bool,
+    ) -> bool {
+        // ThrownEnderpearl.onHit resets fall distance and applies 5 damage after ServerPlayer.teleport.
+        self.hurt_server_inner(HurtRequest {
+            caller,
+            amount: 5.0,
+            damage_type: DamageType::ENDER_PEARL,
+            position: None,
+            source: None,
+            cause: None,
+            expected_lifecycle: Some(lifecycle),
+            ender_pearl_transfer: was_loaded,
+            before_hurt: || {
+                if self.is_alive() {
+                    self.reset_fall_distance_and_impulse_context();
+                }
+            },
+        })
+    }
+
+    fn hurt_server_inner<F>(&self, request: HurtRequest<'_, F>) -> bool
+    where
+        F: FnOnce(),
+    {
+        let Some(request) = request.admit(self) else {
+            return false;
         };
+        let caller = request.caller;
+        let context = HurtContext {
+            fall_world: request.fall_world.as_deref(),
+            ..request.context
+        };
+        let damage_type = context.damage_type;
+        let position = context.position;
+        let source = context.source;
+        let cause = context.cause;
+        // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
         let amount = if let Some(player) = caller.get_player() {
-            let Some(amount) = player.admit_incoming_damage(amount, damage_type, cause, source)
-            else {
+            let Some(amount) = player.admit_incoming_damage(
+                request.amount,
+                damage_type,
+                cause,
+                source,
+                context.ender_pearl_transfer,
+            ) else {
                 return false;
             };
             amount
         } else {
-            amount
+            request.amount
         };
         // LivingEntity.hurtServer:1179 rolls before the death/fire-resistance gates.
         if self.entity.is_invulnerable_to(&damage_type, cause)
@@ -171,9 +279,9 @@ impl LivingEntity {
         context: HurtContext<'_>,
     ) -> bool {
         self.damage_owner.lifecycle() == context.lifecycle
-            && context
-                .fall_world
-                .is_none_or(|world| self.fall_session_current(caller, world))
+            && context.fall_world.is_none_or(|world| {
+                self.fall_session_current(caller, world, context.ender_pearl_transfer)
+            })
             && self.damage_owner.admits_health(self.health.load())
             && !self.rejects_damage(context.damage_type, context.cause)
             && caller.get_player().is_none_or(|player| {
@@ -183,6 +291,7 @@ impl LivingEntity {
                         context.damage_type,
                         context.cause,
                         context.source,
+                        context.ender_pearl_transfer,
                     )
                     .is_some()
             })
