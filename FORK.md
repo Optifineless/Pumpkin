@@ -2,6 +2,20 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Held-item drop equipment publication (#163)
+
+Accepted Java and Bedrock held drops queue the current main hand for the normal
+equipment publication tick. Empty hands lose weapon modifiers and observers see
+the committed hand; partial stacks, cancelled drops and callback source/selection
+changes retain existing withdrawal and plugin contracts. Mirrors vanilla 26.3
+`LivingEntity.detectEquipmentUpdates/collectEquipmentChanges/handleEquipmentChanges`.
+Native API 8, Wasm WIT and saved-data formats are unchanged. Implemented by
+Codex (GPT-6.1 Sol). In-game verification: Not yet.
+
+Play test: drop the last selected spear without changing slots or picking it up;
+expect fist damage/recharge and an empty hand for a nearby observer. Capture both
+views and the single ground item; repeat with partial/whole stacks and cancellation.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
