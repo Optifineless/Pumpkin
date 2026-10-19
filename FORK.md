@@ -2,6 +2,40 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Departed dragon and Wither bossbar recipients (#118)
+
+Dragon fights and Withers retain weak handles to exact player subscriptions, so
+ordinary dimension changes, cross-world respawns and boss death deliver REMOVE
+through the departed session. Retired Withers also drain recipients during their
+existing unload serialization, with destruction as a final cleanup fallback.
+Replacement sessions with the same account UUID
+receive their own ADD. Ordered owner dispatch releases guards before packet
+callbacks and revalidates ADD/UPDATE at delivery, including outer effect batches;
+departed subscriptions receive no queued health/title updates. The terminal dragon
+zero-health packet still precedes REMOVE for a viewer remaining in the source.
+Radius, scan cadence,
+custom assigned bars, fog attributes, boss AI and saved-data meaning are unchanged.
+Mirrors vanilla 26.3 `ServerBossEvent.addPlayer/removePlayer/removeAllPlayers/broadcast`,
+`EnderDragonFight.updatePlayers` and `WitherBoss.startSeenByPlayer/stopSeenByPlayer`.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): `DragonFight` and `WitherEntity` runtime layouts change;
+rebuild native plugins. `WitherEntity::bossbar_players` is now private owner state
+instead of a public UUID vector; native source that accessed it must stop mutating
+recipient membership directly. Public methods, native API version and Wasm WIT
+are unchanged. No recipient handles are saved.
+Direct plugin discard while retaining a Wither handle can delay cleanup until
+that handle is released; normal unload and death paths are covered. A shared
+removal notification hook is outside this change's transfer/removal boundary.
+
+Play test: leave an active End fight or nearby Wither for another dimension;
+expect its bar to disappear while an assigned custom bar stays. Die near a Wither
+and respawn in another dimension; expect the same cleanup. Return or reconnect;
+expect one fresh bar, with normal health/title changes and death cleanup. Capture
+the HUD and boss-event UUID/order across each transition, including cancellation
+and a destination boss. Capture fog/sky appearance too; client-rendered fog remains
+unverified, and independent ambient fog needs a separate reproduction.
+
 ## Held-item drop equipment publication (#163)
 
 Accepted Java and Bedrock held drops queue the current main hand for the normal

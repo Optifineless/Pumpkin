@@ -585,6 +585,10 @@ crates/pumpkin-core/src/world/dragon_fight/fresh_review_tests.rs::ordinary_admis
 crates/pumpkin-core/src/world/dragon_fight/fresh_review_tests.rs::stationary_observer_receives_bossbar_after_real_kill_and_four_crystal_respawn::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/dragon_fight/packet_callback_tests.rs::kill_packet_reentry::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/dragon_fight/packet_callback_tests.rs::kill_packet_reentry::std::sync::Mutex::default#2
+# Test-only production dispatcher gate: complete a real teleport with bounded Scenario polling.
+# block_in_place releases the Tokio worker; no fight/recipient guard or effect batch crosses await.
+crates/pumpkin-core/src/world/dragon_fight/recipient_tests.rs::b1020_g03_departure_during_deferred_add_cannot_publish_stale_bar::block_in_place#1
+crates/pumpkin-core/src/world/dragon_fight/recipient_tests.rs::b1020_g03_departure_during_deferred_add_cannot_publish_stale_bar::block_on#1
 crates/pumpkin-core/src/world/dragon_fight/respawn_tests.rs::summoning_dragon_explodes_and_removes_crystals_without_deadlock::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/dragon_fight/respawn_tests.rs::summoning_pillars_explosion_completes_without_deadlock::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/explosion/context_tests.rs::crystal_attacker_gets_damage_credit_without_owning_chained_tnt::std::sync::Mutex::default#1

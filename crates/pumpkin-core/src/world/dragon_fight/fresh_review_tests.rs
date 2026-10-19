@@ -230,7 +230,8 @@ async fn stationary_observer_receives_bossbar_after_real_kill_and_four_crystal_r
             fight.respawn_stage.is_none() && !fight.dragon_killed && fight.dragon_uuid.is_some(),
             "actual respawn did not complete"
         );
-        assert!(fight.bossbar_players.contains(&player.gameprofile.id));
+        let tracked = fight.bossbar_players.iter().any(|r| r.matches(&player));
+        assert!(tracked);
     });
     assert_eq!(
         player.get_entity().pos.load(),

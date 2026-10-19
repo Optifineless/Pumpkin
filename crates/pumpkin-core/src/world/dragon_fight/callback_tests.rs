@@ -23,6 +23,10 @@ pub(super) fn observe_before_actions() {
     }
 }
 
+pub(super) fn before_actions(observer: impl FnOnce() + 'static) {
+    BEFORE_ACTIONS.with_borrow_mut(|slot| *slot = Some(Box::new(observer)));
+}
+
 struct FightReader {
     spawns: Mutex<Vec<String>>,
 }

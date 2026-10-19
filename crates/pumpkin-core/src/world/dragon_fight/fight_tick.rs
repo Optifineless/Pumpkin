@@ -48,7 +48,21 @@ impl DragonFight {
         (result, actions)
     }
 
-    fn execute_actions(mut actions: Vec<FightAction>, world: &Arc<World>) {
+    fn execute_actions(actions: Vec<FightAction>, world: &Arc<World>) {
+        if actions.is_empty() {
+            return;
+        }
+        // Defer validation as well as bytes when an outer state owner batches effects.
+        let request = FightDispatch {
+            world: world.clone(),
+            actions: Some(actions),
+        };
+        if let Err(dispatch) = crate::world::guard_effects::defer(move || request.run()) {
+            dispatch();
+        }
+    }
+
+    fn execute_actions_now(mut actions: Vec<FightAction>, world: &Arc<World>) {
         #[cfg(test)]
         if !actions.is_empty() {
             super::callback_tests::observe_before_actions();
@@ -149,6 +163,34 @@ impl DragonFight {
                 }
             }
         });
+    }
+}
+
+struct FightDispatch {
+    world: Arc<World>,
+    actions: Option<Vec<FightAction>>,
+}
+
+impl FightDispatch {
+    fn run(mut self) {
+        let actions = self.actions.take().unwrap_or_default();
+        DragonFight::execute_actions_now(actions, &self.world);
+    }
+}
+
+impl Drop for FightDispatch {
+    fn drop(&mut self) {
+        // An unwinding outer batch discards its dispatch request. Keep ownership retryable.
+        if let Some(mut actions) = self.actions.take()
+            && let Some(mutex) = &self.world.dragon_fight
+        {
+            let mut fight = mutex
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            actions.append(&mut fight.actions);
+            fight.actions = actions;
+            fight.executing_actions = false;
+        }
     }
 }
 

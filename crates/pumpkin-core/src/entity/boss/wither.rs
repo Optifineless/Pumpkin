@@ -39,6 +39,12 @@ use crate::{
     },
 };
 
+mod bossbar_recipients;
+use bossbar_recipients::WitherBossbar;
+
+#[cfg(test)]
+mod bossbar_tests;
+
 const INVULNERABLE_TICKS: i32 = 220;
 
 pub struct WitherEntity {
@@ -50,14 +56,15 @@ pub struct WitherEntity {
     pub alternative_targets: [AtomicI32; 3],
     pub main_attack_timer: AtomicI32,
     pub bossbar_uuid: Uuid,
-    pub bossbar_players: Mutex<Vec<Uuid>>,
+    bossbar_players: Mutex<WitherBossbar>,
+    self_reference: Weak<Self>,
     pub dropped_loot: AtomicBool,
 }
 
 impl WitherEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
-        let wither = Self {
+        let mob_arc = Arc::new_cyclic(|weak| Self {
             mob_entity,
             invulnerable_ticks: AtomicI32::new(0),
             destroy_blocks_tick: AtomicI32::new(0),
@@ -66,10 +73,10 @@ impl WitherEntity {
             alternative_targets: [AtomicI32::new(0), AtomicI32::new(0), AtomicI32::new(0)],
             main_attack_timer: AtomicI32::new(0),
             bossbar_uuid: Uuid::new_v4(),
-            bossbar_players: Mutex::new(Vec::new()),
+            bossbar_players: Mutex::new(WitherBossbar::default()),
+            self_reference: weak.clone(),
             dropped_loot: AtomicBool::new(false),
-        };
-        let mob_arc = Arc::new(wither);
+        });
         let mob_weak: Weak<dyn Mob> = {
             let mob_arc: Arc<dyn Mob> = mob_arc.clone();
             Arc::downgrade(&mob_arc)
@@ -255,74 +262,10 @@ impl WitherEntity {
         }
     }
 
-    fn update_bossbar(&self, world: &Arc<crate::world::World>, progress: f32) {
-        let pos = self.mob_entity.living_entity.entity.pos.load();
-        let tracking_radius_sq = 50.0 * 50.0;
-        let players = world.players.load();
-
-        let current: Vec<Uuid> = players
-            .iter()
-            .filter(|p| {
-                let p_pos = p.living_entity.entity.pos.load();
-                (p_pos - pos).length_squared() < tracking_radius_sq
-            })
-            .map(|p| p.gameprofile.id)
-            .collect();
-
-        let mut bossbar_players = self
-            .bossbar_players
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        for &uid in &current {
-            if !bossbar_players.contains(&uid) {
-                if let Some(p) = players.iter().find(|p| p.gameprofile.id == uid) {
-                    let mut bar = self.make_bossbar();
-                    bar.health = progress;
-                    p.send_bossbar(&bar);
-                }
-                bossbar_players.push(uid);
-            }
-        }
-
-        let to_remove: Vec<Uuid> = bossbar_players
-            .iter()
-            .filter(|uid| !current.contains(uid))
-            .copied()
-            .collect();
-
-        for uid in &to_remove {
-            if let Some(p) = players.iter().find(|p| &p.gameprofile.id == uid) {
-                p.remove_bossbar(self.bossbar_uuid);
-            }
-            bossbar_players.retain(|u| u != uid);
-        }
-
-        for player in players.iter() {
-            if bossbar_players.contains(&player.gameprofile.id) {
-                player.update_bossbar_health(&self.bossbar_uuid, progress);
-            }
-        }
-    }
-
-    fn remove_all_bossbar(&self, world: &Arc<crate::world::World>) {
-        let mut bossbar_players = self
-            .bossbar_players
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let players = world.players.load();
-        for player in players.iter() {
-            if bossbar_players.contains(&player.gameprofile.id) {
-                player.remove_bossbar(self.bossbar_uuid);
-            }
-        }
-        bossbar_players.clear();
-    }
-
     #[expect(clippy::too_many_lines)]
     fn tick_wither(&self) {
         let entity = &self.mob_entity.living_entity.entity;
-        let world = entity.world.load();
+        let world = entity.world.load_full();
 
         if world.level_info.load().difficulty == Difficulty::Peaceful {
             self.remove_all_bossbar(&world);
@@ -692,6 +635,10 @@ impl Mob for WitherEntity {
     }
 
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        // Retired owners serialize before detaching, without another mob tick.
+        if self.get_entity().is_removed() {
+            self.remove_all_bossbar(&self.get_entity().world.load_full());
+        }
         nbt.put_int("Invul", self.get_invulnerable_ticks());
     }
 

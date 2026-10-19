@@ -13,6 +13,11 @@ use pumpkin_protocol::java::client::play::{BosseventAction, CBossEvent};
 use pumpkin_util::text::TextComponent;
 use uuid::Uuid;
 
+pub(crate) mod recipient;
+
+#[cfg(test)]
+pub(crate) mod recipient_test_support;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BossbarColor {
     Pink,
