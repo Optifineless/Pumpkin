@@ -4,7 +4,9 @@ use std::any::Any;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use pumpkin_data::data_component_impl::JukeboxPlayableImpl;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::jukebox_song::JukeboxSong;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
@@ -31,6 +33,7 @@ pub struct JukeboxBlockEntity {
 
 const RECORD_ITEM_NBT_KEY: &str = "RecordItem";
 const TICKS_SINCE_SONG_STARTED_NBT_KEY: &str = "ticks_since_song_started";
+const JUKEBOX_SONG_FINISH_PADDING_TICKS: u64 = 20;
 
 impl BlockEntity for JukeboxBlockEntity {
     fn resource_location(&self) -> &'static str {
@@ -50,16 +53,25 @@ impl BlockEntity for JukeboxBlockEntity {
             .and_then(ItemStack::read_item_stack)
             .unwrap_or_else(|| ItemStack::EMPTY.clone());
 
-        let ticks_since_song_started =
-            nbt.get_long(TICKS_SINCE_SONG_STARTED_NBT_KEY).unwrap_or(0) as u64;
+        // Mirrors JukeboxBlockEntity.loadAdditional and JukeboxSongPlayer.setSongWithoutPlaying.
+        let ticks_since_song_started = nbt
+            .get_long(TICKS_SINCE_SONG_STARTED_NBT_KEY)
+            .and_then(|ticks| u64::try_from(ticks).ok());
+        let song_length_ticks = ticks_since_song_started
+            .and_then(|ticks| {
+                Self::song_length(&record_stack)
+                    .filter(|length| !Self::song_has_finished(ticks, *length))
+                    .map(|length| (ticks, length))
+            })
+            .unwrap_or((0, 0));
 
         Self {
             position,
             world: Mutex::new(Weak::new()),
             transaction: std::sync::Arc::default(),
             record_stack: Arc::new(Mutex::new(record_stack)),
-            ticks_since_song_started: AtomicU64::new(ticks_since_song_started),
-            song_length_ticks: AtomicU64::new(0), // Will be set when playing starts
+            ticks_since_song_started: AtomicU64::new(song_length_ticks.0),
+            song_length_ticks: AtomicU64::new(song_length_ticks.1),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
         }
@@ -74,7 +86,7 @@ impl BlockEntity for JukeboxBlockEntity {
         }
 
         let ticks = self.ticks_since_song_started.load(Ordering::Relaxed);
-        if ticks > 0 {
+        if self.song_length_ticks.load(Ordering::Relaxed) > 0 {
             nbt.put_long(TICKS_SINCE_SONG_STARTED_NBT_KEY, ticks as i64);
         }
     }
@@ -88,13 +100,13 @@ impl BlockEntity for JukeboxBlockEntity {
         // Increment ticks if we're playing
         let song_length = self.song_length_ticks.load(Ordering::Relaxed);
         if song_length > 0 {
-            let ticks = self
-                .ticks_since_song_started
-                .fetch_add(1, Ordering::Relaxed);
-            // Check if song has finished
-            if ticks >= song_length {
+            let ticks = self.ticks_since_song_started.load(Ordering::Relaxed);
+            if Self::song_has_finished(ticks, song_length) {
                 self.stop_playing();
                 // JukeboxSongPlayer.tick leaves the record when playback ends.
+            } else {
+                self.ticks_since_song_started
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -119,10 +131,12 @@ impl BlockEntity for JukeboxBlockEntity {
             record.write_item_stack(&mut record_nbt);
             nbt.put("RecordItem", NbtTag::Compound(record_nbt));
         }
-        nbt.put_long(
-            "ticks_since_song_started",
-            self.ticks_since_song_started.load(Ordering::Relaxed) as i64,
-        );
+        if self.song_length_ticks.load(Ordering::Relaxed) > 0 {
+            nbt.put_long(
+                TICKS_SINCE_SONG_STARTED_NBT_KEY,
+                self.ticks_since_song_started.load(Ordering::Relaxed) as i64,
+            );
+        }
         Some(nbt)
     }
 
@@ -141,6 +155,18 @@ impl JukeboxBlockEntity {
             .world
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(world);
+    }
+
+    fn song_length(record: &ItemStack) -> Option<u64> {
+        let playable = record.get_data_component::<JukeboxPlayableImpl>()?;
+        let song_name = playable.song.rsplit(':').next()?;
+        JukeboxSong::from_name(song_name).map(|song| song.length_in_ticks())
+    }
+
+    // JukeboxSong.hasFinished includes a 20-tick finish padding.
+    const fn song_has_finished(ticks_since_song_started: u64, song_length_ticks: u64) -> bool {
+        ticks_since_song_started
+            >= song_length_ticks.saturating_add(JUKEBOX_SONG_FINISH_PADDING_TICKS)
     }
 
     // JukeboxBlockEntity.setTheItem / notifyItemChangedInJukebox.
@@ -275,12 +301,7 @@ impl JukeboxBlockEntity {
 
     /// Check if a song is currently playing
     pub fn is_playing(&self) -> bool {
-        let song_length = self.song_length_ticks.load(Ordering::Relaxed);
-        if song_length == 0 {
-            return false;
-        }
-        let ticks = self.ticks_since_song_started.load(Ordering::Relaxed);
-        ticks < song_length
+        self.song_length_ticks.load(Ordering::Relaxed) > 0
     }
 
     fn mark_dirty(&self) {
@@ -377,3 +398,65 @@ impl Clearable for JukeboxBlockEntity {
 #[cfg(test)]
 #[path = "jukebox_event_tests.rs"]
 mod tests;
+#[cfg(test)]
+mod playback_restore_tests {
+    use super::*;
+    use pumpkin_data::item::Item;
+
+    fn jukebox_nbt(ticks: Option<i64>) -> NbtCompound {
+        let mut record = NbtCompound::new();
+        ItemStack::new(1, &Item::MUSIC_DISC_PIGSTEP).write_item_stack(&mut record);
+
+        let mut nbt = NbtCompound::new();
+        nbt.put_compound(RECORD_ITEM_NBT_KEY, record);
+        if let Some(ticks) = ticks {
+            nbt.put_long(TICKS_SINCE_SONG_STARTED_NBT_KEY, ticks);
+        }
+        nbt
+    }
+
+    #[test]
+    fn restores_active_song_from_nbt() {
+        let entity = JukeboxBlockEntity::from_nbt(&jukebox_nbt(Some(20)), BlockPos::new(0, 64, 0));
+
+        assert!(entity.is_playing());
+        assert_eq!(entity.ticks_since_song_started.load(Ordering::Relaxed), 20);
+        assert_eq!(
+            entity.song_length_ticks.load(Ordering::Relaxed),
+            JukeboxSong::Pigstep.length_in_ticks()
+        );
+    }
+
+    #[test]
+    fn does_not_start_song_without_playback_ticks() {
+        let entity = JukeboxBlockEntity::from_nbt(&jukebox_nbt(None), BlockPos::new(0, 64, 0));
+
+        assert!(!entity.is_playing());
+    }
+
+    #[test]
+    fn preserves_song_started_at_tick_zero() {
+        let entity = JukeboxBlockEntity::new(BlockPos::new(0, 64, 0));
+        entity.set_record(ItemStack::new(1, &Item::MUSIC_DISC_PIGSTEP));
+        entity.start_playing(JukeboxSong::Pigstep.length_in_ticks());
+
+        let mut nbt = NbtCompound::new();
+        entity.write_nbt(&mut nbt);
+        let restored = JukeboxBlockEntity::from_nbt(&nbt, BlockPos::new(0, 64, 0));
+
+        assert!(restored.is_playing());
+        assert_eq!(restored.ticks_since_song_started.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn does_not_restore_finished_song() {
+        let length = JukeboxSong::Pigstep.length_in_ticks();
+        let entity = JukeboxBlockEntity::from_nbt(
+            &jukebox_nbt(Some((length + JUKEBOX_SONG_FINISH_PADDING_TICKS) as i64)),
+            BlockPos::new(0, 64, 0),
+        );
+
+        assert!(!entity.is_playing());
+        assert_eq!(entity.song_length_ticks.load(Ordering::Relaxed), 0);
+    }
+}
