@@ -30,6 +30,7 @@ pub(super) struct HurtContext<'a> {
     pub position: Option<Vector3<f64>>,
     pub source: Option<&'a dyn EntityBase>,
     pub cause: Option<&'a dyn EntityBase>,
+    pub fall_world: Option<&'a crate::world::World>,
 }
 
 #[cfg(test)]
@@ -64,12 +65,16 @@ impl LivingEntity {
         let _owner = self.damage_owner.enter();
         let _pending = self.damage_owner.pending_hurt();
         // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
+        let fall_world = damage_type
+            .has_tag(&tag::DamageType::MINECRAFT_IS_FALL)
+            .then(|| self.entity.world.load_full());
         let context = HurtContext {
             lifecycle: self.damage_owner.lifecycle(),
             damage_type,
             position,
             source,
             cause,
+            fall_world: fall_world.as_deref(),
         };
         let amount = if let Some(player) = caller.get_player() {
             let Some(amount) = player.admit_incoming_damage(amount, damage_type, cause, source)
@@ -166,6 +171,9 @@ impl LivingEntity {
         context: HurtContext<'_>,
     ) -> bool {
         self.damage_owner.lifecycle() == context.lifecycle
+            && context
+                .fall_world
+                .is_none_or(|world| self.fall_session_current(caller, world))
             && self.damage_owner.admits_health(self.health.load())
             && !self.rejects_damage(context.damage_type, context.cause)
             && caller.get_player().is_none_or(|player| {

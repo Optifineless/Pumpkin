@@ -6,14 +6,14 @@ impl JavaClient {
         if !player.has_client_loaded() {
             return;
         }
-        if !player.get_entity().has_vehicle()
+        let admitted = !player.get_entity().has_vehicle()
             && !player.is_movement_locked.load(Ordering::Relaxed)
             && player
                 .awaiting_teleport
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .is_none()
-        {
+                .is_none();
+        if admitted {
             player.known_movement.record(Vector3::new(0.0, 0.0, 0.0));
         }
         player
@@ -21,5 +21,8 @@ impl JavaClient {
             .entity
             .on_ground
             .store(ground.on_ground, Ordering::Relaxed);
+        if admitted {
+            Self::check_player_fall(player, Vector3::new(0.0, 0.0, 0.0), ground.on_ground);
+        }
     }
 }

@@ -14,6 +14,27 @@ pub fn is_above(bottom: f64, block_y: i32, shape_top: f64) -> bool {
 }
 
 impl World {
+    // CollisionGetter.findSupportingBlock; Vec3i.compareTo breaks ties by greatest Y/Z/X.
+    pub(crate) fn find_supporting_block(
+        &self,
+        source: &dyn EntityBase,
+        footprint: BoundingBox,
+    ) -> Option<BlockPos> {
+        let position = source.get_entity().pos.load();
+        let (_, candidates) = self.get_block_collisions(footprint, source);
+        candidates
+            .into_iter()
+            .map(|(_, pos)| pos)
+            .min_by(|first, second| {
+                first
+                    .dist_to_center_sqr(position.x, position.y, position.z)
+                    .total_cmp(&second.dist_to_center_sqr(position.x, position.y, position.z))
+                    .then_with(|| {
+                        (second.0.y, second.0.z, second.0.x).cmp(&(first.0.y, first.0.z, first.0.x))
+                    })
+            })
+    }
+
     /// Visits local collision boxes using BlockState.getCollisionShape's entity or empty context.
     /// Callers translate by `pos` exactly once; movement intersects its swept query separately.
     pub(crate) fn for_each_collision_shape(
