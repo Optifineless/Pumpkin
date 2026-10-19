@@ -53,6 +53,7 @@ pub(crate) mod neighbor_updater;
 mod particle_senders;
 mod pending_block_entity;
 pub(crate) use pending_block_entity::BlockEntityMutationPermit;
+mod player_lookup;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -3673,7 +3674,8 @@ impl World {
         chunker::update_position(player);
         // Update commands
 
-        player.set_health(20.0);
+        // ServerPlayer dimension changes preserve health; respawn resets it explicitly.
+        player.send_health_update();
     }
 
     pub fn explode(
@@ -4244,7 +4246,9 @@ impl World {
                 return Some(player.clone());
             }
         }
-        None
+        self.entity_tracker
+            .get_tracked_entity(id)
+            .and_then(|tracked| self.player_from_tracking(&tracked))
     }
 
     /// Gets an entity by an entity id
@@ -4254,12 +4258,8 @@ impl World {
                 return Some(entity.clone());
             }
         }
-        for player in self.players.load().iter() {
-            if player.get_entity().entity_id == id {
-                return Some(player.clone() as Arc<dyn EntityBase>);
-            }
-        }
-        None
+        self.get_player_by_id(id)
+            .map(|player| player as Arc<dyn EntityBase>)
     }
 
     /// Gets a `Player` by a username
@@ -4269,7 +4269,7 @@ impl World {
                 return Some(player.clone());
             }
         }
-        None
+        self.find_tracked_player(|player| player.gameprofile.name.eq_ignore_ascii_case(name))
     }
 
     // Gets all entities at a Box
@@ -4324,10 +4324,11 @@ impl World {
     /// An `Option<Arc<Player>>` containing the player if found, or `None` if not.
     pub fn get_player_by_uuid(&self, id: uuid::Uuid) -> Option<Arc<Player>> {
         self.players
-            .load()
+            .load_full()
             .iter()
             .find(|p| p.gameprofile.id == id)
             .cloned()
+            .or_else(|| self.find_tracked_player(|player| player.gameprofile.id == id))
     }
 
     /// Retrieves an entity by their unique UUID.
