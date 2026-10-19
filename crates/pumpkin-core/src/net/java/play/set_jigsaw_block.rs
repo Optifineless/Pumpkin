@@ -22,6 +22,13 @@ impl JavaClient {
                 return;
             };
 
+            // ServerGamePacketListenerImpl.handleSetJigsawBlock mutates the live entity from this packet.
+            let world = player.world();
+            let Some(mutation) = world.block_entity_mutation_permit(pos) else {
+                warn!("Jigsaw block update rejected while chunk is unloading at {pos:?}");
+                return;
+            };
+
             *jigsaw_block
                 .name
                 .lock()
@@ -52,7 +59,8 @@ impl JavaClient {
                 .store(jigsaw.placement_priority.0, Ordering::SeqCst);
             jigsaw_block.dirty.store(true, Ordering::Relaxed);
 
-            player.world().update_block_entity(&block_entity);
+            drop(mutation);
+            world.update_block_entity(&block_entity);
         }
     }
 }

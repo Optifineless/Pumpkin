@@ -22,6 +22,9 @@ impl Ignition {
     where
         F: FnOnce(Arc<World>, BlockPos, BlockStateId),
     {
+        let Some(_mutation) = world.block_entity_mutation_permit(location) else {
+            return false;
+        };
         if *world.get_fluid(&location) != Fluid::EMPTY {
             return false;
         }

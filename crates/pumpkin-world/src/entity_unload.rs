@@ -9,7 +9,7 @@ use pumpkin_util::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{Level, SyncEntityChunk};
+use super::{Level, SyncChunk, SyncEntityChunk};
 use crate::chunk::io::FileIO;
 
 #[derive(Default)]
@@ -60,6 +60,30 @@ pub struct EntityUnload {
 }
 
 impl Level {
+    /// Retains this terrain incarnation until a reopened block-entity image is captured.
+    /// Call outside block-entity admission and without a loaded-chunk entry guard.
+    pub fn request_block_entity_recapture(&self, pos: Vector2<i32>, expected: &SyncChunk) -> bool {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // ChunkMap.scheduleUnload takes this same admission before removing published terrain.
+        if !self
+            .loaded_chunks
+            .get(&pos)
+            .is_some_and(|chunk| Arc::ptr_eq(chunk.value(), expected))
+        {
+            return false;
+        }
+        if !self.chunk_watchers.contains_key(&pos) {
+            // A reopening may race the preceding retirement's finish. Give the new capture its
+            // own generation so that finish cannot release this terrain fence.
+            unloads.invalidate(pos);
+            self.request_entity_unload_locked(&mut unloads, pos);
+        }
+        true
+    }
+
     /// Publishes watcher ownership synchronously, before releasing player tickets.
     pub fn watch_entity_chunks(&self, chunks: &[Vector2<i32>]) {
         let mut unloads = self

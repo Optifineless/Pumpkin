@@ -39,6 +39,9 @@ impl TNTBlock {
         location: &BlockPos,
         owner: Option<&dyn EntityBase>,
     ) -> bool {
+        let Some(_mutation) = world.block_entity_mutation_permit(*location) else {
+            return false;
+        };
         if !world.level_info.load().game_rules.tnt_explodes {
             return false;
         }

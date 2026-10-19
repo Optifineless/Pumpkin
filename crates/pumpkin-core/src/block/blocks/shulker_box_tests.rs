@@ -89,6 +89,35 @@ async fn deep_review_mining_open_shulker_rejects_stale_clicks_and_preserves_one_
     assert!(world.level.shutdown().await.is_ok());
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retired_shulker_with_pending_image_invalidates_open_menu() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path());
+    let world = world(&server, dir.path());
+    let viewer = TestPlayer::new(&world).player;
+    world.players.store(Arc::new(vec![viewer.clone()]));
+    let pos = BlockPos::new(8, 64, 8);
+    let (_entity, menu) = open_box(&server, &world, &viewer, pos);
+    assert!(menu.lock().unwrap().can_use(viewer.as_ref()));
+    // Entity-chunk retirement captures the box into a pending image; terrain stays loaded.
+    assert!(world.unload_block_entities(pos.chunk_position()));
+    let chunk = world
+        .level
+        .loaded_chunks
+        .get(&pos.chunk_position())
+        .unwrap()
+        .clone();
+    assert!(
+        chunk
+            .pending_block_entities
+            .lock()
+            .unwrap()
+            .contains_key(&pos)
+    );
+    // Validation holds the screen guard and must not promote the pending image.
+    assert!(!menu.lock().unwrap().can_use(viewer.as_ref()));
+}
+
 fn open_box(
     server: &Arc<crate::server::Server>,
     world: &Arc<crate::world::World>,

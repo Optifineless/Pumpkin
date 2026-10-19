@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicI8, Ordering},
 };
 
-use super::BlockEntity;
+use super::{BlockEntity, mutation_context::BlockEntityMutationContext};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::text::click::ClickEvent;
@@ -11,6 +11,7 @@ use pumpkin_util::text::{TextComponent, TextContent};
 
 pub use pumpkin_data::dye_color::DyeColor;
 
+/// Live edits use the sign setters; direct public field writes bypass retirement admission.
 pub struct SignBlockEntity {
     pub front_text: SignText,
     pub back_text: SignText,
@@ -22,11 +23,13 @@ pub struct SignBlockEntity {
 
 pub type Text = SignText;
 
+/// Use the setters for live text; direct public field writes bypass retirement admission.
 pub struct SignText {
     pub has_glowing_text: AtomicBool,
     color: AtomicI8,
     pub messages: Arc<Mutex<[TextComponent; 4]>>,
     pub filtered_messages: Arc<Mutex<[TextComponent; 4]>>,
+    mutation_context: BlockEntityMutationContext,
 }
 
 impl Clone for SignText {
@@ -36,6 +39,7 @@ impl Clone for SignText {
             color: AtomicI8::new(self.color.load(Ordering::Relaxed)),
             messages: self.messages.clone(),
             filtered_messages: self.filtered_messages.clone(),
+            mutation_context: self.mutation_context.clone(),
         }
     }
 }
@@ -47,6 +51,7 @@ impl Default for SignText {
             color: AtomicI8::new(DyeColor::Black as i8),
             messages: Arc::new(Mutex::new(Self::empty_messages())),
             filtered_messages: Arc::new(Mutex::new(Self::empty_messages())),
+            mutation_context: BlockEntityMutationContext::default(),
         }
     }
 }
@@ -118,12 +123,17 @@ impl From<NbtTag> for SignText {
             color: AtomicI8::new(DyeColor::by_name(color).unwrap_or(DyeColor::Black).id() as i8),
             messages: Arc::new(Mutex::new(parsed_messages)),
             filtered_messages: Arc::new(Mutex::new(parsed_filtered)),
+            mutation_context: BlockEntityMutationContext::default(),
         }
     }
 }
 
 impl SignText {
     pub const LINES: usize = 4;
+
+    pub(crate) fn bind_world(&self, world: &Arc<crate::world::World>, position: BlockPos) {
+        self.mutation_context.bind_world(world, position);
+    }
 
     #[must_use]
     pub fn empty_messages() -> [TextComponent; 4] {
@@ -147,6 +157,7 @@ impl SignText {
             color: AtomicI8::new(color.id() as i8),
             messages: Arc::new(Mutex::new(messages)),
             filtered_messages: Arc::new(Mutex::new(filtered)),
+            mutation_context: BlockEntityMutationContext::default(),
         }
     }
 
@@ -161,8 +172,10 @@ impl SignText {
     }
 
     pub fn set_has_glowing_text(&self, has_glowing_text: bool) {
-        self.has_glowing_text
-            .store(has_glowing_text, Ordering::Relaxed);
+        self.mutation_context.mutate(|| {
+            self.has_glowing_text
+                .store(has_glowing_text, Ordering::Relaxed);
+        });
     }
 
     #[must_use]
@@ -176,7 +189,9 @@ impl SignText {
     }
 
     pub fn set_color(&self, color: DyeColor) {
-        self.color.store(color.id() as i8, Ordering::Relaxed);
+        self.mutation_context.mutate(|| {
+            self.color.store(color.id() as i8, Ordering::Relaxed);
+        });
     }
 
     #[must_use]
@@ -199,58 +214,62 @@ impl SignText {
         if index >= Self::LINES {
             return;
         }
-        let filtered = filtered_message.unwrap_or_else(|| message.clone());
-        let message = TextComponent::text(message.into_string());
-        let filtered = TextComponent::text(filtered.into_string());
-        self.messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)[index] = message;
-        self.filtered_messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)[index] = filtered;
+        self.mutation_context.mutate(|| {
+            let filtered = filtered_message.unwrap_or_else(|| message.clone());
+            let message = TextComponent::text(message.into_string());
+            let filtered = TextComponent::text(filtered.into_string());
+            self.messages
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[index] = message;
+            self.filtered_messages
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[index] = filtered;
+        });
     }
 
     /// Stores submitted lines as literals, retaining styles and matching the filtered copy.
     // SignBlockEntity.updateMessages retains the previous line's style.
     pub fn update_messages(&self, lines: [&str; Self::LINES], should_filter: bool) {
-        let original = self.get_messages(should_filter);
-        let mut messages = self
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for ((message, line), previous) in messages.iter_mut().zip(lines).zip(original) {
-            let mut literal = TextComponent::text(line.to_string());
-            literal.0.style.clone_from(&previous.0.style);
-            if let TextContent::Opaque { component } = &*previous.0.content {
-                // SignBlockEntity.updateMessages keeps Style.Serializer.MAP_CODEC fields.
-                const STYLE_FIELDS: [&str; 11] = [
-                    "color",
-                    "shadow_color",
-                    "bold",
-                    "italic",
-                    "underlined",
-                    "strikethrough",
-                    "obfuscated",
-                    "click_event",
-                    "hover_event",
-                    "insertion",
-                    "font",
-                ];
-                let mut styled_literal = NbtCompound::new();
-                for field in STYLE_FIELDS {
-                    if let Some(value) = component.0.get(field) {
-                        styled_literal.put(field, value.clone());
+        self.mutation_context.mutate(|| {
+            let original = self.get_messages(should_filter);
+            let mut messages = self
+                .messages
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for ((message, line), previous) in messages.iter_mut().zip(lines).zip(original) {
+                let mut literal = TextComponent::text(line.to_string());
+                literal.0.style.clone_from(&previous.0.style);
+                if let TextContent::Opaque { component } = &*previous.0.content {
+                    // SignBlockEntity.updateMessages keeps Style.Serializer.MAP_CODEC fields.
+                    const STYLE_FIELDS: [&str; 11] = [
+                        "color",
+                        "shadow_color",
+                        "bold",
+                        "italic",
+                        "underlined",
+                        "strikethrough",
+                        "obfuscated",
+                        "click_event",
+                        "hover_event",
+                        "insertion",
+                        "font",
+                    ];
+                    let mut styled_literal = NbtCompound::new();
+                    for field in STYLE_FIELDS {
+                        if let Some(value) = component.0.get(field) {
+                            styled_literal.put(field, value.clone());
+                        }
                     }
+                    styled_literal.put_string("text", line.to_string());
+                    literal = TextComponent::from_nbt(&NbtTag::Compound(styled_literal));
                 }
-                styled_literal.put_string("text", line.to_string());
-                literal = TextComponent::from_nbt(&NbtTag::Compound(styled_literal));
+                *message = literal;
             }
-            *message = literal;
-        }
-        self.filtered_messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone_from(&messages);
+            self.filtered_messages
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone_from(&messages);
+        });
     }
 
     #[must_use]
@@ -439,10 +458,10 @@ impl<'a> SignEntityRef<'a> {
     }
 
     pub fn set_waxed(&self, waxed: bool) {
-        match self {
+        self.front_text().mutation_context.mutate(|| match self {
             Self::Sign(s) => s.is_waxed.store(waxed, Ordering::Relaxed),
             Self::Hanging(s) => s.is_waxed.store(waxed, Ordering::Relaxed),
-        }
+        });
     }
 
     #[must_use]

@@ -6,9 +6,10 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::generation::structure::template::BlockPlacer;
 use pumpkin_world::level::Level;
+use rustc_hash::FxHashSet;
 
 use crate::block::entities::block_entity_name;
-use crate::world::World;
+use crate::world::{BlockEntityMutationPermit, World};
 
 impl World {
     pub fn clear_synced_block_events_in_box(&self, min: &BlockPos, max: &BlockPos) {
@@ -32,6 +33,8 @@ pub struct WorldBlockPlacer<'a> {
     world: &'a Arc<World>,
     pub block_entity_nbts: Vec<NbtCompound>,
     pub changed_positions: Vec<(BlockPos, BlockStateId)>,
+    mutation_permits: Vec<BlockEntityMutationPermit<'a>>,
+    rejected_positions: FxHashSet<BlockPos>,
 }
 
 impl<'a> WorldBlockPlacer<'a> {
@@ -41,13 +44,19 @@ impl<'a> WorldBlockPlacer<'a> {
             world,
             block_entity_nbts: Vec::new(),
             changed_positions: Vec::new(),
+            mutation_permits: Vec::new(),
+            rejected_positions: FxHashSet::with_hasher(rustc_hash::FxBuildHasher),
         }
     }
 
     #[allow(clippy::unused_async)]
     pub fn finalize(&self) {
         for nbt in &self.block_entity_nbts {
-            if let Some(block_entity) = crate::block::entities::block_entity_from_nbt(nbt) {
+            if let Some(block_entity) = crate::block::entities::block_entity_from_nbt(nbt)
+                && !self
+                    .rejected_positions
+                    .contains(&block_entity.get_position())
+            {
                 self.world.add_block_entity(block_entity);
             }
         }
@@ -62,6 +71,14 @@ impl BlockPlacer for WorldBlockPlacer<'_> {
 
     fn set_block_state(&mut self, pos: &Vector3<i32>, state: &BlockState) {
         let block_pos = BlockPos::new(pos.x, pos.y, pos.z);
+        let Some(mutation) = self.world.block_entity_mutation_permit(block_pos) else {
+            self.rejected_positions.insert(block_pos);
+            tracing::warn!(
+                "Structure block placement rejected while chunk is unloading at {block_pos:?}"
+            );
+            return;
+        };
+        self.rejected_positions.remove(&block_pos);
         let replaced = Level::set_block_state(&self.world.level, &block_pos, state.id);
         if replaced.to_block() != state.id.to_block()
             && block_entity_name(Block::from_state_id(replaced)).is_some()
@@ -76,9 +93,27 @@ impl BlockPlacer for WorldBlockPlacer<'_> {
             self.world.remove_block_entity(&block_pos);
         }
         self.changed_positions.push((block_pos, state.id));
+        self.mutation_permits.push(mutation);
     }
 
     fn add_block_entity(&mut self, nbt: NbtCompound) {
+        let (Some(x), Some(y), Some(z)) = (nbt.get_int("x"), nbt.get_int("y"), nbt.get_int("z"))
+        else {
+            return;
+        };
+        let position = BlockPos::new(x, y, z);
+        // StructureTemplate queues NBT even when its terrain write was rejected.
+        if self.rejected_positions.contains(&position) {
+            return;
+        }
+        let Some(mutation) = self.world.block_entity_mutation_permit(position) else {
+            self.rejected_positions.insert(position);
+            tracing::warn!(
+                "Structure block entity rejected while chunk is unloading at {position:?}"
+            );
+            return;
+        };
+        self.mutation_permits.push(mutation);
         self.block_entity_nbts.push(nbt);
     }
 }

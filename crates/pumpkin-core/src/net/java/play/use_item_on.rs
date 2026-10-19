@@ -113,6 +113,16 @@ impl JavaClient {
             }
         }}
 
+        let Some(_mutation) = world.block_entity_mutation_permit(position) else {
+            tracing::warn!("Block interaction rejected while chunk is unloading at {position:?}");
+            let state_id = world.get_block_state_id(&position);
+            player.try_send_client_packet(&CBlockUpdate::new(
+                position,
+                VarInt(i32::from(state_id.as_u16())),
+            ));
+            return Ok(());
+        };
+
         // Read after plugin callbacks, which may change the inventory themselves.
         let source_slot = super::hand_use_result::hand_slot(player, hand);
         let mut item = inventory.get_stack_in_hand(hand);
