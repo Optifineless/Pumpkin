@@ -1,18 +1,14 @@
 use crate::text::color::{ARGBColor, hsv_to_rgb};
-use crate::translation::{
-    Locale, get_translation, get_translation_text, reorder_substitutions, translation_to_pretty,
-};
+use crate::translation::Locale;
 use crate::version::JavaMinecraftVersion;
 use click::ClickEvent;
 use color::Color;
-use colored::Colorize;
 use core::str;
 use hover::HoverEvent;
 use serde::de::{Error, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
 use std::fmt::Formatter;
-use std::fmt::Write;
 use std::sync::LazyLock;
 use style::Style;
 
@@ -26,10 +22,15 @@ pub mod display_projection;
 mod display_projection_tests;
 pub mod hover;
 pub mod legacy;
+pub(crate) mod render;
+pub(crate) mod render_budget;
+#[cfg(test)]
+mod render_budget_tests;
 pub mod style;
 mod translatable;
 #[cfg(test)]
 mod translatable_tests;
+mod translated;
 
 #[cfg(test)]
 mod component_codec_tests;
@@ -941,10 +942,6 @@ fn nbt_compound_to_json(compound: &pumpkin_nbt::NbtCompound) -> serde_json::Valu
     serde_json::Value::Object(map)
 }
 
-fn opaque_text(component: &pumpkin_nbt::NbtCompound) -> String {
-    translatable::get_text(component, Locale::EnUs)
-}
-
 fn nbt_tag_to_json(tag: &pumpkin_nbt::tag::NbtTag) -> serde_json::Value {
     match tag {
         pumpkin_nbt::tag::NbtTag::End => serde_json::Value::Null,
@@ -978,210 +975,26 @@ impl TextComponentBase {
     /// A formatted string ready for console output.
     #[must_use]
     pub fn to_pretty_console(self) -> String {
-        self.to_pretty_console_inner(&Style::default())
-    }
-
-    #[expect(clippy::wrong_self_convention)]
-    fn to_pretty_console_inner(self, current_styles: &Style) -> String {
-        fn osc8_link(url: &str, text: &str) -> String {
-            format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
-        }
-        /// Prioritizes `a`.
-        fn combine_styles(a: Style, b: &Style) -> Style {
-            let mut style = Style::default();
-            if let Some(color) = a.color {
-                style.color = Some(color);
-            } else {
-                style.color = b.color;
-            }
-            if let Some(bold) = a.bold {
-                style.bold = Some(bold);
-            } else {
-                style.bold = b.bold;
-            }
-            if let Some(italic) = a.italic {
-                style.italic = Some(italic);
-            } else {
-                style.italic = b.italic;
-            }
-            if let Some(underlined) = a.underlined {
-                style.underlined = Some(underlined);
-            } else {
-                style.underlined = b.underlined;
-            }
-            if let Some(strikethrough) = a.strikethrough {
-                style.strikethrough = Some(strikethrough);
-            } else {
-                style.strikethrough = b.strikethrough;
-            }
-            if let Some(click_event) = a.click_event {
-                style.click_event = Some(click_event);
-            } else {
-                style.click_event.clone_from(&b.click_event);
-            }
-            style
-        }
-
-        let mut text = match *self.content {
-            TextContent::Translatable { component } => {
-                translatable::get_text(&component.0, Locale::EnUs)
-            }
-            TextContent::Opaque { component } => opaque_text(&component.0),
-            TextContent::Text { text } => text.into_owned(),
-            TextContent::Translate {
-                translate, with, ..
-            } => translation_to_pretty(format!("minecraft:{translate}"), Locale::EnUs, with),
-            TextContent::EntityNames {
-                selector,
-                separator: _,
-            } => selector.into_owned(),
-            TextContent::Keybind { keybind } => keybind.into_owned(),
-            TextContent::Custom { key, with, .. } => translation_to_pretty(key, Locale::EnUs, with),
-            TextContent::PlayerSprite { ref profile, .. } => profile
-                .0
-                .get_string("name")
-                .map_or_else(|| "player_sprite".to_string(), ToString::to_string),
-        };
-        let style = combine_styles(*self.style, current_styles);
-        let color = style.color;
-        if let Some(color) = color {
-            text = color.console_color(&text).to_string();
-        }
-        if style.bold.is_some() {
-            text = text.bold().to_string();
-        }
-        if style.italic.is_some() {
-            text = text.italic().to_string();
-        }
-        if style.underlined.is_some() {
-            text = text.underline().to_string();
-        }
-        if style.strikethrough.is_some() {
-            text = text.strikethrough().to_string();
-        }
-        if let Some(ClickEvent::OpenUrl { url }) = style.click_event.as_ref() {
-            text = osc8_link(url, &text);
-        }
-        if let Some(ClickEvent::OpenFile { path }) = style.click_event.as_ref() {
-            text = osc8_link(&format!("file://{path}"), &text);
-        }
-
-        for child in self.extra {
-            text += &*child.to_pretty_console_inner(&style);
-        }
-        text
+        render::component(&self, Locale::EnUs, render::Mode::Console)
     }
 
     /// Converts this component into a raw Bedrock string, specifically for translation parameters.
     /// Translations are emitted as `%translation.key` so Bedrock evaluates them natively.
     #[must_use]
     pub fn to_bedrock_string(&self) -> String {
-        let mut text = String::new();
-
-        match &*self.content {
-            TextContent::Translatable { component } => {
-                text.push_str(&translatable::get_text(&component.0, Locale::EnUs));
-            }
-            TextContent::Opaque { component } => text.push_str(&opaque_text(&component.0)),
-            TextContent::Text { text: t } => text.push_str(t),
-            TextContent::Translate {
-                translate,
-                bedrock_translate,
-                with: _,
-            } => {
-                let key = bedrock_translate.as_deref().unwrap_or(translate.as_ref());
-                let _ = write!(text, "%{key}");
-            }
-            TextContent::EntityNames { selector, .. } => text.push_str(selector),
-            TextContent::Keybind { keybind } => text.push_str(keybind),
-            TextContent::Custom { key, .. } => {
-                let _ = write!(text, "%{key}");
-            }
-            TextContent::PlayerSprite { profile, .. } => {
-                if let Some(name) = profile.0.get_string("name") {
-                    text.push_str(name);
-                }
-            }
-        }
-
-        for child in &self.extra {
-            text.push_str(&child.to_bedrock_string());
-        }
-
-        text
+        render::component(self, Locale::EnUs, render::Mode::BedrockRaw)
     }
 
     #[must_use]
     pub fn to_bedrock_legacy(&self, locale: Locale) -> String {
-        let mut text = String::new();
-
-        // 1. Inject Bedrock formatting codes
-        if let Some(color) = &self.style.color {
-            match color {
-                Color::Named(named) => {
-                    let _ = write!(text, "§{}", named.to_legacy_char());
-                }
-                Color::Rgb(_rgb) => {
-                    // Bedrock doesn't strictly support Java's §x hex format.
-                    // Most Bedrock implementations fallback to Gray or ignore it.
-                }
-                Color::Reset => {
-                    // Explicitly handle the Reset variant
-                    text.push_str("§r");
-                }
-            }
-        }
-
-        if self.style.bold == Some(true) {
-            text.push_str("§l");
-        }
-        if self.style.italic == Some(true) {
-            text.push_str("§o");
-        }
-        if self.style.underlined == Some(true) {
-            text.push_str("§n");
-        }
-        if self.style.obfuscated == Some(true) {
-            text.push_str("§k");
-        }
-        // Note: Bedrock does not support strikethrough natively without resource packs.
-
-        // 2. Resolve Content
-        match &*self.content {
-            TextContent::Translatable { component } => {
-                text.push_str(&translatable::get_text(&component.0, locale));
-            }
-            TextContent::Opaque { component } => text.push_str(&opaque_text(&component.0)),
-            TextContent::Text { text: t } => text.push_str(t),
-            TextContent::Translate {
-                translate,
-                bedrock_translate,
-                with,
-            } => {
-                let key = bedrock_translate.as_ref().unwrap_or(translate);
-                text.push_str(&get_translation_text(key.to_string(), locale, with.clone()));
-            }
-            TextContent::EntityNames { selector, .. } => text.push_str(selector),
-            TextContent::Keybind { keybind } => text.push_str(keybind),
-            TextContent::Custom { key, with, .. } => {
-                text.push_str(&get_translation_text(key.clone(), locale, with.clone()));
-            }
-            TextContent::PlayerSprite { profile, .. } => {
-                if let Some(name) = profile.0.get_string("name") {
-                    text.push_str(name);
-                }
-            }
-        }
-
-        // 3. Recursively append extra components
-        for child in &self.extra {
-            text.push_str(&child.to_bedrock_legacy(locale));
-            // Bedrock styles bleed into subsequent text. We append a reset code
-            // to ensure child styles are properly isolated from one another.
-            text.push_str("§r");
-        }
-
-        text
+        render::component(
+            self,
+            locale,
+            render::Mode::Legacy {
+                version: None,
+                code: '§',
+            },
+        )
     }
 
     /// Extracts the raw text content of this component for the given locale.
@@ -1196,134 +1009,13 @@ impl TextComponentBase {
         translatable::component_text(&self, locale)
     }
 
-    /// Converts this component by resolving all translations.
-    ///
-    /// # Returns
-    /// A new component with all translations resolved.
-    fn translate_hover_event(style: &mut Style) {
-        if let Some(ref hover) = style.hover_event {
-            style.hover_event = match hover {
-                HoverEvent::ShowText { value } => {
-                    let mut hover_components = vec![];
-                    for hover_component in value {
-                        hover_components.push(hover_component.to_owned().to_translated());
-                    }
-                    Some(HoverEvent::ShowText {
-                        value: hover_components,
-                    })
-                }
-                HoverEvent::ShowEntity { name, id, uuid } => name.as_ref().map_or_else(
-                    || {
-                        Some(HoverEvent::ShowEntity {
-                            name: None,
-                            id: id.clone(),
-                            uuid: uuid.clone(),
-                        })
-                    },
-                    |name| {
-                        Some(HoverEvent::ShowEntity {
-                            name: Some(name.iter().map(|x| x.to_owned().to_translated()).collect()),
-                            id: id.clone(),
-                            uuid: uuid.clone(),
-                        })
-                    },
-                ),
-                HoverEvent::ShowItem { id, count } => Some(HoverEvent::ShowItem {
-                    id: id.clone(),
-                    count: count.to_owned(),
-                }),
-            };
-        }
-    }
-
-    /// Converts this component by resolving all translations.
-    ///
-    /// # Returns
-    /// A new component with all translations resolved.
+    /// Resolves custom translations with the shared rendering budget.
     #[must_use]
     pub fn to_translated(self) -> Self {
-        // NOTE: Divide the translation into slices and inserts the substitutions.
-        let component = match *self.content {
-            TextContent::Translate {
-                translate,
-                bedrock_translate,
-                with,
-            } => {
-                let mut translated_with = vec![];
-                for w in with {
-                    translated_with.push(w.to_translated());
-                }
-                Self {
-                    content: Box::new(TextContent::Translate {
-                        translate,
-                        bedrock_translate,
-                        with: translated_with,
-                    }),
-                    style: self.style,
-                    extra: self.extra,
-                }
-            }
-            TextContent::Custom { key, with, locale } => {
-                let translation = get_translation(&key, locale);
-                let mut translation_parent = translation.clone();
-                let mut translation_slices = vec![];
-
-                if translation.contains('%') {
-                    let (substitutions, ranges) = reorder_substitutions(&translation, with);
-                    for (idx, &range) in ranges.iter().enumerate() {
-                        if idx == 0 {
-                            translation_parent = translation[..range.start].to_string();
-                        }
-                        translation_slices.push(substitutions[idx].clone());
-                        if range.end >= translation.len() - 1 {
-                            continue;
-                        }
-
-                        translation_slices.push(Self {
-                            content: Box::new(TextContent::Text {
-                                text: if idx == ranges.len() - 1 {
-                                    // Last substitution, append the rest of the translation
-                                    Cow::Owned(translation[range.end + 1..].to_string())
-                                } else {
-                                    Cow::Owned(
-                                        translation[range.end + 1..ranges[idx + 1].start]
-                                            .to_string(),
-                                    )
-                                },
-                            }),
-                            style: Box::new(Style::default()),
-                            extra: vec![],
-                        });
-                    }
-                }
-                for i in self.extra {
-                    translation_slices.push(i);
-                }
-                Self {
-                    content: Box::new(TextContent::Text {
-                        text: translation_parent.into(),
-                    }),
-                    style: self.style,
-                    extra: translation_slices,
-                }
-            }
-            _ => self, // If not a translation, return as is
-        };
-        // Ensure that the extra components are translated
-        let extra = component
-            .extra
-            .into_iter()
-            .map(Self::to_translated)
-            .collect();
-
-        // If the hover event is present, it will also be translated
-        let mut style = component.style;
-        Self::translate_hover_event(&mut style);
-
-        Self {
-            content: component.content,
-            style,
-            extra,
+        if translated::needs_translation(&self) {
+            translated::component(&self)
+        } else {
+            self
         }
     }
 }

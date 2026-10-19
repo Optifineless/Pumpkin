@@ -1,175 +1,78 @@
-use super::{TextComponentBase, TextContent, component_codec::collection_tags};
-use crate::translation::{
-    Locale, Placeholder, get_translation, get_translation_with_fallback, placeholder_at,
+use super::{
+    TextComponentBase,
+    render::{self, ConsoleStyle, Mode, Renderer},
 };
+use crate::translation::{Locale, get_render_translation};
 use pumpkin_nbt::{NbtCompound, tag::NbtTag};
 
-const MAX_RENDERED_BYTES: usize = 32 * 1024;
-const MAX_RENDER_STEPS: usize = 128 * 1024;
-const MAX_RENDER_DEPTH: usize = 128;
-
+#[cfg(test)]
 pub(super) fn get_text(component: &NbtCompound, locale: Locale) -> String {
-    let mut renderer = Renderer {
-        text: String::new(),
-        steps: MAX_RENDER_STEPS,
-    };
-    renderer.compound(component, locale, 0);
+    let mut renderer = Renderer::new(Mode::Plain);
+    renderer.compound(component, locale, 0, ConsoleStyle::default());
     renderer.text
 }
 
 pub(super) fn component_text(component: &TextComponentBase, locale: Locale) -> String {
-    let mut renderer = Renderer {
-        text: String::new(),
-        steps: MAX_RENDER_STEPS,
-    };
-    renderer.component(component, locale, 0);
-    renderer.text
-}
-
-struct Renderer {
-    text: String,
-    steps: usize,
+    render::component(component, locale, Mode::Plain)
 }
 
 impl Renderer {
-    fn component(&mut self, component: &TextComponentBase, locale: Locale, depth: usize) {
-        if !self.enter(depth) {
-            return;
-        }
-        match component.content.as_ref() {
-            TextContent::Translatable { component } => self.compound(&component.0, locale, depth),
-            TextContent::Opaque { component } => self.compound(&component.0, Locale::EnUs, depth),
-            TextContent::Text { text } => self.append(text),
-            TextContent::Translate {
-                translate,
-                bedrock_translate,
-                with,
-            } => {
-                let key = bedrock_translate.as_ref().unwrap_or(translate);
-                let template = get_translation(&format!("minecraft:{key}"), locale);
-                self.component_translation(&template, with, locale, depth);
-            }
-            TextContent::Custom { key, with, .. } => {
-                let template = get_translation(key, locale);
-                self.component_translation(&template, with, locale, depth);
-            }
-            TextContent::EntityNames { selector, .. } => self.append(selector),
-            TextContent::Keybind { keybind } => self.append(keybind),
-            TextContent::PlayerSprite { profile, .. } => {
-                self.append(profile.0.get_string("name").unwrap_or_default());
-            }
-        }
-        for child in &component.extra {
-            if self.full() {
-                break;
-            }
-            self.component(child, locale, depth + 1);
-        }
-    }
-
-    fn component_translation(
+    pub(super) fn compound(
         &mut self,
-        template: &str,
-        with: &[TextComponentBase],
+        component: &NbtCompound,
         locale: Locale,
         depth: usize,
+        style: ConsoleStyle<'_>,
     ) {
-        if with.is_empty() || !template.contains('%') {
-            self.append(template);
-            return;
-        }
-        self.steps = self.steps.saturating_sub(template.len());
-        let bytes = template.as_bytes();
-        let mut next = 0;
-        let mut current = 0;
-        let mut position = 0;
-        while position < bytes.len() && !self.full() {
-            if bytes[position] != b'%' || (position > 0 && bytes[position - 1] == b'\\') {
-                position += 1;
-                continue;
-            }
-            let Some((placeholder, end)) = placeholder_at(bytes, position) else {
-                position += 1;
-                continue;
-            };
-            self.append(&template[current..position]);
-            match placeholder {
-                Placeholder::Escape => self.append("%"),
-                Placeholder::Next => {
-                    self.component(&with[next], locale, depth + 1);
-                    next = (next + 1).min(with.len() - 1);
-                }
-                Placeholder::Indexed(index) => {
-                    self.component(&with[index.clamp(1, with.len()) - 1], locale, depth + 1);
-                }
-            }
-            current = end + 1;
-            position = current;
-        }
-        if !self.full() {
-            self.append(&template[current..]);
-        }
-    }
-
-    const fn full(&self) -> bool {
-        self.text.len() >= MAX_RENDERED_BYTES || self.steps == 0
-    }
-
-    const fn enter(&mut self, depth: usize) -> bool {
-        if depth >= MAX_RENDER_DEPTH {
-            self.steps = 0;
-        }
-        if self.full() {
-            return false;
-        }
-        self.steps -= 1;
-        true
-    }
-
-    fn append(&mut self, value: &str) {
-        let mut length = value.len().min(MAX_RENDERED_BYTES - self.text.len());
-        while !value.is_char_boundary(length) {
-            length -= 1;
-        }
-        self.text.push_str(&value[..length]);
-        if length < value.len() {
-            self.steps = 0;
-        }
-    }
-
-    fn compound(&mut self, component: &NbtCompound, locale: Locale, depth: usize) {
-        if !self.enter(depth) {
+        if !self.budget.enter(depth) {
             return;
         }
         if let Some(key) = component.get_string("translate") {
             // TranslatableContents.decompose selects Language.getOrDefault first.
-            let template = get_translation_with_fallback(
+            let template = get_render_translation(
                 &format!("minecraft:{key}"),
                 locale,
-                component.get_string("fallback").unwrap_or(key),
+                Some(component.get_string("fallback").unwrap_or(key)),
             );
-            self.steps = self.steps.saturating_sub(template.len());
-            if self.full() {
+            if !self.budget.scan(template.len()) {
                 return;
             }
-            let arguments = component
-                .get("with")
-                .and_then(collection_tags)
-                .unwrap_or_default();
+            let arguments = component.get("with");
+            let count = match arguments {
+                Some(NbtTag::List(values)) => values.len(),
+                Some(NbtTag::ByteArray(values)) => values.len(),
+                Some(NbtTag::IntArray(values)) => values.len(),
+                Some(NbtTag::LongArray(values)) => values.len(),
+                _ => 0,
+            };
             // Validate before emitting: malformed templates render literally in vanilla.
-            if visit_template(&template, arguments.len(), |_, _| true).is_some() {
-                let _ = visit_template(&template, arguments.len(), |literal, argument| {
+            if visit_template(&template, count, |_, _| true).is_some() {
+                let _ = visit_template(&template, count, |literal, argument| {
                     if self.full() {
                         return false;
                     }
-                    self.append(literal);
+                    self.append(literal, style);
                     if let Some(index) = argument {
-                        self.tag(&arguments[index], locale, depth + 1);
+                        match arguments {
+                            Some(NbtTag::List(values)) => {
+                                self.tag(&values[index], locale, depth + 1, style);
+                            }
+                            Some(NbtTag::ByteArray(values)) => {
+                                self.tag(&NbtTag::Byte(values[index]), locale, depth + 1, style);
+                            }
+                            Some(NbtTag::IntArray(values)) => {
+                                self.tag(&NbtTag::Int(values[index]), locale, depth + 1, style);
+                            }
+                            Some(NbtTag::LongArray(values)) => {
+                                self.tag(&NbtTag::Long(values[index]), locale, depth + 1, style);
+                            }
+                            _ => {}
+                        }
                     }
                     !self.full()
                 });
             } else {
-                self.append(&template);
+                self.append(&template, style);
             }
         } else {
             self.append(
@@ -179,6 +82,7 @@ impl Renderer {
                     .or_else(|| component.get_string("keybind"))
                     .or_else(|| component.get_string("selector"))
                     .unwrap_or_default(),
+                style,
             );
         }
         if let Some(children) = component.get_list("extra") {
@@ -186,42 +90,42 @@ impl Renderer {
                 if self.full() {
                     break;
                 }
-                self.tag(child, locale, depth + 1);
+                self.tag(child, locale, depth + 1, style);
             }
         }
     }
 
-    fn tag(&mut self, tag: &NbtTag, locale: Locale, depth: usize) {
+    fn tag(&mut self, tag: &NbtTag, locale: Locale, depth: usize, style: ConsoleStyle<'_>) {
         if let NbtTag::Compound(component) = tag {
             if component.child_tags.len() == 1
                 && let Some(value) = component.get("")
             {
-                if self.enter(depth) {
-                    self.tag(value, locale, depth + 1);
+                if self.budget.enter(depth) {
+                    self.tag(value, locale, depth + 1, style);
                 }
             } else {
-                self.compound(component, locale, depth);
+                self.compound(component, locale, depth, style);
             }
             return;
         }
-        if !self.enter(depth) {
+        if !self.budget.enter(depth) {
             return;
         }
         // TranslatableContents.getArgument uses Number.toString or visits a component.
         match tag {
-            NbtTag::Byte(value) => self.append(&value.to_string()),
-            NbtTag::Short(value) => self.append(&value.to_string()),
-            NbtTag::Int(value) => self.append(&value.to_string()),
-            NbtTag::Long(value) => self.append(&value.to_string()),
-            NbtTag::Float(value) => self.append(&floating_point_text(format!("{value:?}"))),
-            NbtTag::Double(value) => self.append(&floating_point_text(format!("{value:?}"))),
-            NbtTag::String(value) => self.append(value),
+            NbtTag::Byte(value) => self.append(&value.to_string(), style),
+            NbtTag::Short(value) => self.append(&value.to_string(), style),
+            NbtTag::Int(value) => self.append(&value.to_string(), style),
+            NbtTag::Long(value) => self.append(&value.to_string(), style),
+            NbtTag::Float(value) => self.append(&floating_point_text(format!("{value:?}")), style),
+            NbtTag::Double(value) => self.append(&floating_point_text(format!("{value:?}")), style),
+            NbtTag::String(value) => self.append(value, style),
             NbtTag::List(children) => {
                 for child in children {
                     if self.full() {
                         break;
                     }
-                    self.tag(child, locale, depth + 1);
+                    self.tag(child, locale, depth + 1, style);
                 }
             }
             _ => {}

@@ -12,6 +12,7 @@ mod legacy;
 mod lifecycle;
 mod loaded;
 mod login;
+mod native_render;
 mod projection;
 mod reentry;
 mod render_bounds;

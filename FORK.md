@@ -75,6 +75,37 @@ newly accepted 512-container documents can also be saved on normal worker stacks
 Native API 8 (same version), public methods and layouts are unchanged in this round.
 In-game verification: Not yet.
 
+Review round 6 uses one private output/traversal budget for plain text, styled
+console feedback and logs, both translation-string helpers, Java legacy text,
+Bedrock raw/legacy text and titles, and custom translation materialization
+(including hover text). Substitutions are visited by reference; formatting and
+hyperlink bytes count toward the 32 KiB limit, and empty expansions stop at the
+shared traversal limit. Translation table copies are bounded before allocation.
+Raw persistence codecs remain lossless. API 8 (same version): no public methods,
+types or layouts change in this round.
+Native components needing no server-only custom translation pass unchanged
+through serialization, including entity names and text-display saves. The input
+scan is iterative and does not expand or copy component payloads.
+
+The native renderer retains the fork's existing missing-argument clamping;
+vanilla 26.3 `TranslatableContents.decompose/getArgument` instead displays an
+invalid template literally. This round bounds that existing behavior rather
+than changing ordinary translations. A saved native S20 objective is covered
+through startup, Java join, the actual Console `scoreboard players get` command,
+mutation and save; safe S5 controls reproduce the old unbounded output.
+In-game verification: Not yet. Play test: query an imported translated objective
+from the console, then join and save; expect prompt, shortened feedback, a normal
+join and unchanged saved display data. Capture the console query and sidebar.
+
+Not addressed (backlog): live `displayautoupdate` holder-name resolution; numeric
+translation arguments in display projection; Bedrock team-coloured slots,
+objective lifecycle slot assignments and allocation-derived score-entry IDs.
+The Wasm whole-settings API also cannot distinguish a round-tripped default
+white from an intentional white update on an uncoloured team. Its existing
+preservation rule remains: to explicitly set white, update to a nonwhite colour
+first, then white (or create the team with white). A one-call intent distinction
+needs a separate design. These parity gaps do not change the retained raw save.
+
 If the namespaced file is absent, supported pre-26.1 worlds import
 `data/scoreboard.dat`; successful later saves publish the namespaced file without
 removing the legacy original. A corrupt namespaced file never falls back to legacy.

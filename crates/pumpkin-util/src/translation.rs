@@ -214,13 +214,17 @@ pub fn reorder_substitutions(
     // read from rather than drained. Freeze them for that read-only access.
     let with = with.into_boxed_slice();
 
+    let mut budget = crate::text::render_budget::Budget::new();
     let bytes = translation.as_bytes();
     let mut substitutions: Vec<TextComponentBase> = vec![];
     let mut ranges: Vec<SubstitutionRange> = vec![];
     let mut next_idx = 0usize;
     let mut i = 0usize;
 
-    while i < bytes.len() {
+    if !budget.scan(translation.len()) {
+        return (substitutions, ranges);
+    }
+    while i < bytes.len() && !budget.full() {
         if bytes[i] != b'%' || (i > 0 && bytes[i - 1] == b'\\') {
             i += 1;
             continue;
@@ -230,18 +234,35 @@ pub fn reorder_substitutions(
             continue;
         };
 
-        substitutions.push(match placeholder {
+        if !budget.reserve(crate::text::render_budget::COMPONENT_OVERHEAD) {
+            break;
+        }
+        let substitution = match placeholder {
             Placeholder::Escape => literal("%"),
             Placeholder::Next => {
-                let taken = with.get(next_idx).cloned().unwrap_or_else(|| literal(""));
+                let taken = with.get(next_idx);
                 next_idx = (next_idx + 1).min(with.len().saturating_sub(1));
-                taken
+                if let Some(taken) = taken {
+                    if !budget.component(taken, 0) {
+                        break;
+                    }
+                    taken.clone()
+                } else {
+                    literal("")
+                }
             }
-            Placeholder::Indexed(index) => with
-                .get(index.clamp(1, with.len().max(1)) - 1)
-                .cloned()
-                .unwrap_or_else(|| literal("")),
-        });
+            Placeholder::Indexed(index) => {
+                if let Some(taken) = with.get(index.clamp(1, with.len().max(1)) - 1) {
+                    if !budget.component(taken, 0) {
+                        break;
+                    }
+                    taken.clone()
+                } else {
+                    literal("")
+                }
+            }
+        };
+        substitutions.push(substitution);
         ranges.push(SubstitutionRange { start: i, end });
         i = end + 1;
     }
@@ -258,31 +279,16 @@ pub fn reorder_substitutions(
 ///
 /// # Returns
 /// The resolved and formatted translation string.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Keep the existing API 8 signature"
+)]
 pub fn translation_to_pretty<P: Into<Cow<'static, str>>>(
     namespaced_key: P,
     locale: Locale,
     with: Vec<TextComponentBase>,
 ) -> String {
-    let translation = get_translation(&namespaced_key.into(), locale);
-    if with.is_empty() || !translation.contains('%') {
-        return translation;
-    }
-
-    let (substitutions, indices) = reorder_substitutions(&translation, with);
-    let mut result = String::new();
-    let mut pos = 0;
-
-    for (idx, &range) in indices.iter().enumerate() {
-        let sub_idx = idx.clamp(0, substitutions.len() - 1);
-        let substitution = substitutions[sub_idx].clone().to_pretty_console();
-
-        result.push_str(&translation[pos..range.start]);
-        result.push_str(&substitution);
-        pos = range.end + 1;
-    }
-
-    result.push_str(&translation[pos..]);
-    result
+    crate::text::render::translation(&namespaced_key.into(), locale, &with, true)
 }
 
 /// Resolves a translation into plain text.
@@ -294,31 +300,33 @@ pub fn translation_to_pretty<P: Into<Cow<'static, str>>>(
 ///
 /// # Returns
 /// The resolved translation as plain text.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Keep the existing API 8 signature"
+)]
 pub fn get_translation_text<P: Into<Cow<'static, str>>>(
     namespaced_key: P,
     locale: Locale,
     with: Vec<TextComponentBase>,
 ) -> String {
-    let translation = get_translation(&namespaced_key.into(), locale);
-    if with.is_empty() || !translation.contains('%') {
-        return translation;
+    crate::text::render::translation(&namespaced_key.into(), locale, &with, false)
+}
+
+// Bound the template copy before allocation; release translation ownership before recursion.
+pub(crate) fn get_render_translation(key: &str, locale: Locale, fallback: Option<&str>) -> String {
+    let translations = TRANSLATIONS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let key = key.to_lowercase();
+    let value = translations[locale as usize]
+        .get(&key)
+        .or_else(|| translations[Locale::EnUs as usize].get(&key))
+        .map_or_else(|| fallback.unwrap_or(&key), String::as_str);
+    let mut end = value.len().min(crate::text::render_budget::MAX_BYTES);
+    while !value.is_char_boundary(end) {
+        end -= 1;
     }
-
-    let (substitutions, indices) = reorder_substitutions(&translation, with);
-    let mut result = String::new();
-    let mut pos = 0;
-
-    for (idx, &range) in indices.iter().enumerate() {
-        let sub_idx = idx.clamp(0, substitutions.len() - 1);
-        let substitution = substitutions[sub_idx].clone().get_text(locale);
-
-        result.push_str(&translation[pos..range.start]);
-        result.push_str(&substitution);
-        pos = range.end + 1;
-    }
-
-    result.push_str(&translation[pos..]);
-    result
+    value[..end].to_owned()
 }
 
 pub static TRANSLATIONS: LazyLock<Mutex<[HashMap<String, String>; Locale::COUNT]>> =

@@ -1,8 +1,6 @@
-use std::fmt::Write;
-
+use crate::text::TextComponent;
 use crate::text::color::Color;
-use crate::text::{TextComponent, TextContent};
-use crate::translation::{Locale, get_translation_text};
+use crate::translation::Locale;
 
 impl TextComponent {
     /// Parses a legacy Minecraft formatted string (using section signs '§' by default) into a text component.
@@ -220,90 +218,14 @@ impl TextComponent {
         code_symbol: char,
         locale: Locale,
     ) -> String {
-        let mut text = String::new();
-
-        // 1. Color formatting
-        if let Some(color) = &self.0.style.color {
-            match color {
-                Color::Named(named) => {
-                    let _ = write!(text, "{code_symbol}{}", named.to_legacy_char());
-                }
-                Color::Rgb(rgb) => {
-                    if *version >= crate::version::JavaMinecraftVersion::V_1_16 {
-                        let hex = format!("{:02x}{:02x}{:02x}", rgb.red, rgb.green, rgb.blue);
-                        let _ = write!(text, "{code_symbol}x");
-                        for ch in hex.chars() {
-                            let _ = write!(text, "{code_symbol}{ch}");
-                        }
-                    } else {
-                        let named = rgb.to_nearest_named();
-                        let _ = write!(text, "{code_symbol}{}", named.to_legacy_char());
-                    }
-                }
-                Color::Reset => {
-                    let _ = write!(text, "{code_symbol}r");
-                }
-            }
-        }
-
-        // 2. Style formatting
-        if self.0.style.bold == Some(true) {
-            let _ = write!(text, "{code_symbol}l");
-        }
-        if self.0.style.italic == Some(true) {
-            let _ = write!(text, "{code_symbol}o");
-        }
-        if self.0.style.underlined == Some(true) {
-            let _ = write!(text, "{code_symbol}n");
-        }
-        if self.0.style.strikethrough == Some(true) {
-            let _ = write!(text, "{code_symbol}m");
-        }
-        if self.0.style.obfuscated == Some(true) {
-            let _ = write!(text, "{code_symbol}k");
-        }
-
-        // 3. Resolve Content
-        match &*self.0.content {
-            TextContent::Translatable { component } => {
-                text.push_str(&super::translatable::get_text(&component.0, locale));
-            }
-            TextContent::Opaque { component } => text.push_str(&super::opaque_text(&component.0)),
-            TextContent::Text { text: t } => text.push_str(t),
-            TextContent::Translate {
-                translate,
-                bedrock_translate: _,
-                with,
-            } => {
-                text.push_str(&get_translation_text(
-                    format!("minecraft:{translate}"),
-                    locale,
-                    with.clone(),
-                ));
-            }
-            TextContent::EntityNames { selector, .. } => text.push_str(selector),
-            TextContent::Keybind { keybind } => text.push_str(keybind),
-            TextContent::Custom { key, with, .. } => {
-                text.push_str(&get_translation_text(key.clone(), locale, with.clone()));
-            }
-            TextContent::PlayerSprite { profile, .. } => {
-                if let Some(name) = profile.0.get_string("name") {
-                    text.push_str(name);
-                }
-            }
-        }
-
-        // 4. Recursively append extra components
-        for child in &self.0.extra {
-            text.push_str(&Self(child.clone()).to_legacy_string_with_code_for_version(
-                version,
-                code_symbol,
-                locale,
-            ));
-            let _ = write!(text, "{code_symbol}r");
-        }
-
-        text
+        super::render::component(
+            &self.0,
+            locale,
+            super::render::Mode::Legacy {
+                version: Some(*version),
+                code: code_symbol,
+            },
+        )
     }
 }
 
