@@ -9,11 +9,92 @@ use crate::block::{
 };
 
 pub const MAX_AGE: u8 = 4;
+// PitcherCropBlock.DOUBLE_PLANT_AGE_INTERSECTION.
+const DOUBLE_PLANT_AGE_INTERSECTION: u8 = 3;
 
 #[pumpkin_block("minecraft:pitcher_crop")]
 pub struct PitcherCropBlock;
 
 impl PitcherCropBlock {
+    // PitcherCropBlock.getLowerHalf resolves bone meal clicked on either half.
+    fn lower_half(
+        world: &crate::world::World,
+        pos: pumpkin_util::math::position::BlockPos,
+    ) -> Option<(
+        pumpkin_util::math::position::BlockPos,
+        PitcherCropLikeProperties,
+    )> {
+        let (block, state_id) = world.get_block_and_state_id(&pos);
+        if block != &Block::PITCHER_CROP {
+            return None;
+        }
+        let props = PitcherCropLikeProperties::from_state_id(state_id);
+        if props.half == DoubleBlockHalf::Lower {
+            return Some((pos, props));
+        }
+
+        let lower_pos = pos.down();
+        let (lower_block, lower_state_id) = world.get_block_and_state_id(&lower_pos);
+        if lower_block != &Block::PITCHER_CROP {
+            return None;
+        }
+        let lower_props = PitcherCropLikeProperties::from_state_id(lower_state_id);
+        (lower_props.half == DoubleBlockHalf::Lower).then_some((lower_pos, lower_props))
+    }
+
+    // PitcherCropBlock.canGrow is shared by bonemeal admission and its mutation.
+    fn can_grow(
+        world: &crate::world::World,
+        lower_pos: &pumpkin_util::math::position::BlockPos,
+        lower_state: PitcherCropLikeProperties,
+        new_age: u8,
+    ) -> bool {
+        lower_state.age < MAX_AGE
+            && world.get_raw_brightness(lower_pos, 0) >= 8
+            && world.is_in_build_limit(lower_pos.up())
+            && (!Self::is_double(new_age) || Self::can_grow_into(world, &lower_pos.up()))
+    }
+
+    fn can_grow_into(
+        world: &crate::world::World,
+        pos: &pumpkin_util::math::position::BlockPos,
+    ) -> bool {
+        let (block, state) = world.get_block_and_state_id(pos);
+        state.to_state().is_air() || block == &Block::PITCHER_CROP
+    }
+
+    const fn is_double(age: u8) -> bool {
+        age >= DOUBLE_PLANT_AGE_INTERSECTION
+    }
+
+    fn grow_bonemeal(
+        world: &std::sync::Arc<crate::world::World>,
+        lower_pos: pumpkin_util::math::position::BlockPos,
+        mut lower_state: PitcherCropLikeProperties,
+    ) {
+        let new_age = lower_state.age.saturating_add(1).min(MAX_AGE);
+        if !Self::can_grow(world, &lower_pos, lower_state, new_age) {
+            return;
+        }
+
+        lower_state.age = new_age;
+        // PitcherCropBlock.grow uses setBlock(..., 2) before setBlockAndUpdate on the upper half.
+        world.set_block_state(
+            &lower_pos,
+            lower_state.to_state_id(&Block::PITCHER_CROP),
+            BlockFlags::NOTIFY_LISTENERS,
+        );
+        if Self::is_double(new_age) {
+            let mut upper_state = lower_state;
+            upper_state.half = DoubleBlockHalf::Upper;
+            world.set_block_state(
+                &lower_pos.up(),
+                upper_state.to_state_id(&Block::PITCHER_CROP),
+                BlockFlags::NOTIFY_ALL,
+            );
+        }
+    }
+
     #[must_use]
     pub fn can_survive(
         world: &dyn BlockAccessor,
@@ -51,7 +132,7 @@ impl BlockBehaviour for PitcherCropBlock {
             return Block::AIR.default_state.id;
         }
 
-        if props.half == DoubleBlockHalf::Lower && props.age >= 3 {
+        if props.half == DoubleBlockHalf::Lower && Self::is_double(props.age) {
             let above = args.world.get_block(&args.position.up());
             if above != &Block::PITCHER_CROP {
                 return Block::AIR.default_state.id;
@@ -99,47 +180,23 @@ impl BlockBehaviour for PitcherCropBlock {
     }
 
     fn is_valid_bonemeal_target(&self, args: BonemealArgs<'_>) -> bool {
-        let props = PitcherCropLikeProperties::from_state_id(args.state_id);
-        if props.half == DoubleBlockHalf::Lower {
-            props.age < MAX_AGE
-        } else {
-            let lower_state = args.world.get_block_state_id(&args.position.down());
-            let lower_props = PitcherCropLikeProperties::from_state_id(lower_state);
-            lower_props.age < MAX_AGE
-        }
+        Self::lower_half(args.world, *args.position).is_some_and(|(lower_pos, lower_state)| {
+            Self::can_grow(
+                args.world,
+                &lower_pos,
+                lower_state,
+                lower_state.age.saturating_add(1).min(MAX_AGE),
+            )
+        })
     }
 
     fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
-        let props = PitcherCropLikeProperties::from_state_id(args.state_id);
-        let (lower_pos, lower_props) = if props.half == DoubleBlockHalf::Lower {
-            (*args.position, props)
-        } else {
-            (
-                args.position.down(),
-                PitcherCropLikeProperties::from_state_id(
-                    args.world.get_block_state_id(&args.position.down()),
-                ),
-            )
-        };
-
-        if lower_props.age < MAX_AGE {
-            let next_age = lower_props.age + 1;
-            let mut new_lower = lower_props;
-            new_lower.age = next_age;
-            args.world.set_block_state(
-                &lower_pos,
-                new_lower.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL,
-            );
-            if next_age >= 3 {
-                let mut upper_props = new_lower;
-                upper_props.half = DoubleBlockHalf::Upper;
-                args.world.set_block_state(
-                    &lower_pos.up(),
-                    upper_props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_ALL,
-                );
-            }
+        if let Some((lower_pos, lower_state)) = Self::lower_half(args.world, *args.position) {
+            Self::grow_bonemeal(args.world, lower_pos, lower_state);
         }
     }
 }
+
+#[cfg(test)]
+#[path = "pitcher_crop_tests.rs"]
+mod tests;
