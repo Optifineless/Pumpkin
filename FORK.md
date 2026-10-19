@@ -34,6 +34,21 @@ instrument; Glowstone is assigned Pling. Mob-head instruments retain their
 above-block override and Harp fallback. Mirrors vanilla 26.3
 `NoteBlockInstrument.Type.BASE_BLOCK`, `NoteBlock.setInstrument` and
 `NoteBlock.triggerEvent`. In-game verification: **Not yet**.
+
+## Jukebox playback restoration (#18)
+
+An unfinished jukebox song restores its saved elapsed ticks and duration from
+the record component; ended, stopped, empty and invalid-song records stay stopped.
+Comparator output still follows the inserted record, while weak redstone power
+follows playback. Mirrors vanilla 26.3 `JukeboxBlockEntity.loadAdditional` and
+`JukeboxSongPlayer.setSongWithoutPlaying`. Adapted from upstream PR #3549 by
+HPnetwork (`d425daf19c4`); loading does not replay insertion or start effects.
+In-game verification: Not yet.
+
+Play test: Play a cat disc, save and reload after 20 ticks; expect playback power
+to stay on and turn off when the song ends, while the comparator still reads the
+inserted disc.
+
 ## Fence and wall connections (#52, #53)
 
 Fence and wall solid-face connections honor `Block.isExceptionForConnection`, so
