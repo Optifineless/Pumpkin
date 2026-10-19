@@ -3,6 +3,7 @@ use super::{
     experience_orb::ExperienceOrbEntity,
     living::{LivingEntity, attribute_modifier_slot_matches},
     mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE,
+    player::Player,
 };
 use crate::world::loot::{LootContextParameters, build_entity_death_loot_context};
 use pumpkin_data::{
@@ -16,7 +17,7 @@ use pumpkin_data::{
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use pumpkin_util::{GameMode, math::vector3::Vector3};
 use rand::RngExt;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{Arc, atomic::Ordering::Relaxed};
 
 /// Returns equipment slots in the order used by vanilla EquipmentSlot.VALUES.
 pub(crate) const fn equipment_slots_in_vanilla_order() -> [EquipmentSlot; 8] {
@@ -118,8 +119,11 @@ impl LivingEntity {
     ) {
         let _owner = self.own_damage();
         let lifecycle = self.damage_lifecycle();
-        let world = self.entity.world.load();
-        let Some(dyn_self) = world.get_entity_by_id(self.entity.entity_id) else {
+        let world = self.entity.world.load_full();
+        let Some(dyn_self) = world
+            .get_entity_by_id(self.entity.entity_id)
+            .filter(|entity| std::ptr::eq(entity.get_entity(), &raw const self.entity))
+        else {
             return;
         };
         if self
@@ -144,7 +148,7 @@ impl LivingEntity {
 
             // LivingEntity.hurtServer plays the death sound only for a fresh cooldown hit.
             world.send_entity_status(&self.entity, EntityStatus::Death, Some(ActorEventID::Death));
-            let death_message = self.prepare_death_message(&*dyn_self, damage_type, source, cause);
+            let death_message = self.prepare_death_message(&dyn_self, damage_type, source, cause);
             if !self.death_lifecycle_current(lifecycle) {
                 return;
             }
@@ -475,15 +479,15 @@ impl LivingEntity {
 
     fn prepare_death_message(
         &self,
-        caller: &dyn EntityBase,
+        caller: &Arc<dyn EntityBase>,
         damage_type: DamageType,
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> Option<pumpkin_util::text::TextComponent> {
-        let message = Self::get_death_message(caller, damage_type, source, cause);
-        if let Some(player) = caller.get_player() {
+        let message = Self::get_death_message(caller.as_ref(), damage_type, source, cause);
+        if caller.get_player().is_some() {
             let world = self.entity.world.load();
-            if let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
+            if let Ok(player_arc) = Arc::downcast::<Player>(caller.clone())
                 && let Some(server) = world.server.upgrade()
             {
                 // ServerPlayer.die builds its message before inventory drops; honor Pumpkin's cancellation.
