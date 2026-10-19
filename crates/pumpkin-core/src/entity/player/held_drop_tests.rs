@@ -179,6 +179,14 @@ impl Fixture {
     }
 
     fn take_equipment(&mut self) -> Vec<ItemStack> {
+        self.take_equipment_slots()
+            .into_iter()
+            .filter(|(slot, _)| *slot == EquipmentSlot::MAIN_HAND.discriminant())
+            .map(|(_, stack)| stack)
+            .collect()
+    }
+
+    fn take_equipment_slots(&mut self) -> Vec<(i8, ItemStack)> {
         let entity_id = self.player().entity_id();
         self.observer
             .take_packets()
@@ -192,8 +200,7 @@ impl Fixture {
             })
             .filter(|packet| packet.entity_id.0 == entity_id)
             .flat_map(|packet| packet.equipment)
-            .filter(|(slot, _)| *slot == EquipmentSlot::MAIN_HAND.discriminant())
-            .map(|(_, stack)| stack.0.into_owned())
+            .map(|(slot, stack)| (slot, stack.0.into_owned()))
             .collect()
     }
 
@@ -526,7 +533,7 @@ async fn b1019_g24_callback_selection_publishes_current_hand() {
 }
 
 #[tokio::test]
-async fn b1019_g24_drop_then_real_attack_uses_fist_damage_and_recharge() {
+async fn b1020b_g07_drop_then_real_attack_uses_fist_damage_and_recharge() {
     let mut fixture = Fixture::new(Route::JavaSingle).await;
     let player = fixture.player().clone();
     let baseline = combat_values(&player);
@@ -535,8 +542,8 @@ async fn b1019_g24_drop_then_real_attack_uses_fist_damage_and_recharge() {
     fixture.drop_packet();
     assert_eq!(
         player.last_attacked_ticks.load(Ordering::Relaxed),
-        2,
-        "drop reset elapsed attack recharge"
+        0,
+        "drop retained elapsed attack recharge"
     );
     player.tick(&fixture.server);
     player.last_attacked_ticks.store(2, Ordering::Relaxed);
@@ -573,3 +580,9 @@ async fn b1019_g24_drop_then_real_attack_uses_fist_damage_and_recharge() {
     assert_eq!(player.last_attacked_ticks.load(Ordering::Relaxed), 0);
     fixture.close().await;
 }
+
+#[path = "q_drop_tests.rs"]
+mod q_drop_tests;
+
+#[path = "held_drop_callback_tests.rs"]
+mod held_drop_callback_tests;

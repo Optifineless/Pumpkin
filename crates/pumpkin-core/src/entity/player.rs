@@ -4,6 +4,7 @@ mod container_menu_block_effects;
 mod death;
 mod equipment_updates;
 mod experience_orb;
+mod held_drop;
 #[cfg(test)]
 mod held_drop_tests;
 mod inventory_sync;
@@ -38,7 +39,6 @@ use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::Receiver;
 use crossbeam::queue::SegQueue;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_inventory::Inventory;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
 use pumpkin_protocol::RawPacket;
 use pumpkin_protocol::bedrock::client::play_status::CPlayStatus;
@@ -4209,23 +4209,25 @@ impl Player {
 
     /// Send the player's skin layers and used hand to all players.
     pub fn send_client_information(&self) {
-        let config = self.config.load();
+        let (skin_parts, main_hand) = {
+            let config = self.config.load();
+            (config.skin_parts, config.main_hand as u8)
+        };
         self.living_entity.entity.set_synced_data(
             pumpkin_data::tracked_data::player::PLAYER_MODE_CUSTOMISATION,
-            config.skin_parts,
+            skin_parts,
         );
         self.living_entity.entity.set_synced_data(
             pumpkin_data::tracked_data::player::PLAYER_MAIN_HAND,
-            config.main_hand as u8,
+            main_hand,
         );
         self.living_entity.entity.set_synced_data(
             pumpkin_data::tracked_data::player::PLAYER_MODE_CUSTOMIZATION_ID,
-            config.skin_parts,
+            skin_parts,
         );
-        self.living_entity.entity.set_synced_data(
-            pumpkin_data::tracked_data::player::MAIN_ARM_ID,
-            config.main_hand as u8,
-        );
+        self.living_entity
+            .entity
+            .set_synced_data(pumpkin_data::tracked_data::player::MAIN_ARM_ID, main_hand);
     }
 
     pub fn can_harvest(&self, state: &BlockState, block: &'static Block) -> bool {
@@ -4365,58 +4367,7 @@ impl Player {
     }
 
     pub fn drop_held_item(&self, drop_stack: bool) {
-        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
-        let source_slot = self.inventory.get_selected_slot() as usize;
-        let item_stack = self.inventory.get_stack(source_slot);
-
-        if item_stack.is_empty() {
-            return;
-        }
-
-        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
-        let dropped_stack = item_stack.copy_with_count(drop_amount);
-
-        if let Some(server) = self.world().server.upgrade()
-            && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
-        {
-            let mut event =
-                crate::plugin::api::events::player::player_drop_item::PlayerDropItemEvent::new(
-                    player_arc,
-                    dropped_stack.item.registry_key.to_string(),
-                    dropped_stack.item_count,
-                );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
-        }
-
-        let dropped_stack = pumpkin_inventory::inventory::slot_transaction::withdraw(
-            self.inventory.as_ref(),
-            source_slot,
-            &item_stack,
-            drop_amount,
-        );
-        if dropped_stack.is_empty() {
-            return;
-        }
-        // LivingEntity.detectEquipmentUpdates reads the current hand after the committed drop.
-        self.queue_equipment_updates(&[EquipmentSlot::MAIN_HAND]);
-        let updated_stack = self.inventory.get_stack(source_slot);
-        self.drop_item(dropped_stack);
-
-        let inv: Arc<dyn Inventory> = self.inventory.clone();
-        let screen_binding = self
-            .current_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut screen_handler = screen_binding
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(slot_index) = screen_handler.get_slot_index(&inv, source_slot) {
-            screen_handler.set_received_stack(slot_index, updated_stack);
-            screen_handler.send_content_updates();
-        }
+        self.drop_held_item_inner(drop_stack);
     }
 
     pub fn swap_item(&self) {
