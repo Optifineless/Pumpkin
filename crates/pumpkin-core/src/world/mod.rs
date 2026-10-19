@@ -4291,13 +4291,14 @@ impl World {
 
         entities_guard
             .iter()
-            .map(|e| e.clone() as Arc<dyn EntityBase>)
+            .filter(|entity| entity.get_entity().bounding_box.load().intersects(aabb))
+            .map(|entity| entity.clone() as Arc<dyn EntityBase>)
             .chain(
                 players_guard
                     .iter()
-                    .map(|p| p.clone() as Arc<dyn EntityBase>),
+                    .filter(|player| player.get_entity().bounding_box.load().intersects(aabb))
+                    .map(|player| player.clone() as Arc<dyn EntityBase>),
             )
-            .filter(|entity| entity.get_entity().bounding_box.load().intersects(aabb))
             .collect()
     }
 
