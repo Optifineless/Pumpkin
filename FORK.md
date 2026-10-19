@@ -461,6 +461,10 @@ G10 implementation: Codex (GPT-6 Luna).
 | [#159](https://github.com/Optifineless/Pumpkin/issues/159) Always Active command blocks capture the predecessor predicate before the first scheduled activation and publish that state with the replacement block entity. New activations mirror vanilla 26.3 `CommandBlockEntity.setAutomatic/onModeSwitch/scheduleTick`, invoked in `ServerGamePacketListenerImpl.handleSetCommandBlock`; `CommandBlock.tick` consumes the captured predicate for this tick before refreshing the next repeating predicate. Unchanged automatic saves and switches away from repeating preserve any queued predicate without scheduling a new activation. The reporter's sustained Always Active repeating silence remains unconfirmed and is not established as fixed by this scoped repair. | Not yet |
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also fixes the existing-knot downcast used by player-to-knot transfers. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved` and `LeadItem.bindPlayerMobs`; species-specific `canBeLeashed` eligibility is not yet ported. | Not yet |
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also applies species `canBeLeashed` rules before transfers, avoids publishing fence knots for ineligible leashes, treats cancelled knot shearing as handled without durability loss, and skips leash distance physics across worlds. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved`, `LeadItem.bindPlayerMobs`, `Leashable.canHaveALeashAttachedTo/canBeLeashed/tickLeash`, and `Mob.canBeLeashed`. | Not yet |
+| [#14](https://github.com/Optifineless/Pumpkin/issues/14) Lava bucket fuel remainder | Fuel consumption creates component-backed item-stack templates with their count/components and uses the lava bucket's static bucket remainder when no template exists; an overflow remainder drops once. Mirrors vanilla 26.3 `AbstractFurnaceBlockEntity.consumeFuel`. | Not yet |
+| [#15](https://github.com/Optifineless/Pumpkin/issues/15) Smoker and blast furnace cooking speed | The actual appliance recipe kind is used throughout; the admitted fuel's resolved `CookingFuel` speed scales cook duration, preserves partial completion across fuel changes, and is reused after crafting. With coal, smokers and blast furnaces cook eight admitted items per fuel; normal furnaces retain speed 1. | Not yet |
+
+In-game verification: Not yet.
 
 ## Known regressions under investigation
 
@@ -599,6 +603,8 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Overlapping metadata flushes and refreshes enqueue older changes before newer changes, and an unwound sender retains queued refreshes for an ordinary tracker retry (PR #148 review). | Not yet |
 
 ## Native plugin API 8
+
+- API 8 (same version): issues #14 and #15 add private speed state to furnace block entity layouts and methods to the public `CookingBlockEntityBase` trait/vtable. Native plugins using these types or trait objects must rebuild against this checkout; additive saved speed defaults to 1.0 for old saves and Wasm WIT is unchanged. In-game verification: Not yet.
 
 - API 8 (same version): #141 adds `PlayerInventory::replace_stack_if_unchanged` for identity-checked hand writeback. Rebuild native plugins against this checkout; saved data and Wasm WIT are unchanged. In-game verification **Not yet**.
 
