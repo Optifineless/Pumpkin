@@ -45,6 +45,8 @@ pub(crate) mod neighbor_updater;
 mod particle_senders;
 mod pending_block_entity;
 mod player_respawn;
+#[cfg(test)]
+pub(crate) use player_respawn::test_support as respawn_test_support;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -4274,7 +4276,10 @@ impl World {
                             self.dimension.minecraft_name, destination.dimension.minecraft_name
                         );
 
-                        if !self.transfer_respawning_player(player, &destination).await {
+                        if !self
+                            .transfer_respawning_player(player, &destination, position)
+                            .await
+                        {
                             return false;
                         }
                     }
