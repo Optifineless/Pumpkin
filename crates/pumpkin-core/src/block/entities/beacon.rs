@@ -54,7 +54,7 @@ impl BeaconBlockEntity {
             world.get_top_block(Vector2::new(self.position.0.x, self.position.0.z)) + 1;
         // A WorldSurface below the beacon is stale, so scan to build height rather than hiding
         // an obstruction above the beacon behind that low ceiling.
-        let top = if heightmap_top < self.position.0.y {
+        let top = if heightmap_top <= self.position.0.y {
             world.get_top_y()
         } else {
             heightmap_top

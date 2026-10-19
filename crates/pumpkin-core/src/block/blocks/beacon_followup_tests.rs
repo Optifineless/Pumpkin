@@ -217,6 +217,10 @@ fn refresh_beam(fixture: &Fixture) {
 }
 
 fn set_stale_beacon_heightmap(fixture: &Fixture) {
+    set_beacon_surface_heightmap(fixture, 62);
+}
+
+fn set_beacon_surface_heightmap(fixture: &Fixture, surface_y: i32) {
     let chunk = fixture
         .world
         .level
@@ -227,7 +231,7 @@ fn set_stale_beacon_heightmap(fixture: &Fixture) {
         pumpkin_world::chunk::ChunkHeightmapType::WorldSurface,
         0,
         0,
-        62,
+        surface_y,
         fixture.world.dimension.min_y,
     );
 }
@@ -345,6 +349,35 @@ async fn beacon_power_selection_sound_waits_for_complete_tick_scan() {
     scan_beam_to_world_top(&fixture);
     assert!(fixture.beacon.has_active_beam());
     assert_selection_sound(&mut fixture, 1);
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn beacon_stale_heightmap_one_below_beacon_still_scans_obstruction() {
+    let fixture = Fixture::new(4);
+    let roof_position = BlockPos::new(0, 66, 0);
+    fixture.world.set_block_state(
+        &roof_position,
+        Block::STONE.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    set_beacon_surface_heightmap(&fixture, fixture.pos.0.y - 1);
+    assert_eq!(
+        fixture.world.get_top_block(Vector2::new(0, 0)),
+        fixture.pos.0.y - 1
+    );
+
+    fixture.beacon.tick(&fixture.world);
+    assert!(!fixture.beacon.has_active_beam());
+
+    fixture.world.set_block_state(
+        &roof_position,
+        Block::AIR.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    set_beacon_surface_heightmap(&fixture, fixture.pos.0.y - 1);
+    scan_beam_to_world_top(&fixture);
+    assert!(fixture.beacon.has_active_beam());
     fixture.finish().await;
 }
 

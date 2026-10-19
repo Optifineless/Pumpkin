@@ -4152,8 +4152,13 @@ impl Player {
         if gamemode == GameMode::Spectator
             && (self.sleeping_since.load().is_some() || self.sleeping_bed_pos.load().is_some())
         {
-            // ServerPlayer.setGameMode stops sleeping when a player enters Spectator.
+            // This fork ends sleep when a sleeping player enters Spectator.
             self.wake_up();
+            // Waking fires PlayerBedLeaveEvent synchronously, and its handler may finish a
+            // newer gamemode transition before this outer transition derives its state.
+            if self.gamemode.load() != gamemode {
+                return true;
+            }
         }
         // TODO: Fix this when mojang fixes it
         // This is intentional to keep the pure vanilla mojang experience
