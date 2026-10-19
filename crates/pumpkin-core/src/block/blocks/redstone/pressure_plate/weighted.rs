@@ -11,7 +11,7 @@ use crate::{
     world::World,
 };
 
-use super::{PressurePlate, detection_box_at};
+use super::{EntitySensitivity, PressurePlate, detection_box_at, eligible_entity_count};
 
 /// This is for Gold and Iron Pressure Plate
 pub struct WeightedPressurePlateBlock;
@@ -101,7 +101,7 @@ impl PressurePlate for WeightedPressurePlateBlock {
             150
         };
         let aabb = detection_box_at(pos);
-        let len = world.get_entities_at_box(&aabb).len() + world.get_players_at_box(&aabb).len();
+        let len = eligible_entity_count(world, &aabb, EntitySensitivity::Everything);
         signal_strength(len, weight)
     }
 

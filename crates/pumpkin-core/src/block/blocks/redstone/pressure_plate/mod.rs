@@ -25,6 +25,28 @@ fn detection_box_at(pos: &BlockPos) -> BoundingBox {
     PRESSURE_PLATE_DETECTION_BOX.at_pos(*pos)
 }
 
+#[derive(Clone, Copy)]
+enum EntitySensitivity {
+    Everything,
+    Living,
+}
+
+fn eligible_entity_count(
+    world: &World,
+    detection_box: &BoundingBox,
+    sensitivity: EntitySensitivity,
+) -> usize {
+    world
+        .get_all_at_box(detection_box)
+        .iter()
+        .filter(|entity| !entity.is_spectator() && entity.get_entity().is_affected_by_blocks())
+        .filter(|entity| {
+            matches!(sensitivity, EntitySensitivity::Everything)
+                || entity.get_living_entity().is_some()
+        })
+        .count()
+}
+
 pub(crate) trait PressurePlate {
     fn on_entity_collision_pp(&self, args: OnEntityCollisionArgs<'_>) {
         let output = self.get_redstone_output(args.block, args.state.id);

@@ -146,6 +146,16 @@ honeycomb can still wax a blank sign. Mirrors vanilla 26.3
 `SignBlock.useItemOn` and `SignApplicator.canApplyToSign`. In-game verification:
 **Not yet**.
 
+## Pressure-plate entity eligibility (#82)
+
+Stone pressure plates count living entities; wooden and weighted plates count all
+eligible entities. Every variant excludes spectators and entities whose block
+effects are disabled, with weighted plates filtering before saturation. The shared
+calculation covers collision activation and scheduled recounts. Mirrors vanilla
+26.3 `PressurePlateBlock.getSignalStrength`,
+`WeightedPressurePlateBlock.getSignalStrength` and
+`BasePressurePlateBlock.getEntityCount`. In-game verification: Not yet.
+
 Management-enabled shutdown (#173) now stops the listener, WebSocket sessions and
 heartbeat so the final player, world and level.dat saves can finish. The authenticated
 `minecraft:server/stop` RPC signals shutdown before its bounded, best-effort success
