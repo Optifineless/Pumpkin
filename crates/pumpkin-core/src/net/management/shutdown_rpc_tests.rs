@@ -1,11 +1,16 @@
 //! Management RPC and pending-upgrade shutdown regressions.
+#[path = "backpressure_tests.rs"]
+mod backpressure_tests;
 use std::{
     collections::HashSet,
     future::Future,
     io,
     net::SocketAddr,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize},
+    },
     task::{Context, Poll},
     time::Duration,
 };
@@ -33,7 +38,8 @@ use tokio_tungstenite::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AppState, STOP_RPC_REPLY_FLUSH_TIMEOUT, handlers, ws_handler, ws_handler_with_dispatch,
+    AppState, STOP_RPC_REPLY_FLUSH_TIMEOUT, handlers, notification_flood_tests::NotificationFlood,
+    ws_handler, ws_handler_with_dispatch,
 };
 use crate::server::combat_test_support;
 struct StalledWriteListener {
@@ -41,6 +47,7 @@ struct StalledWriteListener {
     stall_writes: CancellationToken,
     release_writes: CancellationToken,
     write_stalled: mpsc::UnboundedSender<()>,
+    flood: Arc<NotificationFlood>,
 }
 
 struct StalledWriteConnection {
@@ -49,6 +56,7 @@ struct StalledWriteConnection {
     release_writes: CancellationToken,
     release_future: Pin<Box<dyn Future<Output = ()> + Send>>,
     write_stalled: mpsc::UnboundedSender<()>,
+    flood: Arc<NotificationFlood>,
     reported_stall: bool,
 }
 
@@ -65,6 +73,7 @@ impl axum::serve::Listener for StalledWriteListener {
                 release_writes: self.release_writes.clone(),
                 release_future: Box::pin(self.release_writes.clone().cancelled_owned()),
                 write_stalled: self.write_stalled.clone(),
+                flood: self.flood.clone(),
                 reported_stall: false,
             },
             address,
@@ -107,7 +116,11 @@ impl AsyncWrite for StalledWriteConnection {
                 return Poll::Pending;
             }
         }
-        Pin::new(&mut connection.stream).poll_write(context, buffer)
+        let result = Pin::new(&mut connection.stream).poll_write(context, buffer);
+        if matches!(result, Poll::Ready(Ok(written)) if written > 0) {
+            connection.flood.replenish();
+        }
+        result
     }
 
     fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -128,6 +141,7 @@ struct StalledWriteHarness {
     write_stalled: mpsc::UnboundedReceiver<()>,
     shutdown: oneshot::Sender<()>,
     serve: tokio::task::JoinHandle<()>,
+    flood: Arc<NotificationFlood>,
 }
 
 fn management_server_with_secret(
@@ -150,6 +164,11 @@ async fn start_stalled_write_server(
     server: Arc<crate::server::Server>,
     secret: String,
 ) -> StalledWriteHarness {
+    let flood = Arc::new(NotificationFlood {
+        hub: server.management_hub.clone(),
+        enabled: AtomicBool::new(false),
+        replenished: AtomicUsize::new(0),
+    });
     let state = AppState {
         server,
         secret,
@@ -166,6 +185,7 @@ async fn start_stalled_write_server(
         stall_writes: stall_writes.clone(),
         release_writes: release_writes.clone(),
         write_stalled: write_stalled_tx,
+        flood: flood.clone(),
     };
     let (shutdown, shutdown_rx) = oneshot::channel();
     let serve = tokio::spawn(async move {
@@ -183,6 +203,7 @@ async fn start_stalled_write_server(
         write_stalled,
         shutdown,
         serve,
+        flood,
     }
 }
 

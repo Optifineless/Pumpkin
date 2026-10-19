@@ -32,14 +32,14 @@ use crate::server::{Server, combat_test_support};
 const PROGRESS_DEADLINE: Duration = Duration::from_secs(5);
 type WsClient = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-struct NotificationFlood {
-    hub: Arc<ManagementHub>,
-    enabled: AtomicBool,
-    replenished: AtomicUsize,
+pub(super) struct NotificationFlood {
+    pub(super) hub: Arc<ManagementHub>,
+    pub(super) enabled: AtomicBool,
+    pub(super) replenished: AtomicUsize,
 }
 
 impl NotificationFlood {
-    fn replenish(&self) {
+    pub(super) fn replenish(&self) {
         if self.enabled.load(Ordering::Relaxed) {
             // Every notification flush replaces its queue entry before the next select.
             // Unlike a producer task, this cannot lose a scheduling race with the receiver.

@@ -3,6 +3,7 @@ pub mod dto;
 pub mod handlers;
 pub mod hub;
 pub mod rpc;
+mod socket_writer;
 
 #[cfg(test)]
 mod notification_flood_tests;
@@ -36,15 +37,16 @@ use axum::{
     routing::get,
     serve::Listener,
 };
-use futures::{SinkExt, StreamExt};
+use futures::{StreamExt, stream::SplitStream};
 use pumpkin_config::networking::management::ManagementServerConfig;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::{TcpListener, TcpStream},
+    sync::{mpsc, oneshot},
 };
-use tokio_util::sync::CancellationToken;
+use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{debug, error, info, warn};
 
 use crate::server::Server;
@@ -394,104 +396,89 @@ async fn dispatch_request(request: RpcRequest, server: Arc<Server>) -> (Option<R
 async fn handle_socket_messages_with_dispatch<D, F>(
     socket: WebSocket,
     server: &Arc<Server>,
-    mut notif_rx: tokio::sync::broadcast::Receiver<String>,
-    mut dispatch: D,
+    notif_rx: tokio::sync::broadcast::Receiver<String>,
+    dispatch: D,
 ) where
     D: FnMut(RpcRequest, Arc<Server>) -> F,
     F: Future<Output = (Option<RpcResponse>, bool)>,
 {
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, receiver) = socket.split();
+    let (outgoing, replies) = mpsc::channel(socket_writer::REPLY_CAPACITY);
+    let mut writer = AbortOnDropHandle::new(server.spawn_task(socket_writer::run(
+        sender,
+        server.clone(),
+        notif_rx,
+        replies,
+    )));
+    tokio::select! {
+        drain = read_socket_messages(receiver, server, outgoing, dispatch) => {
+            if !drain {
+                writer.abort();
+            }
+            let _ = writer.await;
+        }
+        _ = &mut writer => {}
+    }
+}
 
+async fn read_socket_messages<D, F>(
+    mut receiver: SplitStream<WebSocket>,
+    server: &Arc<Server>,
+    outgoing: mpsc::Sender<socket_writer::Outbound>,
+    mut dispatch: D,
+) -> bool
+where
+    D: FnMut(RpcRequest, Arc<Server>) -> F,
+    F: Future<Output = (Option<RpcResponse>, bool)>,
+{
     loop {
-        if server.management_shutdown.is_cancelled() {
+        // Connection.channelRead0 runs independently from sendNotification writes.
+        let incoming = tokio::select! {
+            biased;
+            () = server.management_shutdown.cancelled() => return true,
+            incoming = receiver.next() => incoming,
+        };
+        let Some(incoming) = incoming else { break };
+        let message = match incoming {
+            Ok(message) => message,
+            Err(error) => {
+                debug!("Management WebSocket error: {error}");
+                break;
+            }
+        };
+        let outbound = match message {
+            Message::Text(text) => {
+                let (response, stop_requested) =
+                    handle_json_text(text.as_str(), server.clone(), &mut dispatch).await;
+                let Some(response) = response else { continue };
+                let message = Message::from(response);
+                if stop_requested {
+                    // Stop is already dispatched; only its best-effort acknowledgement waits.
+                    let (flushed, wait_flushed) = oneshot::channel();
+                    if outgoing.try_send((message, Some(flushed))).is_err() {
+                        return false;
+                    }
+                    if !matches!(
+                        tokio::time::timeout(STOP_RPC_REPLY_FLUSH_TIMEOUT, wait_flushed).await,
+                        Ok(Ok(()))
+                    ) {
+                        debug!("Management stop acknowledgement flush failed or timed out");
+                        return false;
+                    }
+                    continue;
+                }
+                message
+            }
+            Message::Ping(payload) => Message::Pong(payload),
+            Message::Close(_) => return true,
+            _ => continue,
+        };
+        // A peer that also exhausts reply capacity is disconnected, never awaited.
+        if outgoing.try_send((outbound, None)).is_err() {
             break;
         }
-        // Connection.channelRead0 handles input independently from sendNotification.
-        tokio::select! {
-            notif = notif_rx.recv() => {
-                match notif {
-                    Ok(notif_str) => {
-                        if sender.send(Message::from(notif_str)).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        warn!("Management client lagged behind by {skipped} messages");
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                }
-            }
-            () = server.management_shutdown.cancelled() => break,
-            incoming = receiver.next() => {
-                let Some(msg_res) = incoming else { break };
-                let msg = match msg_res {
-                    Ok(m) => m,
-                    Err(e) => {
-                        debug!("Management WebSocket error: {e}");
-                        break;
-                    }
-                };
-
-                match msg {
-                    Message::Text(text) => {
-                        let text_str = text.as_str();
-                        let (response, stop_requested) =
-                            handle_json_text(text_str, server.clone(), &mut dispatch).await;
-                        if stop_requested {
-                            if let Some(response) = response {
-                                match tokio::time::timeout(
-                                    STOP_RPC_REPLY_FLUSH_TIMEOUT,
-                                    sender.send(Message::from(response)),
-                                )
-                                .await
-                                {
-                                    Ok(Ok(())) => {}
-                                    Ok(Err(_)) => return,
-                                    Err(_) => {
-                                        debug!("Management stop acknowledgement flush timed out");
-                                        return;
-                                    }
-                                }
-                            }
-                            continue;
-                        }
-                        let send_failed = if let Some(response) = response {
-                            sender.send(Message::from(response)).await.is_err()
-                        } else {
-                            false
-                        };
-                        if send_failed {
-                            break;
-                        }
-                    }
-                    Message::Close(_) => break,
-                    Message::Ping(p) => {
-                        if sender.send(Message::Pong(p)).await.is_err() {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
     }
-    if server.management_shutdown.is_cancelled() {
-        // JsonRpcNotificationService.serverShuttingDown queues stopping before closure.
-        // Drain only what was queued at cancellation: a producer that keeps broadcasting
-        // must not keep this tracked task (and so the final world saves) waiting.
-        for _ in 0..notif_rx.len() {
-            match notif_rx.try_recv() {
-                Ok(notification) => {
-                    if sender.send(Message::from(notification)).await.is_err() {
-                        break;
-                    }
-                }
-                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
-                Err(_) => break,
-            }
-        }
-    }
-    let _ = sender.close().await;
+    false
 }
 
 async fn handle_json_text<D, F>(

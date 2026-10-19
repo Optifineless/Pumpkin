@@ -30,7 +30,7 @@ pub mod loader;
 /// host features.
 pub mod permissions;
 
-use crate::{LOGGER_IMPL, server::Server};
+use crate::{LOGGER_IMPL, SHOULD_STOP, server::Server};
 pub use api::*;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -799,6 +799,9 @@ impl PluginManager {
         let mut total_wait_time = std::time::Duration::ZERO;
 
         for name in sorted_names {
+            if SHOULD_STOP.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
             if let Some((instance, metadata, loader_data, loader, path)) = plugins_map.remove(&name)
             {
                 let (allowed, wait_time) = self
@@ -816,6 +819,11 @@ impl PluginManager {
                     continue;
                 }
 
+                if SHOULD_STOP.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Destroy the native instance before loader_data unloads its library.
+                    drop(instance);
+                    break;
+                }
                 match self
                     .spawn_plugin_initialization(
                         server.clone(),

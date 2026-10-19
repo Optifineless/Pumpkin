@@ -36,6 +36,7 @@ type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>;
 #[derive(Default)]
 struct StartupState {
     entered: Notify,
+    started: AtomicBool,
     release: Notify,
     loaded: AtomicBool,
     unloaded: AtomicBool,
@@ -52,8 +53,11 @@ impl Plugin for StartupPlugin {
                 EventPriority::Normal,
                 true,
             );
+            self.0.started.store(true, Ordering::Release);
             self.0.entered.notify_one();
-            self.0.release.notified().await;
+            tokio::time::timeout(STAGE_TIMEOUT, self.0.release.notified())
+                .await
+                .expect("plugin on_load was never released");
             self.0.loaded.store(true, Ordering::Release);
             Ok(())
         })
@@ -80,7 +84,10 @@ impl EventHandler<ServerLoadEvent> for LoadCounter {
     }
 }
 
-struct StartupLoader(Arc<StartupState>);
+struct StartupLoader {
+    first: Arc<StartupState>,
+    second: Arc<StartupState>,
+}
 
 impl PluginLoader for StartupLoader {
     fn can_load(&self, path: &Path) -> bool {
@@ -88,17 +95,28 @@ impl PluginLoader for StartupLoader {
             .is_some_and(|extension| extension == "startup-test")
     }
 
-    fn load<'a>(&'a self, _path: &'a Path) -> PluginLoadFuture<'a> {
+    fn load<'a>(&'a self, path: &'a Path) -> PluginLoadFuture<'a> {
         Box::pin(async move {
-            let plugin: Arc<dyn Plugin> = Arc::new(StartupPlugin(self.0.clone()));
+            let second = path.file_stem().unwrap() == "following";
+            let state = if second { &self.second } else { &self.first };
+            let plugin: Arc<dyn Plugin> = Arc::new(StartupPlugin(state.clone()));
             Ok((
                 plugin,
                 PluginMetadata {
-                    name: "blocked-startup".into(),
+                    name: if second {
+                        "following-startup"
+                    } else {
+                        "blocked-startup"
+                    }
+                    .into(),
                     version: "1".into(),
                     authors: Vec::new(),
                     description: String::new(),
-                    dependencies: Vec::new(),
+                    dependencies: if second {
+                        vec!["blocked-startup".into()]
+                    } else {
+                        Vec::new()
+                    },
                     permissions: Vec::new(),
                 },
                 Box::new(()) as Box<dyn Any + Send + Sync>,
@@ -145,6 +163,7 @@ async fn isolated_scenario(test_name: &str, child_env: &str, stop_before_release
     std::env::set_current_dir(directory.path()).unwrap();
     std::fs::create_dir("plugins").unwrap();
     std::fs::write("plugins/blocked.startup-test", b"test plugin").unwrap();
+    std::fs::write("plugins/following.startup-test", b"second test plugin").unwrap();
     tokio::time::timeout(
         Duration::from_secs(30),
         startup_scenario(directory.path(), stop_before_release),
@@ -153,7 +172,11 @@ async fn isolated_scenario(test_name: &str, child_env: &str, stop_before_release
     .expect("startup regression exceeded its child crash guard");
 }
 
-async fn fixture(path: &Path, state: Arc<StartupState>) -> (Arc<PumpkinServer>, SocketAddr) {
+async fn fixture(
+    path: &Path,
+    first: Arc<StartupState>,
+    second: Arc<StartupState>,
+) -> (Arc<PumpkinServer>, SocketAddr) {
     let mut server = combat_test_support::server(path);
     let configuration = Arc::get_mut(&mut server).unwrap();
     configuration.advanced_config.logging.enabled = false;
@@ -175,7 +198,7 @@ async fn fixture(path: &Path, state: Arc<StartupState>) -> (Arc<PumpkinServer>, 
     server.watchdog_prepare_workers();
     server
         .plugin_manager
-        .add_loader(&server, Arc::new(StartupLoader(state)))
+        .add_loader(&server, Arc::new(StartupLoader { first, second }))
         .await;
     let config = server.advanced_config.networking.management.clone();
     let listener = ManagementServer::bind(&config).await.unwrap();
@@ -226,7 +249,9 @@ async fn receive_json(client: &mut Client) -> Value {
 
 async fn startup_scenario(path: &Path, stop_before_release: bool) {
     let state = Arc::new(StartupState::default());
-    let (server, address) = fixture(path, state.clone()).await;
+    let second = Arc::new(StartupState::default());
+    second.release.notify_one();
+    let (server, address) = fixture(path, state.clone(), second.clone()).await;
     let mut client = connect_client(address).await;
     let (initialized, wait_initialized) = tokio::sync::oneshot::channel();
     let startup = server.clone();
@@ -297,6 +322,20 @@ async fn startup_scenario(path: &Path, stop_before_release: bool) {
     );
     assert!(state.loaded.load(Ordering::Acquire));
     assert!(state.unloaded.load(Ordering::Acquire));
+    assert_eq!(
+        second.started.load(Ordering::Acquire),
+        !stop_before_release,
+        "stop accepted during A must prevent B on_load from starting"
+    );
+    assert_eq!(second.loaded.load(Ordering::Acquire), !stop_before_release);
+    assert_eq!(
+        second.unloaded.load(Ordering::Acquire),
+        !stop_before_release
+    );
+    assert_eq!(
+        second.load_events.load(Ordering::Relaxed),
+        usize::from(!stop_before_release)
+    );
     assert!(server.server.tasks.is_empty());
     assert!(path.join("level.dat").exists());
     assert!(crate::SERVER_IS_STOPPING.load(Ordering::Acquire));
