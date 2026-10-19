@@ -92,6 +92,9 @@ fn boolean(data: &NbtCompound, field: &str, default: bool) -> Result<bool, World
 fn component(data: &NbtCompound, field: &str) -> Result<Option<TextComponent>, WorldInfoError> {
     data.get(field)
         .map(|tag| {
+            if !component_codec::is_valid_component(tag) {
+                return Err(invalid(&format!("{field} must be a valid component")));
+            }
             component_codec::read_component(tag)
                 .ok_or_else(|| invalid(&format!("{field} must be a component")))
         })
@@ -264,6 +267,9 @@ fn read_format(data: &NbtCompound) -> Result<Option<NumberFormat>, WorldInfoErro
             component(format, "value")?.ok_or_else(|| invalid("fixed format value is required"))?,
         ))),
         "styled" => {
+            if !component_codec::is_valid_component_style(format) {
+                return Err(invalid("styled format must be a valid component style"));
+            }
             // The sidecar retains the complete Style.Serializer.MAP_CODEC record.
             let json = component_codec::canonical_component(tag);
             let style = serde_json::from_value::<Style>(json).unwrap_or_default();

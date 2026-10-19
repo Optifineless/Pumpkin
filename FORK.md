@@ -19,6 +19,19 @@ all team options and memberships, and all 19 display slots. Display and format
 commands expose the persisted settings. The world-data version is corrected from
 26.2's 4903 to 26.3's 5023, checked against the official server jar's `version.json`.
 
+Round 2 validates saved text structure before accepting any scoreboard state,
+following vanilla 26.3 `ComponentSerialization.createCodec`, its strict/fuzzy
+content dispatch, the content codecs and `Style.Serializer.MAP_CODEC`. This covers
+objective and team display names, team prefixes/suffixes, score display names,
+fixed-format values, and nested components (including styled-format hover text).
+Malformed components fail the whole load, log an error and disable saves for the
+session, keeping the original bytes and sending an empty scoreboard on join.
+Valid opaque NBT/object contents and unknown style fields still round-trip.
+Validation checks field structure; command syntax and registry-dependent payloads
+remain outside this structural check. The existing general component decoder is
+unchanged. Startup, Java join serialization, save/shutdown regressions and a
+validator-disabled negative control cover the failure and preservation paths.
+
 API 8 (same version): `Server`, `World`, `Scoreboard`, `ScoreboardObjective` and
 `Team` layouts change, including the shared `World.scoreboard` handle; native
 plugins must be rebuilt. Wasm API versions and existing player display overlays
@@ -30,6 +43,9 @@ Nether on the same team, and change a score and team prefix; expect both players
 to see the changes. Move between dimensions; expect one team and the same sidebar.
 Stop and restart; expect scores, formatting, team settings and membership to
 survive. Capture the cross-dimension updates and the restored sidebar after restart.
+With a malformed saved objective or team prefix, start the server and join;
+expect an error in the server log, a successful join with no imported scoreboard,
+and the original `scoreboard.dat` bytes preserved after `/save-all` and shutdown.
 
 ## Empty map centers (#45)
 

@@ -1,6 +1,8 @@
 mod number_format;
 mod save_data;
 #[cfg(test)]
+mod save_data_component_tests;
+#[cfg(test)]
 mod save_data_tests;
 mod save_data_values;
 

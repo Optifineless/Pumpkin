@@ -11,6 +11,7 @@ mod loaded;
 mod login;
 mod reentry;
 mod save_paths;
+mod saved_components;
 mod vanilla;
 mod versions;
 
