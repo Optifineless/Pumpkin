@@ -6,9 +6,12 @@ use crate::world::World;
 use pumpkin_nbt::{compound::NbtCompound, nbt_compress::read_gzip_compound_tag};
 use std::{fs, path::Path, sync::Arc, time::Duration};
 
+mod death_visibility;
+mod legacy;
 mod lifecycle;
 mod loaded;
 mod login;
+mod projection;
 mod reentry;
 mod save_paths;
 mod saved_components;

@@ -21,6 +21,7 @@ pub mod color;
 pub mod component_codec;
 mod component_style_validation;
 mod component_validation;
+pub mod display_projection;
 pub mod hover;
 pub mod legacy;
 pub mod style;

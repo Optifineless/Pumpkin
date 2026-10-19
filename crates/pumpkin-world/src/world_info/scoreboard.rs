@@ -26,7 +26,15 @@ pub fn read_scoreboard(level_folder: &Path) -> Result<Option<NbtCompound>, World
     let path = minecraft_data_dir(level_folder).join("scoreboard.dat");
     let file = match File::open(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            // DimensionStorageFileFix (26.1) moved this saved data into the namespace.
+            // Import without moving the original: structural decoding can still fail later.
+            match File::open(level_folder.join("data/scoreboard.dat")) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error.into()),
+            }
+        }
         Err(error) => return Err(error.into()),
     };
     if file.metadata()?.len() > MAX_SCOREBOARD_BYTES {

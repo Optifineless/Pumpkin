@@ -19,18 +19,38 @@ all team options and memberships, and all 19 display slots. Display and format
 commands expose the persisted settings. The world-data version is corrected from
 26.2's 4903 to 26.3's 5023, checked against the official server jar's `version.json`.
 
-Round 2 validates saved text structure before accepting any scoreboard state,
-following vanilla 26.3 `ComponentSerialization.createCodec`, its strict/fuzzy
-content dispatch, the content codecs and `Style.Serializer.MAP_CODEC`. This covers
-objective and team display names, team prefixes/suffixes, score display names,
-fixed-format values, and nested components (including styled-format hover text).
-Malformed components fail the whole load, log an error and disable saves for the
-session, keeping the original bytes and sending an empty scoreboard on join.
-Valid opaque NBT/object contents and unknown style fields still round-trip.
-Validation checks field structure; command syntax and registry-dependent payloads
-remain outside this structural check. The existing general component decoder is
-unchanged. Startup, Java join serialization, save/shutdown regressions and a
-validator-disabled negative control cover the failure and preservation paths.
+Review round 3 separates storage from display. Every saved component keeps its
+exact raw NBT in the existing persistence sidecar, including unusual or malformed
+text and full events. Runtime displays and Java scoreboard packet serializers
+project only literal/translated text, fallback, recursive arguments/extras, named
+or ASCII RGB colors, five boolean decorations and valid resource-location fonts.
+Events, insertion, selectors, score/NBT/keybind/object contents, shadow colors and
+unknown fields stay on disk and never enter imported displays or command feedback.
+Unsupported empty objective/team names display their storage name. Styled and fixed
+number formats use the same subset. Session-created subset text retains its display.
+UTF-8 hex colors return parse errors instead of panicking in either color parser.
+Malformed NBT or wrong record/component outer types still fail the whole load and
+disable saves. This is a deliberate display restriction, without changing saved
+component meaning; it replaces round 2's incomplete client-codec validation gate.
+
+If the namespaced file is absent, supported pre-26.1 worlds import
+`data/scoreboard.dat`; successful later saves publish the namespaced file without
+removing the legacy original. A corrupt namespaced file never falls back to legacy.
+Death announcements now obey the victim's saved server-team visibility across all
+dimensions, preserving the victim's death-screen packet. Routing mirrors 26.3
+`ServerPlayer.die` and `PlayerList.broadcastSystemToTeam/AllExceptTeam` (including
+excluding the victim from the restricted own-team announcement). Projection is a
+fork display policy; storage/migration follow `ScoreboardSaveData.Packed` and
+`DimensionStorageFileFix`. Checked against the official 26.3 inner server JAR
+SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`,
+decompiled with Vineflower 1.11.2.
+
+Backlog: the new `displayautoupdate` flag remains persisted but does not refresh
+live holder names. Complete parity with `Scoreboard`'s `ScoreAccess.set` needs
+pre-lock live-holder snapshots across numeric commands, triggers, criteria,
+execute-store callbacks and plugin-facing writes. The existing entity/player
+name renderers also omit team decoration. A partial command-only update would
+leave those paths inconsistent; this nonblocking work is outside this review fix.
 
 API 8 (same version): `Server`, `World`, `Scoreboard`, `ScoreboardObjective` and
 `Team` layouts change, including the shared `World.scoreboard` handle; native
@@ -43,9 +63,17 @@ Nether on the same team, and change a score and team prefix; expect both players
 to see the changes. Move between dimensions; expect one team and the same sidebar.
 Stop and restart; expect scores, formatting, team settings and membership to
 survive. Capture the cross-dimension updates and the restored sidebar after restart.
-With a malformed saved objective or team prefix, start the server and join;
-expect an error in the server log, a successful join with no imported scoreboard,
-and the original `scoreboard.dat` bytes preserved after `/save-all` and shutdown.
+With unusual saved text, start the server and join; expect safe text (or the
+objective/team name), no disconnect, and the original component data retained
+through `/save-all` and shutdown. For a structurally corrupt scoreboard, expect
+an error, a successful join with an empty imported scoreboard and saves disabled.
+Import a pre-26.1 world and expect its old scoreboard before making any changes.
+Set `deathMessageVisibility` to `never`, `hideForOwnTeam` and `hideForOtherTeams`;
+kill a member and check recipients in another dimension. Capture the safe sidebar,
+restored legacy scoreboard and each announcement audience. In-game verification:
+Not yet. Review fixes by Codex; native API remains 8 with no additional layout
+changes in this round.
+
 
 ## Empty map centers (#45)
 

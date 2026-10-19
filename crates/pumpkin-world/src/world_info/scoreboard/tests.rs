@@ -97,3 +97,33 @@ fn scoreboard_rejects_oversized_compressed_document() {
     assert!(read_scoreboard(folder.path()).is_err());
     assert_eq!(fs::metadata(path).unwrap().len(), MAX_SCOREBOARD_BYTES + 1);
 }
+
+#[test]
+fn scoreboard_namespaced_path_wins_and_corruption_never_falls_back() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(directory.path().join("data/minecraft")).unwrap();
+    let mut legacy = NbtCompound::new();
+    legacy.put_compound("data", NbtCompound::new());
+    super::super::data_files::write_saved_data(
+        &directory.path().join("data/scoreboard.dat"),
+        legacy,
+    )
+    .unwrap();
+    let mut data = NbtCompound::new();
+    data.put_string("marker", "canonical".into());
+    super::write_scoreboard(directory.path(), data.clone(), 5023).unwrap();
+    assert_eq!(
+        super::read_scoreboard(directory.path())
+            .unwrap()
+            .unwrap()
+            .get_compound("data"),
+        Some(&data)
+    );
+    std::fs::write(
+        directory.path().join("data/minecraft/scoreboard.dat"),
+        b"corrupt",
+    )
+    .unwrap();
+    assert!(super::read_scoreboard(directory.path()).is_err());
+    assert!(directory.path().join("data/scoreboard.dat").is_file());
+}

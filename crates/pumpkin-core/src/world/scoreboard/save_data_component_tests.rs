@@ -72,124 +72,109 @@ fn unsupported_component() -> NbtCompound {
     content
 }
 
-#[test]
-fn scoreboard_saved_components_reject_malformed_content_at_every_field() {
-    for field in COMPONENT_FIELDS {
-        for malformed in [
-            NbtTag::Compound(NbtCompound::new()),
-            NbtTag::List(Vec::new()),
-            NbtTag::Int(42),
-        ] {
-            assert!(
-                Scoreboard::from_save_data(&payload(field, malformed.clone(), false)).is_err(),
-                "{field:?} admitted malformed saved component {malformed:?}"
-            );
+// These are file payloads from the review, not values built by the display projector.
+pub fn examples() -> Vec<NbtTag> {
+    [
+        serde_json::json!({"text":"x","color":"not_a_color"}),
+        serde_json::json!({"text":"x","click_event":{"action":"open_url","url":"relative"}}),
+        serde_json::json!({"text":"x","hover_event":{"action":"show_entity","id":"minecraft:pig","uuid":"invalid"}}),
+        serde_json::json!({"selector":"@"}),
+        serde_json::json!({"nbt":"[","storage":"minecraft:test"}),
+        serde_json::json!({"nbt":"foo","source":"block","block":"0 0"}),
+        serde_json::json!({"nbt":"foo","source":"entity","entity":"@"}),
+        serde_json::json!({"text":"x","hover_event":{"action":"show_item","id":"minecraft:stone","components":{"minecraft:custom_name":{}}}}),
+        serde_json::json!({"text":"x","click_event":{"action":"show_dialog","dialog":{"type":"minecraft:notice","title":{}}}}),
+        serde_json::json!({"text":"x","hover_event":{"action":"show_entity","id":"minecraft:no_such_entity","uuid":"00000000-0000-0000-0000-000000000001"}}),
+        serde_json::json!({"text":"x","color":"#€123"}),
+        serde_json::json!({"text":"x","color":"#１123"}),
+        serde_json::json!({}),
+        serde_json::json!([]),
+        serde_json::json!({"text":"parent","extra":[{}]}),
+        serde_json::json!({"translate":"unknown","with":[{}],"fallback":"fallback"}),
+        serde_json::json!({"text":"x","font":"..:invalid","bold":"invalid","italic":{},"shadow_color":"bad","insertion":"drop"}),
+        serde_json::json!({"text":"safe","font":"minecraft:default","bold":true,"italic":false,"underlined":true,"strikethrough":false,"obfuscated":false,"extra":[{"translate":"custom.nested","fallback":"%s %s","with":["plain",{"text":"argument","color":"#12ABCD"}]}]}),
+    ].into_iter().map(fixture_tag).collect()
+}
+
+fn fixture_tag(value: serde_json::Value) -> NbtTag {
+    match value {
+        serde_json::Value::String(value) => NbtTag::String(value.into()),
+        serde_json::Value::Object(fields) => {
+            let mut compound = NbtCompound::new();
+            for (name, value) in fields {
+                compound.put(&name, fixture_tag(value));
+            }
+            NbtTag::Compound(compound)
         }
+        serde_json::Value::Array(values) => {
+            NbtTag::List(values.into_iter().map(fixture_tag).collect())
+        }
+        serde_json::Value::Bool(value) => NbtTag::Byte(i8::from(value)),
+        _ => panic!("Review fixtures only use strings, booleans, lists and compounds"),
     }
 }
 
 #[test]
-fn scoreboard_saved_components_reject_invalid_extra_and_translation_children() {
-    let mut extra = NbtCompound::new();
-    extra.put_string("text", "parent".into());
-    extra.put_list("extra", vec![NbtTag::Compound(NbtCompound::new())]);
-    let mut translation = NbtCompound::new();
-    translation.put_string("translate", "chat.type.text".into());
-    translation.put_list("with", vec![NbtTag::Compound(NbtCompound::new())]);
-    let mut empty_extra = NbtCompound::new();
-    empty_extra.put_string("text", "parent".into());
-    empty_extra.put_list("extra", Vec::new());
+fn scoreboard_saved_components_reject_only_wrong_outer_types_at_every_field() {
     for field in COMPONENT_FIELDS {
-        for malformed in [&extra, &translation, &empty_extra] {
-            assert!(
-                Scoreboard::from_save_data(&payload(
-                    field,
-                    NbtTag::Compound(malformed.clone()),
-                    false,
-                ))
-                .is_err(),
-                "{field:?} admitted malformed saved component child {malformed:?}"
-            );
-        }
+        assert!(Scoreboard::from_save_data(&payload(field, NbtTag::Int(42), false)).is_err());
     }
 }
 
 #[test]
-fn scoreboard_saved_components_validate_orphan_score_display_and_fixed_format() {
+fn scoreboard_saved_components_project_and_preserve_every_review_example() {
+    for field in COMPONENT_FIELDS {
+        for example in examples() {
+            let data = payload(field, example.clone(), false);
+            let mut board = Scoreboard::from_save_data(&data)
+                .unwrap_or_else(|error| panic!("{field:?} rejected {example:?}: {error}"));
+            board.set_score_value(&NoTarget, "temporary", "points", 1);
+            board.reset_scores_for_entity(&NoTarget, "temporary");
+            assert!(board.is_dirty());
+            assert_eq!(
+                board.to_save_data(),
+                data,
+                "{field:?} lost raw NBT {example:?}"
+            );
+        }
+    }
     for field in [
         ComponentField::ScoreDisplay,
         ComponentField::ScoreFixedFormat,
     ] {
-        assert!(
-            Scoreboard::from_save_data(&payload(field, NbtTag::Compound(NbtCompound::new()), true))
-                .is_err(),
-            "{field:?} admitted malformed component from an orphan score"
+        let data = payload(field, NbtTag::Compound(NbtCompound::new()), true);
+        assert_eq!(
+            Scoreboard::from_save_data(&data).unwrap().to_save_data(),
+            data
         );
     }
 }
 
 #[test]
-fn scoreboard_saved_components_validate_selector_object_and_hover_children() {
-    let malformed = NbtTag::Compound(NbtCompound::new());
-    let mut selector = NbtCompound::new();
-    selector.put_string("selector", "@a".into());
-    selector.put("separator", malformed.clone());
-    let mut object = NbtCompound::new();
-    object.put_string("sprite", "minecraft:block/stone".into());
-    object.put("fallback", malformed.clone());
-    let mut show_text = NbtCompound::new();
-    show_text.put_string("action", "show_text".into());
-    show_text.put("value", malformed.clone());
-    let mut show_entity = NbtCompound::new();
-    show_entity.put_string("action", "show_entity".into());
-    show_entity.put_string("id", "minecraft:pig".into());
-    show_entity.put_string("uuid", "00000000-0000-0000-0000-000000000001".into());
-    show_entity.put("name", malformed);
-    let children = [show_text, show_entity].map(|hover| {
-        let mut parent = NbtCompound::new();
-        parent.put_string("text", "hover parent".into());
-        parent.put_compound("hover_event", hover);
-        parent
-    });
-    for field in COMPONENT_FIELDS {
-        for parent in [&selector, &object, &children[0], &children[1]] {
-            assert!(
-                Scoreboard::from_save_data(&payload(
-                    field,
-                    NbtTag::Compound(parent.clone()),
-                    false,
-                ))
-                .is_err(),
-                "{field:?} admitted malformed nested component {parent:?}"
+fn scoreboard_saved_components_project_styled_formats_and_preserve_raw_styles() {
+    for list in ["Objectives", "PlayerScores"] {
+        for example in examples()
+            .into_iter()
+            .filter_map(|tag| tag.extract_compound().cloned())
+        {
+            let mut format = example;
+            format.put_string("type", "minecraft:styled".into());
+            let mut data = payload(
+                ComponentField::ObjectiveDisplayName,
+                NbtTag::String("Points".into()),
+                false,
+            );
+            let mut record = data.get_list(list).unwrap()[0]
+                .extract_compound()
+                .unwrap()
+                .clone();
+            record.put_compound("format", format);
+            data.put_list(list, vec![NbtTag::Compound(record)]);
+            assert_eq!(
+                Scoreboard::from_save_data(&data).unwrap().to_save_data(),
+                data
             );
         }
-    }
-}
-
-#[test]
-fn scoreboard_saved_components_validate_hover_children_in_styled_number_formats() {
-    for list in ["Objectives", "PlayerScores"] {
-        let mut hover = NbtCompound::new();
-        hover.put_string("action", "show_text".into());
-        hover.put_compound("value", NbtCompound::new());
-        let mut format = NbtCompound::new();
-        format.put_string("type", "minecraft:styled".into());
-        format.put_compound("hover_event", hover);
-        let mut data = payload(
-            ComponentField::ObjectiveDisplayName,
-            NbtTag::String("Points".into()),
-            false,
-        );
-        let mut record = data.get_list(list).unwrap()[0]
-            .extract_compound()
-            .unwrap()
-            .clone();
-        record.put_compound("format", format);
-        data.put_list(list, vec![NbtTag::Compound(record)]);
-        assert!(
-            Scoreboard::from_save_data(&data).is_err(),
-            "{list} admitted malformed component through styled-format hover value"
-        );
     }
 }
 

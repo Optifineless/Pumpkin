@@ -439,13 +439,18 @@ impl NumberFormat {
                 // StyledFormat.TYPE uses Style.Serializer.TRUSTED_STREAM_CODEC (NBT).
                 let mut component = TextComponent::empty();
                 *component.0.style = style.clone();
-                let mut fields = component.0.to_nbt_compound_for_version(version);
+                let mut fields = pumpkin_util::text::display_projection::component(&component, "")
+                    .0
+                    .to_nbt_compound_for_version(version);
                 fields.child_tags.remove("text");
                 write.write_compound_nbt_with_version(Some(&fields), version)
             }
             Self::Fixed(text) => {
                 write.write_var_int(&2.into())?;
-                write.write_component(text, version)
+                write.write_component(
+                    &pumpkin_util::text::display_projection::component(text, ""),
+                    version,
+                )
             }
         }
     }

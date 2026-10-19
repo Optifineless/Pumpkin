@@ -2,7 +2,10 @@ use std::io::Write;
 
 use pumpkin_data::packet::clientbound::play::SET_OBJECTIVE;
 use pumpkin_macros::java_packet;
-use pumpkin_util::{text::TextComponent, version::JavaMinecraftVersion};
+use pumpkin_util::{
+    text::{TextComponent, display_projection},
+    version::JavaMinecraftVersion,
+};
 
 use crate::{ClientPacket, NumberFormat, VarInt, WritingError, ser::NetworkWriteExt};
 
@@ -45,8 +48,10 @@ impl ClientPacket for CUpdateObjectives {
         write.write_string(&self.objective_name)?;
         write.write_u8(self.mode)?;
         if self.mode == 0 || self.mode == 2 {
+            let display_name =
+                display_projection::component(&self.display_name, &self.objective_name);
             if *version < JavaMinecraftVersion::V_1_13 {
-                write.write_string(&self.display_name.clone().to_pretty_console())?;
+                write.write_string(&display_name.to_pretty_console())?;
                 let render_str = if self.render_type.0 == 1 {
                     "hearts"
                 } else {
@@ -54,7 +59,7 @@ impl ClientPacket for CUpdateObjectives {
                 };
                 write.write_string(render_str)?;
             } else {
-                write.write_component(&self.display_name, version)?;
+                write.write_component(&display_name, version)?;
                 write.write_var_int(&self.render_type)?;
                 if *version >= JavaMinecraftVersion::V_1_20_3 {
                     write.write_option(&self.number_format, |p, v| {

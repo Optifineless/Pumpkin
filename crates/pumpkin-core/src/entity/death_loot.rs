@@ -505,8 +505,30 @@ impl LivingEntity {
             if world.level_info.load().game_rules.show_death_messages
                 && let Some(server) = world.server.upgrade()
             {
+                // ServerPlayer.die / PlayerList team broadcasts are server-wide.
+                // Snapshot membership before sends can enter packet plugins.
+                let team = server
+                    .scoreboard
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_entity_team(&player.gameprofile.name)
+                    .map(|team| (team.deathmessage_visibility, team.players.clone()));
                 for recipient in server.get_all_players() {
-                    recipient.send_system_message(&message);
+                    use crate::world::scoreboard::NameTagVisibility;
+                    let visible = team.as_ref().is_none_or(|(visibility, members)| {
+                        let same_team = members.contains(&recipient.gameprofile.name);
+                        match visibility {
+                            NameTagVisibility::Always => true,
+                            NameTagVisibility::Never => false,
+                            NameTagVisibility::HideForOwnTeam => !same_team,
+                            NameTagVisibility::HideForOtherTeams => {
+                                same_team && recipient.gameprofile.id != player.gameprofile.id
+                            }
+                        }
+                    });
+                    if visible {
+                        recipient.send_system_message(&message);
+                    }
                 }
             }
         } else if self.entity.custom_name.load().is_some() {

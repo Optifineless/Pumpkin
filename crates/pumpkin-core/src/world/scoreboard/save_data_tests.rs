@@ -93,12 +93,10 @@ fn scoreboard_score_value_update_retains_style_until_explicit_format_replacement
     let saved = output.get_list("PlayerScores").ok_or("missing scores")?[0]
         .extract_compound()
         .ok_or("invalid score")?;
-    let hover = saved
-        .get_compound("format")
-        .ok_or("missing format")?
-        .get_compound("hover_event")
-        .ok_or("missing hover event")?;
-    assert!(hover.get("components").is_none());
+    let mut replacement = NbtCompound::new();
+    replacement.put_string("type", "minecraft:styled".into());
+    replacement.put_string("color", "red".into());
+    assert_eq!(saved.get_compound("format"), Some(&replacement));
     board.set_score_number_format(&NoTarget, "holder", "points", None);
     let output = board.to_save_data();
     let saved = output.get_list("PlayerScores").ok_or("missing scores")?[0]

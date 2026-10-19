@@ -1,7 +1,7 @@
 mod number_format;
 mod save_data;
 #[cfg(test)]
-mod save_data_component_tests;
+pub(crate) mod save_data_component_tests;
 #[cfg(test)]
 mod save_data_tests;
 mod save_data_values;
@@ -24,7 +24,7 @@ use pumpkin_protocol::{
         RenderType, TeamMethod, TeamParameters,
     },
 };
-use pumpkin_util::text::{TextComponent, color::NamedColor};
+use pumpkin_util::text::{TextComponent, color::NamedColor, display_projection};
 use tracing::warn;
 
 use super::World;
@@ -263,7 +263,11 @@ impl Scoreboard {
         let be_update = BSetDisplayObjective {
             display_slot_name: "sidebar".to_string(), // Default to sidebar
             objective_name: objective.name.clone(),
-            objective_display_name: objective.display_name.clone().get_text(),
+            objective_display_name: display_projection::component(
+                &objective.display_name,
+                &objective.name,
+            )
+            .get_text(),
             criteria_name: "dummy".to_string(),
             sort_order: VarInt(0),
         };
@@ -299,7 +303,11 @@ impl Scoreboard {
         let be_update = BSetDisplayObjective {
             display_slot_name: "sidebar".to_string(),
             objective_name: objective.name.clone(),
-            objective_display_name: objective.display_name.clone().get_text(),
+            objective_display_name: display_projection::component(
+                &objective.display_name,
+                &objective.name,
+            )
+            .get_text(),
             criteria_name: "dummy".to_string(),
             sort_order: VarInt(0),
         };
@@ -330,7 +338,7 @@ impl Scoreboard {
             .and_then(|name| self.objectives.get(name))
             .map_or_else(
                 || obj_name_str.to_string(),
-                |o| o.display_name.clone().get_text(),
+                |o| display_projection::component(&o.display_name, &o.name).get_text(),
             );
 
         let je_display = CDisplayObjective::new(slot, obj_name_str.to_string());
@@ -738,7 +746,11 @@ impl Scoreboard {
             let be_update = BSetDisplayObjective {
                 display_slot_name: "sidebar".to_string(),
                 objective_name: objective.name.clone(),
-                objective_display_name: objective.display_name.clone().get_text(),
+                objective_display_name: display_projection::component(
+                    &objective.display_name,
+                    &objective.name,
+                )
+                .get_text(),
                 criteria_name: "dummy".to_string(),
                 sort_order: VarInt(0),
             };
@@ -754,7 +766,7 @@ impl Scoreboard {
             };
             let display_name = self.objectives.get(objective_name).map_or_else(
                 || objective_name.clone(),
-                |o| o.display_name.clone().get_text(),
+                |o| display_projection::component(&o.display_name, &o.name).get_text(),
             );
             let je_display = CDisplayObjective::new(*slot, objective_name.clone());
             let be_display = BSetDisplayObjective {

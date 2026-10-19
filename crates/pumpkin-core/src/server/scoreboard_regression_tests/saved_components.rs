@@ -13,7 +13,7 @@ use pumpkin_world::world_info::{
 };
 use std::{io::Cursor, process::Command};
 
-fn isolated_child(name: &str) -> bool {
+pub(super) fn isolated_child(name: &str) -> bool {
     const CHILD: &str = "PUMPKIN_SCOREBOARD_SAVED_COMPONENT_CHILD";
     if std::env::var(CHILD).is_ok_and(|value| value == name) {
         return true;
@@ -34,7 +34,7 @@ fn isolated_child(name: &str) -> bool {
     false
 }
 
-async fn startup(path: &Path) -> (Arc<Server>, LogBuffer) {
+pub(super) async fn startup(path: &Path) -> (Arc<Server>, LogBuffer) {
     AnvilLevelInfo
         .write_world_info(&LevelData::default(pumpkin_util::world_seed::Seed(0)), path)
         .unwrap();
@@ -78,7 +78,7 @@ async fn startup(path: &Path) -> (Arc<Server>, LogBuffer) {
     (server, logs)
 }
 
-async fn joining_packets(server: &Arc<Server>) -> Vec<bytes::Bytes> {
+pub(super) async fn joining_packets(server: &Arc<Server>) -> Vec<bytes::Bytes> {
     let profile = GameProfile {
         id: uuid::Uuid::new_v4(),
         name: "saved-component".into(),
@@ -132,7 +132,7 @@ async fn joining_packets(server: &Arc<Server>) -> Vec<bytes::Bytes> {
     packets
 }
 
-fn write_fixture(path: &Path, root: NbtCompound) -> Vec<u8> {
+pub(super) fn write_fixture(path: &Path, root: NbtCompound) -> Vec<u8> {
     let destination = path.join("data/minecraft/scoreboard.dat");
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
     write_saved_data(&destination, root).unwrap();
@@ -202,20 +202,19 @@ async fn rejects_malformed(root: NbtCompound) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn scoreboard_regression_saved_component_empty_objective_is_quarantined() {
-    if !isolated_child("scoreboard_regression_saved_component_empty_objective_is_quarantined") {
+async fn scoreboard_regression_saved_component_scalar_objective_is_quarantined() {
+    if !isolated_child("scoreboard_regression_saved_component_scalar_objective_is_quarantined") {
         return;
     }
     let mut objective = NbtCompound::new();
     objective.put_string("Name", "bad".into());
-    objective.put_compound("DisplayName", NbtCompound::new());
+    objective.put_int("DisplayName", 42);
     rejects_malformed(minimal_root(objective, None)).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn scoreboard_regression_saved_component_malformed_team_prefix_is_quarantined() {
-    if !isolated_child("scoreboard_regression_saved_component_malformed_team_prefix_is_quarantined")
-    {
+async fn scoreboard_regression_saved_component_scalar_team_prefix_is_quarantined() {
+    if !isolated_child("scoreboard_regression_saved_component_scalar_team_prefix_is_quarantined") {
         return;
     }
     let mut objective = NbtCompound::new();
@@ -223,11 +222,11 @@ async fn scoreboard_regression_saved_component_malformed_team_prefix_is_quaranti
     objective.put_string("DisplayName", "Good".into());
     let mut team = NbtCompound::new();
     team.put_string("Name", "bad_team".into());
-    team.put_compound("MemberNamePrefix", NbtCompound::new());
+    team.put_int("MemberNamePrefix", 42);
     rejects_malformed(minimal_root(objective, Some(team))).await;
 }
 
-fn objective_components(packets: &[bytes::Bytes]) -> Vec<(String, NbtTag)> {
+pub(super) fn objective_components(packets: &[bytes::Bytes]) -> Vec<(String, NbtTag)> {
     packets
         .iter()
         .filter_map(|packet| {
@@ -308,8 +307,8 @@ async fn scoreboard_regression_saved_component_opaque_nbt_joins_and_round_trips(
             .find(|(name, _)| name == "imported")
             .unwrap()
             .1,
-        opaque,
-        "The actual Java objective packet changed unsupported content or unknown style"
+        NbtTag::String("imported".into()),
+        "The actual Java objective packet must project unsupported content to its objective name"
     );
     let world = server.worlds.load()[0].clone();
     command(&server, &world, "scoreboard objectives add temporary dummy");

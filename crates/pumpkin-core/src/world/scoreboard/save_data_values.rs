@@ -1,7 +1,7 @@
 use pumpkin_data::scoreboard::ScoreboardDisplaySlot;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_protocol::{NumberFormat, codec::var_int::VarInt, java::client::play::RenderType};
-use pumpkin_util::text::{TextComponent, color::NamedColor, component_codec, style::Style};
+use pumpkin_util::text::{TextComponent, color::NamedColor, component_codec, display_projection};
 use pumpkin_world::world_info::WorldInfoError;
 
 use super::{CollisionRule, NameTagVisibility, ScoreboardObjective, ScoreboardScore, Team};
@@ -89,14 +89,23 @@ fn boolean(data: &NbtCompound, field: &str, default: bool) -> Result<bool, World
     })
 }
 
-fn component(data: &NbtCompound, field: &str) -> Result<Option<TextComponent>, WorldInfoError> {
+fn component(
+    data: &NbtCompound,
+    field: &str,
+    fallback: &str,
+) -> Result<Option<TextComponent>, WorldInfoError> {
     data.get(field)
         .map(|tag| {
-            if !component_codec::is_valid_component(tag) {
-                return Err(invalid(&format!("{field} must be a valid component")));
+            if !matches!(
+                tag,
+                NbtTag::String(_) | NbtTag::List(_) | NbtTag::Compound(_)
+            ) {
+                return Err(invalid(&format!(
+                    "{field} must be a string, list or compound"
+                )));
             }
-            component_codec::read_component(tag)
-                .ok_or_else(|| invalid(&format!("{field} must be a component")))
+            // PersistentData retains this field's exact NBT against the projected baseline.
+            Ok(display_projection::project(tag, fallback))
         })
         .transpose()
 }
@@ -105,7 +114,7 @@ pub(super) fn read_objective(data: &NbtCompound) -> Result<ScoreboardObjective, 
     Ok(ScoreboardObjective {
         name: required_string(data, "Name")?,
         criterion: string(data, "CriteriaName", "dummy")?.to_string(),
-        display_name: component(data, "DisplayName")?
+        display_name: component(data, "DisplayName", &required_string(data, "Name")?)?
             .ok_or_else(|| invalid("objective DisplayName is required"))?,
         render_type: match string(data, "RenderType", "integer")? {
             "integer" => RenderType::Integer,
@@ -146,7 +155,7 @@ pub(super) fn read_score(data: &NbtCompound) -> Result<ScoreboardScore, WorldInf
             tag.extract_int()
                 .ok_or_else(|| invalid("Score must be an integer"))
         })?),
-        display_name: component(data, "display")?,
+        display_name: component(data, "display", "")?,
         number_format: read_format(data)?,
         // Score.Packed differs from a newly constructed Score: missing Locked is false.
         locked: boolean(data, "Locked", false)?,
@@ -187,7 +196,7 @@ pub(super) fn read_team(data: &NbtCompound) -> Result<Team, WorldInfoError> {
         ),
     };
     Ok(Team {
-        display_name: component(data, "DisplayName")?
+        display_name: component(data, "DisplayName", &name)?
             .unwrap_or_else(|| TextComponent::text(name.clone())),
         name,
         options: i8::from(boolean(data, "AllowFriendlyFire", true)?)
@@ -202,8 +211,10 @@ pub(super) fn read_team(data: &NbtCompound) -> Result<Team, WorldInfoError> {
             _ => return Err(invalid("unknown collision rule")),
         },
         color,
-        player_prefix: component(data, "MemberNamePrefix")?.unwrap_or_else(TextComponent::empty),
-        player_suffix: component(data, "MemberNameSuffix")?.unwrap_or_else(TextComponent::empty),
+        player_prefix: component(data, "MemberNamePrefix", "")?
+            .unwrap_or_else(TextComponent::empty),
+        player_suffix: component(data, "MemberNameSuffix", "")?
+            .unwrap_or_else(TextComponent::empty),
         players: list(data, "Players")?
             .iter()
             .map(|tag| {
@@ -264,16 +275,12 @@ fn read_format(data: &NbtCompound) -> Result<Option<NumberFormat>, WorldInfoErro
     match kind.strip_prefix("minecraft:").unwrap_or(&kind) {
         "blank" => Ok(Some(NumberFormat::Blank)),
         "fixed" => Ok(Some(NumberFormat::Fixed(
-            component(format, "value")?.ok_or_else(|| invalid("fixed format value is required"))?,
+            component(format, "value", "")?
+                .ok_or_else(|| invalid("fixed format value is required"))?,
         ))),
         "styled" => {
-            if !component_codec::is_valid_component_style(format) {
-                return Err(invalid("styled format must be a valid component style"));
-            }
-            // The sidecar retains the complete Style.Serializer.MAP_CODEC record.
-            let json = component_codec::canonical_component(tag);
-            let style = serde_json::from_value::<Style>(json).unwrap_or_default();
-            Ok(Some(NumberFormat::Styled(style)))
+            let projected = display_projection::project(tag, "");
+            Ok(Some(NumberFormat::Styled(*projected.0.style)))
         }
         _ => Err(invalid("unknown number format")),
     }
