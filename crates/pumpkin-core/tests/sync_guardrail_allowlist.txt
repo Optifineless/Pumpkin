@@ -548,6 +548,8 @@ crates/pumpkin-core/src/server/named_root_clock_tests/retention.rs::named_clock_
 crates/pumpkin-core/src/server/named_root_clock_tests/retention.rs::named_clock_nested_newer_retirement_survives_older_pending_callback::unknown::Mutex::new#2
 crates/pumpkin-core/src/server/named_root_clock_tests/retention.rs::named_clock_new_owner_wins_old_unload_completion_and_path_alias::unknown::Mutex::new#1
 crates/pumpkin-core/src/server/recipe.rs::new::std::sync::RwLock::new#1
+# Test-only mode hook receiver; take and release before removal and the bounded callback wait.
+crates/pumpkin-core/src/server/scenario/hardcore_respawn_review.rs::removed_hardcore_respawn_cannot_publish::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scenario/lifecycle.rs::s2_disconnect_during_respawn_does_not_republish_closed_instance::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scenario/mod.rs::<module>::tokio::sync::Mutex::const_new#1
 # Test-only respawn hook receiver; take under the guard, release before the bounded wait; no nested lock or production edge.

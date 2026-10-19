@@ -205,12 +205,13 @@ impl Scenario {
 
     pub async fn restart(self) -> Self {
         self.stop().await;
+        let hardcore = self.server.basic_config.hardcore;
         let Self {
             server, fixture, ..
         } = self;
         drop(server); // Release the real session lock before opening the same directory.
         let scenario = Self {
-            server: Self::services(fixture.directory.path()),
+            server: Self::services(fixture.directory.path(), hardcore),
             fixture,
             sessions: Rc::default(),
             stopped: Rc::default(),

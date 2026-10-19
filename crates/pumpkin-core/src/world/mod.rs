@@ -4408,6 +4408,10 @@ impl World {
             // ServerGamePacketListenerImpl.handleClientCommand persists hardcore mode before chunk waits.
             player.set_gamemode(pumpkin_util::GameMode::Spectator);
         }
+        // Game-mode callbacks may complete departure before tracker publication.
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
 
         // TODO: difficulty, exp bar, status effect
 

@@ -5,6 +5,7 @@
 )]
 
 mod entity_unload;
+mod hardcore_respawn_review;
 mod lifecycle;
 mod old_saves;
 mod ownership;
@@ -179,9 +180,12 @@ impl std::ops::Deref for Scenario {
 impl Scenario {
     /// Acquires the fixture permit inside `run`; use `restart` to reuse a live scenario.
     pub async fn new() -> Self {
+        Self::new_with_hardcore(false).await
+    }
+    async fn new_with_hardcore(hardcore: bool) -> Self {
         let isolation = SCENARIO_GATE.lock().await;
         let directory = tempfile::tempdir().unwrap();
-        let server = Self::services(directory.path());
+        let server = Self::services(directory.path(), hardcore);
         let scenario = Self {
             server,
             sessions: Rc::default(),
@@ -197,9 +201,10 @@ impl Scenario {
         }
         scenario
     }
-    fn services(path: &Path) -> Arc<Server> {
+    fn services(path: &Path, hardcore: bool) -> Arc<Server> {
         let mut server = combat_test_support::server(path);
         let services = Arc::get_mut(&mut server).unwrap();
+        services.basic_config.hardcore = hardcore;
         services.dimensions = vec![Dimension::OVERWORLD, Dimension::THE_NETHER];
         services.advanced_config.networking.java.view_distance =
             std::num::NonZeroU8::new(2).unwrap();
