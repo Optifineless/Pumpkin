@@ -8,7 +8,11 @@ use crate::{
 use pumpkin_data::{
     Block, BlockStateId,
     biome::Biome,
-    block_properties::{DoubleBlockHalf, TallSeagrassLikeProperties, WhiteWoolSlabLikeProperties},
+    block_properties::{
+        DoubleBlockHalf, KelpLikeProperties, TallSeagrassLikeProperties,
+        WhiteWoolSlabLikeProperties,
+    },
+    item::Item,
 };
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
@@ -108,6 +112,23 @@ fn tall_seagrass(half: DoubleBlockHalf) -> BlockStateId {
     properties.to_state_id(&Block::TALL_SEAGRASS)
 }
 
+fn item_count(world: &World, item: &Item) -> u32 {
+    world
+        .entities
+        .load()
+        .iter()
+        .filter_map(|entity| entity.get_item_entity())
+        .map(|entity| {
+            let stack = entity.get_item_stack().lock().unwrap();
+            if stack.item == item {
+                u32::from(stack.item_count)
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g11_issue80_absorbs_waterlogged_blocks_and_aquatic_plants() {
     let slab = BlockPos::new(8, 70, 9);
@@ -168,6 +189,68 @@ async fn b1019_g11_issue80_absorbs_waterlogged_blocks_and_aquatic_plants() {
         0,
         "seagrass without shears follows its ordinary no-drop loot table"
     );
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g11_issue80_claims_kelp_before_item_spawn_callback() {
+    let kelp = SPONGE.offset((1, 0, 0).into());
+    let kelp_state = Block::KELP.default_state.id;
+    let aged_kelp_state = KelpLikeProperties { age: 1 }.to_state_id(&Block::KELP);
+    let fixture = Fixture::new(&[(kelp, kelp_state)]);
+    let callback_calls = Arc::new(AtomicUsize::new(0));
+    let observed_callback_calls = callback_calls.clone();
+    let world = fixture.world.clone();
+    fixture.register::<crate::plugin::api::events::entity::item_spawn::ItemSpawnEvent>(
+        move |event| {
+            if event.item_name == "kelp" && observed_callback_calls.fetch_add(1, Relaxed) == 0 {
+                world.set_block_state_if(
+                    &kelp,
+                    aged_kelp_state,
+                    BlockFlags::NOTIFY_LISTENERS | BlockFlags::UPDATE_KNOWN_SHAPE,
+                    |current| current == kelp_state,
+                );
+            }
+        },
+    );
+
+    fixture.place_sponge(SPONGE);
+
+    assert_eq!(callback_calls.load(Relaxed), 1);
+    let item_drops = item_count(&fixture.world, &Item::KELP);
+    let plant_sources = u32::from(fixture.world.get_block(&kelp) == &Block::KELP);
+    assert_eq!(
+        item_drops + plant_sources,
+        1,
+        "one original kelp must yield one drop or one live source"
+    );
+    assert_eq!(plant_sources, 0, "the claimed kelp must be removed");
+    assert_eq!(item_drops, 1, "the uncancelled drop must be published");
+    assert_eq!(fixture.world.get_block(&SPONGE), &Block::WET_SPONGE);
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g11_cancelled_item_spawn_still_consumes_absorbed_kelp() {
+    let kelp = SPONGE.offset((1, 0, 0).into());
+    let fixture = Fixture::new(&[(kelp, Block::KELP.default_state.id)]);
+    let callback_calls = Arc::new(AtomicUsize::new(0));
+    let observed_callback_calls = callback_calls.clone();
+    fixture.register::<crate::plugin::api::events::entity::item_spawn::ItemSpawnEvent>(
+        move |event| {
+            if event.item_name == "kelp" {
+                observed_callback_calls.fetch_add(1, Relaxed);
+                event.cancelled = true;
+            }
+        },
+    );
+
+    fixture.place_sponge(SPONGE);
+
+    assert_eq!(callback_calls.load(Relaxed), 1);
+    assert_eq!(fixture.world.get_block(&kelp), &Block::AIR);
+    assert_eq!(item_count(&fixture.world, &Item::KELP), 0);
+    assert_eq!(fixture.world.get_block(&SPONGE), &Block::WET_SPONGE);
     fixture.finish().await;
 }
 

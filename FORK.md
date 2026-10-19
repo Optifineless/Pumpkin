@@ -4,7 +4,7 @@ This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained fo
 
 ## Sponge fluid traversal and depth (#80, #81)
 
-Sponge absorption follows vanilla 26.3 `SpongeBlock.removeWaterBreadthFirstSearch` and `BlockPos.breadthFirstTraversal`: connected water uses graph depth six and at most 64 absorbed blocks. Waterlogged hosts keep their block while losing water; kelp and seagrass use their normal loot handling and are removed. The cancellable sponge event remains before mutation, with current states rechecked after callbacks. No saved-data or public API change.
+Sponge absorption follows vanilla 26.3 `SpongeBlock.removeWaterBreadthFirstSearch` and `BlockPos.breadthFirstTraversal`: connected water uses graph depth six and at most 64 absorbed blocks. Waterlogged hosts keep their block while losing water; kelp and seagrass use their normal loot handling and are removed. The cancellable sponge event remains before mutation, with current states rechecked after callbacks. Aquatic plants are conditionally removed before their drops are published, so synchronous item-spawn callbacks cannot duplicate the observed plant. Cancelled drops still leave the plant removed, and callback replacements survive. No saved-data or public API change.
 
 In-game verification: Not yet.
 

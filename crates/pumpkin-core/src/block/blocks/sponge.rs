@@ -135,23 +135,23 @@ impl SpongeBlock {
             ..Default::default()
         };
         let drops = crate::block::block_drops(world, block, &node.position, &params);
-        if world.get_block_state_id(&node.position) != node.state_id {
-            return false;
-        }
-        for drop in drops {
-            world.drop_stack(&node.position, drop);
-            if world.get_block_state_id(&node.position) != node.state_id {
-                return false;
-            }
-        }
-        world
+        // Claim the observed plant before ItemSpawnEvent callbacks can mutate it. The world write
+        // is complete before publishing drops, so callback replacements at this position survive.
+        if world
             .set_block_state_if(
                 &node.position,
                 BlockStateId::AIR,
                 BlockFlags::NOTIFY_LISTENERS,
                 |current| current == node.state_id,
             )
-            .is_some()
+            .is_none()
+        {
+            return false;
+        }
+        for drop in drops {
+            world.drop_stack(&node.position, drop);
+        }
+        true
     }
 
     /// Mirrors SpongeBlock.removeWaterBreadthFirstSearch: accepted nodes include the sponge at
