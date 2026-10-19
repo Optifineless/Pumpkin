@@ -243,54 +243,77 @@ async fn scheduled_fire_b1019_g10_freezes_at_radius_zero_then_minus_one_control_
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn scheduled_fire_b1019_g10_includes_radius_boundary_and_excludes_spectators() {
-    let fixture = FireFixture::new();
-    let player = TestPlayer::new(&fixture.world);
-    fixture.set_fire_radius(2);
-
-    let boundary = BlockPos::new(4, 64, 4);
-    fixture.set_fire(boundary, 15);
-    player
-        .player
-        .get_entity()
-        .set_pos(Vector3::new(6.5, 64.5, 4.5));
-    fixture.schedule_fire(boundary);
-    fixture.tick();
+async fn scheduled_fire_b1019_g10_uses_strict_source_corner_radius() {
+    let inside = tick_fire_radius_with_player(
+        2,
+        BlockPos::new(4, 64, 4),
+        Vector3::new(5.999, 64.0, 4.0),
+        false,
+    )
+    .await;
     assert_eq!(
-        fixture.world.get_block_state_id(&boundary),
+        inside.1,
         Block::AIR.default_state.id,
-        "a survival player exactly at the radius boundary is eligible"
+        "a live player just inside the source-corner radius admits the fire tick"
     );
 
-    let outside = BlockPos::new(8, 64, 8);
-    let outside_fire = fixture.set_fire(outside, 15);
-    player
-        .player
-        .get_entity()
-        .set_pos(Vector3::new(10.5001, 64.5, 8.5));
-    fixture.schedule_fire(outside);
-    fixture.tick();
+    let exact = tick_fire_radius_with_player(
+        2,
+        BlockPos::new(8, 64, 8),
+        Vector3::new(10.0, 64.0, 8.0),
+        false,
+    )
+    .await;
     assert_eq!(
-        fixture.world.get_block_state_id(&outside),
-        outside_fire,
-        "a player just beyond the radius must not admit the source fire"
+        exact.1, exact.0,
+        "a player exactly on the source-corner radius must not admit the fire tick"
+    );
+
+    let outside = tick_fire_radius_with_player(
+        2,
+        BlockPos::new(12, 64, 12),
+        Vector3::new(14.001, 64.0, 12.0),
+        false,
+    )
+    .await;
+    assert_eq!(
+        outside.1, outside.0,
+        "a player outside the source-corner radius must not admit the fire tick"
     );
 
     let spectator_source = BlockPos::new(12, 64, 12);
-    let spectator_fire = fixture.set_fire(spectator_source, 15);
-    player
-        .player
-        .get_entity()
-        .set_pos(spectator_source.to_centered_f64());
-    player.player.set_gamemode(GameMode::Spectator);
-    fixture.schedule_fire(spectator_source);
-    fixture.tick();
+    let spectator = tick_fire_radius_with_player(
+        2,
+        spectator_source,
+        spectator_source.to_centered_f64(),
+        true,
+    )
+    .await;
     assert_eq!(
-        fixture.world.get_block_state_id(&spectator_source),
-        spectator_fire,
+        spectator.1, spectator.0,
         "spectators must not count as eligible fire-spread players"
     );
+}
+
+async fn tick_fire_radius_with_player(
+    radius: i64,
+    source: BlockPos,
+    player_pos: Vector3<f64>,
+    spectator: bool,
+) -> (BlockStateId, BlockStateId) {
+    let fixture = FireFixture::new();
+    fixture.set_fire_radius(radius);
+    let player = TestPlayer::new(&fixture.world);
+    player.player.get_entity().set_pos(player_pos);
+    if spectator {
+        player.player.gamemode.store(GameMode::Spectator);
+    }
+    let initial_state = fixture.set_fire(source, 0);
+    fixture.schedule_fire(source);
+    fixture.tick();
+    let result_state = fixture.world.get_block_state_id(&source);
     fixture.shutdown().await;
+    (initial_state, result_state)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -443,3 +466,6 @@ async fn rain_extinction_b1019_g10_notifies_air_and_preserves_supported_neighbor
     assert!(!updates.iter().any(|(pos, _)| *pos == neighbor));
     fixture.shutdown().await;
 }
+
+#[path = "round_two_tests.rs"]
+mod round_two_tests;

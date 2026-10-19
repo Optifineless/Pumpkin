@@ -25,6 +25,7 @@ use crate::block::{
     BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,
     OnEntityCollisionArgs, OnScheduledTickArgs, PlacedArgs,
 };
+use crate::entity::EntityBase;
 use crate::world::World;
 use crate::world::portal::nether::NetherPortal;
 
@@ -180,12 +181,28 @@ impl FireBlock {
             .load()
             .game_rules
             .fire_spread_radius_around_player;
-        spread_radius == -1
-            || world
-                .get_nearest_player(pos.to_centered_f64(), spread_radius as f64, |player| {
-                    !player.is_spectator()
-                })
-                .is_some()
+        if spread_radius == -1 {
+            return true;
+        }
+
+        // Vanilla ChunkMap.anyPlayerCloseEnoughTo measures from the block corner, strictly.
+        let source_pos = Vector3::new(f64::from(pos.0.x), f64::from(pos.0.y), f64::from(pos.0.z));
+        let radius = spread_radius as f64;
+        let radius_squared = radius.powi(2);
+        world
+            .get_nearby_players(source_pos, radius)
+            .into_iter()
+            .any(|player| {
+                if player.is_spectator() {
+                    return false;
+                }
+                player
+                    .get_entity()
+                    .pos
+                    .load()
+                    .squared_distance_to_vec(&source_pos)
+                    < radius_squared
+            })
     }
 
     fn try_spreading_fire(&self, world: &Arc<World>, pos: &BlockPos, chance: i32, age: u8) {
@@ -207,21 +224,28 @@ impl FireBlock {
                 }
             }
             let old_block = block;
-            if Self::random_range(0..(age + 10) as i32) < 5
+            let burned_state = if Self::random_range(0..(age + 10) as i32) < 5
                 && !Self::is_near_rain(world.as_ref(), pos)
             {
                 let new_age = (age + (Self::random_range(0..5) / 4)).min(15);
-                let state_id = self.get_state_for_position(world.as_ref(), &Block::FIRE, pos);
-                let mut fire_props = FireProperties::from_state_id(state_id);
+                let fire_state_id = self.get_state_for_position(world.as_ref(), &Block::FIRE, pos);
+                let mut fire_props = FireProperties::from_state_id(fire_state_id);
                 fire_props.age = new_age;
                 let new_state_id = fire_props.to_state_id(&Block::FIRE);
-                world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_ALL);
+                world.set_block_state_if(pos, new_state_id, BlockFlags::NOTIFY_ALL, |state| {
+                    state == state_id
+                })
             } else {
-                world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
-            }
+                world.set_block_state_if(
+                    pos,
+                    Block::AIR.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                    |state| state == state_id,
+                )
+            };
 
             // The TNT was already replaced above, so `prime` would find no TNT here.
-            if old_block == &Block::TNT {
+            if burned_state.is_some() && old_block == &Block::TNT {
                 TNTBlock::spawn_primed(world, pos);
             }
         }
@@ -429,6 +453,7 @@ impl BlockBehaviour for FireBlock {
                 for yy in -1..=4 {
                     if xx != 0 || yy != 0 || zz != 0 {
                         let offset_pos = pos.offset(Vector3::new(xx, yy, zz));
+                        let target_state_id = world.get_block_state_id(&offset_pos);
                         let ignite_odds = self.get_burn_chance(world, &offset_pos);
 
                         if ignite_odds > 0 {
@@ -469,10 +494,11 @@ impl BlockBehaviour for FireBlock {
                                     }
                                 }
 
-                                world.set_block_state(
+                                let _ = world.set_block_state_if(
                                     &offset_pos,
                                     new_state_id,
                                     BlockFlags::NOTIFY_NEIGHBORS,
+                                    |state| state == target_state_id,
                                 );
                             }
                         }
