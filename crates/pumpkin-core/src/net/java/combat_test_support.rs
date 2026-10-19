@@ -65,6 +65,23 @@ impl TestPlayer {
         &mut self,
         operation: F,
     ) -> F::Output {
+        self.with_outgoing_writer_inner(operation, None).await
+    }
+
+    pub async fn with_outgoing_writer_and_capture<F: std::future::Future>(
+        &mut self,
+        operation: F,
+        packets: &mut Vec<bytes::Bytes>,
+    ) -> F::Output {
+        self.with_outgoing_writer_inner(operation, Some(packets))
+            .await
+    }
+
+    async fn with_outgoing_writer_inner<F: std::future::Future>(
+        &mut self,
+        operation: F,
+        mut capture: Option<&mut Vec<bytes::Bytes>>,
+    ) -> F::Output {
         tokio::pin!(operation);
         loop {
             tokio::select! {
@@ -72,6 +89,9 @@ impl TestPlayer {
                 Some(packet) = self.packets.recv() => {
                     if let OutgoingPacket::Data { data, completion } = packet {
                         decrement_pending_bytes(&self.client().pending_bytes, data.len());
+                        if let Some(packets) = capture.as_mut() {
+                            packets.push(data);
+                        }
                         if let Some(outgoing::Completion::Framed(done) | outgoing::Completion::Flushed(done)) = completion {
                             let _ = done.send(());
                         }

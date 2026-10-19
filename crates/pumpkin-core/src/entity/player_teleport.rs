@@ -60,65 +60,56 @@ impl Player {
     }
 
     /// Teleports a pearl's player owner and applies pearl effects only after success.
-    pub(crate) fn teleport_for_ender_pearl(
-        &self,
-        position: Vector3<f64>,
-        world: Arc<World>,
-    ) -> bool {
+    pub(crate) fn teleport_for_ender_pearl(&self, position: Vector3<f64>, world: Arc<World>) {
         let current_world = self.world();
         let yaw = self.get_entity().yaw.load();
         let pitch = self.get_entity().pitch.load();
         if Arc::ptr_eq(&current_world, &world) {
-            if self.teleport_same_world(position, yaw, pitch).is_some()
+            if let Some(accepted_position) = self.teleport_same_world(position, yaw, pitch)
                 && current_world
                     .get_player_by_uuid(self.gameprofile.id)
                     .is_some_and(|player| std::ptr::eq(self, player.as_ref()))
             {
                 self.finish_ender_pearl_teleport();
+                current_world.play_sound(
+                    pumpkin_data::sound::Sound::EntityPlayerTeleport,
+                    pumpkin_data::sound::SoundCategory::Players,
+                    &accepted_position,
+                );
             }
-            return false;
+            return;
         }
 
         let Some(player) = current_world.get_player_by_uuid(self.gameprofile.id) else {
-            return false;
+            return;
         };
         let task_player = player.clone();
         let expected_player = task_player.clone();
         let life = task_player.living_entity.damage_lifecycle();
-        let sound_world = world.clone();
-        player
-            .spawn_task(async move {
-                let outcome = task_player
-                    .teleport_world_with_commit(
-                        world,
-                        position,
-                        Some(yaw),
-                        Some(pitch),
-                        move |player| {
-                            // ThrownEnderpearl.onHit applies these after ServerPlayer.teleport succeeds.
-                            if Arc::ptr_eq(player, &expected_player) {
-                                player.finish_ender_pearl_teleport_for_lifecycle(life);
-                            }
-                        },
-                        move |published_world| {
-                            // ThrownEnderpearl.onHit plays sound after transfer effects; publish first so the owner can hear it.
-                            published_world.play_sound(
-                                pumpkin_data::sound::Sound::EntityPlayerTeleport,
-                                pumpkin_data::sound::SoundCategory::Players,
-                                &position,
-                            );
-                        },
-                    )
-                    .await;
-                if outcome == TeleportWorldOutcome::NotCommitted {
-                    sound_world.play_sound(
-                        pumpkin_data::sound::Sound::EntityPlayerTeleport,
-                        pumpkin_data::sound::SoundCategory::Players,
-                        &position,
-                    );
-                }
-            })
-            .is_some()
+        player.spawn_task(async move {
+            let _ = task_player
+                .teleport_world_with_commit(
+                    world,
+                    position,
+                    Some(yaw),
+                    Some(pitch),
+                    move |player| {
+                        // ThrownEnderpearl.onHit applies these after ServerPlayer.teleport succeeds.
+                        if Arc::ptr_eq(player, &expected_player) {
+                            player.finish_ender_pearl_teleport_for_lifecycle(life);
+                        }
+                    },
+                    move |published_world, accepted_position| {
+                        // ThrownEnderpearl.onHit sounds after damage and the destination position packet.
+                        published_world.play_sound(
+                            pumpkin_data::sound::Sound::EntityPlayerTeleport,
+                            pumpkin_data::sound::SoundCategory::Players,
+                            &accepted_position,
+                        );
+                    },
+                )
+                .await;
+        });
     }
 
     fn finish_ender_pearl_teleport(&self) {

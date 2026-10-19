@@ -56,7 +56,9 @@ impl AsyncEventGate {
     async fn hold_once(&self) {
         if self.armed.swap(false, Ordering::AcqRel) {
             self.entered.notify_one();
-            self.release.notified().await;
+            tokio::time::timeout(std::time::Duration::from_secs(30), self.release.notified())
+                .await
+                .expect("event gate was not released");
         }
     }
 
@@ -319,14 +321,7 @@ async fn verification_cross_world_pearl_effects_commit_before_changed_world_even
     pearl.tick(&pearl, &server);
     assert!(pearl.thrown.has_hit.load(Ordering::Relaxed));
 
-    let task_player = player.clone();
-    test_player
-        .with_outgoing_writer(async move {
-            if let crate::net::ClientPlatform::Java(client) = task_player.client.as_ref() {
-                client.await_tasks().await;
-            }
-        })
-        .await;
+    wait_for_player_tasks(&mut test_player, player.clone()).await;
 
     assert!(arrived_in_target_world.load(Ordering::Relaxed));
     assert_eq!(
@@ -337,6 +332,9 @@ async fn verification_cross_world_pearl_effects_commit_before_changed_world_even
     assert_eq!(player.living_entity.fall_distance.load(), 0.0);
     assert_eq!(player.living_entity.health.load(), 15.0);
 }
+
+#[path = "ender_pearl_owner_review_tests.rs"]
+mod owner_review_tests;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn verification_pearl_losing_to_concurrent_world_transfer_has_no_effects() {

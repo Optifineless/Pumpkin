@@ -50,8 +50,9 @@ struct AdmittedHurt<'a> {
     caller: &'a dyn EntityBase,
     amount: f32,
     context: HurtContext<'a>,
-    _owner: DamageToken,
+    // Struct fields drop in order: retire admission before releasing the serial owner.
     _pending: PendingHurt,
+    _owner: DamageToken,
 }
 
 impl<'a, F: FnOnce()> HurtRequest<'a, F> {
@@ -88,6 +89,8 @@ mod boundary_tests;
 mod callback_tests;
 #[cfg(test)]
 mod instant_tests;
+#[cfg(test)]
+mod owner_exit_tests;
 #[cfg(test)]
 mod ownership_immunity_tests;
 #[cfg(test)]

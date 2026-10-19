@@ -3956,7 +3956,8 @@ impl World {
         chunker::update_position(player);
         // Update commands
 
-        player.set_health(20.0);
+        // ServerPlayer dimension changes preserve health; respawn resets it explicitly.
+        player.send_health_update();
     }
 
     pub fn explode(

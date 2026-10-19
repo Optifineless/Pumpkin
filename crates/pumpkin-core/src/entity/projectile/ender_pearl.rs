@@ -122,7 +122,8 @@ impl EntityBase for EnderPearlEntity {
                     }
 
                     // ThrownEnderpearl.onHit damages a ServerPlayer only when teleport returns it.
-                    player.teleport_for_ender_pearl(teleport_pos, world.clone())
+                    player.teleport_for_ender_pearl(teleport_pos, world.clone());
+                    true
                 },
             );
 
