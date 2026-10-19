@@ -60,10 +60,20 @@ async fn dragon_parts_forward_damage_with_head_and_neck_exemptions() {
         assert!(world.spawn_entity(entity.clone()));
         let part = &dragon.parts[index];
         let before = dragon.mob_entity.living_entity.health.load();
-        assert!(part.damage_with_context(
+        // EnderDragon.hurt admits only a Player cause or ALWAYS_HURTS_ENDER_DRAGONS types.
+        assert!(!part.damage_with_context(
             part.as_ref(),
             8.0,
             DamageType::GENERIC,
+            None,
+            None,
+            None
+        ));
+        assert_eq!(dragon.mob_entity.living_entity.health.load(), before);
+        assert!(part.damage_with_context(
+            part.as_ref(),
+            8.0,
+            DamageType::EXPLOSION,
             None,
             None,
             None
