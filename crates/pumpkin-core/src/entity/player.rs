@@ -11,6 +11,9 @@ mod map_tracking;
 mod melee;
 mod menu_close;
 mod respawn_position;
+#[cfg(test)]
+pub(crate) mod respawn_position_test_gate;
+mod stand_up;
 use known_movement::KnownMovement;
 pub mod statistics;
 

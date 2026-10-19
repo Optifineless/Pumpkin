@@ -864,6 +864,8 @@ crates/pumpkin-wasm-host-common/src/equipment_tests.rs::wasm_non_player_main_han
 # Owners contain no stack storage, acquire in Arc identity order, and release before effects.
 crates/pumpkin-inventory/src/inventory/slot_transaction.rs::default::parking_lot::ReentrantMutex::new#1
 # Test-only completion gates and event observations; no production state or guard held across an await.
+# PR #233 test-only arrival oneshot; sender is taken and guard drops before callbacks/awaits.
+crates/pumpkin-core/src/world/portal/end_return_loading_tests.rs::b1019_g16_bedrock_end_return_transfers_to_personal_anchor::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/portal/end_return_session_tests.rs::b1019_g16_session_replaced_during_end_destination::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/portal/end_return_session_tests.rs::b1019_g16_session_replaced_during_end_destination::std::sync::Mutex::new#2
 crates/pumpkin-core/src/world/portal/end_return_test_support.rs::transfer::std::sync::Mutex::new#1

@@ -13,6 +13,10 @@ mod destination;
 pub mod end;
 mod end_return;
 #[cfg(test)]
+mod end_return_loading_tests;
+#[cfg(test)]
+mod end_return_safety_tests;
+#[cfg(test)]
 mod end_return_session_tests;
 #[cfg(test)]
 mod end_return_test_support;

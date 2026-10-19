@@ -40,7 +40,7 @@ use crate::{
     world::World,
 };
 
-fn install_bed(world: &Arc<World>) {
+pub(super) fn install_bed(world: &Arc<World>) {
     let mut props = WhiteBedLikeProperties::default(&Block::WHITE_BED);
     props.facing = HorizontalFacing::South;
     props.part = BedPart::Foot;
@@ -57,7 +57,7 @@ fn install_bed(world: &Arc<World>) {
     );
 }
 
-fn install_anchor(world: &Arc<World>) {
+pub(super) fn install_anchor(world: &Arc<World>) {
     let mut props = RespawnAnchorLikeProperties::default(&Block::RESPAWN_ANCHOR);
     props.charges = 3;
     world.set_block_state(
@@ -67,7 +67,7 @@ fn install_anchor(world: &Arc<World>) {
     );
 }
 
-fn assert_anchor(world: &World) {
+pub(super) fn assert_anchor(world: &World) {
     assert_eq!(
         RespawnAnchorLikeProperties::from_state_id(world.get_block_state_id(&PERSONAL)).charges,
         3,
@@ -77,12 +77,13 @@ fn assert_anchor(world: &World) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g16_end_return_uses_saved_bed_from_both_save_formats() {
-    for legacy in [false, true] {
+    for (legacy, yaw) in [(false, 27.0), (true, 0.0), (false, 180.0)] {
         let fixture = Fixture::new().await;
         install_bed(&fixture.overworld);
         let mut client = fixture.returning_player();
         let player = client.player.clone();
         load_personal(&player, &Dimension::OVERWORLD, legacy);
+        player.respawn_point.lock().unwrap().as_mut().unwrap().yaw = yaw;
         let before = player.respawn_point.lock().unwrap().clone();
         let valid = tokio::time::timeout(DEADLINE, player.calculate_respawn_point())
             .await
@@ -93,12 +94,17 @@ async fn b1019_g16_end_return_uses_saved_bed_from_both_save_formats() {
             Vector3::new(7.5, 64.1, 8.5),
             "fixture bed must validate away from shared spawn"
         );
+        assert_eq!(valid.yaw, yaw);
         transfer(&fixture, &mut client).await;
         assert!(Arc::ptr_eq(&player.world(), &fixture.overworld));
         assert_eq!(
             player.position(),
-            Vector3::new(7.5, 64.1, 8.5),
+            Vector3::new(if yaw == 0.0 { 7.5 } else { 9.5 }, 64.0, 8.5),
             "registered End return must use the valid saved bed"
+        );
+        assert_eq!(
+            player.get_entity().yaw.load(),
+            if yaw == 0.0 { -90.0 } else { 90.0 }
         );
         assert_eq!(*player.respawn_point.lock().unwrap(), before);
         assert!(player.seen_credits.load(Ordering::Relaxed));
@@ -118,7 +124,8 @@ async fn b1019_g16_end_return_retains_anchor_dimension_and_charges() {
         Arc::ptr_eq(&player.world(), &fixture.nether),
         "personal spawn's dimension must survive the asynchronous transfer"
     );
-    assert_eq!(player.position(), Vector3::new(8.5, 64.1, 7.5));
+    assert_eq!(player.position(), Vector3::new(8.5, 64.0, 7.5));
+    assert!(player.get_entity().yaw.load().abs() < 0.001);
     assert_anchor(&fixture.nether);
     fixture.finish().await;
 }
@@ -322,7 +329,7 @@ impl EventHandler<PlayerChangeWorldEvent> for ChangeWorld {
     }
 }
 
-async fn drain(fixture: &Fixture, client: &mut TestPlayer) {
+pub(super) async fn drain(fixture: &Fixture, client: &mut TestPlayer) {
     fixture.server.tasks.close();
     tokio::time::timeout(DEADLINE, fixture.server.tasks.wait())
         .await
@@ -361,7 +368,7 @@ async fn b1019_g16_end_return_cancellation_and_redirection_keep_anchor_charges()
             vec![(
                 Dimension::THE_END,
                 Dimension::THE_NETHER,
-                Vector3::new(8.5, 64.1, 7.5)
+                Vector3::new(8.5, 64.0, 7.5)
             )],
             "change-world event must observe the resolved personal dimension and position",
         );

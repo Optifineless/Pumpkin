@@ -181,7 +181,7 @@ pub(super) fn contact(server: &Server, entity: &dyn EntityBase) {
     entity.get_entity().tick(entity, server);
 }
 
-struct Arrived(Mutex<Option<oneshot::Sender<()>>>);
+pub(super) struct Arrived(pub(super) Mutex<Option<oneshot::Sender<()>>>);
 impl EventHandler<PlayerChangedWorldEvent> for Arrived {
     fn handle_blocking<'a>(
         &'a self,

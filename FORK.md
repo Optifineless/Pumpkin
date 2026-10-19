@@ -14,6 +14,24 @@ Mirrors Java 26.3 `EndPortalBlock.getPortalDestination`,
 `ServerPlayer.findRespawnPositionAndUseSpawnBlock(false)` and
 `PlayerSpawnFinder.findSpawn/fixupSpawnHeight`.
 
+PR #233 review: living End returns exhaust safe bed/anchor candidates before
+allowing dangerous cells or floors, and require collision support instead of
+legacy solidity. Wall signs over shafts cannot become respawn floors. Arrival
+height follows that support and yaw faces the saved spawn block, mirroring
+`AbstractBedBlock.findStandUpPosition`, `RespawnAnchorBlock.findStandUpPosition`,
+`DismountHelper.findSafeDismountLocation` and `ServerPlayer.RespawnPosAngle`.
+Consuming death respawn retains its existing selection and yaw. Tests cover
+registered End contact and actual Java/Bedrock transfers, lava and burning
+floors, sign shafts, and saved-spawn changes/world unload at the chunk-fetch
+boundary. Implemented by Codex (GPT-6.1 Sol). In-game verification: Not yet.
+
+Play test: In Survival, return from the End with lava beside a charged Nether
+anchor and a dry supported alternative; expect the dry arrival, no new damage
+or fire, and the same charge count. Repeat with a bed whose first side has a
+wall sign over a deep shaft and whose opposite side has a stone floor; expect
+arrival on stone, facing the bed. Capture a recording of each arrival and the
+anchor charge count before and after.
+
 Either Nether portal axis change adds 90 degrees to Pumpkin's absolute yaw;
 same-axis travel retains yaw. This narrowly adapts Zinedin Polic's correction in
 upstream PR [#3819](https://github.com/Pumpkin-MC/Pumpkin/pull/3819), commit

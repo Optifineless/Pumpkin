@@ -1,5 +1,5 @@
-use super::{CalculatedRespawnPoint, Player, RespawnPoint, Vector2, Vector3, debug, tag};
-use crate::world::World;
+use super::{CalculatedRespawnPoint, Player, RespawnPoint, Vector2, Vector3, debug, stand_up, tag};
+use crate::world::{World, portal::residency::run_portal_job};
 use pumpkin_data::{Block, tag::Taggable};
 use pumpkin_world::chunk_system::residency::ChunkResidency;
 use std::sync::Arc;
@@ -39,10 +39,11 @@ impl Player {
         let pos = &respawn_point.position;
 
         // Ensure chunks around the spawn position are fetched
-        let min_chunk_x = (pos.0.x - 2) >> 4;
-        let max_chunk_x = (pos.0.x + 2) >> 4;
-        let min_chunk_z = (pos.0.z - 2) >> 4;
-        let max_chunk_z = (pos.0.z + 2) >> 4;
+        let radius = if consume_spawn_block { 2 } else { 3 };
+        let min_chunk_x = (pos.0.x - radius) >> 4;
+        let max_chunk_x = (pos.0.x + radius) >> 4;
+        let min_chunk_z = (pos.0.z - radius) >> 4;
+        let max_chunk_z = (pos.0.z + radius) >> 4;
         let mut residency = ChunkResidency::new(world.level.chunk_loading.clone());
         residency.add_all(
             (min_chunk_x..=max_chunk_x)
@@ -50,6 +51,10 @@ impl Player {
         );
         for cx in min_chunk_x..=max_chunk_x {
             for cz in min_chunk_z..=max_chunk_z {
+                #[cfg(test)]
+                if !consume_spawn_block {
+                    super::respawn_position_test_gate::pause(self.gameprofile.id).await;
+                }
                 world
                     .level
                     .get_or_fetch_chunk(Vector2::new(cx, cz), |_| ())
@@ -58,7 +63,16 @@ impl Player {
             }
         }
 
-        let result = Self::resolve_respawn_position(&world, &respawn_point, consume_spawn_block)?;
+        let result = if consume_spawn_block {
+            Self::resolve_respawn_position(&world, &respawn_point, true)?
+        } else {
+            let inspect_world = world.clone();
+            run_portal_job(&world, move || {
+                let _residency = residency;
+                Self::resolve_respawn_position(&inspect_world, &respawn_point, false)
+            })
+            .await?
+        };
         Some((result, world))
     }
 
@@ -92,12 +106,7 @@ impl Player {
                     "Returning forced spawn point at {:?}, dimension: {:?}",
                     position, respawn_point.dimension
                 );
-                return Some(CalculatedRespawnPoint {
-                    position,
-                    yaw: respawn_point.yaw,
-                    pitch: 0.0,
-                    dimension: respawn_point.dimension.clone(),
-                });
+                return Some(respawn_point_at(respawn_point, position, true));
             }
             return None;
         }
@@ -107,17 +116,13 @@ impl Player {
             let bed_props = BedProperties::from_state_id(state_id);
             let facing = bed_props.facing;
 
-            // Try positions around the bed based on facing direction
-            // Vanilla tries multiple offset patterns; we use a simplified version
-            if let Some(spawn_pos) = Self::find_bed_spawn_position(world, pos, facing) {
-                return Some(CalculatedRespawnPoint {
-                    position: spawn_pos,
-                    yaw: respawn_point.yaw,
-                    pitch: 0.0,
-                    dimension: respawn_point.dimension.clone(),
-                });
-            }
-            return None;
+            let position = if consume_spawn_block {
+                Self::find_bed_spawn_position(world, pos, facing)
+            } else {
+                stand_up::bed_stand_up(world, *pos, facing, respawn_point.yaw)
+            };
+            return position
+                .map(|position| respawn_point_at(respawn_point, position, consume_spawn_block));
         }
 
         // Handle respawn anchor (Nether)
@@ -130,8 +135,12 @@ impl Player {
                 return None;
             }
 
-            // Try positions around the anchor
-            if let Some(spawn_pos) = Self::find_anchor_spawn_position(world, pos) {
+            let position = if consume_spawn_block {
+                Self::find_anchor_spawn_position(world, pos)
+            } else {
+                stand_up::anchor_stand_up(world, *pos)
+            };
+            if let Some(spawn_pos) = position {
                 if consume_spawn_block {
                     // Decrement charges after successful respawn position found
                     let new_charges = charges - 1;
@@ -144,16 +153,32 @@ impl Player {
                     );
                 }
 
-                return Some(CalculatedRespawnPoint {
-                    position: spawn_pos,
-                    yaw: respawn_point.yaw,
-                    pitch: 0.0,
-                    dimension: respawn_point.dimension.clone(),
-                });
+                return Some(respawn_point_at(
+                    respawn_point,
+                    spawn_pos,
+                    consume_spawn_block,
+                ));
             }
             return None;
         }
 
         None
+    }
+}
+
+fn respawn_point_at(
+    saved: &RespawnPoint,
+    position: Vector3<f64>,
+    retain_saved_yaw: bool,
+) -> CalculatedRespawnPoint {
+    CalculatedRespawnPoint {
+        position,
+        yaw: if retain_saved_yaw {
+            saved.yaw
+        } else {
+            stand_up::look_at_yaw(position, saved.position)
+        },
+        pitch: 0.0,
+        dimension: saved.dimension.clone(),
     }
 }
