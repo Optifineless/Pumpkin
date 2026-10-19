@@ -180,3 +180,6 @@ mod hand_use_review_tests;
 
 #[cfg(test)]
 mod block_transformer_tests;
+
+#[cfg(test)]
+mod block_transformer_review_tests;

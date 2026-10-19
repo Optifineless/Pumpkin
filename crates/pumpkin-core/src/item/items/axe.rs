@@ -2,7 +2,7 @@ use crate::block::registry::BlockActionResult;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use pumpkin_data::block_properties::{DoubleBlockHalf, OakDoorLikeProperties};
+use pumpkin_data::block_properties::{BlockProperties, DoubleBlockHalf, OakDoorLikeProperties};
 use pumpkin_data::block_transformer::AXE;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
@@ -66,7 +66,8 @@ impl ItemBehaviour for AxeItem {
             if player.gamemode.load() != GameMode::Creative {
                 let _ = item.damage_item(i32::from(result.entry.item_damage_per_use));
             }
-            if block.has_tag(&tag::Block::MINECRAFT_DOORS) {
+            let is_door = block.has_tag(&tag::Block::MINECRAFT_DOORS);
+            if is_door {
                 let door_props = OakDoorLikeProperties::from_state_id(current_state_id);
                 let other_half_pos = match door_props.half {
                     DoubleBlockHalf::Lower => location.up(),
@@ -74,26 +75,33 @@ impl ItemBehaviour for AxeItem {
                 };
                 let (other_block, other_state_id) = world.get_block_and_state_id(&other_half_pos);
                 if other_block == block {
-                    let other_new_state_id = if result.target_block.states.len() <= 1 {
-                        result.target_block.default_state.id
-                    } else if let Some(other_props) = other_block.properties(other_state_id) {
-                        let props = other_props.to_props();
-                        result
-                            .target_block
-                            .from_properties(&props)
-                            .to_state_id(result.target_block)
-                    } else {
-                        result.target_block.default_state.id
-                    };
-                    world.set_block_state(
-                        &other_half_pos,
-                        other_new_state_id,
-                        BlockFlags::NOTIFY_ALL,
-                    );
+                    let other_props = OakDoorLikeProperties::from_state_id(other_state_id);
+                    if other_props.half != door_props.half {
+                        let other_new_state_id = if result.target_block.states.len() <= 1 {
+                            result.target_block.default_state.id
+                        } else {
+                            result
+                                .target_block
+                                .from_properties(&other_props.to_props())
+                                .to_state_id(result.target_block)
+                        };
+                        world.set_block_state(
+                            &other_half_pos,
+                            other_new_state_id,
+                            BlockFlags::NOTIFY_LISTENERS
+                                | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
+                                | BlockFlags::UPDATE_KNOWN_SHAPE,
+                        );
+                    }
                 }
             }
 
-            world.set_block_state(&location, result.new_state_id, BlockFlags::NOTIFY_ALL);
+            let flags = if is_door {
+                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
+            } else {
+                BlockFlags::NOTIFY_ALL
+            };
+            world.set_block_state(&location, result.new_state_id, flags);
             super::block_transformer::send_transform_effects(
                 player,
                 location,
