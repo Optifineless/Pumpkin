@@ -13,6 +13,13 @@ use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
 use std::sync::Arc;
 
+#[cfg(test)]
+std::thread_local! {
+    static TEST_FIRE_RANDOM: std::cell::RefCell<Option<rand::rngs::StdRng>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
 use crate::block::blocks::tnt::TNTBlock;
 use crate::block::{
     BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,
@@ -32,6 +39,29 @@ impl FireBlock {
     #[must_use]
     pub fn get_fire_tick_delay() -> i32 {
         30 + rand::rng().random_range(0..10)
+    }
+
+    fn random_range<T>(range: std::ops::Range<T>) -> T
+    where
+        T: rand::distr::uniform::SampleUniform + Clone + PartialOrd,
+    {
+        #[cfg(test)]
+        if let Some(value) = TEST_FIRE_RANDOM
+            .with_borrow_mut(|rng| rng.as_mut().map(|rng| rng.random_range(range.clone())))
+        {
+            return value;
+        }
+        rand::rng().random_range(range)
+    }
+
+    fn random_f32() -> f32 {
+        #[cfg(test)]
+        if let Some(value) =
+            TEST_FIRE_RANDOM.with_borrow_mut(|rng| rng.as_mut().map(rand::RngExt::random::<f32>))
+        {
+            return value;
+        }
+        rand::rng().random::<f32>()
     }
 
     fn is_flammable(id: BlockStateId) -> bool {
@@ -113,8 +143,12 @@ impl FireBlock {
             || world.is_raining_at(&pos.south())
     }
 
-    // Get burn odds for a block, used in try_spreading_fire
-    fn get_burn_odds(block: &Block) -> i32 {
+    // Mirrors FireBlock.getBurnOdds(BlockState); waterlogged states have no burn odds.
+    fn get_burn_odds(state_id: BlockStateId) -> i32 {
+        let block = state_id.to_block();
+        if block.is_waterlogged(state_id) {
+            return 0;
+        }
         block.flammable.as_ref().map_or(0, |f| f.burn_chance.into())
     }
 
@@ -140,10 +174,25 @@ impl FireBlock {
         )
     }
 
+    fn can_spread_fire_around(world: &World, pos: &BlockPos) -> bool {
+        let spread_radius = world
+            .level_info
+            .load()
+            .game_rules
+            .fire_spread_radius_around_player;
+        spread_radius == -1
+            || world
+                .get_nearest_player(pos.to_centered_f64(), spread_radius as f64, |player| {
+                    !player.is_spectator()
+                })
+                .is_some()
+    }
+
     fn try_spreading_fire(&self, world: &Arc<World>, pos: &BlockPos, chance: i32, age: u8) {
-        let block = world.get_block(pos);
-        let odds = Self::get_burn_odds(block);
-        if rand::rng().random_range(0..chance) < odds {
+        let state_id = world.get_block_state_id(pos);
+        let block = state_id.to_block();
+        let odds = Self::get_burn_odds(state_id);
+        if Self::random_range(0..chance) < odds {
             if let Some(server) = world.server.upgrade() {
                 let mut event = crate::plugin::api::events::block::block_burn::BlockBurnEvent {
                     world: world.clone(),
@@ -158,10 +207,10 @@ impl FireBlock {
                 }
             }
             let old_block = block;
-            if rand::rng().random_range(0..(age + 10) as i32) < 5
+            if Self::random_range(0..(age + 10) as i32) < 5
                 && !Self::is_near_rain(world.as_ref(), pos)
             {
-                let new_age = (age + (rand::rng().random_range(0..5) / 4)).min(15) as u8;
+                let new_age = (age + (Self::random_range(0..5) / 4)).min(15);
                 let state_id = self.get_state_for_position(world.as_ref(), &Block::FIRE, pos);
                 let mut fire_props = FireProperties::from_state_id(state_id);
                 fire_props.age = new_age;
@@ -240,14 +289,18 @@ impl BlockBehaviour for FireBlock {
     #[expect(clippy::too_many_lines)]
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let (world, block, pos) = (args.world, args.block, args.position);
-
         // Schedule next tick first
         world.schedule_block_tick(
             block,
             *pos,
-            Self::get_fire_tick_delay() as u8,
+            (30 + Self::random_range(0..10)) as u8,
             TickPriority::Normal,
         );
+
+        // FireBlock.tick gates all behavior after scheduling, using the source position.
+        if !Self::can_spread_fire_around(world.as_ref(), pos) {
+            return;
+        }
 
         // Check if fire can survive
         if !self.can_place_at(CanPlaceAtArgs {
@@ -261,11 +314,8 @@ impl BlockBehaviour for FireBlock {
             player: None,
             use_item_on: None,
         }) {
-            world.set_block_state(
-                pos,
-                Block::AIR.default_state.id,
-                BlockFlags::NOTIFY_NEIGHBORS,
-            );
+            // Vanilla Level.removeBlock notifies both clients and neighbors.
+            world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
             return;
         }
 
@@ -292,19 +342,16 @@ impl BlockBehaviour for FireBlock {
         // Check if rain should extinguish the fire
         if !infiniburn && Self::is_near_rain(world.as_ref(), pos) {
             let rain_chance = 0.2 + (age as f32) * 0.03;
-            if rand::random::<f32>() < rain_chance {
-                world.set_block_state(
-                    pos,
-                    Block::AIR.default_state.id,
-                    BlockFlags::NOTIFY_NEIGHBORS,
-                );
+            if Self::random_f32() < rain_chance {
+                // Vanilla Level.removeBlock notifies both clients and neighbors.
+                world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
                 return;
             }
         }
 
         // Increment age
-        let random = (rand::rng().random_range(0..3) / 2) as u8;
-        let new_age = (age + random).min(15);
+        let age_increase = (Self::random_range(0..3) / 2) as u8;
+        let new_age = (age + age_increase).min(15);
         if new_age != age {
             fire_props.age = new_age;
             let new_state_id = fire_props.to_state_id(&Block::FIRE);
@@ -323,7 +370,7 @@ impl BlockBehaviour for FireBlock {
 
             // At max age, fire has a chance to extinguish if not on flammable block
             if new_age == 15
-                && rand::rng().random_range(0..4) == 0
+                && Self::random_range(0..4) == 0
                 && !Self::is_flammable(world.get_block_state_id(&pos.down()))
             {
                 world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
@@ -375,14 +422,6 @@ impl BlockBehaviour for FireBlock {
             new_age,
         );
 
-        // Respect the `fire_spread_radius_around_player` gamerule.
-        // -1 = disabled (allow unlimited spread), 0 = disabled (no spread), >0 = radius in blocks
-        let spread_radius = world
-            .level_info
-            .load()
-            .game_rules
-            .fire_spread_radius_around_player;
-
         // Try to spread fire to nearby air blocks
         let difficulty = world.level_info.load().difficulty as i32;
         for xx in -1..=1 {
@@ -393,20 +432,6 @@ impl BlockBehaviour for FireBlock {
                         let ignite_odds = self.get_burn_chance(world, &offset_pos);
 
                         if ignite_odds > 0 {
-                            // Skip if spreding is disabled or if there are no players nearby
-                            if spread_radius == 0 {
-                                continue;
-                            }
-                            if spread_radius != -1 {
-                                let center = offset_pos.to_centered_f64();
-                                if world
-                                    .get_closest_player(center, spread_radius as f64)
-                                    .is_none()
-                                {
-                                    continue;
-                                }
-                            }
-
                             // Calculate spread rate based on height
                             let rate = if yy > 1 { 100 + (yy - 1) * 100 } else { 100 };
 
@@ -420,11 +445,10 @@ impl BlockBehaviour for FireBlock {
                             }
 
                             if odds > 0
-                                && rand::rng().random_range(0..rate) <= odds
+                                && Self::random_range(0..rate) <= odds
                                 && !Self::is_near_rain(world.as_ref(), &offset_pos)
                             {
-                                let spread_age =
-                                    (new_age + rand::rng().random_range(0..5) / 4).min(15) as u8;
+                                let spread_age = (new_age + Self::random_range(0..5) / 4).min(15);
                                 let fire_state_id =
                                     self.get_state_for_position(world.as_ref(), block, &offset_pos);
                                 let mut new_fire_props =
@@ -464,3 +488,7 @@ impl BlockBehaviour for FireBlock {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
