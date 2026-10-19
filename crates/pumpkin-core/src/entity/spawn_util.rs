@@ -49,7 +49,7 @@ impl SpawnStrategy {
     }
 }
 
-fn is_face_full_up(world: &World, pos: &BlockPos, state: &BlockState) -> bool {
+pub(crate) fn is_face_full_up(world: &World, pos: &BlockPos, state: &BlockState) -> bool {
     // Block.isFaceFull -> VoxelShape.calculateFace slices the union just below y=1.
     let mut face = Vec::new();
     world.for_each_collision_shape(state, pos, None, &mut |shape| {

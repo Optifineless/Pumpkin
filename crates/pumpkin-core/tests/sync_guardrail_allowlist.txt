@@ -272,11 +272,11 @@ crates/pumpkin-core/src/entity/boss/ender_dragon.rs::new::std::sync::Mutex::new#
 crates/pumpkin-core/src/entity/boss/ender_dragon.rs::new::std::sync::Mutex::new#8
 crates/pumpkin-core/src/entity/boss/ender_dragon.rs::new::std::sync::Mutex::new#9
 crates/pumpkin-core/src/entity/boss/wither.rs::new::std::sync::Mutex::new#1
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#1
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#2
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#3
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#4
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#5
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#1
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#2
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#3
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#4
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#5
 crates/pumpkin-core/src/entity/decoration/armor_stand_interaction_tests.rs::armor_stand_equipment_emits_one_event_per_change::std::sync::Mutex::default#1
 crates/pumpkin-core/src/entity/decoration/display.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-core/src/entity/decoration/display.rs::new::std::sync::Mutex::new#10
@@ -863,3 +863,10 @@ crates/pumpkin-wasm-host-common/src/equipment_tests.rs::wasm_non_player_main_han
 # wraps non-reentrant std locks; replacing this mutex directly would self-deadlock.
 # Owners contain no stack storage, acquire in Arc identity order, and release before effects.
 crates/pumpkin-inventory/src/inventory/slot_transaction.rs::default::parking_lot::ReentrantMutex::new#1
+# Test-only completion gates and event observations; no production state or guard held across an await.
+crates/pumpkin-core/src/world/portal/end_return_session_tests.rs::b1019_g16_session_replaced_during_end_destination::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/end_return_session_tests.rs::b1019_g16_session_replaced_during_end_destination::std::sync::Mutex::new#2
+crates/pumpkin-core/src/world/portal/end_return_test_support.rs::transfer::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_end_return_cancellation_and_redirection_keep_anchor_charges::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_non_player_end_return_keeps_shared_spawn_behavior::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/nether_axis_tests.rs::transfer::std::sync::Mutex::new#1

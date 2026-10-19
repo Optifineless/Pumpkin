@@ -2,6 +2,32 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Portal return destination and axis rotation (#73, #76)
+
+Returning players resolve their saved bed or anchor in its own dimension without
+spending an anchor charge. Missing, obstructed and absent personal spawns use an
+adjusted shared spawn on loaded terrain, preserving saved spawn coordinates and
+supported administrator-selected heights. Invalid saved spawns send the existing
+missing-spawn notification without rewriting the record. Entering-End platforms,
+non-player exits, credits and cancellable world-change events keep their paths.
+Mirrors Java 26.3 `EndPortalBlock.getPortalDestination`,
+`ServerPlayer.findRespawnPositionAndUseSpawnBlock(false)` and
+`PlayerSpawnFinder.findSpawn/fixupSpawnHeight`.
+
+Either Nether portal axis change adds 90 degrees to Pumpkin's absolute yaw;
+same-axis travel retains yaw. This narrowly adapts Zinedin Polic's correction in
+upstream PR [#3819](https://github.com/Pumpkin-MC/Pumpkin/pull/3819), commit
+`5cd3fe4d3d30ffbd7596b985b6eaf9a97c25add4`, preserving this fork's optional source
+axis, pitch, velocity and residency contracts. Mirrors
+`NetherPortalBlock.createDimensionTransition`.
+
+API 8 (same version): the shared collision predicates gain crate-internal
+visibility only; external public layouts/signatures, Wasm WIT and saved-data
+meanings are unchanged. Rebuild native plugins against this checkout; existing
+plugin sources remain compatible with the unchanged respawn method signature.
+The wider asynchronous portal/session race (#180) and death-respawn work (#205/#202) remain separate. Implemented by Codex.
+In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

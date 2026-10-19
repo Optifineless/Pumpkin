@@ -33,7 +33,7 @@ mod item_use;
 #[path = "living_movement.rs"]
 mod movement;
 #[path = "random_teleport.rs"]
-mod random_teleport;
+pub(crate) mod random_teleport;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod visibility;
