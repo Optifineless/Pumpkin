@@ -1,15 +1,35 @@
 use super::LivingEntity;
-use crate::entity::{
-    NBTStorage, NBTStorageInit,
-    attributes::{Modifier, ModifierOperation},
-};
+use crate::entity::{NBTStorage, NBTStorageInit};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{
-    attributes::Attributes, data_component_impl::Operation, effect::StatusEffect,
-    entity::EntityType, potion::Effect,
+    attributes::Attributes, effect::StatusEffect, entity::EntityType, potion::Effect,
 };
 use pumpkin_nbt::compound::NbtCompound;
 use std::sync::atomic::Ordering::Relaxed;
+
+#[cfg(test)]
+#[path = "living/effect_commit_tests.rs"]
+mod effect_commit_tests;
+
+#[cfg(test)]
+mod test_hooks {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static AFTER_COMMIT: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::default();
+    }
+
+    pub(super) fn install(hook: impl FnOnce() + 'static) {
+        AFTER_COMMIT.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+    }
+
+    pub(super) fn after_commit() {
+        let hook = AFTER_COMMIT.with(|slot| slot.borrow_mut().take());
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(super) struct HiddenEffect {
@@ -193,87 +213,24 @@ impl LivingEntity {
                 }
             }
         };
-        drop(owner);
-        if let Some(updated) = updated {
-            self.on_effect_updated(&updated);
-        }
+        let mut touched_attrs = updated
+            .as_ref()
+            .map_or_else(Vec::new, |effect| self.commit_effect_update(effect));
         // LivingEntity.addEffect invokes the incoming effect's start hook even without an upgrade.
         if incoming_type == &StatusEffect::ABSORPTION {
-            let _owner = self.own_damage();
-            self.set_absorption(absorption_on_effect_started(
+            self.set_absorption_state(absorption_on_effect_started(
                 self.absorption.load(),
                 incoming_amplifier,
                 self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32,
             ));
-        }
-    }
-
-    fn on_effect_updated(&self, effect: &Effect) {
-        // LivingEntity.onEffectAdded / onEffectUpdated mutates before publishing packets.
-        let touched_attrs = {
-            let _owner = self.own_damage();
-            let mut touched_attrs = Vec::new();
-
-            // Effects that modify attributes (ex. speed) reapply their local modifiers.
-            for modifier in effect.effect_type.attribute_modifiers {
-                let id = modifier.id.to_string();
-                let operation = match modifier.operation {
-                    Operation::AddValue => ModifierOperation::Add,
-                    Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
-                    Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
-                };
-                let amount = modifier.base_value * (f64::from(effect.amplifier) + 1.);
-                let modifier_instance = Modifier {
-                    id,
-                    amount,
-                    operation,
-                    // Vanilla `MobEffect.addAttributeModifiers` adds these as permanent.
-                    permanent: true,
-                };
-
-                self.update_attribute(modifier.attribute, |instance| {
-                    instance.add_or_replace_modifier(modifier_instance.clone());
-                });
-                if !touched_attrs
-                    .iter()
-                    .any(|attribute: &pumpkin_data::attributes::Attributes| {
-                        attribute.id == modifier.attribute.id
-                    })
-                {
-                    touched_attrs.push(modifier.attribute.clone());
-                }
+            if !touched_attrs.contains(&Attributes::MAX_ABSORPTION) {
+                touched_attrs.push(Attributes::MAX_ABSORPTION);
             }
-
-            // LivingEntity.onAttributeUpdated clamps limits after an upgrade or hidden-effect restore.
-            for modifier in effect.effect_type.attribute_modifiers {
-                if modifier.attribute == &Attributes::MAX_HEALTH {
-                    let maximum = self.get_max_health();
-                    if self.health.load() > maximum {
-                        self.set_health(maximum);
-                    }
-                } else if modifier.attribute == &Attributes::MAX_ABSORPTION {
-                    let maximum = self.get_attribute_value(&Attributes::MAX_ABSORPTION) as f32;
-                    if self.absorption.load() > maximum {
-                        self.set_absorption(maximum);
-                    }
-                }
-            }
-            touched_attrs
-        };
-
-        if !touched_attrs.is_empty() {
-            crate::entity::attributes::send_attribute_updates_for_living(self, touched_attrs);
         }
-        if effect.effect_type == &StatusEffect::INVISIBILITY {
-            self.entity.set_invisible(true);
-        }
-        if effect.effect_type == &StatusEffect::GLOWING {
-            self.entity.set_glowing(true);
-        }
-
-        // Packet publication stays outside combat ownership.
-        self.broadcast_effect(effect);
-        self.sync_effect_particles();
+        drop(owner);
+        #[cfg(test)]
+        test_hooks::after_commit();
+        self.publish_effect_update(updated.as_ref(), touched_attrs);
     }
 
     // Called with active_effects held, so a remove/re-add cannot masquerade as the old instance.

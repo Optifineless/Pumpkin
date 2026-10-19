@@ -17,6 +17,7 @@ mod death_protection;
 mod death_statistics;
 #[cfg(test)]
 mod effect_load_tests;
+mod effect_updates;
 #[path = "effects.rs"]
 pub(crate) mod effects;
 mod equipment_modifiers;
@@ -665,13 +666,9 @@ impl LivingEntity {
 
     /// Sets the current absorption amount for this entity (yellow hearts)
     pub fn set_absorption(&self, new_abs: f32) {
-        let _owner = self.damage_owner.enter();
-        // Must be at least 0
-        let new_abs = new_abs.max(0.0);
-
-        // Set local state
-        self.damage_owner.changed(0.0);
-        self.absorption.store(new_abs);
+        let owner = self.damage_owner.enter();
+        self.set_absorption_state(new_abs);
+        drop(owner);
 
         // Broadcast attribute update for max_absorption so clients receive
         // the updated absorption value via the attribute packet.
@@ -679,12 +676,6 @@ impl LivingEntity {
             self,
             vec![Attributes::MAX_ABSORPTION],
         );
-
-        // Send absorption metadata for players (visual yellow hearts)
-        if self.entity.entity_type == &EntityType::PLAYER {
-            self.entity
-                .set_synced_data(tracked_data::player::DATA_PLAYER_ABSORPTION_ID, new_abs);
-        }
     }
 
     /// Convenience helper to mutate an attribute instance. Automatically inserts

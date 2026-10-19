@@ -5,7 +5,10 @@
 
 use super::dolphin_swim_with_player::DolphinSwimWithPlayerGoal;
 use crate::{
-    entity::{EntityBase, death_test_world::DeathTestWorld, player::Player},
+    entity::{
+        EntityBase, ai::goal::wander_around::WanderAroundGoal, death_test_world::DeathTestWorld,
+        player::Player,
+    },
     net::java::combat_test_support::TestPlayer,
     plugin::{
         BoxFuture, EventHandler, EventPriority,
@@ -54,6 +57,8 @@ fn spawn_controlled_dolphin(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         selector.remove_goal::<DolphinSwimWithPlayerGoal>(mob);
+        // Navigation assertions exclude unrelated random strolling after the follow goal stops.
+        selector.remove_goal::<WanderAroundGoal>(mob);
         selector.add_goal(2, Box::new(goal));
     };
     (dolphin, roll)
