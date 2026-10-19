@@ -61,6 +61,7 @@ impl ScreenHandlerFactory for BeaconScreenFactory {
         let beacon_data: Arc<dyn PropertyDelegate> =
             Arc::new(BeaconPropertyDelegate(self.entity.clone()));
         let mut concrete_handler = create_beacon_handler(sync_id, player_inventory, beacon_data);
+        concrete_handler.block_entity = Some(self.entity.clone());
         let world = self.world.clone();
         let entity = self.entity.clone();
         // BeaconMenu.stillValid: a broken or replaced beacon closes the menu, so the payment

@@ -78,6 +78,8 @@ pub struct BeaconScreenHandler {
     pub inventory: Arc<dyn Inventory>,
     /// The block entity's synchronized levels and selected effects.
     pub beacon_data: Arc<dyn PropertyDelegate>,
+    /// The server-side block entity retained by this menu, when available.
+    pub block_entity: Option<Arc<dyn Any + Send + Sync>>,
     /// `BeaconMenu.stillValid`; `None` keeps the menu valid.
     pub validity_check: Option<ValidityCheck>,
     /// Core screen handler behavior (slots, sync ID, listeners).
@@ -99,6 +101,7 @@ impl BeaconScreenHandler {
         let mut handler = Self {
             inventory: inventory.clone(),
             beacon_data,
+            block_entity: None,
             validity_check: None,
             behaviour: ScreenHandlerBehaviour::new(sync_id, Some(WindowType::Beacon)),
         };

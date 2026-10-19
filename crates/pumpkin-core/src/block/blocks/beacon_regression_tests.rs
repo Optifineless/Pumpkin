@@ -485,7 +485,12 @@ async fn beacon_open_menu_payment_stays_transient_across_chunk_save_and_reload()
         .chunk_saver
         .fetch_chunks(&fixture.world.level.level_folder, &[chunk_pos], send)
         .await;
-    let LoadedData::Loaded(reloaded) = receive.recv().await.unwrap() else {
+    let LoadedData::Loaded(reloaded) =
+        tokio::time::timeout(std::time::Duration::from_secs(10), receive.recv())
+            .await
+            .expect("beacon chunk reload timed out")
+            .expect("beacon chunk reload channel closed")
+    else {
         panic!("saved beacon chunk missing")
     };
     fixture
@@ -553,3 +558,6 @@ async fn beacon_broken_while_open_keeps_payment_and_invalidates_menu() {
     assert_eq!(emerald_count(&fixture.player.player), 1);
     fixture.finish().await;
 }
+
+#[path = "beacon_persistence_tests.rs"]
+mod persistence;

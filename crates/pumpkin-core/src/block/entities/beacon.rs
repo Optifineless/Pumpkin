@@ -7,9 +7,17 @@ use pumpkin_data::effect::StatusEffect;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::sync::LockClass;
 
 use crate::block::entities::{BlockEntity, PropertyDelegate};
 use crate::world::World;
+
+enum BeaconEffects {}
+
+impl LockClass for BeaconEffects {
+    const NAME: &'static str = "beacon effects";
+    const LEVEL: u8 = 40;
+}
 
 pub struct BeaconBlockEntity {
     pub position: BlockPos,
@@ -17,6 +25,7 @@ pub struct BeaconBlockEntity {
     pub secondary_effect: AtomicI32,
     pub levels: AtomicI32,
     pub dirty: AtomicBool,
+    effects_lock: pumpkin_util::sync::Mutex<(), BeaconEffects>,
 
     // Vanilla Parity Fields
     pub custom_name: Mutex<Option<String>>,
@@ -41,6 +50,7 @@ impl BeaconBlockEntity {
             secondary_effect: AtomicI32::new(-1),
             levels: AtomicI32::new(0),
             dirty: AtomicBool::new(false),
+            effects_lock: pumpkin_util::sync::Mutex::new(()),
             custom_name: Mutex::new(None),
             lock_key: Mutex::new(None),
             last_check_y: AtomicI32::new(position.0.y - 1),
@@ -51,15 +61,17 @@ impl BeaconBlockEntity {
     pub fn get_data(&self, id: usize) -> i32 {
         match id {
             Self::DATA_LEVELS => self.levels.load(Ordering::Relaxed),
-            Self::DATA_PRIMARY => Self::encode_effect(self.primary_effect.load(Ordering::Relaxed)),
-            Self::DATA_SECONDARY => {
-                Self::encode_effect(self.secondary_effect.load(Ordering::Relaxed))
-            }
+            Self::DATA_PRIMARY => Self::encode_effect(self.effects().0),
+            Self::DATA_SECONDARY => Self::encode_effect(self.effects().1),
             _ => 0,
         }
     }
 
     pub fn set_data(&self, id: usize, value: i32) {
+        let _effects = self
+            .effects_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match id {
             Self::DATA_LEVELS => self.levels.store(value, Ordering::Relaxed),
             Self::DATA_PRIMARY => self
@@ -71,6 +83,30 @@ impl BeaconBlockEntity {
             _ => {}
         }
         self.mark_dirty();
+    }
+
+    /// Commits both selected effects under one owner, as in `BeaconMenu.updateEffects`.
+    pub fn set_effects(&self, primary: Option<i32>, secondary: Option<i32>) {
+        let _effects = self
+            .effects_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.primary_effect
+            .store(primary.unwrap_or(-1), Ordering::Relaxed);
+        self.secondary_effect
+            .store(secondary.unwrap_or(-1), Ordering::Relaxed);
+        self.mark_dirty();
+    }
+
+    fn effects(&self) -> (i32, i32) {
+        let _effects = self
+            .effects_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (
+            self.primary_effect.load(Ordering::Relaxed),
+            self.secondary_effect.load(Ordering::Relaxed),
+        )
     }
 
     const fn encode_effect(effect_id: i32) -> i32 {
@@ -192,8 +228,7 @@ impl BeaconBlockEntity {
     }
 
     pub fn apply_effects(&self, world: &Arc<World>, levels: i32) {
-        let primary_id = self.primary_effect.load(Ordering::Relaxed);
-        let secondary_id = self.secondary_effect.load(Ordering::Relaxed);
+        let (primary_id, secondary_id) = self.effects();
 
         if primary_id < 0 {
             return;
@@ -320,6 +355,7 @@ impl BlockEntity for BeaconBlockEntity {
             secondary_effect: AtomicI32::new(secondary),
             levels: AtomicI32::new(levels),
             dirty: AtomicBool::new(false),
+            effects_lock: pumpkin_util::sync::Mutex::new(()),
             custom_name: Mutex::new(custom_name),
             lock_key: Mutex::new(lock_key),
             last_check_y: AtomicI32::new(position.0.y - 1),
@@ -327,7 +363,7 @@ impl BlockEntity for BeaconBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        let primary = self.primary_effect.load(Ordering::Relaxed);
+        let (primary, secondary) = self.effects();
         if primary >= 0 {
             if let Some(eff) = <StatusEffect as IDSetContent>::from_id(primary as u16) {
                 nbt.put_string("primary_effect", eff.minecraft_name.to_string());
@@ -335,7 +371,6 @@ impl BlockEntity for BeaconBlockEntity {
                 nbt.put_int("primary_effect", primary);
             }
         }
-        let secondary = self.secondary_effect.load(Ordering::Relaxed);
         if secondary >= 0 {
             if let Some(eff) = <StatusEffect as IDSetContent>::from_id(secondary as u16) {
                 nbt.put_string("secondary_effect", eff.minecraft_name.to_string());
@@ -375,7 +410,7 @@ impl BlockEntity for BeaconBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        let primary = self.primary_effect.load(Ordering::Relaxed);
+        let (primary, secondary) = self.effects();
         if primary >= 0 {
             if let Some(eff) = <StatusEffect as IDSetContent>::from_id(primary as u16) {
                 nbt.put_string("primary_effect", eff.minecraft_name.to_string());
@@ -383,7 +418,6 @@ impl BlockEntity for BeaconBlockEntity {
                 nbt.put_int("primary_effect", primary);
             }
         }
-        let secondary = self.secondary_effect.load(Ordering::Relaxed);
         if secondary >= 0 {
             if let Some(eff) = <StatusEffect as IDSetContent>::from_id(secondary as u16) {
                 nbt.put_string("secondary_effect", eff.minecraft_name.to_string());

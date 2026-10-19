@@ -1,11 +1,11 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use crate::block::entities::beacon::BeaconBlockEntity;
+use crate::block::entities::{BlockEntity, beacon::BeaconBlockEntity};
 use pumpkin_inventory::beacon_screen_handler::BeaconScreenHandler;
 use pumpkin_protocol::java::server::play::SSetBeacon;
 
 enum UpdateResult {
-    Applied,
+    Applied(Option<(Arc<World>, Arc<dyn BlockEntity>)>),
     NoPayment,
     InvalidEffects,
 }
@@ -53,26 +53,46 @@ impl JavaClient {
                 } else if !beacon_handler.consume_payment() {
                     UpdateResult::NoPayment
                 } else {
-                    beacon_handler.beacon_data.set_property(
-                        BeaconBlockEntity::DATA_PRIMARY as i32,
-                        BeaconBlockEntity::encode_effect_id(primary_id),
-                    );
-                    beacon_handler.beacon_data.set_property(
-                        BeaconBlockEntity::DATA_SECONDARY as i32,
-                        BeaconBlockEntity::encode_effect_id(secondary_id),
-                    );
+                    let beacon = beacon_handler
+                        .block_entity
+                        .as_ref()
+                        .and_then(|entity| entity.clone().downcast::<BeaconBlockEntity>().ok());
+                    let updated = if let Some(beacon) = beacon {
+                        beacon.set_effects(primary_id, secondary_id);
+                        Some((player.world(), beacon as Arc<dyn BlockEntity>))
+                    } else {
+                        beacon_handler.beacon_data.set_property(
+                            BeaconBlockEntity::DATA_PRIMARY as i32,
+                            BeaconBlockEntity::encode_effect_id(primary_id),
+                        );
+                        beacon_handler.beacon_data.set_property(
+                            BeaconBlockEntity::DATA_SECONDARY as i32,
+                            BeaconBlockEntity::encode_effect_id(secondary_id),
+                        );
+                        None
+                    };
                     screen_handler.sync_state();
 
                     info!(
                         "Player {} updated beacon effects: primary {:?}, secondary {:?}",
                         player.gameprofile.name, primary_id, secondary_id
                     );
-                    UpdateResult::Applied
+                    UpdateResult::Applied(updated)
                 }
             } else {
                 UpdateResult::NoPayment
             }
         };
+
+        // BeaconMenu.updateEffects calls blockEntityChanged. Admission is below the
+        // screen lock in the lock hierarchy, so refresh the saved image only after unlocking.
+        if let UpdateResult::Applied(Some((world, entity))) = &result
+            && world
+                .get_block_entity(&entity.get_position())
+                .is_some_and(|live| Arc::ptr_eq(&live, entity))
+        {
+            world.update_block_entity(entity);
+        }
 
         if matches!(result, UpdateResult::InvalidEffects) {
             let primary_id = packet.primary_effect.map(|v| v.0);
