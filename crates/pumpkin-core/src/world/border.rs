@@ -7,19 +7,47 @@ use crate::entity::player::Player;
 
 use super::World;
 
+const MILLIS_PER_TICK: i64 = 50;
+
 #[derive(Clone)]
 pub struct Worldborder {
     effects: super::guard_effects::OwnerEffects,
+    extent: Option<MovingBorderExtent>,
     pub center_x: f64,
     pub center_z: f64,
     pub old_diameter: f64,
     pub new_diameter: f64,
+    /// Remaining transition time in milliseconds for the legacy native API.
     pub speed: i64,
     pub portal_teleport_boundary: i32,
     pub warning_blocks: i32,
     pub warning_time: i32,
     pub damage_per_block: f32,
     pub buffer: f32,
+}
+
+#[derive(Clone)]
+struct MovingBorderExtent {
+    from: f64,
+    duration: i64,
+    remaining: i64,
+    size: f64,
+    previous_size: f64,
+}
+
+impl MovingBorderExtent {
+    fn update(&mut self, target: f64) {
+        // WorldBorder.MovingBorderExtent.update/calculateSize advance only on game ticks.
+        self.remaining -= 1;
+        self.previous_size = self.size;
+        let duration = self.duration as f64;
+        let progress = (duration - self.remaining as f64) / duration;
+        self.size = if progress < 1.0 {
+            self.from + progress * (target - self.from)
+        } else {
+            target
+        };
+    }
 }
 
 impl Worldborder {
@@ -34,6 +62,7 @@ impl Worldborder {
     ) -> Self {
         Self {
             effects: super::guard_effects::OwnerEffects::default(),
+            extent: None,
             center_x: x,
             center_z: z,
             old_diameter: diameter,
@@ -53,9 +82,9 @@ impl Worldborder {
             player.try_send_client_packet(&CInitializeWorldBorder::new(
                 self.center_x,
                 self.center_z,
-                self.old_diameter,
-                self.new_diameter,
-                self.speed.into(),
+                self.get_size(),
+                self.get_lerp_target(),
+                self.get_lerp_time().into(),
                 self.portal_teleport_boundary.into(),
                 self.warning_blocks.into(),
                 self.warning_time.into(),
@@ -76,19 +105,38 @@ impl Worldborder {
         });
     }
 
+    /// Sets the diameter using the legacy native duration in milliseconds, rounded up to ticks.
     pub fn set_diameter(&mut self, world: &World, diameter: f64, speed: Option<i64>) {
-        self.old_diameter = self.new_diameter;
-        self.new_diameter = diameter;
+        let ticks =
+            speed.map(|millis| millis / MILLIS_PER_TICK + i64::from(millis % MILLIS_PER_TICK > 0));
+        self.set_diameter_ticks(world, diameter, ticks);
+    }
 
-        match speed {
-            Some(speed) => {
+    /// Sets the diameter with a transition duration in game ticks.
+    pub fn set_diameter_ticks(&mut self, world: &World, diameter: f64, ticks: Option<i64>) {
+        self.old_diameter = self.get_size();
+        self.new_diameter = diameter;
+        let ticks = ticks.filter(|ticks| *ticks > 0);
+        self.extent = ticks
+            .filter(|_| self.old_diameter != diameter)
+            .map(|duration| MovingBorderExtent {
+                from: self.old_diameter,
+                duration,
+                remaining: duration,
+                size: self.old_diameter,
+                previous_size: self.old_diameter,
+            });
+        self.speed = self.get_lerp_time().saturating_mul(MILLIS_PER_TICK);
+
+        match ticks {
+            Some(_) => {
                 self.effects.capture(|| {
                     super::guard_effects::broadcast_je(
                         world,
                         &CSetBorderLerpSize::new(
-                            self.old_diameter,
-                            self.new_diameter,
-                            speed.into(),
+                            self.get_size(),
+                            self.get_lerp_target(),
+                            self.get_lerp_time().into(),
                         ),
                     );
                 });
@@ -105,7 +153,54 @@ impl Worldborder {
     }
 
     pub fn add_diameter(&mut self, world: &World, offset: f64, speed: Option<i64>) {
-        self.set_diameter(world, self.new_diameter + offset, speed);
+        let speed = speed.map(|millis| {
+            millis.saturating_add(self.get_lerp_time().saturating_mul(MILLIS_PER_TICK))
+        });
+        self.set_diameter(world, self.get_size() + offset, speed);
+    }
+
+    #[must_use]
+    pub fn get_size(&self) -> f64 {
+        self.extent
+            .as_ref()
+            .map_or(self.new_diameter, |extent| extent.size)
+    }
+
+    #[must_use]
+    pub fn get_lerp_time(&self) -> i64 {
+        self.extent.as_ref().map_or(0, |extent| extent.remaining)
+    }
+
+    #[must_use]
+    pub const fn get_lerp_target(&self) -> f64 {
+        self.new_diameter
+    }
+
+    pub fn tick(&mut self) {
+        if let Some(extent) = &mut self.extent {
+            extent.update(self.new_diameter);
+            if extent.remaining <= 0 {
+                self.extent = None;
+                self.old_diameter = self.new_diameter;
+            }
+            self.speed = self.get_lerp_time().saturating_mul(MILLIS_PER_TICK);
+        }
+    }
+
+    /// Returns min X/Z and max X/Z, matching `WorldBorder`'s partial-tick bounds.
+    #[must_use]
+    pub fn bounds(&self, partial_tick: f32) -> (f64, f64, f64, f64) {
+        let size = self.extent.as_ref().map_or(self.new_diameter, |extent| {
+            extent.previous_size + f64::from(partial_tick) * (extent.size - extent.previous_size)
+        });
+        let half = size / 2.0;
+        let limit = f64::from(self.portal_teleport_boundary);
+        (
+            (self.center_x - half).clamp(-limit, limit),
+            (self.center_z - half).clamp(-limit, limit),
+            (self.center_x + half).clamp(-limit, limit),
+            (self.center_z + half).clamp(-limit, limit),
+        )
     }
 
     pub fn set_warning_delay(&mut self, world: &World, delay: i32) {
@@ -144,6 +239,7 @@ impl Worldborder {
         self.old_diameter = 29_999_984.0;
         self.new_diameter = 29_999_984.0;
         self.speed = 0;
+        self.extent = None;
         self.portal_teleport_boundary = 29_999_984;
         self.warning_blocks = 5;
         self.warning_time = 15;
@@ -169,11 +265,7 @@ impl Worldborder {
 
     #[must_use]
     pub fn contains(&self, x: f64, z: f64) -> bool {
-        let half = self.new_diameter / 2.0;
-        let min_x = self.center_x - half;
-        let max_x = self.center_x + half;
-        let min_z = self.center_z - half;
-        let max_z = self.center_z + half;
+        let (min_x, min_z, max_x, max_z) = self.bounds(0.0);
         x >= min_x && x < max_x && z >= min_z && z < max_z
     }
 
@@ -190,28 +282,26 @@ impl Worldborder {
         mut position: pumpkin_util::math::vector3::Vector3<f64>,
     ) -> pumpkin_util::math::vector3::Vector3<f64> {
         // WorldBorder.clampVec3ToBound uses the float constant 1.0E-5F at the upper edges.
-        let half = self.new_diameter / 2.0;
-        let limit = f64::from(self.portal_teleport_boundary);
-        let clamp = |value: f64, center: f64| {
-            let min = (center - half).max(-limit);
-            let max = (center + half).min(limit) - f64::from(1.0e-5f32);
+        let (min_x, min_z, max_x, max_z) = self.bounds(0.0);
+        let clamp = |value: f64, min: f64, max: f64| {
+            let max = max - f64::from(1.0e-5f32);
             if value < min { min } else { value.min(max) }
         };
-        position.x = clamp(position.x, self.center_x);
-        position.z = clamp(position.z, self.center_z);
+        position.x = clamp(position.x, min_x, max_x);
+        position.z = clamp(position.z, min_z, max_z);
         position
     }
 
     #[must_use]
     pub fn clamp_block(&self, x: i32, z: i32) -> (i32, i32) {
-        let half = self.new_diameter / 2.0;
+        let (min_x, min_z, max_x, max_z) = self.bounds(0.0);
         // A border narrower than one block spans no block boundary, leaving `max`
         // below `min`. `Ord::clamp` panics on an inverted range, so collapse the
         // range onto the single block that holds the centre instead.
-        let min_x = (self.center_x - half).floor() as i32;
-        let max_x = ((self.center_x + half).floor() as i32 - 1).max(min_x);
-        let min_z = (self.center_z - half).floor() as i32;
-        let max_z = ((self.center_z + half).floor() as i32 - 1).max(min_z);
+        let min_x = min_x.floor() as i32;
+        let max_x = (max_x.floor() as i32 - 1).max(min_x);
+        let min_z = min_z.floor() as i32;
+        let max_z = (max_z.floor() as i32 - 1).max(min_z);
         (x.clamp(min_x, max_x), z.clamp(min_z, max_z))
     }
 }
@@ -289,3 +379,10 @@ mod tests {
         assert!(clamped.z < -16.0 && clamped.z > -16.00002);
     }
 }
+
+#[cfg(test)]
+mod bounds_tests;
+#[cfg(test)]
+mod regression_tests;
+#[cfg(test)]
+pub(crate) mod test_support;

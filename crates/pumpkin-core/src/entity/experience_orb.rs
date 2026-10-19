@@ -3,6 +3,8 @@ mod collection;
 mod movement;
 pub use collection::collect_nearby_orbs;
 #[cfg(test)]
+mod border_tests;
+#[cfg(test)]
 mod review_tests;
 #[cfg(test)]
 mod tests;

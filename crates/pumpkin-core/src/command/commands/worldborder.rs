@@ -60,18 +60,28 @@ const ERROR_SAME_DAMAGE_AMOUNT: CommandErrorType<0> = CommandErrorType::new(
 fn set_size(
     source: &CommandSource,
     distance: f64,
-    time_in_ticks: i64,
+    time_in_ticks: Option<i64>,
+    is_add: bool,
 ) -> Result<i32, CommandSyntaxError> {
     let _effects = crate::world::guard_effects::GuardEffects::new();
     let world = source.world().clone();
-    let (current, diff) = {
+    let (distance, time_in_ticks, current, diff) = {
         let mut border = world
             .worldborder
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let current = border.new_diameter;
+        let current = border.get_size();
+        let distance = if is_add { current + distance } else { distance };
+        // WorldBorderCommand's timed add retains the running resize's remaining ticks.
+        let time_in_ticks = time_in_ticks.map_or(0, |ticks| {
+            if is_add {
+                ticks.saturating_add(border.get_lerp_time())
+            } else {
+                ticks
+            }
+        });
 
-        if (current - distance).abs() < f64::EPSILON {
+        if current == distance {
             return Err(ERROR_SAME_SIZE.create_without_context());
         }
         if distance < 1.0 {
@@ -81,10 +91,17 @@ fn set_size(
             return Err(ERROR_TOO_BIG.create_without_context());
         }
 
-        let speed = (time_in_ticks > 0).then(|| time_in_ticks * 50); // ticks to milliseconds
-
-        border.set_diameter(&world, distance, speed);
-        (current, (distance - current) as i32)
+        border.set_diameter_ticks(
+            &world,
+            distance,
+            (time_in_ticks > 0).then_some(time_in_ticks),
+        );
+        (
+            distance,
+            time_in_ticks,
+            current,
+            (distance - current) as i32,
+        )
     };
 
     let formatted_distance = format!("{distance:.1}");
@@ -173,7 +190,7 @@ fn get_size(source: &CommandSource) -> Result<i32, CommandSyntaxError> {
         .worldborder
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .new_diameter;
+        .get_size();
 
     source.send_feedback(
         TextComponent::translate_cross(
@@ -307,25 +324,12 @@ impl CommandExecutor for SetSizeExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let distance = DoubleArgumentType::get(context, "distance")?;
         let time = if self.has_time {
-            i64::from(TimeArgumentType::get(context, "time")?)
+            Some(i64::from(TimeArgumentType::get(context, "time")?))
         } else {
-            0
+            None
         };
 
-        let target_distance = if self.is_add {
-            let current = context
-                .source
-                .world()
-                .worldborder
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .new_diameter;
-            current + distance
-        } else {
-            distance
-        };
-
-        set_size(&context.source, target_distance, time)
+        set_size(&context.source, distance, time, self.is_add)
     }
 }
 

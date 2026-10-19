@@ -78,6 +78,23 @@ and wait for the beam to stop; expect the selection sound only with the beam.
 Record the page pulse, both beacon menus and the audible selection before/after
 covering the beacon. No deployment or real-client verification is claimed here.
 
+## Live timed world borders (#181)
+
+Timed borders advance once per game tick. Queries, clamps and orb collision
+filtering share vanilla 26.3 `WorldBorder.MovingBorderExtent` previous/current-size
+bounds. Commands and arriving clients use the current size, target and remaining
+ticks; timed add retains the remaining interval. Immediate set and reset retire
+the transition. Saved border tags and startup defaults retain their existing meaning.
+
+API 8 (same version): `Worldborder` gains private moving-extent state and live-query
+methods; rebuild native plugins. Existing native setter signatures remain source
+compatible; `new_diameter` remains the target, and `get_size()` returns the current
+size. Native `set_diameter`/`add_diameter` durations and `speed` retain milliseconds,
+rounded up to game ticks. Both Wasm hosts now honor the existing WIT's tick
+durations and live-size getters; WIT and packet layouts are unchanged.
+Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
 ## Held-item drop equipment publication (#163)
 
 Accepted Java and Bedrock held drops queue the current main hand for the normal
