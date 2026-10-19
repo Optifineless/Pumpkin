@@ -532,6 +532,7 @@ fn create_loom_result(banner_stack: &ItemStack, dye_stack: &ItemStack, pattern: 
         .unwrap_or_default();
     existing_layers.layers.push(BannerPatternLayer {
         pattern: pattern.to_string(),
+        translation_key: None,
         color: pattern_color,
     });
     result.set_data_component(existing_layers);

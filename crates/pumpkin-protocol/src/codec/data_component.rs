@@ -404,10 +404,8 @@ impl DataComponentCodec<Self> for LoreImpl {
 
 impl DataComponentCodec<Self> for ItemNameImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        let mut name = pumpkin_nbt::compound::NbtCompound::new();
-        name.put_string("translate", self.name.to_string());
         let mut bytes = Vec::new();
-        NbtTag::Compound(name)
+        self.write_data()
             .serialize(&mut NbtWriteHelperJava::new(&mut bytes))
             .map_err(|error| WritingError::Message(error.to_string()))?;
         seq.write_slice(&bytes)
@@ -2468,18 +2466,34 @@ impl DataComponentCodec<Self> for NoteBlockSoundImpl {
 
 impl DataComponentCodec<Self> for BannerPatternsImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        let layer_count = i32::try_from(self.layers.len())
+        let supported_layers: Vec<_> = self
+            .layers
+            .iter()
+            .filter_map(|layer| {
+                if layer.translation_key.is_some() {
+                    Some((layer, None))
+                } else {
+                    let registry_id = banner_pattern_registry_id(&layer.pattern);
+                    if registry_id.is_none() {
+                        log_unknown_banner_pattern(&layer.pattern);
+                    }
+                    registry_id.map(|id| (layer, Some(id)))
+                }
+            })
+            .collect();
+        let layer_count = i32::try_from(supported_layers.len())
             .map_err(|_| WritingError::Message("Too many banner pattern layers".into()))?;
         seq.write_var_int(&VarInt(layer_count))?;
-        for layer in &self.layers {
-            let pattern_id = banner_pattern_registry_id(&layer.pattern).ok_or_else(|| {
-                WritingError::Message(format!(
-                    "Unknown banner pattern registry entry `{}`",
-                    layer.pattern
-                ))
-            })?;
-            // ByteBufCodecs.holder writes a registry reference as id + 1; 0 means an inline pattern.
-            seq.write_var_int(&VarInt(pattern_id + 1))?;
+        for (layer, pattern_id) in supported_layers {
+            if let Some(translation_key) = &layer.translation_key {
+                // ByteBufCodecs.holder uses zero for a direct BannerPattern value.
+                seq.write_var_int(&VarInt(0))?;
+                seq.write_string(&layer.pattern)?;
+                seq.write_string(translation_key)?;
+            } else if let Some(pattern_id) = pattern_id {
+                // Registered holders encode the synced registry id plus one.
+                seq.write_var_int(&VarInt(pattern_id + 1))?;
+            }
             seq.write_var_int(&VarInt::from(layer.color.id() as i32))?;
         }
         Ok(())
@@ -2491,22 +2505,36 @@ impl DataComponentCodec<Self> for BannerPatternsImpl {
         let mut layers = Vec::with_capacity(crate::ser::collection_capacity(layer_count)?);
         for _ in 0..layer_count {
             let holder_id = seq.get_var_int()?.0;
-            if holder_id <= 0 {
-                return Err(ReadingError::Message(
-                    "Inline or invalid banner pattern holder".into(),
-                ));
-            }
-            let pattern_id = holder_id - 1;
-            let pattern = banner_pattern_name(pattern_id).ok_or_else(|| {
-                ReadingError::Message(format!(
-                    "Unknown synced banner pattern registry id {pattern_id}"
-                ))
-            })?;
+            let (pattern, translation_key) = match holder_id.cmp(&0) {
+                std::cmp::Ordering::Equal => {
+                    (seq.get_str()?.to_string(), Some(seq.get_str()?.to_string()))
+                }
+                std::cmp::Ordering::Greater => {
+                    let pattern_id = holder_id - 1;
+                    (
+                        banner_pattern_name(pattern_id).ok_or_else(|| {
+                            ReadingError::Message(format!(
+                                "Unknown synced banner pattern registry id {pattern_id}"
+                            ))
+                        })?,
+                        None,
+                    )
+                }
+                std::cmp::Ordering::Less => {
+                    return Err(ReadingError::Message(
+                        "Invalid banner pattern holder id".into(),
+                    ));
+                }
+            };
             let color_id = u8::try_from(seq.get_var_int()?.0)
                 .map_err(|_| ReadingError::Message("Invalid banner pattern dye id".into()))?;
             let color = pumpkin_data::dye_color::DyeColor::by_id(color_id)
                 .ok_or_else(|| ReadingError::Message("Invalid banner pattern dye id".into()))?;
-            layers.push(pumpkin_data::data_component_impl::BannerPatternLayer { pattern, color });
+            layers.push(pumpkin_data::data_component_impl::BannerPatternLayer {
+                pattern,
+                translation_key,
+                color,
+            });
         }
         Ok(Self { layers })
     }
@@ -2533,6 +2561,18 @@ fn banner_pattern_name(id: i32) -> Option<String> {
         .iter()
         .find(|registry| registry.registry_id == "banner_pattern")?;
     Some(format!("minecraft:{}", registry.entries.get(id)?.name))
+}
+
+fn log_unknown_banner_pattern(pattern: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            pattern,
+            "Skipping unsupported banner pattern layer in Java item encoding"
+        );
+    }
 }
 
 impl DataComponentCodec<Self> for BaseColorImpl {

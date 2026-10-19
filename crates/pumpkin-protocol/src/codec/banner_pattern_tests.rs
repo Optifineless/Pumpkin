@@ -69,6 +69,7 @@ fn ominous_patterns() -> BannerPatternsImpl {
             .iter()
             .map(|(pattern, _, color, _)| BannerPatternLayer {
                 pattern: (*pattern).to_owned(),
+                translation_key: None,
                 color: *color,
             })
             .collect(),
@@ -201,6 +202,7 @@ fn banner_patterns_plain_white_and_unrelated_pattern_controls_are_preserved() {
 
     let custom_layer = BannerPatternLayer {
         pattern: "minecraft:flower".to_owned(),
+        translation_key: None,
         color: pumpkin_data::dye_color::DyeColor::Red,
     };
     let mut patterned = ItemStack::new(1, &Item::WHITE_BANNER);
@@ -232,25 +234,85 @@ fn banner_patterns_plain_white_and_unrelated_pattern_controls_are_preserved() {
 }
 
 #[test]
-fn banner_patterns_unknown_saved_identifier_fails_java_encoding_safely() {
+fn banner_patterns_unknown_saved_layer_is_skipped_without_losing_supported_layers() {
+    let unknown = BannerPatternLayer {
+        pattern: "murgicraft:unknown_pattern".to_owned(),
+        translation_key: None,
+        color: pumpkin_data::dye_color::DyeColor::Red,
+    };
+    let known = BannerPatternLayer {
+        pattern: "minecraft:flower".to_owned(),
+        translation_key: None,
+        color: pumpkin_data::dye_color::DyeColor::Blue,
+    };
     let mut stack = ItemStack::new(1, &Item::WHITE_BANNER);
     stack.set_data_component(BannerPatternsImpl {
-        layers: vec![BannerPatternLayer {
-            pattern: "murgicraft:unknown_pattern".to_owned(),
-            color: pumpkin_data::dye_color::DyeColor::Red,
-        }],
+        layers: vec![unknown.clone(), known.clone()],
     });
-    let packet = CSetEquipment::new(VarInt(42), vec![(5, ItemStackSerializer::from(stack))]);
-    let mut bytes = Vec::new();
-    let error = packet
-        .write_packet_data(&mut bytes, &CURRENT_MC_VERSION)
-        .unwrap_err();
-    assert!(error.to_string().contains("murgicraft:unknown_pattern"));
+    let bytes = equipment_packet_bytes(stack.clone());
+    let flower_id = Registry::get_synced(CURRENT_MC_VERSION)
+        .into_iter()
+        .find(|registry| registry.registry_id == "minecraft:banner_pattern")
+        .unwrap()
+        .registry_entries
+        .iter()
+        .position(|entry| entry.entry_id == "minecraft:flower")
+        .unwrap();
+    assert_eq!(
+        read_equipment_banner_pattern_layers(&bytes),
+        vec![(
+            i32::try_from(flower_id).unwrap() + 1,
+            i32::from(pumpkin_data::dye_color::DyeColor::Blue.id())
+        )]
+    );
+    assert_eq!(
+        stack
+            .get_data_component::<BannerPatternsImpl>()
+            .unwrap()
+            .layers,
+        vec![unknown, known.clone()]
+    );
+    let decoded = decode_equipment_stack(&bytes);
+    assert_eq!(
+        decoded
+            .0
+            .get_data_component::<BannerPatternsImpl>()
+            .unwrap()
+            .layers,
+        vec![known]
+    );
 }
 
 #[test]
-fn banner_patterns_reject_inline_or_negative_holders() {
-    for holder in [0, -1, i32::MIN] {
+fn banner_patterns_decode_and_encode_vanilla_direct_holder_fixture() {
+    // BannerPattern.DIRECT_STREAM_CODEC: asset ID then translation key, followed by dye color.
+    let fixture = [
+        1, // one layer
+        0, // direct holder
+        17, b'm', b'i', b'n', b'e', b'c', b'r', b'a', b'f', b't', b':', b'c', b'r', b'e', b'e',
+        b'p', b'e', b'r', 30, b'b', b'l', b'o', b'c', b'k', b'.', b'm', b'i', b'n', b'e', b'c',
+        b'r', b'a', b'f', b't', b'.', b'b', b'a', b'n', b'n', b'e', b'r', b'.', b'c', b'r', b'e',
+        b'e', b'p', b'e', b'r', 14,
+    ];
+    let mut read = fixture.as_slice();
+    let decoded = BannerPatternsImpl::deserialize(&mut read).unwrap();
+    assert!(read.is_empty());
+    assert_eq!(
+        decoded.layers,
+        vec![BannerPatternLayer {
+            pattern: "minecraft:creeper".to_owned(),
+            translation_key: Some("block.minecraft.banner.creeper".to_owned()),
+            color: pumpkin_data::dye_color::DyeColor::Red,
+        }]
+    );
+    let mut encoded = Vec::new();
+    decoded.serialize(&mut encoded).unwrap();
+    assert_eq!(encoded, fixture);
+}
+
+#[test]
+fn banner_patterns_reject_negative_holders() {
+    for holder in [-1, i32::MIN] {
         let mut bytes = Vec::new();
         bytes.write_var_int(&VarInt(1)).unwrap();
         bytes.write_var_int(&VarInt(holder)).unwrap();

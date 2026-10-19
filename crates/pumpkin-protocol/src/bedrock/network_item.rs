@@ -1,9 +1,12 @@
 use std::io::{Error, ErrorKind, Read, Write};
 use std::num::NonZero;
 
-use pumpkin_data::item::{BedrockItem, JavaToBedrockItemMapping};
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_nbt::{Nbt, deserializer::NbtReadHelperBedrock};
+use pumpkin_data::{
+    data_component_impl::BannerPatternsImpl,
+    item::{BedrockItem, JavaToBedrockItemMapping},
+};
+use pumpkin_nbt::{Nbt, compound::NbtCompound, deserializer::NbtReadHelperBedrock, tag::NbtTag};
 
 use crate::{
     codec::{var_int::VarInt, var_uint::VarUInt},
@@ -145,7 +148,7 @@ impl From<&ItemStack> for NetworkItemDescriptor {
                     stack_size: stack.item_count as u16,
                     aux_value: VarUInt(mapping.bedrock_data),
                     block_runtime_id: VarInt::from(mapping.bedrock_block_state),
-                    nbt_data: Nbt::default(),
+                    nbt_data: banner_pattern_nbt(stack),
                     place_on_blocks: Vec::default(),
                     destroy_blocks: Vec::default(),
                     shield_blocking_tick: 0,
@@ -353,8 +356,9 @@ impl From<&ItemStack> for NetworkItemStackDescriptor {
             JavaToBedrockItemMapping::from_java_item_id(stack.get_item().id).map_or(
                 Self::default(),
                 |mapping| {
-                    // Empty NBT followed by empty can-place and can-destroy lists.
-                    let extra_data = vec![0; 10];
+                    // User data contains the banner's supported Bedrock patterns,
+                    // followed by empty can-place and can-destroy lists.
+                    let extra_data = write_banner_user_data(stack);
 
                     Self {
                         id: mapping.bedrock_item.id,
@@ -368,6 +372,59 @@ impl From<&ItemStack> for NetworkItemStackDescriptor {
             )
         }
     }
+}
+
+const BEDROCK_BANNER_PATTERN_LIMIT: usize = 64;
+
+fn banner_pattern_code(pattern: &str) -> Option<&'static str> {
+    Some(match pattern {
+        "minecraft:rhombus" => "mr",
+        "minecraft:stripe_bottom" => "bs",
+        "minecraft:stripe_center" => "cs",
+        "minecraft:stripe_middle" => "ms",
+        "minecraft:border" => "bo",
+        "minecraft:half_horizontal" => "hh",
+        "minecraft:circle" => "mc",
+        _ => return None,
+    })
+}
+
+fn banner_pattern_nbt(stack: &ItemStack) -> Nbt {
+    let Some(patterns) = stack.get_data_component::<BannerPatternsImpl>() else {
+        return Nbt::default();
+    };
+
+    let bedrock_patterns = patterns
+        .layers
+        .iter()
+        .filter_map(|layer| {
+            let pattern = banner_pattern_code(&layer.pattern)?;
+            let mut entry = NbtCompound::new();
+            entry.put_string("Pattern", pattern.to_owned());
+            entry.put_int("Color", i32::from(layer.color.id()));
+            Some(NbtTag::Compound(entry))
+        })
+        .take(BEDROCK_BANNER_PATTERN_LIMIT)
+        .collect();
+
+    let mut root = NbtCompound::new();
+    root.put_list("Patterns", bedrock_patterns);
+    root.put_int("Type", 0);
+    Nbt::new(String::new(), root)
+}
+
+fn write_banner_user_data(stack: &ItemStack) -> Vec<u8> {
+    let nbt = banner_pattern_nbt(stack);
+    let mut user_data = if nbt.is_empty() {
+        vec![0, 0]
+    } else {
+        let mut bytes = vec![0xff, 0xff, 1];
+        bytes.extend_from_slice(&nbt.write_bedrock());
+        bytes
+    };
+    // Both following arrays are empty i32 lengths.
+    user_data.extend_from_slice(&[0; 8]);
+    user_data
 }
 
 /// Container identifier paired with an optional dynamic session ID for complex inventories.
@@ -665,6 +722,11 @@ fn read_user_data(
 #[cfg(test)]
 mod budget_tests {
     use super::*;
+    use pumpkin_data::{
+        data_component_impl::{BannerPatternLayer, BannerPatternsImpl},
+        dye_color::DyeColor,
+        item::Item,
+    };
 
     #[test]
     fn bedrock_item_nbt_enforces_aggregate_quota_before_list_elements() {
@@ -673,5 +735,64 @@ mod budget_tests {
         let bytes = [0xff, 0xff, 1, 10, 0, 9, 1, b'a', 1, 0x82, 0x80, 0x40];
         let error = read_user_data(&bytes, false).err().unwrap();
         assert!(error.to_string().contains("NBT quota"));
+    }
+
+    #[test]
+    fn banner_patterns_are_written_to_both_bedrock_item_descriptors() {
+        let mut stack = ItemStack::new(1, &Item::WHITE_BANNER);
+        stack.set_data_component(BannerPatternsImpl {
+            layers: [
+                ("minecraft:rhombus", DyeColor::Cyan),
+                ("minecraft:stripe_bottom", DyeColor::LightGray),
+                ("minecraft:stripe_center", DyeColor::Gray),
+                ("minecraft:border", DyeColor::LightGray),
+                ("minecraft:stripe_middle", DyeColor::Black),
+                ("minecraft:half_horizontal", DyeColor::LightGray),
+                ("minecraft:circle", DyeColor::LightGray),
+                ("murgicraft:unknown", DyeColor::Red),
+            ]
+            .into_iter()
+            .map(|(pattern, color)| BannerPatternLayer {
+                pattern: pattern.to_owned(),
+                translation_key: None,
+                color,
+            })
+            .collect(),
+        });
+
+        let descriptor = NetworkItemDescriptor::from(&stack);
+        let compact = NetworkItemStackDescriptor::from(&stack);
+        let (compact_nbt, place_on, destroy, _) =
+            read_user_data(&compact.extra_data, false).unwrap();
+        assert_eq!(compact_nbt, descriptor.nbt_data);
+        assert!(place_on.is_empty());
+        assert!(destroy.is_empty());
+        assert_eq!(descriptor.nbt_data.root_tag.get_int("Type"), Some(0));
+        let Some(NbtTag::List(layers)) = descriptor.nbt_data.root_tag.get("Patterns") else {
+            panic!("Bedrock banner NBT omitted Patterns");
+        };
+        assert_eq!(layers.len(), 7);
+        let codes_and_colors: Vec<_> = layers
+            .iter()
+            .map(|tag| {
+                let compound = tag.extract_compound().unwrap();
+                (
+                    compound.get_string("Pattern").unwrap(),
+                    compound.get_int("Color").unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            codes_and_colors,
+            vec![
+                ("mr", 9),
+                ("bs", 8),
+                ("cs", 7),
+                ("bo", 8),
+                ("ms", 15),
+                ("hh", 8),
+                ("mc", 8),
+            ]
+        );
     }
 }

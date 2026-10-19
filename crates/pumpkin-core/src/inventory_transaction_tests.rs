@@ -4,7 +4,10 @@ use std::{
     sync::{Arc, Barrier, mpsc},
 };
 
-use pumpkin_data::{Block, biome::Biome, entity::EntityType, item::Item, item_stack::ItemStack};
+use pumpkin_data::{
+    Block, biome::Biome, data_component::DataComponent, entity::EntityType, item::Item,
+    item_stack::ItemStack,
+};
 use pumpkin_inventory::{
     Clearable, Inventory, generic_container_screen_handler::create_generic_9x3,
 };
@@ -12,6 +15,7 @@ use pumpkin_protocol::{
     VarInt,
     codec::item_stack_seralizer::OptionalItemStackHash,
     java::server::play::{SClickSlot, SlotActionType},
+    ser::NetworkWriteExt,
 };
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 
@@ -24,6 +28,86 @@ use crate::{
     net::java::combat_test_support::TestPlayer,
     world::spawn_test_support,
 };
+
+#[tokio::test]
+async fn captain_banner_client_hash_claim_survives_real_inventory_slot_click() {
+    let fixture = DeathTestWorld::new().await;
+    let mut test_player = TestPlayer::new(&fixture.world());
+    let player = test_player.player.clone();
+    let mut banner = crate::entity::mob::raider::create_ominous_banner();
+    // Isolate the two component hashes under review from the unrelated TooltipDisplay hash.
+    banner.patch.retain(|(component, _)| {
+        matches!(
+            *component,
+            DataComponent::BannerPatterns | DataComponent::ItemName
+        )
+    });
+    assert_eq!(banner.patch.len(), 2);
+    player.inventory().set_stack(9, banner.clone());
+
+    let screen = player.current_screen_handler.lock().unwrap().clone();
+    player
+        .screen_handler_sync_handler
+        .store_player(player.clone());
+    player.on_screen_handler_opened(screen.as_ref());
+    let (sync_id, revision) = {
+        let handler = screen.lock().unwrap();
+        let behaviour = handler.get_behaviour();
+        (
+            behaviour.sync_id,
+            behaviour
+                .revision
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
+    };
+
+    // These are the 26.3 HashedStack component values from HashOps for all eight
+    // captain banner layers and its translated item name.
+    let mut client_claim = Vec::new();
+    client_claim.put_bool(true).unwrap();
+    client_claim
+        .put_var_int(&VarInt(i32::from(Item::WHITE_BANNER.id)))
+        .unwrap();
+    client_claim.put_var_int(&VarInt(1)).unwrap();
+    client_claim.put_var_int(&VarInt(2)).unwrap();
+    client_claim
+        .put_var_int(&VarInt(i32::from(DataComponent::BannerPatterns.to_id())))
+        .unwrap();
+    client_claim.put_i32(0x5349c6bcu32 as i32).unwrap();
+    client_claim
+        .put_var_int(&VarInt(i32::from(DataComponent::ItemName.to_id())))
+        .unwrap();
+    client_claim.put_i32(0x0fc5_df16u32 as i32).unwrap();
+    client_claim.put_var_int(&VarInt(0)).unwrap();
+    let client_claim = OptionalItemStackHash::read(&mut client_claim.as_slice()).unwrap();
+
+    let empty_claim = OptionalItemStackHash::read(&mut [0u8].as_slice()).unwrap();
+    let packet = SClickSlot {
+        sync_id: VarInt(i32::from(sync_id)),
+        revision: VarInt(revision as i32),
+        slot: 9,
+        button: SClickSlot::BUTTON_LEFT,
+        mode: SlotActionType::Pickup,
+        length_of_array: VarInt(1),
+        array_of_changed_slots: vec![(9, empty_claim)],
+        carried_item: client_claim,
+    };
+    test_player.take_packets();
+    player.on_slot_click(packet, &fixture.server);
+
+    let cursor = {
+        let handler = screen.lock().unwrap();
+        let behaviour = handler.get_behaviour();
+        behaviour.cursor_stack.lock().unwrap().clone()
+    };
+    let slot = player.inventory().get_stack(9);
+    assert!(slot.is_empty());
+    assert!(cursor.are_items_and_components_equal(&banner));
+    assert!(
+        test_player.take_packets().is_empty(),
+        "26.3 captain banner hash claim triggered a slot or cursor resync"
+    );
+}
 
 thread_local! {
     static CHEST_READS: RefCell<Option<(usize, Arc<Barrier>)>> = const { RefCell::new(None) };

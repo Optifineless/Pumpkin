@@ -322,12 +322,7 @@ mod tests {
             .push((DataComponent::MapId, Some(MapIdImpl { id: 1 }.to_dyn())));
         map.patch.push((
             DataComponent::ItemName,
-            Some(
-                ItemNameImpl {
-                    name: Cow::Borrowed("filled_map.mansion"),
-                }
-                .to_dyn(),
-            ),
+            Some(ItemNameImpl::translated("filled_map.mansion").to_dyn()),
         ));
 
         for output in [dyed, stew, map] {

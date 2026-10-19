@@ -3,6 +3,7 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
 use std::borrow::Cow;
+use std::hash::Hash;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomDataImpl {
@@ -27,7 +28,7 @@ impl DataComponentImpl for CustomDataImpl {
         NbtTag::Compound(self.data.clone())
     }
     fn get_hash(&self) -> i32 {
-        0
+        super::instrument::hash::hash_tag(&self.write_data()) as i32
     }
     default_impl!(CustomData);
 }
@@ -136,33 +137,79 @@ impl DataComponentImpl for CustomNameImpl {
     default_impl!(CustomName);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct ItemNameImpl {
-    pub name: Cow<'static, str>,
+    /// The saved name, including its text component structure and style.
+    pub name: ItemNameContent,
 }
+
+/// A const-friendly translation key or a fully decoded component name.
+#[derive(Clone, Debug)]
+pub enum ItemNameContent {
+    /// A generated item's ordinary translation key.
+    TranslationKey(Cow<'static, str>),
+    /// An arbitrary component read from item data or supplied at runtime.
+    Component(TextComponent),
+}
+
+impl ItemNameContent {
+    /// Builds the equivalent text component for serialization or display.
+    #[must_use]
+    #[allow(deprecated)]
+    pub fn to_component(&self) -> TextComponent {
+        match self {
+            Self::TranslationKey(key) => TextComponent::translate(key.clone(), &[]),
+            Self::Component(component) => component.clone(),
+        }
+    }
+
+    /// Returns the plain text visible from this component.
+    #[must_use]
+    pub fn get_text(&self) -> String {
+        self.to_component().get_text()
+    }
+}
+
 impl ItemNameImpl {
+    #[allow(deprecated)]
+    pub fn translated(key: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            name: ItemNameContent::Component(TextComponent::translate(key, &[])),
+        }
+    }
+
+    #[must_use]
+    pub const fn translation_key(key: &'static str) -> Self {
+        Self {
+            name: ItemNameContent::TranslationKey(Cow::Borrowed(key)),
+        }
+    }
+
     pub fn read_data(data: &NbtTag) -> Option<Self> {
-        let name = match data {
-            NbtTag::String(name) => name.to_string(),
-            NbtTag::Compound(component) => component
-                .get_string("translate")
-                .or_else(|| component.get_string("text"))?
-                .to_owned(),
-            _ => return None,
-        };
-        Some(Self {
-            name: Cow::Owned(name),
+        super::text_component_codec::read_component(data).map(|name| Self {
+            name: ItemNameContent::Component(name),
         })
+    }
+}
+
+impl PartialEq for ItemNameImpl {
+    fn eq(&self, other: &Self) -> bool {
+        super::text_component_codec::canonical_component(&self.write_data())
+            == super::text_component_codec::canonical_component(&other.write_data())
+    }
+}
+impl Eq for ItemNameImpl {}
+impl std::hash::Hash for ItemNameImpl {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        super::text_component_codec::canonical_component(&self.write_data()).hash(state);
     }
 }
 impl DataComponentImpl for ItemNameImpl {
     fn write_data(&self) -> NbtTag {
-        let mut component = NbtCompound::new();
-        component.put_string("translate", self.name.to_string());
-        NbtTag::Compound(component)
+        super::text_component_codec::write_component(&self.name.to_component())
     }
     fn get_hash(&self) -> i32 {
-        get_str_hash(&self.name) as i32
+        super::instrument::hash::hash_tag(&self.write_data()) as i32
     }
     default_impl!(ItemName);
 }
@@ -551,6 +598,7 @@ impl DataComponentImpl for ProvidesBannerPatternsImpl {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct BannerPatternLayer {
     pub pattern: String,
+    pub translation_key: Option<String>,
     pub color: crate::dye_color::DyeColor,
 }
 
@@ -569,9 +617,16 @@ impl BannerPatternsImpl {
             for tag in list {
                 if let Some(compound) = tag.extract_compound() {
                     let pattern = compound.get_string("pattern")?.to_string();
+                    let translation_key = compound
+                        .get_string("translation_key")
+                        .map(ToOwned::to_owned);
                     let color_str = compound.get_string("color")?;
                     let color = crate::dye_color::DyeColor::by_name(color_str).unwrap_or_default();
-                    layers.push(BannerPatternLayer { pattern, color });
+                    layers.push(BannerPatternLayer {
+                        pattern,
+                        translation_key,
+                        color,
+                    });
                 }
             }
         }
@@ -585,12 +640,36 @@ impl DataComponentImpl for BannerPatternsImpl {
         for layer in &self.layers {
             let mut compound = NbtCompound::new();
             compound.put_string("pattern", layer.pattern.clone());
+            if let Some(translation_key) = &layer.translation_key {
+                compound.put_string("translation_key", translation_key.clone());
+            }
             compound.put_string("color", layer.color.name().to_string());
             list.push(NbtTag::Compound(compound));
         }
         NbtTag::List(list)
     }
 
+    fn get_hash(&self) -> i32 {
+        let layers = self
+            .layers
+            .iter()
+            .map(|layer| {
+                let mut value = NbtCompound::new();
+                let pattern = if let Some(translation_key) = &layer.translation_key {
+                    let mut direct = NbtCompound::new();
+                    direct.put_string("asset_id", layer.pattern.clone());
+                    direct.put_string("translation_key", translation_key.clone());
+                    NbtTag::Compound(direct)
+                } else {
+                    NbtTag::String(layer.pattern.clone().into())
+                };
+                value.put("pattern", pattern);
+                value.put_string("color", layer.color.name().to_string());
+                NbtTag::Compound(value)
+            })
+            .collect();
+        super::instrument::hash::hash_tag(&NbtTag::List(layers)) as i32
+    }
     default_impl!(BannerPatterns);
 }
 
@@ -656,5 +735,71 @@ impl std::hash::Hash for SoundEvent {
 impl SoundEvent {
     pub const fn new(sound_name: Cow<'static, str>, range: Option<f32>) -> Self {
         Self { sound_name, range }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn captain_banner_and_item_name_hash_match_26_3_hashops_fixtures() {
+        let layers = [
+            ("minecraft:rhombus", crate::dye_color::DyeColor::Cyan),
+            (
+                "minecraft:stripe_bottom",
+                crate::dye_color::DyeColor::LightGray,
+            ),
+            ("minecraft:stripe_center", crate::dye_color::DyeColor::Gray),
+            ("minecraft:border", crate::dye_color::DyeColor::LightGray),
+            ("minecraft:stripe_middle", crate::dye_color::DyeColor::Black),
+            (
+                "minecraft:half_horizontal",
+                crate::dye_color::DyeColor::LightGray,
+            ),
+            ("minecraft:circle", crate::dye_color::DyeColor::LightGray),
+            ("minecraft:border", crate::dye_color::DyeColor::Black),
+        ]
+        .into_iter()
+        .map(|(pattern, color)| BannerPatternLayer {
+            pattern: pattern.to_owned(),
+            translation_key: None,
+            color,
+        })
+        .collect();
+
+        // These independent HashOps fixtures use BannerPatternLayers list/map encoding.
+        assert_eq!(BannerPatternsImpl { layers }.get_hash() as u32, 0x5349_c6bc);
+        assert_eq!(
+            ItemNameImpl::translated("block.minecraft.ominous_banner").get_hash() as u32,
+            0x0fc5_df16
+        );
+    }
+
+    #[test]
+    fn item_name_retains_literal_styled_and_composite_text_components() {
+        let mut literal = NbtCompound::new();
+        literal.put_string("text", "Custom".to_owned());
+        let mut styled = literal.clone();
+        styled.put_string("color", "gold".to_owned());
+        styled.put("bold", NbtTag::Byte(1));
+        let mut first = NbtCompound::new();
+        first.put_string("text", "First".to_owned());
+        let mut second = NbtCompound::new();
+        second.put_string("text", " second".to_owned());
+        second.put_string("color", "red".to_owned());
+
+        for input in [
+            NbtTag::Compound(literal),
+            NbtTag::Compound(styled),
+            NbtTag::List(vec![NbtTag::Compound(first), NbtTag::Compound(second)]),
+        ] {
+            let expected = super::super::text_component_codec::canonical_component(&input);
+            let item_name = ItemNameImpl::read_data(&input).unwrap();
+            assert_eq!(
+                super::super::text_component_codec::canonical_component(&item_name.write_data()),
+                expected
+            );
+        }
     }
 }

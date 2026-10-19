@@ -518,7 +518,7 @@ impl ItemStack {
         if let Some(item_name) =
             self.get_data_component::<crate::data_component_impl::ItemNameImpl>()
         {
-            return item_name.name.to_string();
+            return item_name.name.clone().get_text();
         }
         self.item.registry_key.to_string()
     }
@@ -1149,24 +1149,21 @@ mod tests {
         let mut stack = ItemStack::new(1, &Item::FILLED_MAP);
         stack.patch.push((
             DataComponent::ItemName,
-            Some(
-                ItemNameImpl {
-                    name: Cow::Borrowed("filled_map.mansion"),
-                }
-                .to_dyn(),
-            ),
+            Some(ItemNameImpl::translated("filled_map.mansion").to_dyn()),
         ));
 
         let mut compound = NbtCompound::new();
         stack.write_item_stack(&mut compound);
         let decoded = ItemStack::read_item_stack(&compound).expect("stack should decode");
 
+        let decoded = decoded
+            .get_data_component::<ItemNameImpl>()
+            .expect("item name should decode")
+            .write_data();
+        let expected = ItemNameImpl::translated("filled_map.mansion").write_data();
         assert_eq!(
-            decoded
-                .get_data_component::<ItemNameImpl>()
-                .expect("item name should decode")
-                .name,
-            "filled_map.mansion"
+            pumpkin_util::text::component_codec::canonical_component(&decoded),
+            pumpkin_util::text::component_codec::canonical_component(&expected)
         );
     }
 

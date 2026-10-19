@@ -94,9 +94,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.abandoned_camp_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.abandoned_camp_map"),
             ),
             (
                 AttributeModifiers,
@@ -144,9 +142,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.acacia_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.acacia_boat"),
             ),
             (
                 AttributeModifiers,
@@ -204,9 +200,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_button"),
             ),
             (
                 AttributeModifiers,
@@ -264,9 +258,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.acacia_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.acacia_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -324,9 +316,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_door"),
             ),
             (
                 AttributeModifiers,
@@ -384,9 +374,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_fence"),
             ),
             (
                 AttributeModifiers,
@@ -444,9 +432,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -504,9 +490,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -564,9 +548,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -614,9 +596,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_log"),
             ),
             (
                 AttributeModifiers,
@@ -674,9 +654,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_planks"),
             ),
             (
                 AttributeModifiers,
@@ -734,9 +712,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -794,9 +770,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -855,9 +829,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -916,9 +888,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_sign"),
             ),
             (
                 AttributeModifiers,
@@ -976,9 +946,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_slab"),
             ),
             (
                 AttributeModifiers,
@@ -1036,9 +1004,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -1096,9 +1062,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -1156,9 +1120,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.acacia_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.acacia_wood"),
             ),
             (
                 AttributeModifiers,
@@ -1216,9 +1178,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.activator_rail"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.activator_rail"),
             ),
             (
                 AttributeModifiers,
@@ -1265,9 +1225,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.air"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.air"),
             ),
             (
                 AttributeModifiers,
@@ -1314,9 +1272,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.allay_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.allay_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -1364,9 +1320,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.allium"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.allium"),
             ),
             (
                 AttributeModifiers,
@@ -1414,9 +1368,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.amethyst_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.amethyst_block"),
             ),
             (
                 AttributeModifiers,
@@ -1463,9 +1415,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.amethyst_cluster"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.amethyst_cluster"),
             ),
             (
                 AttributeModifiers,
@@ -1512,9 +1462,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.amethyst_shard"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.amethyst_shard"),
             ),
             (
                 AttributeModifiers,
@@ -1562,9 +1510,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.ancient_debris"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.ancient_debris"),
             ),
             (
                 AttributeModifiers,
@@ -1617,9 +1563,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.andesite"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.andesite"),
             ),
             (
                 AttributeModifiers,
@@ -1666,9 +1610,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.andesite_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.andesite_slab"),
             ),
             (
                 AttributeModifiers,
@@ -1715,9 +1657,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.andesite_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.andesite_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -1764,9 +1704,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.andesite_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.andesite_wall"),
             ),
             (
                 AttributeModifiers,
@@ -1813,9 +1751,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.angler_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.angler_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -1862,9 +1798,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.anvil"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.anvil"),
             ),
             (
                 AttributeModifiers,
@@ -1911,9 +1845,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.apple"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.apple"),
             ),
             (
                 AttributeModifiers,
@@ -1979,9 +1911,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.archer_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.archer_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -2028,9 +1958,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.armadillo_scute"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.armadillo_scute"),
             ),
             (
                 AttributeModifiers,
@@ -2077,9 +2005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.armadillo_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.armadillo_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -2127,9 +2053,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.armor_stand"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.armor_stand"),
             ),
             (
                 AttributeModifiers,
@@ -2176,9 +2100,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.arms_up_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.arms_up_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -2225,9 +2147,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.arrow"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.arrow"),
             ),
             (
                 AttributeModifiers,
@@ -2274,9 +2194,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.axolotl_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.axolotl_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -2324,9 +2242,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.axolotl_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.axolotl_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -2374,9 +2290,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.azalea"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.azalea"),
             ),
             (
                 AttributeModifiers,
@@ -2435,9 +2349,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.azalea_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.azalea_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -2485,9 +2397,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.azure_bluet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.azure_bluet"),
             ),
             (
                 AttributeModifiers,
@@ -2535,9 +2445,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.baked_potato"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.baked_potato"),
             ),
             (
                 AttributeModifiers,
@@ -2603,9 +2511,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo"),
             ),
             (
                 AttributeModifiers,
@@ -2663,9 +2569,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_block"),
             ),
             (
                 AttributeModifiers,
@@ -2723,9 +2627,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_button"),
             ),
             (
                 AttributeModifiers,
@@ -2783,9 +2685,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bamboo_chest_raft"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bamboo_chest_raft"),
             ),
             (
                 AttributeModifiers,
@@ -2843,9 +2743,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_door"),
             ),
             (
                 AttributeModifiers,
@@ -2903,9 +2801,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_fence"),
             ),
             (
                 AttributeModifiers,
@@ -2963,9 +2859,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -3023,9 +2917,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -3083,9 +2975,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_mosaic"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_mosaic"),
             ),
             (
                 AttributeModifiers,
@@ -3143,9 +3033,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_mosaic_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_mosaic_slab"),
             ),
             (
                 AttributeModifiers,
@@ -3203,9 +3091,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_mosaic_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_mosaic_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -3263,9 +3149,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_planks"),
             ),
             (
                 AttributeModifiers,
@@ -3323,9 +3207,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -3383,9 +3265,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bamboo_raft"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bamboo_raft"),
             ),
             (
                 AttributeModifiers,
@@ -3443,9 +3323,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -3504,9 +3382,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_sign"),
             ),
             (
                 AttributeModifiers,
@@ -3564,9 +3440,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_slab"),
             ),
             (
                 AttributeModifiers,
@@ -3624,9 +3498,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -3684,9 +3556,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bamboo_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bamboo_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -3744,9 +3614,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.barrel"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.barrel"),
             ),
             (
                 AttributeModifiers,
@@ -3805,9 +3673,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.barrier"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.barrier"),
             ),
             (
                 AttributeModifiers,
@@ -3854,9 +3720,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.basalt"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.basalt"),
             ),
             (
                 AttributeModifiers,
@@ -3903,9 +3767,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bat_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bat_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -3953,9 +3815,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.beacon"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.beacon"),
             ),
             (
                 AttributeModifiers,
@@ -4002,9 +3862,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bedrock"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bedrock"),
             ),
             (
                 AttributeModifiers,
@@ -4051,9 +3909,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bee_nest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bee_nest"),
             ),
             (
                 AttributeModifiers,
@@ -4110,9 +3966,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bee_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bee_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -4160,9 +4014,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.beef"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.beef"),
             ),
             (
                 AttributeModifiers,
@@ -4227,9 +4079,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.beehive"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.beehive"),
             ),
             (
                 AttributeModifiers,
@@ -4286,9 +4136,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.beetroot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.beetroot"),
             ),
             (
                 AttributeModifiers,
@@ -4354,9 +4202,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.beetroot_seeds"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.beetroot_seeds"),
             ),
             (
                 AttributeModifiers,
@@ -4404,9 +4250,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.beetroot_soup"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.beetroot_soup"),
             ),
             (
                 AttributeModifiers,
@@ -4478,9 +4322,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bell"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bell"),
             ),
             (
                 AttributeModifiers,
@@ -4527,9 +4369,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.big_dripleaf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.big_dripleaf"),
             ),
             (
                 AttributeModifiers,
@@ -4577,9 +4417,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.birch_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.birch_boat"),
             ),
             (
                 AttributeModifiers,
@@ -4637,9 +4475,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_button"),
             ),
             (
                 AttributeModifiers,
@@ -4697,9 +4533,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.birch_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.birch_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -4757,9 +4591,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_door"),
             ),
             (
                 AttributeModifiers,
@@ -4817,9 +4649,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_fence"),
             ),
             (
                 AttributeModifiers,
@@ -4877,9 +4707,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -4937,9 +4765,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -4997,9 +4823,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -5047,9 +4871,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_log"),
             ),
             (
                 AttributeModifiers,
@@ -5107,9 +4929,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_planks"),
             ),
             (
                 AttributeModifiers,
@@ -5167,9 +4987,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -5227,9 +5045,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -5288,9 +5104,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -5349,9 +5163,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_sign"),
             ),
             (
                 AttributeModifiers,
@@ -5409,9 +5221,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_slab"),
             ),
             (
                 AttributeModifiers,
@@ -5469,9 +5279,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -5529,9 +5337,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -5589,9 +5395,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.birch_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.birch_wood"),
             ),
             (
                 AttributeModifiers,
@@ -5649,9 +5453,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_banner"),
             ),
             (
                 AttributeModifiers,
@@ -5710,9 +5512,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_bed"),
             ),
             (
                 AttributeModifiers,
@@ -5759,9 +5559,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.black_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.black_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -5815,9 +5613,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_candle"),
             ),
             (
                 AttributeModifiers,
@@ -5864,9 +5660,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -5943,9 +5737,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -5992,9 +5784,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -6041,9 +5831,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -6090,9 +5878,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -6139,9 +5925,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.black_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.black_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -6199,9 +5983,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.black_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.black_dye"),
             ),
             (
                 AttributeModifiers,
@@ -6254,9 +6036,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -6303,9 +6083,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.black_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.black_harness"),
             ),
             (
                 AttributeModifiers,
@@ -6368,9 +6146,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -6418,9 +6194,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -6467,9 +6241,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -6516,9 +6288,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -6565,9 +6335,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_wool"),
             ),
             (
                 AttributeModifiers,
@@ -6625,9 +6393,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -6685,9 +6451,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.black_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.black_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -6745,9 +6509,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blackstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blackstone"),
             ),
             (
                 AttributeModifiers,
@@ -6794,9 +6556,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blackstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blackstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -6843,9 +6603,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blackstone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blackstone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -6892,9 +6650,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blackstone_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blackstone_wall"),
             ),
             (
                 AttributeModifiers,
@@ -6941,9 +6697,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blade_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blade_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -6990,9 +6744,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blast_furnace"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blast_furnace"),
             ),
             (
                 AttributeModifiers,
@@ -7040,9 +6792,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blaze_powder"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blaze_powder"),
             ),
             (
                 AttributeModifiers,
@@ -7090,9 +6840,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blaze_rod"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blaze_rod"),
             ),
             (
                 AttributeModifiers,
@@ -7150,9 +6898,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blaze_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blaze_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -7200,9 +6946,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_banner"),
             ),
             (
                 AttributeModifiers,
@@ -7261,9 +7005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_bed"),
             ),
             (
                 AttributeModifiers,
@@ -7310,9 +7052,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blue_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blue_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -7366,9 +7106,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_candle"),
             ),
             (
                 AttributeModifiers,
@@ -7415,9 +7153,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -7494,9 +7230,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -7543,9 +7277,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -7592,9 +7324,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -7641,9 +7371,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -7690,9 +7418,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blue_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blue_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -7750,9 +7476,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blue_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blue_dye"),
             ),
             (
                 AttributeModifiers,
@@ -7805,9 +7529,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blue_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blue_egg"),
             ),
             (
                 AttributeModifiers,
@@ -7860,9 +7582,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -7909,9 +7629,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.blue_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.blue_harness"),
             ),
             (
                 AttributeModifiers,
@@ -7974,9 +7692,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_ice"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_ice"),
             ),
             (
                 AttributeModifiers,
@@ -8023,9 +7739,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_orchid"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_orchid"),
             ),
             (
                 AttributeModifiers,
@@ -8073,9 +7787,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -8123,9 +7835,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -8172,9 +7882,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -8221,9 +7929,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -8270,9 +7976,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_wool"),
             ),
             (
                 AttributeModifiers,
@@ -8330,9 +8034,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -8390,9 +8092,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.blue_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.blue_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -8450,9 +8150,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bogged_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bogged_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -8500,9 +8198,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bolt_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bolt_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -8549,9 +8245,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bone"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bone"),
             ),
             (
                 AttributeModifiers,
@@ -8598,9 +8292,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bone_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bone_block"),
             ),
             (
                 AttributeModifiers,
@@ -8647,9 +8339,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bone_meal"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bone_meal"),
             ),
             (
                 AttributeModifiers,
@@ -8696,9 +8386,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.book"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.book"),
             ),
             (
                 AttributeModifiers,
@@ -8746,9 +8434,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bookshelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bookshelf"),
             ),
             (
                 AttributeModifiers,
@@ -8806,9 +8492,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bordure_indented_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bordure_indented_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -8856,9 +8540,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bow"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bow"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 384 }),
@@ -8919,9 +8601,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bowl"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bowl"),
             ),
             (
                 AttributeModifiers,
@@ -8979,9 +8659,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brain_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brain_coral"),
             ),
             (
                 AttributeModifiers,
@@ -9028,9 +8706,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brain_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brain_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -9077,9 +8753,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brain_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brain_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -9126,9 +8800,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bread"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bread"),
             ),
             (
                 AttributeModifiers,
@@ -9194,9 +8866,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.breeze_rod"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.breeze_rod"),
             ),
             (
                 AttributeModifiers,
@@ -9243,9 +8913,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.breeze_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.breeze_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -9293,9 +8961,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brewer_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brewer_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -9342,9 +9008,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brewing_stand"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brewing_stand"),
             ),
             (
                 AttributeModifiers,
@@ -9392,9 +9056,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brick"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brick"),
             ),
             (
                 AttributeModifiers,
@@ -9441,9 +9103,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -9490,9 +9150,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -9539,9 +9197,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -9588,9 +9244,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bricks"),
             ),
             (
                 AttributeModifiers,
@@ -9637,9 +9291,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_banner"),
             ),
             (
                 AttributeModifiers,
@@ -9698,9 +9350,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_bed"),
             ),
             (
                 AttributeModifiers,
@@ -9747,9 +9397,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brown_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brown_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -9803,9 +9451,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_candle"),
             ),
             (
                 AttributeModifiers,
@@ -9852,9 +9498,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -9931,9 +9575,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -9980,9 +9622,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -10029,9 +9669,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -10078,9 +9716,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -10127,9 +9763,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brown_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brown_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -10187,9 +9821,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brown_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brown_dye"),
             ),
             (
                 AttributeModifiers,
@@ -10242,9 +9874,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brown_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brown_egg"),
             ),
             (
                 AttributeModifiers,
@@ -10297,9 +9927,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -10346,9 +9974,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brown_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brown_harness"),
             ),
             (
                 AttributeModifiers,
@@ -10411,9 +10037,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_mushroom"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_mushroom"),
             ),
             (
                 AttributeModifiers,
@@ -10461,9 +10085,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_mushroom_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_mushroom_block"),
             ),
             (
                 AttributeModifiers,
@@ -10511,9 +10133,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -10561,9 +10181,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -10610,9 +10228,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -10659,9 +10275,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -10708,9 +10322,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_wool"),
             ),
             (
                 AttributeModifiers,
@@ -10768,9 +10380,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -10828,9 +10438,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.brown_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.brown_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -10888,9 +10496,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.brush"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.brush"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 64 }),
@@ -10939,9 +10545,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bubble_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bubble_coral"),
             ),
             (
                 AttributeModifiers,
@@ -10988,9 +10592,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bubble_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bubble_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -11037,9 +10639,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bubble_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bubble_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -11086,9 +10686,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bucket"),
             ),
             (
                 AttributeModifiers,
@@ -11135,9 +10733,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.budding_amethyst"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.budding_amethyst"),
             ),
             (
                 AttributeModifiers,
@@ -11184,9 +10780,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.bundle"),
             ),
             (
                 AttributeModifiers,
@@ -11240,9 +10834,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.buried_ancient_city_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.buried_ancient_city_map"),
             ),
             (
                 AttributeModifiers,
@@ -11290,9 +10882,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.buried_mineshaft_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.buried_mineshaft_map"),
             ),
             (
                 AttributeModifiers,
@@ -11340,9 +10930,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.buried_treasure_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.buried_treasure_map"),
             ),
             (
                 AttributeModifiers,
@@ -11390,9 +10978,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.buried_trial_chambers_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.buried_trial_chambers_map"),
             ),
             (
                 AttributeModifiers,
@@ -11440,9 +11026,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.burn_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.burn_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -11489,9 +11073,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.bush"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.bush"),
             ),
             (
                 AttributeModifiers,
@@ -11539,9 +11121,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cactus"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cactus"),
             ),
             (
                 AttributeModifiers,
@@ -11589,9 +11169,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cactus_flower"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cactus_flower"),
             ),
             (
                 AttributeModifiers,
@@ -11639,9 +11217,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cake"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cake"),
             ),
             (
                 AttributeModifiers,
@@ -11689,9 +11265,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.calcite"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.calcite"),
             ),
             (
                 AttributeModifiers,
@@ -11738,9 +11312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.calibrated_sculk_sensor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.calibrated_sculk_sensor"),
             ),
             (
                 AttributeModifiers,
@@ -11787,9 +11359,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.camel_husk_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.camel_husk_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -11837,9 +11407,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.camel_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.camel_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -11887,9 +11455,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.campfire"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.campfire"),
             ),
             (
                 AttributeModifiers,
@@ -11937,9 +11503,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.candle"),
             ),
             (
                 AttributeModifiers,
@@ -11986,9 +11550,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.carrot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.carrot"),
             ),
             (
                 AttributeModifiers,
@@ -12054,9 +11616,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.carrot_on_a_stick"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.carrot_on_a_stick"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 25 }),
@@ -12105,9 +11665,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cartography_table"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cartography_table"),
             ),
             (
                 AttributeModifiers,
@@ -12165,9 +11723,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.carved_pumpkin"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.carved_pumpkin"),
             ),
             (
                 AttributeModifiers,
@@ -12237,9 +11793,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cat_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cat_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -12287,9 +11841,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cauldron"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cauldron"),
             ),
             (
                 AttributeModifiers,
@@ -12336,9 +11888,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cave_spider_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cave_spider_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -12386,9 +11936,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chain_command_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chain_command_block"),
             ),
             (
                 AttributeModifiers,
@@ -12435,9 +11983,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chainmail_boots"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chainmail_boots"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 195 }),
@@ -12524,9 +12070,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chainmail_chestplate"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chainmail_chestplate"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 240 }),
@@ -12613,9 +12157,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chainmail_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chainmail_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 165 }),
@@ -12702,9 +12244,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chainmail_leggings"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chainmail_leggings"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 225 }),
@@ -12791,9 +12331,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.charcoal"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.charcoal"),
             ),
             (
                 AttributeModifiers,
@@ -12851,9 +12389,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cherry_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cherry_boat"),
             ),
             (
                 AttributeModifiers,
@@ -12911,9 +12447,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_button"),
             ),
             (
                 AttributeModifiers,
@@ -12971,9 +12505,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cherry_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cherry_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -13031,9 +12563,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_door"),
             ),
             (
                 AttributeModifiers,
@@ -13091,9 +12621,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_fence"),
             ),
             (
                 AttributeModifiers,
@@ -13151,9 +12679,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -13211,9 +12737,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -13271,9 +12795,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -13321,9 +12843,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_log"),
             ),
             (
                 AttributeModifiers,
@@ -13381,9 +12901,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_planks"),
             ),
             (
                 AttributeModifiers,
@@ -13441,9 +12959,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -13501,9 +13017,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -13562,9 +13076,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -13623,9 +13135,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_sign"),
             ),
             (
                 AttributeModifiers,
@@ -13683,9 +13193,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_slab"),
             ),
             (
                 AttributeModifiers,
@@ -13743,9 +13251,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -13803,9 +13309,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -13863,9 +13367,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cherry_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cherry_wood"),
             ),
             (
                 AttributeModifiers,
@@ -13923,9 +13425,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chest"),
             ),
             (
                 AttributeModifiers,
@@ -13984,9 +13484,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chest_minecart"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chest_minecart"),
             ),
             (
                 AttributeModifiers,
@@ -14033,9 +13531,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chicken"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chicken"),
             ),
             (
                 AttributeModifiers,
@@ -14110,9 +13606,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chicken_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chicken_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -14160,9 +13654,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chipped_anvil"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chipped_anvil"),
             ),
             (
                 AttributeModifiers,
@@ -14209,9 +13701,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_bookshelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_bookshelf"),
             ),
             (
                 AttributeModifiers,
@@ -14270,9 +13760,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_cinnabar"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_cinnabar"),
             ),
             (
                 AttributeModifiers,
@@ -14319,9 +13807,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -14368,9 +13854,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_deepslate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_deepslate"),
             ),
             (
                 AttributeModifiers,
@@ -14417,9 +13901,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_nether_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_nether_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -14466,9 +13948,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_polished_blackstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_polished_blackstone"),
             ),
             (
                 AttributeModifiers,
@@ -14515,9 +13995,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_quartz_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_quartz_block"),
             ),
             (
                 AttributeModifiers,
@@ -14564,9 +14042,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_red_sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_red_sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -14613,9 +14089,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_resin_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_resin_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -14662,9 +14136,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -14711,9 +14183,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -14760,9 +14230,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_sulfur"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_sulfur"),
             ),
             (
                 AttributeModifiers,
@@ -14809,9 +14277,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_tuff"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_tuff"),
             ),
             (
                 AttributeModifiers,
@@ -14858,9 +14324,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chiseled_tuff_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chiseled_tuff_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -14907,9 +14371,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chorus_flower"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chorus_flower"),
             ),
             (
                 AttributeModifiers,
@@ -14963,9 +14425,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.chorus_fruit"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.chorus_fruit"),
             ),
             (
                 AttributeModifiers,
@@ -15030,9 +14490,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.chorus_plant"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.chorus_plant"),
             ),
             (
                 AttributeModifiers,
@@ -15079,9 +14537,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar"),
             ),
             (
                 AttributeModifiers,
@@ -15128,9 +14584,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -15177,9 +14631,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -15226,9 +14678,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -15275,9 +14725,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -15324,9 +14772,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar_slab"),
             ),
             (
                 AttributeModifiers,
@@ -15373,9 +14819,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -15422,9 +14866,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cinnabar_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cinnabar_wall"),
             ),
             (
                 AttributeModifiers,
@@ -15471,9 +14913,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.clay"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.clay"),
             ),
             (
                 AttributeModifiers,
@@ -15520,9 +14960,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.clay_ball"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.clay_ball"),
             ),
             (
                 AttributeModifiers,
@@ -15569,9 +15007,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.clock"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.clock"),
             ),
             (
                 AttributeModifiers,
@@ -15618,9 +15054,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.closed_eyeblossom"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.closed_eyeblossom"),
             ),
             (
                 AttributeModifiers,
@@ -15668,9 +15102,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.coal"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.coal"),
             ),
             (
                 AttributeModifiers,
@@ -15728,9 +15160,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.coal_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.coal_block"),
             ),
             (
                 AttributeModifiers,
@@ -15788,9 +15218,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.coal_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.coal_ore"),
             ),
             (
                 AttributeModifiers,
@@ -15837,9 +15265,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.coarse_dirt"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.coarse_dirt"),
             ),
             (
                 AttributeModifiers,
@@ -15886,9 +15312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.coast_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.coast_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -15935,9 +15359,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobbled_deepslate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobbled_deepslate"),
             ),
             (
                 AttributeModifiers,
@@ -15984,9 +15406,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobbled_deepslate_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobbled_deepslate_slab"),
             ),
             (
                 AttributeModifiers,
@@ -16033,9 +15453,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobbled_deepslate_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobbled_deepslate_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -16082,9 +15500,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobbled_deepslate_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobbled_deepslate_wall"),
             ),
             (
                 AttributeModifiers,
@@ -16131,9 +15547,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobblestone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobblestone"),
             ),
             (
                 AttributeModifiers,
@@ -16180,9 +15594,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobblestone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobblestone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -16229,9 +15641,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobblestone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobblestone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -16278,9 +15688,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobblestone_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobblestone_wall"),
             ),
             (
                 AttributeModifiers,
@@ -16327,9 +15735,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cobweb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cobweb"),
             ),
             (
                 AttributeModifiers,
@@ -16376,9 +15782,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cocoa_beans"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cocoa_beans"),
             ),
             (
                 AttributeModifiers,
@@ -16426,9 +15830,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cod"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cod"),
             ),
             (
                 AttributeModifiers,
@@ -16493,9 +15895,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cod_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cod_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -16551,9 +15951,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cod_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cod_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -16601,9 +15999,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.command_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.command_block"),
             ),
             (
                 AttributeModifiers,
@@ -16650,9 +16046,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.command_block_minecart"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.command_block_minecart"),
             ),
             (
                 AttributeModifiers,
@@ -16699,9 +16093,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.comparator"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.comparator"),
             ),
             (
                 AttributeModifiers,
@@ -16748,9 +16140,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.compass"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.compass"),
             ),
             (
                 AttributeModifiers,
@@ -16797,9 +16187,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.composter"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.composter"),
             ),
             (
                 AttributeModifiers,
@@ -16857,9 +16245,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.conduit"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.conduit"),
             ),
             (
                 AttributeModifiers,
@@ -16906,9 +16292,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cooked_beef"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cooked_beef"),
             ),
             (
                 AttributeModifiers,
@@ -16973,9 +16357,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cooked_chicken"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cooked_chicken"),
             ),
             (
                 AttributeModifiers,
@@ -17040,9 +16422,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cooked_cod"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cooked_cod"),
             ),
             (
                 AttributeModifiers,
@@ -17107,9 +16487,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cooked_mutton"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cooked_mutton"),
             ),
             (
                 AttributeModifiers,
@@ -17174,9 +16552,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cooked_porkchop"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cooked_porkchop"),
             ),
             (
                 AttributeModifiers,
@@ -17241,9 +16617,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cooked_rabbit"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cooked_rabbit"),
             ),
             (
                 AttributeModifiers,
@@ -17308,9 +16682,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cooked_salmon"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cooked_salmon"),
             ),
             (
                 AttributeModifiers,
@@ -17375,9 +16747,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cookie"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cookie"),
             ),
             (
                 AttributeModifiers,
@@ -17443,9 +16813,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_axe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_axe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 190 }),
@@ -17543,9 +16911,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -17592,9 +16958,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_block"),
             ),
             (
                 AttributeModifiers,
@@ -17641,9 +17005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_boots"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_boots"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 143 }),
@@ -17730,9 +17092,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -17779,9 +17139,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -17828,9 +17186,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -17877,9 +17233,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_chestplate"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_chestplate"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 176 }),
@@ -17966,9 +17320,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -18015,9 +17367,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_golem_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_golem_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -18065,9 +17415,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -18123,9 +17471,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -18172,9 +17518,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 121 }),
@@ -18261,9 +17605,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_hoe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_hoe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 190 }),
@@ -18361,9 +17703,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_horse_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_horse_armor"),
             ),
             (
                 AttributeModifiers,
@@ -18441,9 +17781,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_ingot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_ingot"),
             ),
             (
                 AttributeModifiers,
@@ -18491,9 +17829,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -18540,9 +17876,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_leggings"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_leggings"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 165 }),
@@ -18629,9 +17963,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_nautilus_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_nautilus_armor"),
             ),
             (
                 AttributeModifiers,
@@ -18709,9 +18041,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_nugget"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_nugget"),
             ),
             (
                 AttributeModifiers,
@@ -18758,9 +18088,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_ore"),
             ),
             (
                 AttributeModifiers,
@@ -18807,9 +18135,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_pickaxe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_pickaxe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 190 }),
@@ -18907,9 +18233,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_shovel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_shovel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 190 }),
@@ -19007,9 +18331,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_spear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_spear"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 190 }),
@@ -19150,9 +18472,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.copper_sword"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.copper_sword"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 190 }),
@@ -19255,9 +18575,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_torch"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_torch"),
             ),
             (
                 AttributeModifiers,
@@ -19304,9 +18622,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -19353,9 +18669,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cornflower"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cornflower"),
             ),
             (
                 AttributeModifiers,
@@ -19403,9 +18717,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cow_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cow_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -19453,9 +18765,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cracked_deepslate_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cracked_deepslate_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -19502,9 +18812,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cracked_deepslate_tiles"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cracked_deepslate_tiles"),
             ),
             (
                 AttributeModifiers,
@@ -19551,9 +18859,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cracked_nether_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cracked_nether_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -19600,9 +18906,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cracked_polished_blackstone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cracked_polished_blackstone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -19649,9 +18953,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cracked_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cracked_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -19698,9 +19000,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crafter"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crafter"),
             ),
             (
                 AttributeModifiers,
@@ -19748,9 +19048,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crafting_table"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crafting_table"),
             ),
             (
                 AttributeModifiers,
@@ -19808,9 +19106,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.creaking_heart"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.creaking_heart"),
             ),
             (
                 AttributeModifiers,
@@ -19857,9 +19153,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.creaking_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.creaking_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -19907,9 +19201,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.creeper_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.creeper_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -19966,9 +19258,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.creeper_head"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.creeper_head"),
             ),
             (
                 AttributeModifiers,
@@ -20037,9 +19327,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.creeper_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.creeper_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -20087,9 +19375,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_button"),
             ),
             (
                 AttributeModifiers,
@@ -20136,9 +19422,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_door"),
             ),
             (
                 AttributeModifiers,
@@ -20185,9 +19469,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_fence"),
             ),
             (
                 AttributeModifiers,
@@ -20234,9 +19516,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -20283,9 +19563,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_fungus"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_fungus"),
             ),
             (
                 AttributeModifiers,
@@ -20333,9 +19611,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -20382,9 +19658,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_hyphae"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_hyphae"),
             ),
             (
                 AttributeModifiers,
@@ -20431,9 +19705,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_nylium"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_nylium"),
             ),
             (
                 AttributeModifiers,
@@ -20480,9 +19752,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_planks"),
             ),
             (
                 AttributeModifiers,
@@ -20529,9 +19799,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -20578,9 +19846,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_roots"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_roots"),
             ),
             (
                 AttributeModifiers,
@@ -20628,9 +19894,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -20678,9 +19942,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_sign"),
             ),
             (
                 AttributeModifiers,
@@ -20727,9 +19989,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_slab"),
             ),
             (
                 AttributeModifiers,
@@ -20776,9 +20036,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -20825,9 +20083,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_stem"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_stem"),
             ),
             (
                 AttributeModifiers,
@@ -20874,9 +20130,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crimson_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crimson_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -20923,9 +20177,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.crossbow"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.crossbow"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 465 }),
@@ -20992,9 +20244,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.crying_obsidian"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.crying_obsidian"),
             ),
             (
                 AttributeModifiers,
@@ -21041,9 +20291,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -21090,9 +20338,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -21139,9 +20385,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -21188,9 +20432,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cut_red_sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cut_red_sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -21237,9 +20479,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cut_red_sandstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cut_red_sandstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -21286,9 +20526,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cut_sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cut_sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -21335,9 +20573,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cut_sandstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cut_sandstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -21384,9 +20620,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_banner"),
             ),
             (
                 AttributeModifiers,
@@ -21445,9 +20679,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_bed"),
             ),
             (
                 AttributeModifiers,
@@ -21494,9 +20726,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cyan_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cyan_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -21550,9 +20780,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_candle"),
             ),
             (
                 AttributeModifiers,
@@ -21599,9 +20827,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -21678,9 +20904,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -21727,9 +20951,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -21776,9 +20998,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -21825,9 +21045,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -21874,9 +21092,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cyan_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cyan_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -21934,9 +21150,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cyan_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cyan_dye"),
             ),
             (
                 AttributeModifiers,
@@ -21989,9 +21203,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -22038,9 +21250,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.cyan_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.cyan_harness"),
             ),
             (
                 AttributeModifiers,
@@ -22103,9 +21313,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -22153,9 +21361,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -22202,9 +21408,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -22251,9 +21455,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -22300,9 +21502,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_wool"),
             ),
             (
                 AttributeModifiers,
@@ -22360,9 +21560,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -22420,9 +21618,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.cyan_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.cyan_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -22480,9 +21676,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.damaged_anvil"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.damaged_anvil"),
             ),
             (
                 AttributeModifiers,
@@ -22529,9 +21723,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dandelion"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dandelion"),
             ),
             (
                 AttributeModifiers,
@@ -22579,9 +21771,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.danger_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.danger_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -22628,9 +21818,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.dark_oak_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.dark_oak_boat"),
             ),
             (
                 AttributeModifiers,
@@ -22688,9 +21876,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_button"),
             ),
             (
                 AttributeModifiers,
@@ -22748,9 +21934,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.dark_oak_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.dark_oak_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -22808,9 +21992,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_door"),
             ),
             (
                 AttributeModifiers,
@@ -22868,9 +22050,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_fence"),
             ),
             (
                 AttributeModifiers,
@@ -22928,9 +22108,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -22988,9 +22166,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -23048,9 +22224,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -23098,9 +22272,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_log"),
             ),
             (
                 AttributeModifiers,
@@ -23158,9 +22330,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_planks"),
             ),
             (
                 AttributeModifiers,
@@ -23218,9 +22388,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -23278,9 +22446,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -23339,9 +22505,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -23400,9 +22564,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_sign"),
             ),
             (
                 AttributeModifiers,
@@ -23460,9 +22622,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_slab"),
             ),
             (
                 AttributeModifiers,
@@ -23520,9 +22680,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -23580,9 +22738,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -23640,9 +22796,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_oak_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_oak_wood"),
             ),
             (
                 AttributeModifiers,
@@ -23700,9 +22854,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_prismarine"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_prismarine"),
             ),
             (
                 AttributeModifiers,
@@ -23749,9 +22901,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_prismarine_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_prismarine_slab"),
             ),
             (
                 AttributeModifiers,
@@ -23798,9 +22948,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dark_prismarine_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dark_prismarine_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -23847,9 +22995,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.daylight_detector"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.daylight_detector"),
             ),
             (
                 AttributeModifiers,
@@ -23907,9 +23053,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_brain_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_brain_coral"),
             ),
             (
                 AttributeModifiers,
@@ -23956,9 +23100,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_brain_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_brain_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -24005,9 +23147,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_brain_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_brain_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -24054,9 +23194,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_bubble_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_bubble_coral"),
             ),
             (
                 AttributeModifiers,
@@ -24103,9 +23241,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_bubble_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_bubble_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -24152,9 +23288,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_bubble_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_bubble_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -24201,9 +23335,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_bush"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_bush"),
             ),
             (
                 AttributeModifiers,
@@ -24261,9 +23393,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_fire_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_fire_coral"),
             ),
             (
                 AttributeModifiers,
@@ -24310,9 +23440,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_fire_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_fire_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -24359,9 +23487,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_fire_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_fire_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -24408,9 +23534,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_horn_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_horn_coral"),
             ),
             (
                 AttributeModifiers,
@@ -24457,9 +23581,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_horn_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_horn_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -24506,9 +23628,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_horn_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_horn_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -24555,9 +23675,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_tube_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_tube_coral"),
             ),
             (
                 AttributeModifiers,
@@ -24604,9 +23722,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_tube_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_tube_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -24653,9 +23769,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dead_tube_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dead_tube_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -24702,9 +23816,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.debug_stick"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.debug_stick"),
             ),
             (
                 AttributeModifiers,
@@ -24753,9 +23865,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.decorated_pot"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.decorated_pot"),
             ),
             (
                 AttributeModifiers,
@@ -24804,9 +23914,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate"),
             ),
             (
                 AttributeModifiers,
@@ -24853,9 +23961,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -24902,9 +24008,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -24951,9 +24055,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -25000,9 +24102,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -25049,9 +24149,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_coal_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_coal_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25098,9 +24196,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_copper_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_copper_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25147,9 +24243,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_diamond_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_diamond_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25196,9 +24290,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_emerald_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_emerald_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25245,9 +24337,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_gold_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_gold_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25294,9 +24384,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_iron_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_iron_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25343,9 +24431,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_lapis_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_lapis_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25392,9 +24478,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_redstone_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_redstone_ore"),
             ),
             (
                 AttributeModifiers,
@@ -25441,9 +24525,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_tile_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_tile_slab"),
             ),
             (
                 AttributeModifiers,
@@ -25490,9 +24572,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_tile_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_tile_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -25539,9 +24619,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_tile_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_tile_wall"),
             ),
             (
                 AttributeModifiers,
@@ -25588,9 +24666,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.deepslate_tiles"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.deepslate_tiles"),
             ),
             (
                 AttributeModifiers,
@@ -25637,9 +24713,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.desert_pyramid_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.desert_pyramid_map"),
             ),
             (
                 AttributeModifiers,
@@ -25687,9 +24761,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.desert_village_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.desert_village_map"),
             ),
             (
                 AttributeModifiers,
@@ -25737,9 +24809,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.detector_rail"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.detector_rail"),
             ),
             (
                 AttributeModifiers,
@@ -25786,9 +24856,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond"),
             ),
             (
                 AttributeModifiers,
@@ -25836,9 +24904,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_axe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_axe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 1561 }),
@@ -25936,9 +25002,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.diamond_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.diamond_block"),
             ),
             (
                 AttributeModifiers,
@@ -25985,9 +25049,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_boots"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_boots"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 429 }),
@@ -26074,9 +25136,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_chestplate"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_chestplate"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 528 }),
@@ -26163,9 +25223,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 363 }),
@@ -26252,9 +25310,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_hoe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_hoe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 1561 }),
@@ -26352,9 +25408,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_horse_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_horse_armor"),
             ),
             (
                 AttributeModifiers,
@@ -26432,9 +25486,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_leggings"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_leggings"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 495 }),
@@ -26521,9 +25573,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_nautilus_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_nautilus_armor"),
             ),
             (
                 AttributeModifiers,
@@ -26601,9 +25651,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.diamond_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.diamond_ore"),
             ),
             (
                 AttributeModifiers,
@@ -26650,9 +25698,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_pickaxe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_pickaxe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 1561 }),
@@ -26750,9 +25796,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_shovel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_shovel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 1561 }),
@@ -26850,9 +25894,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_spear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_spear"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 1561 }),
@@ -26993,9 +26035,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.diamond_sword"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.diamond_sword"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 1561 }),
@@ -27098,9 +26138,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.diorite"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.diorite"),
             ),
             (
                 AttributeModifiers,
@@ -27147,9 +26185,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.diorite_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.diorite_slab"),
             ),
             (
                 AttributeModifiers,
@@ -27196,9 +26232,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.diorite_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.diorite_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -27245,9 +26279,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.diorite_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.diorite_wall"),
             ),
             (
                 AttributeModifiers,
@@ -27294,9 +26326,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dirt"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dirt"),
             ),
             (
                 AttributeModifiers,
@@ -27343,9 +26373,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dirt_path"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dirt_path"),
             ),
             (
                 AttributeModifiers,
@@ -27392,9 +26420,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.disc_fragment_5"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.disc_fragment_5"),
             ),
             (
                 AttributeModifiers,
@@ -27441,9 +26467,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dispenser"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dispenser"),
             ),
             (
                 AttributeModifiers,
@@ -27491,9 +26515,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.dolphin_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.dolphin_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -27541,9 +26563,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.donkey_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.donkey_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -27591,9 +26611,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.dragon_breath"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.dragon_breath"),
             ),
             (
                 AttributeModifiers,
@@ -27640,9 +26658,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dragon_egg"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dragon_egg"),
             ),
             (
                 AttributeModifiers,
@@ -27689,9 +26705,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dragon_head"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dragon_head"),
             ),
             (
                 AttributeModifiers,
@@ -27760,9 +26774,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dried_ghast"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dried_ghast"),
             ),
             (
                 AttributeModifiers,
@@ -27809,9 +26821,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.dried_kelp"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.dried_kelp"),
             ),
             (
                 AttributeModifiers,
@@ -27877,9 +26887,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dried_kelp_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dried_kelp_block"),
             ),
             (
                 AttributeModifiers,
@@ -27938,9 +26946,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dripstone_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dripstone_block"),
             ),
             (
                 AttributeModifiers,
@@ -27987,9 +26993,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.dropper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.dropper"),
             ),
             (
                 AttributeModifiers,
@@ -28037,9 +27041,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.drowned_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.drowned_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -28087,9 +27089,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.dune_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.dune_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -28136,9 +27136,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.echo_shard"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.echo_shard"),
             ),
             (
                 AttributeModifiers,
@@ -28185,9 +27183,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.egg"),
             ),
             (
                 AttributeModifiers,
@@ -28240,9 +27236,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.elder_guardian_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.elder_guardian_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -28290,9 +27284,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.elytra"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.elytra"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 432 }),
@@ -28364,9 +27356,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.emerald"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.emerald"),
             ),
             (
                 AttributeModifiers,
@@ -28414,9 +27404,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.emerald_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.emerald_block"),
             ),
             (
                 AttributeModifiers,
@@ -28463,9 +27451,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.emerald_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.emerald_ore"),
             ),
             (
                 AttributeModifiers,
@@ -28512,9 +27498,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.enchanted_book"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.enchanted_book"),
             ),
             (
                 AttributeModifiers,
@@ -28568,9 +27552,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.enchanted_golden_apple"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.enchanted_golden_apple"),
             ),
             (
                 AttributeModifiers,
@@ -28672,9 +27654,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.enchanting_table"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.enchanting_table"),
             ),
             (
                 AttributeModifiers,
@@ -28721,9 +27701,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.end_crystal"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.end_crystal"),
             ),
             (
                 AttributeModifiers,
@@ -28771,9 +27749,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.end_portal_frame"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.end_portal_frame"),
             ),
             (
                 AttributeModifiers,
@@ -28820,9 +27796,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.end_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.end_rod"),
             ),
             (
                 AttributeModifiers,
@@ -28869,9 +27843,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.end_stone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.end_stone"),
             ),
             (
                 AttributeModifiers,
@@ -28918,9 +27890,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.end_stone_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.end_stone_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -28967,9 +27937,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.end_stone_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.end_stone_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -29016,9 +27984,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.end_stone_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.end_stone_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -29065,9 +28031,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.end_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.end_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -29114,9 +28078,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.ender_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.ender_chest"),
             ),
             (
                 AttributeModifiers,
@@ -29163,9 +28125,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ender_dragon_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ender_dragon_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -29213,9 +28173,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ender_eye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ender_eye"),
             ),
             (
                 AttributeModifiers,
@@ -29269,9 +28227,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ender_pearl"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ender_pearl"),
             ),
             (
                 AttributeModifiers,
@@ -29318,9 +28274,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.enderman_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.enderman_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -29368,9 +28322,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.endermite_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.endermite_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -29418,9 +28370,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.evoker_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.evoker_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -29468,9 +28418,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.experience_bottle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.experience_bottle"),
             ),
             (
                 AttributeModifiers,
@@ -29518,9 +28466,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.explorer_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.explorer_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -29567,9 +28513,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -29616,9 +28560,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper"),
             ),
             (
                 AttributeModifiers,
@@ -29665,9 +28607,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -29714,9 +28654,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -29763,9 +28701,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -29812,9 +28748,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -29861,9 +28795,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -29910,9 +28842,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -29968,9 +28898,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -30017,9 +28945,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -30066,9 +28992,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -30115,9 +29039,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -30164,9 +29086,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -30213,9 +29133,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -30262,9 +29180,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.exposed_lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.exposed_lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -30311,9 +29227,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.eye_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.eye_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -30360,9 +29274,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.farmland"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.farmland"),
             ),
             (
                 AttributeModifiers,
@@ -30409,9 +29321,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.feather"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.feather"),
             ),
             (
                 AttributeModifiers,
@@ -30458,9 +29368,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.fermented_spider_eye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.fermented_spider_eye"),
             ),
             (
                 AttributeModifiers,
@@ -30507,9 +29415,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.fern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.fern"),
             ),
             (
                 AttributeModifiers,
@@ -30557,9 +29463,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.field_masoned_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.field_masoned_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -30607,9 +29511,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.filled_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.filled_map"),
             ),
             (
                 AttributeModifiers,
@@ -30657,9 +29559,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.fire_charge"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.fire_charge"),
             ),
             (
                 AttributeModifiers,
@@ -30706,9 +29606,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.fire_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.fire_coral"),
             ),
             (
                 AttributeModifiers,
@@ -30755,9 +29653,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.fire_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.fire_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -30804,9 +29700,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.fire_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.fire_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -30853,9 +29747,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.firefly_bush"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.firefly_bush"),
             ),
             (
                 AttributeModifiers,
@@ -30903,9 +29795,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.firework_rocket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.firework_rocket"),
             ),
             (
                 AttributeModifiers,
@@ -30959,9 +29849,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.firework_star"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.firework_star"),
             ),
             (
                 AttributeModifiers,
@@ -31008,9 +29896,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.fishing_rod"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.fishing_rod"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 64 }),
@@ -31071,9 +29957,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.fletching_table"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.fletching_table"),
             ),
             (
                 AttributeModifiers,
@@ -31131,9 +30015,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.flint"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.flint"),
             ),
             (
                 AttributeModifiers,
@@ -31180,9 +30062,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.flint_and_steel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.flint_and_steel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 64 }),
@@ -31231,9 +30111,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.flow_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.flow_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -31280,9 +30158,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.flow_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.flow_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -31330,9 +30206,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.flow_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.flow_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -31379,9 +30253,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.flower_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.flower_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -31429,9 +30301,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.flower_pot"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.flower_pot"),
             ),
             (
                 AttributeModifiers,
@@ -31478,9 +30348,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.flowering_azalea"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.flowering_azalea"),
             ),
             (
                 AttributeModifiers,
@@ -31539,9 +30407,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.flowering_azalea_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.flowering_azalea_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -31589,9 +30455,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.fox_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.fox_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -31639,9 +30503,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.friend_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.friend_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -31688,9 +30550,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.frog_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.frog_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -31738,9 +30598,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.frogspawn"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.frogspawn"),
             ),
             (
                 AttributeModifiers,
@@ -31787,9 +30645,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.furnace"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.furnace"),
             ),
             (
                 AttributeModifiers,
@@ -31837,9 +30693,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.furnace_minecart"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.furnace_minecart"),
             ),
             (
                 AttributeModifiers,
@@ -31886,9 +30740,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ghast_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ghast_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -31936,9 +30788,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ghast_tear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ghast_tear"),
             ),
             (
                 AttributeModifiers,
@@ -31985,9 +30835,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gilded_blackstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gilded_blackstone"),
             ),
             (
                 AttributeModifiers,
@@ -32034,9 +30882,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.glass"),
             ),
             (
                 AttributeModifiers,
@@ -32083,9 +30929,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.glass_bottle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.glass_bottle"),
             ),
             (
                 AttributeModifiers,
@@ -32132,9 +30976,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -32181,9 +31023,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.glistering_melon_slice"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.glistering_melon_slice"),
             ),
             (
                 AttributeModifiers,
@@ -32230,9 +31070,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.globe_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.globe_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -32280,9 +31118,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.glow_berries"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.glow_berries"),
             ),
             (
                 AttributeModifiers,
@@ -32348,9 +31184,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.glow_ink_sac"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.glow_ink_sac"),
             ),
             (
                 AttributeModifiers,
@@ -32397,9 +31231,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.glow_item_frame"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.glow_item_frame"),
             ),
             (
                 AttributeModifiers,
@@ -32446,9 +31278,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.glow_lichen"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.glow_lichen"),
             ),
             (
                 AttributeModifiers,
@@ -32496,9 +31326,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.glow_squid_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.glow_squid_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -32546,9 +31374,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.glowstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.glowstone"),
             ),
             (
                 AttributeModifiers,
@@ -32595,9 +31421,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.glowstone_dust"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.glowstone_dust"),
             ),
             (
                 AttributeModifiers,
@@ -32644,9 +31468,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.goat_horn"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.goat_horn"),
             ),
             (
                 AttributeModifiers,
@@ -32697,9 +31519,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.goat_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.goat_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -32747,9 +31567,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gold_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gold_block"),
             ),
             (
                 AttributeModifiers,
@@ -32796,9 +31614,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.gold_ingot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.gold_ingot"),
             ),
             (
                 AttributeModifiers,
@@ -32846,9 +31662,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.gold_nugget"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.gold_nugget"),
             ),
             (
                 AttributeModifiers,
@@ -32895,9 +31709,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gold_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gold_ore"),
             ),
             (
                 AttributeModifiers,
@@ -32944,9 +31756,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_apple"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_apple"),
             ),
             (
                 AttributeModifiers,
@@ -33031,9 +31841,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_axe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_axe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 32 }),
@@ -33131,9 +31939,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_boots"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_boots"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 91 }),
@@ -33220,9 +32026,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_carrot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_carrot"),
             ),
             (
                 AttributeModifiers,
@@ -33287,9 +32091,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_chestplate"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_chestplate"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 112 }),
@@ -33376,9 +32178,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.golden_dandelion"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.golden_dandelion"),
             ),
             (
                 AttributeModifiers,
@@ -33425,9 +32225,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 77 }),
@@ -33514,9 +32312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_hoe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_hoe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 32 }),
@@ -33614,9 +32410,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_horse_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_horse_armor"),
             ),
             (
                 AttributeModifiers,
@@ -33694,9 +32488,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_leggings"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_leggings"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 105 }),
@@ -33783,9 +32575,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_nautilus_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_nautilus_armor"),
             ),
             (
                 AttributeModifiers,
@@ -33863,9 +32653,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_pickaxe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_pickaxe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 32 }),
@@ -33963,9 +32751,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_shovel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_shovel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 32 }),
@@ -34063,9 +32849,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_spear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_spear"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 32 }),
@@ -34206,9 +32990,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.golden_sword"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.golden_sword"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 32 }),
@@ -34311,9 +33093,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.granite"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.granite"),
             ),
             (
                 AttributeModifiers,
@@ -34360,9 +33140,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.granite_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.granite_slab"),
             ),
             (
                 AttributeModifiers,
@@ -34409,9 +33187,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.granite_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.granite_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -34458,9 +33234,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.granite_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.granite_wall"),
             ),
             (
                 AttributeModifiers,
@@ -34507,9 +33281,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.grass_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.grass_block"),
             ),
             (
                 AttributeModifiers,
@@ -34556,9 +33328,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gravel"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gravel"),
             ),
             (
                 AttributeModifiers,
@@ -34605,9 +33375,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_banner"),
             ),
             (
                 AttributeModifiers,
@@ -34666,9 +33434,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_bed"),
             ),
             (
                 AttributeModifiers,
@@ -34715,9 +33481,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.gray_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.gray_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -34771,9 +33535,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_candle"),
             ),
             (
                 AttributeModifiers,
@@ -34820,9 +33582,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -34899,9 +33659,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -34948,9 +33706,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -34997,9 +33753,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -35046,9 +33800,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -35095,9 +33847,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.gray_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.gray_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -35155,9 +33905,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.gray_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.gray_dye"),
             ),
             (
                 AttributeModifiers,
@@ -35210,9 +33958,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -35259,9 +34005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.gray_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.gray_harness"),
             ),
             (
                 AttributeModifiers,
@@ -35324,9 +34068,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -35374,9 +34116,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -35423,9 +34163,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -35472,9 +34210,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -35521,9 +34257,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_wool"),
             ),
             (
                 AttributeModifiers,
@@ -35581,9 +34315,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -35641,9 +34373,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.gray_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.gray_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -35701,9 +34431,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_banner"),
             ),
             (
                 AttributeModifiers,
@@ -35762,9 +34490,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_bed"),
             ),
             (
                 AttributeModifiers,
@@ -35811,9 +34537,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.green_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.green_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -35867,9 +34591,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_candle"),
             ),
             (
                 AttributeModifiers,
@@ -35916,9 +34638,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -35995,9 +34715,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -36044,9 +34762,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -36093,9 +34809,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -36142,9 +34856,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -36191,9 +34903,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.green_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.green_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -36251,9 +34961,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.green_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.green_dye"),
             ),
             (
                 AttributeModifiers,
@@ -36306,9 +35014,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -36355,9 +35061,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.green_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.green_harness"),
             ),
             (
                 AttributeModifiers,
@@ -36420,9 +35124,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -36470,9 +35172,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -36519,9 +35219,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -36568,9 +35266,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -36617,9 +35313,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_wool"),
             ),
             (
                 AttributeModifiers,
@@ -36677,9 +35371,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -36737,9 +35429,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.green_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.green_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -36797,9 +35487,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.grindstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.grindstone"),
             ),
             (
                 AttributeModifiers,
@@ -36846,9 +35534,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.guardian_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.guardian_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -36896,9 +35582,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.gunpowder"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.gunpowder"),
             ),
             (
                 AttributeModifiers,
@@ -36945,9 +35629,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.guster_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.guster_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -36995,9 +35677,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.guster_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.guster_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -37044,9 +35724,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.hanging_roots"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.hanging_roots"),
             ),
             (
                 AttributeModifiers,
@@ -37094,9 +35772,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.happy_ghast_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.happy_ghast_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -37144,9 +35820,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.hay_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.hay_block"),
             ),
             (
                 AttributeModifiers,
@@ -37194,9 +35868,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.heart_of_the_sea"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.heart_of_the_sea"),
             ),
             (
                 AttributeModifiers,
@@ -37243,9 +35915,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.heart_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.heart_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -37292,9 +35962,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.heartbreak_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.heartbreak_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -37341,9 +36009,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.heavy_core"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.heavy_core"),
             ),
             (
                 AttributeModifiers,
@@ -37390,9 +36056,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.heavy_weighted_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.heavy_weighted_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -37439,9 +36103,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.hoglin_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.hoglin_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -37489,9 +36151,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.honey_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.honey_block"),
             ),
             (
                 AttributeModifiers,
@@ -37538,9 +36198,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.honey_bottle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.honey_bottle"),
             ),
             (
                 AttributeModifiers,
@@ -37614,9 +36272,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.honeycomb"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.honeycomb"),
             ),
             (
                 AttributeModifiers,
@@ -37663,9 +36319,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.honeycomb_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.honeycomb_block"),
             ),
             (
                 AttributeModifiers,
@@ -37712,9 +36366,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.hopper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.hopper"),
             ),
             (
                 AttributeModifiers,
@@ -37762,9 +36414,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.hopper_minecart"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.hopper_minecart"),
             ),
             (
                 AttributeModifiers,
@@ -37811,9 +36461,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.horn_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.horn_coral"),
             ),
             (
                 AttributeModifiers,
@@ -37860,9 +36508,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.horn_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.horn_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -37909,9 +36555,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.horn_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.horn_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -37958,9 +36602,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.horse_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.horse_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -38008,9 +36650,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.host_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.host_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -38057,9 +36697,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.howl_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.howl_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -38106,9 +36744,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.husk_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.husk_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -38156,9 +36792,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.ice"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.ice"),
             ),
             (
                 AttributeModifiers,
@@ -38205,9 +36839,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.infested_chiseled_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.infested_chiseled_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -38254,9 +36886,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.infested_cobblestone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.infested_cobblestone"),
             ),
             (
                 AttributeModifiers,
@@ -38303,9 +36933,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.infested_cracked_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.infested_cracked_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -38352,9 +36980,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.infested_deepslate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.infested_deepslate"),
             ),
             (
                 AttributeModifiers,
@@ -38401,9 +37027,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.infested_mossy_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.infested_mossy_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -38450,9 +37074,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.infested_stone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.infested_stone"),
             ),
             (
                 AttributeModifiers,
@@ -38499,9 +37121,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.infested_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.infested_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -38548,9 +37168,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ink_sac"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ink_sac"),
             ),
             (
                 AttributeModifiers,
@@ -38597,9 +37215,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_axe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_axe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 250 }),
@@ -38697,9 +37313,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.iron_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.iron_bars"),
             ),
             (
                 AttributeModifiers,
@@ -38746,9 +37360,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.iron_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.iron_block"),
             ),
             (
                 AttributeModifiers,
@@ -38795,9 +37407,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_boots"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_boots"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 195 }),
@@ -38884,9 +37494,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.iron_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.iron_chain"),
             ),
             (
                 AttributeModifiers,
@@ -38933,9 +37541,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_chestplate"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_chestplate"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 240 }),
@@ -39022,9 +37628,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.iron_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.iron_door"),
             ),
             (
                 AttributeModifiers,
@@ -39071,9 +37675,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_golem_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_golem_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -39121,9 +37723,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 165 }),
@@ -39210,9 +37810,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_hoe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_hoe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 250 }),
@@ -39310,9 +37908,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_horse_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_horse_armor"),
             ),
             (
                 AttributeModifiers,
@@ -39390,9 +37986,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_ingot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_ingot"),
             ),
             (
                 AttributeModifiers,
@@ -39440,9 +38034,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_leggings"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_leggings"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 225 }),
@@ -39529,9 +38121,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_nautilus_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_nautilus_armor"),
             ),
             (
                 AttributeModifiers,
@@ -39609,9 +38199,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_nugget"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_nugget"),
             ),
             (
                 AttributeModifiers,
@@ -39658,9 +38246,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.iron_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.iron_ore"),
             ),
             (
                 AttributeModifiers,
@@ -39707,9 +38293,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_pickaxe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_pickaxe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 250 }),
@@ -39807,9 +38391,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_shovel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_shovel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 250 }),
@@ -39907,9 +38489,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_spear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_spear"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 250 }),
@@ -40050,9 +38630,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.iron_sword"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.iron_sword"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 250 }),
@@ -40155,9 +38733,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.iron_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.iron_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -40204,9 +38780,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.item_frame"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.item_frame"),
             ),
             (
                 AttributeModifiers,
@@ -40253,9 +38827,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jack_o_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jack_o_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -40302,9 +38874,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jigsaw"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jigsaw"),
             ),
             (
                 AttributeModifiers,
@@ -40351,9 +38921,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jukebox"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jukebox"),
             ),
             (
                 AttributeModifiers,
@@ -40411,9 +38979,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.jungle_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.jungle_boat"),
             ),
             (
                 AttributeModifiers,
@@ -40471,9 +39037,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_button"),
             ),
             (
                 AttributeModifiers,
@@ -40531,9 +39095,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.jungle_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.jungle_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -40591,9 +39153,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_door"),
             ),
             (
                 AttributeModifiers,
@@ -40651,9 +39211,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_fence"),
             ),
             (
                 AttributeModifiers,
@@ -40711,9 +39269,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -40771,9 +39327,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -40831,9 +39385,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -40881,9 +39433,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_log"),
             ),
             (
                 AttributeModifiers,
@@ -40941,9 +39491,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_planks"),
             ),
             (
                 AttributeModifiers,
@@ -41001,9 +39549,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -41061,9 +39607,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.jungle_pyramid_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.jungle_pyramid_map"),
             ),
             (
                 AttributeModifiers,
@@ -41111,9 +39655,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -41172,9 +39714,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -41233,9 +39773,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_sign"),
             ),
             (
                 AttributeModifiers,
@@ -41293,9 +39831,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_slab"),
             ),
             (
                 AttributeModifiers,
@@ -41353,9 +39889,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -41413,9 +39947,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -41473,9 +40005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.jungle_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.jungle_wood"),
             ),
             (
                 AttributeModifiers,
@@ -41533,9 +40063,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.kelp"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.kelp"),
             ),
             (
                 AttributeModifiers,
@@ -41583,9 +40111,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.knowledge_book"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.knowledge_book"),
             ),
             (
                 AttributeModifiers,
@@ -41633,9 +40159,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.ladder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.ladder"),
             ),
             (
                 AttributeModifiers,
@@ -41693,9 +40217,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lantern"),
             ),
             (
                 AttributeModifiers,
@@ -41742,9 +40264,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lapis_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lapis_block"),
             ),
             (
                 AttributeModifiers,
@@ -41791,9 +40311,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lapis_lazuli"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lapis_lazuli"),
             ),
             (
                 AttributeModifiers,
@@ -41841,9 +40359,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lapis_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lapis_ore"),
             ),
             (
                 AttributeModifiers,
@@ -41890,9 +40406,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.large_amethyst_bud"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.large_amethyst_bud"),
             ),
             (
                 AttributeModifiers,
@@ -41939,9 +40453,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.large_fern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.large_fern"),
             ),
             (
                 AttributeModifiers,
@@ -41989,9 +40501,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lava_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lava_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -42049,9 +40559,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lead"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lead"),
             ),
             (
                 AttributeModifiers,
@@ -42098,9 +40606,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.leaf_litter"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.leaf_litter"),
             ),
             (
                 AttributeModifiers,
@@ -42159,9 +40665,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.leather"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.leather"),
             ),
             (
                 AttributeModifiers,
@@ -42208,9 +40712,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.leather_boots"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.leather_boots"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 65 }),
@@ -42297,9 +40799,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.leather_chestplate"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.leather_chestplate"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 80 }),
@@ -42386,9 +40886,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.leather_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.leather_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 55 }),
@@ -42475,9 +40973,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.leather_horse_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.leather_horse_armor"),
             ),
             (
                 AttributeModifiers,
@@ -42555,9 +41051,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.leather_leggings"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.leather_leggings"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 75 }),
@@ -42644,9 +41138,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lectern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lectern"),
             ),
             (
                 AttributeModifiers,
@@ -42704,9 +41196,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lever"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lever"),
             ),
             (
                 AttributeModifiers,
@@ -42753,9 +41243,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light"),
             ),
             (
                 AttributeModifiers,
@@ -42808,9 +41296,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_banner"),
             ),
             (
                 AttributeModifiers,
@@ -42869,9 +41355,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_bed"),
             ),
             (
                 AttributeModifiers,
@@ -42918,9 +41402,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_blue_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_blue_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -42974,9 +41456,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_candle"),
             ),
             (
                 AttributeModifiers,
@@ -43023,9 +41503,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -43102,9 +41580,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -43151,9 +41627,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -43200,9 +41674,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -43249,9 +41721,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -43298,9 +41768,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_blue_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_blue_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -43358,9 +41826,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_blue_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_blue_dye"),
             ),
             (
                 AttributeModifiers,
@@ -43413,9 +41879,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -43462,9 +41926,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_blue_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_blue_harness"),
             ),
             (
                 AttributeModifiers,
@@ -43527,9 +41989,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -43577,9 +42037,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -43626,9 +42084,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -43675,9 +42131,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -43724,9 +42178,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_wool"),
             ),
             (
                 AttributeModifiers,
@@ -43784,9 +42236,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -43844,9 +42294,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_blue_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_blue_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -43904,9 +42352,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_banner"),
             ),
             (
                 AttributeModifiers,
@@ -43965,9 +42411,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_bed"),
             ),
             (
                 AttributeModifiers,
@@ -44014,9 +42458,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_gray_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_gray_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -44070,9 +42512,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_candle"),
             ),
             (
                 AttributeModifiers,
@@ -44119,9 +42559,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -44198,9 +42636,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -44247,9 +42683,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -44296,9 +42730,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -44345,9 +42777,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -44394,9 +42824,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_gray_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_gray_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -44454,9 +42882,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_gray_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_gray_dye"),
             ),
             (
                 AttributeModifiers,
@@ -44509,9 +42935,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -44558,9 +42982,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.light_gray_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.light_gray_harness"),
             ),
             (
                 AttributeModifiers,
@@ -44623,9 +43045,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -44673,9 +43093,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -44722,9 +43140,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -44771,9 +43187,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -44820,9 +43234,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_wool"),
             ),
             (
                 AttributeModifiers,
@@ -44880,9 +43292,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -44940,9 +43350,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_gray_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_gray_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -45000,9 +43408,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.light_weighted_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.light_weighted_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -45049,9 +43455,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -45098,9 +43502,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lilac"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lilac"),
             ),
             (
                 AttributeModifiers,
@@ -45148,9 +43550,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lily_of_the_valley"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lily_of_the_valley"),
             ),
             (
                 AttributeModifiers,
@@ -45198,9 +43598,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lily_pad"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lily_pad"),
             ),
             (
                 AttributeModifiers,
@@ -45248,9 +43646,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_banner"),
             ),
             (
                 AttributeModifiers,
@@ -45309,9 +43705,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_bed"),
             ),
             (
                 AttributeModifiers,
@@ -45358,9 +43752,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lime_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lime_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -45414,9 +43806,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_candle"),
             ),
             (
                 AttributeModifiers,
@@ -45463,9 +43853,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -45542,9 +43930,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -45591,9 +43977,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -45640,9 +44024,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -45689,9 +44071,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -45738,9 +44118,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lime_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lime_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -45798,9 +44176,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lime_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lime_dye"),
             ),
             (
                 AttributeModifiers,
@@ -45853,9 +44229,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -45902,9 +44276,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lime_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lime_harness"),
             ),
             (
                 AttributeModifiers,
@@ -45967,9 +44339,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -46017,9 +44387,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -46066,9 +44434,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -46115,9 +44481,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -46164,9 +44528,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_wool"),
             ),
             (
                 AttributeModifiers,
@@ -46224,9 +44586,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -46284,9 +44644,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lime_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lime_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -46344,9 +44702,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.lingering_potion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.lingering_potion"),
             ),
             (
                 AttributeModifiers,
@@ -46406,9 +44762,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.llama_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.llama_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -46456,9 +44810,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.lodestone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.lodestone"),
             ),
             (
                 AttributeModifiers,
@@ -46505,9 +44857,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.loom"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.loom"),
             ),
             (
                 AttributeModifiers,
@@ -46565,9 +44915,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mace"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mace"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 500 }),
@@ -46654,9 +45002,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_banner"),
             ),
             (
                 AttributeModifiers,
@@ -46715,9 +45061,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_bed"),
             ),
             (
                 AttributeModifiers,
@@ -46764,9 +45108,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.magenta_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.magenta_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -46820,9 +45162,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_candle"),
             ),
             (
                 AttributeModifiers,
@@ -46869,9 +45209,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -46948,9 +45286,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -46997,9 +45333,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -47046,9 +45380,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -47095,9 +45427,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -47144,9 +45474,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.magenta_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.magenta_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -47204,9 +45532,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.magenta_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.magenta_dye"),
             ),
             (
                 AttributeModifiers,
@@ -47259,9 +45585,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -47308,9 +45632,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.magenta_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.magenta_harness"),
             ),
             (
                 AttributeModifiers,
@@ -47373,9 +45695,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -47423,9 +45743,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -47472,9 +45790,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -47521,9 +45837,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -47570,9 +45884,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_wool"),
             ),
             (
                 AttributeModifiers,
@@ -47630,9 +45942,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -47690,9 +46000,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magenta_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magenta_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -47750,9 +46058,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.magma_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.magma_block"),
             ),
             (
                 AttributeModifiers,
@@ -47799,9 +46105,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.magma_cream"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.magma_cream"),
             ),
             (
                 AttributeModifiers,
@@ -47848,9 +46152,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.magma_cube_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.magma_cube_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -47898,9 +46200,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mangrove_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mangrove_boat"),
             ),
             (
                 AttributeModifiers,
@@ -47958,9 +46258,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_button"),
             ),
             (
                 AttributeModifiers,
@@ -48018,9 +46316,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mangrove_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mangrove_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -48078,9 +46374,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_door"),
             ),
             (
                 AttributeModifiers,
@@ -48138,9 +46432,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_fence"),
             ),
             (
                 AttributeModifiers,
@@ -48198,9 +46490,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -48258,9 +46548,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -48318,9 +46606,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -48368,9 +46654,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_log"),
             ),
             (
                 AttributeModifiers,
@@ -48428,9 +46712,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_planks"),
             ),
             (
                 AttributeModifiers,
@@ -48488,9 +46770,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -48548,9 +46828,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_propagule"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_propagule"),
             ),
             (
                 AttributeModifiers,
@@ -48609,9 +46887,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_roots"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_roots"),
             ),
             (
                 AttributeModifiers,
@@ -48670,9 +46946,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -48731,9 +47005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_sign"),
             ),
             (
                 AttributeModifiers,
@@ -48791,9 +47063,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_slab"),
             ),
             (
                 AttributeModifiers,
@@ -48851,9 +47121,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -48911,9 +47179,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -48971,9 +47237,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mangrove_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mangrove_wood"),
             ),
             (
                 AttributeModifiers,
@@ -49031,9 +47295,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.map"),
             ),
             (
                 AttributeModifiers,
@@ -49080,9 +47342,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.medium_amethyst_bud"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.medium_amethyst_bud"),
             ),
             (
                 AttributeModifiers,
@@ -49129,9 +47389,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.melon"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.melon"),
             ),
             (
                 AttributeModifiers,
@@ -49179,9 +47437,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.melon_seeds"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.melon_seeds"),
             ),
             (
                 AttributeModifiers,
@@ -49229,9 +47485,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.melon_slice"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.melon_slice"),
             ),
             (
                 AttributeModifiers,
@@ -49297,9 +47551,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.milk_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.milk_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -49363,9 +47615,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.minecart"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.minecart"),
             ),
             (
                 AttributeModifiers,
@@ -49412,9 +47662,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.miner_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.miner_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -49461,9 +47709,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mojang_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mojang_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -49511,9 +47757,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mooshroom_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mooshroom_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -49561,9 +47805,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.moss_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.moss_block"),
             ),
             (
                 AttributeModifiers,
@@ -49611,9 +47853,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.moss_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.moss_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -49661,9 +47901,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_cobblestone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_cobblestone"),
             ),
             (
                 AttributeModifiers,
@@ -49710,9 +47948,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_cobblestone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_cobblestone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -49759,9 +47995,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_cobblestone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_cobblestone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -49808,9 +48042,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_cobblestone_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_cobblestone_wall"),
             ),
             (
                 AttributeModifiers,
@@ -49857,9 +48089,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_stone_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_stone_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -49906,9 +48136,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_stone_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_stone_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -49955,9 +48183,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_stone_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_stone_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -50004,9 +48230,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mossy_stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mossy_stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -50053,9 +48277,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mourner_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mourner_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -50102,9 +48324,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mud"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mud"),
             ),
             (
                 AttributeModifiers,
@@ -50151,9 +48371,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mud_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mud_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -50200,9 +48418,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mud_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mud_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -50249,9 +48465,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mud_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mud_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -50298,9 +48512,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mud_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mud_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -50347,9 +48559,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.muddy_mangrove_roots"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.muddy_mangrove_roots"),
             ),
             (
                 AttributeModifiers,
@@ -50396,9 +48606,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mule_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mule_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -50446,9 +48654,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mushroom_stem"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mushroom_stem"),
             ),
             (
                 AttributeModifiers,
@@ -50496,9 +48702,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mushroom_stew"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mushroom_stew"),
             ),
             (
                 AttributeModifiers,
@@ -50576,9 +48780,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_11"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_11"),
             ),
             (
                 AttributeModifiers,
@@ -50631,9 +48833,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_13"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_13"),
             ),
             (
                 AttributeModifiers,
@@ -50686,9 +48886,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_5"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_5"),
             ),
             (
                 AttributeModifiers,
@@ -50741,9 +48939,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_blocks"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_blocks"),
             ),
             (
                 AttributeModifiers,
@@ -50796,9 +48992,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_bounce"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_bounce"),
             ),
             (
                 AttributeModifiers,
@@ -50851,9 +49045,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_cat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_cat"),
             ),
             (
                 AttributeModifiers,
@@ -50906,9 +49098,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_chirp"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_chirp"),
             ),
             (
                 AttributeModifiers,
@@ -50961,9 +49151,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_creator"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_creator"),
             ),
             (
                 AttributeModifiers,
@@ -51016,9 +49204,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_creator_music_box"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_creator_music_box"),
             ),
             (
                 AttributeModifiers,
@@ -51071,9 +49257,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_far"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_far"),
             ),
             (
                 AttributeModifiers,
@@ -51126,9 +49310,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_lava_chicken"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_lava_chicken"),
             ),
             (
                 AttributeModifiers,
@@ -51181,9 +49363,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_mall"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_mall"),
             ),
             (
                 AttributeModifiers,
@@ -51236,9 +49416,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_mellohi"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_mellohi"),
             ),
             (
                 AttributeModifiers,
@@ -51291,9 +49469,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_otherside"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_otherside"),
             ),
             (
                 AttributeModifiers,
@@ -51346,9 +49522,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_pigstep"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_pigstep"),
             ),
             (
                 AttributeModifiers,
@@ -51401,9 +49575,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_precipice"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_precipice"),
             ),
             (
                 AttributeModifiers,
@@ -51456,9 +49628,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_relic"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_relic"),
             ),
             (
                 AttributeModifiers,
@@ -51511,9 +49681,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_stal"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_stal"),
             ),
             (
                 AttributeModifiers,
@@ -51566,9 +49734,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_strad"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_strad"),
             ),
             (
                 AttributeModifiers,
@@ -51621,9 +49787,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_tears"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_tears"),
             ),
             (
                 AttributeModifiers,
@@ -51676,9 +49840,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_wait"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_wait"),
             ),
             (
                 AttributeModifiers,
@@ -51731,9 +49893,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.music_disc_ward"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.music_disc_ward"),
             ),
             (
                 AttributeModifiers,
@@ -51780,9 +49940,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.mutton"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.mutton"),
             ),
             (
                 AttributeModifiers,
@@ -51847,9 +50005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.mycelium"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.mycelium"),
             ),
             (
                 AttributeModifiers,
@@ -51896,9 +50052,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.name_tag"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.name_tag"),
             ),
             (
                 AttributeModifiers,
@@ -51945,9 +50099,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.nautilus_shell"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.nautilus_shell"),
             ),
             (
                 AttributeModifiers,
@@ -51994,9 +50146,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.nautilus_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.nautilus_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -52044,9 +50194,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.nether_brick"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.nether_brick"),
             ),
             (
                 AttributeModifiers,
@@ -52093,9 +50241,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_brick_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_brick_fence"),
             ),
             (
                 AttributeModifiers,
@@ -52142,9 +50288,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -52191,9 +50335,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -52240,9 +50382,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -52289,9 +50429,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -52338,9 +50476,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_gold_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_gold_ore"),
             ),
             (
                 AttributeModifiers,
@@ -52387,9 +50523,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_quartz_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_quartz_ore"),
             ),
             (
                 AttributeModifiers,
@@ -52436,9 +50570,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_sprouts"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_sprouts"),
             ),
             (
                 AttributeModifiers,
@@ -52486,9 +50618,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.nether_star"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.nether_star"),
             ),
             (
                 AttributeModifiers,
@@ -52542,9 +50672,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.nether_wart"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.nether_wart"),
             ),
             (
                 AttributeModifiers,
@@ -52592,9 +50720,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.nether_wart_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.nether_wart_block"),
             ),
             (
                 AttributeModifiers,
@@ -52642,9 +50768,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_axe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_axe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 2031 }),
@@ -52748,9 +50872,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.netherite_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.netherite_block"),
             ),
             (
                 AttributeModifiers,
@@ -52803,9 +50925,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_boots"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_boots"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 481 }),
@@ -52905,9 +51025,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_chestplate"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_chestplate"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 592 }),
@@ -53007,9 +51125,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 407 }),
@@ -53109,9 +51225,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_hoe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_hoe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 2031 }),
@@ -53215,9 +51329,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_horse_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_horse_armor"),
             ),
             (
                 AttributeModifiers,
@@ -53308,9 +51420,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_ingot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_ingot"),
             ),
             (
                 AttributeModifiers,
@@ -53364,9 +51474,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_leggings"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_leggings"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 555 }),
@@ -53466,9 +51574,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_nautilus_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_nautilus_armor"),
             ),
             (
                 AttributeModifiers,
@@ -53559,9 +51665,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_pickaxe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_pickaxe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 2031 }),
@@ -53665,9 +51769,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_scrap"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_scrap"),
             ),
             (
                 AttributeModifiers,
@@ -53720,9 +51822,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_shovel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_shovel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 2031 }),
@@ -53826,9 +51926,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_spear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_spear"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 2031 }),
@@ -53975,9 +52073,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_sword"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_sword"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 2031 }),
@@ -54086,9 +52182,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.netherite_upgrade_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.netherite_upgrade_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -54135,9 +52229,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.netherrack"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.netherrack"),
             ),
             (
                 AttributeModifiers,
@@ -54184,9 +52276,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.note_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.note_block"),
             ),
             (
                 AttributeModifiers,
@@ -54244,9 +52334,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.oak_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.oak_boat"),
             ),
             (
                 AttributeModifiers,
@@ -54304,9 +52392,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_button"),
             ),
             (
                 AttributeModifiers,
@@ -54364,9 +52450,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.oak_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.oak_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -54424,9 +52508,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_door"),
             ),
             (
                 AttributeModifiers,
@@ -54484,9 +52566,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_fence"),
             ),
             (
                 AttributeModifiers,
@@ -54544,9 +52624,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -54604,9 +52682,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -54664,9 +52740,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -54714,9 +52788,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_log"),
             ),
             (
                 AttributeModifiers,
@@ -54774,9 +52846,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_planks"),
             ),
             (
                 AttributeModifiers,
@@ -54834,9 +52904,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -54894,9 +52962,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -54955,9 +53021,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -55016,9 +53080,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_sign"),
             ),
             (
                 AttributeModifiers,
@@ -55076,9 +53138,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_slab"),
             ),
             (
                 AttributeModifiers,
@@ -55136,9 +53196,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -55196,9 +53254,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -55256,9 +53312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oak_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oak_wood"),
             ),
             (
                 AttributeModifiers,
@@ -55316,9 +53370,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.observer"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.observer"),
             ),
             (
                 AttributeModifiers,
@@ -55365,9 +53417,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.obsidian"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.obsidian"),
             ),
             (
                 AttributeModifiers,
@@ -55414,9 +53464,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ocean_monument_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ocean_monument_map"),
             ),
             (
                 AttributeModifiers,
@@ -55464,9 +53512,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ocelot_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ocelot_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -55514,9 +53560,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.ochre_froglight"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.ochre_froglight"),
             ),
             (
                 AttributeModifiers,
@@ -55563,9 +53607,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ominous_bottle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ominous_bottle"),
             ),
             (
                 AttributeModifiers,
@@ -55628,9 +53670,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ominous_trial_key"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ominous_trial_key"),
             ),
             (
                 AttributeModifiers,
@@ -55677,9 +53717,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.open_eyeblossom"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.open_eyeblossom"),
             ),
             (
                 AttributeModifiers,
@@ -55727,9 +53765,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_banner"),
             ),
             (
                 AttributeModifiers,
@@ -55788,9 +53824,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_bed"),
             ),
             (
                 AttributeModifiers,
@@ -55837,9 +53871,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.orange_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.orange_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -55893,9 +53925,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_candle"),
             ),
             (
                 AttributeModifiers,
@@ -55942,9 +53972,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -56021,9 +54049,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -56070,9 +54096,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -56119,9 +54143,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -56168,9 +54190,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -56217,9 +54237,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.orange_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.orange_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -56277,9 +54295,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.orange_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.orange_dye"),
             ),
             (
                 AttributeModifiers,
@@ -56332,9 +54348,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -56381,9 +54395,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.orange_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.orange_harness"),
             ),
             (
                 AttributeModifiers,
@@ -56446,9 +54458,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_poplar_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_poplar_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -56496,9 +54506,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -56546,9 +54554,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -56595,9 +54601,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -56644,9 +54648,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -56693,9 +54695,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_tulip"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_tulip"),
             ),
             (
                 AttributeModifiers,
@@ -56743,9 +54743,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_wool"),
             ),
             (
                 AttributeModifiers,
@@ -56803,9 +54801,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -56863,9 +54859,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.orange_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.orange_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -56923,9 +54917,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxeye_daisy"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxeye_daisy"),
             ),
             (
                 AttributeModifiers,
@@ -56973,9 +54965,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -57022,9 +55012,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper"),
             ),
             (
                 AttributeModifiers,
@@ -57071,9 +55059,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -57120,9 +55106,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -57169,9 +55153,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -57218,9 +55200,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -57267,9 +55247,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -57316,9 +55294,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -57374,9 +55350,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -57423,9 +55397,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -57472,9 +55444,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -57521,9 +55491,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -57570,9 +55538,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -57619,9 +55585,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -57668,9 +55632,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.oxidized_lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.oxidized_lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -57717,9 +55679,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.packed_ice"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.packed_ice"),
             ),
             (
                 AttributeModifiers,
@@ -57766,9 +55726,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.packed_mud"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.packed_mud"),
             ),
             (
                 AttributeModifiers,
@@ -57815,9 +55773,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.painting"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.painting"),
             ),
             (
                 AttributeModifiers,
@@ -57864,9 +55820,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_hanging_moss"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_hanging_moss"),
             ),
             (
                 AttributeModifiers,
@@ -57914,9 +55868,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_moss_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_moss_block"),
             ),
             (
                 AttributeModifiers,
@@ -57964,9 +55916,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_moss_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_moss_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -58014,9 +55964,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pale_oak_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pale_oak_boat"),
             ),
             (
                 AttributeModifiers,
@@ -58074,9 +56022,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_button"),
             ),
             (
                 AttributeModifiers,
@@ -58134,9 +56080,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pale_oak_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pale_oak_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -58194,9 +56138,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_door"),
             ),
             (
                 AttributeModifiers,
@@ -58254,9 +56196,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_fence"),
             ),
             (
                 AttributeModifiers,
@@ -58314,9 +56254,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -58374,9 +56312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -58434,9 +56370,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -58484,9 +56418,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_log"),
             ),
             (
                 AttributeModifiers,
@@ -58544,9 +56476,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_planks"),
             ),
             (
                 AttributeModifiers,
@@ -58604,9 +56534,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -58664,9 +56592,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -58725,9 +56651,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -58786,9 +56710,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_sign"),
             ),
             (
                 AttributeModifiers,
@@ -58846,9 +56768,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_slab"),
             ),
             (
                 AttributeModifiers,
@@ -58906,9 +56826,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -58966,9 +56884,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -59026,9 +56942,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pale_oak_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pale_oak_wood"),
             ),
             (
                 AttributeModifiers,
@@ -59086,9 +57000,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.panda_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.panda_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59136,9 +57048,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.paper"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.paper"),
             ),
             (
                 AttributeModifiers,
@@ -59185,9 +57095,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.parched_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.parched_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59235,9 +57143,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.parrot_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.parrot_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59285,9 +57191,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pearlescent_froglight"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pearlescent_froglight"),
             ),
             (
                 AttributeModifiers,
@@ -59334,9 +57238,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.peony"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.peony"),
             ),
             (
                 AttributeModifiers,
@@ -59384,9 +57286,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.petrified_oak_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.petrified_oak_slab"),
             ),
             (
                 AttributeModifiers,
@@ -59433,9 +57333,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.phantom_membrane"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.phantom_membrane"),
             ),
             (
                 AttributeModifiers,
@@ -59482,9 +57380,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.phantom_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.phantom_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59532,9 +57428,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pig_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pig_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59582,9 +57476,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.piglin_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.piglin_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -59632,9 +57524,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.piglin_brute_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.piglin_brute_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59692,9 +57582,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.piglin_head"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.piglin_head"),
             ),
             (
                 AttributeModifiers,
@@ -59763,9 +57651,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.piglin_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.piglin_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59813,9 +57699,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pillager_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pillager_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -59863,9 +57747,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_banner"),
             ),
             (
                 AttributeModifiers,
@@ -59924,9 +57806,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_bed"),
             ),
             (
                 AttributeModifiers,
@@ -59973,9 +57853,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pink_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pink_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -60029,9 +57907,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_candle"),
             ),
             (
                 AttributeModifiers,
@@ -60078,9 +57954,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -60157,9 +58031,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -60206,9 +58078,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -60255,9 +58125,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -60304,9 +58172,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -60353,9 +58219,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pink_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pink_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -60413,9 +58277,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pink_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pink_dye"),
             ),
             (
                 AttributeModifiers,
@@ -60468,9 +58330,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -60517,9 +58377,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pink_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pink_harness"),
             ),
             (
                 AttributeModifiers,
@@ -60582,9 +58440,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_petals"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_petals"),
             ),
             (
                 AttributeModifiers,
@@ -60632,9 +58488,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -60682,9 +58536,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -60731,9 +58583,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -60780,9 +58630,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -60829,9 +58677,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_tulip"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_tulip"),
             ),
             (
                 AttributeModifiers,
@@ -60879,9 +58725,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_wool"),
             ),
             (
                 AttributeModifiers,
@@ -60939,9 +58783,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -60999,9 +58841,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pink_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pink_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -61059,9 +58899,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.piston"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.piston"),
             ),
             (
                 AttributeModifiers,
@@ -61108,9 +58946,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pitcher_plant"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pitcher_plant"),
             ),
             (
                 AttributeModifiers,
@@ -61158,9 +58994,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pitcher_pod"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pitcher_pod"),
             ),
             (
                 AttributeModifiers,
@@ -61208,9 +59042,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.plains_village_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.plains_village_map"),
             ),
             (
                 AttributeModifiers,
@@ -61258,9 +59090,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.player_head"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.player_head"),
             ),
             (
                 AttributeModifiers,
@@ -61329,9 +59159,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.plenty_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.plenty_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -61378,9 +59206,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.podzol"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.podzol"),
             ),
             (
                 AttributeModifiers,
@@ -61427,9 +59253,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pointed_dripstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pointed_dripstone"),
             ),
             (
                 AttributeModifiers,
@@ -61476,9 +59300,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.poisonous_potato"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.poisonous_potato"),
             ),
             (
                 AttributeModifiers,
@@ -61553,9 +59375,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.polar_bear_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.polar_bear_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -61603,9 +59423,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_andesite"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_andesite"),
             ),
             (
                 AttributeModifiers,
@@ -61652,9 +59470,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_andesite_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_andesite_slab"),
             ),
             (
                 AttributeModifiers,
@@ -61701,9 +59517,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_andesite_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_andesite_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -61750,9 +59564,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_basalt"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_basalt"),
             ),
             (
                 AttributeModifiers,
@@ -61799,9 +59611,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone"),
             ),
             (
                 AttributeModifiers,
@@ -61848,9 +59658,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -61897,9 +59705,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -61946,9 +59752,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -61995,9 +59799,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -62044,9 +59846,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_button"),
             ),
             (
                 AttributeModifiers,
@@ -62093,9 +59893,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -62142,9 +59940,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -62191,9 +59987,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -62240,9 +60034,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_blackstone_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_blackstone_wall"),
             ),
             (
                 AttributeModifiers,
@@ -62289,9 +60081,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_cinnabar"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_cinnabar"),
             ),
             (
                 AttributeModifiers,
@@ -62338,9 +60128,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_cinnabar_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_cinnabar_slab"),
             ),
             (
                 AttributeModifiers,
@@ -62387,9 +60175,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_cinnabar_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_cinnabar_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -62436,9 +60222,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_cinnabar_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_cinnabar_wall"),
             ),
             (
                 AttributeModifiers,
@@ -62485,9 +60269,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_deepslate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_deepslate"),
             ),
             (
                 AttributeModifiers,
@@ -62534,9 +60316,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_deepslate_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_deepslate_slab"),
             ),
             (
                 AttributeModifiers,
@@ -62583,9 +60363,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_deepslate_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_deepslate_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -62632,9 +60410,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_deepslate_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_deepslate_wall"),
             ),
             (
                 AttributeModifiers,
@@ -62681,9 +60457,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_diorite"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_diorite"),
             ),
             (
                 AttributeModifiers,
@@ -62730,9 +60504,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_diorite_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_diorite_slab"),
             ),
             (
                 AttributeModifiers,
@@ -62779,9 +60551,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_diorite_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_diorite_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -62828,9 +60598,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_granite"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_granite"),
             ),
             (
                 AttributeModifiers,
@@ -62877,9 +60645,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_granite_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_granite_slab"),
             ),
             (
                 AttributeModifiers,
@@ -62926,9 +60692,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_granite_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_granite_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -62975,9 +60739,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_sulfur"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_sulfur"),
             ),
             (
                 AttributeModifiers,
@@ -63024,9 +60786,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_sulfur_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_sulfur_slab"),
             ),
             (
                 AttributeModifiers,
@@ -63073,9 +60833,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_sulfur_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_sulfur_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -63122,9 +60880,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_sulfur_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_sulfur_wall"),
             ),
             (
                 AttributeModifiers,
@@ -63171,9 +60927,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_tuff"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_tuff"),
             ),
             (
                 AttributeModifiers,
@@ -63220,9 +60974,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_tuff_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_tuff_slab"),
             ),
             (
                 AttributeModifiers,
@@ -63269,9 +61021,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_tuff_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_tuff_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -63318,9 +61068,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.polished_tuff_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.polished_tuff_wall"),
             ),
             (
                 AttributeModifiers,
@@ -63367,9 +61115,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.poplar_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.poplar_boat"),
             ),
             (
                 AttributeModifiers,
@@ -63427,9 +61173,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_button"),
             ),
             (
                 AttributeModifiers,
@@ -63487,9 +61231,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.poplar_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.poplar_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -63547,9 +61289,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_door"),
             ),
             (
                 AttributeModifiers,
@@ -63607,9 +61347,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_fence"),
             ),
             (
                 AttributeModifiers,
@@ -63667,9 +61405,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -63727,9 +61463,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -63787,9 +61521,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_log"),
             ),
             (
                 AttributeModifiers,
@@ -63847,9 +61579,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_planks"),
             ),
             (
                 AttributeModifiers,
@@ -63907,9 +61637,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -63967,9 +61695,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -64028,9 +61754,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -64089,9 +61813,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_sign"),
             ),
             (
                 AttributeModifiers,
@@ -64149,9 +61871,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_slab"),
             ),
             (
                 AttributeModifiers,
@@ -64209,9 +61929,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -64269,9 +61987,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -64329,9 +62045,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poplar_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poplar_wood"),
             ),
             (
                 AttributeModifiers,
@@ -64389,9 +62103,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.popped_chorus_fruit"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.popped_chorus_fruit"),
             ),
             (
                 AttributeModifiers,
@@ -64438,9 +62150,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.poppy"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.poppy"),
             ),
             (
                 AttributeModifiers,
@@ -64488,9 +62198,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.porkchop"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.porkchop"),
             ),
             (
                 AttributeModifiers,
@@ -64555,9 +62263,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.potato"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.potato"),
             ),
             (
                 AttributeModifiers,
@@ -64623,9 +62329,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.potent_sulfur"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.potent_sulfur"),
             ),
             (
                 AttributeModifiers,
@@ -64672,9 +62376,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.potion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.potion"),
             ),
             (
                 AttributeModifiers,
@@ -64747,9 +62449,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.powder_snow_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.powder_snow_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -64796,9 +62496,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.powered_rail"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.powered_rail"),
             ),
             (
                 AttributeModifiers,
@@ -64845,9 +62543,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.prismarine"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.prismarine"),
             ),
             (
                 AttributeModifiers,
@@ -64894,9 +62590,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.prismarine_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.prismarine_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -64943,9 +62637,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.prismarine_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.prismarine_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -64992,9 +62684,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.prismarine_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.prismarine_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -65041,9 +62731,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.prismarine_crystals"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.prismarine_crystals"),
             ),
             (
                 AttributeModifiers,
@@ -65090,9 +62778,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.prismarine_shard"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.prismarine_shard"),
             ),
             (
                 AttributeModifiers,
@@ -65139,9 +62825,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.prismarine_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.prismarine_slab"),
             ),
             (
                 AttributeModifiers,
@@ -65188,9 +62872,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.prismarine_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.prismarine_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -65237,9 +62919,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.prismarine_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.prismarine_wall"),
             ),
             (
                 AttributeModifiers,
@@ -65286,9 +62966,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.prize_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.prize_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -65335,9 +63013,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pufferfish"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pufferfish"),
             ),
             (
                 AttributeModifiers,
@@ -65430,9 +63106,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pufferfish_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pufferfish_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -65488,9 +63162,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pufferfish_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pufferfish_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -65538,9 +63210,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.pumpkin"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.pumpkin"),
             ),
             (
                 AttributeModifiers,
@@ -65588,9 +63258,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pumpkin_pie"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pumpkin_pie"),
             ),
             (
                 AttributeModifiers,
@@ -65656,9 +63324,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.pumpkin_seeds"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.pumpkin_seeds"),
             ),
             (
                 AttributeModifiers,
@@ -65706,9 +63372,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_banner"),
             ),
             (
                 AttributeModifiers,
@@ -65767,9 +63431,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_bed"),
             ),
             (
                 AttributeModifiers,
@@ -65816,9 +63478,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.purple_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.purple_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -65872,9 +63532,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_candle"),
             ),
             (
                 AttributeModifiers,
@@ -65921,9 +63579,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -66000,9 +63656,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -66049,9 +63703,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -66098,9 +63750,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -66147,9 +63797,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -66196,9 +63844,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.purple_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.purple_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -66256,9 +63902,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.purple_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.purple_dye"),
             ),
             (
                 AttributeModifiers,
@@ -66311,9 +63955,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -66360,9 +64002,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.purple_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.purple_harness"),
             ),
             (
                 AttributeModifiers,
@@ -66425,9 +64065,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -66475,9 +64113,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -66524,9 +64160,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -66573,9 +64207,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -66622,9 +64254,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_wool"),
             ),
             (
                 AttributeModifiers,
@@ -66682,9 +64312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -66742,9 +64370,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purple_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purple_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -66802,9 +64428,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purpur_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purpur_block"),
             ),
             (
                 AttributeModifiers,
@@ -66851,9 +64475,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purpur_pillar"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purpur_pillar"),
             ),
             (
                 AttributeModifiers,
@@ -66900,9 +64522,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purpur_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purpur_slab"),
             ),
             (
                 AttributeModifiers,
@@ -66949,9 +64569,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.purpur_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.purpur_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -66998,9 +64616,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.quartz"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.quartz"),
             ),
             (
                 AttributeModifiers,
@@ -67048,9 +64664,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.quartz_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.quartz_block"),
             ),
             (
                 AttributeModifiers,
@@ -67097,9 +64711,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.quartz_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.quartz_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -67146,9 +64758,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.quartz_pillar"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.quartz_pillar"),
             ),
             (
                 AttributeModifiers,
@@ -67195,9 +64805,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.quartz_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.quartz_slab"),
             ),
             (
                 AttributeModifiers,
@@ -67244,9 +64852,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.quartz_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.quartz_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -67293,9 +64899,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.rabbit"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.rabbit"),
             ),
             (
                 AttributeModifiers,
@@ -67360,9 +64964,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.rabbit_foot"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.rabbit_foot"),
             ),
             (
                 AttributeModifiers,
@@ -67409,9 +65011,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.rabbit_hide"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.rabbit_hide"),
             ),
             (
                 AttributeModifiers,
@@ -67458,9 +65058,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.rabbit_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.rabbit_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -67508,9 +65106,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.rabbit_stew"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.rabbit_stew"),
             ),
             (
                 AttributeModifiers,
@@ -67582,9 +65178,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.rail"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.rail"),
             ),
             (
                 AttributeModifiers,
@@ -67631,9 +65225,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.raiser_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.raiser_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -67680,9 +65272,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ravager_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ravager_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -67730,9 +65320,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.raw_copper"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.raw_copper"),
             ),
             (
                 AttributeModifiers,
@@ -67779,9 +65367,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.raw_copper_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.raw_copper_block"),
             ),
             (
                 AttributeModifiers,
@@ -67828,9 +65414,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.raw_gold"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.raw_gold"),
             ),
             (
                 AttributeModifiers,
@@ -67877,9 +65461,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.raw_gold_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.raw_gold_block"),
             ),
             (
                 AttributeModifiers,
@@ -67926,9 +65508,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.raw_iron"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.raw_iron"),
             ),
             (
                 AttributeModifiers,
@@ -67975,9 +65555,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.raw_iron_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.raw_iron_block"),
             ),
             (
                 AttributeModifiers,
@@ -68024,9 +65602,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.recovery_compass"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.recovery_compass"),
             ),
             (
                 AttributeModifiers,
@@ -68073,9 +65649,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_banner"),
             ),
             (
                 AttributeModifiers,
@@ -68134,9 +65708,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_bed"),
             ),
             (
                 AttributeModifiers,
@@ -68183,9 +65755,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.red_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.red_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -68239,9 +65809,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_candle"),
             ),
             (
                 AttributeModifiers,
@@ -68288,9 +65856,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -68367,9 +65933,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -68416,9 +65980,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -68465,9 +66027,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -68514,9 +66074,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -68563,9 +66121,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.red_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.red_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -68623,9 +66179,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.red_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.red_dye"),
             ),
             (
                 AttributeModifiers,
@@ -68678,9 +66232,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -68727,9 +66279,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.red_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.red_harness"),
             ),
             (
                 AttributeModifiers,
@@ -68792,9 +66342,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_mushroom"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_mushroom"),
             ),
             (
                 AttributeModifiers,
@@ -68842,9 +66390,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_mushroom_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_mushroom_block"),
             ),
             (
                 AttributeModifiers,
@@ -68892,9 +66438,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_nether_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_nether_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -68941,9 +66485,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_nether_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_nether_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -68990,9 +66532,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_nether_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_nether_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -69039,9 +66579,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_nether_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_nether_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -69088,9 +66626,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_poplar_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_poplar_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -69138,9 +66674,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_sand"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_sand"),
             ),
             (
                 AttributeModifiers,
@@ -69187,9 +66721,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -69236,9 +66768,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_sandstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_sandstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -69285,9 +66815,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_sandstone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_sandstone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -69334,9 +66862,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_sandstone_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_sandstone_wall"),
             ),
             (
                 AttributeModifiers,
@@ -69383,9 +66909,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_shrub"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_shrub"),
             ),
             (
                 AttributeModifiers,
@@ -69433,9 +66957,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -69483,9 +67005,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -69532,9 +67052,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -69581,9 +67099,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -69630,9 +67146,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_tulip"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_tulip"),
             ),
             (
                 AttributeModifiers,
@@ -69680,9 +67194,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_wool"),
             ),
             (
                 AttributeModifiers,
@@ -69740,9 +67252,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -69800,9 +67310,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.red_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.red_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -69860,9 +67368,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.redstone"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.redstone"),
             ),
             (
                 AttributeModifiers,
@@ -69910,9 +67416,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.redstone_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.redstone_block"),
             ),
             (
                 AttributeModifiers,
@@ -69959,9 +67463,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.redstone_lamp"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.redstone_lamp"),
             ),
             (
                 AttributeModifiers,
@@ -70008,9 +67510,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.redstone_ore"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.redstone_ore"),
             ),
             (
                 AttributeModifiers,
@@ -70057,9 +67557,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.redstone_torch"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.redstone_torch"),
             ),
             (
                 AttributeModifiers,
@@ -70106,9 +67604,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.reinforced_deepslate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.reinforced_deepslate"),
             ),
             (
                 AttributeModifiers,
@@ -70155,9 +67651,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.repeater"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.repeater"),
             ),
             (
                 AttributeModifiers,
@@ -70204,9 +67698,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.repeating_command_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.repeating_command_block"),
             ),
             (
                 AttributeModifiers,
@@ -70253,9 +67745,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.resin_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.resin_block"),
             ),
             (
                 AttributeModifiers,
@@ -70302,9 +67792,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.resin_brick"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.resin_brick"),
             ),
             (
                 AttributeModifiers,
@@ -70352,9 +67840,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.resin_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.resin_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -70401,9 +67887,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.resin_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.resin_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -70450,9 +67934,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.resin_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.resin_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -70499,9 +67981,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.resin_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.resin_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -70548,9 +68028,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.resin_clump"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.resin_clump"),
             ),
             (
                 AttributeModifiers,
@@ -70597,9 +68075,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.respawn_anchor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.respawn_anchor"),
             ),
             (
                 AttributeModifiers,
@@ -70646,9 +68122,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.rib_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.rib_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -70695,9 +68169,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.rooted_dirt"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.rooted_dirt"),
             ),
             (
                 AttributeModifiers,
@@ -70744,9 +68216,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.rose_bush"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.rose_bush"),
             ),
             (
                 AttributeModifiers,
@@ -70794,9 +68264,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.rotten_flesh"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.rotten_flesh"),
             ),
             (
                 AttributeModifiers,
@@ -70871,9 +68339,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.saddle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.saddle"),
             ),
             (
                 AttributeModifiers,
@@ -70936,9 +68402,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.salmon"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.salmon"),
             ),
             (
                 AttributeModifiers,
@@ -71003,9 +68467,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.salmon_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.salmon_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -71061,9 +68523,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.salmon_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.salmon_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -71111,9 +68571,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sand"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sand"),
             ),
             (
                 AttributeModifiers,
@@ -71160,9 +68618,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -71209,9 +68665,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sandstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sandstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -71258,9 +68712,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sandstone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sandstone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -71307,9 +68759,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sandstone_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sandstone_wall"),
             ),
             (
                 AttributeModifiers,
@@ -71356,9 +68806,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.savanna_village_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.savanna_village_map"),
             ),
             (
                 AttributeModifiers,
@@ -71406,9 +68854,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.scaffolding"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.scaffolding"),
             ),
             (
                 AttributeModifiers,
@@ -71466,9 +68912,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.scrape_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.scrape_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -71515,9 +68959,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sculk"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sculk"),
             ),
             (
                 AttributeModifiers,
@@ -71564,9 +69006,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sculk_catalyst"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sculk_catalyst"),
             ),
             (
                 AttributeModifiers,
@@ -71613,9 +69053,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sculk_sensor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sculk_sensor"),
             ),
             (
                 AttributeModifiers,
@@ -71662,9 +69100,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sculk_shrieker"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sculk_shrieker"),
             ),
             (
                 AttributeModifiers,
@@ -71711,9 +69147,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sculk_vein"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sculk_vein"),
             ),
             (
                 AttributeModifiers,
@@ -71760,9 +69194,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sea_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sea_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -71809,9 +69241,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sea_pickle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sea_pickle"),
             ),
             (
                 AttributeModifiers,
@@ -71859,9 +69289,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.seagrass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.seagrass"),
             ),
             (
                 AttributeModifiers,
@@ -71909,9 +69337,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sentry_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sentry_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -71958,9 +69384,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.shaper_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.shaper_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -72007,9 +69431,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sheaf_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sheaf_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -72056,9 +69478,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.shears"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.shears"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 238 }),
@@ -72137,9 +69557,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sheep_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sheep_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -72187,9 +69605,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.shelf_mushroom"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.shelf_mushroom"),
             ),
             (
                 AttributeModifiers,
@@ -72237,9 +69653,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.shelter_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.shelter_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -72286,9 +69700,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.shield"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.shield"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 336 }),
@@ -72381,9 +69793,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.short_dry_grass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.short_dry_grass"),
             ),
             (
                 AttributeModifiers,
@@ -72442,9 +69852,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.short_grass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.short_grass"),
             ),
             (
                 AttributeModifiers,
@@ -72492,9 +69900,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.shroomlight"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.shroomlight"),
             ),
             (
                 AttributeModifiers,
@@ -72542,9 +69948,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -72592,9 +69996,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.shulker_shell"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.shulker_shell"),
             ),
             (
                 AttributeModifiers,
@@ -72641,9 +70043,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.shulker_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.shulker_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -72691,9 +70091,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.silence_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.silence_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -72740,9 +70138,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.silverfish_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.silverfish_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -72790,9 +70186,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.skeleton_horse_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.skeleton_horse_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -72849,9 +70243,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.skeleton_skull"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.skeleton_skull"),
             ),
             (
                 AttributeModifiers,
@@ -72920,9 +70312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.skeleton_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.skeleton_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -72970,9 +70360,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.skull_banner_pattern"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.skull_banner_pattern"),
             ),
             (
                 AttributeModifiers,
@@ -73020,9 +70408,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.skull_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.skull_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -73069,9 +70455,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.slime_ball"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.slime_ball"),
             ),
             (
                 AttributeModifiers,
@@ -73118,9 +70502,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.slime_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.slime_block"),
             ),
             (
                 AttributeModifiers,
@@ -73167,9 +70549,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.slime_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.slime_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -73217,9 +70597,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.small_amethyst_bud"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.small_amethyst_bud"),
             ),
             (
                 AttributeModifiers,
@@ -73266,9 +70644,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.small_dripleaf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.small_dripleaf"),
             ),
             (
                 AttributeModifiers,
@@ -73316,9 +70692,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smithing_table"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smithing_table"),
             ),
             (
                 AttributeModifiers,
@@ -73376,9 +70750,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smoker"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smoker"),
             ),
             (
                 AttributeModifiers,
@@ -73426,9 +70798,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_basalt"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_basalt"),
             ),
             (
                 AttributeModifiers,
@@ -73475,9 +70845,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_quartz"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_quartz"),
             ),
             (
                 AttributeModifiers,
@@ -73524,9 +70892,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_quartz_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_quartz_slab"),
             ),
             (
                 AttributeModifiers,
@@ -73573,9 +70939,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_quartz_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_quartz_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -73622,9 +70986,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_red_sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_red_sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -73671,9 +71033,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_red_sandstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_red_sandstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -73720,9 +71080,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_red_sandstone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_red_sandstone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -73769,9 +71127,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_sandstone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_sandstone"),
             ),
             (
                 AttributeModifiers,
@@ -73818,9 +71174,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_sandstone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_sandstone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -73867,9 +71221,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_sandstone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_sandstone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -73916,9 +71268,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_stone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_stone"),
             ),
             (
                 AttributeModifiers,
@@ -73965,9 +71315,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.smooth_stone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.smooth_stone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -74014,9 +71362,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sniffer_egg"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sniffer_egg"),
             ),
             (
                 AttributeModifiers,
@@ -74063,9 +71409,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sniffer_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sniffer_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -74113,9 +71457,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.snort_pottery_sherd"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.snort_pottery_sherd"),
             ),
             (
                 AttributeModifiers,
@@ -74162,9 +71504,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.snout_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.snout_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -74211,9 +71551,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.snow"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.snow"),
             ),
             (
                 AttributeModifiers,
@@ -74260,9 +71598,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.snow_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.snow_block"),
             ),
             (
                 AttributeModifiers,
@@ -74309,9 +71645,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.snow_golem_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.snow_golem_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -74359,9 +71693,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.snowball"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.snowball"),
             ),
             (
                 AttributeModifiers,
@@ -74408,9 +71740,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.snowy_village_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.snowy_village_map"),
             ),
             (
                 AttributeModifiers,
@@ -74458,9 +71788,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.soul_campfire"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.soul_campfire"),
             ),
             (
                 AttributeModifiers,
@@ -74508,9 +71836,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.soul_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.soul_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -74557,9 +71883,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.soul_sand"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.soul_sand"),
             ),
             (
                 AttributeModifiers,
@@ -74606,9 +71930,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.soul_soil"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.soul_soil"),
             ),
             (
                 AttributeModifiers,
@@ -74655,9 +71977,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.soul_torch"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.soul_torch"),
             ),
             (
                 AttributeModifiers,
@@ -74704,9 +72024,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spawner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spawner"),
             ),
             (
                 AttributeModifiers,
@@ -74753,9 +72071,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.spectral_arrow"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.spectral_arrow"),
             ),
             (
                 AttributeModifiers,
@@ -74802,9 +72118,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.spider_eye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.spider_eye"),
             ),
             (
                 AttributeModifiers,
@@ -74879,9 +72193,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.spider_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.spider_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -74929,9 +72241,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.spire_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.spire_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -74978,9 +72288,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.splash_potion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.splash_potion"),
             ),
             (
                 AttributeModifiers,
@@ -75036,9 +72344,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sponge"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sponge"),
             ),
             (
                 AttributeModifiers,
@@ -75085,9 +72391,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spore_blossom"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spore_blossom"),
             ),
             (
                 AttributeModifiers,
@@ -75135,9 +72439,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.spruce_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.spruce_boat"),
             ),
             (
                 AttributeModifiers,
@@ -75195,9 +72497,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_button"),
             ),
             (
                 AttributeModifiers,
@@ -75255,9 +72555,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.spruce_chest_boat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.spruce_chest_boat"),
             ),
             (
                 AttributeModifiers,
@@ -75315,9 +72613,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_door"),
             ),
             (
                 AttributeModifiers,
@@ -75375,9 +72671,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_fence"),
             ),
             (
                 AttributeModifiers,
@@ -75435,9 +72729,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -75495,9 +72787,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -75555,9 +72845,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -75605,9 +72893,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_log"),
             ),
             (
                 AttributeModifiers,
@@ -75665,9 +72951,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_planks"),
             ),
             (
                 AttributeModifiers,
@@ -75725,9 +73009,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -75785,9 +73067,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_sapling"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_sapling"),
             ),
             (
                 AttributeModifiers,
@@ -75846,9 +73126,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -75907,9 +73185,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_sign"),
             ),
             (
                 AttributeModifiers,
@@ -75967,9 +73243,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_slab"),
             ),
             (
                 AttributeModifiers,
@@ -76027,9 +73301,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -76087,9 +73359,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -76147,9 +73417,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.spruce_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.spruce_wood"),
             ),
             (
                 AttributeModifiers,
@@ -76207,9 +73475,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.spyglass"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.spyglass"),
             ),
             (
                 AttributeModifiers,
@@ -76256,9 +73522,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.squid_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.squid_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -76306,9 +73570,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stick"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stick"),
             ),
             (
                 AttributeModifiers,
@@ -76366,9 +73628,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sticky_piston"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sticky_piston"),
             ),
             (
                 AttributeModifiers,
@@ -76415,9 +73675,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone"),
             ),
             (
                 AttributeModifiers,
@@ -76464,9 +73722,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stone_axe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stone_axe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 131 }),
@@ -76564,9 +73820,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -76613,9 +73867,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -76662,9 +73914,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -76711,9 +73961,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -76760,9 +74008,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_button"),
             ),
             (
                 AttributeModifiers,
@@ -76809,9 +74055,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stone_hoe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stone_hoe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 131 }),
@@ -76909,9 +74153,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stone_pickaxe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stone_pickaxe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 131 }),
@@ -77009,9 +74251,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -77058,9 +74298,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stone_shovel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stone_shovel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 131 }),
@@ -77158,9 +74396,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_slab"),
             ),
             (
                 AttributeModifiers,
@@ -77207,9 +74443,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stone_spear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stone_spear"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 131 }),
@@ -77350,9 +74584,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stone_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stone_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -77399,9 +74631,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stone_sword"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stone_sword"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 131 }),
@@ -77504,9 +74734,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stonecutter"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stonecutter"),
             ),
             (
                 AttributeModifiers,
@@ -77553,9 +74781,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.straw_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.straw_bed"),
             ),
             (
                 AttributeModifiers,
@@ -77603,9 +74829,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.stray_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.stray_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -77653,9 +74877,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.strider_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.strider_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -77703,9 +74925,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.string"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.string"),
             ),
             (
                 AttributeModifiers,
@@ -77752,9 +74972,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_acacia_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_acacia_log"),
             ),
             (
                 AttributeModifiers,
@@ -77812,9 +75030,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_acacia_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_acacia_wood"),
             ),
             (
                 AttributeModifiers,
@@ -77872,9 +75088,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_bamboo_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_bamboo_block"),
             ),
             (
                 AttributeModifiers,
@@ -77932,9 +75146,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_birch_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_birch_log"),
             ),
             (
                 AttributeModifiers,
@@ -77992,9 +75204,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_birch_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_birch_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78052,9 +75262,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_cherry_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_cherry_log"),
             ),
             (
                 AttributeModifiers,
@@ -78112,9 +75320,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_cherry_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_cherry_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78172,9 +75378,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_crimson_hyphae"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_crimson_hyphae"),
             ),
             (
                 AttributeModifiers,
@@ -78221,9 +75425,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_crimson_stem"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_crimson_stem"),
             ),
             (
                 AttributeModifiers,
@@ -78270,9 +75472,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_dark_oak_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_dark_oak_log"),
             ),
             (
                 AttributeModifiers,
@@ -78330,9 +75530,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_dark_oak_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_dark_oak_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78390,9 +75588,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_jungle_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_jungle_log"),
             ),
             (
                 AttributeModifiers,
@@ -78450,9 +75646,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_jungle_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_jungle_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78510,9 +75704,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_mangrove_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_mangrove_log"),
             ),
             (
                 AttributeModifiers,
@@ -78570,9 +75762,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_mangrove_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_mangrove_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78630,9 +75820,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_oak_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_oak_log"),
             ),
             (
                 AttributeModifiers,
@@ -78690,9 +75878,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_oak_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_oak_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78750,9 +75936,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_pale_oak_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_pale_oak_log"),
             ),
             (
                 AttributeModifiers,
@@ -78810,9 +75994,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_pale_oak_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_pale_oak_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78870,9 +76052,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_poplar_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_poplar_log"),
             ),
             (
                 AttributeModifiers,
@@ -78930,9 +76110,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_poplar_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_poplar_wood"),
             ),
             (
                 AttributeModifiers,
@@ -78990,9 +76168,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_spruce_log"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_spruce_log"),
             ),
             (
                 AttributeModifiers,
@@ -79050,9 +76226,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_spruce_wood"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_spruce_wood"),
             ),
             (
                 AttributeModifiers,
@@ -79110,9 +76284,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_warped_hyphae"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_warped_hyphae"),
             ),
             (
                 AttributeModifiers,
@@ -79159,9 +76331,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.stripped_warped_stem"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.stripped_warped_stem"),
             ),
             (
                 AttributeModifiers,
@@ -79208,9 +76378,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.structure_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.structure_block"),
             ),
             (
                 AttributeModifiers,
@@ -79257,9 +76425,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.structure_void"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.structure_void"),
             ),
             (
                 AttributeModifiers,
@@ -79306,9 +76472,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sugar"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sugar"),
             ),
             (
                 AttributeModifiers,
@@ -79355,9 +76519,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sugar_cane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sugar_cane"),
             ),
             (
                 AttributeModifiers,
@@ -79405,9 +76567,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur"),
             ),
             (
                 AttributeModifiers,
@@ -79454,9 +76614,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -79503,9 +76661,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -79552,9 +76708,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -79601,9 +76755,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -79650,9 +76802,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sulfur_cube_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sulfur_cube_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -79700,9 +76850,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sulfur_cube_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sulfur_cube_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -79750,9 +76898,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_slab"),
             ),
             (
                 AttributeModifiers,
@@ -79799,9 +76945,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_spike"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_spike"),
             ),
             (
                 AttributeModifiers,
@@ -79848,9 +76992,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -79897,9 +77039,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sulfur_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sulfur_wall"),
             ),
             (
                 AttributeModifiers,
@@ -79946,9 +77086,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.sunflower"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.sunflower"),
             ),
             (
                 AttributeModifiers,
@@ -79996,9 +77134,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.suspicious_gravel"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.suspicious_gravel"),
             ),
             (
                 AttributeModifiers,
@@ -80045,9 +77181,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.suspicious_sand"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.suspicious_sand"),
             ),
             (
                 AttributeModifiers,
@@ -80094,9 +77228,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.suspicious_stew"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.suspicious_stew"),
             ),
             (
                 AttributeModifiers,
@@ -80169,9 +77301,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.swamp_hut_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.swamp_hut_map"),
             ),
             (
                 AttributeModifiers,
@@ -80219,9 +77349,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.sweet_berries"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.sweet_berries"),
             ),
             (
                 AttributeModifiers,
@@ -80287,9 +77415,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tadpole_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tadpole_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -80337,9 +77463,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tadpole_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tadpole_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -80387,9 +77511,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.taiga_village_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.taiga_village_map"),
             ),
             (
                 AttributeModifiers,
@@ -80437,9 +77559,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tall_dry_grass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tall_dry_grass"),
             ),
             (
                 AttributeModifiers,
@@ -80498,9 +77618,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tall_grass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tall_grass"),
             ),
             (
                 AttributeModifiers,
@@ -80548,9 +77666,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.target"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.target"),
             ),
             (
                 AttributeModifiers,
@@ -80597,9 +77713,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -80646,9 +77760,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.test_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.test_block"),
             ),
             (
                 AttributeModifiers,
@@ -80701,9 +77813,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.test_instance_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.test_instance_block"),
             ),
             (
                 AttributeModifiers,
@@ -80750,9 +77860,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tide_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tide_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -80799,9 +77907,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tinted_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tinted_glass"),
             ),
             (
                 AttributeModifiers,
@@ -80848,9 +77954,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tipped_arrow"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tipped_arrow"),
             ),
             (
                 AttributeModifiers,
@@ -80910,9 +78014,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tnt"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tnt"),
             ),
             (
                 AttributeModifiers,
@@ -80959,9 +78061,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tnt_minecart"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tnt_minecart"),
             ),
             (
                 AttributeModifiers,
@@ -81008,9 +78108,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.torch"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.torch"),
             ),
             (
                 AttributeModifiers,
@@ -81057,9 +78155,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.torchflower"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.torchflower"),
             ),
             (
                 AttributeModifiers,
@@ -81107,9 +78203,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.torchflower_seeds"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.torchflower_seeds"),
             ),
             (
                 AttributeModifiers,
@@ -81157,9 +78251,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.totem_of_undying"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.totem_of_undying"),
             ),
             (
                 AttributeModifiers,
@@ -81252,9 +78344,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.trader_llama_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.trader_llama_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -81302,9 +78392,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.trapped_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.trapped_chest"),
             ),
             (
                 AttributeModifiers,
@@ -81363,9 +78451,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.trial_key"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.trial_key"),
             ),
             (
                 AttributeModifiers,
@@ -81412,9 +78498,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.trial_spawner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.trial_spawner"),
             ),
             (
                 AttributeModifiers,
@@ -81461,9 +78545,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.trident"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.trident"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 250 }),
@@ -81544,9 +78626,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tripwire_hook"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tripwire_hook"),
             ),
             (
                 AttributeModifiers,
@@ -81593,9 +78673,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tropical_fish"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tropical_fish"),
             ),
             (
                 AttributeModifiers,
@@ -81660,9 +78738,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tropical_fish_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tropical_fish_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -81718,9 +78794,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.tropical_fish_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.tropical_fish_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -81768,9 +78842,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tube_coral"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tube_coral"),
             ),
             (
                 AttributeModifiers,
@@ -81817,9 +78889,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tube_coral_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tube_coral_block"),
             ),
             (
                 AttributeModifiers,
@@ -81866,9 +78936,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tube_coral_fan"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tube_coral_fan"),
             ),
             (
                 AttributeModifiers,
@@ -81915,9 +78983,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff"),
             ),
             (
                 AttributeModifiers,
@@ -81964,9 +79030,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff_brick_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff_brick_slab"),
             ),
             (
                 AttributeModifiers,
@@ -82013,9 +79077,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff_brick_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff_brick_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -82062,9 +79124,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff_brick_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff_brick_wall"),
             ),
             (
                 AttributeModifiers,
@@ -82111,9 +79171,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff_bricks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff_bricks"),
             ),
             (
                 AttributeModifiers,
@@ -82160,9 +79218,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff_slab"),
             ),
             (
                 AttributeModifiers,
@@ -82209,9 +79265,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -82258,9 +79312,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.tuff_wall"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.tuff_wall"),
             ),
             (
                 AttributeModifiers,
@@ -82307,9 +79359,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.turtle_egg"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.turtle_egg"),
             ),
             (
                 AttributeModifiers,
@@ -82356,9 +79406,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.turtle_helmet"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.turtle_helmet"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 275 }),
@@ -82445,9 +79493,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.turtle_scute"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.turtle_scute"),
             ),
             (
                 AttributeModifiers,
@@ -82494,9 +79540,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.turtle_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.turtle_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -82544,9 +79588,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.twisting_vines"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.twisting_vines"),
             ),
             (
                 AttributeModifiers,
@@ -82594,9 +79636,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.vault"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.vault"),
             ),
             (
                 AttributeModifiers,
@@ -82643,9 +79683,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.verdant_froglight"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.verdant_froglight"),
             ),
             (
                 AttributeModifiers,
@@ -82692,9 +79730,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.vex_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.vex_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -82741,9 +79777,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.vex_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.vex_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -82791,9 +79825,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.villager_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.villager_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -82841,9 +79873,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.vindicator_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.vindicator_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -82891,9 +79921,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.vine"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.vine"),
             ),
             (
                 AttributeModifiers,
@@ -82941,9 +79969,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wandering_trader_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wandering_trader_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -82991,9 +80017,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.ward_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.ward_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -83040,9 +80064,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.warden_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.warden_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -83090,9 +80112,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.warm_ocean_ruins_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.warm_ocean_ruins_map"),
             ),
             (
                 AttributeModifiers,
@@ -83140,9 +80160,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_button"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_button"),
             ),
             (
                 AttributeModifiers,
@@ -83189,9 +80207,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_door"),
             ),
             (
                 AttributeModifiers,
@@ -83238,9 +80254,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_fence"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_fence"),
             ),
             (
                 AttributeModifiers,
@@ -83287,9 +80301,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_fence_gate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_fence_gate"),
             ),
             (
                 AttributeModifiers,
@@ -83336,9 +80348,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_fungus"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_fungus"),
             ),
             (
                 AttributeModifiers,
@@ -83386,9 +80396,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.warped_fungus_on_a_stick"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.warped_fungus_on_a_stick"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 100 }),
@@ -83437,9 +80445,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_hanging_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_hanging_sign"),
             ),
             (
                 AttributeModifiers,
@@ -83486,9 +80492,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_hyphae"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_hyphae"),
             ),
             (
                 AttributeModifiers,
@@ -83535,9 +80539,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_nylium"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_nylium"),
             ),
             (
                 AttributeModifiers,
@@ -83584,9 +80586,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_planks"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_planks"),
             ),
             (
                 AttributeModifiers,
@@ -83633,9 +80633,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_pressure_plate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_pressure_plate"),
             ),
             (
                 AttributeModifiers,
@@ -83682,9 +80680,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_roots"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_roots"),
             ),
             (
                 AttributeModifiers,
@@ -83732,9 +80728,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_shelf"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_shelf"),
             ),
             (
                 AttributeModifiers,
@@ -83782,9 +80776,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_sign"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_sign"),
             ),
             (
                 AttributeModifiers,
@@ -83831,9 +80823,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_slab"),
             ),
             (
                 AttributeModifiers,
@@ -83880,9 +80870,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -83929,9 +80917,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_stem"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_stem"),
             ),
             (
                 AttributeModifiers,
@@ -83978,9 +80964,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -84027,9 +81011,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.warped_wart_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.warped_wart_block"),
             ),
             (
                 AttributeModifiers,
@@ -84077,9 +81059,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.water_bucket"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.water_bucket"),
             ),
             (
                 AttributeModifiers,
@@ -84126,9 +81106,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -84175,9 +81153,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -84224,9 +81200,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_block"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_block"),
             ),
             (
                 AttributeModifiers,
@@ -84273,9 +81247,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -84322,9 +81294,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -84371,9 +81341,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -84420,9 +81388,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -84469,9 +81435,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -84527,9 +81491,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -84576,9 +81538,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -84625,9 +81585,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -84674,9 +81632,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -84723,9 +81679,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -84772,9 +81726,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -84821,9 +81773,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -84870,9 +81820,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper"),
             ),
             (
                 AttributeModifiers,
@@ -84919,9 +81867,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -84968,9 +81914,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -85017,9 +81961,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -85066,9 +82008,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -85115,9 +82055,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -85164,9 +82102,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -85222,9 +82158,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -85271,9 +82205,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -85320,9 +82252,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -85369,9 +82299,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -85418,9 +82346,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -85467,9 +82393,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -85516,9 +82440,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_exposed_lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_exposed_lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -85565,9 +82487,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -85614,9 +82534,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -85663,9 +82581,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper"),
             ),
             (
                 AttributeModifiers,
@@ -85712,9 +82628,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -85761,9 +82675,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -85810,9 +82722,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -85859,9 +82769,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -85908,9 +82816,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -85957,9 +82863,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -86015,9 +82919,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -86064,9 +82966,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -86113,9 +83013,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -86162,9 +83060,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -86211,9 +83107,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -86260,9 +83154,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -86309,9 +83201,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_oxidized_lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_oxidized_lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -86358,9 +83248,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -86407,9 +83295,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper"),
             ),
             (
                 AttributeModifiers,
@@ -86456,9 +83342,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -86505,9 +83389,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -86554,9 +83436,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -86603,9 +83483,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -86652,9 +83530,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -86701,9 +83577,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -86759,9 +83633,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -86808,9 +83680,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -86857,9 +83727,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -86906,9 +83774,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -86955,9 +83821,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -87004,9 +83868,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -87053,9 +83915,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.waxed_weathered_lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.waxed_weathered_lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -87102,9 +83962,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wayfinder_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wayfinder_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -87151,9 +84009,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_chiseled_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_chiseled_copper"),
             ),
             (
                 AttributeModifiers,
@@ -87200,9 +84056,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper"),
             ),
             (
                 AttributeModifiers,
@@ -87249,9 +84103,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_bars"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_bars"),
             ),
             (
                 AttributeModifiers,
@@ -87298,9 +84150,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_bulb"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_bulb"),
             ),
             (
                 AttributeModifiers,
@@ -87347,9 +84197,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_chain"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_chain"),
             ),
             (
                 AttributeModifiers,
@@ -87396,9 +84244,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_chest"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_chest"),
             ),
             (
                 AttributeModifiers,
@@ -87445,9 +84291,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_door"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_door"),
             ),
             (
                 AttributeModifiers,
@@ -87494,9 +84338,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_golem_statue"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_golem_statue"),
             ),
             (
                 AttributeModifiers,
@@ -87552,9 +84394,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_grate"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_grate"),
             ),
             (
                 AttributeModifiers,
@@ -87601,9 +84441,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_lantern"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_lantern"),
             ),
             (
                 AttributeModifiers,
@@ -87650,9 +84488,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_copper_trapdoor"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_copper_trapdoor"),
             ),
             (
                 AttributeModifiers,
@@ -87699,9 +84535,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_cut_copper"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_cut_copper"),
             ),
             (
                 AttributeModifiers,
@@ -87748,9 +84582,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_cut_copper_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_cut_copper_slab"),
             ),
             (
                 AttributeModifiers,
@@ -87797,9 +84629,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_cut_copper_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_cut_copper_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -87846,9 +84676,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weathered_lightning_rod"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weathered_lightning_rod"),
             ),
             (
                 AttributeModifiers,
@@ -87895,9 +84723,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.weeping_vines"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.weeping_vines"),
             ),
             (
                 AttributeModifiers,
@@ -87945,9 +84771,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.wet_sponge"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.wet_sponge"),
             ),
             (
                 AttributeModifiers,
@@ -87994,9 +84818,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wheat"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wheat"),
             ),
             (
                 AttributeModifiers,
@@ -88044,9 +84866,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wheat_seeds"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wheat_seeds"),
             ),
             (
                 AttributeModifiers,
@@ -88094,9 +84914,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_banner"),
             ),
             (
                 AttributeModifiers,
@@ -88155,9 +84973,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_bed"),
             ),
             (
                 AttributeModifiers,
@@ -88204,9 +85020,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.white_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.white_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -88260,9 +85074,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_candle"),
             ),
             (
                 AttributeModifiers,
@@ -88309,9 +85121,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -88388,9 +85198,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -88437,9 +85245,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -88486,9 +85292,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -88535,9 +85339,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -88584,9 +85386,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.white_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.white_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -88644,9 +85444,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.white_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.white_dye"),
             ),
             (
                 AttributeModifiers,
@@ -88699,9 +85497,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -88748,9 +85544,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.white_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.white_harness"),
             ),
             (
                 AttributeModifiers,
@@ -88813,9 +85607,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -88863,9 +85655,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -88912,9 +85702,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -88961,9 +85749,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -89010,9 +85796,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_tulip"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_tulip"),
             ),
             (
                 AttributeModifiers,
@@ -89060,9 +85844,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_wool"),
             ),
             (
                 AttributeModifiers,
@@ -89120,9 +85902,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -89180,9 +85960,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.white_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.white_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -89240,9 +86018,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wild_armor_trim_smithing_template"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wild_armor_trim_smithing_template"),
             ),
             (
                 AttributeModifiers,
@@ -89289,9 +86065,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.wildflowers"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.wildflowers"),
             ),
             (
                 AttributeModifiers,
@@ -89346,9 +86120,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wind_charge"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wind_charge"),
             ),
             (
                 AttributeModifiers,
@@ -89395,9 +86167,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.witch_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.witch_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -89445,9 +86215,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.wither_rose"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.wither_rose"),
             ),
             (
                 AttributeModifiers,
@@ -89495,9 +86263,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.wither_skeleton_skull"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.wither_skeleton_skull"),
             ),
             (
                 AttributeModifiers,
@@ -89566,9 +86332,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wither_skeleton_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wither_skeleton_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -89616,9 +86380,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wither_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wither_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -89666,9 +86428,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wolf_armor"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wolf_armor"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 64 }),
@@ -89756,9 +86516,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wolf_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wolf_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -89806,9 +86564,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wooden_axe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wooden_axe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 59 }),
@@ -89917,9 +86673,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wooden_hoe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wooden_hoe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 59 }),
@@ -90028,9 +86782,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wooden_pickaxe"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wooden_pickaxe"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 59 }),
@@ -90139,9 +86891,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wooden_shovel"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wooden_shovel"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 59 }),
@@ -90250,9 +87000,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wooden_spear"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wooden_spear"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 59 }),
@@ -90404,9 +87152,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.wooden_sword"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.wooden_sword"),
             ),
             (Damage, &DamageImpl { damage: 0 }),
             (MaxDamage, &MaxDamageImpl { max_damage: 59 }),
@@ -90520,9 +87266,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.woodland_mansion_map"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.woodland_mansion_map"),
             ),
             (
                 AttributeModifiers,
@@ -90570,9 +87314,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.writable_book"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.writable_book"),
             ),
             (
                 AttributeModifiers,
@@ -90623,9 +87365,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.written_book"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.written_book"),
             ),
             (
                 AttributeModifiers,
@@ -90673,9 +87413,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_banner"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_banner"),
             ),
             (
                 AttributeModifiers,
@@ -90734,9 +87472,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_bed"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_bed"),
             ),
             (
                 AttributeModifiers,
@@ -90783,9 +87519,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.yellow_bundle"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.yellow_bundle"),
             ),
             (
                 AttributeModifiers,
@@ -90839,9 +87573,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_candle"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_candle"),
             ),
             (
                 AttributeModifiers,
@@ -90888,9 +87620,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_carpet"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_carpet"),
             ),
             (
                 AttributeModifiers,
@@ -90967,9 +87697,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_concrete"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_concrete"),
             ),
             (
                 AttributeModifiers,
@@ -91016,9 +87744,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_concrete_powder"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_concrete_powder"),
             ),
             (
                 AttributeModifiers,
@@ -91065,9 +87791,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_concrete_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_concrete_slab"),
             ),
             (
                 AttributeModifiers,
@@ -91114,9 +87838,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_concrete_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_concrete_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -91163,9 +87885,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 16 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.yellow_cushion"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.yellow_cushion"),
             ),
             (
                 AttributeModifiers,
@@ -91223,9 +87943,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.yellow_dye"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.yellow_dye"),
             ),
             (
                 AttributeModifiers,
@@ -91278,9 +87996,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_glazed_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_glazed_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -91327,9 +88043,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.yellow_harness"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.yellow_harness"),
             ),
             (
                 AttributeModifiers,
@@ -91392,9 +88106,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_poplar_leaves"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_poplar_leaves"),
             ),
             (
                 AttributeModifiers,
@@ -91442,9 +88154,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 1 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_shulker_box"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_shulker_box"),
             ),
             (
                 AttributeModifiers,
@@ -91492,9 +88202,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_stained_glass"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_stained_glass"),
             ),
             (
                 AttributeModifiers,
@@ -91541,9 +88249,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_stained_glass_pane"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_stained_glass_pane"),
             ),
             (
                 AttributeModifiers,
@@ -91590,9 +88296,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_terracotta"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_terracotta"),
             ),
             (
                 AttributeModifiers,
@@ -91639,9 +88343,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_wool"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_wool"),
             ),
             (
                 AttributeModifiers,
@@ -91699,9 +88401,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_wool_slab"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_wool_slab"),
             ),
             (
                 AttributeModifiers,
@@ -91759,9 +88459,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.yellow_wool_stairs"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.yellow_wool_stairs"),
             ),
             (
                 AttributeModifiers,
@@ -91819,9 +88517,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.zoglin_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.zoglin_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -91878,9 +88574,7 @@ impl Item {
             ),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("block.minecraft.zombie_head"),
-                },
+                &ItemNameImpl::translation_key("block.minecraft.zombie_head"),
             ),
             (
                 AttributeModifiers,
@@ -91949,9 +88643,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.zombie_horse_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.zombie_horse_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -91999,9 +88691,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.zombie_nautilus_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.zombie_nautilus_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -92049,9 +88739,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.zombie_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.zombie_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -92099,9 +88787,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.zombie_villager_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.zombie_villager_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -92149,9 +88835,7 @@ impl Item {
             (MaxStackSize, &MaxStackSizeImpl { size: 64 }),
             (
                 ItemName,
-                &ItemNameImpl {
-                    name: Cow::Borrowed("item.minecraft.zombified_piglin_spawn_egg"),
-                },
+                &ItemNameImpl::translation_key("item.minecraft.zombified_piglin_spawn_egg"),
             ),
             (
                 AttributeModifiers,
@@ -92202,13 +88886,13 @@ impl Item {
                 if id == &ItemName {
                     data.as_any()
                         .downcast_ref::<ItemNameImpl>()
-                        .map(|name| name.name.as_ref())
+                        .map(|name| name.name.to_component())
                 } else {
                     None
                 }
             })
-            .unwrap_or(self.registry_key);
-        TextComponent::translate(name, &[])
+            .unwrap_or_else(|| TextComponent::translate(self.registry_key, &[]));
+        name
     }
     #[doc = "Try to parse an item from a resource location string."]
     #[must_use]

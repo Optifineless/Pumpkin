@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use crate::{
-    entity::EntityBase, net::java::combat_test_support::TestPlayer, server::combat_test_support,
-    world::raid::Raid,
+    entity::EntityBase, net::bedrock::combat_test_support::TestBedrockPlayer,
+    net::java::combat_test_support::TestPlayer, server::combat_test_support, world::raid::Raid,
 };
 use pumpkin_data::{
     data_component::DataComponent,
     data_component_impl::{
-        BannerPatternLayer, BannerPatternsImpl, CustomNameImpl, EquipmentSlot, ItemNameImpl,
-        Rarity, RarityImpl, TooltipDisplayImpl,
+        BannerPatternLayer, BannerPatternsImpl, CustomNameImpl, DataComponentImpl, EquipmentSlot,
+        ItemNameImpl, Rarity, RarityImpl, TooltipDisplayImpl,
     },
     dye_color::DyeColor,
     item::Item,
@@ -16,7 +16,17 @@ use pumpkin_data::{
     packet::{CURRENT_MC_VERSION, clientbound::play::SET_EQUIPMENT},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::{ServerPacket, java::client::play::CSetEquipment, ser::NetworkReadExt};
+use pumpkin_nbt::tag::NbtTag;
+use pumpkin_protocol::{
+    ServerPacket,
+    bedrock::{
+        client::CMobArmorEquipment,
+        network_item::{NetworkItemDescriptor, NetworkItemStackDescriptor},
+    },
+    codec::var_ulong::VarULong,
+    java::client::play::CSetEquipment,
+    ser::NetworkReadExt,
+};
 use pumpkin_util::{math::position::BlockPos, version::JavaMinecraftVersion};
 
 fn expected_layers() -> Vec<BannerPatternLayer> {
@@ -33,6 +43,7 @@ fn expected_layers() -> Vec<BannerPatternLayer> {
     .into_iter()
     .map(|(pattern, color)| BannerPatternLayer {
         pattern: pattern.to_owned(),
+        translation_key: None,
         color,
     })
     .collect()
@@ -47,14 +58,7 @@ fn assert_ominous_banner(stack: &ItemStack) {
             .layers,
         expected_layers()
     );
-    assert_eq!(
-        stack
-            .get_data_component::<ItemNameImpl>()
-            .unwrap()
-            .name
-            .as_ref(),
-        "block.minecraft.ominous_banner"
-    );
+    assert_ominous_item_name(stack);
     let tooltip = stack.get_data_component::<TooltipDisplayImpl>().unwrap();
     assert!(!tooltip.hide_tooltip);
     assert_eq!(
@@ -69,6 +73,35 @@ fn assert_ominous_banner(stack: &ItemStack) {
         stack.get_data_component::<RarityImpl>().unwrap().rarity,
         Rarity::Uncommon
     );
+}
+
+fn assert_ominous_item_name(stack: &ItemStack) {
+    let actual = stack
+        .get_data_component::<ItemNameImpl>()
+        .unwrap()
+        .write_data();
+    let expected = ItemNameImpl::translated("block.minecraft.ominous_banner").write_data();
+    assert_eq!(
+        pumpkin_util::text::component_codec::canonical_component(&actual),
+        pumpkin_util::text::component_codec::canonical_component(&expected)
+    );
+}
+
+fn assert_ominous_banner_wire(stack: &ItemStack) {
+    assert_eq!(stack.item.id, Item::WHITE_BANNER.id);
+    let layers = &stack
+        .get_data_component::<BannerPatternsImpl>()
+        .unwrap()
+        .layers;
+    assert_eq!(
+        layers
+            .iter()
+            .filter(|layer| layer.pattern != "murgicraft:unknown_pattern")
+            .cloned()
+            .collect::<Vec<_>>(),
+        expected_layers()
+    );
+    assert_ominous_item_name(stack);
 }
 
 fn observer_equipment_packets(observer: &mut TestPlayer) -> Vec<CSetEquipment> {
@@ -113,6 +146,7 @@ fn assert_legacy_captain_banner_loads_unchanged() {
 fn assert_unknown_saved_pattern_is_preserved() {
     let unknown_pattern = BannerPatternLayer {
         pattern: "murgicraft:unknown_pattern".to_owned(),
+        translation_key: None,
         color: DyeColor::Red,
     };
     let mut custom_stack = ItemStack::new(1, &Item::WHITE_BANNER);
@@ -132,6 +166,10 @@ fn assert_unknown_saved_pattern_is_preserved() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep save/load and both observer edition tracker paths in one regression"
+)]
 async fn ominous_banner_raid_captain_components_survive_save_and_later_java_observation() {
     assert_eq!(CURRENT_MC_VERSION, JavaMinecraftVersion::V_26_3);
     let directory = tempfile::tempdir().unwrap();
@@ -176,6 +214,42 @@ async fn ominous_banner_raid_captain_components_survive_save_and_later_java_obse
     assert_legacy_captain_banner_loads_unchanged();
     assert_unknown_saved_pattern_is_preserved();
 
+    // Keep an unknown datapack pattern in the equipped stack. Its Java wire layer
+    // is filtered independently, so pairing still publishes the chest slot too.
+    let unknown_layer = BannerPatternLayer {
+        pattern: "murgicraft:unknown_pattern".to_owned(),
+        translation_key: None,
+        color: DyeColor::Red,
+    };
+    let mut equipped_head = stack.clone();
+    let mut equipped_patterns = equipped_head
+        .get_data_component::<BannerPatternsImpl>()
+        .unwrap()
+        .clone();
+    equipped_patterns.layers.push(unknown_layer.clone());
+    equipped_head.set_data_component(equipped_patterns);
+    living
+        .entity_equipment
+        .lock()
+        .unwrap()
+        .equipment
+        .insert(EquipmentSlot::HEAD, equipped_head.clone());
+    living.entity_equipment.lock().unwrap().equipment.insert(
+        EquipmentSlot::CHEST,
+        ItemStack::new(1, &Item::IRON_CHESTPLATE),
+    );
+    let mut unknown_saved = NbtCompound::new();
+    equipped_head.write_item_stack(&mut unknown_saved);
+    assert_eq!(
+        ItemStack::read_item_stack(&unknown_saved)
+            .unwrap()
+            .get_data_component::<BannerPatternsImpl>()
+            .unwrap()
+            .layers
+            .last(),
+        Some(&unknown_layer)
+    );
+
     // Create a later observer after the captain exists to exercise tracker pairing publication.
     let mut observer = TestPlayer::new(&world);
     observer
@@ -196,14 +270,103 @@ async fn ominous_banner_raid_captain_components_survive_save_and_later_java_obse
     tracked.seen_by.insert(observer.player.gameprofile.id);
     tracked.add_pairing(&observer.player);
 
-    let head = observer_equipment_packets(&mut observer)
+    let equipment_packet = observer_equipment_packets(&mut observer)
         .into_iter()
         .filter(|packet| packet.entity_id.0 == captain.get_entity().entity_id)
-        .flat_map(|packet| packet.equipment)
+        .find(|packet| {
+            packet
+                .equipment
+                .iter()
+                .any(|(slot, _)| *slot == EquipmentSlot::HEAD.discriminant())
+                && packet
+                    .equipment
+                    .iter()
+                    .any(|(slot, _)| *slot == EquipmentSlot::CHEST.discriminant())
+        })
+        .expect("pairing omitted head or unrelated chest equipment");
+    let head = equipment_packet
+        .equipment
+        .into_iter()
         .find(|(slot, _)| *slot == EquipmentSlot::HEAD.discriminant())
         .map(|(_, stack)| stack.0.into_owned())
         .expect("later observer received no captain head equipment");
-    assert_ominous_banner(&head);
+    assert_ominous_banner_wire(&head);
+
+    // Bedrock equipment updates use NetworkItemStackDescriptor's User Data NBT.
+    // Exercise the same living-equipment publication path used by armor changes.
+    let mut bedrock_observer = TestBedrockPlayer::new(&world).await;
+    bedrock_observer
+        .player
+        .get_entity()
+        .set_pos(pumpkin_util::math::vector3::Vector3::new(8.5, 64.0, 8.5));
+    bedrock_observer
+        .player
+        .watched_section
+        .store(observer.player.watched_section.load());
+    bedrock_observer
+        .player
+        .chunk_sender
+        .lock()
+        .unwrap()
+        .mark_sent_out_of_band(pumpkin_util::math::vector2::Vector2::new(0, 0));
+    let tracked = world
+        .entity_tracker
+        .get_tracked_entity(captain.get_entity().entity_id)
+        .unwrap();
+    tracked.update_player(&bedrock_observer.player, &world);
+    assert!(
+        tracked
+            .seen_by
+            .contains(&bedrock_observer.player.gameprofile.id)
+    );
+    living.send_equipment_changes(&[(EquipmentSlot::HEAD, equipped_head)]);
+
+    let bedrock_head = living
+        .entity_equipment
+        .lock()
+        .unwrap()
+        .get(&EquipmentSlot::HEAD);
+    let bedrock_chest = living
+        .entity_equipment
+        .lock()
+        .unwrap()
+        .get(&EquipmentSlot::CHEST);
+    let descriptor = NetworkItemStackDescriptor::from(&bedrock_head);
+    assert!(
+        descriptor
+            .extra_data
+            .windows(8)
+            .any(|bytes| bytes == b"Patterns")
+    );
+    assert!(descriptor.extra_data.windows(2).any(|bytes| bytes == b"mr"));
+    let descriptor_nbt = NetworkItemDescriptor::from(&bedrock_head).nbt_data;
+    assert_eq!(descriptor_nbt.root_tag.get_int("Type"), Some(0));
+    let Some(NbtTag::List(bedrock_layers)) = descriptor_nbt.root_tag.get("Patterns") else {
+        panic!("Bedrock captain banner omitted Patterns NBT");
+    };
+    assert_eq!(bedrock_layers.len(), 8);
+
+    let armor_packet = CMobArmorEquipment {
+        target_runtime_id: VarULong(captain.get_entity().entity_id as u64),
+        head: descriptor,
+        torso: NetworkItemStackDescriptor::from(&bedrock_chest),
+        legs: NetworkItemStackDescriptor::default(),
+        feet: NetworkItemStackDescriptor::default(),
+        body: NetworkItemStackDescriptor::default(),
+    };
+    let expected_packet = bedrock_observer
+        .client()
+        .serialize_packet(&armor_packet)
+        .unwrap();
+    let received_packets = bedrock_observer.take_packets();
+    assert!(
+        received_packets.iter().any(|packet| {
+            packet.starts_with(&expected_packet[..4])
+                && packet.windows(8).any(|bytes| bytes == b"Patterns")
+                && packet.windows(2).any(|bytes| bytes == b"mr")
+        }),
+        "Bedrock observer did not receive banner patterns in armor equipment: {received_packets:?}"
+    );
 
     world.level.shutdown().await.unwrap();
 }

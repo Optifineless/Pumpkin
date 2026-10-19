@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crossbeam::atomic::AtomicCell;
@@ -27,41 +26,47 @@ pub fn create_ominous_banner() -> ItemStack {
         layers: vec![
             BannerPatternLayer {
                 pattern: "minecraft:rhombus".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::Cyan,
             },
             BannerPatternLayer {
                 pattern: "minecraft:stripe_bottom".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::LightGray,
             },
             BannerPatternLayer {
                 pattern: "minecraft:stripe_center".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::Gray,
             },
             BannerPatternLayer {
                 pattern: "minecraft:border".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::LightGray,
             },
             BannerPatternLayer {
                 pattern: "minecraft:stripe_middle".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::Black,
             },
             BannerPatternLayer {
                 pattern: "minecraft:half_horizontal".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::LightGray,
             },
             BannerPatternLayer {
                 pattern: "minecraft:circle".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::LightGray,
             },
             BannerPatternLayer {
                 pattern: "minecraft:border".to_owned(),
+                translation_key: None,
                 color: pumpkin_data::dye_color::DyeColor::Black,
             },
         ],
     });
-    stack.set_data_component(ItemNameImpl {
-        name: Cow::Borrowed("block.minecraft.ominous_banner"),
-    });
+    stack.set_data_component(ItemNameImpl::translated("block.minecraft.ominous_banner"));
     stack.set_data_component(TooltipDisplayImpl {
         hide_tooltip: false,
         hidden_components: vec![DataComponent::BannerPatterns],

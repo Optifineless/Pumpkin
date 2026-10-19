@@ -224,19 +224,9 @@ fn decode_item_name(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl>,
     let tag = cursor
         .get_nbt_with_version(&JavaMinecraftVersion::V_26_3)?
         .ok_or_else(|| ReadingError::Message("Missing ItemName NBT".into()))?;
-    let name = match tag {
-        NbtTag::String(name) => name.to_string(),
-        NbtTag::Compound(compound) => compound
-            .get_string("translate")
-            .or_else(|| compound.get_string("text"))
-            .unwrap_or_default()
-            .to_owned(),
-        _ => String::new(),
-    };
-    Ok(ItemNameImpl {
-        name: Cow::Owned(name),
-    }
-    .to_dyn())
+    ItemNameImpl::read_data(&tag)
+        .map(DataComponentImpl::to_dyn)
+        .ok_or_else(|| ReadingError::Message("Invalid ItemName NBT".into()))
 }
 
 fn decode_custom_data(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl>, ReadingError> {

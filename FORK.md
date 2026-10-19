@@ -69,8 +69,11 @@ Ender Dragon contact ignores Creative and Spectator players and sends Survival d
 
 Pillager patrol and raid captains now carry the vanilla 26.3 ominous banner
 components. Java equipment packets resolve banner pattern holders through the
-synced registry; unsupported saved pattern identifiers remain saved and fail
-safely on Java encoding. Older plain captain banners load unchanged. Fixes #165.
+synced registry; unsupported saved pattern identifiers remain in storage and
+only their layers are skipped on the Java wire, with one warning. Direct pattern
+holders retain their asset and translation keys. Older plain captain banners load
+unchanged. Bedrock equipment carries the supported banner layers in item NBT.
+Fixes #165.
 Implemented by Codex (GPT-6 Luna). In-game verification: **Not yet**.
 
 ## Door and trapdoor placement (#22, #23)
@@ -605,6 +608,8 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 | Overlapping metadata flushes and refreshes enqueue older changes before newer changes, and an unwound sender retains queued refreshes for an ordinary tracker retry (PR #148 review). | Not yet |
 
 ## Native plugin API 8
+
+- API 8 (same version): `ItemNameImpl.name` now stores either a const translation key or the complete decoded text component, and `BannerPatternLayer` retains direct-holder translation keys. Rebuild native plugins against this checkout; Wasm WIT is unchanged.
 
 - API 8 (same version): #141 adds `PlayerInventory::replace_stack_if_unchanged` for identity-checked hand writeback. Rebuild native plugins against this checkout; saved data and Wasm WIT are unchanged. In-game verification **Not yet**.
 

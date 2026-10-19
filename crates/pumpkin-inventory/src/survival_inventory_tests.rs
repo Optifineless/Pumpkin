@@ -295,6 +295,7 @@ fn banner_cloning_copies_patterns_and_returns_original() {
     banner.set_data_component(BannerPatternsImpl {
         layers: vec![BannerPatternLayer {
             pattern: "minecraft:stripe_bottom".into(),
+            translation_key: None,
             color: DyeColor::Blue,
         }],
     });

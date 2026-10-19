@@ -155,10 +155,12 @@ async fn hand_use_banner_washes_one_pattern_from_one_banner() {
         layers: vec![
             BannerPatternLayer {
                 pattern: "minecraft:stripe_top".into(),
+                translation_key: None,
                 color: DyeColor::Red,
             },
             BannerPatternLayer {
                 pattern: "minecraft:stripe_bottom".into(),
+                translation_key: None,
                 color: DyeColor::Blue,
             },
         ],
