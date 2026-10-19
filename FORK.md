@@ -2,6 +2,23 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Hanging support lifecycle and painting attacker (#44, #47)
+
+Paintings and ordinary item frames check support, block collision and hanging
+coexistence every 101 world ticks, matching vanilla 26.3
+`BlockAttachedEntity.tick`, `HangingEntity.survives` and `ItemFrame.survives`.
+The full painting area is checked; Fixed frames remain immune. Missing neighboring
+terrain postpones validation until it is loaded. Break callbacks run before the
+existing first-removal claim; only its winner drops the decoration and frame
+contents. Painting damage uses the actual causing entity, so Creative attacks
+suppress the painting item while Survival and support loss retain their drops.
+
+API 8 (same version): painting and frame layouts gain a runtime check counter,
+and frame items use shared snapshots so component callbacks run after unlocking.
+Survival queries are additive. Native plugins must rebuild; existing source
+signatures, saved tags and Wasm WIT stay compatible. The check counter is not
+saved, as in vanilla. Implemented by Codex. In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

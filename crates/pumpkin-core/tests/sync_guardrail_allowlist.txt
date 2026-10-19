@@ -863,3 +863,9 @@ crates/pumpkin-wasm-host-common/src/equipment_tests.rs::wasm_non_player_main_han
 # wraps non-reentrant std locks; replacing this mutex directly would self-deadlock.
 # Owners contain no stack storage, acquire in Arc identity order, and release before effects.
 crates/pumpkin-inventory/src/inventory/slot_transaction.rs::default::parking_lot::ReentrantMutex::new#1
+
+# Test-only event recording and bounded channel gate; guards never enclose server callbacks.
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_java_attack_hanging_events_keep_payload_order_and_cancellation::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#2
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#3
