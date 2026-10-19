@@ -2,20 +2,54 @@ use pumpkin_inventory::screen_handler::ScreenMutex;
 use std::sync::Arc;
 
 use pumpkin_data::translation;
-use pumpkin_inventory::Inventory;
 use pumpkin_inventory::beacon_screen_handler::create_beacon_handler;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
+use pumpkin_inventory::window_property::PropertyDelegate;
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::text::TextComponent;
 
+use crate::block::entities::{BlockEntity, beacon::BeaconBlockEntity};
 use crate::block::registry::BlockActionResult;
 use crate::block::{BlockBehaviour, GetScreenHandlerFactoryArgs, NormalUseArgs};
 
-// Create the factory just like ChestScreenFactory
-struct BeaconScreenFactory(Arc<dyn Inventory>);
+struct BeaconScreenFactory {
+    world: std::sync::Weak<crate::world::World>,
+    entity: Arc<dyn BlockEntity>,
+}
+
+// Container.DEFAULT_DISTANCE_BUFFER.
+const DEFAULT_DISTANCE_BUFFER: f64 = 4.0;
+
+struct BeaconPropertyDelegate(Arc<dyn BlockEntity>);
+
+impl PropertyDelegate for BeaconPropertyDelegate {
+    fn get_property(&self, index: i32) -> i32 {
+        if index >= 0 && index < BeaconBlockEntity::NUM_DATA_VALUES as i32 {
+            self.0
+                .as_any()
+                .downcast_ref::<BeaconBlockEntity>()
+                .map_or(0, |beacon| beacon.get_data(index as usize))
+        } else {
+            0
+        }
+    }
+
+    fn set_property(&self, index: i32, value: i32) {
+        if index >= 0
+            && index < BeaconBlockEntity::NUM_DATA_VALUES as i32
+            && let Some(beacon) = self.0.as_any().downcast_ref::<BeaconBlockEntity>()
+        {
+            beacon.set_data(index as usize, value);
+        }
+    }
+
+    fn get_properties_size(&self) -> i32 {
+        BeaconBlockEntity::NUM_DATA_VALUES as i32
+    }
+}
 
 impl ScreenHandlerFactory for BeaconScreenFactory {
     fn create_screen_handler(
@@ -24,7 +58,31 @@ impl ScreenHandlerFactory for BeaconScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let concrete_handler = create_beacon_handler(sync_id, player_inventory, self.0.clone());
+        let beacon_data: Arc<dyn PropertyDelegate> =
+            Arc::new(BeaconPropertyDelegate(self.entity.clone()));
+        let mut concrete_handler = create_beacon_handler(sync_id, player_inventory, beacon_data);
+        concrete_handler.block_entity = Some(self.entity.clone());
+        let world = self.world.clone();
+        let entity = self.entity.clone();
+        // BeaconMenu.stillValid: a broken or replaced beacon closes the menu, so the payment
+        // is returned instead of being spent on a detached block entity.
+        concrete_handler.validity_check = Some(Box::new(move |player| {
+            let Some(player) = player
+                .as_any()
+                .downcast_ref::<crate::entity::player::Player>()
+            else {
+                return false;
+            };
+            let Some(world) = world.upgrade() else {
+                return false;
+            };
+            Arc::ptr_eq(&world, &player.world())
+                && world
+                    .get_block_entity(&entity.get_position())
+                    .is_some_and(|live| Arc::ptr_eq(&live, &entity))
+                && player
+                    .can_interact_with_block_at(&entity.get_position(), DEFAULT_DISTANCE_BUFFER)
+        }));
         let concrete_arc = Arc::new(ScreenMutex::new(concrete_handler));
 
         Some(concrete_arc as SharedScreenHandler)
@@ -70,7 +128,10 @@ impl BlockBehaviour for BeaconBlock {
         args: GetScreenHandlerFactoryArgs<'_>,
     ) -> Option<Box<dyn ScreenHandlerFactory>> {
         let block_entity = args.world.get_block_entity(args.position)?;
-        let inventory = block_entity.get_inventory()?;
-        Some(Box::new(BeaconScreenFactory(inventory)))
+        block_entity.as_any().downcast_ref::<BeaconBlockEntity>()?;
+        Some(Box::new(BeaconScreenFactory {
+            world: Arc::downgrade(args.world),
+            entity: block_entity,
+        }))
     }
 }
