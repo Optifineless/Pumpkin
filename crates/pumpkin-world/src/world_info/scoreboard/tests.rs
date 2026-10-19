@@ -1,7 +1,7 @@
 use std::{fs, io::Write};
 
 use flate2::{Compression, write::GzEncoder};
-use pumpkin_nbt::tag::NbtTag;
+use pumpkin_nbt::{Nbt, tag::NbtTag};
 
 use super::*;
 
@@ -30,6 +30,72 @@ fn scoreboard_saved_data_round_trip_preserves_raw_payload() {
     let root = read_scoreboard(folder.path()).unwrap().unwrap();
     assert_eq!(root.get_int("DataVersion"), Some(5023));
     assert_eq!(root.get_compound("data"), Some(&payload));
+}
+
+#[test]
+fn scoreboard_counts_each_container_once_up_to_vanilla_limit() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = ensure_minecraft_data_dir(folder.path())
+        .unwrap()
+        .join("scoreboard.dat");
+    for lists in [false, true] {
+        for containers in [512, 513] {
+            // Keep the decoder fixture independent of the writer at the depth boundary.
+            let mut id = pumpkin_nbt::STRING_ID;
+            let mut nested = vec![0, 4, b'l', b'e', b'a', b'f'];
+            // The saved-data root and data compounds account for two containers.
+            for _ in 2..containers {
+                let mut outer = if lists {
+                    vec![id, 0, 0, 0, 1]
+                } else {
+                    vec![id, 0, 0]
+                };
+                outer.extend(nested);
+                if !lists {
+                    outer.push(pumpkin_nbt::END_ID);
+                }
+                nested = outer;
+                id = if lists {
+                    pumpkin_nbt::LIST_ID
+                } else {
+                    pumpkin_nbt::COMPOUND_ID
+                };
+            }
+            let mut bytes = vec![10, 0, 0, 10, 0, 4, b'd', b'a', b't', b'a', id, 0, 6];
+            bytes.extend_from_slice(b"nested");
+            bytes.extend(nested);
+            bytes.extend_from_slice(&[0, 0]);
+            let mut encoded = GzEncoder::new(Vec::new(), Compression::default());
+            encoded.write_all(&bytes).unwrap();
+            fs::write(&path, encoded.finish().unwrap()).unwrap();
+            let result = read_scoreboard(folder.path());
+            if containers == 512 {
+                let root = result.unwrap().unwrap();
+                let mut value = root.get_compound("data").unwrap().get("nested").unwrap();
+                for _ in 2..containers {
+                    value = if lists {
+                        &value.extract_list().unwrap()[0]
+                    } else {
+                        value.extract_compound().unwrap().get("").unwrap()
+                    };
+                }
+                assert_eq!(value.extract_string(), Some("leaf"));
+                // Newly accepted documents must survive the real atomic writer too.
+                write_scoreboard(
+                    folder.path(),
+                    root.get_compound("data").unwrap().clone(),
+                    5023,
+                )
+                .unwrap();
+                assert!(read_scoreboard(folder.path()).unwrap().is_some());
+            } else {
+                assert!(
+                    result.is_err(),
+                    "Accepted {containers} containers, lists={lists}"
+                );
+            }
+        }
+    }
 }
 
 #[test]

@@ -141,3 +141,97 @@ async fn scoreboard_regression_equal_display_name_commands_replace_imported_even
     server.shutdown().await;
     world.level.world_portal.store(Arc::new(None));
 }
+
+fn native_fixture() -> NbtCompound {
+    let mut root = fixture();
+    let NbtTag::Compound(data) = root.child_tags.get_mut("data").unwrap() else {
+        panic!("Missing fixture data")
+    };
+    data.put_list(
+        "Objectives",
+        ["saved", "unsaved", "untouched"]
+            .map(|name| {
+                let mut objective = NbtCompound::new();
+                objective.put_string("Name", name.into());
+                objective.put("DisplayName", imported_text());
+                let mut format = NbtCompound::new();
+                format.put_string("type", "minecraft:fixed".into());
+                format.put("value", imported_text());
+                objective.put_compound("format", format);
+                NbtTag::Compound(objective)
+            })
+            .into(),
+    );
+    root
+}
+
+fn native_replace(board: &mut crate::world::scoreboard::Scoreboard, name: &str, text: &str) {
+    use pumpkin_protocol::NumberFormat;
+    use pumpkin_util::text::TextComponent;
+
+    let team = board.get_team_mut(name).unwrap();
+    team.display_name = TextComponent::text(text.to_owned());
+    team.player_prefix = TextComponent::text(text.to_owned());
+    team.player_suffix = TextComponent::text(text.to_owned());
+    let objective = board.get_objective_mut(name).unwrap();
+    objective.display_name = TextComponent::text(text.to_owned());
+    objective.number_format = Some(NumberFormat::Fixed(TextComponent::text(text.to_owned())));
+}
+
+fn assert_native_replacements(data: &NbtCompound) {
+    for section in ["Teams", "Objectives"] {
+        for record in data.get_list(section).unwrap() {
+            let record = record.extract_compound().unwrap();
+            let name = record.get_string("Name").unwrap();
+            if name == "equal" {
+                continue;
+            }
+            let expected = if name == "untouched" {
+                imported_text()
+            } else {
+                NbtTag::String("A".into())
+            };
+            let fields: &[&str] = if section == "Teams" {
+                &["DisplayName", "MemberNamePrefix", "MemberNameSuffix"]
+            } else {
+                &["DisplayName"]
+            };
+            for field in fields {
+                assert_eq!(
+                    record.get(field),
+                    Some(&expected),
+                    "{section}/{name}/{field}"
+                );
+            }
+            if section == "Objectives" {
+                assert_eq!(
+                    record.get_compound("format").unwrap().get("value"),
+                    Some(&expected),
+                    "{name}/format"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scoreboard_regression_native_borrows_discard_replaced_components() {
+    if !isolated_child("scoreboard_regression_native_borrows_discard_replaced_components") {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    write_fixture(directory.path(), native_fixture());
+    let (server, _) = startup(directory.path()).await;
+    let world = server.worlds.load()[0].clone();
+    native_replace(&mut server.scoreboard.lock().unwrap(), "saved", "B");
+    save(&server).await;
+    native_replace(&mut server.scoreboard.lock().unwrap(), "saved", "A");
+    native_replace(&mut server.scoreboard.lock().unwrap(), "unsaved", "B");
+    native_replace(&mut server.scoreboard.lock().unwrap(), "unsaved", "A");
+    save(&server).await;
+    assert_native_replacements(payload(&read_scoreboard(directory.path())));
+    server.shutdown().await;
+    world.level.world_portal.store(Arc::new(None));
+    let (board, _) = super::super::scoreboard_storage::load_scoreboard(directory.path());
+    assert_native_replacements(&board.lock().unwrap().to_save_data());
+}

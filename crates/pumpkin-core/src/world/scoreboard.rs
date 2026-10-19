@@ -8,6 +8,9 @@ mod save_data_tests;
 mod save_data_values;
 mod tracking;
 
+#[cfg(test)]
+pub(crate) use tracking::BEDROCK_TITLES_RENDERED;
+
 pub(crate) use save_data_values::DISPLAY_SLOTS;
 
 use rustc_hash::FxHashMap;
@@ -167,6 +170,10 @@ impl Scoreboard {
     pub fn get_objective_mut(&mut self, name: &str) -> Option<&mut ScoreboardObjective> {
         if self.objectives.contains_key(name) {
             self.mark_dirty();
+            if let Some(saved) = self.persistence.objectives.get_mut(name) {
+                saved.discard("DisplayName");
+                saved.discard("format");
+            }
         }
         self.objectives.get_mut(name)
     }
@@ -229,6 +236,11 @@ impl Scoreboard {
     pub fn get_team_mut(&mut self, name: &str) -> Option<&mut Team> {
         if self.teams.contains_key(name) {
             self.mark_dirty();
+            if let Some(saved) = self.persistence.teams.get_mut(name) {
+                for field in ["DisplayName", "MemberNamePrefix", "MemberNameSuffix"] {
+                    saved.discard(field);
+                }
+            }
         }
         self.teams.get_mut(name)
     }

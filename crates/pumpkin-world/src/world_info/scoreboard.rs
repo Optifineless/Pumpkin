@@ -6,7 +6,7 @@ use std::{
 
 use flate2::read::GzDecoder;
 use pumpkin_nbt::{
-    Nbt, NbtCompound,
+    NbtCompound,
     deserializer::{NbtReadHelper, NbtReadHelperJava, NbtStreamReader},
 };
 
@@ -15,6 +15,7 @@ use super::{
     data_files::{ensure_minecraft_data_dir, minecraft_data_dir, write_saved_data},
 };
 
+mod nbt;
 #[cfg(test)]
 mod tests;
 
@@ -56,9 +57,7 @@ pub fn read_scoreboard(level_folder: &Path) -> Result<Option<NbtCompound>, World
     // must be complete before it can safely replace the player's document later.
     let input = StrictInput(Cursor::new(bytes.as_slice()));
     let mut reader = NbtReadHelperJava::new(NbtStreamReader(input));
-    let root = Nbt::read(&mut reader)
-        .map_err(|error| invalid_data(&error.to_string()))?
-        .root_tag;
+    let root = nbt::read(&mut reader).map_err(|error| invalid_data(&error.to_string()))?;
     if reader.reader().0.0.position() != bytes.len() as u64 {
         return Err(invalid_data("Trailing bytes in scoreboard.dat NBT"));
     }

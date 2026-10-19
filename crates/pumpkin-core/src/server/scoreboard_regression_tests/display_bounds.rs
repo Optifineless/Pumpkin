@@ -2,7 +2,7 @@ use super::{saved_components::*, *};
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::ser::NetworkReadExt;
 
-fn fixture(display: NbtTag, displayed: bool) -> NbtCompound {
+pub(super) fn fixture(display: NbtTag, displayed: bool) -> NbtCompound {
     let mut objective = NbtCompound::new();
     objective.put_string("Name", "imported".into());
     objective.put("DisplayName", display);
@@ -225,4 +225,52 @@ async fn scoreboard_regression_hidden_oversized_objective_joins_without_replay()
     drop(observer);
     server.shutdown().await;
     world.level.world_portal.store(Arc::new(None));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scoreboard_regression_c180_loads_saves_and_reloads() {
+    if !isolated_child("scoreboard_regression_c180_loads_saves_and_reloads") {
+        return;
+    }
+    let mut display = NbtTag::String("y".into());
+    for _ in 0..180 {
+        let mut component = NbtCompound::new();
+        component.put_string("text", "x".into());
+        component.put_list("extra", vec![display]);
+        display = NbtTag::Compound(component);
+    }
+    let root = fixture(display, true);
+    assert_eq!(container_depth(&NbtTag::Compound(root.clone())), 364);
+    let directory = tempfile::tempdir().unwrap();
+    write_fixture(directory.path(), root.clone());
+    let (server, _) = startup(directory.path()).await;
+    assert!(
+        server
+            .scoreboard
+            .lock()
+            .unwrap()
+            .get_objective("imported")
+            .is_some()
+    );
+    let packets = joining_packets(&server).await;
+    assert_eq!(objective_components(&packets).len(), 1);
+    let world = server.worlds.load()[0].clone();
+    command(&server, &world, "scoreboard players set Holder imported 43");
+    save(&server).await;
+    let saved = pumpkin_world::world_info::scoreboard::read_scoreboard(directory.path())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        payload(&saved).get_list("Objectives"),
+        payload(&root).get_list("Objectives")
+    );
+    server.shutdown().await;
+    world.level.world_portal.store(Arc::new(None));
+    let (board, _) = super::super::scoreboard_storage::load_scoreboard(directory.path());
+    let board = board.lock().unwrap();
+    assert_eq!(board.get_score_value("Holder", "imported"), Some(43));
+    assert_eq!(
+        board.to_save_data().get_list("Objectives"),
+        payload(&root).get_list("Objectives")
+    );
 }

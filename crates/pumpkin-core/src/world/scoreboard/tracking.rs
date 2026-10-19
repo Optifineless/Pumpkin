@@ -1,5 +1,6 @@
 use pumpkin_data::scoreboard::ScoreboardDisplaySlot;
 use pumpkin_protocol::{
+    BClientPacket, Packet,
     bedrock::client::{
         remove_objective::CRemoveObjective as BRemoveObjective,
         set_display_objective::CSetDisplayObjective as BSetDisplayObjective,
@@ -16,6 +17,29 @@ use rustc_hash::FxHashSet;
 
 use super::{DISPLAY_SLOTS, Scoreboard, ScoreboardObjective, ScoreboardScore, ScoreboardTarget};
 use crate::entity::player::Player;
+
+#[cfg(test)]
+pub static BEDROCK_TITLES_RENDERED: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+// ScoreboardTarget serializes only the recipient edition. Defer the title until then.
+struct BedrockDisplay<F>(F);
+
+impl<F> Packet for BedrockDisplay<F> {
+    const PACKET_ID: i32 = BSetDisplayObjective::PACKET_ID;
+}
+
+impl<F: Fn() -> BSetDisplayObjective> BClientPacket for BedrockDisplay<F> {
+    fn write_packet(&self, writer: impl std::io::Write) -> Result<(), std::io::Error> {
+        (self.0)().write_packet(writer)
+    }
+}
+
+fn bedrock_title(component: &TextComponent, name: &str) -> String {
+    #[cfg(test)]
+    BEDROCK_TITLES_RENDERED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    display_projection::component(component, name).get_text()
+}
 
 impl Scoreboard {
     pub(super) fn is_tracked(&self, name: &str) -> bool {
@@ -37,17 +61,13 @@ impl Scoreboard {
             objective.render_type,
             objective.number_format.clone(),
         );
-        let bedrock = BSetDisplayObjective {
+        let bedrock = BedrockDisplay(|| BSetDisplayObjective {
             display_slot_name: "sidebar".into(),
             objective_name: objective.name.clone(),
-            objective_display_name: display_projection::component(
-                &objective.display_name,
-                &objective.name,
-            )
-            .get_text(),
+            objective_display_name: bedrock_title(&objective.display_name, &objective.name),
             criteria_name: "dummy".into(),
             sort_order: VarInt(0),
-        };
+        });
         self.effects
             .capture(|| target.send_editioned(&java, &bedrock));
     }
@@ -59,12 +79,8 @@ impl Scoreboard {
         name: Option<&str>,
     ) {
         let name = name.unwrap_or("");
-        let display = self.objectives.get(name).map_or_else(
-            || name.to_owned(),
-            |objective| display_projection::component(&objective.display_name, name).get_text(),
-        );
         let java = CDisplayObjective::new(slot, name.to_owned());
-        let bedrock = BSetDisplayObjective {
+        let bedrock = BedrockDisplay(|| BSetDisplayObjective {
             display_slot_name: match slot {
                 ScoreboardDisplaySlot::List => "list",
                 ScoreboardDisplaySlot::BelowName => "belowname",
@@ -72,10 +88,13 @@ impl Scoreboard {
             }
             .into(),
             objective_name: name.to_owned(),
-            objective_display_name: display,
+            objective_display_name: self.objectives.get(name).map_or_else(
+                || name.to_owned(),
+                |objective| bedrock_title(&objective.display_name, name),
+            ),
             criteria_name: "dummy".into(),
             sort_order: VarInt(0),
-        };
+        });
         self.effects
             .capture(|| target.send_editioned(&java, &bedrock));
     }

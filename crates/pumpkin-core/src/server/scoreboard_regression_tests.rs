@@ -14,6 +14,7 @@ mod loaded;
 mod login;
 mod projection;
 mod reentry;
+mod render_bounds;
 mod replacements;
 mod save_paths;
 mod saved_components;

@@ -58,14 +58,22 @@ field-replacement intent. The affected setters are:
   `Scoreboard::update_score` for `display_name` and `number_format`, and
   `Scoreboard::update_score_with_number_format` for `display_name`.
 
-Native `Scoreboard::get_objective_mut` and `Scoreboard::get_team_mut` also expose
-bare mutable references: a same-value assignment or A to B to A through those
-references (including separate borrows) cannot be observed and may retain the
-original raw component. A to B to A through the runtime update methods is covered
-by regression tests. Commands and explicit number-format replacement setters
-still invalidate only the replaced field,
-including same-value replacements. This exception is accepted to keep the plugin
-API unchanged; no API methods or lossless runtime component model are added.
+Native `Scoreboard::get_objective_mut` and `Scoreboard::get_team_mut` discard
+that record's raw component sidecars before handing out a mutable reference.
+This conservatively replaces its display components even if the caller only
+changes another field. Commands and explicit number-format replacement setters
+invalidate only the replaced field, including same-value replacements.
+
+Review round 5 also constructs Bedrock titles only during Bedrock packet
+serialization. Rendered text shares one 32 KiB output budget across the complete
+component tree without materializing argument strings; bounded traversal also stops repeated
+empty arguments. The scoreboard file reader counts each compound and list once,
+including the root, with vanilla NbtAccounter's 512-container limit. Other NBT
+readers and their limits are unchanged. Full raw text remains on disk.
+NBT serialization keeps scalar encoding off recursive container stack frames so
+newly accepted 512-container documents can also be saved on normal worker stacks.
+Native API 8 (same version), public methods and layouts are unchanged in this round.
+In-game verification: Not yet.
 
 If the namespaced file is absent, supported pre-26.1 worlds import
 `data/scoreboard.dat`; successful later saves publish the namespaced file without

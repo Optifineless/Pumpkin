@@ -135,7 +135,7 @@ pub fn get_translation_with_fallback(key: &str, locale: Locale, fallback: &str) 
 }
 
 /// What a `%` in a translation string introduces.
-enum Placeholder {
+pub(crate) enum Placeholder {
     /// `%%`, which stands for a single literal `%`.
     Escape,
     /// `%<conversion>`, which takes the next substitution in order.
@@ -160,7 +160,7 @@ const fn is_conversion(byte: u8) -> bool {
 /// trailing `%` or digits with no conversion after them; those are literal text.
 /// The end is reported rather than assumed because a [`SubstitutionRange`] has to
 /// span the whole placeholder for the callers that resume reading at `end + 1`.
-fn placeholder_at(bytes: &[u8], start: usize) -> Option<(Placeholder, usize)> {
+pub(crate) fn placeholder_at(bytes: &[u8], start: usize) -> Option<(Placeholder, usize)> {
     let after = start + 1;
     match bytes.get(after) {
         Some(&b'%') => return Some((Placeholder::Escape, after)),

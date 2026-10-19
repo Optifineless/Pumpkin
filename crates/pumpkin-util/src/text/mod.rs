@@ -28,6 +28,8 @@ pub mod hover;
 pub mod legacy;
 pub mod style;
 mod translatable;
+#[cfg(test)]
+mod translatable_tests;
 
 #[cfg(test)]
 mod component_codec_tests;
@@ -940,18 +942,7 @@ fn nbt_compound_to_json(compound: &pumpkin_nbt::NbtCompound) -> serde_json::Valu
 }
 
 fn opaque_text(component: &pumpkin_nbt::NbtCompound) -> String {
-    let mut text = component
-        .get_string("text")
-        .or_else(|| component.get_string("fallback"))
-        .or_else(|| component.get_string("translate"))
-        .unwrap_or_default()
-        .to_owned();
-    if let Some(children) = component.get_list("extra") {
-        for child in children {
-            text.push_str(&TextComponent::from_nbt(child).get_text());
-        }
-    }
-    text
+    translatable::get_text(component, Locale::EnUs)
 }
 
 fn nbt_tag_to_json(tag: &pumpkin_nbt::tag::NbtTag) -> serde_json::Value {
@@ -1202,37 +1193,7 @@ impl TextComponentBase {
     /// The plain text content of the component.
     #[must_use]
     pub fn get_text(self, locale: Locale) -> String {
-        let mut text = match *self.content {
-            TextContent::Translatable { component } => translatable::get_text(&component.0, locale),
-            TextContent::Opaque { component } => opaque_text(&component.0),
-            TextContent::Text { text } => text.into_owned(),
-            TextContent::Translate {
-                translate,
-                bedrock_translate,
-                with,
-            } => {
-                let key = bedrock_translate.as_ref().unwrap_or(&translate);
-                get_translation_text(format!("minecraft:{key}"), locale, with)
-            }
-            TextContent::EntityNames {
-                selector,
-                separator: _,
-            } => selector.into_owned(),
-            TextContent::Keybind { keybind } => keybind.into_owned(),
-            TextContent::Custom { key, with, .. } => get_translation_text(key, locale, with),
-            TextContent::PlayerSprite { profile, .. } => profile
-                .0
-                .get_string("name")
-                .map(ToString::to_string)
-                .unwrap_or_default(),
-        };
-
-        // Recursively append the text of all child components
-        for child in self.extra {
-            text += &child.get_text(locale);
-        }
-
-        text
+        translatable::component_text(&self, locale)
     }
 
     /// Converts this component by resolving all translations.

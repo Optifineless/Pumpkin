@@ -126,6 +126,34 @@ impl NbtTag {
 
     /// Serializes the tag payload without writing its type ID.
     pub fn serialize_data<W: NbtWriteHelper>(self, w: &mut W) -> serializer::Result<()> {
+        // Keep the scalar encoder's large debug stack frame off recursive containers.
+        match self {
+            Self::Compound(compound) => compound.serialize_content(w),
+            Self::List(list) => Self::serialize_list(list, w),
+            value => value.serialize_value(w),
+        }
+    }
+
+    fn serialize_list<W: NbtWriteHelper>(list: Vec<Self>, w: &mut W) -> serializer::Result<()> {
+        let len = list.len();
+        if len > i32::MAX as usize {
+            return Err(Error::LargeLength(len));
+        }
+
+        let list_element_id = Self::get_list_element_type_id(&list);
+
+        w.write_u8(list_element_id)?;
+        w.write_i32(len as i32)?;
+        for nbt_tag in list {
+            // Since tags in the same list tag must have the same type,
+            // we need to handle those of different tag types by
+            // wrapping them in `NbtCompound`s if needed.
+            Self::wrap_tag_if_needed(list_element_id, nbt_tag).serialize_data(w)?;
+        }
+        Ok(())
+    }
+
+    fn serialize_value<W: NbtWriteHelper>(self, w: &mut W) -> serializer::Result<()> {
         match self {
             Self::End => {}
             Self::Byte(byte) => w.write_i8(byte)?,
@@ -150,23 +178,7 @@ impl NbtTag {
             Self::String(string) => {
                 w.write_string(&string)?;
             }
-            Self::List(list) => {
-                let len = list.len();
-                if len > i32::MAX as usize {
-                    return Err(Error::LargeLength(len));
-                }
-
-                let list_element_id = Self::get_list_element_type_id(&list);
-
-                w.write_u8(list_element_id)?;
-                w.write_i32(len as i32)?;
-                for nbt_tag in list {
-                    // Since tags in the same list tag must have the same type,
-                    // we need to handle those of different tag types by
-                    // wrapping them in `NbtCompound`s if needed.
-                    Self::wrap_tag_if_needed(list_element_id, nbt_tag).serialize_data(w)?;
-                }
-            }
+            Self::List(list) => Self::serialize_list(list, w)?,
             Self::Compound(compound) => {
                 compound.serialize_content(w)?;
             }
