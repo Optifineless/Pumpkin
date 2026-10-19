@@ -13,10 +13,13 @@ retain component-bearing food remainders, and preserve callback inventory edits.
 Existing interaction and regain-health events retain their order and cancellation.
 The species age clock, breeding inheritance and saved-data meanings are unchanged.
 
-PR #249 review restores handless `Mob::mob_interact` calls on caller-supplied
-stacks, including detached stacks, through the shared species handlers. Packet
-hand transactions retain their existing validation. API 8 (same version), with
-no new public API or layout changes. In-game verification: Not yet.
+PR #249 review restores handless `Mob::mob_interact`, `EntityBase::interact` and
+default `EntityBase::interact_at` calls on caller-supplied stacks, including
+detached stacks, through the shared species handlers. Direct
+`Animal::animal_interact` retains caller-stack feeding. Alive and shearing checks
+remain ahead of species dispatch; packet hand transactions retain their existing
+validation. API 8 (same version), with no new public API or layout changes.
+In-game verification: Not yet.
 
 Mirrors vanilla 26.3 `Cat.mobInteract`, `Wolf.mobInteract`, `TamableAnimal.feed`,
 `Animal.mobInteract`, `AbstractCow.mobInteract` and `ItemUtils.createFilledResult`.

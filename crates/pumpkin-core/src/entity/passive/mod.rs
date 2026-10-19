@@ -78,6 +78,8 @@ mod animal_interaction;
 #[cfg(test)]
 mod b1019_g08_cow_tests;
 #[cfg(test)]
+mod b1019_g08_handless_tests;
+#[cfg(test)]
 mod b1019_g08_test_support;
 #[cfg(test)]
 mod b1019_g08_wolf_tests;

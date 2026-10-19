@@ -1585,7 +1585,14 @@ impl<T: Mob + Send + 'static> EntityBase for T {
     }
 
     fn interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        self.interact_with_hand(player, item_stack, pumpkin_util::Hand::Right)
+        // Handless callers own their stack; only explicit hands validate inventory.
+        crate::entity::shearable::interact_with_hand(
+            self,
+            player,
+            item_stack,
+            pumpkin_util::Hand::Right,
+        )
+        .unwrap_or_else(|| self.mob_interact(player, item_stack))
     }
 
     fn interact_with_hand(
