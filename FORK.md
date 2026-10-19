@@ -2,6 +2,36 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Admitted movement and landing bookkeeping (#112, #77, #74)
+
+Accepted Java movement counts the last descending segment before landing, including
+zero-displacement ground-only and rotation-only packets. All landings retain the
+actual support block's callback; neighboring noncontact slime no longer cancels a
+stone landing. Position and position+rotation use the same grounded-to-airborne,
+upward takeoff predicate for jump statistics and exhaustion.
+
+Mirrors vanilla 26.3 `Entity.checkFallDamage`,
+`ServerGamePacketListenerImpl.handlePlayerPositionChange` and
+`ServerPlayer.jumpFromGround`. Landing callbacks retain their distance until they
+finish; private combat-owner reservations prevent duplicate consumption and keep
+new descent, replacement lives and replacement sessions safe across callbacks.
+Mace landing particles retain the ServerPlayer override's pre-accumulation distance.
+Water, climbable, honey and scaffolding paths, damage admission, plugin cancellation
+and the existing floor/epsilon formula remain in use. `FallDistance`, statistics
+and hunger saves retain their existing tags, defaults and meaning.
+
+API 8 (same version): public signatures, vtables and embedded layouts are unchanged;
+new runtime reservation state lives behind the existing private damage-owner Arc.
+Native plugin source remains compatible; rebuild native plugins against this
+checkout. Wasm WIT is unchanged. Implemented by Codex (GPT-6.1 Sol).
+In-game verification: Not yet.
+
+Play test: drop exactly four blocks onto stone with and without turning; expect
+half a heart lost once. Repeat beside noncontact slime, then onto actual slime;
+expect normal stone damage and no slime damage. Compare walking/sprinting jumps
+with and without turning; expect identical jump statistics and hunger costs.
+Record the measured drop, landing blocks, health and jump-statistic changes.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

@@ -270,6 +270,13 @@ pub mod lock_difficulty;
 #[path = "loom_shift_click_tests.rs"]
 mod loom_shift_click_tests;
 pub mod move_vehicle;
+mod movement_bookkeeping;
+#[cfg(test)]
+mod movement_jump_tests;
+#[cfg(test)]
+mod movement_landing_callback_tests;
+#[cfg(test)]
+mod movement_landing_tests;
 pub mod paddle_boat;
 pub mod pick_item;
 pub mod ping_request;

@@ -13,7 +13,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed},
     },
 };
 
@@ -37,6 +37,10 @@ struct OwnerState {
     revision: AtomicU64,
     hurts: AtomicUsize,
     lifecycle: AtomicU64,
+    landing: AtomicU64,
+    next_landing: AtomicU64,
+    landing_distance: crossbeam::atomic::AtomicCell<f32>,
+    landing_has_descent: AtomicBool,
     committed_admission: crossbeam::atomic::AtomicCell<f32>,
 }
 
@@ -247,7 +251,44 @@ impl DamageOwner {
 
     pub(super) fn reset(&self) {
         self.0.lifecycle.fetch_add(1, Relaxed);
+        self.0.landing.store(0, Relaxed);
         self.0.committed_admission.store(0.0);
+    }
+
+    // Called only in a combat-owned segment. The reservation survives callback release.
+    pub(super) fn claim_landing(&self, distance: f32) -> Option<u64> {
+        if self.0.landing.load(Relaxed) != 0 {
+            return None;
+        }
+        let claim = self.0.next_landing.fetch_add(1, Relaxed) + 1;
+        self.0.landing_distance.store(distance);
+        self.0.landing_has_descent.store(false, Relaxed);
+        self.0.landing.store(claim, Relaxed);
+        Some(claim)
+    }
+
+    pub(super) fn fall_distance_before_descent(&self, distance: f32) -> f32 {
+        if self.0.landing.load(Relaxed) != 0
+            && !self.0.landing_has_descent.swap(true, Relaxed)
+            && distance == self.0.landing_distance.load()
+        {
+            // The callback-visible baseline already belongs to the reserved landing.
+            0.0
+        } else {
+            distance
+        }
+    }
+
+    pub(super) fn landing_has_descent(&self) -> bool {
+        self.0.landing_has_descent.load(Relaxed)
+    }
+
+    pub(super) fn landing_is_current(&self, claim: u64) -> bool {
+        self.0.landing.load(Relaxed) == claim
+    }
+
+    pub(super) fn release_landing(&self, claim: u64) {
+        let _ = self.0.landing.compare_exchange(claim, 0, Relaxed, Relaxed);
     }
 
     pub(super) fn lifecycle(&self) -> u64 {

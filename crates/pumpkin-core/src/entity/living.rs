@@ -23,6 +23,7 @@ mod equipment_modifiers;
 mod equipment_packets;
 #[cfg(test)]
 mod ext_review_tests;
+mod fall;
 mod fall_damage;
 #[cfg(test)]
 mod hand_use_tests;
@@ -67,7 +68,6 @@ use std::sync::atomic::{
 use tracing::warn;
 
 use super::{Entity, EntityBase, NBTStorageInit};
-use crate::block::OnLandedUponArgs;
 use crate::entity::NBTStorage;
 use crate::entity::ageable::AgeableMob;
 use crate::entity::attributes::AttributeInstance;
@@ -268,12 +268,8 @@ impl LivingEntity {
     #[expect(dead_code)]
     const USING_RIPTIDE_FLAG: u8 = 4;
 
-    const PREVENT_AREA_FALL_DAMAGE_BLOCKS: [&'static Block; 4] = [
-        &Block::COBWEB,
-        &Block::LADDER,
-        &Block::POWDER_SNOW,
-        &Block::SLIME_BLOCK,
-    ];
+    const PREVENT_AREA_FALL_DAMAGE_BLOCKS: [&'static Block; 3] =
+        [&Block::COBWEB, &Block::LADDER, &Block::POWDER_SNOW];
 
     fn hurt_sound_for_entity(entity_type: &'static EntityType) -> Sound {
         entity_type.hurt_sound.unwrap_or(Sound::EntityGenericHurt)
@@ -1568,69 +1564,6 @@ impl LivingEntity {
             strength += 0.1 * f64::from(effect.amplifier + 1);
         }
         strength
-    }
-
-    pub fn fall(
-        &self,
-        caller: &dyn EntityBase,
-        height_difference: f64,
-        ground: bool,
-        dont_damage: bool,
-    ) {
-        if caller
-            .get_mob()
-            .is_some_and(super::mob::Mob::check_fall_damage)
-        {
-            return;
-        }
-        if ground {
-            let fall_distance = self.fall_distance.load();
-            if let Some(player) = caller.get_player() {
-                player.check_mace_landing_particles(fall_distance);
-            }
-            if fall_distance > 0.0 {
-                self.on_changed_block(caller, self.entity.block_pos.load());
-            }
-            if fall_distance <= 0.0
-                || dont_damage
-                || self.should_prevent_fall_damage()
-                || self.should_prevent_fall_damage_in_area()
-                || self.is_immune_to_fall_damage()
-            {
-                self.fall_distance.store(0.0);
-                return;
-            }
-            let world = self.entity.world.load();
-            let landing_pos = self.entity.get_pos_with_y_offset(0.2).0;
-            let block = world.get_block(&landing_pos);
-            let pumpkin_block = world.block_registry.get_pumpkin_block(block.id);
-            if let Some(pumpkin_block) = pumpkin_block {
-                pumpkin_block.on_landed_upon(OnLandedUponArgs {
-                    world: &world,
-                    position: &landing_pos,
-                    fall_distance,
-                    entity: caller,
-                });
-            } else {
-                self.handle_fall_damage(caller, fall_distance, 1.0);
-            }
-            // Entity.checkFallDamage resets only after the landing callback records damage.
-            self.fall_distance.store(0.0);
-        } else if height_difference < 0.0 {
-            let new_fall_distance = if !self.should_prevent_fall_damage()
-                && !self.should_prevent_fall_damage_in_area()
-            {
-                let distance = self.fall_distance.load();
-                distance - (height_difference as f32)
-            } else {
-                0f32
-            };
-            self.fall_distance.store(new_fall_distance);
-            crate::block::blocks::honey::HoneyBlock::reset_player_fall_distance(
-                caller,
-                height_difference,
-            );
-        }
     }
 
     pub fn handle_fall_damage(
