@@ -285,6 +285,11 @@ impl World {
     }
 
     pub(super) fn load_pending_block_entity(&self, pos: &BlockPos) -> Option<Arc<dyn BlockEntity>> {
+        // Most lookups miss, and menu validity checks look up while holding their
+        // screen handler: only take admission (level 10) when an image exists.
+        if !self.has_pending_block_entity_image(pos) {
+            return None;
+        }
         let mutation = self.reserve_block_entity_mutation(*pos)?;
         let snapshot = self.pending_block_entity_snapshot(pos)?;
         // A read keeps the legacy invalidation/retry contract during decoding.
@@ -302,6 +307,21 @@ impl World {
         let entity = self.promote_pending_block_entity(&snapshot, candidate)?;
         self.bind_block_entity_context(entity.as_ref());
         Some(entity)
+    }
+
+    fn has_pending_block_entity_image(&self, pos: &BlockPos) -> bool {
+        let chunk = self
+            .level
+            .loaded_chunks
+            .get(&pos.chunk_position())
+            .map(|chunk| chunk.clone());
+        chunk.is_some_and(|chunk| {
+            chunk
+                .pending_block_entities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_key(pos)
+        })
     }
 
     fn pending_block_entity_snapshot(
