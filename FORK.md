@@ -437,6 +437,14 @@ walking/sprinting jumps with and without turning; expect identical jump statisti
 and hunger costs. Record the measured drop, landing blocks, health and jump-statistic
 changes.
 
+## Sponge fluid traversal and depth (#80, #81)
+
+Sponge absorption follows vanilla 26.3 `SpongeBlock.removeWaterBreadthFirstSearch` and `BlockPos.breadthFirstTraversal`: connected water uses graph depth six and at most 64 absorbed blocks. Waterlogged hosts keep their block while losing water; kelp and seagrass use their normal loot handling and are removed. The cancellable sponge event remains before mutation, with current states rechecked after callbacks. Aquatic plants are conditionally removed before their drops are published, so synchronous item-spawn callbacks cannot duplicate the observed plant. Cancelled drops still leave the plant removed, and callback replacements survive. No saved-data or public API change.
+
+In-game verification: Not yet.
+
+Play test: Place a dry sponge beside a waterlogged slab, kelp, seagrass and a seven-block water line. Expect the slab to stay dry, kelp to drop normally, seagrass to be removed, the first six water blocks to disappear, and the seventh to remain.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
