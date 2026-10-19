@@ -31,6 +31,9 @@ mod active_chunks;
 #[cfg(test)]
 mod block_entity_capture_window_tests;
 mod block_entity_context;
+mod block_entity_notifications;
+#[cfg(test)]
+mod block_entity_registration_tests;
 pub mod brightness;
 #[cfg(test)]
 mod bucket_retirement_tests;
@@ -5926,8 +5929,16 @@ impl World {
                 hook();
             }
         }
-        let published =
-            self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(&registered));
+        let (notification, request) = self
+            .prepare_block_entity_notification(block_pos, &registered, block_entity_nbt)
+            .unzip();
+        let published = self.publish_block_entity_nbt(
+            block_pos,
+            &persistent_nbt,
+            stamp,
+            Some(&registered),
+            notification,
+        );
         if !published {
             tracing::warn!("Block entity persistence image rejected for {block_pos:?}");
         }
@@ -5936,16 +5947,20 @@ impl World {
         });
         drop(mutation);
 
-        if published && let Some(nbt) = &block_entity_nbt {
-            let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
-            self.broadcast_to_chunk(
-                chunk_pos,
-                &CBlockEntityData::new(
-                    registered.get_position(),
-                    VarInt(registered.get_id() as i32),
-                    bytes.as_ref().into(),
-                ),
-            );
+        #[cfg(test)]
+        if published {
+            let hook = self
+                .persistence_test_hooks
+                .registration_published
+                .lock()
+                .unwrap()
+                .take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+        if published && let Some(request) = request {
+            request.dispatch();
         }
     }
 
@@ -5958,7 +5973,7 @@ impl World {
             return;
         };
         let stamp = self.next_block_entity_capture_stamp();
-        if !self.publish_block_entity_nbt(block_pos, nbt, stamp, None) {
+        if !self.publish_block_entity_nbt(block_pos, nbt, stamp, None, None) {
             tracing::warn!(
                 "Block entity NBT addition rejected while chunk is unloading at {block_pos:?}"
             );
@@ -6035,8 +6050,16 @@ impl World {
             }
         }
 
-        let published =
-            self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(block_entity));
+        let (notification, request) = self
+            .prepare_block_entity_notification(block_pos, block_entity, block_entity_nbt)
+            .unzip();
+        let published = self.publish_block_entity_nbt(
+            block_pos,
+            &persistent_nbt,
+            stamp,
+            Some(block_entity),
+            notification,
+        );
         self.level.read_chunk_sync(&chunk_pos, |chunk| {
             chunk.mark_dirty(true);
         });
@@ -6046,16 +6069,8 @@ impl World {
                 "Block entity update rejected for detached or replaced entity at {block_pos:?}"
             );
         }
-        if published && let Some(nbt) = &block_entity_nbt {
-            let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
-            self.broadcast_to_chunk(
-                chunk_pos,
-                &CBlockEntityData::new(
-                    block_entity.get_position(),
-                    VarInt(block_entity.get_id() as i32),
-                    bytes.as_ref().into(),
-                ),
-            );
+        if published && let Some(request) = request {
+            request.dispatch();
         }
     }
 

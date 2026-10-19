@@ -82,51 +82,49 @@ impl WitherEntity {
                 let request = WitherDispatch {
                     owner,
                     world: world.clone(),
-                    actions: Some(actions),
+                    actions: Some(actions.into()),
                 };
                 if let Err(dispatch) = crate::world::guard_effects::defer(move || request.run()) {
                     dispatch();
                 }
             } else {
-                self.execute_bossbar_actions(actions, world);
+                WitherExecution {
+                    owner: self,
+                    world,
+                    actions: actions.into(),
+                    completed: false,
+                }
+                .run();
             }
         }
         result
     }
 
-    fn execute_bossbar_actions(&self, mut actions: Vec<BossbarAction>, world: &Arc<World>) {
-        while !actions.is_empty() {
-            for action in actions {
-                match action {
-                    BossbarAction::Add(recipient, bar) => {
-                        self.send_bossbar(world, &recipient, |p| {
-                            if recipient.publish() {
-                                p.send_bossbar(&bar);
-                            }
-                        });
+    fn execute_bossbar_action(&self, action: &BossbarAction, world: &Arc<World>) {
+        match action {
+            BossbarAction::Add(recipient, bar) => {
+                self.send_bossbar(world, recipient, |player| {
+                    if !recipient.is_published() {
+                        player.send_bossbar(bar);
+                        recipient.publish();
                     }
-                    BossbarAction::Health(recipient, progress) => {
-                        self.send_bossbar(world, &recipient, |p| {
-                            if recipient.is_published() {
-                                p.update_bossbar_health(&self.bossbar_uuid, progress);
-                            }
-                        });
+                });
+            }
+            BossbarAction::Health(recipient, progress) => {
+                self.send_bossbar(world, recipient, |player| {
+                    if recipient.is_published() {
+                        player.update_bossbar_health(&self.bossbar_uuid, *progress);
                     }
-                    BossbarAction::Remove(recipient) => {
-                        if recipient.retire()
-                            && let Some(player) = recipient.player()
-                        {
-                            player.remove_bossbar(self.bossbar_uuid);
-                        }
+                });
+            }
+            BossbarAction::Remove(recipient) => {
+                if recipient.is_published() {
+                    if let Some(player) = recipient.player() {
+                        player.remove_bossbar(self.bossbar_uuid);
                     }
+                    recipient.retire();
                 }
             }
-            let mut state = self
-                .bossbar_players
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            actions = std::mem::take(&mut state.actions);
-            state.executing = !actions.is_empty();
         }
     }
 
@@ -185,7 +183,13 @@ impl WitherEntity {
         bar.health = progress;
         self.with_bossbar(world, |state| {
             for player in &current {
-                if !state.recipients.iter().any(|r| r.matches(player)) {
+                if let Some(recipient) = state.recipients.iter().find(|r| r.matches(player)) {
+                    if !recipient.is_published() {
+                        state
+                            .actions
+                            .push(BossbarAction::Add(recipient.clone(), bar.clone()));
+                    }
+                } else {
                     let recipient = BossbarRecipient::new(player);
                     state
                         .actions
@@ -218,30 +222,109 @@ impl WitherEntity {
     }
 }
 
-struct WitherDispatch {
-    owner: Arc<WitherEntity>,
-    world: Arc<World>,
-    actions: Option<Vec<BossbarAction>>,
+// Finish committed successors before propagating a native callback panic.
+struct WitherExecution<'a> {
+    owner: &'a WitherEntity,
+    world: &'a Arc<World>,
+    actions: std::collections::VecDeque<BossbarAction>,
+    completed: bool,
 }
 
-impl WitherDispatch {
+impl WitherExecution<'_> {
     fn run(mut self) {
-        self.owner
-            .execute_bossbar_actions(self.actions.take().unwrap_or_default(), &self.world);
-    }
-}
-
-impl Drop for WitherDispatch {
-    fn drop(&mut self) {
-        if let Some(mut actions) = self.actions.take() {
+        let mut first_panic = None;
+        loop {
+            while let Some(action) = self.actions.front() {
+                // Retry a failed delivery once, including terminal REMOVE, without
+                // letting a persistently panicking recipient strand its successors.
+                for _ in 0..2 {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        self.owner.execute_bossbar_action(action, self.world);
+                    }));
+                    let Err(payload) = result else {
+                        break;
+                    };
+                    if first_panic.is_none() {
+                        first_panic = Some(payload);
+                    } else if let Err(nested) =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(payload)))
+                    {
+                        std::mem::forget(nested);
+                    }
+                }
+                self.actions.pop_front();
+            }
             let mut state = self
                 .owner
                 .bossbar_players
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            actions.append(&mut state.actions);
-            state.actions = actions;
-            state.executing = false;
+            self.actions.extend(std::mem::take(&mut state.actions));
+            if self.actions.is_empty() {
+                state.executing = false;
+                self.completed = true;
+                drop(state);
+                if let Some(payload) = first_panic {
+                    std::panic::resume_unwind(payload);
+                }
+                return;
+            }
         }
+    }
+}
+
+impl Drop for WitherExecution<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            restore_dispatch(self.owner, self.world, std::mem::take(&mut self.actions));
+        }
+    }
+}
+
+struct WitherDispatch {
+    owner: Arc<WitherEntity>,
+    world: Arc<World>,
+    actions: Option<std::collections::VecDeque<BossbarAction>>,
+}
+
+impl WitherDispatch {
+    fn run(mut self) {
+        WitherExecution {
+            owner: &self.owner,
+            world: &self.world,
+            actions: self.actions.take().unwrap_or_default(),
+            completed: false,
+        }
+        .run();
+    }
+}
+
+impl Drop for WitherDispatch {
+    fn drop(&mut self) {
+        if let Some(actions) = self.actions.take() {
+            restore_dispatch(&self.owner, &self.world, actions);
+        }
+    }
+}
+
+fn restore_dispatch(
+    owner: &WitherEntity,
+    world: &Arc<World>,
+    actions: std::collections::VecDeque<BossbarAction>,
+) {
+    let mut state = owner
+        .bossbar_players
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut actions: Vec<_> = actions.into();
+    actions.append(&mut state.actions);
+    state.actions = actions;
+    state.executing = false;
+    drop(state);
+    if let Some(owner) = owner.self_reference.upgrade() {
+        let world = world.clone();
+        // An abandoned GuardEffects still borrows its TLS queue while dropping us.
+        // Retry independently, after unlocking, even when this owner will never tick again.
+        std::thread::spawn(move || owner.with_bossbar(&world, |_| {}));
     }
 }

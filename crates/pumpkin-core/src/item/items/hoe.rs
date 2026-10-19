@@ -56,13 +56,32 @@ impl ItemBehaviour for HoeItem {
         let world = player.world();
         let current_state_id = world.get_block_state_id(&location);
         let result = match super::block_transformer::prepare_transform(
-            &HOE, player, location, face, block, hand,
+            &HOE,
+            player,
+            location,
+            face,
+            block,
+            hand,
+            current_state_id,
         ) {
             Ok(result) => result,
             Err(action) => return action,
         };
 
         if let Some(result) = result {
+            #[cfg(test)]
+            super::block_transformer::before_transform_write(&world, location);
+            if world
+                .set_block_state_if(
+                    &location,
+                    result.new_state_id,
+                    BlockFlags::NOTIFY_ALL,
+                    |current| current == current_state_id,
+                )
+                .is_none()
+            {
+                return BlockActionResult::Pass;
+            }
             if let Some(loot_key) = result.entry.loot
                 && let Some(loot_table) = world.get_loot_table(loot_key)
             {
@@ -80,7 +99,6 @@ impl ItemBehaviour for HoeItem {
             if player.gamemode.load() != GameMode::Creative {
                 let _ = item.damage_item(i32::from(result.entry.item_damage_per_use));
             }
-            world.set_block_state(&location, result.new_state_id, BlockFlags::NOTIFY_ALL);
             super::block_transformer::send_transform_effects(
                 player,
                 location,

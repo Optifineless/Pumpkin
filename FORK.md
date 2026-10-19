@@ -2,6 +2,44 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Owner review follow-ups for #239, #242 and #243
+
+Axe transformations condition every clicked and companion write on its observed
+state. Rejected clicked writes do not consume durability or publish transform
+effects; hoe and shovel transformations use the same admission, including rooted
+dirt drops and campfire extinction. Honeycomb already used conditional writes.
+Door companion ordering remains unchanged to preserve paired-block callbacks.
+
+Final lectern retirement reconciles `has_book` and clears `powered` when its
+captured inventory has no book, keeping a queued take consistent across reload.
+Wither dispatch releases ownership after native packet panics, preserves pending
+successors and retries abandoned batches independently of another tick or save.
+Registration and update packets share the block-entity publication order, skip
+replaced incarnations, and send after mutation ownership releases. Committed tags
+also survive an abandoned outer effect batch.
+
+These preserve saved-data meaning. API 8 (same version): private World admission
+state gains an ordered client-notification queue; rebuild native plugins. Public
+signatures and Wasm WIT are unchanged. Mirrors the concurrency boundaries around
+vanilla 26.3 axe/hoe/shovel use, `LecternBlock.resetBookState`,
+`LevelChunk.getBlockEntityNbtForSaving` and `ServerBossEvent` delivery. Decompiled
+26.3 source was unavailable; no new Java-source parity verification is claimed.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: **Not yet**.
+
+All ten real-entry regressions have recorded failing negative controls. Bypassing
+tool predicates overwrites replacements and produces stale root drops/wear;
+omitting retirement reconciliation reloads an occupied empty lectern. Original
+Wither dispatch strands health/terminal cleanup, original registration delivery
+sends older text last, and canceling a committed notification loses its final tag.
+The controls retain the test seams and restore production files afterward.
+
+Play test: scrape both halves of a stocked copper chest and a copper door while
+another player replaces a half; expect the replacement to remain and each
+successful use to wear the tool once. Take a lectern book near simulation distance
+and restart; expect one book returned and an empty, unpowered lectern. Kill a
+Wither and replace a sign while another player watches; expect the bar to disappear
+and the final sign text to remain. Record the item counts, reload, HUD and sign.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so
