@@ -2,6 +2,38 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Item-provided block sounds (#18, #265, #266)
+
+Player heads retain their valid `note_block_sound` component through placement,
+ordinary drops and reload. Note events play that identifier from the block center
+in RECORDS at volume 3 and pitch 1; unconfigured heads fail the event silently.
+Tagged heads used on a note block's top face reach ordinary placement and its
+existing hand payment and cancellation rules. Other clicks retain tuning.
+Mirrors vanilla 26.3 `NoteBlock.useItemOn/triggerEvent/getCustomSoundId` and
+`SkullBlockEntity` implicit components and load/save methods.
+
+Explicit registered `jukebox_playable` patches save as vanilla's direct song
+identifier and accept earlier fork compounds. Existing invalid fork references
+retain their stopped-record meaning. Real insertion and disk reload preserve the
+chosen song and active elapsed ticks; ordinary default discs are unchanged.
+Mirrors `JukeboxPlayable.CODEC/tryInsertIntoJukebox` and
+`JukeboxBlockEntity.loadAdditional`. Arbitrary inline songs are not represented.
+Native API 8, public layouts/signatures and Wasm WIT are unchanged.
+
+Upstream #3728 partially overlaps with legacy jukebox writing, and #3507 includes
+skull components in a broader redesign. This change keeps the scoped existing
+paths. The separate restored-power/D17 follow-up remains owned by fork #257;
+the coordinator must settle that subset before closing all of #18.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: place a configured player head on a note block in Survival; expect one
+head payment, no tuning, and its custom sound when attacked or powered. Repeat
+after breaking/replacing the head and after a restart; expect the same sound.
+Use an unconfigured head; expect silence. Insert a disc with a registered-song
+patch, save and restart mid-song; expect the same disc/song and retained progress.
+Capture sound, placement/payment and the reload sequence with Java and Bedrock
+clients before opening the PR yourself.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

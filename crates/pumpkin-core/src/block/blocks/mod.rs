@@ -149,6 +149,8 @@ mod beacon_regression_tests;
 #[cfg(test)]
 mod hunt_plants_tests;
 #[cfg(test)]
+mod note_sound_tests;
+#[cfg(test)]
 mod note_tests;
 #[cfg(test)]
 mod placement_orientation_tests;

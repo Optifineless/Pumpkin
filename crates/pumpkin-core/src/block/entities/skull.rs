@@ -1,5 +1,7 @@
 use super::BlockEntity;
+use pumpkin_data::{data_component_impl::NoteBlockSoundImpl, item_stack::ItemStack};
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_util::identifier::Identifier;
 use pumpkin_util::math::position::BlockPos;
 use std::sync::Mutex;
 
@@ -23,7 +25,10 @@ impl BlockEntity for SkullBlockEntity {
     where
         Self: Sized,
     {
-        let note_block_sound = nbt.get_string("note_block_sound").map(ToString::to_string);
+        let note_block_sound = nbt
+            .get_string("note_block_sound")
+            .and_then(|sound| Identifier::parse(sound).ok())
+            .map(|sound| sound.to_string());
         let profile = nbt.get_compound("profile").cloned();
         let custom_name = nbt
             .get_string("custom_name")
@@ -52,6 +57,32 @@ impl BlockEntity for SkullBlockEntity {
             && let Some(name) = name.as_ref()
         {
             nbt.put_string("custom_name", name.clone());
+        }
+    }
+
+    fn apply_item_components(&self, stack: &ItemStack) {
+        // SkullBlockEntity.applyImplicitComponents uses the placed item's optional sound.
+        let sound = stack
+            .get_data_component::<NoteBlockSoundImpl>()
+            .and_then(|component| Identifier::parse(&component.sound).ok())
+            .map(|sound| sound.to_string());
+        *self
+            .note_block_sound
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = sound;
+    }
+
+    fn collect_item_components(&self, stack: &mut ItemStack) {
+        // SkullBlockEntity.collectImplicitComponents also feeds ordinary block drops.
+        let sound = self
+            .note_block_sound
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(sound) = sound.and_then(|sound| Identifier::parse(&sound).ok()) {
+            stack.set_data_component(NoteBlockSoundImpl {
+                sound: sound.to_string(),
+            });
         }
     }
 

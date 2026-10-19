@@ -35,6 +35,8 @@ mod hopper_container;
 mod hopper_transfer;
 pub mod jigsaw_block;
 pub mod jukebox;
+#[cfg(test)]
+mod jukebox_component_tests;
 pub mod lectern;
 pub mod map;
 pub mod mob_spawner;
