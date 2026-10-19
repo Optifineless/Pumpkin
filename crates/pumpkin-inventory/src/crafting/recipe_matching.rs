@@ -240,7 +240,9 @@ pub(super) fn default_remainders(inventory: &dyn RecipeInputInventory) -> Vec<It
         .collect()
 }
 
-fn crafting_remainder(item: &Item) -> ItemStack {
+/// Creates the item's crafting remainder, including its default components.
+#[must_use]
+pub fn crafting_remainder(item: &Item) -> ItemStack {
     // CraftingRecipe.defaultCraftingReminder reads Item.getCraftingRemainder, not USE_REMAINDER.
     // Items.java:1940,1945,1956,2405,2730 hardcodes these five craftRemainder registrations.
     let remainder = if [

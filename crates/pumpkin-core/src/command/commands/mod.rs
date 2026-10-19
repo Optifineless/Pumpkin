@@ -16,6 +16,7 @@ mod bossbar;
 mod clear;
 mod clone;
 mod compute;
+pub(crate) use compute::evaluate_block_providers;
 mod damage;
 mod data;
 mod datapack;

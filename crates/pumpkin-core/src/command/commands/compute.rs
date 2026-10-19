@@ -131,6 +131,72 @@ pub struct ComputeContext<'a> {
     pub depth: Cell<usize>,
 }
 
+// BrewingStandBlockEntity.getUses/getSpeedMultiplier share the context-provider evaluator.
+pub fn evaluate_block_providers(
+    world: &Arc<crate::world::World>,
+    position: BlockPos,
+    uses: &NbtTag,
+    speed: &NbtTag,
+) -> Option<(i32, f32)> {
+    let server = world.server.upgrade()?;
+    let source = CommandSource::new(
+        crate::command::CommandSender::Console,
+        world.clone(),
+        None,
+        position.to_centered_f64(),
+        pumpkin_util::math::vector2::Vector2::default(),
+        String::new(),
+        TextComponent::empty(),
+        server.clone(),
+    );
+    let context = ComputeContext {
+        source: &source,
+        target_type: TargetType::Block,
+        block_pos: Some(position),
+        target_entity: None,
+        datapack_manager: Some(&server.datapack_manager),
+        depth: Cell::new(0),
+    };
+    let uses = match uses {
+        NbtTag::String(id) => resolve_int_provider_id(id, &context),
+        tag => evaluate_tag_int(tag, &context),
+    }
+    .ok()
+    .and_then(|value| i32::try_from(value).ok())
+    .unwrap_or(0);
+    let speed_is_reference = matches!(speed, NbtTag::String(_));
+    let speed = match speed {
+        NbtTag::String(id) => {
+            let id = if id.contains(':') {
+                id.to_string()
+            } else {
+                format!("minecraft:{id}")
+            };
+            // A missing ResolvableFloat reference uses 1; an invalid resolved provider uses 0.
+            server
+                .datapack_manager
+                .get_context_float_provider(&id)
+                .map_or(1.0, |_| {
+                    resolve_float_provider_id(&id, &context).unwrap_or(0.0)
+                })
+        }
+        tag => evaluate_tag_float(tag, &context).unwrap_or(0.0),
+    };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Vanilla context providers return float"
+    )]
+    let speed = speed as f32;
+    Some((
+        uses,
+        if speed_is_reference && !speed.is_finite() {
+            0.0
+        } else {
+            speed
+        },
+    ))
+}
+
 fn build_context<'a>(
     context: &'a CommandContext,
     target_type: TargetType,

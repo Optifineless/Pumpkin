@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::sync::{
     Arc, Mutex as StdMutex, RwLock,
-    atomic::AtomicI32,
     atomic::{AtomicBool, Ordering},
+    atomic::{AtomicI32, AtomicU32},
 };
 
 use crate::block::entities::PropertyDelegate;
@@ -18,6 +18,9 @@ use pumpkin_protocol::codec::recipe::DynamicRecipe;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
+#[path = "brewing_stand_state.rs"]
+mod state;
+
 pub struct BrewingStandBlockEntity {
     pub position: BlockPos,
     // recipe eligibility also includes the world's loaded recipes.
@@ -29,6 +32,9 @@ pub struct BrewingStandBlockEntity {
     pub comparator_dirty: AtomicBool,
     pub brew_time: AtomicI32,
     pub fuel: AtomicI32,
+    total_brew_time: AtomicI32,
+    total_fuel: AtomicI32,
+    speed_multiplier: AtomicU32,
     pub last_potion_count: StdMutex<Option<[bool; 3]>>,
     pub ingredient_item: StdMutex<Option<&'static pumpkin_data::item::Item>>,
 }
@@ -49,6 +55,9 @@ impl BrewingStandBlockEntity {
             comparator_dirty: AtomicBool::new(false),
             brew_time: AtomicI32::new(0),
             fuel: AtomicI32::new(0),
+            total_brew_time: AtomicI32::new(0),
+            total_fuel: AtomicI32::new(0),
+            speed_multiplier: AtomicU32::new(1.0f32.to_bits()),
             last_potion_count: StdMutex::new(None),
             ingredient_item: StdMutex::new(None),
         }
@@ -152,6 +161,7 @@ impl BrewingStandBlockEntity {
 
         // Brew potion slots
         let mut ingredient_used = false;
+        let mut remainder_overflow = ItemStack::EMPTY.clone();
         {
             let owner = self.slot_transaction(0);
             let _guard = owner.lock();
@@ -258,7 +268,14 @@ impl BrewingStandBlockEntity {
 
             // Consume one ingredient
             if ingredient_used {
-                items[3].decrement(1);
+                remainder_overflow = Self::consume_with_remainder(&mut items[3]);
+                if !self.ingredient_matches(&items[3]) {
+                    *self
+                        .ingredient_item
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                }
+                self.brew_time.store(0, Ordering::Relaxed);
             }
         }
 
@@ -266,26 +283,9 @@ impl BrewingStandBlockEntity {
             return;
         }
 
-        // Check if remaining ingredient matches or clear it
-        if let Ok(items) = self.items.read() {
-            let remaining = &items[3];
-            if remaining.is_empty()
-                || !self
-                    .ingredient_item
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .is_some_and(|stored| remaining.get_item().id == stored.id)
-            {
-                *self
-                    .ingredient_item
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-            }
-        }
-
         // BrewingStandBlockEntity.serverTick finishes at zero;
         // the next tick's ordinary start path fires BrewingStartEvent.
-        self.brew_time.store(0, Ordering::Relaxed);
+        world.drop_stack(&self.position, remainder_overflow);
 
         // Play sound at the center of the block
         let pos = Vector3::new(
@@ -297,53 +297,6 @@ impl BrewingStandBlockEntity {
 
         // Mark dirty to trigger update
         self.mark_dirty();
-    }
-
-    fn try_refill_fuel(&self, world: &Arc<crate::world::World>) -> bool {
-        let expected_fuel = if self.fuel.load(Ordering::Relaxed) <= 0
-            && let Ok(items) = self.items.try_read()
-            && !items[4].is_empty()
-            && items[4].get_data_component::<BrewingFuelImpl>().is_some()
-        {
-            items[4].clone()
-        } else {
-            return false;
-        };
-
-        let fuel_power = if let Some(server) = world.server.upgrade() {
-            let mut fuel_event = crate::plugin::api::events::inventory::brewing_stand_fuel::BrewingStandFuelEvent::new(
-                self.position,
-                20,
-            );
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut fuel_event);
-
-            if fuel_event.cancelled {
-                return false;
-            }
-
-            fuel_event.fuel_power
-        } else {
-            20
-        };
-
-        let mut refilled = false;
-        self.update_slot(4, &mut |current| {
-            if self.fuel.load(Ordering::Relaxed) <= 0
-                && current.uid == expected_fuel.uid
-                && current.are_equal(&expected_fuel)
-                && !current.is_empty()
-            {
-                current.decrement(1);
-                self.fuel.store(i32::from(fuel_power), Ordering::Relaxed);
-                refilled = true;
-            }
-        });
-        if refilled {
-            self.on_slot_changed(4);
-        }
-        refilled
     }
 }
 
@@ -522,6 +475,8 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
             entity.fuel.store(f, Ordering::Relaxed);
         }
 
+        entity.read_brew_totals(nbt);
+
         // Load inventory items from NBT
         let items = entity
             .items
@@ -558,12 +513,7 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        // Persist brew state
-        nbt.put_short("BrewTime", self.brew_time.load(Ordering::Relaxed) as i16);
-        nbt.put_byte("Fuel", self.fuel.load(Ordering::Relaxed) as i8);
-
-        // Save inventory contents to NBT
-        self.write_inventory_nbt(nbt, true);
+        self.write_brew_inventory(nbt, true);
     }
 
     fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
@@ -572,9 +522,7 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        nbt.put_short("BrewTime", self.brew_time.load(Ordering::Relaxed) as i16);
-        nbt.put_byte("Fuel", self.fuel.load(Ordering::Relaxed) as i8);
-        self.write_inventory_nbt(&mut nbt, false);
+        self.write_brew_inventory(&mut nbt, false);
         Some(nbt)
     }
 
@@ -618,48 +566,13 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
 
         // Handle brewing state machine
         if is_brewing {
-            // Decrement brew time
-            let new_brew_time = self.brew_time.fetch_sub(1, Ordering::Relaxed) - 1;
-            let is_done_brewing = new_brew_time == 0;
-
-            if is_done_brewing && brewable {
-                // Brewing complete
+            if self.advance_brewing(&ingredient, brewable) {
                 self.do_brew(world, &ingredient);
-            } else if !brewable || !self.ingredient_matches(&ingredient) {
-                // Cancel brewing
-                self.brew_time.store(0, Ordering::Relaxed);
-                self.mark_timer_dirty();
-            } else {
-                // Continue brewing
-                self.mark_timer_dirty();
             }
         } else if brewable && self.fuel.load(Ordering::Relaxed) > 0 {
-            let brew_time = if let Some(server) = world.server.upgrade() {
-                let mut start_event =
-                    crate::plugin::api::events::block::brewing_start::BrewingStartEvent::new(
-                        self.position,
-                        world.clone(),
-                        400,
-                    );
-                server
-                    .plugin_manager
-                    .fire_blocking(&server, &mut start_event);
-                if start_event.cancelled {
-                    return;
-                }
-                start_event.brewing_time
-            } else {
-                400
-            };
-
-            // Start new brewing cycle
-            self.fuel.fetch_sub(1, Ordering::Relaxed);
-            self.brew_time.store(brew_time, Ordering::Relaxed);
-            *self
-                .ingredient_item
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ingredient.get_item());
-            self.mark_timer_dirty();
+            if !self.start_brewing(world, &ingredient) {
+                return;
+            }
         } else if fuel_refilled {
             // Mark dirty if fuel was refilled to update fuel indicator
             self.mark_timer_dirty();
@@ -721,6 +634,8 @@ impl PropertyDelegate for BrewingStandBlockEntity {
         match index {
             0 => self.brew_time.load(Ordering::Relaxed),
             1 => self.fuel.load(Ordering::Relaxed),
+            2 => self.total_brew_time.load(Ordering::Relaxed),
+            3 => self.total_fuel.load(Ordering::Relaxed),
             _ => 0,
         }
     }
@@ -728,6 +643,6 @@ impl PropertyDelegate for BrewingStandBlockEntity {
     fn set_property(&self, _index: i32, _value: i32) {}
 
     fn get_properties_size(&self) -> i32 {
-        2
+        4
     }
 }

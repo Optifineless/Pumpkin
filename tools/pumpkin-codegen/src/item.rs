@@ -888,8 +888,8 @@ impl ToTokens for ItemComponents {
             tokens
                 .extend(quote! { (Dye, &DyeImpl { color: crate::dye_color::DyeColor::#color }), });
         }
-        if self.brewing_fuel.is_some() {
-            tokens.extend(quote! { (BrewingFuel, &BrewingFuelImpl), });
+        if let Some(fuel) = &self.brewing_fuel {
+            tokens.extend(crate::item_brewing_fuel::component_tokens(fuel));
         }
         if let Some(compostable) = &self.compostable {
             let layers = compostable

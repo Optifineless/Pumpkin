@@ -12,6 +12,9 @@ mod book_components;
 #[path = "mob_visibility.rs"]
 mod mob_visibility;
 
+#[path = "brewing_fuel.rs"]
+mod brewing_fuel;
+
 #[cfg(test)]
 #[path = "component_crash_tests.rs"]
 mod component_crash_tests;
@@ -968,6 +971,7 @@ pub fn deserialize(
 ) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
     let _scope = crate::ser::decode_budget::DecodeScope::component()?;
     match id {
+        DataComponent::BrewingFuel => Ok(BrewingFuelImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MobVisibility => Ok(MobVisibilityImpl::deserialize(seq)?.to_dyn()),
         DataComponent::CustomData => Ok(CustomDataImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MaxStackSize => Ok(MaxStackSizeImpl::deserialize(seq)?.to_dyn()),
@@ -1123,6 +1127,7 @@ pub fn serialize(
     seq: &mut impl NetworkWriteExt,
 ) -> Result<(), WritingError> {
     match id {
+        DataComponent::BrewingFuel => get::<BrewingFuelImpl>(value).serialize(seq),
         DataComponent::MobVisibility => get::<MobVisibilityImpl>(value).serialize(seq),
         DataComponent::CustomData => get::<CustomDataImpl>(value).serialize(seq),
         DataComponent::MaxStackSize => get::<MaxStackSizeImpl>(value).serialize(seq),

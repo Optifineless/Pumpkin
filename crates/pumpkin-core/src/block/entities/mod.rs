@@ -16,7 +16,13 @@ pub mod beacon;
 pub mod bed;
 pub mod bell;
 pub mod blasting_furnace;
+#[cfg(test)]
+mod brewing_menu_tests;
 pub mod brewing_stand;
+#[cfg(test)]
+mod brewing_stand_test_support;
+#[cfg(test)]
+mod brewing_stand_tests;
 pub mod chest;
 pub mod chest_like_block_entity;
 pub mod chiseled_bookshelf;
