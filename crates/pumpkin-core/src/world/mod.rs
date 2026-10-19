@@ -30,6 +30,7 @@ use tracing::{debug, error, info, trace, warn};
 mod active_chunks;
 mod block_entity_context;
 pub mod brightness;
+mod cauldron;
 pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
