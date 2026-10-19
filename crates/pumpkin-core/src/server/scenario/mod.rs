@@ -13,6 +13,7 @@ mod persistence;
 mod player_list;
 pub mod riding_lock_probe;
 mod transfer;
+mod villager_persistence;
 
 use super::{Server, combat_test_support};
 use crate::{

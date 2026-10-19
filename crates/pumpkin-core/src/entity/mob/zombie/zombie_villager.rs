@@ -12,7 +12,6 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::Metadata;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -22,6 +21,9 @@ use crate::entity::mob::zombie::ZombieEntityBase;
 use crate::entity::mob::{Mob, MobEntity};
 use crate::entity::passive::villager::VillagerEntity;
 use crate::entity::passive::villager::data::{GossipType, VillagerData};
+use crate::entity::passive::villager::data_persistence::{
+    LoadedVillagerData, VillagerDataPersistence, VillagerPersistenceLock,
+};
 use crate::entity::player::Player;
 use crate::entity::player::advancement::trigger::AdvancementTrigger;
 use crate::entity::{Entity, EntityBase};
@@ -34,6 +36,8 @@ fn speeds_up_conversion(block: &Block) -> bool {
 pub struct ZombieVillagerEntity {
     pub mob_entity: Arc<ZombieEntityBase>,
     villager_data: std::sync::Mutex<VillagerData>,
+    villager_data_persistence:
+        pumpkin_util::sync::Mutex<VillagerDataPersistence, VillagerPersistenceLock>,
     /// `Offers` and `Gossips` kept as the NBT vanilla stores them, so a cure can
     /// hand them straight back to the villager it converts into.
     villager_nbt: std::sync::Mutex<NbtCompound>,
@@ -70,6 +74,9 @@ impl ZombieVillagerEntity {
                     .unwrap_or(pumpkin_data::villager::VillagerProfession::None),
                 1,
             )),
+            villager_data_persistence: pumpkin_util::sync::Mutex::new(
+                VillagerDataPersistence::default(),
+            ),
             villager_nbt: std::sync::Mutex::new(NbtCompound::new()),
             villager_xp: AtomicI32::new(0),
             conversion_time: AtomicI32::new(0),
@@ -83,6 +90,13 @@ impl ZombieVillagerEntity {
             .villager_data
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn snapshot_villager_data_persistence(&self, data: VillagerData) -> VillagerDataPersistence {
+        self.villager_data_persistence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .snapshot_for_save(data)
     }
 
     pub fn set_villager_data(&self, data: VillagerData) {
@@ -213,8 +227,17 @@ impl ZombieVillagerEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         nbt.put_int("Xp", self.villager_xp.load(Ordering::Relaxed));
-        villager.mob_read_nbt(&nbt);
+        let retained = self.snapshot_villager_data_persistence(data);
+        if retained.has_unknown_names() {
+            nbt.put_compound("VillagerData", retained.encode(data));
+        }
+        // ZombieVillager.finishConversion restores data before offers; a profession change clears them.
         villager.set_villager_data(data);
+        villager.mob_read_nbt(&nbt);
+        // Conversion finalizes villager data even when no unknown names needed an NBT override.
+        villager
+            .villager_data_finalized
+            .store(true, Ordering::Relaxed);
 
         if let Some(starter) = self.conversion_starter.load() {
             // Vanilla's `ZOMBIE_VILLAGER_CURED` reputation event.
@@ -351,11 +374,9 @@ impl Mob for ZombieVillagerEntity {
         self.mob_entity.mob_write_nbt(nbt);
 
         let data = self.get_villager_data();
-        let mut villager_data_nbt = NbtCompound::new();
-        villager_data_nbt.put_int("Type", data.r#type.0);
-        villager_data_nbt.put_int("Profession", data.profession.0);
-        villager_data_nbt.put_int("Level", data.level.0);
-        nbt.put_compound("VillagerData", villager_data_nbt);
+        let retained = self.snapshot_villager_data_persistence(data);
+        // ZombieVillager.addAdditionalSaveData uses the same VillagerData.CODEC as villagers.
+        nbt.put_compound("VillagerData", retained.encode(data));
         nbt.put_int("Xp", self.villager_xp.load(Ordering::Relaxed));
 
         {
@@ -389,17 +410,22 @@ impl Mob for ZombieVillagerEntity {
         self.mob_entity.mob_read_nbt(nbt);
 
         if let Some(villager_data_nbt) = nbt.get_compound("VillagerData") {
-            let mut data = self.get_villager_data();
-            if let Some(r#type) = villager_data_nbt.get_int("Type") {
-                data.r#type = VarInt(r#type);
+            let loaded = LoadedVillagerData::decode(villager_data_nbt, self.get_villager_data());
+            self.set_villager_data(loaded.data);
+            let should_warn = self
+                .villager_data_persistence
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .replace(&loaded);
+            if should_warn {
+                let (villager_type, profession) = loaded.unknown_names();
+                tracing::warn!(
+                    zombie_villager = %self.get_entity().entity_uuid,
+                    ?villager_type,
+                    ?profession,
+                    "Preserving unknown villager registry names in saved data"
+                );
             }
-            if let Some(profession) = villager_data_nbt.get_int("Profession") {
-                data.profession = VarInt(profession);
-            }
-            if let Some(level) = villager_data_nbt.get_int("Level") {
-                data.level = VarInt(level);
-            }
-            self.set_villager_data(data);
         }
 
         if let Some(xp) = nbt.get_int("Xp") {

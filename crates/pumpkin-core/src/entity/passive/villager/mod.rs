@@ -20,7 +20,6 @@ use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::bedrock::{
     client::set_actor_data::{MetadataValue, SyncedActorDataList, entity_data_key},
     server::actor_event::ActorEventID,
@@ -49,7 +48,13 @@ use crate::world::World;
 use crate::world::villager_poi::profession_for_block;
 
 pub mod data;
+pub(crate) mod data_persistence;
+mod food_persistence;
 mod golem_spawning;
+mod gossip_persistence;
+mod inventory_persistence;
+mod persistence;
+pub use inventory_persistence::VillagerInventory;
 pub(crate) mod hostiles;
 mod reward_trade_xp;
 pub use data::{
@@ -337,7 +342,13 @@ pub struct VillagerEntity {
     golem_scan_ticks: AtomicI32,
     golem_spawn_lock: std::sync::Mutex<()>,
     pub villager_data: std::sync::Mutex<VillagerData>,
+    villager_data_persistence: pumpkin_util::sync::Mutex<
+        data_persistence::VillagerDataPersistence,
+        data_persistence::VillagerPersistenceLock,
+    >,
+    pub villager_data_finalized: AtomicBool,
     pub food_level: AtomicI32,
+    food_level_warning_logged: AtomicBool,
     pub xp: AtomicI32,
     pub last_restock_time: AtomicI64,
     pub last_restock_check_day: AtomicI64,
@@ -346,7 +357,7 @@ pub struct VillagerEntity {
     pub last_gossip_decay_time: AtomicI64,
     pub last_gossip_share_time: AtomicI64,
     pub gossips: std::sync::Mutex<FxHashMap<Uuid, FxHashMap<GossipType, i32>>>,
-    pub inventory: std::sync::Mutex<Vec<ItemStack>>,
+    pub inventory: std::sync::Mutex<VillagerInventory>,
     pub merchant_inventory: Arc<SimpleInventory>,
     pub offers: std::sync::Mutex<Vec<pumpkin_protocol::java::client::play::MerchantOffer>>,
     pub merchant_update_timer: AtomicI32,
@@ -408,14 +419,19 @@ impl VillagerEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .set_can_float(true);
         let villager_data = VillagerData::new(VillagerType::Plains, VillagerProfession::None, 1);
-        let inventory = std::sync::Mutex::new((0..8).map(|_| ItemStack::EMPTY.clone()).collect());
+        let inventory = std::sync::Mutex::new(VillagerInventory::default());
 
         let villager = Self {
             mob_entity,
             golem_scan_ticks: AtomicI32::new(golem_spawning::initial_scan_delay()),
             golem_spawn_lock: std::sync::Mutex::new(()),
             villager_data: std::sync::Mutex::new(villager_data),
+            villager_data_persistence: pumpkin_util::sync::Mutex::new(
+                data_persistence::VillagerDataPersistence::default(),
+            ),
+            villager_data_finalized: AtomicBool::new(false),
             food_level: AtomicI32::new(0),
+            food_level_warning_logged: AtomicBool::new(false),
             xp: AtomicI32::new(0),
             last_restock_time: AtomicI64::new(0),
             last_restock_check_day: AtomicI64::new(0),
@@ -1823,156 +1839,14 @@ impl Mob for VillagerEntity {
         self.golem_ai_step();
     }
 
-    #[expect(clippy::too_many_lines)]
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
-        {
-            let data = self
-                .villager_data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut villager_data_nbt = NbtCompound::new();
-            villager_data_nbt.put_int("Type", data.r#type.0);
-            villager_data_nbt.put_int("Profession", data.profession.0);
-            villager_data_nbt.put_int("Level", data.level.0);
-            nbt.put_compound("VillagerData", villager_data_nbt);
-        };
-
-        nbt.put_int("FoodLevel", self.food_level.load(Ordering::Relaxed));
-        nbt.put_int("Xp", self.xp.load(Ordering::Relaxed));
-        nbt.put_long(
-            "LastRestock",
-            self.last_restock_time.load(Ordering::Relaxed),
-        );
-        nbt.put_int("RestocksToday", self.restocks_today.load(Ordering::Relaxed));
-        nbt.put_long(
-            "LastGossipDecay",
-            self.last_gossip_decay_time.load(Ordering::Relaxed),
-        );
-
-        let last_gossip_share = self.last_gossip_share_time.load(Ordering::Relaxed);
-        if last_gossip_share > 0 {
-            nbt.put_long("LastGossipShare", last_gossip_share);
-        }
-
-        let last_worked = self.last_worked_at_poi.load(Ordering::Relaxed);
-        if last_worked > 0 {
-            nbt.put_long("LastWorkedAtPoi", last_worked);
-        }
-
-        if let Some(pos) = self.get_job_site() {
-            nbt.put_int("JobSiteX", pos.0.x);
-            nbt.put_int("JobSiteY", pos.0.y);
-            nbt.put_int("JobSiteZ", pos.0.z);
-            nbt.put_bool(
-                "JobSitePending",
-                self.job_site_pending.load(Ordering::Relaxed),
-            );
-        }
-
-        if let Some(pos) = self.get_home() {
-            nbt.put_int("HomeX", pos.0.x);
-            nbt.put_int("HomeY", pos.0.y);
-            nbt.put_int("HomeZ", pos.0.z);
-        }
-
-        let offers = self
-            .offers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !offers.is_empty() {
-            let mut recipes = Vec::new();
-            for offer in offers.iter() {
-                let mut recipe = NbtCompound::new();
-                let mut buy = NbtCompound::new();
-                let mut sell = NbtCompound::new();
-
-                let item_stack: &ItemStack = offer.base_cost_a.0.as_ref();
-                item_stack.write_item_stack(&mut buy);
-                recipe.put_compound("buy", buy);
-
-                let item_stack: &ItemStack = offer.output.0.as_ref();
-                item_stack.write_item_stack(&mut sell);
-                recipe.put_compound("sell", sell);
-
-                if let Some(cost_b) = &offer.cost_b {
-                    let mut buy_b = NbtCompound::new();
-                    let item_stack: &ItemStack = cost_b.0.as_ref();
-                    item_stack.write_item_stack(&mut buy_b);
-                    recipe.put_compound("buyB", buy_b);
-                }
-
-                recipe.put_int("uses", offer.uses);
-                recipe.put_int("maxUses", offer.max_uses);
-                recipe.put_bool("rewardExp", offer.reward_exp);
-                recipe.put_int("xp", offer.xp);
-                recipe.put_float("priceMultiplier", offer.price_multiplier);
-                recipe.put_int("specialPrice", offer.special_price);
-                recipe.put_int("demand", offer.demand);
-
-                recipes.push(NbtTag::Compound(recipe));
-            }
-            let mut offers_compound = NbtCompound::new();
-            offers_compound.put("Recipes", NbtTag::List(recipes));
-            nbt.put_compound("Offers", offers_compound);
-        }
-
-        let inventory = self
-            .inventory
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !inventory.is_empty() {
-            let mut inventory_list = Vec::new();
-            for item in inventory.iter() {
-                let mut item_compound = NbtCompound::new();
-                item.write_item_stack(&mut item_compound);
-                inventory_list.push(NbtTag::Compound(item_compound));
-            }
-            nbt.put("Inventory", NbtTag::List(inventory_list));
-        }
-
-        let gossips = self
-            .gossips
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !gossips.is_empty() {
-            let mut gossip_list = Vec::new();
-            for (uuid, entries) in gossips.iter() {
-                for (gossip_type, val) in entries {
-                    let mut gossip_nbt = NbtCompound::new();
-                    let (u1, u2) = uuid.as_u64_pair();
-                    let uuid_array =
-                        vec![(u1 >> 32) as i32, u1 as i32, (u2 >> 32) as i32, u2 as i32];
-                    gossip_nbt.put("Target", NbtTag::IntArray(uuid_array));
-                    gossip_nbt.put_string("Type", gossip_type.name().to_string());
-                    gossip_nbt.put_int("Value", *val);
-                    gossip_list.push(NbtTag::Compound(gossip_nbt));
-                }
-            }
-            nbt.put("Gossips", NbtTag::List(gossip_list));
-        }
+        self.write_villager_nbt(nbt);
     }
 
     #[allow(clippy::too_many_lines)]
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
-        if let Some(villager_data_nbt) = nbt.get_compound("VillagerData") {
-            let mut data = self
-                .villager_data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some(t) = villager_data_nbt.get_int("Type") {
-                data.r#type = VarInt(t);
-            }
-            if let Some(p) = villager_data_nbt.get_int("Profession") {
-                data.profession = VarInt(p);
-            }
-            if let Some(l) = villager_data_nbt.get_int("Level") {
-                data.level = VarInt(l);
-            }
-        }
-
-        if let Some(food) = nbt.get_int("FoodLevel") {
-            self.food_level.store(food, Ordering::Relaxed);
-        }
+        self.read_villager_data_nbt(nbt);
+        self.read_food_nbt(nbt);
         if let Some(xp) = nbt.get_int("Xp") {
             self.xp.store(xp, Ordering::Relaxed);
         }
@@ -2074,55 +1948,8 @@ impl Mob for VillagerEntity {
             }
         }
 
-        // Inventory
-        if let Some(inventory_list) = nbt.get_list("Inventory") {
-            let mut inventory = self
-                .inventory
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            inventory.clear();
-            for tag in inventory_list {
-                if let Some(item_compound) = tag.extract_compound()
-                    && let Some(stack) = ItemStack::read_item_stack(item_compound)
-                {
-                    inventory.push(stack);
-                }
-            }
-        }
-
-        // Gossips
-        if let Some(gossip_list) = nbt.get_list("Gossips") {
-            let mut gossips = self
-                .gossips
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            gossips.clear();
-            for tag in gossip_list {
-                if let Some(gossip_nbt) = tag.extract_compound() {
-                    let uuid = gossip_nbt.get_int_array("Target").map(|uuid_array| {
-                        Uuid::from_u128(
-                            (uuid_array[0] as u128) << 96
-                                | (uuid_array[1] as u128) << 64
-                                | (uuid_array[2] as u128) << 32
-                                | (uuid_array[3] as u128),
-                        )
-                    });
-                    let gossip_type = gossip_nbt
-                        .get_string("Type")
-                        .and_then(GossipType::from_name)
-                        .or_else(|| {
-                            gossip_nbt
-                                .get_int("Type")
-                                .and_then(GossipType::from_legacy_id)
-                        });
-                    if let (Some(uuid), Some(gossip_type), Some(val)) =
-                        (uuid, gossip_type, gossip_nbt.get_int("Value"))
-                    {
-                        gossips.entry(uuid).or_default().insert(gossip_type, val);
-                    }
-                }
-            }
-        }
+        self.read_inventory_nbt(nbt);
+        self.read_gossips_nbt(nbt);
     }
 
     fn get_mob_entity(&self) -> &MobEntity {

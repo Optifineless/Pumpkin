@@ -33,6 +33,65 @@ then move between dimensions; expect every tab to retain all online players and
 remove a player only on disconnect. Capture tabs and player-info packets during
 login, a portal trip, metadata changes and logout.
 
+## Villager persistence, breeding slice 1
+
+Villagers load vanilla 26.3 registry-name `VillagerData`, the finalized flag and
+byte `FoodLevel`, while accepting the earlier fork's numeric fields and int food.
+Saves use the vanilla form. Unknown registry names and out-of-range legacy food
+remain preserved with a warning. Inventory retains eight usable slots and saves
+nonempty stacks in order; unsupported and excess entries retain lossless NBT tag
+content, not literal bytes: compound-key order is not kept.
+Gossip UUIDs use the shared four-int UUID codec, malformed targets are skipped
+with a warning, and the fork's saved `LastGossipShare` is restored. Offers, restock
+state, home and Brain memories keep their existing persistence. Each save captures
+state under separate locks and encodes after releasing the guards.
+
+Checked against vanilla 26.3 `VillagerData.CODEC`,
+`Villager.readAdditionalSaveData/addAdditionalSaveData`, `InventoryCarrier`,
+`SimpleContainer` and `GossipContainer.GossipEntry.CODEC`. Zombie villagers use the
+same registry-name codec, accept legacy numeric data, and retain unknown names.
+Retained names are saved only while the live field equals its decoded fallback;
+later type or profession changes discard that field's retained name, including
+direct native/Wasm writes. Level-only changes preserve both retained names.
+Curing applies villager data before restoring offers, matching
+`ZombieVillager.finishConversion`, so remembered trades survive a profession
+change; retained unknown registry names also transfer to the cured villager.
+Existing zombie Offers, Gossips, Xp and conversion-field behavior is
+unchanged. Pickup, breeding, goals and biological age are unchanged.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+The original eight bounded server scenarios exercise chunk activation and two real shutdown/
+restart saves, including unknown registry names and both finalized-flag cases.
+All eight fail on `95cb23667` (the short gossip target panics) and pass with this
+change. Raw-entry comparisons use canonical NBT bytes because the existing NBT
+parser discards compound-key order; tag types, values and list order are retained.
+Six round-2 scenarios add setter/direct-write changes, independent retained
+fields, zombie vanilla/legacy/unknown data and carried fields, and known/unknown
+cures. Each exercises two shutdown/restart cycles, with isolated negative
+controls for fallback validation, zombie serialization and cure restoration.
+
+PR #226 review round 3 keeps inventory entries raw when decoding would drop
+unsupported top-level or component data. It skips only canonical legacy
+`minecraft:air` zero-count placeholders, retaining other zero-count entries
+across two restarts. Zombie-villager conversion finalizes villager data for
+known and unknown registry names while keeping restored offers. Chunk activation
+initializes Java tracked data and Bedrock actor metadata from loaded villager
+data and XP. No public plugin API or saved-data meaning changes. In-game
+verification: **Not yet**. The new persistence assertions fail on `854cb8cfd`
+for lossy inventory rewrites, the dropped zero-count entry and the known cure's
+false finalized flag.
+
+API 8 (same version): `VillagerEntity` and `ZombieVillagerEntity` gain persistence
+state (including recorded fallback values), and the public villager
+inventory now holds `VillagerInventory`, whose usable slots are a fixed array of
+eight stacks. Native plugins must be rebuilt; Wasm WIT is unchanged.
+
+Play test: Import villagers with professions, trades, food and player reputation,
+restart the server twice, and expect the same villagers, trades and discounts.
+Give a villager with an unknown saved profession a lectern; expect its librarian
+profession to survive two restarts. Import a zombie librarian, cure it, and expect
+the same remembered trades before and after restarting.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
