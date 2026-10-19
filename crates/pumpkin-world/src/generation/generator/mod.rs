@@ -11,6 +11,8 @@ use crate::generation::{GlobalRandomConfig, Seed};
 pub mod biome_finder;
 pub mod structure_finder;
 #[cfg(test)]
+mod structure_finder_review_tests;
+#[cfg(test)]
 mod structure_finder_tests;
 
 pub trait GeneratorInit {

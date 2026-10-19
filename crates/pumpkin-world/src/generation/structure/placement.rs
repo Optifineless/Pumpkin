@@ -1,7 +1,7 @@
 use pumpkin_data::structures::{
     ConcentricRingsStructurePlacement, FrequencyReductionMethod, RandomSpreadStructurePlacement,
     SpreadType, StructurePlacement, StructurePlacementCalculator, StructurePlacementType,
-    StructureSet,
+    StructureSet, WeightedEntry,
 };
 use pumpkin_util::{
     math::floor_div,
@@ -36,6 +36,39 @@ pub struct GlobalStructureCache {
     /// world seed, so it is computed once here instead of being recomputed for every
     /// surrounding chunk whose structure references overlap it.
     structure_starts: OnceLock<DashMap<(StructureKeys, i32, i32), Option<StructurePosition>>>,
+}
+
+/// Returns the deterministic weighted fallback order for structures in a set.
+pub(crate) fn weighted_structure_order(
+    entries: &[WeightedEntry],
+    seed: u64,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> Vec<WeightedEntry> {
+    let mut candidates = entries.to_vec();
+    let large_feature_seed = get_large_feature_seed(seed, chunk_x, chunk_z);
+    let mut random = LegacyRand::from_seed(large_feature_seed);
+    let mut total_weight: u32 = candidates.iter().map(|entry| entry.weight).sum();
+    let mut ordered = Vec::with_capacity(candidates.len());
+
+    while !candidates.is_empty() {
+        let mut roll = random.next_bounded_i32(total_weight as i32);
+        let mut selected_idx = 0;
+
+        for (index, entry) in candidates.iter().enumerate() {
+            roll -= entry.weight as i32;
+            if roll < 0 {
+                selected_idx = index;
+                break;
+            }
+        }
+
+        let selected = candidates.remove(selected_idx);
+        total_weight -= selected.weight;
+        ordered.push(selected);
+    }
+
+    ordered
 }
 
 struct RingTask {

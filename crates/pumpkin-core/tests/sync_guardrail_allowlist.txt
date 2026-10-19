@@ -857,7 +857,7 @@ crates/pumpkin-world/src/chunk_system/schedule.rs::create::tokio::sync::Mutex::n
 crates/pumpkin-world/src/chunk_system/storage_failure_tests.rs::scheduler::unknown::Mutex::new#1
 crates/pumpkin-world/src/data/player_data.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/end_city/mod.rs::get_structure_position::std::sync::Mutex::new#1
-crates/pumpkin-world/src/generation/structure/structures/jigsaw_placement.rs::add_pieces::std::sync::Mutex::new#1
+crates/pumpkin-world/src/generation/structure/structures/jigsaw_placement.rs::add_pieces_with_biome_check::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/mansion/mod.rs::get_structure_position::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/mineshaft.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-world/src/generation/structure/structures/nether_fortress/mod.rs::get_structure_position::std::sync::Mutex::new#1

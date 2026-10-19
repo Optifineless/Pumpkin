@@ -121,6 +121,7 @@ xxhash-rust.workspace = true
 
 
 [dev-dependencies]
+pumpkin-world = { workspace = true, features = ["test"] }
 syn = { workspace = true, features = ["visit"] }
 tokio-tungstenite = "0.29.0"
 tempfile.workspace = true

@@ -25,7 +25,12 @@ use std::{
 const WAIT: Duration = Duration::from_secs(20);
 const END_CHUNK: (i32, i32) = (25, 123);
 
-fn world(seed: u64, dimension: Dimension, biome: Option<&str>, set: &str) -> WorldGenerator {
+pub(super) fn world(
+    seed: u64,
+    dimension: Dimension,
+    biome: Option<&str>,
+    set: &str,
+) -> WorldGenerator {
     let source = biome.map(|biome| BiomeSource::Fixed {
         biome: format!("minecraft:{biome}"),
         biome_type: "minecraft:fixed".to_owned(),
@@ -39,14 +44,14 @@ fn world(seed: u64, dimension: Dimension, biome: Option<&str>, set: &str) -> Wor
     )))
 }
 
-fn noise(world: &WorldGenerator) -> &VanillaGenerator {
+pub(super) fn noise(world: &WorldGenerator) -> &VanillaGenerator {
     let WorldGenerator::Noise(generator) = world else {
         unreachable!()
     };
     generator
 }
 
-fn generate(world: &WorldGenerator, (x, z): (i32, i32)) -> ProtoChunk {
+pub(super) fn generate(world: &WorldGenerator, (x, z): (i32, i32)) -> ProtoChunk {
     let mut chunk = ProtoChunk::new(x, z, world);
     chunk.step_to_biomes(noise(world));
     chunk.set_structure_starts(noise(world));
@@ -62,7 +67,7 @@ fn locate(
     find_nearest_structure_start(BlockPos::new(x * 16, 0, z * 16), set, &[key], 0, world)
 }
 
-fn cached(
+pub(super) fn cached(
     world: &WorldGenerator,
     key: StructureKeys,
     (x, z): (i32, i32),
@@ -74,7 +79,7 @@ fn cached(
         })
 }
 
-fn owned(chunk: &ProtoChunk, key: StructureKeys) -> &StructurePosition {
+pub(super) fn owned(chunk: &ProtoChunk, key: StructureKeys) -> &StructurePosition {
     let Some(StructureInstance::Start(position)) = chunk.structure_starts.get(&key) else {
         panic!("generated chunk must own {key:?}")
     };
@@ -82,12 +87,12 @@ fn owned(chunk: &ProtoChunk, key: StructureKeys) -> &StructurePosition {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct Pieces {
+pub(super) struct Pieces {
     start: BlockPos,
     pieces: Vec<(StructurePieceType, BlockBox)>,
 }
 
-fn pieces(position: &StructurePosition) -> Pieces {
+pub(super) fn pieces(position: &StructurePosition) -> Pieces {
     let collector = position.collector.lock().unwrap();
     assert!(
         !collector.pieces.is_empty(),

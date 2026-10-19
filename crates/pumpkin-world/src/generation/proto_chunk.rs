@@ -11,7 +11,6 @@ use pumpkin_data::tag::RegistryKey;
 use pumpkin_data::{Block, BlockState, block_properties::blocks_movement, chunk::Biome};
 use pumpkin_data::{BlockId, BlockStateId, tag};
 use pumpkin_util::random::xoroshiro128::XoroshiroSplitter;
-use pumpkin_util::random::{RandomImpl, get_large_feature_seed, legacy_rand::LegacyRand};
 use pumpkin_util::{
     HeightMap,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
@@ -45,7 +44,9 @@ use crate::generation::noise::router::surface_height_sampler::SurfaceHeightSampl
 use crate::generation::noise::{CHUNK_DIM, ChunkNoiseGenerator, LAVA_BLOCK, WATER_BLOCK};
 use crate::generation::section_coords::section_to_block;
 use crate::generation::structure::lazily_generate_structure;
-use crate::generation::structure::placement::should_generate_structure;
+use crate::generation::structure::placement::{
+    should_generate_structure, weighted_structure_order,
+};
 use crate::generation::structure::structures::{
     StructureGeneratorContext, StructureInstance, create_chunk_random,
 };
@@ -1298,39 +1299,6 @@ impl ProtoChunk {
         allowed_biomes
     }
 
-    /// Returns the deterministic weighted fallback order for structures in a set.
-    fn weighted_structure_order(
-        entries: &[WeightedEntry],
-        seed: u64,
-        chunk_x: i32,
-        chunk_z: i32,
-    ) -> Vec<WeightedEntry> {
-        let mut candidates = entries.to_vec();
-        let large_feature_seed = get_large_feature_seed(seed, chunk_x, chunk_z);
-        let mut random = LegacyRand::from_seed(large_feature_seed);
-        let mut total_weight: u32 = candidates.iter().map(|entry| entry.weight).sum();
-        let mut ordered = Vec::with_capacity(candidates.len());
-
-        while !candidates.is_empty() {
-            let mut roll = random.next_bounded_i32(total_weight as i32);
-            let mut selected_idx = 0;
-
-            for (index, entry) in candidates.iter().enumerate() {
-                roll -= entry.weight as i32;
-                if roll < 0 {
-                    selected_idx = index;
-                    break;
-                }
-            }
-
-            let selected = candidates.remove(selected_idx);
-            total_weight -= selected.weight;
-            ordered.push(selected);
-        }
-
-        ordered
-    }
-
     /// Creates the structure starts owned by this chunk.
     pub fn set_structure_starts(&mut self, generator: &super::generator::VanillaGenerator) {
         debug_assert_eq!(self.stage, StagedChunkEnum::Biomes);
@@ -1367,7 +1335,7 @@ impl ProtoChunk {
                 continue;
             }
 
-            for entry in Self::weighted_structure_order(set.structures, seed, self.x, self.z) {
+            for entry in weighted_structure_order(set.structures, seed, self.x, self.z) {
                 if self.try_set_structure_start(
                     global_cache,
                     &entry,
@@ -1501,7 +1469,7 @@ impl ProtoChunk {
                     let entries = if set.structures.len() == 1 {
                         set.structures.to_vec()
                     } else {
-                        Self::weighted_structure_order(
+                        weighted_structure_order(
                             set.structures,
                             random_config.seed,
                             candidate_chunk_x,

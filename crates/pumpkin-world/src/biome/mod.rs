@@ -7,6 +7,7 @@ use crate::generation::noise::router::multi_noise_sampler::MultiNoiseSampler;
 pub mod end;
 pub mod multi_noise;
 pub mod position_finder;
+mod possible_biomes;
 
 pub use position_finder::{
     Climate, ClimateSampler, DistanceMetric, FittestPositionFinder, FittestPositionFinderResult,

@@ -9,7 +9,10 @@ use pumpkin_world::{
     ProtoChunk,
     generation::{
         generator::{VanillaGenerator, WorldGenerator},
-        structure::structures::{StructurePosition, create_chunk_random},
+        structure::{
+            structures::{StructurePosition, create_chunk_random},
+            test_support::with_height_sampler_budget,
+        },
     },
     world_info::BiomeSource,
 };
@@ -243,10 +246,25 @@ async fn b1019_g23_fixed_biome_command_order() -> TestResult {
 
 #[tokio::test]
 async fn b1019_g23_overworld_command_refuses_end_city() -> TestResult {
+    impossible_city_command(Dimension::OVERWORLD, None).await
+}
+
+#[tokio::test]
+async fn b1019_g23_r2_fixed_plains_end_command_is_bounded() -> TestResult {
+    impossible_city_command(Dimension::THE_END, Some("plains")).await
+}
+
+async fn impossible_city_command(dimension: Dimension, biome: Option<&str>) -> TestResult {
     let directory = tempfile::tempdir()?;
     let server = combat_test_support::server(directory.path());
-    let world = combat_test_support::world(&server, directory.path());
-    server.worlds.store(Arc::new(vec![world.clone()]));
+    let world = command_world(
+        &server,
+        directory.path(),
+        dimension,
+        12_345,
+        biome,
+        "end_cities",
+    );
     let player = TestPlayer::new(&world);
     player.player.permission_lvl.store(PermissionLvl::Four);
     player.player.get_entity().set_pos(Vector3::new(
@@ -255,25 +273,156 @@ async fn b1019_g23_overworld_command_refuses_end_city() -> TestResult {
         f64::from(CITY_CHUNK.1 * 16),
     ));
     let source = player.player.get_command_source(&server);
-    let result = bounded_dispatcher().execute_input("locate structure minecraft:end_city", &source);
+    let (result, constructions) = with_height_sampler_budget(0, || {
+        server
+            .command_dispatcher
+            .load_full()
+            .execute_input("locate structure minecraft:end_city", &source)
+    });
+    tokio::time::timeout(Duration::from_secs(20), world.level.shutdown()).await??;
+    assert_eq!(
+        constructions, 0,
+        "production radius must require no terrain work"
+    );
     assert!(
         result
-            .expect_err("Overworld must not locate an End city")
+            .expect_err("this source cannot produce an End city")
             .is(&STRUCTURE_NOT_FOUND_ERROR_TYPE)
     );
-    let generator = world.level.world_gen.load_full();
-    let set = &StructureSet::END_CITIES;
-    let StructurePlacementType::RandomSpread(spread) = &set.placement.placement_type else {
-        panic!("End cities use random-spread placement")
-    };
-    let candidate = pumpkin_world::generation::structure::placement::get_structure_chunk_in_region(
-        spread,
-        world.level.seed.0 as i64,
-        CITY_CHUNK.0.div_euclid(spread.spacing),
-        CITY_CHUNK.1.div_euclid(spread.spacing),
-        set.placement.salt,
+    Ok(())
+}
+
+#[tokio::test]
+async fn b1019_g23_r2_end_column_biome_rejects_before_terrain() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let server = combat_test_support::server(directory.path());
+    let world = command_world(
+        &server,
+        directory.path(),
+        Dimension::THE_END,
+        12_345,
+        None,
+        "end_cities",
     );
-    assert!(cached(&generator, StructureKeys::EndCity, candidate).is_none());
+    let player = TestPlayer::new(&world);
+    player.player.permission_lvl.store(PermissionLvl::Four);
+    // This placement lies on the central island. The source supports cities elsewhere.
+    player
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(64.0, 80.0, 352.0));
+    let source = player.player.get_command_source(&server);
+    let (result, constructions) = with_height_sampler_budget(0, || {
+        bounded_dispatcher().execute_input("locate structure minecraft:end_city", &source)
+    });
     tokio::time::timeout(Duration::from_secs(20), world.level.shutdown()).await??;
+    assert_eq!(constructions, 0);
+    assert!(result.unwrap_err().is(&STRUCTURE_NOT_FOUND_ERROR_TYPE));
+    Ok(())
+}
+
+async fn nether_winner_command(biome: &str, winner: StructureKeys) -> TestResult {
+    let chunk = (4, 56);
+    let mut expected = None;
+    for locate_first in [false, true] {
+        let directory = tempfile::tempdir()?;
+        let server = combat_test_support::server(directory.path());
+        let world = command_world(
+            &server,
+            directory.path(),
+            Dimension::THE_NETHER,
+            0,
+            Some(biome),
+            "nether_complexes",
+        );
+        let player = TestPlayer::new(&world);
+        player.player.permission_lvl.store(PermissionLvl::Four);
+        player
+            .player
+            .get_entity()
+            .set_pos(Vector3::new(64.0, 80.0, 896.0));
+        let source = player.player.get_command_source(&server);
+        let generator = world.level.world_gen();
+        let generated = (!locate_first).then(|| generate(&generator, chunk));
+        let dispatcher = server.command_dispatcher.load_full();
+        let command = "locate structure minecraft:fortress";
+        let distance = dispatcher
+            .execute_input(command, &source)
+            .map_err(|error| format!("{error:?}"))?;
+        assert_eq!(
+            dispatcher
+                .execute_input(command, &source)
+                .map_err(|error| format!("{error:?}"))?,
+            distance
+        );
+        let located = cached(&generator, winner, chunk).unwrap();
+        let bounds = piece_bounds(&located);
+        let _generated = generated.unwrap_or_else(|| generate(&generator, chunk));
+        assert_eq!(
+            piece_bounds(&cached(&generator, winner, chunk).unwrap()),
+            bounds
+        );
+        let actual = (distance, located.start_pos, bounds);
+        if let Some(expected) = &expected {
+            assert_eq!(
+                &actual, expected,
+                "cache order must preserve the selected start"
+            );
+        } else {
+            expected = Some(actual);
+        }
+        if winner == StructureKeys::BastionRemnant {
+            assert!(
+                distance > 0,
+                "the bastion-owned chunk must not be reported as a fortress"
+            );
+        } else {
+            assert_eq!(
+                distance, 0,
+                "fortress must remain a valid failed-bastion fallback"
+            );
+        }
+        drop(dispatcher);
+        tokio::time::timeout(Duration::from_secs(20), world.level.shutdown()).await??;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn b1019_g23_r2_fortress_command_uses_weighted_winner() -> TestResult {
+    nether_winner_command("nether_wastes", StructureKeys::BastionRemnant).await
+}
+
+#[tokio::test]
+async fn b1019_g23_r2_fortress_command_keeps_failed_bastion_fallback() -> TestResult {
+    nether_winner_command("basalt_deltas", StructureKeys::Fortress).await
+}
+
+#[tokio::test]
+async fn b1019_g23_r2_ordinary_command_finds_nearest_village() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let server = combat_test_support::server(directory.path());
+    let world = command_world(
+        &server,
+        directory.path(),
+        Dimension::OVERWORLD,
+        1_790_191_031_698_462_450,
+        None,
+        "villages",
+    );
+    let player = TestPlayer::new(&world);
+    player.player.permission_lvl.store(PermissionLvl::Four);
+    player
+        .player
+        .get_entity()
+        .set_pos(Vector3::new(3549.0, 80.0, 2988.0));
+    let source = player.player.get_command_source(&server);
+    let distance = server
+        .command_dispatcher
+        .load_full()
+        .execute_input("locate structure #minecraft:village", &source)
+        .map_err(|error| format!("{error:?}"))?;
+    tokio::time::timeout(Duration::from_secs(20), world.level.shutdown()).await??;
+    assert_eq!(distance, 5);
     Ok(())
 }
