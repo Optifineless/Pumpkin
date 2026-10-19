@@ -1314,3 +1314,26 @@ unchanged. In-game verification: **Not yet**.
 Issues #78, #79 and #160: scheduled fire checks the fire-spread radius at its source after scheduling its next tick, measuring from the block corner with a strict radius; -1 remains unrestricted, radius 0 admits no players, and spectators do not count. Adjacent burnout reads the target block state, so waterlogged wood has no burn odds. Burn and spread callbacks retain a replacement block instead of overwriting it; dry burning, cancellable events and TNT priming remain. Support and rain extinction notify clients as well as neighbors. Mirrors vanilla 26.3 `FireBlock.tick/canSpreadFireAround/getBurnOdds/checkBurnOut` and `Level.removeBlock`. Upstream PR #3669 independently contains the same two notification flags for #160; this grouped fork change records that overlap alongside #78 and #79. No public API or saved-data changes. In-game verification: Not yet.
 
 Play test: Set the fire-spread radius to 0, place a supported flame beside an air gap and a dry wooden block beyond it, and keep players centered over the flame and gap; expect no new flame or wood loss. Set the radius to -1 and repeat; expect fire to spread, dry wood to burn, waterlogged wood to remain, and TNT to prime once.
+
+## Lodestone compass component preservation (#43)
+
+Survival singleton binding updates the used stack in place. Stack and Creative
+binding copy the original component patch with a fresh stack UID and replace its
+lodestone tracker; a full Survival inventory drops the bound copy, while a full
+Creative inventory discards it. Mirrors vanilla 26.3 `CompassItem.useOn`,
+`ItemStack.transmuteCopyIgnoreEmpty` and `Inventory.add`. No public API, WIT or
+saved-data changes. Survival stacked binding withdraws from the exact hand slot
+before insertion, so a bound copy that matches its source can merge without
+increasing the total count. A real `handle_use_item_on` regression covers both
+hands, repeated same-target uses, and free/full inventory layouts. In-game
+verification: Not yet.
+
+Play test: Bind a named singleton in each hand with a full inventory; expect the
+same named compass to remain held with the new tracker and no drop. Combine two
+identically named compasses bound to the same lodestone, then click it repeatedly
+in either hand with space and with a full inventory; expect exactly two
+compasses with the name and custom settings intact. Bind a named stack and
+rebind it; expect the copy to retain its name and component removals.
+Repeat in Creative with space and with a full inventory; expect a bound copy in
+the free slot and no ground copy when full. Capture the holder and a nearby
+observer.
