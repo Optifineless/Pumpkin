@@ -4869,8 +4869,17 @@ impl World {
         let new_block = Block::from_state_id(block_state_id);
         let is_new_block = old_block != new_block;
         let block_moved = flags.contains(BlockFlags::MOVED);
+        // CopperChestBlock.shouldChangedStateKeepBlockEntity keeps storage across stage changes.
+        let keep_copper_chest_entity = retired.is_none()
+            && is_new_block
+            && old_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_COPPER_CHESTS)
+            && new_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_COPPER_CHESTS);
 
-        if retired.is_none() && is_new_block && block_entity_name(old_block).is_some() {
+        if retired.is_none()
+            && is_new_block
+            && !keep_copper_chest_entity
+            && block_entity_name(old_block).is_some()
+        {
             if let Some(entity) = self.get_block_entity(position)
                 && !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK)
             {
@@ -4889,7 +4898,10 @@ impl World {
             );
         }
 
-        if !flags.contains(BlockFlags::SKIP_BLOCK_ADDED_CALLBACK) && is_new_block {
+        if !flags.contains(BlockFlags::SKIP_BLOCK_ADDED_CALLBACK)
+            && is_new_block
+            && !keep_copper_chest_entity
+        {
             self.block_registry.on_placed(
                 self,
                 new_block,

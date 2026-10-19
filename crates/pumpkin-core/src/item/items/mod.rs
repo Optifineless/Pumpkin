@@ -1,6 +1,7 @@
 pub mod armor_stand;
 pub mod arrow;
 pub mod axe;
+mod block_transformer;
 pub mod boat;
 pub mod bone_meal;
 pub mod bow;
@@ -176,3 +177,9 @@ pub fn default_registry() -> Arc<ItemRegistry> {
 
 #[cfg(test)]
 mod hand_use_review_tests;
+
+#[cfg(test)]
+mod block_transformer_tests;
+
+#[cfg(test)]
+mod block_transformer_review_tests;

@@ -627,6 +627,7 @@ G10 implementation: Codex (GPT-6 Luna).
 
 | Fork issue | Change | Checked in-game |
 |:--|:--|:--|
+| [#20](https://github.com/Optifineless/Pumpkin/issues/20) | Axe, hoe and shovel transformations generate from the `blocks` array in the 26.3 asset wrapper; Java item-use-on applies stripping, copper scraping/unwaxing, tilling, rooted-dirt loot and path creation. Copper chest stage changes retain their block entity, and door transformations preserve both halves without writing above them. In-game verification: Not yet. | Not yet |
 | [#21](https://github.com/Optifineless/Pumpkin/issues/21) Waxing copper slabs preserves top, bottom and double types and compatible waterlogging; shared waxed block conversion retains other matching state properties. Mirrors vanilla 26.3 `HoneycombItem.getWaxed` and `Block.withPropertiesOf`. | Not yet |
 | [#159](https://github.com/Optifineless/Pumpkin/issues/159) Always Active command blocks evaluate their activation condition before the first scheduled impulse tick; conditional blocks still require a successful predecessor, and repeating blocks keep their current-condition snapshot and next-condition refresh ordering. Mirrors vanilla 26.3 CommandBlockEntity.scheduleTick/markConditionMet and CommandBlock.tick. The reporter's sustained Always Active repeating silence remains unconfirmed and is not established as fixed by this scoped repair. | Not yet |
 | [#159](https://github.com/Optifineless/Pumpkin/issues/159) Always Active command blocks capture the predecessor predicate before the first scheduled activation and publish that state with the replacement block entity. New activations mirror vanilla 26.3 `CommandBlockEntity.setAutomatic/onModeSwitch/scheduleTick`, invoked in `ServerGamePacketListenerImpl.handleSetCommandBlock`; `CommandBlock.tick` consumes the captured predicate for this tick before refreshing the next repeating predicate. Unchanged automatic saves and switches away from repeating preserve any queued predicate without scheduling a new activation. The reporter's sustained Always Active repeating silence remains unconfirmed and is not established as fixed by this scoped repair. | Not yet |
@@ -772,6 +773,7 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 
 ## Native plugin API 8
 
+- API 8 (same version): block-item use adds `ItemBehaviour::use_on_block_with_hand` and `ItemRegistry::use_on_block_with_hand` so item callbacks receive the packet hand; the default trait method preserves existing callback behavior, while the trait vtable changes. Rebuild native plugins against this checkout; Wasm WIT is unchanged. In-game verification: Not yet.
 - API 8 (same version): #141 adds `PlayerInventory::replace_stack_if_unchanged` for identity-checked hand writeback. Rebuild native plugins against this checkout; saved data and Wasm WIT are unchanged. In-game verification **Not yet**.
 
 - API 8 (same version): the tick watchdog changes `Server` layout through its crate-private `watchdog` field and adds `Server::start_watchdog`. Rebuild native plugins; Wasm WIT is unchanged. In-game verification **Not yet**.
