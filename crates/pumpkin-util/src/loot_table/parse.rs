@@ -437,6 +437,7 @@ impl Parser<'_> {
         } else {
             match kind {
                 "item" => LootEntryKind::Item(string(value, "name", "")),
+                "dynamic" => LootEntryKind::Dynamic(string(value, "name", "")),
                 "empty" => LootEntryKind::Empty,
                 "tag" => LootEntryKind::Tag {
                     items: value.get("items").cloned().unwrap_or_else(|| {

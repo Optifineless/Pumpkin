@@ -1,4 +1,5 @@
 use pumpkin_data::{
+    data_component_impl::{PotDecoration, PotDecorationsImpl},
     item::Item,
     item_stack::ItemStack,
     recipes::{CraftingRecipeTypes, RecipeIngredientTypes, RecipeResultStruct},
@@ -272,5 +273,18 @@ fn decorated_pot(count: usize, inventory: &dyn RecipeInputInventory) -> Option<I
     {
         return None;
     }
-    Some(ItemStack::new(1, &Item::DECORATED_POT))
+
+    // Mirrors DecoratedPotRecipe.assemble / ItemStackTemplate.fromNonEmptyStack:
+    // consume one item from each cross slot while retaining its component patch.
+    let decorations = [1, 3, 5, 7].map(|slot| {
+        let ingredient = inventory.get_stack(slot);
+        Some(PotDecoration {
+            item: ingredient.item,
+            count: 1,
+            patch: ingredient.patch,
+        })
+    });
+    let mut result = ItemStack::new(1, &Item::DECORATED_POT);
+    result.set_data_component(PotDecorationsImpl { decorations });
+    Some(result)
 }

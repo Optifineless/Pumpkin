@@ -1,4 +1,7 @@
-use pumpkin_data::{item::Item, item_stack::ItemStack};
+use pumpkin_data::{
+    data_component::DataComponent, data_component_impl::PotDecorationsImpl, item::Item,
+    item_stack::ItemStack,
+};
 pub use pumpkin_util::loot_table::{
     DynamicLootCondition, DynamicLootEntry, DynamicLootPool, DynamicLootTable, LootBonusFormula,
     LootCondition, LootEntry, LootEntryKind, LootFunction, LootPool, LootTable, LootTableReference,
@@ -87,6 +90,13 @@ fn expand<'a>(
         LootEntryKind::Sequence(children) => children
             .iter()
             .all(|child| expand(child, &modifiers, params, rng, output)),
+        LootEntryKind::Dynamic(name)
+            if name.strip_prefix("minecraft:").unwrap_or(name) == "sherds" =>
+        {
+            push_expanded(entry, EntryChoice::All, &modifiers, params, output);
+            true
+        }
+        LootEntryKind::Dynamic(_) | LootEntryKind::Unsupported => false,
         LootEntryKind::Group(children) => {
             if let [child] = children.as_slice() {
                 return expand(child, &modifiers, params, rng, output);
@@ -96,7 +106,6 @@ fn expand<'a>(
             }
             true
         }
-        LootEntryKind::Unsupported => false,
         LootEntryKind::Tag {
             items,
             expand: true,
@@ -194,6 +203,26 @@ fn create_stacks(
         LootEntryKind::Item(name) => {
             if let Some(stack) = new_stack(name) {
                 adjusted(stack, rng);
+            }
+        }
+        LootEntryKind::Dynamic(name) => {
+            if name.strip_prefix("minecraft:").unwrap_or(name) != "sherds" {
+                return;
+            }
+            let decorations = params
+                .block_entity_components
+                .get(&DataComponent::PotDecorations)
+                .and_then(|component| component.as_any().downcast_ref::<PotDecorationsImpl>())
+                .cloned()
+                .unwrap_or_else(crate::block::entities::decorated_pot::legacy_brick_decorations);
+            // DecoratedPotBlock.getDrops emits left, back, front, then right.
+            for face in [1, 0, 3, 2]
+                .into_iter()
+                .filter_map(|index| decorations.decorations[index].as_ref())
+            {
+                let stack = face.to_item_stack();
+                let count = i32::from(stack.item_count);
+                adjusted(LootStack { stack, count }, rng);
             }
         }
         LootEntryKind::Tag { items, .. } => {

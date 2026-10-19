@@ -1,4 +1,8 @@
 use super::BlockEntity;
+use pumpkin_data::data_component_impl::{
+    ContainerImpl, DataComponentImpl, PotDecoration, PotDecorationsImpl,
+};
+use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::{Clearable, Inventory, inventory::slot_transaction};
 use pumpkin_nbt::compound::NbtCompound;
@@ -11,10 +15,32 @@ use std::sync::{
 
 use crate::world::World;
 
+enum PotDecorationsLockClass {}
+
+impl pumpkin_util::sync::LockClass for PotDecorationsLockClass {
+    const NAME: &'static str = "decorated pot decorations";
+    const LEVEL: u8 = 40;
+}
+
+type PotDecorationsLock<T> = pumpkin_util::sync::Mutex<T, PotDecorationsLockClass>;
+
+/// Compatibility for fork-era block entities that predate stored face templates.
+pub(crate) fn legacy_brick_decorations() -> PotDecorationsImpl {
+    let brick = PotDecoration {
+        item: &Item::BRICK,
+        count: 1,
+        patch: Vec::new(),
+    };
+    PotDecorationsImpl {
+        decorations: std::array::from_fn(|_| Some(brick.clone())),
+    }
+}
+
 pub struct DecoratedPotBlockEntity {
     pub position: BlockPos,
-    pub sherds: Mutex<Option<Vec<NbtTag>>>,
+    pub sherds: Mutex<Option<NbtTag>>,
     pub item: Mutex<Option<ItemStack>>,
+    decorations: PotDecorationsLock<Option<PotDecorationsImpl>>,
     transaction: Arc<slot_transaction::Transaction>,
     dirty: AtomicBool,
     comparator_dirty: AtomicBool,
@@ -23,6 +49,47 @@ pub struct DecoratedPotBlockEntity {
 impl BlockEntity for DecoratedPotBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
+    }
+
+    fn collect_item_components(&self, stack: &mut ItemStack) {
+        let decorations = self
+            .decorations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .cloned()
+            // Old fork saves had no face data and historically returned four bricks.
+            // Explicitly stored empty decorations remain empty.
+            .unwrap_or_else(legacy_brick_decorations);
+        stack.set_data_component(decorations);
+        if let Some(item) = self.get_item().filter(|item| !item.is_empty()) {
+            stack.set_data_component(ContainerImpl {
+                items: vec![(0, item)],
+            });
+        }
+    }
+
+    fn apply_item_components(&self, stack: &ItemStack) {
+        let decorations = stack.get_data_component::<PotDecorationsImpl>().cloned();
+        *self
+            .decorations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = decorations;
+
+        let item = stack
+            .get_data_component::<ContainerImpl>()
+            .and_then(|container| {
+                container
+                    .items
+                    .iter()
+                    .find(|(slot, item)| *slot == 0 && !item.is_empty())
+                    .map(|(_, item)| item.clone())
+            });
+        *self
+            .item
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = item;
+        self.on_slot_changed(0);
     }
 
     fn get_position(&self) -> BlockPos {
@@ -38,7 +105,21 @@ impl BlockEntity for DecoratedPotBlockEntity {
     where
         Self: Sized,
     {
-        let sherds = nbt.get_list("sherds").map(<[_]>::to_vec);
+        let sherds = nbt.get("sherds").cloned();
+        let decorations = nbt
+            .get("PotDecorations")
+            .map(|data| PotDecorationsImpl::read_data(data).unwrap_or(PotDecorationsImpl::EMPTY));
+        let decorations = decorations.or_else(|| {
+            sherds.as_ref().map(|saved| {
+                PotDecorationsImpl::read_data(saved)
+                    .or_else(|| match saved {
+                        NbtTag::List(legacy) => PotDecorationsImpl::from_legacy_sherds(legacy),
+                        _ => None,
+                    })
+                    // A present but unreadable field must not be treated as missing legacy data.
+                    .unwrap_or(PotDecorationsImpl::EMPTY)
+            })
+        });
         let item = nbt
             .get_compound("item")
             .and_then(ItemStack::read_item_stack);
@@ -46,6 +127,7 @@ impl BlockEntity for DecoratedPotBlockEntity {
             position,
             sherds: Mutex::new(sherds),
             item: Mutex::new(item),
+            decorations: PotDecorationsLock::new(decorations),
             transaction: Arc::default(),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -56,7 +138,15 @@ impl BlockEntity for DecoratedPotBlockEntity {
         if let Ok(sherds) = self.sherds.lock()
             && let Some(sh) = sherds.as_ref()
         {
-            nbt.put_list("sherds", sh.clone());
+            nbt.put("sherds", sh.clone());
+        }
+        if let Some(decorations) = self
+            .decorations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            nbt.put("PotDecorations", decorations.write_data());
         }
         // DecoratedPotBlockEntity.saveAdditional keeps the single-item tag format.
         let item = slot_transaction::snapshot_slot(self, 0);
@@ -97,12 +187,21 @@ impl BlockEntity for DecoratedPotBlockEntity {
 impl DecoratedPotBlockEntity {
     pub const ID: &'static str = "minecraft:decorated_pot";
 
+    pub(crate) fn has_empty_decorations(&self) -> bool {
+        self.decorations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|decorations| decorations.decorations.iter().all(Option::is_none))
+    }
+
     #[must_use]
     pub fn new(position: BlockPos) -> Self {
         Self {
             position,
             sherds: Mutex::new(None),
             item: Mutex::new(None),
+            decorations: PotDecorationsLock::new(None),
             transaction: Arc::default(),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),

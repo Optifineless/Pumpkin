@@ -27,7 +27,6 @@ pub fn collect_block_entity_components(
         .filter_map(|(id, value)| value.map(|value| (id, value)))
         .collect();
     // Banners have no typed collection hook yet. Decode their native NBT directly.
-    // Pot decorations still have a placeholder codec.
     if entity.resource_location() == "minecraft:banner" {
         let mut nbt = NbtCompound::new();
         entity.write_nbt(&mut nbt);
@@ -41,22 +40,6 @@ pub fn collect_block_entity_components(
         {
             result.insert(DataComponent::CustomName, Box::new(CustomNameImpl { name }));
         }
-    }
-    if let Some(pot) = entity
-        .as_any()
-        .downcast_ref::<crate::block::entities::decorated_pot::DecoratedPotBlockEntity>()
-        && let Some(item) = pot
-            .item
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-    {
-        result.insert(
-            DataComponent::Container,
-            Box::new(pumpkin_data::data_component_impl::ContainerImpl {
-                items: vec![(0, item.clone())],
-            }),
-        );
     }
     result
 }

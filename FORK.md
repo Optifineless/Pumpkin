@@ -183,6 +183,30 @@ plugin sources remain compatible with the unchanged respawn method signature.
 The wider asynchronous portal/session race (#180) and death-respawn work (#205/#202) remain separate. Implemented by Codex.
 In-game verification: Not yet.
 
+## Decorated-pot loot alternatives (#13)
+
+Intact pots drop one decorated pot with its decorations; their stored item still
+drops once. Tools tagged to break pots crack them before loot selection, which
+drops the stored sherd decorations instead. This removes the extra unconditional
+four bricks and preserves Silk Touch protection, Creative, spawn protection and
+cancelled-break behavior. Mirrors vanilla 26.3 `DecoratedPotBlock.getDrops`,
+`DecoratedPotBlock.playerWillDestroy`, `DecoratedPotRecipe.assemble` and
+`blocks/decorated_pot.json`. Crafting retains one component-preserving template
+per input face. Pre-upgrade block entities with no face data keep the historical
+four-brick drops. Pots with all four faces empty, including bare saved items and
+`/give` pots, break intact and return the pot plus its contents. This deliberate
+compatibility policy has no provenance tracking and differs from vanilla, where
+a shattering tool drops only present sherds. Empty decorations remain empty;
+vanilla's named `sherds` compound and the fork's legacy list remain readable and
+are preserved.
+API 8 (same version): `DecoratedPotBlockEntity`, `PotDecorationsImpl` and
+`LootEntryKind` public layouts change; `DecoratedPotBlockEntity.sherds` now
+retains the raw NBT tag; rebuild native plugins. In-game verification: Not yet.
+
+Play test: Break an empty decorated pot with a diamond pickaxe, with and without
+a diamond stored inside; expect one pot item back and the stored diamond when
+present. Break a pot with sherds the same way; expect the sherds instead.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

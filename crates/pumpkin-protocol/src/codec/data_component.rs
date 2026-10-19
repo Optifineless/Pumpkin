@@ -2485,16 +2485,33 @@ impl DataComponentCodec<Self> for BaseColorImpl {
 
 impl DataComponentCodec<Self> for PotDecorationsImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt(0))
+        for face in &self.decorations {
+            seq.write_bool(face.is_some())?;
+            if let Some(face) = face {
+                serialize_item_stack_template(&face.to_item_stack(), seq)?;
+            }
+        }
+        Ok(())
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let len = seq.get_var_int()?.0 as usize;
-        let _ = crate::ser::collection_capacity(len)?;
-        for _ in 0..len {
-            let _ = seq.get_var_int()?;
+        let mut decorations = Self::EMPTY.decorations;
+        for face in &mut decorations {
+            if seq.get_bool()? {
+                let stack = deserialize_item_stack_template(seq)?;
+                if stack.item == &pumpkin_data::item::Item::AIR || stack.item_count == 0 {
+                    return Err(ReadingError::Message(
+                        "Invalid decorated-pot face item template".into(),
+                    ));
+                }
+                *face = Some(pumpkin_data::data_component_impl::PotDecoration {
+                    item: stack.item,
+                    count: i32::from(stack.item_count),
+                    patch: stack.patch,
+                });
+            }
         }
-        Ok(Self)
+        Ok(Self { decorations })
     }
 }
 
