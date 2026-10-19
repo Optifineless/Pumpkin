@@ -17,7 +17,7 @@ use pumpkin_world::world::BlockFlags;
 
 use super::{
     World,
-    bossbar::{Bossbar, BossbarColor, BossbarDivisions, BossbarFlags},
+    bossbar::{Bossbar, BossbarColor, BossbarDivisions, BossbarFlags, recipient::BossbarRecipient},
 };
 use crate::entity::{Entity, EntityBase, decoration::end_crystal::EndCrystalEntity};
 
@@ -25,6 +25,8 @@ mod fight_actions;
 use fight_actions::{DragonSpawn, FightAction};
 
 mod fight_tick;
+
+mod bossbar_recipients;
 
 mod respawn_actions;
 use respawn_actions::RespawnAction;
@@ -101,7 +103,7 @@ pub struct DragonFight {
 
     // ── Boss bar ──────────────────────────────────────────────────────────────
     bossbar_uuid: Uuid,
-    bossbar_players: Vec<Uuid>,
+    bossbar_players: Vec<Arc<BossbarRecipient>>,
     actions: Vec<FightAction>,
     executing_actions: bool,
     pending_dragon_spawn: Option<Uuid>,
@@ -1033,93 +1035,6 @@ impl DragonFight {
         }
     }
 
-    // ServerBossEvent.broadcast: packet translation can re-enter the fight.
-    fn update_bossbar_health(&mut self, world: &Arc<World>, health: f32) {
-        for player in world.players.load().iter() {
-            if self.bossbar_players.contains(&player.gameprofile.id) {
-                self.actions.push(FightAction::BossbarHealth(
-                    player.clone(),
-                    self.bossbar_uuid,
-                    health,
-                ));
-            }
-        }
-    }
-
-    fn update_bossbar_title(&mut self, world: &Arc<World>, title: &TextComponent) {
-        for player in world.players.load().iter() {
-            if self.bossbar_players.contains(&player.gameprofile.id) {
-                self.actions.push(FightAction::BossbarTitle(
-                    player.clone(),
-                    self.bossbar_uuid,
-                    title.clone(),
-                ));
-            }
-        }
-    }
-
-    fn remove_all_bossbar(&mut self, world: &Arc<World>) {
-        for player in world.players.load().iter() {
-            if self.bossbar_players.contains(&player.gameprofile.id) {
-                self.actions.push(FightAction::RemoveBossbar(
-                    player.clone(),
-                    self.bossbar_uuid,
-                ));
-            }
-        }
-        self.bossbar_players.clear();
-    }
-
-    fn update_players(&mut self, world: &Arc<World>) {
-        let players = world.players.load();
-        let target_y = self.origin.0.y as f64 + DRAGON_SPAWN_Y as f64;
-        let origin_x = self.origin.0.x as f64;
-        let origin_z = self.origin.0.z as f64;
-
-        let current: Vec<Uuid> = players
-            .iter()
-            .filter(|p| {
-                let pos = p.living_entity.entity.pos.load();
-                let dx = pos.x - origin_x;
-                let dy = pos.y - target_y;
-                let dz = pos.z - origin_z;
-                dx * dx + dy * dy + dz * dz < ARENA_RADIUS * ARENA_RADIUS
-            })
-            .map(|p| p.gameprofile.id)
-            .collect();
-
-        // Add newly-in-range players
-        for &uid in &current {
-            if !self.bossbar_players.contains(&uid) {
-                if !self.dragon_killed
-                    && let Some(p) = players.iter().find(|p| p.gameprofile.id == uid)
-                {
-                    self.actions
-                        .push(FightAction::AddBossbar(p.clone(), self.make_bossbar()));
-                }
-                self.bossbar_players.push(uid);
-            }
-        }
-
-        // Remove out-of-range players
-        let to_remove: Vec<Uuid> = self
-            .bossbar_players
-            .iter()
-            .filter(|uid| !current.contains(uid))
-            .copied()
-            .collect();
-
-        for uid in &to_remove {
-            if let Some(player) = players.iter().find(|player| &player.gameprofile.id == uid) {
-                self.actions.push(FightAction::RemoveBossbar(
-                    player.clone(),
-                    self.bossbar_uuid,
-                ));
-            }
-            self.bossbar_players.retain(|u| u != uid);
-        }
-    }
-
     // ── Public queries ────────────────────────────────────────────────────────
 
     #[must_use]
@@ -1145,3 +1060,6 @@ impl DragonFight {
 
 #[cfg(test)]
 mod fresh_review_tests;
+
+#[cfg(test)]
+mod recipient_tests;

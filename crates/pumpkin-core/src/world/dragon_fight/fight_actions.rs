@@ -51,10 +51,11 @@ impl DragonSpawn {
 }
 
 pub(super) enum FightAction {
-    AddBossbar(Arc<crate::entity::player::Player>, super::Bossbar),
-    RemoveBossbar(Arc<crate::entity::player::Player>, Uuid),
-    BossbarHealth(Arc<crate::entity::player::Player>, Uuid, f32),
-    BossbarTitle(Arc<crate::entity::player::Player>, Uuid, TextComponent),
+    AddBossbar(Arc<super::BossbarRecipient>, super::Bossbar),
+    RemoveBossbar(Arc<super::BossbarRecipient>, Uuid),
+    BossbarHealth(Arc<super::BossbarRecipient>, Uuid, f32),
+    BossbarDeathHealth(Arc<super::BossbarRecipient>, Uuid),
+    BossbarTitle(Arc<super::BossbarRecipient>, Uuid, TextComponent),
     WorldEvent(pumpkin_data::world::WorldEvent, BlockPos, i32),
     PlacePortal(BlockPos, bool),
     ClearPortal(BlockPos),
@@ -80,12 +81,37 @@ impl FightAction {
     // EnderDragonFight world effects retain their order and tick, without the fight guard.
     pub(super) fn execute(self, world: &Arc<World>) {
         match self {
-            Self::AddBossbar(player, bossbar) => Self::add_bossbar(world, &player, &bossbar),
-            Self::RemoveBossbar(player, uuid) => player.remove_bossbar(uuid),
-            Self::BossbarHealth(player, uuid, health) => {
-                player.update_bossbar_health(&uuid, health);
+            Self::AddBossbar(recipient, bossbar) => {
+                DragonFight::send_bossbar(world, &recipient, bossbar.uuid, |player| {
+                    if recipient.publish() {
+                        player.send_bossbar(&bossbar);
+                    }
+                });
             }
-            Self::BossbarTitle(player, uuid, title) => player.update_bossbar_title(&uuid, title),
+            Self::RemoveBossbar(recipient, uuid) => {
+                if recipient.retire()
+                    && let Some(player) = recipient.player()
+                {
+                    player.remove_bossbar(uuid);
+                }
+            }
+            Self::BossbarHealth(recipient, uuid, health) => {
+                DragonFight::send_bossbar(world, &recipient, uuid, |player| {
+                    if recipient.is_published() {
+                        player.update_bossbar_health(&uuid, health);
+                    }
+                });
+            }
+            Self::BossbarDeathHealth(recipient, uuid) => {
+                DragonFight::send_bossbar_death_health(world, &recipient, uuid);
+            }
+            Self::BossbarTitle(recipient, uuid, title) => {
+                DragonFight::send_bossbar(world, &recipient, uuid, |player| {
+                    if recipient.is_published() {
+                        player.update_bossbar_title(&uuid, title);
+                    }
+                });
+            }
             Self::WorldEvent(event, pos, data) => world.sync_world_event(event, pos, data),
             Self::PlacePortal(pos, active) => super::super::end_podium::place(world, pos, active),
             Self::ClearPortal(pos) => Self::clear_portal(world, pos),
@@ -148,21 +174,6 @@ impl FightAction {
             }
             true
         })
-    }
-
-    // ServerBossEvent.addPlayer only sends while visible; a deferred kill may have hidden it.
-    fn add_bossbar(
-        world: &Arc<World>,
-        player: &Arc<crate::entity::player::Player>,
-        bossbar: &super::Bossbar,
-    ) {
-        if let Some(fight_mutex) = &world.dragon_fight
-            && DragonFight::with_fight(fight_mutex, world, |fight| {
-                !fight.dragon_killed && fight.bossbar_players.contains(&player.gameprofile.id)
-            })
-        {
-            player.send_bossbar(bossbar);
-        }
     }
 
     fn spawn_dragon(world: &Arc<World>, spawn: &DragonSpawn) {
