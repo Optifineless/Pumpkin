@@ -43,7 +43,7 @@ pub(super) fn player_will_destroy(args: PlayerWillDestroyArgs<'_>) {
         // Keep the fork's partner BreakEvent. Shape propagation waits for the admitted foot.
         args.world.break_bed_block(
             &head,
-            None,
+            Some(args.player),
             Some(args.player),
             BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS | BlockFlags::UPDATE_KNOWN_SHAPE,
             crate::world::neighbor_updater::UPDATE_LIMIT,

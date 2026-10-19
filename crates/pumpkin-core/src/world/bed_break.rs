@@ -30,9 +30,16 @@ impl World {
         update_limit: u32,
         expected: BlockStateId,
     ) -> Option<BlockStateId> {
+        if cause.is_some_and(|player| self.is_in_spawn_protection(player, position)) {
+            return None;
+        }
         let snapshot = self.reserve_bed_break(*position, expected)?;
         let block = Block::from_state_id(expected);
-        let retired = RetiredBlockEffects::capture(self, position, expected);
+        let mut retired = RetiredBlockEffects::capture(self, position, expected);
+        if cause.is_some() {
+            // Player partners get their own attributed admission, including cancellation.
+            retired.suppress_bed_partner_shape();
+        }
         let mut event = BlockBreakEvent::new(
             cause.cloned(),
             block,
@@ -48,15 +55,11 @@ impl World {
         }
         let mut flags = flags;
         flags.set(BlockFlags::SKIP_DROPS, !event.drop);
+        let creative_foot = cause
+            .is_some_and(|player| player.gamemode.load() == GameMode::Creative)
+            && WhiteBedLikeProperties::from_state_id(expected).part == BedPart::Foot;
         self.block_registry
             .player_will_destroy(self, cause, position, expected.to_state());
-        if cause.is_some_and(|player| player.gamemode.load() == GameMode::Creative)
-            && WhiteBedLikeProperties::from_state_id(expected).part == BedPart::Foot
-            && retired.bed_partner_is_unchanged(self, expected)
-        {
-            // A cancelled Creative partner event must not be retried by the foot's shape cascade.
-            flags.insert(BlockFlags::UPDATE_KNOWN_SHAPE);
-        }
         // Keep the existing BlockDropItemEvent's live pre-removal context, without a guard.
         let loot = event.drop.then(|| {
             let tool = cause.and_then(|player| {
@@ -98,24 +101,34 @@ impl World {
         if WhiteBedLikeProperties::from_state_id(expected).part == BedPart::Head {
             completion_flags.insert(BlockFlags::SKIP_DROPS);
         }
-        // A loot or spawn listener can replace the cell before Level.setBlock's completion.
+        if committed {
+            self.on_block_state_set_with_block_entity(
+                position,
+                expected,
+                BlockStateId::AIR,
+                completion_flags,
+                update_limit,
+                Some(&retired),
+            );
+        }
+        // Loot, spawn and physics callbacks may replace the retired cell or its partner.
         // Retire only its captured orphan, retaining a listener's replacement bed pair.
-        if self.get_block_state_id(position) != BlockStateId::AIR
+        if !creative_foot
+            && (cause.is_some() || self.get_block_state_id(position) != BlockStateId::AIR)
             && let Some((partner, state)) = retired.orphaned_bed_partner(self, position, expected)
         {
-            self.break_bed_block(&partner, None, None, completion_flags, update_limit, state);
+            self.break_bed_block(
+                &partner,
+                cause,
+                effect_actor,
+                completion_flags,
+                update_limit,
+                state,
+            );
         }
         if !committed {
             return None;
         }
-        self.on_block_state_set_with_block_entity(
-            position,
-            expected,
-            BlockStateId::AIR,
-            completion_flags,
-            update_limit,
-            Some(&retired),
-        );
         self.send_block_destroy_effect(position, expected, effect_actor);
         Some(expected)
     }

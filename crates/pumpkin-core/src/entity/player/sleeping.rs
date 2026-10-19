@@ -21,7 +21,6 @@ struct WakeContext {
     operation: u64,
     world: Arc<World>,
     bed_pos: Option<BlockPos>,
-    timer: Option<u8>,
     life: u64,
     registered: bool,
 }
@@ -30,7 +29,6 @@ impl WakeContext {
     fn is_current(&self, player: &Player) -> bool {
         player.sleep_operation.load(Relaxed) == self.operation
             && player.sleeping_bed_pos.load() == self.bed_pos
-            && player.sleeping_since.load() == self.timer
             && player.living_entity.damage_lifecycle() == self.life
             && Arc::ptr_eq(&player.world(), &self.world)
             && self
@@ -86,7 +84,6 @@ impl Player {
             registered: world.get_player_by_uuid(self.gameprofile.id).is_some(),
             world,
             bed_pos: self.sleeping_bed_pos.load(),
-            timer: self.sleeping_since.load(),
             life: self.living_entity.damage_lifecycle(),
         };
         self.finish_stop_sleeping(&context, removed_bed);
@@ -105,7 +102,7 @@ impl Player {
         let entity = self.get_entity();
         let Some(bed_pos) = context.bed_pos else {
             entity.set_pose_if(EntityPose::Standing, || context.is_current(self));
-            if context.is_current(self) {
+            if context.is_current(self) && entity.pose.load() == EntityPose::Standing {
                 self.sleeping_since.store(None);
             }
             return;
@@ -143,7 +140,7 @@ impl Player {
         }
         // LivingEntity.stopSleeping keeps position/rotation when the bed no longer exists.
         entity.set_pose_if(EntityPose::Standing, || context.is_current(self));
-        if !context.is_current(self) {
+        if !context.is_current(self) || entity.pose.load() != EntityPose::Standing {
             return;
         }
         entity.set_pos(self.position());

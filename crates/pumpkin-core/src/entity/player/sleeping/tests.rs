@@ -38,6 +38,9 @@ use crate::{
 const FOOT: BlockPos = BlockPos::new(5, 64, 5);
 const HEAD: BlockPos = BlockPos::new(6, 64, 5);
 
+#[path = "round3_tests.rs"]
+mod round3;
+
 fn use_block(fixture: &PlayerFixture, client: &TestPlayer, position: BlockPos) {
     client
         .client()

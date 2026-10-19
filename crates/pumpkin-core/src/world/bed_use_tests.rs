@@ -43,6 +43,9 @@ use crate::{
 const FOOT: BlockPos = BlockPos::new(5, 64, 5);
 const HEAD: BlockPos = BlockPos::new(6, 64, 5);
 
+#[path = "bed_use_round3_tests.rs"]
+mod round3;
+
 struct Callback<F>(F);
 impl<E: Payload, F: Fn(&mut E) + Send + Sync> EventHandler<E> for Callback<F> {
     fn handle_blocking<'a>(&'a self, _: &'a Arc<Server>, event: &'a mut E) -> BoxFuture<'a, ()> {
@@ -60,6 +63,13 @@ struct Fixture {
 
 impl Fixture {
     fn new(dimension: Dimension) -> Self {
+        Self::with_registry(dimension, None)
+    }
+
+    fn with_registry(
+        dimension: Dimension,
+        registry: Option<Arc<crate::block::registry::BlockRegistry>>,
+    ) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let server = combat_test_support::server(directory.path());
         let world = Arc::new(World::load(
@@ -71,7 +81,7 @@ impl Fixture {
             ),
             server.level_info.clone(),
             dimension,
-            server.block_registry.clone(),
+            registry.unwrap_or_else(|| server.block_registry.clone()),
             Arc::downgrade(&server),
         ));
         combat_test_support::publish_empty_chunk(&world, Vector2::new(0, 0));

@@ -55,6 +55,9 @@ const HEAD: BlockPos = BlockPos::new(6, 64, 5);
 #[path = "bed_pair_review_tests.rs"]
 mod review;
 
+#[path = "bed_pair_round3_tests.rs"]
+mod round3;
+
 enum TestRecords {}
 impl LockClass for TestRecords {
     const NAME: &'static str = "bed test records";
@@ -369,7 +372,7 @@ async fn b1019_g05_bed_drop_overrides_and_event_order_are_preserved() {
             if position == HEAD && drop_items {
                 expected.push((HEAD, false, true));
             }
-            expected.push((partner, false, false));
+            expected.push((partner, true, false));
             if position == FOOT && drop_items {
                 expected.push((HEAD, false, true));
             }

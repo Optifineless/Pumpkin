@@ -15,6 +15,7 @@ use crate::world::{World, guard_effects, neighbor_updater::UPDATE_LIMIT};
 /// Captures positional cleanup targets before deferred callbacks can replace them.
 pub(in crate::world) struct RetiredBlockEffects {
     partner: Option<RetiredPartner>,
+    suppress_bed_partner_shape: bool,
 }
 
 struct RetiredPartner {
@@ -46,6 +47,7 @@ impl RetiredBlockEffects {
             None
         };
         Self {
+            suppress_bed_partner_shape: false,
             partner: partner.map(|position| RetiredPartner {
                 state: world.get_block_state_id(&position),
                 position,
@@ -59,14 +61,22 @@ impl RetiredBlockEffects {
             .is_none_or(|partner| world.get_block_state_id(&partner.position) == partner.state)
     }
 
-    pub(in crate::world) fn bed_partner_is_unchanged(
+    pub(in crate::world) const fn suppress_bed_partner_shape(&mut self) {
+        self.suppress_bed_partner_shape = true;
+    }
+
+    pub(in crate::world) fn bed_partner_to_skip(
         &self,
         world: &World,
         old: BlockStateId,
-    ) -> bool {
+    ) -> Option<BlockPos> {
         let block = Block::from_state_id(old);
-        !(block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) || block == &Block::STRAW_BED)
-            || self.partner_is_unchanged(world)
+        if (block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) || block == &Block::STRAW_BED)
+            && (self.suppress_bed_partner_shape || !self.partner_is_unchanged(world))
+        {
+            return self.partner.as_ref().map(|partner| partner.position);
+        }
+        None
     }
 
     pub(in crate::world) fn orphaned_bed_partner(

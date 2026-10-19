@@ -106,7 +106,8 @@ impl World {
                 crate::block::drop_loot(self, block, &position, true, &params);
             }
         }
-        committed == halves.len()
+        // BedBlock.destroyOnUse still explodes after consuming an available half.
+        committed != 0
     }
 }
 

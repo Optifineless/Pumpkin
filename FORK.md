@@ -31,12 +31,28 @@ replacements and discard uncommitted loot. Callbacks and item spawning hold no
 publication guard. API 8 (same version): `World` gains private runtime bed-break
 admission state under its existing publication gate; rebuild native plugins.
 Saved fields and Wasm WIT are unchanged.
+PR #230 round 3: player breaks admit both halves with the original actor and
+spawn protection, retaining partner cancellation without an environmental retry.
+Wake ownership uses operation/lifecycle identity rather than the ticking sleep
+timer, and cancelled Standing transitions retain the remembered sleep state.
+Unsafe use explodes after any committed half; unrelated neighbour shape updates
+still run when a captured partner changed. Checked against vanilla 26.3
+`BedBlock.destroyOnUse`, `LivingEntity.hurtServer/stopSleeping` and `Level.setBlock`.
+B4 remains BACKLOG by coordinator decision: no existing per-cell mutation identity
+distinguishes an equal-state replacement during loot callbacks; new revision
+infrastructure is out of scope. This limitation was introduced in round 2.
+The older raw-removal spawn-boundary gap (L1) remains outside this change;
+player-driven partner admission now checks protection explicitly.
 In-game verification: Not yet.
 
 Play test: place ordinary and straw beds, break either half in Survival and expect
 one bed item; repeat in Creative and expect none. With a plugin that cancels bed
 loot by checking the event's world and position, break the head and expect no item.
 Record the breaks and resulting drops on the candidate build.
+Repeat with Java and Bedrock and a protection plugin; expect both break events to
+name the breaker and a cancelled/protected partner to remain. Leave an intact bed
+while another player hits the sleeper; expect waking to finish. Use a bed in the
+Nether or End and expect the explosion, including when only one half is consumed.
 
 ## Empty map centers (#45)
 

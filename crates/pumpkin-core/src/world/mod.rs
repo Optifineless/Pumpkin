@@ -408,6 +408,8 @@ pub struct World {
     pending_block_entity_loads: std::sync::Mutex<pending_block_entity::PendingBlockEntityLoads>,
     #[cfg(test)]
     lazy_block_entity_hook: std::sync::Mutex<Option<pending_block_entity::PublicationHook>>,
+    #[cfg(test)]
+    bed_half_write_test: std::sync::atomic::AtomicU8,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
@@ -586,6 +588,8 @@ impl World {
             pending_block_entity_loads: std::sync::Mutex::default(),
             #[cfg(test)]
             lazy_block_entity_hook: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            bed_half_write_test: std::sync::atomic::AtomicU8::new(0),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
@@ -5264,9 +5268,6 @@ impl World {
 
             if !flags.intersects(BlockFlags::MOVED | BlockFlags::UPDATE_KNOWN_SHAPE)
                 && update_limit > 0
-                && retired.is_none_or(|retired| {
-                    retired.bed_partner_is_unchanged(self, replaced_block_state_id)
-                })
             {
                 let mut neighbour_update_flags = flags;
                 neighbour_update_flags.remove(BlockFlags::NOTIFY_NEIGHBORS);
@@ -5291,6 +5292,9 @@ impl World {
                     position,
                     neighbour_update_flags,
                     update_limit - 1,
+                    retired.and_then(|retired| {
+                        retired.bed_partner_to_skip(self, replaced_block_state_id)
+                    }),
                 );
                 self.block_registry.prepare_with_limit(
                     self,

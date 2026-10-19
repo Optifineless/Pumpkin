@@ -293,6 +293,8 @@ impl World {
         if !snapshot.chunk_is_current() {
             return None;
         }
+        // TODO(#230 B4): Check a per-cell mutation identity when one exists;
+        // state equality cannot distinguish a removed and reinstalled identical bed.
         self.remove_bed_states_under_publication_gate(
             &[(snapshot.position, snapshot.expected)],
             &mut loads,
@@ -341,6 +343,25 @@ impl World {
             // All native retirement callbacks run only after this gate is released.
             let retired = self.remove_block_entity_under_publication_gate(&position, loads);
             committed.push((position, expected, retired));
+            #[cfg(test)]
+            if halves.len() == 2 && committed.len() == 1 {
+                use std::sync::atomic::Ordering::Relaxed;
+                // A bounded test rendezvous, with no callback or additional lock under the gate.
+                if self
+                    .bed_half_write_test
+                    .compare_exchange(1, 2, Relaxed, Relaxed)
+                    .is_ok()
+                {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+                    while self.bed_half_write_test.load(Relaxed) == 2 {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "bed writer test timed out"
+                        );
+                        std::thread::yield_now();
+                    }
+                }
+            }
         }
         committed
     }
