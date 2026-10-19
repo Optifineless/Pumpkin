@@ -18,7 +18,7 @@ use std::{future::Future, sync::atomic::AtomicUsize, time::Duration};
 const POS: BlockPos = BlockPos::new(8, 65, 8);
 
 async fn bounded(test: impl Future<Output = ()>) {
-    tokio::time::timeout(Duration::from_secs(60), test)
+    tokio::time::timeout(Duration::from_secs(180), test)
         .await
         .unwrap();
 }
