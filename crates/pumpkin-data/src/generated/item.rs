@@ -24778,7 +24778,7 @@ impl Item {
                 },
             ),
             (Lore, &LoreImpl { lines: Vec::new() }),
-            (PotDecorations, &PotDecorationsImpl),
+            (PotDecorations, &PotDecorationsImpl::EMPTY),
             (
                 Rarity,
                 &RarityImpl {

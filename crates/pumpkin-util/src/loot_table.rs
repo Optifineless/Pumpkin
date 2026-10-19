@@ -86,6 +86,7 @@ pub struct LootFunction {
 #[derive(Clone, Debug)]
 pub enum LootEntryKind {
     Item(String),
+    Dynamic(String),
     Empty,
     Tag {
         items: Value,
@@ -245,6 +246,7 @@ pub fn component_copy_supported(name: &str) -> bool {
             | "jukebox_playable"
             | "cooking_fuel"
             | "compostable"
+            | "pot_decorations"
     )
 }
 
@@ -305,5 +307,20 @@ mod tests {
             ));
         }
         assert_eq!(unsupported.len(), 1);
+    }
+
+    #[test]
+    fn b1019_g03_dynamic_sherds_entry_is_retained() {
+        let mut unsupported = BTreeSet::new();
+        let table = parse_loot_table(
+            r#"{"pools":[{"rolls":1,"entries":[{"type":"minecraft:dynamic","name":"minecraft:sherds"}]}]}"#,
+            &mut unsupported,
+        )
+        .unwrap();
+        assert!(unsupported.is_empty());
+        assert!(matches!(
+            &table.pools[0].entries[0].kind,
+            LootEntryKind::Dynamic(name) if name == "minecraft:sherds"
+        ));
     }
 }

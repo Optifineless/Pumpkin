@@ -524,14 +524,185 @@ impl DataComponentImpl for BannerPatternsImpl {
     default_impl!(BannerPatterns);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct PotDecorationsImpl;
+/// A pot face's item template, including its count and component patch.
+#[derive(Clone)]
+pub struct PotDecoration {
+    pub item: &'static crate::item::Item,
+    pub count: i32,
+    pub patch: Vec<(
+        crate::data_component::DataComponent,
+        Option<Box<dyn DataComponentImpl>>,
+    )>,
+}
+
+impl PotDecoration {
+    /// Reads a registry name or a complete item template from pot-decoration NBT.
+    fn read_data(data: &NbtTag) -> Option<Self> {
+        if let NbtTag::String(name) = data {
+            let item = crate::item::Item::from_registry_key(name)?;
+            if item.id == crate::item::Item::AIR.id {
+                return None;
+            }
+            return Some(Self {
+                item,
+                count: 1,
+                patch: Vec::new(),
+            });
+        }
+
+        let compound = data.extract_compound()?;
+        let item = crate::item::Item::from_registry_key(compound.get_string("id")?)?;
+        if item.id == crate::item::Item::AIR.id {
+            return None;
+        }
+        let count = match compound.get("count") {
+            Some(count) => count.extract_int()?,
+            None => 1,
+        };
+        if !(1..=i32::from(crate::item::Item::ABSOLUTE_MAX_STACK_SIZE)).contains(&count) {
+            return None;
+        }
+
+        let mut patch = Vec::new();
+        if let Some(components) = compound.get("components") {
+            let components = components.extract_compound()?;
+            let mut seen = [false; 256];
+            for (name, value) in &components.child_tags {
+                let (name, removed) = name
+                    .strip_prefix('!')
+                    .map_or((name.as_ref(), false), |name| (name, true));
+                let id = crate::data_component::DataComponent::try_from_name(name)?;
+                if !Self::is_persistent_component(id)
+                    || std::mem::replace(&mut seen[usize::from(id.to_id())], true)
+                {
+                    return None;
+                }
+                let value = if removed {
+                    if !value.extract_compound()?.child_tags.is_empty() {
+                        return None;
+                    }
+                    None
+                } else {
+                    Some(crate::data_component_impl::read_data(id, value)?)
+                };
+                patch.push((id, value));
+            }
+        }
+        Some(Self { item, count, patch })
+    }
+
+    /// Persists the template while omitting default count and empty component fields.
+    fn write_data(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        compound.put_string("id", format!("minecraft:{}", self.item.registry_key));
+        if self.count != 1 {
+            compound.put_int("count", self.count);
+        }
+        let mut components = NbtCompound::new();
+        for (id, value) in &self.patch {
+            if !Self::is_persistent_component(*id) {
+                continue;
+            }
+            match value {
+                Some(value) => components.put(id.to_name(), value.write_data()),
+                None => components
+                    .put_compound(format!("!{}", id.to_name()).as_str(), NbtCompound::new()),
+            }
+        }
+        if !components.child_tags.is_empty() {
+            compound.put_compound("components", components);
+        }
+        NbtTag::Compound(compound)
+    }
+
+    /// Excludes network-only components from persistent item templates.
+    const fn is_persistent_component(id: crate::data_component::DataComponent) -> bool {
+        !matches!(
+            id,
+            crate::data_component::DataComponent::CreativeSlotLock
+                | crate::data_component::DataComponent::AdditionalTradeCost
+                | crate::data_component::DataComponent::MapPostProcessing
+        )
+    }
+
+    /// Builds the item stack emitted by a cracked decorated pot.
+    #[must_use]
+    pub fn to_item_stack(&self) -> crate::item_stack::ItemStack {
+        let mut stack = crate::item_stack::ItemStack::new(self.count as u8, self.item);
+        stack.patch.clone_from(&self.patch);
+        stack
+    }
+}
+
+impl std::fmt::Debug for PotDecoration {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.write_data(), formatter)
+    }
+}
+
+impl PartialEq for PotDecoration {
+    fn eq(&self, other: &Self) -> bool {
+        self.item.id == other.item.id
+            && self.count == other.count
+            && self.patch.len() == other.patch.len()
+            && self.patch.iter().all(|(id, value)| {
+                other.patch.iter().any(|(other_id, other_value)| {
+                    id == other_id
+                        && match (value, other_value) {
+                            (Some(value), Some(other_value)) => value.equal(other_value.as_ref()),
+                            (None, None) => true,
+                            _ => false,
+                        }
+                })
+            })
+    }
+}
+
+/// The four optional decorated-pot faces, ordered back, left, right, then front.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PotDecorationsImpl {
+    pub decorations: [Option<PotDecoration>; 4],
+}
 impl PotDecorationsImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
+    pub const EMPTY: Self = Self {
+        decorations: [const { None }; 4],
+    };
+    const FACES: [&'static str; 4] = ["back", "left", "right", "front"];
+
+    /// Reads named optional item templates; legacy sherd names remain supported separately.
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        let compound = data.extract_compound()?;
+        let mut decorations = Self::EMPTY.decorations;
+        for (face, name) in decorations.iter_mut().zip(Self::FACES) {
+            if let Some(data) = compound.get(name) {
+                *face = Some(PotDecoration::read_data(data)?);
+            }
+        }
+        Some(Self { decorations })
+    }
+
+    /// Reads the fork's existing four-name `sherds` list without changing its saved format.
+    pub fn from_legacy_sherds(sherds: &[NbtTag]) -> Option<Self> {
+        if sherds.len() != Self::FACES.len() {
+            return None;
+        }
+        let mut decorations = Self::EMPTY.decorations;
+        for (decoration, sherd) in decorations.iter_mut().zip(sherds) {
+            *decoration = Some(PotDecoration::read_data(sherd)?);
+        }
+        Some(Self { decorations })
     }
 }
 impl DataComponentImpl for PotDecorationsImpl {
+    fn write_data(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        for (face, name) in self.decorations.iter().zip(Self::FACES) {
+            if let Some(face) = face {
+                compound.put(name, face.write_data());
+            }
+        }
+        NbtTag::Compound(compound)
+    }
     default_impl!(PotDecorations);
 }
 
@@ -586,5 +757,50 @@ impl std::hash::Hash for SoundEvent {
 impl SoundEvent {
     pub const fn new(sound_name: Cow<'static, str>, range: Option<f32>) -> Self {
         Self { sound_name, range }
+    }
+}
+
+#[cfg(test)]
+mod decorated_pot_tests {
+    use super::*;
+    use crate::item::Item;
+
+    #[test]
+    fn b1019_g03_pot_decorations_round_trip_and_read_legacy_sherds() {
+        let decoration = |item, count| {
+            Some(PotDecoration {
+                item,
+                count,
+                patch: Vec::new(),
+            })
+        };
+        let original = PotDecorationsImpl {
+            decorations: [
+                decoration(&Item::BRICK, 2),
+                decoration(&Item::ANGLER_POTTERY_SHERD, 1),
+                None,
+                decoration(&Item::ARCHER_POTTERY_SHERD, 3),
+            ],
+        };
+        let encoded = original.write_data();
+        assert_eq!(PotDecorationsImpl::read_data(&encoded), Some(original));
+
+        let legacy = [
+            NbtTag::String("minecraft:brick".into()),
+            NbtTag::String("minecraft:angler_pottery_sherd".into()),
+            NbtTag::String("minecraft:brick".into()),
+            NbtTag::String("minecraft:archer_pottery_sherd".into()),
+        ];
+        let migrated = PotDecorationsImpl::from_legacy_sherds(&legacy).unwrap();
+        assert_eq!(migrated.decorations[0].as_ref().unwrap().item, &Item::BRICK);
+        assert_eq!(
+            migrated.decorations[1].as_ref().unwrap().item,
+            &Item::ANGLER_POTTERY_SHERD
+        );
+        assert_eq!(migrated.decorations[2].as_ref().unwrap().item, &Item::BRICK);
+        assert_eq!(
+            migrated.decorations[3].as_ref().unwrap().item,
+            &Item::ARCHER_POTTERY_SHERD
+        );
     }
 }

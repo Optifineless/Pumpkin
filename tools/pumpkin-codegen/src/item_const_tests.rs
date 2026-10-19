@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+#[expect(clippy::unwrap_used, reason = "Valid inline JSON fixture")]
+fn b1019_g03_empty_pot_decorations_codegen_uses_the_typed_default() {
+    let components: ItemComponents = serde_json::from_value(serde_json::json!({
+        "minecraft:item_name": { "translate": "item.test.fixture" },
+        "minecraft:max_stack_size": 64,
+        "minecraft:pot_decorations": {}
+    }))
+    .unwrap();
+    let generated = components.to_token_stream().to_string();
+    assert!(generated.contains("PotDecorationsImpl"));
+    assert!(generated.contains(":: EMPTY"));
+}
+
+#[test]
 fn generated_inline_sounds_and_hidden_effects_compile_as_constants() {
     let components: ItemComponents = serde_json::from_value(serde_json::json!({
         "minecraft:item_name": {"translate": "item.test.fixture"},

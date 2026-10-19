@@ -1,21 +1,25 @@
 use std::sync::Arc;
 
 use pumpkin_data::block_properties::DecoratedPotLikeProperties;
-use pumpkin_data::item::Item;
-use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
+use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
+use pumpkin_world::world::BlockFlags;
 
 use crate::block::entities::decorated_pot::DecoratedPotBlockEntity;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
     BlockBehaviour, BrokenArgs, GetComparatorOutputArgs, NormalUseArgs, OnPlaceArgs,
-    PathComputationType, PlacedArgs, UseWithItemArgs,
+    PathComputationType, PlacedArgs, PlayerWillDestroyArgs, UseWithItemArgs,
 };
 
 #[pumpkin_block("minecraft:decorated_pot")]
 pub struct DecoratedPotBlock;
+
+#[cfg(test)]
+#[path = "decorated_pot_tests.rs"]
+mod tests;
 
 impl BlockBehaviour for DecoratedPotBlock {
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
@@ -93,8 +97,38 @@ impl BlockBehaviour for DecoratedPotBlock {
             SoundCategory::Blocks,
             &args.position.to_f64(),
         );
-        args.world
-            .drop_stack(args.position, ItemStack::new(4, &Item::BRICK));
+    }
+
+    fn player_will_destroy(&self, args: PlayerWillDestroyArgs<'_>) {
+        let held_item = args.player.inventory().held_item();
+        if held_item.is_empty()
+            || !held_item
+                .item
+                .has_tag(&tag::Item::MINECRAFT_BREAKS_DECORATED_POTS)
+        {
+            return;
+        }
+
+        let mut prevents_shattering = false;
+        crate::enchantment::EnchantmentHelper::run_iteration_on_item(
+            &held_item,
+            |enchantment, _| {
+                prevents_shattering |= enchantment
+                    .has_tag(&tag::Enchantment::MINECRAFT_PREVENTS_DECORATED_POT_SHATTERING);
+            },
+        );
+        if prevents_shattering {
+            return;
+        }
+
+        let mut properties = DecoratedPotLikeProperties::from_state_id(args.state.id);
+        properties.cracked = true;
+        // Mirrors vanilla's setBlock(..., 260): UPDATE_KNOWN_SHAPE | NOTIFY_LISTENERS.
+        args.world.set_block_state(
+            args.position,
+            properties.to_state_id(args.block),
+            BlockFlags::UPDATE_KNOWN_SHAPE | BlockFlags::NOTIFY_LISTENERS,
+        );
     }
 
     fn get_comparator_output(&self, args: GetComparatorOutputArgs<'_>) -> Option<u8> {

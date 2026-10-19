@@ -5391,7 +5391,8 @@ impl World {
             });
             let params = crate::world::loot::LootContextParameters {
                 tool,
-                block_state: Some(broken_block_state),
+                // Vanilla evaluates loot against the state returned by playerWillDestroy.
+                block_state: Some(self.get_block_state(position)),
                 position: Some(position.to_f64()),
                 killed_by_player: Some(cause.is_some()),
                 ..Default::default()

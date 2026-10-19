@@ -2,6 +2,18 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Decorated-pot loot alternatives (#13)
+
+Intact pots drop one decorated pot with its decorations; their stored item still
+drops once. Tools tagged to break pots crack them before loot selection, which
+drops the stored sherd decorations instead. This removes the extra unconditional
+four bricks and preserves Silk Touch protection, Creative, spawn protection and
+cancelled-break behavior. Mirrors vanilla 26.3 `DecoratedPotBlock.getDrops`,
+`DecoratedPotBlock.playerWillDestroy` and `blocks/decorated_pot.json`.
+API 8 (same version): `DecoratedPotBlockEntity`, `PotDecorationsImpl` and
+`LootEntryKind` public layouts change; rebuild native plugins. Old `sherds` saves
+remain readable and retain their field. In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

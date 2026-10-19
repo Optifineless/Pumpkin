@@ -1051,7 +1051,7 @@ impl ToTokens for ItemComponents {
             });
         }
         if self.pot_decorations.is_some() {
-            tokens.extend(quote! { (PotDecorations, &PotDecorationsImpl), });
+            tokens.extend(quote! { (PotDecorations, &PotDecorationsImpl::EMPTY), });
         }
         if self.potion_contents.is_some() {
             tokens.extend(quote! {

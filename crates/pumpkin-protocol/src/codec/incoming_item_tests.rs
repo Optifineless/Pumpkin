@@ -90,6 +90,36 @@ fn raw_optional_counts_remain_distinct_from_the_validated_boundary() {
         100
     );
 }
+
+#[test]
+#[expect(
+    clippy::unwrap_used,
+    reason = "Known decorated-pot component wire fixture"
+)]
+fn b1019_g03_pot_decoration_templates_round_trip() {
+    use pumpkin_data::data_component_impl::{PotDecoration, PotDecorationsImpl};
+
+    let decorations = PotDecorationsImpl {
+        decorations: [
+            Some(PotDecoration {
+                item: &Item::BRICK,
+                count: 2,
+                patch: Vec::new(),
+            }),
+            None,
+            Some(PotDecoration {
+                item: &Item::ANGLER_POTTERY_SHERD,
+                count: 1,
+                patch: Vec::new(),
+            }),
+            None,
+        ],
+    };
+    let mut wire = Vec::new();
+    decorations.serialize(&mut wire).unwrap();
+    let decoded = PotDecorationsImpl::deserialize(&mut wire.as_slice()).unwrap();
+    assert_eq!(decoded, decorations);
+}
 #[test]
 #[expect(clippy::unwrap_used, reason = "Known template wire bytes")]
 fn charged_projectiles_preserve_template_bytes() {
