@@ -14,14 +14,16 @@ impl Player {
         damage_type: DamageType,
         cause: Option<&dyn EntityBase>,
         source: Option<&dyn EntityBase>,
+        ender_pearl_transfer: bool,
     ) -> Option<f32> {
-        if self.player_entry_invulnerable(damage_type, source, cause)
+        if self.player_entry_invulnerable(damage_type, source, cause, ender_pearl_transfer)
             || !self.accepts_damage_source(cause)
-            || self.player_entry_invulnerable(damage_type, source, cause)
+            || self.player_entry_invulnerable(damage_type, source, cause, ender_pearl_transfer)
         {
             return None;
         }
-        let amount = self.prepare_incoming_damage(damage, damage_type, cause, source)?;
+        let amount =
+            self.prepare_incoming_damage(damage, damage_type, cause, source, ender_pearl_transfer)?;
         (self.living_entity.health.load() > 0.0).then_some(amount)
     }
 
@@ -30,6 +32,7 @@ impl Player {
         damage_type: DamageType,
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
+        ender_pearl_transfer: bool,
     ) -> bool {
         // Player.isInvulnerableTo:657 / ServerPlayer.isInvulnerableTo:1333.
         self.living_entity
@@ -38,14 +41,18 @@ impl Player {
             || self
                 .living_entity
                 .is_immune_to_enchantment_damage(self, damage_type, source, cause)
-            || self.player_damage_type_disabled(damage_type)
+            || self.player_damage_type_disabled(damage_type, ender_pearl_transfer)
     }
 
-    fn player_damage_type_disabled(&self, damage_type: DamageType) -> bool {
+    fn player_damage_type_disabled(
+        &self,
+        damage_type: DamageType,
+        ender_pearl_transfer: bool,
+    ) -> bool {
         let world = self.world();
         let rules = &world.level_info.load().game_rules;
-        // ThrownEnderpearl.onHit applies this after ServerPlayer.teleport, before its load handshake.
-        (!self.has_client_loaded() && damage_type != DamageType::ENDER_PEARL)
+        // ServerPlayer.isInvulnerableTo separates initial loading from isChangingDimension.
+        (!self.has_client_loaded() && !ender_pearl_transfer)
             || (damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_DROWNING)
                 && !rules.drowning_damage)
             || (damage_type.has_tag(&tag::DamageType::MINECRAFT_IS_FALL) && !rules.fall_damage)
@@ -78,10 +85,11 @@ impl Player {
         damage_type: DamageType,
         cause: Option<&dyn EntityBase>,
         _source: Option<&dyn EntityBase>,
+        ender_pearl_transfer: bool,
     ) -> Option<f32> {
         let world = self.world();
         let bypasses = damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_INVULNERABILITY);
-        if self.player_damage_type_disabled(damage_type)
+        if self.player_damage_type_disabled(damage_type, ender_pearl_transfer)
             || (!bypasses
                 && self
                     .abilities

@@ -3525,7 +3525,7 @@ impl Player {
                 position,
                 yaw,
                 pitch,
-                None::<fn(&Arc<Self>)>,
+                None::<fn(&Arc<Self>, bool)>,
                 None::<fn(&Arc<World>, Vector3<f64>)>,
             )
             .await;
@@ -3542,7 +3542,7 @@ impl Player {
         after_commit_hook: G,
     ) -> TeleportWorldOutcome
     where
-        F: FnOnce(&Arc<Self>) + Send,
+        F: FnOnce(&Arc<Self>, bool) + Send,
         G: FnOnce(&Arc<World>, Vector3<f64>) + Send,
     {
         self.teleport_world_inner(
@@ -3567,7 +3567,7 @@ impl Player {
         mut after_commit_hook: Option<G>,
     ) -> TeleportWorldOutcome
     where
-        F: FnOnce(&Arc<Self>) + Send,
+        F: FnOnce(&Arc<Self>, bool) + Send,
         G: FnOnce(&Arc<World>, Vector3<f64>) + Send,
     {
         let defer_arrival_publication = commit_hook.is_some();
@@ -3601,6 +3601,7 @@ impl Player {
                 let pitch = event.pitch;
                 let new_world = event.new_world;
 
+                let was_loaded = self.has_client_loaded();
                 self.set_client_loaded(false);
                 let Some(player) = current_world.remove_player(self, false).await else {
                     return TeleportWorldOutcome::NotCommitted;
@@ -3706,7 +3707,7 @@ impl Player {
                     new_world.add_arriving_player(&player);
                     // ThrownEnderpearl.onHit applies damage after ServerPlayer.teleport.
                     if let Some(commit_hook) = commit_hook.take() {
-                        commit_hook(&player);
+                        commit_hook(&player, was_loaded);
                     }
                     player.send_health_update();
                     outcome = TeleportWorldOutcome::Committed;

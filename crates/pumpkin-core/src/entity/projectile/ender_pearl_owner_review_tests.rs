@@ -14,6 +14,9 @@ use pumpkin_data::{
 };
 use pumpkin_protocol::ser::NetworkReadExt;
 
+#[path = "ender_pearl_owner_review_tests/round2_tests.rs"]
+mod round2_tests;
+
 struct Fixture {
     server: Arc<Server>,
     source: Arc<crate::world::World>,

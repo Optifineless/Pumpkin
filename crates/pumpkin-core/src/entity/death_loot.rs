@@ -119,20 +119,11 @@ impl LivingEntity {
     ) {
         let _owner = self.own_damage();
         let lifecycle = self.damage_lifecycle();
-        let world = self.entity.world.load();
-        let Some(dyn_self) = world.get_entity_by_id(self.entity.entity_id).or_else(|| {
-            // Pearl arrivals are tracked before joining the destination tick list.
-            world
-                .entity_tracker
-                .get_tracked_entity(self.entity.entity_id)
-                .map(|tracked| tracked.entity.clone())
-                .filter(|entity| {
-                    std::ptr::eq(
-                        std::ptr::from_ref(entity.get_entity()),
-                        std::ptr::from_ref(&self.entity),
-                    )
-                })
-        }) else {
+        let world = self.entity.world.load_full();
+        let Some(dyn_self) = world
+            .get_entity_by_id(self.entity.entity_id)
+            .filter(|entity| std::ptr::eq(entity.get_entity(), &raw const self.entity))
+        else {
             return;
         };
         if self

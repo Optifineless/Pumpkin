@@ -29,6 +29,7 @@ use std::sync::atomic::Ordering::Relaxed;
 #[derive(Clone, Copy)]
 pub(super) struct HurtContext<'a> {
     pub lifecycle: u64,
+    pub ender_pearl_transfer: bool,
     pub damage_type: DamageType,
     pub position: Option<Vector3<f64>>,
     pub source: Option<&'a dyn EntityBase>,
@@ -43,6 +44,7 @@ struct HurtRequest<'a, F> {
     source: Option<&'a dyn EntityBase>,
     cause: Option<&'a dyn EntityBase>,
     expected_lifecycle: Option<u64>,
+    ender_pearl_transfer: bool,
     before_hurt: F,
 }
 
@@ -72,6 +74,7 @@ impl<'a, F: FnOnce()> HurtRequest<'a, F> {
             amount: self.amount,
             context: HurtContext {
                 lifecycle,
+                ender_pearl_transfer: self.ender_pearl_transfer,
                 damage_type: self.damage_type,
                 position: self.position,
                 source: self.source,
@@ -122,6 +125,7 @@ impl LivingEntity {
             source,
             cause,
             expected_lifecycle: None,
+            ender_pearl_transfer: false,
             before_hurt: || {},
         })
     }
@@ -131,6 +135,7 @@ impl LivingEntity {
         &self,
         caller: &dyn EntityBase,
         lifecycle: u64,
+        was_loaded: bool,
     ) -> bool {
         // ThrownEnderpearl.onHit resets fall distance and applies 5 damage after ServerPlayer.teleport.
         self.hurt_server_inner(HurtRequest {
@@ -141,6 +146,7 @@ impl LivingEntity {
             source: None,
             cause: None,
             expected_lifecycle: Some(lifecycle),
+            ender_pearl_transfer: was_loaded,
             before_hurt: || {
                 if self.is_alive() {
                     self.reset_fall_distance_and_impulse_context();
@@ -165,8 +171,13 @@ impl LivingEntity {
         let cause = context.cause;
         // LivingEntity.hurtServer: admit this life before any Pumpkin plugin dispatch.
         let amount = if let Some(player) = caller.get_player() {
-            let Some(amount) = player.admit_incoming_damage(amount, damage_type, cause, source)
-            else {
+            let Some(amount) = player.admit_incoming_damage(
+                amount,
+                damage_type,
+                cause,
+                source,
+                context.ender_pearl_transfer,
+            ) else {
                 return false;
             };
             amount
@@ -268,6 +279,7 @@ impl LivingEntity {
                         context.damage_type,
                         context.cause,
                         context.source,
+                        context.ender_pearl_transfer,
                     )
                     .is_some()
             })

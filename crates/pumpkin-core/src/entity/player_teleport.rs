@@ -93,10 +93,10 @@ impl Player {
                     position,
                     Some(yaw),
                     Some(pitch),
-                    move |player| {
+                    move |player, was_loaded| {
                         // ThrownEnderpearl.onHit applies these after ServerPlayer.teleport succeeds.
                         if Arc::ptr_eq(player, &expected_player) {
-                            player.finish_ender_pearl_teleport_for_lifecycle(life);
+                            player.finish_ender_pearl_teleport_for_lifecycle(life, was_loaded);
                         }
                     },
                     move |published_world, accepted_position| {
@@ -117,8 +117,8 @@ impl Player {
         self.damage(self, 5.0, DamageType::ENDER_PEARL);
     }
 
-    fn finish_ender_pearl_teleport_for_lifecycle(&self, lifecycle: u64) {
+    fn finish_ender_pearl_teleport_for_lifecycle(&self, lifecycle: u64, was_loaded: bool) {
         self.living_entity
-            .hurt_ender_pearl_for_lifecycle(self, lifecycle);
+            .hurt_ender_pearl_for_lifecycle(self, lifecycle, was_loaded);
     }
 }

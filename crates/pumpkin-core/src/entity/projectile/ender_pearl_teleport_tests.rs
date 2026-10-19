@@ -492,4 +492,10 @@ async fn verification_pending_pearl_does_not_damage_respawned_life() {
     assert!(Arc::ptr_eq(&player.world(), &target_world));
     assert_eq!(player.living_entity.health.load(), 20.0);
     assert_eq!(player.living_entity.fall_distance.load(), 7.0);
+    assert!(!player.has_client_loaded());
+    // A fresh pearl must also preserve respawn loading immunity after the old transfer retires.
+    player.get_entity().set_pos(Vector3::new(1.0, 64.0, 1.0));
+    fire_test_pearl(&player, &target_world, &server);
+    assert_eq!(player.living_entity.health.load(), 20.0);
+    assert_eq!(player.living_entity.fall_distance.load(), 0.0);
 }
