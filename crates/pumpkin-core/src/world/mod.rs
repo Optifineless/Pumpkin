@@ -1,6 +1,7 @@
 pub(crate) use explosion::ExplosionDamageSource;
 use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 mod container_lifecycle;
+mod decorated_pot_break;
 mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
@@ -4986,6 +4987,17 @@ impl World {
         flags: BlockFlags,
         update_limit: u32,
     ) -> Option<BlockStateId> {
+        self.break_block_with_limit_prepared(position, cause, flags, update_limit, None)
+    }
+
+    fn break_block_with_limit_prepared(
+        self: &Arc<Self>,
+        position: &BlockPos,
+        cause: Option<&Arc<Player>>,
+        flags: BlockFlags,
+        update_limit: u32,
+        pot: Option<&decorated_pot_break::DecoratedPotBreak<'_>>,
+    ) -> Option<BlockStateId> {
         if let Some(player) = cause
             && self.is_in_spawn_protection(player, position)
         {
@@ -5028,12 +5040,11 @@ impl World {
 
         // Level.destroyBlock must admit removal before callbacks retire or drop the container.
         let _mutation = self.block_entity_mutation_permit(*position)?;
-
-        if event.drop {
-            flags.remove(BlockFlags::SKIP_DROPS);
-        } else {
-            flags.insert(BlockFlags::SKIP_DROPS);
+        if let Some(pot) = pot {
+            pot.prepare(self, position)?;
         }
+
+        flags.set(BlockFlags::SKIP_DROPS, !event.drop);
 
         self.block_registry
             .player_will_destroy(self, cause, position, broken_block_state);

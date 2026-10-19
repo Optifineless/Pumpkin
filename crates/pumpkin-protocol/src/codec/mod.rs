@@ -11,6 +11,8 @@ pub mod little_endian;
 pub mod lp_vector_3d;
 pub mod optional_int;
 pub mod particle_options;
+#[cfg(test)]
+mod pot_decorations_hash_tests;
 pub mod recipe;
 mod u24_type;
 pub mod uuid;

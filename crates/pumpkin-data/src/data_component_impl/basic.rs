@@ -4,6 +4,9 @@ use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
 use std::borrow::Cow;
 
+#[path = "pot_decorations_hash.rs"]
+mod pot_decorations_hash;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomDataImpl {
     pub data: NbtCompound,
@@ -694,6 +697,10 @@ impl PotDecorationsImpl {
     }
 }
 impl DataComponentImpl for PotDecorationsImpl {
+    fn get_hash(&self) -> i32 {
+        pot_decorations_hash::get_hash(self)
+    }
+
     fn write_data(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         for (face, name) in self.decorations.iter().zip(Self::FACES) {

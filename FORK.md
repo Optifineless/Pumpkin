@@ -300,6 +300,40 @@ Play test: Break an empty decorated pot with a diamond pickaxe, with and without
 a diamond stored inside; expect one pot item back and the stored diamond when
 present. Break a pot with sherds the same way; expect the sherds instead.
 
+## Decorated-pot projectile, face data and prediction (#263, #297, #298, #313, #314)
+
+Impact projectiles shatter admitted pots through the normal destruction and loot
+flow. Denied permissions and cancelled hits/breaks preserve the pot. Generic
+dynamic sherd loot requires a real provider; legacy pots retain their four bricks.
+Current typed face templates are sent and saved as vanilla's named `sherds`
+compound, including counts and component patches. Pot prediction hashes compose
+the vanilla HashOps face/template/patch maps using existing component hash contracts.
+Placement refreshes the authoritative chunk image after applying claimed faces.
+Unrelated child-component hash limitations remain; this is not a claim that every
+component's hash is implemented.
+
+Older active `PotDecorations` retains its existing precedence on import. New saves
+keep imported raw data in inert `PotDecorationsRetained` backups and distinguish
+explicit EMPTY from missing legacy data with `PotDecorationsEmpty`; absent new
+fields retain old-save defaults. Client updates expose current vanilla fields.
+Denied Bedrock pot use resends the supported protocol 2193 actor format, checked
+against Geyser's current translator: coordinates, `DecoratedPot` ID and four sherd
+names. That authority exposes no stored-item contents field; no contents-rendering
+correction or general non-bed actor coverage is claimed.
+Explicit pottery-pattern component overrides fall back to brick while that
+registry mapping remains unmodeled. Restricted projectile types that do not
+retain item predicates remain denied rather than borrowing the owner's held item.
+Permission uses the retained item; separately captured vanilla `can_break` data
+and a pickup item changed by plugins can differ. Capturing new projectile state
+and changing generic launch behavior remain outside this patch.
+
+Mirrors vanilla 26.3 `DecoratedPotBlock.onProjectileHit/getDrops`,
+`DecoratedPotBlockEntity.saveAdditional/getUpdateTag`, `PotDecorations.CODEC`,
+`ItemStackTemplate.CODEC` and `HashOps`. API 8 (same version): the pot entity's
+private runtime layout changes; rebuild native plugins. Existing public fields
+and signatures remain source compatible; native API version and Wasm WIT are unchanged.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

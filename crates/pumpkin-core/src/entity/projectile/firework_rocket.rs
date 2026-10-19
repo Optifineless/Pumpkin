@@ -27,6 +27,16 @@ pub struct FireworkRocketEntity {
 }
 
 impl FireworkRocketEntity {
+    pub(crate) fn block_break_predicate(
+        &self,
+    ) -> Option<pumpkin_data::data_component_impl::CanBreakImpl> {
+        self.item
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_data_component::<pumpkin_data::data_component_impl::CanBreakImpl>()
+            .cloned()
+    }
+
     pub fn new(entity: Entity) -> Self {
         Self::with_item(
             entity,

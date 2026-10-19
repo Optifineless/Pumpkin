@@ -11,7 +11,8 @@ use crate::block::entities::decorated_pot::DecoratedPotBlockEntity;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
     BlockBehaviour, BrokenArgs, GetComparatorOutputArgs, NormalUseArgs, OnPlaceArgs,
-    PathComputationType, PlacedArgs, PlayerWillDestroyArgs, UseWithItemArgs,
+    OnProjectileHitArgs, PathComputationType, PlacedArgs, PlayerPlacedArgs, PlayerWillDestroyArgs,
+    UseWithItemArgs,
 };
 
 #[pumpkin_block("minecraft:decorated_pot")]
@@ -22,6 +23,12 @@ pub struct DecoratedPotBlock;
 mod tests;
 
 impl BlockBehaviour for DecoratedPotBlock {
+    fn on_projectile_hit(&self, args: OnProjectileHitArgs<'_>) {
+        // DecoratedPotBlock.onProjectileHit: crack only an admitted impact, then use normal loot/removal.
+        args.world
+            .break_decorated_pot(args.position, args.state.id, args.projectile);
+    }
+
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = DecoratedPotLikeProperties::from_state_id(args.block.default_state.id);
         props.facing = args
@@ -36,6 +43,16 @@ impl BlockBehaviour for DecoratedPotBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let entity = DecoratedPotBlockEntity::new(*args.position);
         args.world.add_block_entity(Arc::new(entity));
+    }
+
+    fn player_placed(&self, args: PlayerPlacedArgs<'_>) {
+        // BlockItem.updateBlockEntityComponents: publish the claimed faces after application.
+        if args.world.get_block(args.position) == args.block
+            && let Some(entity) = args.world.get_block_entity(args.position)
+            && entity.as_any().is::<DecoratedPotBlockEntity>()
+        {
+            args.world.update_block_entity(&entity);
+        }
     }
 
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {

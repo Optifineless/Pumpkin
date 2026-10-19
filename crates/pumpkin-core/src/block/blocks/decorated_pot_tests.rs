@@ -36,7 +36,7 @@ struct Fixture {
     server: Arc<Server>,
     world: Arc<World>,
     player: TestPlayer,
-    _directory: tempfile::TempDir,
+    directory: tempfile::TempDir,
 }
 
 impl Fixture {
@@ -50,8 +50,14 @@ impl Fixture {
             server,
             world,
             player,
-            _directory: directory,
+            directory,
         }
+    }
+
+    async fn shutdown(&self) {
+        tokio::time::timeout(std::time::Duration::from_secs(20), self.server.shutdown())
+            .await
+            .expect("decorated pot fixture shutdown did not finish");
     }
 
     fn approach(&self, block: BlockPos) {
@@ -437,8 +443,14 @@ fn b1019_g03_legacy_sherds_load_and_save_without_changing_the_old_field() {
     let mut saved = NbtCompound::new();
     loaded.write_nbt(&mut saved);
 
-    assert_eq!(saved.get_list("sherds"), Some(sherds.as_slice()));
-    let encoded = saved.get("PotDecorations").unwrap();
+    assert_eq!(
+        saved
+            .get_compound("PotDecorationsRetained")
+            .unwrap()
+            .get_list("sherds"),
+        Some(sherds.as_slice())
+    );
+    let encoded = saved.get("sherds").unwrap();
     let converted = PotDecorationsImpl::read_data(encoded).unwrap();
     assert_eq!(
         converted.decorations[0].as_ref().unwrap().item,
@@ -460,3 +472,15 @@ fn b1019_g03_legacy_sherds_load_and_save_without_changing_the_old_field() {
 
 #[path = "decorated_pot_crafting_tests.rs"]
 mod crafting_tests;
+
+#[path = "decorated_pot_face_tests.rs"]
+mod face_tests;
+
+#[path = "decorated_pot_hash_tests.rs"]
+mod hash_tests;
+
+#[path = "decorated_pot_dynamic_tests.rs"]
+mod dynamic_tests;
+
+#[path = "decorated_pot_projectile_tests.rs"]
+mod projectile_tests;

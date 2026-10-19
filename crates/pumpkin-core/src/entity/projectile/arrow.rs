@@ -760,7 +760,9 @@ impl EntityBase for ArrowEntity {
 
                 let block = world.get_block(&pos);
                 let state = world.get_block_state(&pos);
-                if let Some(server) = world.server.upgrade() {
+                if (!hit_event.cancelled || block != &pumpkin_data::Block::DECORATED_POT)
+                    && let Some(server) = world.server.upgrade()
+                {
                     world
                         .block_registry
                         .on_projectile_hit(block, &world, self, &pos, state, &hit_pos, &server);
