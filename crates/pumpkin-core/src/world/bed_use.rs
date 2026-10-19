@@ -57,6 +57,10 @@ impl World {
         // BedBlock.destroyOnUse removes head then foot. Preflight the fork's two break events
         // before either write, so cancelling the partner cannot leave a half-removed bed.
         let halves = [(head, head_state), (foot, self.get_block_state_id(&foot))];
+        // Keep recursive and concurrent unsafe uses out until both callbacks finish and commit.
+        let Some(reservation) = self.reserve_bed_use(&halves) else {
+            return false;
+        };
         let effects =
             halves.map(|(position, state)| RetiredBlockEffects::capture(self, &position, state));
         let mut drops = [false; 2];
@@ -84,6 +88,7 @@ impl World {
         }
         let retired = self.remove_bed_states_if(&halves);
         let committed = retired.len();
+        drop(reservation);
         // The established owner is per position; even a later rejected write must finish
         // the notifications and block-entity retirement of an already committed half.
         for (index, (position, state, entity)) in retired.into_iter().enumerate() {

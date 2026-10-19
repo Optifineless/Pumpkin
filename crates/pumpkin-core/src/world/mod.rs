@@ -5272,13 +5272,9 @@ impl World {
                 let mut neighbour_update_flags = flags;
                 neighbour_update_flags.remove(BlockFlags::NOTIFY_NEIGHBORS);
                 neighbour_update_flags.remove(BlockFlags::SKIP_REDSTONE_WIRE_STATE_REPLACEMENT);
-                // Suppressing drops for the changed block must not suppress drops
-                // from dependent blocks that lose their support (e.g. in Creative).
-                if !old_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
-                    && old_block != &Block::STRAW_BED
-                {
-                    neighbour_update_flags.remove(BlockFlags::SKIP_DROPS);
-                }
+                // Level.setBlock clears SKIP_DROPS before neighbour shape propagation;
+                // paired-bed teardown keeps suppression on its explicit break path.
+                neighbour_update_flags.remove(BlockFlags::SKIP_DROPS);
                 self.block_registry.prepare_with_limit(
                     self,
                     position,

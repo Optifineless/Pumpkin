@@ -18,6 +18,7 @@ pub(super) struct PendingBlockEntityLoads {
     pub(super) snapshots: FxHashMap<BlockPos, Weak<()>>,
     unloading: FxHashMap<Vector2<i32>, usize>,
     bed_breaks: FxHashSet<BlockPos>,
+    bed_uses: FxHashSet<BlockPos>,
 }
 
 // A logical operation identity, with no lock or blocking permit retained across callbacks.
@@ -46,6 +47,25 @@ impl Drop for BedBreakSnapshot<'_> {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .bed_breaks
             .remove(&self.position);
+    }
+}
+
+// Reserves both halves across unsafe-use break events without retaining the gate.
+pub(super) struct BedUseReservation<'a> {
+    world: &'a World,
+    positions: [BlockPos; 2],
+}
+
+impl Drop for BedUseReservation<'_> {
+    fn drop(&mut self) {
+        let mut loads = self
+            .world
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for position in self.positions {
+            loads.bed_uses.remove(&position);
+        }
     }
 }
 
@@ -265,6 +285,7 @@ impl World {
         if loads.unloading.contains_key(&position.chunk_position())
             || self.get_block_state_id_if_loaded(&position) != Some(expected)
             || loads.bed_breaks.contains(&position)
+            || loads.bed_uses.contains(&position)
         {
             return None;
         }
@@ -279,6 +300,33 @@ impl World {
             position,
             expected,
             chunk,
+        })
+    }
+
+    pub(super) fn reserve_bed_use(
+        &self,
+        halves: &[(BlockPos, BlockStateId)],
+    ) -> Option<BedUseReservation<'_>> {
+        let [first, second] = halves else {
+            return None;
+        };
+        let positions = [first.0, second.0];
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if halves.iter().any(|(position, expected)| {
+            loads.unloading.contains_key(&position.chunk_position())
+                || self.get_block_state_id_if_loaded(position) != Some(*expected)
+                || loads.bed_breaks.contains(position)
+                || loads.bed_uses.contains(position)
+        }) {
+            return None;
+        }
+        loads.bed_uses.extend(positions);
+        Some(BedUseReservation {
+            world: self,
+            positions,
         })
     }
 

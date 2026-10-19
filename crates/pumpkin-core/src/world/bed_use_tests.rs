@@ -318,6 +318,49 @@ async fn b1019_g05_unsafe_use_cancellation_preserves_both_halves() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g05_unsafe_bed_use_reentry_admits_one_pair_operation() {
+    let mut fixture = Fixture::new(Dimension::THE_NETHER);
+    fixture.place(&Block::WHITE_BED, &Item::WHITE_BED);
+    fixture.client.player.set_invulnerable(true);
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let reentrant_player = fixture.client.player.clone();
+    let reentrant_client = reentrant_player.client.clone();
+    let server = fixture.server.clone();
+    fixture.register::<BlockBreakEvent>(move |_| {
+        if seen.fetch_add(1, Relaxed) == 0
+            && let crate::net::ClientPlatform::Java(client) = reentrant_client.as_ref()
+        {
+            client
+                .handle_use_item_on(
+                    &reentrant_player,
+                    &SUseItemOn {
+                        hand: VarInt(0),
+                        position: FOOT,
+                        face: VarInt(BlockDirection::Up as i32),
+                        cursor_pos: Vector3::new(0.5, 1.0, 0.5),
+                        inside_block: false,
+                        is_against_world_border: false,
+                        sequence: VarInt(2),
+                    },
+                    &server,
+                )
+                .unwrap();
+        }
+    });
+
+    fixture.use_on(FOOT);
+
+    assert_eq!(calls.load(Relaxed), 2, "one operation admits both halves");
+    assert!(fixture.world.get_block(&HEAD).is_air());
+    assert!(fixture.world.get_block(&FOOT).is_air());
+    assert_eq!(explosion_packets(&fixture.client.take_packets()), 1);
+    fixture.awake();
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g05_unsafe_break_callbacks_preserve_replacement_containers() {
     for replacement in [HEAD, FOOT] {
         let mut fixture = Fixture::new(Dimension::THE_NETHER);

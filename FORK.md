@@ -43,6 +43,16 @@ distinguishes an equal-state replacement during loot callbacks; new revision
 infrastructure is out of scope. This limitation was introduced in round 2.
 The older raw-removal spawn-boundary gap (L1) remains outside this change;
 player-driven partner admission now checks protection explicitly.
+PR #230 round 4: bed-specific `SKIP_DROPS` no longer reaches unrelated neighbour
+shape updates, so attached blocks that lose support still drop their items.
+The bed pair's own teardown continues to suppress its duplicate drop. Mirrors
+vanilla 26.3 `Level.setBlock`; a Java regression pays for a spore blossom under
+an elevated straw-bed head, then breaks the head in Survival and checks one of
+each item. In-game verification: Not yet.
+Unsafe-dimension bed use also reserves both halves across its break events, so a
+recursive or concurrent use cannot dispatch the same pair's events repeatedly.
+The regression re-enters Java bed use from a break callback and checks for one
+pair admission. In-game verification: Not yet.
 In-game verification: Not yet.
 
 Play test: place ordinary and straw beds, break either half in Survival and expect
@@ -53,6 +63,8 @@ Repeat with Java and Bedrock and a protection plugin; expect both break events t
 name the breaker and a cancelled/protected partner to remain. Leave an intact bed
 while another player hits the sleeper; expect waking to finish. Use a bed in the
 Nether or End and expect the explosion, including when only one half is consumed.
+Place a straw bed on temporary supports, remove them, crouch-place a spore blossom
+under the head, then break the head in Survival; expect one bed and one blossom.
 
 ## Empty map centers (#45)
 
