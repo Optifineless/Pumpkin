@@ -39,6 +39,17 @@ fields, zombie vanilla/legacy/unknown data and carried fields, and known/unknown
 cures. Each exercises two shutdown/restart cycles, with isolated negative
 controls for fallback validation, zombie serialization and cure restoration.
 
+PR #226 review round 3 keeps inventory entries raw when decoding would drop
+unsupported top-level or component data. It skips only canonical legacy
+`minecraft:air` zero-count placeholders, retaining other zero-count entries
+across two restarts. Zombie-villager conversion finalizes villager data for
+known and unknown registry names while keeping restored offers. Chunk activation
+initializes Java tracked data and Bedrock actor metadata from loaded villager
+data and XP. No public plugin API or saved-data meaning changes. In-game
+verification: **Not yet**. The new persistence assertions fail on `854cb8cfd`
+for lossy inventory rewrites, the dropped zero-count entry and the known cure's
+false finalized flag.
+
 API 8 (same version): `VillagerEntity` and `ZombieVillagerEntity` gain persistence
 state (including recorded fallback values), and the public villager
 inventory now holds `VillagerInventory`, whose usable slots are a fixed array of

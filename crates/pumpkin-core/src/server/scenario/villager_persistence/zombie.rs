@@ -166,6 +166,7 @@ fn assert_cured_librarian(scenario: &Scenario, id: Uuid) {
         assert_eq!(data.profession.0, VillagerProfession::Librarian as i32);
         assert_eq!(data.r#type.0, VillagerType::Taiga as i32);
         assert_eq!(data.level.0, 3);
+        assert!(villager.villager_data_finalized.load(Ordering::Relaxed));
         assert_eq!(villager.xp.load(Ordering::Relaxed), 45);
         let offers = villager.offers.lock().unwrap();
         assert_eq!(
@@ -216,6 +217,7 @@ async fn zombie_villager_curing_keeps_librarian_offers_after_two_restarts() {
             assert_eq!(data.get_string("type"), Some("minecraft:taiga"));
             assert_eq!(data.get_string("profession"), Some("minecraft:librarian"));
             assert_eq!(data.get_int("level"), Some(3));
+            assert_eq!(saved.get_bool("VillagerDataFinalized"), Some(true));
             for key in ["Type", "Profession", "Level"] {
                 assert!(data.get(key).is_none(), "legacy key {key} was written");
             }
@@ -252,12 +254,14 @@ async fn zombie_villager_curing_keeps_unknown_names_after_two_restarts() {
                 assert_eq!(data.profession.0, VillagerProfession::None as i32);
                 assert_eq!(data.r#type.0, VillagerType::Plains as i32);
                 assert_eq!(data.level.0, 4);
+                assert!(villager.villager_data_finalized.load(Ordering::Relaxed));
                 assert_eq!(villager.offers.lock().unwrap().len(), 1);
             });
             if cycle < 2 {
                 scenario = scenario.restart().await;
                 let saved = saved_record(&scenario, id).await;
                 assert_eq!(saved.get_compound("VillagerData"), Some(&data));
+                assert_eq!(saved.get_bool("VillagerDataFinalized"), Some(true));
                 assert_eq!(saved.get("Offers"), fixture.get("Offers"));
                 scenario.join(Uuid::new_v4(), "CuredFutureVillager").await;
             }

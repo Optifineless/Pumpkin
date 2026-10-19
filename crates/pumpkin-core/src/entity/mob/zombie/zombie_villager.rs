@@ -234,6 +234,10 @@ impl ZombieVillagerEntity {
         // ZombieVillager.finishConversion restores data before offers; a profession change clears them.
         villager.set_villager_data(data);
         villager.mob_read_nbt(&nbt);
+        // Conversion finalizes villager data even when no unknown names needed an NBT override.
+        villager
+            .villager_data_finalized
+            .store(true, Ordering::Relaxed);
 
         if let Some(starter) = self.conversion_starter.load() {
             // Vanilla's `ZOMBIE_VILLAGER_CURED` reputation event.

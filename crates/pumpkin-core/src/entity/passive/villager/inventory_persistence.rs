@@ -55,15 +55,12 @@ impl VillagerInventory {
         let mut next_slot = 0;
         for tag in list {
             let compound = tag.extract_compound();
-            // The old fork wrote count-zero stacks for unused slots. Its item
-            // decoder now rejects these, so recognize empties before decoding.
-            if compound.is_some_and(|entry| entry.get_int("count") == Some(0)) {
+            // The old fork wrote canonical AIR stacks for unused slots. Do not
+            // treat arbitrary zero-count records as empty: they may be unknown data.
+            if compound.is_some_and(Self::is_legacy_empty_air) {
                 continue;
             }
-            let stack = compound.and_then(ItemStack::read_item_stack);
-            if stack.as_ref().is_some_and(ItemStack::is_empty) {
-                continue;
-            }
+            let stack = compound.and_then(Self::read_representable_stack);
             if let Some(stack) = stack
                 && next_slot < INVENTORY_SIZE
             {
@@ -75,6 +72,50 @@ impl VillagerInventory {
             }
         }
         inventory
+    }
+
+    fn is_legacy_empty_air(entry: &NbtCompound) -> bool {
+        entry.get_string("id") == Some("minecraft:air")
+            && entry.get_int("count") == Some(0)
+            && entry.child_tags.iter().all(|(name, tag)| match name.as_ref() {
+                "id" | "count" => true,
+                "components" => matches!(tag, NbtTag::Compound(components) if components.child_tags.is_empty()),
+                _ => false,
+            })
+    }
+
+    fn read_representable_stack(entry: &NbtCompound) -> Option<ItemStack> {
+        if entry
+            .child_tags
+            .keys()
+            .any(|name| !matches!(name.as_ref(), "id" | "count" | "components"))
+        {
+            return None;
+        }
+        let components = match entry.get("components") {
+            Some(NbtTag::Compound(components)) => Some(components),
+            Some(_) => return None,
+            None => None,
+        };
+        let stack = ItemStack::read_item_stack(entry)?;
+        if stack.is_empty() {
+            return None;
+        }
+
+        // A successful decode is not enough: component codecs can normalize or
+        // skip payloads. Keep the source entry raw unless its component patch
+        // comes back unchanged from the writer.
+        let mut encoded = NbtCompound::new();
+        stack.write_item_stack(&mut encoded);
+        let encoded_components = encoded.get_compound("components");
+        if let Some(components) = components {
+            if encoded_components != Some(components) {
+                return None;
+            }
+        } else if encoded_components.is_some_and(|components| !components.child_tags.is_empty()) {
+            return None;
+        }
+        Some(stack)
     }
 
     // InventoryCarrier.writeInventoryToTag / SimpleContainer.storeAsItemList (26.3).

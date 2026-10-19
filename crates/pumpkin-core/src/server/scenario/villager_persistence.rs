@@ -411,14 +411,22 @@ fn canonical_bytes(tag: &NbtTag) -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn villager_d_overflow_and_bad_components_survive_two_restarts_byte_for_byte() {
+async fn villager_d_lossy_inventory_entries_survive_two_restarts_byte_for_byte() {
     run(async {
         let mut scenario = Scenario::new().await;
         let id = Uuid::new_v4();
         let mut fixture = villager_fixture(id, false);
-        let mut inventory: Vec<_> = (1..=10)
+        let mut inventory: Vec<_> = (1..=12)
             .map(|count| stack("minecraft:bread", count))
             .collect();
+        let NbtTag::Compound(noncompound_components) = &mut inventory[2] else {
+            panic!("fixture item is not a compound")
+        };
+        noncompound_components.put("components", NbtTag::String("future payload".into()));
+        let NbtTag::Compound(unknown_field) = &mut inventory[4] else {
+            panic!("fixture item is not a compound")
+        };
+        unknown_field.put_long("retained_unknown_field", 404);
         let mut undecodable = stack("minecraft:stone", 2)
             .extract_compound()
             .unwrap()
@@ -426,17 +434,13 @@ async fn villager_d_overflow_and_bad_components_survive_two_restarts_byte_for_by
         let mut bad_components = NbtCompound::new();
         bad_components.put_string("minecraft:damage", "invalid component".into());
         undecodable.put_compound("components", bad_components);
-        inventory.insert(2, NbtTag::Compound(undecodable));
-        for (index, entry) in inventory.iter_mut().enumerate().skip(9) {
-            let NbtTag::Compound(compound) = entry else {
-                panic!("fixture item is not a compound")
-            };
-            compound.put_long("retained_unknown_field", i64::try_from(index).unwrap());
-        }
+        inventory.insert(6, NbtTag::Compound(undecodable));
         let expected: Vec<_> = inventory.iter().map(canonical_bytes).collect();
         fixture.put_list("Inventory", inventory);
         seed(&scenario, vec![fixture]).await;
-        scenario.join(Uuid::new_v4(), "OverflowVillager").await;
+        scenario
+            .join(Uuid::new_v4(), "LossyInventoryVillager")
+            .await;
         assert_capacity(&scenario, id, 8);
         for _ in 0..2 {
             scenario = scenario.restart().await;
@@ -446,8 +450,47 @@ async fn villager_d_overflow_and_bad_components_survive_two_restarts_byte_for_by
                 inventory.iter().map(canonical_bytes).collect::<Vec<_>>(),
                 expected
             );
-            scenario.join(Uuid::new_v4(), "OverflowVillager").await;
+            scenario
+                .join(Uuid::new_v4(), "LossyInventoryVillager")
+                .await;
             assert_capacity(&scenario, id, 8);
+        }
+        scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn villager_g_unknown_zero_count_inventory_entry_survives_two_restarts() {
+    run(async {
+        let mut scenario = Scenario::new().await;
+        let id = Uuid::new_v4();
+        let mut fixture = villager_fixture(id, false);
+        let mut unknown = NbtCompound::new();
+        unknown.put_string("id", "future:artifact".into());
+        unknown.put_int("count", 0);
+        let mut components = NbtCompound::new();
+        components.put_string("future:payload", "keep this value".into());
+        unknown.put_compound("components", components);
+        unknown.put_long("retained_unknown_field", 505);
+        let raw = NbtTag::Compound(unknown);
+        let expected = canonical_bytes(&raw);
+        fixture.put_list("Inventory", vec![raw]);
+        seed(&scenario, vec![fixture]).await;
+        scenario
+            .join(Uuid::new_v4(), "ZeroCountUnknownVillager")
+            .await;
+        assert_capacity(&scenario, id, 0);
+        for _ in 0..2 {
+            scenario = scenario.restart().await;
+            let saved = saved_record(&scenario, id).await;
+            let inventory = saved.get_list("Inventory").unwrap();
+            assert_eq!(inventory.len(), 1);
+            assert_eq!(canonical_bytes(&inventory[0]), expected);
+            scenario
+                .join(Uuid::new_v4(), "ZeroCountUnknownVillager")
+                .await;
+            assert_capacity(&scenario, id, 0);
         }
         scenario.stop().await;
     })
