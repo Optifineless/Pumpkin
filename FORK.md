@@ -215,6 +215,21 @@ expect the block to move and the water to disappear only when the bucket fills.
 Place and fill a chest there, save, leave the area and return, then restart; expect
 the contents to remain. Record these border interactions and the reload.
 
+The #191 round-7d follow-up runs lectern page and book-removal world effects after
+the menu guard releases, using the same effect batch as anvils. Deferred effects
+check the original block entity is still live; a removed book still reaches the
+player's inventory or drops once when it is full, even if the lectern disappears.
+Mirrors vanilla 26.3 `LecternMenu.clickMenuButton`, `LecternBlockEntity.setPage`
+and `LecternBlock.signalPageChange/resetBookState`. Written by Codex
+(GPT-6.1 Sol). Saved NBT, native API and WIT are unchanged.
+In-game verification: **Not yet**.
+
+Play test: open a lectern with a multi-page book and turn pages; expect the page
+and redstone pulse to update without a server error. Take the book with space in
+your inventory, then repeat with a full inventory; expect exactly one book in
+your inventory or on the ground, and an empty, unpowered lectern. Record both
+book returns and a page-turn pulse.
+
 ## World normal/frozen service boundary, ticks M1
 
 Normal World ticking and each frozen flush/player batch now require exclusive

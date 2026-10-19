@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use crate::block::entities::BlockEntity;
 use crate::block::entities::lectern::LecternBlockEntity;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
@@ -9,6 +10,7 @@ use crate::block::{
     OnStateReplacedArgs, PathComputationType, PlacedArgs, UseWithItemArgs,
 };
 use crate::world::World;
+use crate::world::guard_effects::defer;
 use pumpkin_data::block_properties::LecternLikeProperties;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
@@ -32,12 +34,14 @@ use pumpkin_world::world::BlockFlags;
 struct LecternPageController {
     world: Arc<World>,
     position: BlockPos,
-    inventory: Arc<dyn Inventory>,
+    block_entity: Arc<dyn BlockEntity>,
 }
 
 impl LecternPageController {
     fn entity(&self) -> Option<&LecternBlockEntity> {
-        self.inventory.as_any().downcast_ref::<LecternBlockEntity>()
+        self.block_entity
+            .as_any()
+            .downcast_ref::<LecternBlockEntity>()
     }
 }
 
@@ -48,24 +52,47 @@ impl LecternController for LecternPageController {
     }
 
     fn set_page(&self, page: i32) {
-        let Some(entity) = self.entity() else {
-            return;
+        let world = self.world.clone();
+        let block_entity = self.block_entity.clone();
+        let position = self.position;
+        // LecternMenu.setData / LecternBlockEntity.setPage commit after the menu unlocks.
+        let effect = move || {
+            if !world.is_live_block_entity(&block_entity) {
+                return;
+            }
+            let Some(entity) = block_entity.as_any().downcast_ref::<LecternBlockEntity>() else {
+                return;
+            };
+            let page_count = entity.page_count();
+            let page = page.clamp(0, (page_count - 1).max(0));
+            if page == entity.page.load(Ordering::Relaxed) as i32 {
+                return;
+            }
+            entity.page.store(page as usize, Ordering::Relaxed);
+            entity.mark_dirty();
+            LecternBlock::pulse(&world, &position);
         };
-        let page_count = entity.page_count();
-        let page = page.clamp(0, (page_count - 1).max(0));
-        if page == entity.page.load(Ordering::Relaxed) as i32 {
-            return;
+        if let Err(effect) = defer(effect) {
+            effect();
         }
-        entity.page.store(page as usize, Ordering::Relaxed);
-        entity.mark_dirty();
-        LecternBlock::pulse(&self.world, &self.position);
     }
 
     fn on_book_taken(&self) {
-        if let Some(entity) = self.entity() {
-            entity.page.store(0, Ordering::Relaxed);
+        let world = self.world.clone();
+        let block_entity = self.block_entity.clone();
+        let position = self.position;
+        let effect = move || {
+            if !world.is_live_block_entity(&block_entity) {
+                return;
+            }
+            if let Some(entity) = block_entity.as_any().downcast_ref::<LecternBlockEntity>() {
+                entity.page.store(0, Ordering::Relaxed);
+            }
+            LecternBlock::set_has_book(&world, &position, false);
+        };
+        if let Err(effect) = defer(effect) {
+            effect();
         }
-        LecternBlock::set_has_book(&self.world, &self.position, false);
     }
 }
 
@@ -190,12 +217,12 @@ impl BlockBehaviour for LecternBlock {
         }
 
         let block_entity = args.world.get_block_entity(args.position)?;
-        let inventory = block_entity.get_inventory()?;
+        let inventory = block_entity.clone().get_inventory()?;
 
         let controller = Arc::new(LecternPageController {
             world: args.world.clone(),
             position: *args.position,
-            inventory: inventory.clone(),
+            block_entity,
         });
 
         Some(Box::new(LecternScreenFactory {
