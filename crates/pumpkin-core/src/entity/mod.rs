@@ -54,7 +54,6 @@ use pumpkin_protocol::{
         CSpawnEntity, Metadata, MetadataSerializer,
     },
 };
-use pumpkin_util::math::vector3::Axis;
 use pumpkin_util::math::{
     boundingbox::{BoundingBox, EntityDimensions},
     get_section_cord, pack_degrees,
@@ -83,6 +82,9 @@ pub mod attributes;
 mod block_action;
 pub mod boss;
 pub mod breath;
+mod collision;
+#[cfg(test)]
+mod collision_tests;
 pub mod custom_sound;
 pub mod decoration;
 pub mod effect;
@@ -1523,108 +1525,6 @@ impl Entity {
         self.supporting_block_pos.load()
     }
 
-    #[expect(clippy::float_cmp)]
-    fn adjust_movement_for_collisions(
-        &self,
-        movement: Vector3<f64>,
-        caller: &dyn EntityBase,
-    ) -> Vector3<f64> {
-        if movement.length_squared() == 0.0 {
-            return movement;
-        }
-
-        self.on_ground.store(false, Ordering::SeqCst);
-        self.supporting_block_pos.store(None);
-        self.horizontal_collision.store(false, Ordering::SeqCst);
-
-        let bounding_box = self.bounding_box.load();
-
-        let (collisions, block_positions) = self
-            .world
-            .load()
-            .get_block_collisions(bounding_box.stretch(movement), caller);
-
-        if collisions.is_empty() {
-            return movement;
-        }
-
-        let mut adjusted_movement = movement;
-
-        // Y-Axis adjustment
-        if movement.get_axis(Axis::Y) != 0.0 {
-            let mut max_time = 1.0;
-            let mut positions = block_positions.into_iter();
-            if let Some((mut collisions_len, mut position)) = positions.next() {
-                let mut supporting_block_pos = None;
-
-                for (i, inert_box) in collisions.iter().enumerate() {
-                    if i == collisions_len {
-                        let Some((next_len, next_pos)) = positions.next() else {
-                            break;
-                        };
-                        collisions_len = next_len;
-                        position = next_pos;
-                    }
-
-                    if let Some(collision_time) = bounding_box.calculate_collision_time(
-                        inert_box,
-                        adjusted_movement,
-                        Axis::Y,
-                        max_time,
-                    ) {
-                        max_time = collision_time;
-
-                        // If the entity is moving downwards and collides, set the supporting block position
-                        if movement.get_axis(Axis::Y) < 0.0 {
-                            supporting_block_pos = Some(position);
-                        }
-                    }
-                }
-
-                if max_time != 1.0 {
-                    let changed_component = adjusted_movement.get_axis(Axis::Y) * max_time;
-                    adjusted_movement.set_axis(Axis::Y, changed_component);
-                }
-
-                self.on_ground
-                    .store(supporting_block_pos.is_some(), Ordering::SeqCst);
-                self.supporting_block_pos.store(supporting_block_pos);
-            }
-        }
-
-        let mut horizontal_collision = false;
-
-        for axis in Axis::horizontal() {
-            if movement.get_axis(axis) == 0.0 {
-                continue;
-            }
-
-            let mut max_time = 1.0;
-
-            for inert_box in &collisions {
-                if let Some(collision_time) = bounding_box.calculate_collision_time(
-                    inert_box,
-                    adjusted_movement,
-                    axis,
-                    max_time,
-                ) {
-                    max_time = collision_time;
-                }
-            }
-
-            if max_time != 1.0 {
-                let changed_component = adjusted_movement.get_axis(axis) * max_time;
-                adjusted_movement.set_axis(axis, changed_component);
-                horizontal_collision = true;
-            }
-        }
-
-        self.horizontal_collision
-            .store(horizontal_collision, Ordering::SeqCst);
-
-        adjusted_movement
-    }
-
     /// Applies knockback to the entity, following vanilla Minecraft's mechanics.
     /// `LivingEntity.takeKnockback()`
     /// This function calculates the entity's new velocity based on the specified knockback strength and direction.
@@ -2175,7 +2075,7 @@ impl Entity {
             return;
         }
 
-        let final_move = self.adjust_movement_for_collisions(motion, caller);
+        let (final_move, stepped) = self.adjust_movement_for_collisions(motion, caller);
         self.vertical_collision
             .store(motion.y != final_move.y, Ordering::Relaxed);
 
@@ -2186,7 +2086,12 @@ impl Entity {
         if caller.cast_any().is::<vehicle::minecart::MinecartEntity>() {
             self.apply_minecart_movement_velocity(motion, final_move, velocity_multiplier);
         } else {
-            self.velocity.store(final_move * velocity_multiplier);
+            self.apply_collision_movement_velocity(
+                motion,
+                final_move,
+                velocity_multiplier,
+                stepped,
+            );
         }
 
         if let Some(living) = caller.get_living_entity() {
