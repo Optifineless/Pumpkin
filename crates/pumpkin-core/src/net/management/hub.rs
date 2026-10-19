@@ -15,6 +15,8 @@ use pumpkin_config::{
 };
 use tokio_util::sync::CancellationToken;
 
+pub(super) const NOTIFICATION_CAPACITY: usize = 1024;
+
 pub struct ManagementSettings {
     pub autosave: AtomicBool,
     pub difficulty: ArcSwap<String>,
@@ -90,7 +92,7 @@ impl ManagementHub {
         settings: Arc<ManagementSettings>,
         management_shutdown: CancellationToken,
     ) -> Self {
-        let (sender, _) = broadcast::channel(1024);
+        let (sender, _) = broadcast::channel(NOTIFICATION_CAPACITY);
         Self {
             sender,
             settings,

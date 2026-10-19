@@ -580,6 +580,8 @@ crates/pumpkin-core/src/server/watchdog/startup_tests.rs::fixture_with_limit::st
 crates/pumpkin-core/src/server/watchdog/startup_tests.rs::freeze_or_sprint_during_a_stuck_tick_keeps_it_eligible::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/watchdog/startup_tests.rs::shutdown_keeps_a_hung_tick_monitored_until_join::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/watchdog/startup_tests.rs::stalled_mode_tick::std::sync::Mutex::new#1
+# Startup fixture constructs PumpkinServer's existing ticker handle mutex; no guard crosses an await or callback.
+crates/pumpkin-core/src/startup_stop_tests.rs::fixture::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/dragon_fight/callback_tests.rs::reader::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/dragon_fight/fresh_review_tests.rs::ordinary_admission_packet_death_keeps_completed_fight_and_rewards::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/dragon_fight/fresh_review_tests.rs::stationary_observer_receives_bossbar_after_real_kill_and_four_crystal_respawn::std::sync::Mutex::default#1

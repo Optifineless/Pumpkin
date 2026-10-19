@@ -67,6 +67,8 @@ pub mod logging;
 pub mod net;
 pub mod plugin;
 pub mod server;
+#[cfg(test)]
+mod startup_stop_tests;
 pub mod telemetry;
 pub mod world;
 
@@ -411,6 +413,9 @@ impl PumpkinServer {
     }
 
     pub async fn init_plugins(&self) -> std::time::Duration {
+        if SHOULD_STOP.load(Ordering::Relaxed) {
+            return std::time::Duration::ZERO;
+        }
         self.start_ticker().unwrap_or_else(|error| {
             error!("Failed to start server ticker/watchdog: {error}");
             std::process::exit(1);
@@ -428,7 +433,7 @@ impl PumpkinServer {
             }
         };
 
-        if self.server.advanced_config.plugins.hot_reload {
+        if !SHOULD_STOP.load(Ordering::Relaxed) && self.server.advanced_config.plugins.hot_reload {
             if let Err(err) = self.server.plugin_manager.start_watcher(&self.server).await {
                 error!("Failed to start plugin hot-reloading watcher: {err}");
             } else {
@@ -449,11 +454,14 @@ impl PumpkinServer {
     }
 
     pub async fn start(&self) {
-        self.start_ticker().unwrap_or_else(|error| {
-            error!("Failed to start server ticker/watchdog: {error}");
-            std::process::exit(1);
-        });
-        if self.server.advanced_config.commands.use_console
+        if !SHOULD_STOP.load(Ordering::Relaxed) {
+            self.start_ticker().unwrap_or_else(|error| {
+                error!("Failed to start server ticker/watchdog: {error}");
+                std::process::exit(1);
+            });
+        }
+        if !SHOULD_STOP.load(Ordering::Relaxed)
+            && self.server.advanced_config.commands.use_console
             && let Some((wrapper, _, _)) = LOGGER_IMPL.wait()
         {
             if let Some(rl) = wrapper.take_readline() {
@@ -472,13 +480,18 @@ impl PumpkinServer {
         let mut master_client_id: u64 = 0;
         let bedrock_clients = Arc::new(Mutex::new(HashMap::new()));
 
-        self.server
-            .plugin_manager
-            .fire(&self.server, &mut ServerLoadEvent::new(LoadType::Startup))
-            .await;
+        // Pumpkin accepts management stops while plugins load; keep the normal shutdown owner.
+        if !SHOULD_STOP.load(Ordering::Relaxed) {
+            self.server
+                .plugin_manager
+                .fire(&self.server, &mut ServerLoadEvent::new(LoadType::Startup))
+                .await;
+        }
 
-        self.server.start_telemetry();
-        self.server.management_hub.broadcast_server_started();
+        if !SHOULD_STOP.load(Ordering::Relaxed) {
+            self.server.start_telemetry();
+            self.server.management_hub.broadcast_server_started();
+        }
 
         while !SHOULD_STOP.load(Ordering::Relaxed) {
             if !self
