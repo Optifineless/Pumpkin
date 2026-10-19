@@ -20,11 +20,16 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+mod food;
+#[cfg(test)]
+mod tests;
+
 pub struct CampfireBlockEntity {
     pub position: BlockPos,
     pub items: [Arc<Mutex<ItemStack>>; Self::SLOT_COUNT],
     pub cooking_times: [Mutex<i32>; Self::SLOT_COUNT],
     pub cooking_total_times: [Mutex<i32>; Self::SLOT_COUNT],
+    cooking_started: [AtomicBool; Self::SLOT_COUNT],
     transaction: Arc<slot_transaction::Transaction>,
     dirty: AtomicBool,
 }
@@ -65,6 +70,12 @@ impl BlockEntity for CampfireBlockEntity {
         if let Some(arr) = nbt.get_int_array("CookingTotalTimes") {
             for (slot, &value) in arr.iter().enumerate().take(Self::SLOT_COUNT) {
                 entity.cooking_total_times[slot] = Mutex::new(value);
+            }
+        }
+        // Old fork and vanilla saves have no marker and retain the legacy <=0 start path.
+        if let Some(arr) = nbt.get_byte_array("CookingStarted") {
+            for (slot, &value) in arr.iter().enumerate().take(Self::SLOT_COUNT) {
+                entity.cooking_started[slot].store(value != 0, Ordering::Relaxed);
             }
         }
 
@@ -150,6 +161,7 @@ impl CampfireBlockEntity {
             items: std::array::from_fn(|_| Arc::new(Mutex::new(ItemStack::EMPTY.clone()))),
             cooking_times: std::array::from_fn(|_| Mutex::new(0)),
             cooking_total_times: std::array::from_fn(|_| Mutex::new(0)),
+            cooking_started: std::array::from_fn(|_| AtomicBool::new(false)),
             transaction: Arc::default(),
             dirty: AtomicBool::new(false),
         }
@@ -178,6 +190,11 @@ impl CampfireBlockEntity {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
             })
             .collect();
+        let cooking_started = self
+            .cooking_started
+            .iter()
+            .map(|started| i8::from(started.load(Ordering::Relaxed)))
+            .collect();
         drop(guard);
         let mut items = Vec::new();
         for (slot, stack) in snapshot.into_iter().enumerate() {
@@ -191,6 +208,7 @@ impl CampfireBlockEntity {
         nbt.put_list("Items", items);
         nbt.put("CookingTimes", NbtTag::IntArray(cooking_times));
         nbt.put("CookingTotalTimes", NbtTag::IntArray(cooking_total_times));
+        nbt.put("CookingStarted", NbtTag::ByteArray(cooking_started));
     }
 
     fn cool_down(&self) -> bool {
@@ -226,7 +244,7 @@ impl CampfireBlockEntity {
         let mut total = *self.cooking_total_times[slot]
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if total <= 0 {
+        if total <= 0 && !self.cooking_started[slot].load(Ordering::Relaxed) {
             total = recipe.cookingtime;
             if let Some(server) = world.server.upgrade() {
                 let mut event =
@@ -252,8 +270,9 @@ impl CampfireBlockEntity {
         let mut saved_total = self.cooking_total_times[slot]
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if *saved_total <= 0 {
+        if *saved_total <= 0 && !self.cooking_started[slot].load(Ordering::Relaxed) {
             *saved_total = total;
+            self.cooking_started[slot].store(true, Ordering::Relaxed);
         }
         total = *saved_total;
         drop(saved_total);
@@ -295,6 +314,7 @@ impl CampfireBlockEntity {
         *self.cooking_total_times[slot]
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = 0;
+        self.cooking_started[slot].store(false, Ordering::Relaxed);
         drop(guard);
         Self::spawn_cooked_item(world, self.position, result);
         (true, true)
@@ -335,6 +355,7 @@ impl Inventory for CampfireBlockEntity {
     }
 
     fn on_slot_replaced(&self, slot: usize, _previous: &ItemStack, current: &ItemStack) {
+        self.cooking_started[slot].store(false, Ordering::Relaxed);
         // CampfireBlockEntity.placeFood initializes the timer with the admitted food.
         *self.cooking_times[slot]
             .lock()
