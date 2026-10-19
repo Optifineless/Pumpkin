@@ -113,6 +113,15 @@ impl Player {
 
         // Handle bed respawn
         if block.has_tag(&tag::Block::MINECRAFT_BEDS) {
+            // ServerPlayer.findRespawnAndUseSpawnBlock rejects beds where BED_RULE forbids spawn.
+            if !consume_spawn_block
+                && !world
+                    .dimension
+                    .bed_rule
+                    .can_set_spawn(world.is_dark_outside())
+            {
+                return None;
+            }
             let bed_props = BedProperties::from_state_id(state_id);
             let facing = bed_props.facing;
 
@@ -131,7 +140,7 @@ impl Player {
             let charges = anchor_props.charges;
 
             // Anchor needs at least 1 charge to work
-            if charges == 0 {
+            if charges == 0 || (!consume_spawn_block && !world.dimension.respawn_anchor_works) {
                 return None;
             }
 

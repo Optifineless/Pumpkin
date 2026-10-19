@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use pumpkin_data::{Block, dimension::Dimension};
+use pumpkin_data::{Block, block_properties::RespawnAnchorLikeProperties, dimension::Dimension};
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::world::BlockFlags;
 
@@ -41,6 +41,88 @@ async fn anchor_hazard_return(hazard: &Block) {
     assert_eq!(player.living_entity.health.load(), health);
     assert!(!player.get_entity().is_on_fire());
     assert_anchor(&fixture.nether);
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g16_end_return_ineligible_overworld_anchor_uses_shared_spawn() {
+    let fixture = Fixture::new().await;
+    install_bed(&fixture.overworld);
+    let mut client = fixture.returning_player();
+    let player = client.player.clone();
+    load_personal(&player, &Dimension::OVERWORLD, false);
+    let saved_spawn = player.respawn_point.lock().unwrap().clone();
+
+    // Keep the old bed's saved record, but replace its head with a charged anchor.
+    for x in 7..=9 {
+        for z in 7..=9 {
+            set(&fixture.overworld, BlockPos::new(x, 63, z), &Block::STONE);
+            set(&fixture.overworld, BlockPos::new(x, 65, z), &Block::AIR);
+            set(&fixture.overworld, BlockPos::new(x, 66, z), &Block::STONE);
+            let pos = BlockPos::new(x, 64, z);
+            if pos != PERSONAL {
+                set(
+                    &fixture.overworld,
+                    pos,
+                    if pos == PERSONAL.add(0, 0, -1) {
+                        &Block::LAVA
+                    } else {
+                        &Block::STONE
+                    },
+                );
+            }
+        }
+    }
+    let mut anchor = RespawnAnchorLikeProperties::default(&Block::RESPAWN_ANCHOR);
+    anchor.charges = 1;
+    fixture.overworld.set_block_state(
+        &PERSONAL,
+        anchor.to_state_id(&Block::RESPAWN_ANCHOR),
+        BlockFlags::FORCE_STATE,
+    );
+
+    let health = player.living_entity.health.load();
+    transfer(&fixture, &mut client).await;
+    assert!(Arc::ptr_eq(&player.world(), &fixture.overworld));
+    assert_eq!(
+        player.position(),
+        Vector3::new(2.5, 64.0, 2.5),
+        "an ineligible Overworld anchor must fall back to the safe shared spawn"
+    );
+    player.get_entity().tick(player.as_ref(), &fixture.server);
+    assert_eq!(player.living_entity.health.load(), health);
+    assert!(!player.get_entity().is_on_fire());
+    assert_eq!(*player.respawn_point.lock().unwrap(), saved_spawn);
+    assert_eq!(
+        RespawnAnchorLikeProperties::from_state_id(fixture.overworld.get_block_state_id(&PERSONAL))
+            .charges,
+        1,
+        "End return must not consume the ineligible anchor"
+    );
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g16_end_return_bed_in_dimension_without_bed_spawns_uses_shared_spawn() {
+    let fixture = Fixture::new().await;
+    install_bed(&fixture.nether);
+    let mut client = fixture.returning_player();
+    let player = client.player.clone();
+    load_personal(&player, &Dimension::THE_NETHER, false);
+    let saved_spawn = player.respawn_point.lock().unwrap().clone();
+    let health = player.living_entity.health.load();
+
+    transfer(&fixture, &mut client).await;
+    assert!(Arc::ptr_eq(&player.world(), &fixture.overworld));
+    assert_eq!(
+        player.position(),
+        Vector3::new(2.5, 64.0, 2.5),
+        "a Nether bed cannot be used for living End return"
+    );
+    player.get_entity().tick(player.as_ref(), &fixture.server);
+    assert_eq!(player.living_entity.health.load(), health);
+    assert!(!player.get_entity().is_on_fire());
+    assert_eq!(*player.respawn_point.lock().unwrap(), saved_spawn);
     fixture.finish().await;
 }
 
