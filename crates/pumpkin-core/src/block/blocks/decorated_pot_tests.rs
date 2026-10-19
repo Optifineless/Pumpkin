@@ -12,7 +12,7 @@ use pumpkin_data::{
     Block, BlockDirection,
     biome::Biome,
     block_properties::DecoratedPotLikeProperties,
-    data_component_impl::{PotDecoration, PotDecorationsImpl},
+    data_component_impl::{DataComponentImpl, PotDecoration, PotDecorationsImpl},
     item::Item,
     item_stack::ItemStack,
 };
@@ -457,3 +457,6 @@ fn b1019_g03_legacy_sherds_load_and_save_without_changing_the_old_field() {
         &Item::BRICK
     );
 }
+
+#[path = "decorated_pot_crafting_tests.rs"]
+mod crafting_tests;

@@ -209,13 +209,12 @@ fn create_stacks(
             if name.strip_prefix("minecraft:").unwrap_or(name) != "sherds" {
                 return;
             }
-            let Some(decorations) = params
+            let decorations = params
                 .block_entity_components
                 .get(&DataComponent::PotDecorations)
                 .and_then(|component| component.as_any().downcast_ref::<PotDecorationsImpl>())
-            else {
-                return;
-            };
+                .cloned()
+                .unwrap_or_else(crate::block::entities::decorated_pot::legacy_brick_decorations);
             // DecoratedPotBlock.getDrops emits left, back, front, then right.
             for face in [1, 0, 3, 2]
                 .into_iter()

@@ -9,10 +9,14 @@ drops once. Tools tagged to break pots crack them before loot selection, which
 drops the stored sherd decorations instead. This removes the extra unconditional
 four bricks and preserves Silk Touch protection, Creative, spawn protection and
 cancelled-break behavior. Mirrors vanilla 26.3 `DecoratedPotBlock.getDrops`,
-`DecoratedPotBlock.playerWillDestroy` and `blocks/decorated_pot.json`.
+`DecoratedPotBlock.playerWillDestroy`, `DecoratedPotRecipe.assemble` and
+`blocks/decorated_pot.json`. Crafting retains one component-preserving template
+per input face. Pre-upgrade fork pots with no face data keep the historical
+four-brick drops; explicit empty decorations stay empty. Vanilla's named
+`sherds` compound and the fork's legacy list remain readable and are preserved.
 API 8 (same version): `DecoratedPotBlockEntity`, `PotDecorationsImpl` and
-`LootEntryKind` public layouts change; rebuild native plugins. Old `sherds` saves
-remain readable and retain their field. In-game verification: Not yet.
+`LootEntryKind` public layouts change; `DecoratedPotBlockEntity.sherds` now
+retains the raw NBT tag; rebuild native plugins. In-game verification: Not yet.
 
 ## Empty map centers (#45)
 
