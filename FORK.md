@@ -2,6 +2,24 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Server-wide tab-list membership (#117)
+
+Login initializes and announces online players across all dimensions. Dimension
+changes retain tab entries; only real logout removes them globally. Gamemode,
+listed status, latency, order and display updates reach every dimension, while
+entity tracking remains world scoped and Java initialization precedes spawning.
+Ordered owner notifications keep concurrent logout behind pending initialization.
+Retains weak player handles in the existing admission session table, so a
+world detach cannot withdraw an online identity; no separate online cache or
+saved format changes. Adapts the roster routing from JulesB40's upstream PR #3432,
+with metadata and lifecycle packet regressions added by Codex (GPT-6.1 Sol).
+Native API 8 and Wasm WIT are unchanged. In-game verification: Not yet.
+
+Play test: keep three clients in the Overworld and Nether, join and reconnect,
+then move between dimensions; expect every tab to retain all online players and
+remove a player only on disconnect. Capture tabs and player-info packets during
+login, a portal trip, metadata changes and logout.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

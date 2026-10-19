@@ -173,10 +173,13 @@ impl Scenario {
         let mut failure = None;
         self.final_snapshots(&mut failure).await;
         self.close_sessions(&mut failure).await;
-        let shutdown = attempt(
-            &mut failure,
-            self.drive("server shutdown", self.server.shutdown()),
-        )
+        let shutdown = attempt(&mut failure, async {
+            // Closed transports need no pump. Let scheduler joins and disk I/O wake
+            // cleanup instead of exhausting cooperative polls on a multithread runtime.
+            tokio::time::timeout(Duration::from_secs(30), self.server.shutdown())
+                .await
+                .expect("scenario server shutdown timed out");
+        })
         .await;
         for world in self.server.worlds.load().iter() {
             if shutdown.is_none() {

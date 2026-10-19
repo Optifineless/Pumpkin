@@ -11,6 +11,7 @@ mod map_storage;
 pub(crate) mod named_clock_storage;
 #[cfg(test)]
 mod named_root_clock_tests;
+mod player_list;
 #[cfg(test)]
 mod save_family_regression_tests;
 #[cfg(test)]
@@ -874,7 +875,8 @@ impl Server {
             &mut PlayerLoginEvent::new(player.clone(), TextComponent::text("You have been kicked from the server"));
             'after: {
                 player.screen_handler_sync_handler.store_player(player.clone());
-                world.add_player(&player).is_ok().then(|| {
+                world.add_pending_player(&player);
+                Some({
                     {
                         let mut user_cache = self
                             .data
@@ -901,6 +903,7 @@ impl Server {
                     );
                     self.management_hub.broadcast_player_joined(&player_dto);
 
+                    self.admission_reservations.attach(&player);
                     player.client.retain_admission(reservation);
                     (player, world)
                 })
@@ -914,6 +917,7 @@ impl Server {
     }
 
     pub fn remove_player(&self, player: &Player) {
+        self.remove_player_list_entry(player);
         let player_dto = crate::net::management::dto::PlayerDto::new(
             Some(player.gameprofile.id),
             Some(player.gameprofile.name.clone()),

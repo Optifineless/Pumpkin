@@ -417,6 +417,15 @@ impl TrackedEntity {
             return;
         }
 
+        if let Some(server) = player.world().server.upgrade()
+            && (!server.can_track_player(player)
+                || self
+                    .entity
+                    .get_player()
+                    .is_some_and(|subject| !server.can_track_player(subject)))
+        {
+            return;
+        }
         let player_entity = player.get_entity();
         let player_pos = player_entity.pos.load();
         let entity_pos = self.entity.get_entity().pos.load();

@@ -129,39 +129,6 @@ async fn s3_old_dimension_hostile_drops_transferred_target() {
     .await;
 }
 
-fn removes_tab_entry(packet: &Bytes, uuid: Uuid) -> bool {
-    let mut bytes = packet.as_ref();
-    if bytes.get_var_int().unwrap().0 != outgoing::PLAYER_INFO_REMOVE.to_id(CURRENT_MC_VERSION) {
-        return false;
-    }
-    let count = bytes.get_var_int().unwrap().0;
-    (0..count).any(|_| bytes.get_uuid().unwrap() == uuid)
-}
-
-#[tokio::test]
-#[ignore = "known bug: issue #117"]
-async fn s3_dimension_transfer_preserves_global_tab_entries() {
-    run(async {
-        // PlayerList.remove broadcasts tab removal only on disconnect; ServerPlayer.teleport keeps it.
-        let scenario = Scenario::new().await;
-        let player = scenario.join(Uuid::new_v4(), "TabTraveller").await;
-        let observer = scenario.join(Uuid::new_v4(), "TabObserver").await;
-        observer.packets();
-        transfer(&scenario, &player, "the_nether").await;
-        let removed = observer
-            .packets()
-            .iter()
-            .any(|packet| removes_tab_entry(packet, player.player.gameprofile.id));
-        transfer(&scenario, &player, "overworld").await;
-        scenario.stop().await;
-        assert!(
-            !removed,
-            "issue #117: changing dimension removes an online player's global TAB entry"
-        );
-    })
-    .await;
-}
-
 #[tokio::test]
 async fn s3_dimension_transfer_preserves_custom_bossbar() {
     run(async {
