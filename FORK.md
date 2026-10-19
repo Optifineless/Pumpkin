@@ -72,6 +72,21 @@ vanilla 26.3 `ArmorSlot.mayPickup` and `EnchantmentHelper.has`. Bedrock checks
 removal under the same inventory owners as the write and corrects rejected client
 predictions after release. Packet regressions cover cursed armor, ordinary armor
 and Creative removal. Implemented by Codex (GPT-6.1 Sol).
+Owner-review follow-up (#203) checks every request's take rules before its first
+action, including armor equipped earlier in the same request. Rejections after
+shape validation correct the active container as well as player stock; malformed
+container, preview and alias requests receive only their error response.
+API 8 (same version): `Slot::can_take_stack` adds staged pickup validation and
+`ResultSlot::simulate_crafts` exposes the shared detached-grid payment simulation;
+native plugins must be rebuilt. No saved-data meaning changes.
+
+General request rollback on a concurrent writer's late conditional-commit failure
+remains a pre-existing backlog: murgicraft's `inventory_commit::commit` already
+rejects changed UIDs/content after earlier actions can commit. This follow-up
+retains live revalidation and does not hold owners across crafting/trade callbacks.
+Vanilla 26.3 decompiled sources were unavailable for this follow-up; the armor
+rule follows the existing `ArmorSlot.mayPickup` / `EnchantmentHelper.has` port,
+and Bedrock corrections follow the fork's existing container addressing.
 In-game verification: **Not yet**.
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.

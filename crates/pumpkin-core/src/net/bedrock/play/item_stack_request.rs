@@ -14,7 +14,34 @@ impl BedrockClient {
         };
         use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
 
+        // Snapshot dynamic recipes before entering the menu; matching staged grids
+        // must not invoke a live recipe provider beneath its guard.
+        let recipes = super::inventory_request_take::RecipeSnapshot(
+            if packet
+                .requests
+                .iter()
+                .flat_map(|request| &request.actions)
+                .any(|action| {
+                    matches!(
+                        action,
+                        ItemStackRequestAction::CraftRecipe { .. }
+                            | ItemStackRequestAction::CraftRecipeAuto { .. }
+                    )
+                })
+            {
+                player
+                    .world()
+                    .server
+                    .upgrade()
+                    .map_or_else(Vec::new, |server| {
+                        server.recipe_manager.get_dynamic_recipes_internal()
+                    })
+            } else {
+                Vec::new()
+            },
+        );
         let effects = crate::world::guard_effects::GuardEffects::new();
+        let mut correction_needed = false;
         let (responses, mut inventory_updated, unclaimed_outputs, crafting_effects) = {
             let current_screen_handler = player
                 .current_screen_handler
@@ -28,6 +55,7 @@ impl BedrockClient {
             let mut responses = Vec::with_capacity(packet.requests.len());
             let mut unclaimed_outputs = Vec::new();
             let mut crafting_effects = Vec::new();
+            let mut processed_request = false;
 
             for request in packet.requests {
                 let mut created_item: Option<ItemStack> = None;
@@ -50,6 +78,22 @@ impl BedrockClient {
                     continue;
                 }
 
+                if !super::inventory_request_take::validate_take_rules(
+                    &*screen_handler,
+                    &request.actions,
+                    player.as_ref(),
+                    &recipes,
+                ) {
+                    correction_needed = true;
+                    responses.push(ItemStackResponseInfo {
+                        result: 1,
+                        client_request_id: request.request_id,
+                        containers: Vec::new(),
+                    });
+                    continue;
+                }
+
+                processed_request = true;
                 for action in request.actions {
                     match action {
                         ItemStackRequestAction::CraftCreative {
@@ -719,6 +763,7 @@ impl BedrockClient {
                     }
                 }
 
+                correction_needed |= result != 0;
                 let mut container_infos = Vec::new();
                 if result == 0 {
                     for update in updates {
@@ -757,7 +802,9 @@ impl BedrockClient {
             }
 
             // Send updates to Java client
-            screen_handler.send_content_updates();
+            if processed_request {
+                screen_handler.send_content_updates();
+            }
 
             // Collect inventory updates if we modified player inventory
             let mut inventory_updated = false;
@@ -787,10 +834,9 @@ impl BedrockClient {
 
         // Send Bedrock specific responses and updates
         // Publish the committed request before callbacks can make further inventory edits.
-        let rejected = responses.iter().any(|response| response.result != 0);
         self.try_enqueue_client_packet(&CItemStackResponse { responses });
-        if rejected {
-            self.correct_inventory_prediction(player);
+        if correction_needed {
+            self.correct_stack_request_prediction(player);
         }
         for commit in crafting_effects {
             commit.finish(player.as_ref());

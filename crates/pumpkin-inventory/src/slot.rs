@@ -190,6 +190,11 @@ pub trait Slot: Send + Sync {
         true
     }
 
+    /// Checks pickup eligibility against staged stock without installing it.
+    fn can_take_stack(&self, player: &dyn InventoryPlayer, _stack: &ItemStack) -> bool {
+        self.can_take_items(player)
+    }
+
     /// Checks if this slot can be modified by the player.
     ///
     /// Mojang name: `allowModification`
@@ -448,8 +453,11 @@ impl Slot for ArmorSlot {
     }
 
     fn can_take_items(&self, player: &dyn InventoryPlayer) -> bool {
+        self.can_take_stack(player, &self.get_stack())
+    }
+
+    fn can_take_stack(&self, player: &dyn InventoryPlayer, stack: &ItemStack) -> bool {
         // ArmorSlot.mayPickup -> EnchantmentHelper.has(PREVENT_ARMOR_CHANGE).
-        let stack = self.get_stack();
         stack.is_empty()
             || player.is_creative()
             || !stack
