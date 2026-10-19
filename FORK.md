@@ -12,6 +12,9 @@ toggle event and synchronizes the owner and observers. Callback replacements
 and life/session changes reject stale wear. Flight transitions reset the runtime
 cadence; existing `FallFlying` saves and client-authoritative motion are unchanged.
 Mirrors vanilla 26.3 `LivingEntity.updateFallFlying/canGlide/canGlideUsing`.
+`StartFlyingElytra` also follows `Player.tryToStartFallFlying`: it starts only
+when the player is airborne, not already gliding or in liquid, and has a usable
+equipped glider without levitation.
 The recurring update retains `Entity.checkFallDistanceAccumulation`, using
 accepted client movement for players and existing velocity for other entities.
 The reported horizontal freeze remains unverified. Written by Codex.

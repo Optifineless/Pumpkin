@@ -85,6 +85,14 @@ impl LivingEntity {
         }
     }
 
+    // Player.tryToStartFallFlying adds current-flight and liquid checks around canGlide.
+    pub(crate) fn can_start_fall_flying(&self, caller: &dyn EntityBase) -> bool {
+        !self.entity.is_fall_flying()
+            && !self.entity.touching_water.load(Relaxed)
+            && !self.entity.touching_lava.load(Relaxed)
+            && self.can_glide(caller)
+    }
+
     fn can_glide(&self, caller: &dyn EntityBase) -> bool {
         self.can_glide_conditions(caller)
             && self
