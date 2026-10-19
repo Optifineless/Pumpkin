@@ -34,6 +34,7 @@ mod block_entity_context;
 pub mod brightness;
 #[cfg(test)]
 mod bucket_retirement_tests;
+mod cauldron;
 pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;

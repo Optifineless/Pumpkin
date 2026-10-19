@@ -300,6 +300,30 @@ Play test: Break an empty decorated pot with a diamond pickaxe, with and without
 a diamond stored inside; expect one pot item back and the stored diamond when
 present. Break a pot with sherds the same way; expect the sherds instead.
 
+
+## Cauldron filled-bucket transactions (#29, #30, #31)
+
+Filled water, lava and powder-snow buckets apply to all four cauldron kinds;
+water buckets top up levels 1/2 to level 3. The existing BucketEmpty event can
+veto every fill before effects. Water above, including flowing or waterlogged
+water, consumes lava/snow use without filling or exchanging items. Source-slot
+identity, player life and target checks preserve callback replacements. Input
+and result commit under one inventory owner; payment and statistics precede
+world callbacks. Mirrors Java 26.3
+`CauldronInteractions.addDefaultInteractions`, `emptyBucket`, the three fill
+interactions and `isUnderWater`. Bottle/washing behavior is unchanged.
+
+Written by Codex, with focused fixture patterns adapted from Optifineless420k’s
+[PR #116](https://github.com/Optifineless/Pumpkin/pull/116); supersedes only that
+PR’s #29–#31 portion. API 8 (same version): exported layouts, shared item-exchange
+and block-hand-result signatures, WIT and saved formats are unchanged.
+In-game verification: Not yet.
+
+Conditional terrain admission precedes item/stat publication, preserving the
+fork's existing filled-terrain observation in those callbacks. Physics callbacks
+wait for payment and statistics. This differs from serial vanilla's intermediate
+terrain visibility during item/stat callbacks; no event framework is redesigned.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
