@@ -187,6 +187,14 @@ impl BlockEntity for DecoratedPotBlockEntity {
 impl DecoratedPotBlockEntity {
     pub const ID: &'static str = "minecraft:decorated_pot";
 
+    pub(crate) fn has_empty_decorations(&self) -> bool {
+        self.decorations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|decorations| decorations.decorations.iter().all(Option::is_none))
+    }
+
     #[must_use]
     pub fn new(position: BlockPos) -> Self {
         Self {

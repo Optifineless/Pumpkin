@@ -121,6 +121,15 @@ impl BlockBehaviour for DecoratedPotBlock {
             return;
         }
 
+        if let Some(block_entity) = args.world.get_block_entity(args.position)
+            && let Some(pot_entity) = block_entity
+                .as_any()
+                .downcast_ref::<DecoratedPotBlockEntity>()
+            && pot_entity.has_empty_decorations()
+        {
+            return;
+        }
+
         let mut properties = DecoratedPotLikeProperties::from_state_id(args.state.id);
         properties.cracked = true;
         // Mirrors vanilla's setBlock(..., 260): UPDATE_KNOWN_SHAPE | NOTIFY_LISTENERS.

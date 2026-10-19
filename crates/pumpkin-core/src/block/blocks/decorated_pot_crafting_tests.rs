@@ -1,8 +1,10 @@
 use super::*;
-use crate::block::entities::{BlockEntity, decorated_pot::DecoratedPotBlockEntity};
+use crate::block::entities::{
+    BlockEntity, barrel::BarrelBlockEntity, decorated_pot::DecoratedPotBlockEntity,
+};
 use pumpkin_inventory::crafting::crafting_screen_handler::CraftingTableScreenHandler;
 use pumpkin_inventory::screen_handler::ScreenHandler;
-use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_protocol::java::server::play::SlotActionType;
 
 fn crafted_pot(fixture: &Fixture, names: [&str; 4]) -> ItemStack {
@@ -152,6 +154,56 @@ async fn b1019_g03_pre_upgrade_pot_without_decorations_keeps_four_bricks() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g03_pre_upgrade_bare_item_breaks_intact_after_container_load() {
+    for with_contents in [false, true] {
+        let fixture = Fixture::new();
+        let support = BlockPos::new(8, 64, 8);
+        let position = support.up();
+        fixture.set_block(support, &Block::STONE);
+
+        let mut old_item = NbtCompound::new();
+        old_item.put_byte("Slot", 0);
+        old_item.put_string("id", "minecraft:decorated_pot".to_owned());
+        old_item.put_int("count", 1);
+        old_item.put_compound("components", NbtCompound::new());
+        let mut container_nbt = NbtCompound::new();
+        container_nbt.put_list("Items", vec![NbtTag::Compound(old_item)]);
+        let container = BarrelBlockEntity::from_nbt(&container_nbt, support);
+        let old_pot = container.get_stack(0);
+        assert_eq!(old_pot.item, &Item::DECORATED_POT);
+        assert!(old_pot.patch.is_empty());
+        assert_eq!(
+            old_pot.get_data_component::<PotDecorationsImpl>(),
+            Some(&PotDecorationsImpl::EMPTY)
+        );
+
+        fixture.give(old_pot);
+        fixture.use_on(support);
+        assert_eq!(fixture.world.get_block(&position), &Block::DECORATED_POT);
+        if with_contents {
+            fixture.insert(position, &Item::DIAMOND);
+        }
+
+        fixture.give(ItemStack::new(1, &Item::DIAMOND_PICKAXE));
+        fixture.dig(position);
+
+        assert_eq!(fixture.world.get_block(&position), &Block::AIR);
+        assert_eq!(item_count(&fixture.world, &Item::DECORATED_POT), 1);
+        assert_eq!(item_count(&fixture.world, &Item::BRICK), 0);
+        assert_eq!(
+            item_count(&fixture.world, &Item::DIAMOND),
+            u32::from(with_contents)
+        );
+        let returned = take_pot_drop(&fixture.world).expect("old bare pot is returned intact");
+        assert_eq!(
+            returned.get_data_component::<PotDecorationsImpl>(),
+            Some(&PotDecorationsImpl::EMPTY)
+        );
+        fixture.server.shutdown().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g03_pre_upgrade_intact_pot_keeps_bricks_in_returned_pot() {
     let fixture = Fixture::new();
     let position = BlockPos::new(8, 65, 8);
@@ -177,15 +229,21 @@ async fn b1019_g03_pre_upgrade_intact_pot_keeps_bricks_in_returned_pot() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1019_g03_explicitly_empty_pot_component_does_not_invent_bricks() {
+async fn b1019_g03_explicitly_empty_pot_component_breaks_intact_without_bricks() {
     let fixture = Fixture::new();
     let position = fixture.place_pot(BlockPos::new(8, 64, 8), PotDecorationsImpl::EMPTY);
     fixture.give(ItemStack::new(1, &Item::DIAMOND_PICKAXE));
     fixture.dig(position);
 
     assert_eq!(fixture.world.get_block(&position), &Block::AIR);
-    assert_eq!(item_count(&fixture.world, &Item::DECORATED_POT), 0);
+    assert_eq!(item_count(&fixture.world, &Item::DECORATED_POT), 1);
     assert_eq!(item_count(&fixture.world, &Item::BRICK), 0);
+    assert_eq!(
+        take_pot_drop(&fixture.world)
+            .expect("empty decorated pot is returned intact")
+            .get_data_component::<PotDecorationsImpl>(),
+        Some(&PotDecorationsImpl::EMPTY)
+    );
     fixture.server.shutdown().await;
 }
 
