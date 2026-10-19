@@ -2,6 +2,25 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Enchanting offer minima and additional rolls (#270, #271)
+
+Enchanting offers below their slot's minimum cost are disabled before their
+clues and properties are published. Additional enchantments compare the next
+random roll with the full adjusted cost, then halve the cost after each
+successful extra selection. Mirrors vanilla 26.3 `EnchantmentMenu.slotsChanged`
+and `EnchantmentHelper.selectEnchantment`. Existing payment, seed conversion,
+book removal, one-book slot limit and plugin events are unchanged. No plugin API,
+WIT or saved-data changes. Implemented by Codex (GPT-6).
+
+In-game verification: Not yet.
+
+Play test: Use an enchanting table with zero or one bookshelf and enough XP;
+expect offers below their slot minimum to appear disabled and remain unchanged
+after clicking. Add fifteen bookshelves and enchant a sword and a stack of books;
+expect higher offers to work, compatible additional enchantments to match Java,
+and only one book to be enchanted from the stack. Capture the table properties,
+resulting items and XP/lapis changes.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so
