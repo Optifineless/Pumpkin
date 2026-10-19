@@ -79,6 +79,9 @@ Creative/Spectator, hurt-timer and team exclusions. Each effect rechecks the liv
 target's world, presence, life and eligibility after earlier callbacks (#201),
 preserving PR #194. Implemented by Codex (GPT-6.1 Sol). In-game verification:
 **Not yet**. Saved formats, native layouts and reserved part IDs are unchanged.
+Dragon contact now collects candidates once from the union of its four part
+boxes and filters out distant entities before cloning their Arcs. The global
+registry still inspects each entry once because it has no spatial index.
 
 Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity
 still consumes tipped and spectral arrows. Mirrors vanilla 26.3

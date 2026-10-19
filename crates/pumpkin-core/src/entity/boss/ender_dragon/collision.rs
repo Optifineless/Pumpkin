@@ -17,18 +17,43 @@ impl EnderDragonEntity {
             return;
         }
         let world = self.get_entity().world.load_full();
-        for wing in &self.parts[6..8] {
-            let bounds = wing
+        let bounds = [
+            self.parts[6]
                 .entity
                 .bounding_box
                 .load()
                 .expand(4.0, 2.0, 4.0)
-                .shift(Vector3::new(0.0, -2.0, 0.0));
-            self.knock_back(&world, &bounds);
+                .shift(Vector3::new(0.0, -2.0, 0.0)),
+            self.parts[7]
+                .entity
+                .bounding_box
+                .load()
+                .expand(4.0, 2.0, 4.0)
+                .shift(Vector3::new(0.0, -2.0, 0.0)),
+            self.parts[0].entity.bounding_box.load().expand_all(1.0),
+            self.parts[1].entity.bounding_box.load().expand_all(1.0),
+        ];
+        let broad_bounds = bounds[1..]
+            .iter()
+            .fold(bounds[0], |union, part| BoundingBox {
+                min: Vector3::new(
+                    union.min.x.min(part.min.x),
+                    union.min.y.min(part.min.y),
+                    union.min.z.min(part.min.z),
+                ),
+                max: Vector3::new(
+                    union.max.x.max(part.max.x),
+                    union.max.y.max(part.max.y),
+                    union.max.z.max(part.max.z),
+                ),
+            });
+        // EnderDragon.aiStep:270-285 checks each part separately after one broad-phase query.
+        let targets = world.get_all_at_box(&broad_bounds);
+        for part_bounds in &bounds[..2] {
+            self.knock_back(&world, part_bounds, &targets);
         }
-        for part in &self.parts[..2] {
-            let bounds = part.entity.bounding_box.load().expand_all(1.0);
-            self.hurt_entities(&world, &bounds);
+        for part_bounds in &bounds[2..] {
+            self.hurt_entities(&world, part_bounds, &targets);
         }
     }
 
@@ -79,12 +104,17 @@ impl EnderDragonEntity {
         })
     }
 
-    fn knock_back(&self, world: &Arc<World>, bounds: &BoundingBox) {
+    fn knock_back(
+        &self,
+        world: &Arc<World>,
+        bounds: &BoundingBox,
+        targets: &[Arc<dyn EntityBase>],
+    ) {
         let body = self.parts[2].entity.bounding_box.load();
         let xm = f64::midpoint(body.min.x, body.max.x);
         let zm = f64::midpoint(body.min.z, body.max.z);
         // Own the candidate Arcs; no registry or phase guard survives an effect.
-        for target in world.get_all_at_box(bounds) {
+        for target in targets {
             if !self.contact_target_eligible(world, target.as_ref(), bounds) {
                 continue;
             }
@@ -124,9 +154,14 @@ impl EnderDragonEntity {
         }
     }
 
-    fn hurt_entities(&self, world: &Arc<World>, bounds: &BoundingBox) {
+    fn hurt_entities(
+        &self,
+        world: &Arc<World>,
+        bounds: &BoundingBox,
+        targets: &[Arc<dyn EntityBase>],
+    ) {
         // EnderDragon.hurt(List<Entity>):399-405.
-        for target in world.get_all_at_box(bounds) {
+        for target in targets {
             self.hurt_contact_target(world, target.as_ref(), bounds, 10.0);
         }
     }

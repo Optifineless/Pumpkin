@@ -7,7 +7,7 @@
 use super::{EnderDragonEntity, phase::EnderDragonPhase};
 use crate::{
     entity::{
-        Entity, EntityBase,
+        Entity, EntityBase, LivingEntity,
         mob::{creaking::CreakingEntity, zombie::zombie::ZombieEntity},
     },
     net::java::combat_test_support::TestPlayer,
@@ -19,8 +19,8 @@ use pumpkin_data::{attributes::Attributes, damage::DamageType, entity::EntityTyp
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_util::{Difficulty, GameMode};
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering::Relaxed},
+    Arc, OnceLock, Weak,
+    atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed},
 };
 
 struct Fixture {
@@ -374,4 +374,115 @@ async fn ender_dragon_tick_skips_head_player_moved_to_another_world_by_callback(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ender_dragon_tick_skips_head_player_removed_by_callback() {
     assert_stale_head_target_skipped(true).await;
+}
+
+#[derive(Default)]
+struct ScanObservations {
+    visits: AtomicUsize,
+    clones_before_filter: AtomicUsize,
+    baseline_strong_count: AtomicUsize,
+}
+
+struct DistantScanProbe {
+    entity: Entity,
+    observations: Arc<ScanObservations>,
+    weak_self: OnceLock<Weak<Self>>,
+}
+
+impl EntityBase for DistantScanProbe {
+    fn get_entity(&self) -> &Entity {
+        self.observations.visits.fetch_add(1, Relaxed);
+        if self.weak_self.get().is_some_and(|weak| {
+            weak.strong_count() > self.observations.baseline_strong_count.load(Relaxed)
+        }) {
+            self.observations.clones_before_filter.fetch_add(1, Relaxed);
+        }
+        &self.entity
+    }
+
+    fn get_living_entity(&self) -> Option<&LivingEntity> {
+        None
+    }
+
+    fn cast_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ender_dragon_tick_scans_distant_candidates_once_without_cloning_them() {
+    const DISTANT_ENTITY_COUNT: usize = 64;
+
+    let fixture = Fixture::new();
+    let mut observations = Vec::with_capacity(DISTANT_ENTITY_COUNT);
+    for index in 0..DISTANT_ENTITY_COUNT {
+        let probe = Arc::new(DistantScanProbe {
+            entity: Entity::new(
+                fixture.world.clone(),
+                Vector3::new(2_000.0 + index as f64 * 2.0, 64.0, 2_000.0),
+                &EntityType::ARMOR_STAND,
+            ),
+            observations: Arc::new(ScanObservations::default()),
+            weak_self: OnceLock::new(),
+        });
+        probe.weak_self.set(Arc::downgrade(&probe)).unwrap();
+        assert!(fixture.world.spawn_entity(probe.clone()));
+
+        let counters = probe.observations.clone();
+        let weak = Arc::downgrade(&probe);
+        drop(probe);
+        counters
+            .baseline_strong_count
+            .store(weak.strong_count(), Relaxed);
+        observations.push(counters);
+    }
+    for counter in &observations {
+        counter.visits.store(0, Relaxed);
+        counter.clones_before_filter.store(0, Relaxed);
+    }
+
+    fixture
+        .dragon
+        .mob_entity
+        .living_entity
+        .hurt_time
+        .store(20, Relaxed);
+    fixture.tick_dragon();
+    let baseline: Vec<_> = observations
+        .iter()
+        .map(|counter| {
+            (
+                counter.visits.load(Relaxed),
+                counter.clones_before_filter.load(Relaxed),
+            )
+        })
+        .collect();
+    for counter in &observations {
+        counter.visits.store(0, Relaxed);
+        counter.clones_before_filter.store(0, Relaxed);
+    }
+    fixture
+        .dragon
+        .mob_entity
+        .living_entity
+        .hurt_time
+        .store(0, Relaxed);
+    fixture.tick_dragon();
+
+    for (counter, (baseline_visits, baseline_clones)) in observations.into_iter().zip(baseline) {
+        assert_eq!(
+            counter.visits.load(Relaxed).saturating_sub(baseline_visits),
+            1,
+            "contact handling should inspect each distant entity once"
+        );
+        assert_eq!(
+            counter
+                .clones_before_filter
+                .load(Relaxed)
+                .saturating_sub(baseline_clones),
+            0,
+            "distant entities must be filtered before their Arc is cloned"
+        );
+    }
+    fixture.finish().await;
 }
