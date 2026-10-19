@@ -2,6 +2,23 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Configured biome source for structure lookup (#121)
+
+Cherry-picked upstream [#4029](https://github.com/Pumpkin-MC/Pumpkin/pull/4029),
+`8677986a5876cdcc77bf674d4114aa75b5e32329` by WhiteProject1, preserving its author.
+Locate uses the generator's configured biome source and generation column heights,
+including End, Nether and fixed-biome worlds. Fork regressions exercise the registered
+locate executor, cold locate/start/reference ordering, real End City templates,
+invalid sites and bounded concurrent publication. Start and reference contexts use
+the raw generator bounds from vanilla 26.3 `WorldGenerationContext`, independently
+of column clipping. Concurrent cache misses return the first published mutable
+piece collection or absent result; upstream #3335's broader concurrency change is
+not included. Saved-data meaning, plugin events, public API 8 and Wasm WIT are
+unchanged. Fork follow-up and tests implemented by Codex (GPT-6.1 Sol).
+Disabled-set filtering and per-dimension placement preparation remain separate
+backlog work; existing generated chunks are not repaired.
+In-game verification: Not yet.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

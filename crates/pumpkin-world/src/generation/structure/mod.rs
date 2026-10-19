@@ -166,8 +166,9 @@ pub fn try_generate_structure(
         chunk_z: chunk.z,
         random,
         sea_level: generator.settings.sea_level,
-        min_y: (chunk.generation_bottom_y() as i32).max(chunk.bottom_y() as i32),
-        height: chunk.generation_height().min(chunk.height()),
+        // WorldGenerationContext uses generator bounds, before noise-column clipping.
+        min_y: i32::from(generator.settings.shape.min_y).max(i32::from(chunk.bottom_y())),
+        height: generator.settings.shape.height.min(chunk.height()),
         height_sampler,
         structure_key: Some(*key),
     };

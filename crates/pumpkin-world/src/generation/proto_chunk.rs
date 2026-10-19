@@ -1444,8 +1444,8 @@ impl ProtoChunk {
         // Matches vanilla WorldGenerationContext:
         // minY = Math.max(heightAccessor.getMinY(), generator.getMinY())
         // height = Math.min(heightAccessor.getHeight(), generator.getGenDepth())
-        let chunk_min_y = (self.generation_bottom_y() as i32).max(self.bottom_y() as i32);
-        let chunk_height = self.generation_height().min(self.height());
+        let chunk_min_y = i32::from(settings.shape.min_y).max(i32::from(self.bottom_y()));
+        let chunk_height = settings.shape.height.min(self.height());
 
         for (set_index, set) in StructureSet::ALL.iter().enumerate() {
             if let Some(ref enabled) = generator.enabled_structure_sets

@@ -65,7 +65,8 @@ impl GlobalStructureCache {
     }
 
     /// Returns the memoized structure start for the given structure and start chunk,
-    /// computing it via `compute` on the first request and caching the result.
+    /// computing it outside cache guards on a miss and reusing the first published result.
+    /// Callers must use this generator's biome source, heights and generation context.
     ///
     /// Because a structure's placement depends only on its start chunk and the world
     /// seed, every chunk whose references overlap that structure can reuse the cached
@@ -82,8 +83,15 @@ impl GlobalStructureCache {
             return cached.value().clone();
         }
         let computed = compute();
-        cache.insert((key, chunk_x, chunk_z), computed.clone());
-        computed
+        // Pieces are mutable during placement. Concurrent misses must share the
+        // first published collector, including an already published absent start.
+        let published = cache
+            .entry((key, chunk_x, chunk_z))
+            .or_insert_with(|| computed.clone())
+            .value()
+            .clone();
+        drop(computed);
+        published
     }
 
     /// Calculates the 128 ring positions matching vanilla Minecraft's
