@@ -20,7 +20,7 @@ impl Entity {
         swept: BoundingBox,
         movement: Vector3<f64>,
     ) -> bool {
-        if movement_is_bounded(self.bounding_box.load(), swept, movement) {
+        if self.collision_sweep_is_bounded(swept, movement) {
             return true;
         }
         self.velocity.store(Vector3::default());
@@ -28,6 +28,14 @@ impl Entity {
         self.horizontal_collision.store(false, Relaxed);
         self.vertical_collision.store(false, Relaxed);
         false
+    }
+
+    pub(super) fn collision_sweep_is_bounded(
+        &self,
+        swept: BoundingBox,
+        movement: Vector3<f64>,
+    ) -> bool {
+        movement_is_bounded(self.bounding_box.load(), swept, movement)
     }
 }
 

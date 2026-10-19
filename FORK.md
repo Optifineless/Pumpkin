@@ -2,6 +2,23 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Ground mob collision step-up (#87)
+
+Grounded mobs retry horizontally blocked movement at actual collision-shape
+heights within their effective STEP_HEIGHT, choosing the first candidate that
+improves horizontal progress. This lets ordinary mobs leave dirt paths and lets
+Endermen use their one-block allowance. Mirrors vanilla 26.3 `Entity.collide`,
+`collectCandidateStepUpHeights` and `collideWithShapes`. Final-footprint support
+and incident vertical velocity reach the existing fall/landing hooks; ceilings,
+airborne collisions and bounded collision sweeps remain respected. Player
+position authority, plugin events, native API 8, WIT and save formats are unchanged.
+Written by Codex Cloud. In-game verification: Not yet.
+
+Play test: lure a cow off a dirt path onto stone; expect smooth ascent without
+jumping. Repeat over slabs/stairs and with an Enderman at a one-block ledge;
+expect ascent within each mob's step allowance. Lower STEP_HEIGHT below the lip;
+expect no automatic step. Add a low ceiling; expect obstruction. Record both.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
