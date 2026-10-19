@@ -6,7 +6,7 @@ use pumpkin_util::sync::LockClass;
 
 use super::{VillagerData, VillagerEntity, VillagerProfession, VillagerType};
 
-pub(super) enum VillagerPersistenceLock {}
+pub enum VillagerPersistenceLock {}
 
 impl LockClass for VillagerPersistenceLock {
     const NAME: &'static str = "villager persistence";
@@ -15,20 +15,26 @@ impl LockClass for VillagerPersistenceLock {
 
 /// Registry names that this build cannot represent in the protocol data.
 #[derive(Clone, Default)]
-pub(super) struct VillagerDataPersistence {
-    unknown_type: Option<String>,
-    unknown_profession: Option<String>,
+pub struct VillagerDataPersistence {
+    unknown_type: Option<RetainedRegistryName>,
+    unknown_profession: Option<RetainedRegistryName>,
     warned_unknown_registry: bool,
 }
 
-struct LoadedVillagerData {
-    data: VillagerData,
+#[derive(Clone)]
+struct RetainedRegistryName {
+    name: String,
+    fallback: VarInt,
+}
+
+pub struct LoadedVillagerData {
+    pub(crate) data: VillagerData,
     unknown_type: Option<String>,
     unknown_profession: Option<String>,
 }
 
 impl LoadedVillagerData {
-    const fn default_data() -> Self {
+    pub(crate) const fn default_data() -> Self {
         Self {
             data: VillagerData::new(VillagerType::Plains, VillagerProfession::None, 1),
             unknown_type: None,
@@ -36,7 +42,7 @@ impl LoadedVillagerData {
         }
     }
 
-    fn decode(nbt: &NbtCompound, previous: VillagerData) -> Self {
+    pub(crate) fn decode(nbt: &NbtCompound, previous: VillagerData) -> Self {
         // VillagerData.CODEC defaults missing/unknown registries and level to plains/none/1.
         if nbt.get("type").is_some()
             || nbt.get("profession").is_some()
@@ -77,6 +83,80 @@ impl LoadedVillagerData {
             Self::default_data()
         }
     }
+
+    pub(crate) fn unknown_names(&self) -> (Option<&str>, Option<&str>) {
+        (
+            self.unknown_type.as_deref(),
+            self.unknown_profession.as_deref(),
+        )
+    }
+}
+
+impl VillagerDataPersistence {
+    pub(crate) const fn has_unknown_names(&self) -> bool {
+        self.unknown_type.is_some() || self.unknown_profession.is_some()
+    }
+
+    pub(crate) fn replace(&mut self, loaded: &LoadedVillagerData) -> bool {
+        self.unknown_type = loaded
+            .unknown_type
+            .as_ref()
+            .map(|name| RetainedRegistryName {
+                name: name.clone(),
+                fallback: loaded.data.r#type,
+            });
+        self.unknown_profession =
+            loaded
+                .unknown_profession
+                .as_ref()
+                .map(|name| RetainedRegistryName {
+                    name: name.clone(),
+                    fallback: loaded.data.profession,
+                });
+        let has_unknown = self.has_unknown_names();
+        let should_warn = has_unknown && !self.warned_unknown_registry;
+        self.warned_unknown_registry |= has_unknown;
+        should_warn
+    }
+
+    pub(crate) fn snapshot_for_save(&mut self, data: VillagerData) -> Self {
+        // Public native/Wasm writers can bypass the setter, so validate at save time.
+        if self
+            .unknown_type
+            .as_ref()
+            .is_some_and(|retained| retained.fallback != data.r#type)
+        {
+            self.unknown_type = None;
+        }
+        if self
+            .unknown_profession
+            .as_ref()
+            .is_some_and(|retained| retained.fallback != data.profession)
+        {
+            self.unknown_profession = None;
+        }
+        self.clone()
+    }
+
+    pub(crate) fn encode(&self, data: VillagerData) -> NbtCompound {
+        let mut encoded = NbtCompound::new();
+        encoded.put_string(
+            "type",
+            self.unknown_type.as_ref().map_or_else(
+                || format!("minecraft:{}", data.type_enum().to_name()),
+                |retained| retained.name.clone(),
+            ),
+        );
+        encoded.put_string(
+            "profession",
+            self.unknown_profession.as_ref().map_or_else(
+                || format!("minecraft:{}", data.profession_enum().to_name()),
+                |retained| retained.name.clone(),
+            ),
+        );
+        encoded.put_int("level", data.level.0);
+        encoded
+    }
 }
 
 impl VillagerEntity {
@@ -89,22 +169,8 @@ impl VillagerEntity {
             .villager_data_persistence
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let mut encoded = NbtCompound::new();
-        encoded.put_string(
-            "type",
-            retained
-                .unknown_type
-                .unwrap_or_else(|| format!("minecraft:{}", data.type_enum().to_name())),
-        );
-        encoded.put_string(
-            "profession",
-            retained
-                .unknown_profession
-                .unwrap_or_else(|| format!("minecraft:{}", data.profession_enum().to_name())),
-        );
-        encoded.put_int("level", data.level.0);
-        nbt.put_compound("VillagerData", encoded);
+            .snapshot_for_save(data);
+        nbt.put_compound("VillagerData", retained.encode(data));
         nbt.put_bool(
             "VillagerDataFinalized",
             self.villager_data_finalized.load(Ordering::Relaxed),
@@ -130,25 +196,17 @@ impl VillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = loaded.data;
 
-        let has_unknown = loaded.unknown_type.is_some() || loaded.unknown_profession.is_some();
-        let should_warn = {
-            let mut retained = self
-                .villager_data_persistence
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            retained.unknown_type.clone_from(&loaded.unknown_type);
-            retained
-                .unknown_profession
-                .clone_from(&loaded.unknown_profession);
-            let should_warn = has_unknown && !retained.warned_unknown_registry;
-            retained.warned_unknown_registry |= has_unknown;
-            should_warn
-        };
+        let should_warn = self
+            .villager_data_persistence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace(&loaded);
         if should_warn {
+            let (villager_type, profession) = loaded.unknown_names();
             tracing::warn!(
                 villager = %self.mob_entity.living_entity.entity.entity_uuid,
-                villager_type = ?loaded.unknown_type,
-                profession = ?loaded.unknown_profession,
+                villager_type = ?villager_type,
+                profession = ?profession,
                 "Preserving unknown villager registry names in saved data"
             );
         }

@@ -1,5 +1,6 @@
 //! Vanilla 26.3 villager fixtures enter through chunk activation and leave through shutdown saves.
 mod registry;
+mod zombie;
 
 use super::*;
 use crate::entity::passive::villager::{GossipType, VillagerEntity};

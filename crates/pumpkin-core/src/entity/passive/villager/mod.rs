@@ -48,7 +48,7 @@ use crate::world::World;
 use crate::world::villager_poi::profession_for_block;
 
 pub mod data;
-mod data_persistence;
+pub(crate) mod data_persistence;
 mod food_persistence;
 mod golem_spawning;
 mod gossip_persistence;
