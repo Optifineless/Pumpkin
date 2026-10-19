@@ -494,8 +494,10 @@ crates/pumpkin-core/src/net/java/outgoing.rs::send_packet_now_does_not_overtake_
 crates/pumpkin-core/src/net/java/outgoing.rs::suspend_flushing_holds_the_fifty_ms_flush_until_resume::std::sync::Mutex::new#1
 crates/pumpkin-core/src/net/java/outgoing.rs::tick_barrier_flushes_once_not_every_sixty_four::std::sync::Mutex::new#1
 crates/pumpkin-core/src/net/java/play/client_command.rs::<module>::std::sync::Mutex::new#1
-crates/pumpkin-core/src/net/java/play/set_command_block.rs::handle_set_command_block::std::sync::Mutex::new#1
-crates/pumpkin-core/src/net/java/play/set_command_block.rs::handle_set_command_block::std::sync::Mutex::new#2
+# CommandBlockSnapshot::into_entity constructs only replacement command/output Mutexes;
+# the command-block predicate and output snapshot are captured before world mutation.
+crates/pumpkin-core/src/net/java/play/set_command_block.rs::into_entity::std::sync::Mutex::new#1
+crates/pumpkin-core/src/net/java/play/set_command_block.rs::into_entity::std::sync::Mutex::new#2
 crates/pumpkin-core/src/net/java/test_client.rs::without_connection::std::sync::Mutex::new#1
 crates/pumpkin-core/src/net/java/test_client.rs::without_connection::std::sync::Mutex::new#2
 crates/pumpkin-core/src/net/java/test_client.rs::without_connection::std::sync::Mutex::new#3

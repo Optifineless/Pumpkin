@@ -5,7 +5,6 @@
 
 use crate::{
     block::entities::command_block::CommandBlockEntity,
-    block::{BlockBehaviour, OnScheduledTickArgs, blocks::command::CommandBlock},
     command::{
         argument_builder::{ArgumentBuilder, command},
         context::command_context::CommandContext,
@@ -59,6 +58,7 @@ impl Fixture {
             level_info
         });
         let world = combat_test_support::world(&server, directory.path());
+        server.worlds.store(Arc::new(vec![world.clone()]));
         let mut chunk = spawn_test_support::proto(&Biome::PLAINS, &Block::STONE);
         chunk.set_block_state(
             COMMAND_POS.0.x,
@@ -91,8 +91,12 @@ impl Fixture {
         world.add_block_entity(predecessor.clone());
 
         let player = TestPlayer::new(&world);
-        player.player.set_gamemode(GameMode::Creative);
+        // Player::set_gamemode consults the server plugin event hook; these packet
+        // fixtures need only expose the same active Creative state to the handler.
+        player.player.gamemode.store(GameMode::Creative);
         player.player.permission_lvl.store(PermissionLvl::Two);
+        assert!(player.player.is_creative());
+        assert!(player.player.permission_lvl.load() >= PermissionLvl::Two);
         Self {
             _directory: directory,
             server,
@@ -111,8 +115,11 @@ impl Fixture {
         self.server.command_dispatcher.store(Arc::new(dispatcher));
     }
 
-    fn configure(&self, mode: i32, conditional: bool) {
-        let mut flags = SSetCommandBlock::FLAG_TRACK_OUTPUT | SSetCommandBlock::FLAG_AUTOMATIC;
+    fn configure(&self, mode: i32, conditional: bool, automatic: bool) {
+        let mut flags = SSetCommandBlock::FLAG_TRACK_OUTPUT;
+        if automatic {
+            flags |= SSetCommandBlock::FLAG_AUTOMATIC;
+        }
         if conditional {
             flags |= SSetCommandBlock::FLAG_CONDITIONAL;
         }
@@ -125,18 +132,34 @@ impl Fixture {
         self.player
             .client()
             .handle_set_command_block(&self.player.player, &packet);
+        let block_entity = self.world.get_block_entity(&COMMAND_POS).unwrap();
+        let command_block = block_entity
+            .as_any()
+            .downcast_ref::<CommandBlockEntity>()
+            .unwrap();
+        assert_eq!(*command_block.command.lock().unwrap(), PROBE_COMMAND);
     }
 
-    fn scheduled_tick(&self) {
-        let block = self.world.get_block(&COMMAND_POS);
-        CommandBlock.on_scheduled_tick(OnScheduledTickArgs {
-            world: &self.world,
-            block,
-            position: &COMMAND_POS,
-        });
+    fn set_powered(&self, powered: bool) {
+        let block_entity = self.world.get_block_entity(&COMMAND_POS).unwrap();
+        let command_block = block_entity
+            .as_any()
+            .downcast_ref::<CommandBlockEntity>()
+            .unwrap();
+        command_block.powered.store(powered, Ordering::Release);
     }
 
-    fn clear_scheduled_command_tick(&self) {
+    fn condition_met(&self) -> bool {
+        let block_entity = self.world.get_block_entity(&COMMAND_POS).unwrap();
+        block_entity
+            .as_any()
+            .downcast_ref::<CommandBlockEntity>()
+            .unwrap()
+            .condition_met
+            .load(Ordering::Acquire)
+    }
+
+    fn persisted_condition_met(&self) -> bool {
         let chunk = self
             .world
             .level
@@ -145,23 +168,23 @@ impl Fixture {
             .unwrap()
             .value()
             .clone();
-        let max = BlockPos::new(
-            COMMAND_POS.0.x + 1,
-            COMMAND_POS.0.y + 1,
-            COMMAND_POS.0.z + 1,
-        );
-        chunk.block_ticks.clear_area(&COMMAND_POS, &max);
+        chunk
+            .pending_block_entities
+            .lock()
+            .unwrap()
+            .get(&COMMAND_POS)
+            .unwrap()
+            .get_bool("conditionMet")
+            .unwrap()
     }
 
-    fn repeating_tick_is_scheduled(&self) -> bool {
-        self.world
-            .level
-            .loaded_chunks
-            .get(&COMMAND_POS.chunk_position())
-            .unwrap()
-            .value()
-            .block_ticks
-            .is_scheduled(COMMAND_POS, &Block::REPEATING_COMMAND_BLOCK)
+    fn tick_is_scheduled(&self, block: &Block) -> bool {
+        self.world.is_block_tick_scheduled(&COMMAND_POS, block)
+    }
+
+    fn advance_tick(&self) {
+        self.server.tick();
+        self.server.update_tick_times(0);
     }
 
     async fn finish(self) {
@@ -178,77 +201,153 @@ fn command_block_state(block: &Block, conditional: bool) -> BlockStateId {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn always_active_impulse_evaluates_its_condition_before_first_scheduled_tick() {
-    let fixture = Fixture::new(false, false, 0);
-    let executions = Arc::new(AtomicUsize::new(0));
-    fixture.register_probe(executions.clone());
+async fn always_active_impulse_captures_conditional_predicate_before_scheduled_tick() {
+    for (predecessor_success, expected_executions) in [(1u32, 1usize), (0, 0)] {
+        let fixture = Fixture::new(true, false, predecessor_success);
+        let executions = Arc::new(AtomicUsize::new(0));
+        fixture.register_probe(executions.clone());
 
-    fixture.configure(2, false);
-    let configured = fixture.world.get_block_entity(&COMMAND_POS).unwrap();
-    let configured = configured
-        .as_any()
-        .downcast_ref::<CommandBlockEntity>()
-        .unwrap();
-    assert!(configured.auto.load(Ordering::Acquire));
-    fixture.scheduled_tick();
-    assert_eq!(executions.load(Ordering::Relaxed), 1);
-    fixture.finish().await;
+        fixture.configure(2, true, true);
+        assert_eq!(fixture.condition_met(), predecessor_success > 0);
+        assert_eq!(fixture.persisted_condition_met(), predecessor_success > 0);
+        assert!(fixture.tick_is_scheduled(&Block::COMMAND_BLOCK));
+        fixture.advance_tick();
+        assert_eq!(executions.load(Ordering::Relaxed), expected_executions);
+        fixture.finish().await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn conditional_impulse_does_not_run_when_its_predecessor_failed() {
+async fn always_active_repeating_consumes_activation_snapshot_then_refreshes_next_tick() {
+    for (predecessor_success, expected_first_execution) in [(1u32, 1usize), (0, 0)] {
+        let fixture = Fixture::new(true, false, predecessor_success);
+        let executions = Arc::new(AtomicUsize::new(0));
+        fixture.register_probe(executions.clone());
+
+        fixture.configure(1, true, true);
+        assert_eq!(fixture.condition_met(), predecessor_success > 0);
+        assert_eq!(fixture.persisted_condition_met(), predecessor_success > 0);
+        assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+        if predecessor_success > 0 {
+            fixture
+                .predecessor
+                .success_count
+                .store(0, Ordering::Release);
+            assert!(fixture.condition_met());
+        }
+
+        fixture.advance_tick();
+        assert_eq!(executions.load(Ordering::Relaxed), expected_first_execution);
+        assert!(!fixture.condition_met());
+        assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+        fixture.advance_tick();
+        assert_eq!(executions.load(Ordering::Relaxed), expected_first_execution);
+        fixture.finish().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unchanged_automatic_save_preserves_queued_false_predicate() {
     let fixture = Fixture::new(true, false, 0);
     let executions = Arc::new(AtomicUsize::new(0));
     fixture.register_probe(executions.clone());
 
-    fixture.configure(2, true);
-    let configured = fixture.world.get_block_entity(&COMMAND_POS).unwrap();
-    let configured = configured
-        .as_any()
-        .downcast_ref::<CommandBlockEntity>()
-        .unwrap();
-    assert!(!configured.condition_met.load(Ordering::Acquire));
-    fixture.scheduled_tick();
+    fixture.configure(1, true, true);
+    assert!(!fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+    fixture.advance_tick();
     assert_eq!(executions.load(Ordering::Relaxed), 0);
-    assert!(!configured.condition_met.load(Ordering::Acquire));
+    assert!(!fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+
+    fixture
+        .predecessor
+        .success_count
+        .store(1, Ordering::Release);
+    fixture.configure(1, true, true);
+    assert!(!fixture.condition_met());
+
+    fixture.advance_tick();
+    assert_eq!(executions.load(Ordering::Relaxed), 0);
+    assert!(fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
     fixture.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn repeating_block_uses_the_previous_condition_and_reschedules_after_each_tick() {
-    let fixture = Fixture::new(true, true, 1);
+async fn unchanged_automatic_save_preserves_queued_true_predicate() {
+    let fixture = Fixture::new(true, false, 1);
     let executions = Arc::new(AtomicUsize::new(0));
     fixture.register_probe(executions.clone());
 
-    fixture.configure(1, true);
-    let block = fixture.world.get_block(&COMMAND_POS);
-    assert_eq!(block.id, Block::REPEATING_COMMAND_BLOCK.id);
-    // The first run consumes the condition captured at activation; this change only
-    // affects the condition for the following run.
+    fixture.configure(1, true, true);
+    assert!(fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+    fixture.advance_tick();
+    assert_eq!(executions.load(Ordering::Relaxed), 1);
+    assert!(fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+
     fixture
         .predecessor
         .success_count
         .store(0, Ordering::Release);
+    fixture.configure(1, true, true);
+    assert!(fixture.condition_met());
 
-    // Consume the activation tick from the fixture queue, then invoke the real callback.
-    fixture.clear_scheduled_command_tick();
-    fixture.scheduled_tick();
-    assert_eq!(executions.load(Ordering::Relaxed), 1);
-    let configured = fixture.world.get_block_entity(&COMMAND_POS).unwrap();
-    let configured = configured
-        .as_any()
-        .downcast_ref::<CommandBlockEntity>()
-        .unwrap();
-    assert!(!configured.condition_met.load(Ordering::Acquire));
-    assert!(configured.auto.load(Ordering::Acquire));
-    assert!(fixture.repeating_tick_is_scheduled());
+    fixture.advance_tick();
+    assert_eq!(executions.load(Ordering::Relaxed), 2);
+    assert!(!fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+    fixture.finish().await;
+}
 
-    // Consume the requeued tick to model the next scheduled invocation.
-    fixture.clear_scheduled_command_tick();
-    fixture.scheduled_tick();
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn active_repeating_to_impulse_does_not_schedule_another_execution() {
+    let fixture = Fixture::new(false, false, 0);
+    let executions = Arc::new(AtomicUsize::new(0));
+    fixture.register_probe(executions.clone());
+
+    fixture.configure(1, false, true);
+    fixture.advance_tick();
     assert_eq!(executions.load(Ordering::Relaxed), 1);
-    assert!(!configured.condition_met.load(Ordering::Acquire));
-    assert!(configured.auto.load(Ordering::Acquire));
-    assert!(fixture.repeating_tick_is_scheduled());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+    let queued_predicate = fixture.condition_met();
+
+    fixture.configure(2, false, true);
+    assert_eq!(fixture.condition_met(), queued_predicate);
+    assert!(!fixture.tick_is_scheduled(&Block::COMMAND_BLOCK));
+    fixture.advance_tick();
+    assert_eq!(executions.load(Ordering::Relaxed), 1);
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn entering_repeating_while_automatic_schedules_activation() {
+    let fixture = Fixture::new(false, false, 0);
+    let executions = Arc::new(AtomicUsize::new(0));
+    fixture.register_probe(executions.clone());
+
+    fixture.configure(2, false, true);
+    fixture.configure(1, false, true);
+    assert!(fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+    fixture.advance_tick();
+    assert_eq!(executions.load(Ordering::Relaxed), 1);
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn entering_repeating_while_powered_schedules_activation() {
+    let fixture = Fixture::new(false, false, 0);
+    let executions = Arc::new(AtomicUsize::new(0));
+    fixture.register_probe(executions.clone());
+    fixture.set_powered(true);
+
+    fixture.configure(1, false, false);
+    assert!(fixture.condition_met());
+    assert!(fixture.tick_is_scheduled(&Block::REPEATING_COMMAND_BLOCK));
+    fixture.advance_tick();
+    assert_eq!(executions.load(Ordering::Relaxed), 1);
     fixture.finish().await;
 }
