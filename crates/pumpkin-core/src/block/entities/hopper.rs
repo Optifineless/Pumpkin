@@ -823,5 +823,10 @@ mod tests {
 }
 
 #[cfg(test)]
+pub(crate) fn test_get_container_at(world: &World, pos: &BlockPos) -> Option<Arc<dyn Inventory>> {
+    get_container_at(world, pos)
+}
+
+#[cfg(test)]
 #[path = "hopper_container_tests.rs"]
 mod container_tests;

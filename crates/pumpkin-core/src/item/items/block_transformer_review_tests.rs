@@ -249,9 +249,32 @@ async fn b227_java_axe_preserves_stocked_single_and_double_copper_chests() {
     hold(&player, &Item::IRON_AXE);
     use_on(&player, &server, left, 2);
 
+    assert_eq!(
+        Block::from_state_id(world.get_block_state_id(&left)),
+        &Block::COPPER_CHEST,
+        "the real Java use-on path must transform the clicked half"
+    );
+    assert_eq!(
+        Block::from_state_id(world.get_block_state_id(&right)),
+        &Block::COPPER_CHEST,
+        "the connected half must follow the clicked chest's stage"
+    );
+    for (position, half) in [(left, ChestType::Left), (right, ChestType::Right)] {
+        let properties = ChestLikeProperties::from_state_id(world.get_block_state_id(&position));
+        assert_eq!(properties.r#type, half);
+        assert_eq!(properties.facing, HorizontalFacing::North);
+    }
     assert_inventory(&world, single, 5);
     assert_inventory(&world, left, 7);
     assert_inventory(&world, right, 11);
+
+    let hopper_inventory =
+        crate::block::entities::hopper::test_get_container_at(&world, &left).unwrap();
+    assert_eq!(
+        hopper_inventory.size(),
+        54,
+        "the hopper container lookup must combine both inventories"
+    );
     world.level.shutdown().await.unwrap();
 }
 

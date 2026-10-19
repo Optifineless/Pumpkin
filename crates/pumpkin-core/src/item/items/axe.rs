@@ -2,8 +2,10 @@ use crate::block::registry::BlockActionResult;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use pumpkin_data::block_properties::{BlockProperties, DoubleBlockHalf, OakDoorLikeProperties};
-use pumpkin_data::block_transformer::AXE;
+use pumpkin_data::block_properties::{
+    BlockProperties, ChestLikeProperties, ChestType, DoubleBlockHalf, OakDoorLikeProperties,
+};
+use pumpkin_data::block_transformer::{AXE, TransformType};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, tag};
@@ -92,6 +94,49 @@ impl ItemBehaviour for AxeItem {
                                 | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
                                 | BlockFlags::UPDATE_KNOWN_SHAPE,
                         );
+                    }
+                }
+            }
+
+            if result.entry.transform_type == Some(TransformType::CopperChest) {
+                let chest_props = ChestLikeProperties::from_state_id(current_state_id);
+                let (direction, expected_partner_type) = match chest_props.r#type {
+                    ChestType::Single => (None, None),
+                    ChestType::Left => (
+                        Some(chest_props.facing.rotate_clockwise()),
+                        Some(ChestType::Right),
+                    ),
+                    ChestType::Right => (
+                        Some(chest_props.facing.rotate_counter_clockwise()),
+                        Some(ChestType::Left),
+                    ),
+                };
+                if let (Some(direction), Some(expected_partner_type)) =
+                    (direction, expected_partner_type)
+                {
+                    let partner_pos = location.offset(direction.to_offset());
+                    let (partner_block, partner_state_id) =
+                        world.get_block_and_state_id(&partner_pos);
+                    if partner_block == block {
+                        let partner_props = ChestLikeProperties::from_state_id(partner_state_id);
+                        if partner_props.facing == chest_props.facing
+                            && partner_props.r#type == expected_partner_type
+                        {
+                            let partner_new_state_id = if result.target_block.states.len() <= 1 {
+                                result.target_block.default_state.id
+                            } else {
+                                result
+                                    .target_block
+                                    .from_properties(&partner_props.to_props())
+                                    .to_state_id(result.target_block)
+                            };
+                            // CopperChestBlock.updateShape keeps both connected halves at one stage.
+                            world.set_block_state(
+                                &partner_pos,
+                                partner_new_state_id,
+                                BlockFlags::NOTIFY_LISTENERS,
+                            );
+                        }
                     }
                 }
             }
