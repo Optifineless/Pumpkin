@@ -324,6 +324,18 @@ fork's existing filled-terrain observation in those callbacks. Physics callbacks
 wait for payment and statistics. This differs from serial vanilla's intermediate
 terrain visibility during item/stat callbacks; no event framework is redesigned.
 
+## Consumable fallback after refused crop placement (#158)
+
+Java carrot and potato use starts eating in the requested hand when crop
+placement refuses without consuming the action. Planting, consuming block
+interactions, explicit failures, protection and cancelled events retain
+precedence. Hunger, cooldown and existing active-use admission are shared with
+air use; callback replacements and selection changes are revalidated before
+starting. Mirrors vanilla 26.3 `BlockItem.useOn`, `Item.useOn/use` and
+`ServerPlayerGameMode.useItemOn`. API 8 (same version): the richer placement
+outcome is internal; public signatures, layouts, saved data and Wasm WIT are
+unchanged. Written by Codex (GPT-6.1 Sol). In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

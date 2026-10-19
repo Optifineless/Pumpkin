@@ -252,6 +252,7 @@ pub mod close_container;
 pub mod command_suggestion;
 pub mod configuration_acknowledged;
 pub mod confirm_teleport;
+mod consumable_use;
 pub mod container_slot_state_changed;
 #[cfg(test)]
 #[path = "container_slot_state_changed_tests.rs"]
