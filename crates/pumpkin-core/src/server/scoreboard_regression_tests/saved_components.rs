@@ -286,13 +286,17 @@ async fn scoreboard_regression_saved_component_opaque_nbt_joins_and_round_trips(
     let (server, logs) = startup(directory.path()).await;
     let packets = joining_packets(&server).await;
     let objectives = objective_components(&packets);
-    assert_eq!(objectives.len(), 2, "Join must send both saved objectives");
+    assert_eq!(
+        objectives.len(),
+        1,
+        "Join must send only displayed objectives"
+    );
     assert_eq!(
         objectives
             .iter()
             .filter(|(name, _)| name == "blank")
             .count(),
-        1
+        0
     );
     assert_eq!(
         objectives

@@ -295,7 +295,8 @@ impl CommandExecutor for ObjectiveModifyExecutor {
         let (key, arguments) = match self.0 {
             ObjectiveModification::DisplayName => {
                 let display_name = ComponentArgumentType::get(context, ARG_DISPLAY_NAME)?;
-                if objective.display_name == display_name {
+                let replaced = scoreboard.discard_objective_display_name(name);
+                if objective.display_name == display_name && !replaced {
                     return Ok(0);
                 }
                 objective.display_name = display_name.clone();
@@ -422,7 +423,7 @@ fn set_score_display(context: &CommandContext, value: DisplayValue) -> CommandEx
                         locked: true,
                     });
                 score.display_name.clone_from(display);
-                scoreboard.update_score(world, score);
+                scoreboard.update_score_with_display_name(world, score);
             }
             DisplayValue::Format(format) => {
                 scoreboard.set_score_number_format(world, &holder.name, name, format.clone());

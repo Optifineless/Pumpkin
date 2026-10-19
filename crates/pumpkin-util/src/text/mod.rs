@@ -22,6 +22,8 @@ pub mod component_codec;
 mod component_style_validation;
 mod component_validation;
 pub mod display_projection;
+#[cfg(test)]
+mod display_projection_tests;
 pub mod hover;
 pub mod legacy;
 pub mod style;

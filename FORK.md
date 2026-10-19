@@ -33,6 +33,40 @@ Malformed NBT or wrong record/component outer types still fail the whole load an
 disable saves. This is a deliberate display restriction, without changing saved
 component meaning; it replaces round 2's incomplete client-codec validation gate.
 
+Review round 4 discards a field's saved raw data when runtime update methods
+change it or a command explicitly replaces it, including A to B to A before or
+between saves. Other components retain their original NBT. Display projections stop
+at 128 emitted container levels and use a conservative 32 KiB budget that includes modified
+UTF-8 strings and component overhead. Raw storage remains complete. Login sends
+teams followed by deduplicated displayed objectives and their scores; hidden
+updates stay server-side until a display slot starts tracking them. Tracking
+mirrors `PlayerList.updateEntireScoreboard` and `ServerScoreboard`'s tracking
+methods. Native API 8 (same version), its public surface and on-disk codecs are
+unchanged by this round. In-game verification: Not yet.
+
+Accepted API 8 exception: a same-value component assignment through a whole-settings
+plugin update may retain that field's original raw NBT because the API carries no
+field-replacement intent. The affected setters are:
+
+- Wasm `scoreboard::Scoreboard::update_team` for `TeamSettings.display_name`,
+  `prefix` and `suffix`, including SDK `Team::update_settings`,
+  `Team::set_display_name`, `Team::set_prefix` and `Team::set_suffix`;
+  Wasm `scoreboard::Scoreboard::update_objective` for `display_name`.
+- Native `Scoreboard::update_team` for `display_name`, `player_prefix` and
+  `player_suffix`; `Scoreboard::update_objective` for `display_name` and
+  `number_format`; `Scoreboard::update_objective_with_number_format` for `display_name`;
+  `Scoreboard::update_score` for `display_name` and `number_format`, and
+  `Scoreboard::update_score_with_number_format` for `display_name`.
+
+Native `Scoreboard::get_objective_mut` and `Scoreboard::get_team_mut` also expose
+bare mutable references: a same-value assignment or A to B to A through those
+references (including separate borrows) cannot be observed and may retain the
+original raw component. A to B to A through the runtime update methods is covered
+by regression tests. Commands and explicit number-format replacement setters
+still invalidate only the replaced field,
+including same-value replacements. This exception is accepted to keep the plugin
+API unchanged; no API methods or lossless runtime component model are added.
+
 If the namespaced file is absent, supported pre-26.1 worlds import
 `data/scoreboard.dat`; successful later saves publish the namespaced file without
 removing the legacy original. A corrupt namespaced file never falls back to legacy.
@@ -73,6 +107,13 @@ kill a member and check recipients in another dimension. Capture the safe sideba
 restored legacy scoreboard and each announcement audience. In-game verification:
 Not yet. Review fixes by Codex; native API remains 8 with no additional layout
 changes in this round.
+
+Round 4 play test: import a prefix A with an old click action, run `/team modify
+red prefix B`, optionally `/save-all`, then `/team modify red prefix A`; save and
+restart, and expect plain A with no old click action. Join a world containing a
+large hidden objective and expect a normal login with no hidden sidebar. Display
+that objective and expect safely shortened text; clear its last display slot and
+expect it to disappear. Capture the successful join and sidebar transitions.
 
 
 ## Empty map centers (#45)

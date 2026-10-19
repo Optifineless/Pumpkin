@@ -1,7 +1,7 @@
 use pumpkin_data::scoreboard::ScoreboardDisplaySlot;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_world::world_info::WorldInfoError;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::save_data_values::{self as values, DISPLAY_SLOTS};
 use super::{Scoreboard, ScoreboardObjective, ScoreboardScore, Team};
@@ -10,6 +10,14 @@ use super::{Scoreboard, ScoreboardObjective, ScoreboardScore, Team};
 pub(super) struct SavedRecord<T> {
     raw: NbtCompound,
     baseline: T,
+    replaced_fields: FxHashSet<&'static str>,
+}
+
+impl<T> SavedRecord<T> {
+    pub(super) fn discard(&mut self, field: &'static str) -> bool {
+        self.raw.child_tags.remove(field);
+        self.replaced_fields.insert(field)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -25,8 +33,7 @@ pub(super) struct PersistentData {
 impl PersistentData {
     pub(super) fn discard_objective_format(&mut self, name: &str) {
         if let Some(saved) = self.objectives.get_mut(name) {
-            saved.raw.child_tags.remove("format");
-            saved.baseline.number_format = None;
+            saved.discard("format");
         }
     }
 
@@ -35,8 +42,7 @@ impl PersistentData {
             .scores
             .get_mut(&(entity_name.to_string(), objective_name.to_string()))
         {
-            saved.raw.child_tags.remove("format");
-            saved.baseline.number_format = None;
+            saved.discard("format");
         }
     }
 }
@@ -83,6 +89,7 @@ impl Scoreboard {
                 SavedRecord {
                     raw: raw.clone(),
                     baseline: objective,
+                    replaced_fields: FxHashSet::default(),
                 },
             );
         }
@@ -104,6 +111,7 @@ impl Scoreboard {
                 SavedRecord {
                     raw: raw.clone(),
                     baseline: team,
+                    replaced_fields: FxHashSet::default(),
                 },
             );
         }
@@ -140,6 +148,7 @@ impl Scoreboard {
                 SavedRecord {
                     raw: raw.clone(),
                     baseline: score,
+                    replaced_fields: FxHashSet::default(),
                 },
             );
         }
@@ -256,7 +265,8 @@ fn pack_record<T>(
     let baseline = encode(&saved.baseline);
     let mut result = saved.raw.clone();
     for name in current.child_tags.keys().chain(baseline.child_tags.keys()) {
-        if current.get(name) == baseline.get(name) {
+        if !saved.replaced_fields.contains(name.as_ref()) && current.get(name) == baseline.get(name)
+        {
             continue;
         }
         if let Some(value) = current.get(name) {

@@ -234,3 +234,55 @@ fn scoreboard_saved_components_preserve_unsupported_contents_and_unknown_styles(
         );
     }
 }
+
+#[test]
+fn scoreboard_native_component_replacements_do_not_resurrect_raw_fields() {
+    use pumpkin_protocol::NumberFormat;
+    use pumpkin_util::text::TextComponent;
+    let original = fixture_tag(serde_json::json!({
+        "text":"A", "click_event":{"action":"run_command","command":"/old"}
+    }));
+    for field in COMPONENT_FIELDS {
+        let mut board =
+            Scoreboard::from_save_data(&payload(field, original.clone(), false)).unwrap();
+        for text in ["B", "A"] {
+            let text = TextComponent::text(text);
+            match field {
+                ComponentField::ObjectiveDisplayName | ComponentField::ObjectiveFixedFormat => {
+                    let mut objective = board.get_objective("points").unwrap().clone();
+                    if matches!(field, ComponentField::ObjectiveDisplayName) {
+                        objective.display_name = text;
+                    } else {
+                        objective.number_format = Some(NumberFormat::Fixed(text));
+                    }
+                    board.update_objective(&NoTarget, objective);
+                }
+                ComponentField::ScoreDisplay | ComponentField::ScoreFixedFormat => {
+                    let mut score = board.get_score("holder", "points").unwrap().clone();
+                    if matches!(field, ComponentField::ScoreDisplay) {
+                        score.display_name = Some(text);
+                    } else {
+                        score.number_format = Some(NumberFormat::Fixed(text));
+                    }
+                    board.update_score(&NoTarget, score);
+                }
+                ComponentField::TeamDisplayName
+                | ComponentField::TeamPrefix
+                | ComponentField::TeamSuffix => {
+                    let mut team = board.get_team("red").unwrap().clone();
+                    match field {
+                        ComponentField::TeamDisplayName => team.display_name = text,
+                        ComponentField::TeamPrefix => team.player_prefix = text,
+                        _ => team.player_suffix = text,
+                    }
+                    board.update_team(&NoTarget, team);
+                }
+            }
+        }
+        assert_eq!(
+            board.to_save_data(),
+            payload(field, NbtTag::String("A".into()), false),
+            "{field:?}"
+        );
+    }
+}

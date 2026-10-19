@@ -55,7 +55,14 @@ fn review_root() -> NbtCompound {
     data.put_list("Objectives", objectives);
     data.put_list("PlayerScores", scores);
     data.put_list("Teams", teams);
-    data.put_compound("DisplaySlots", NbtCompound::new());
+    let mut slots = NbtCompound::new();
+    for ((_, slot), index) in crate::world::scoreboard::DISPLAY_SLOTS
+        .iter()
+        .zip(0..examples().len())
+    {
+        slots.put_string(slot, format!("review_{index}"));
+    }
+    data.put_compound("DisplaySlots", slots);
     let mut root = NbtCompound::new();
     root.put_int("DataVersion", 5023);
     root.put_compound("data", data);
@@ -143,7 +150,28 @@ fn assert_packet_subset(packets: &[bytes::Bytes], root: &NbtCompound) {
     ] {
         assert_eq!(
             packet_count(packets, id),
-            payload(root).get_list(list).unwrap().len()
+            payload(root)
+                .get_list(list)
+                .unwrap()
+                .iter()
+                .filter(|tag| {
+                    let record = tag.extract_compound().unwrap();
+                    list == "Teams"
+                        || payload(root)
+                            .get_compound("DisplaySlots")
+                            .unwrap()
+                            .child_tags
+                            .values()
+                            .any(|value| {
+                                value.extract_string()
+                                    == record.get_string(if list == "Objectives" {
+                                        "Name"
+                                    } else {
+                                        "Objective"
+                                    })
+                            })
+                })
+                .count()
         );
         for packet in packets {
             let mut input = Cursor::new(packet.as_ref());
@@ -280,6 +308,16 @@ async fn scoreboard_regression_command_subset_projects_unchanged() {
     assert_eq!(
         translated.get_list("with").unwrap(),
         &[NbtTag::String("A".into()), NbtTag::String("B".into())]
+    );
+    command(
+        &server,
+        &world,
+        "scoreboard objectives setdisplay sidebar safe",
+    );
+    command(
+        &server,
+        &world,
+        "scoreboard objectives setdisplay list empty_session",
     );
     let packets = joining_packets(&server).await;
     let objectives: std::collections::BTreeMap<_, _> =

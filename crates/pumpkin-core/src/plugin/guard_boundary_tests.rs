@@ -497,6 +497,7 @@ async fn guard_boundary_statistic_award_allows_packet_hook_to_read_scoreboard() 
             "minecraft.custom:minecraft.drop",
         ),
     );
+    fixture.run("scoreboard objectives setdisplay sidebar dropped");
     let calls = packet_hook(&fixture, Owner::Scoreboard);
     fixture
         .player

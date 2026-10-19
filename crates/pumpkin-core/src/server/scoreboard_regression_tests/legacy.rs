@@ -38,7 +38,7 @@ async fn scoreboard_regression_legacy_pre_26_1_imports_saves_and_reloads() {
             .is_some()
     );
     let packets = joining_packets(&server).await;
-    assert_eq!(objective_components(&packets).len(), 2);
+    assert_eq!(objective_components(&packets).len(), 1);
     command(
         &server,
         &world,

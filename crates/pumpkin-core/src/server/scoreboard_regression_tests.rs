@@ -7,12 +7,14 @@ use pumpkin_nbt::{compound::NbtCompound, nbt_compress::read_gzip_compound_tag};
 use std::{fs, path::Path, sync::Arc, time::Duration};
 
 mod death_visibility;
+mod display_bounds;
 mod legacy;
 mod lifecycle;
 mod loaded;
 mod login;
 mod projection;
 mod reentry;
+mod replacements;
 mod save_paths;
 mod saved_components;
 mod vanilla;
@@ -59,6 +61,7 @@ fn populate_base(server: &Arc<Server>, world: &Arc<World>) {
     for input in [
         "scoreboard objectives add tally dummy Tally",
         "scoreboard players set Holder tally 37",
+        "scoreboard objectives setdisplay sidebar.team.red tally",
         "team add red Crimson",
         "team modify red color red",
         "team modify red prefix Prefix",
@@ -92,7 +95,6 @@ fn populate_formatting(server: &Arc<Server>, world: &Arc<World>) {
         "scoreboard objectives modify tally rendertype hearts",
         "scoreboard objectives modify tally displayautoupdate true",
         r#"scoreboard objectives modify tally numberformat fixed {"text":"many"}"#,
-        "scoreboard objectives setdisplay sidebar.team.red tally",
         r#"scoreboard players display name Holder tally {"text":"Alias","italic":true}"#,
         "scoreboard players display numberformat Holder tally styled {color:'blue',bold:true}",
     ] {
@@ -119,6 +121,11 @@ async fn scoreboard_regression_commands_share_state_and_packets_across_dimension
             &server,
             &worlds[1],
             "scoreboard players set Holder shared 37",
+        );
+        command(
+            &server,
+            &worlds[1],
+            "scoreboard objectives setdisplay sidebar shared",
         );
         command(&server, &worlds[1], "team add shared_team");
         assert_eq!(

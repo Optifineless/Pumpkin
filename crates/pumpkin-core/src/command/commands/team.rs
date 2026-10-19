@@ -572,7 +572,8 @@ impl CommandExecutor for TeamModifyDisplayNameExecutor {
 
         let mut team = team.clone();
         let new_display_name = TextComponent::text(new_name_owned);
-        if team.display_name == new_display_name {
+        let replaced = scoreboard.discard_team_component(&team_name_owned, "DisplayName");
+        if team.display_name == new_display_name && !replaced {
             return Err(NAME_UNCHANGED_ERROR.create_without_context());
         }
 
@@ -619,6 +620,7 @@ impl CommandExecutor for TeamModifyPrefixExecutor {
         let mut team = team.clone();
         let new_prefix = TextComponent::text(new_prefix_owned);
         team.player_prefix = new_prefix.clone();
+        scoreboard.discard_team_component(&team_name_owned, "MemberNamePrefix");
         let team_display_name = team.display_name.clone();
         scoreboard.update_team(&world, team);
 
@@ -661,6 +663,7 @@ impl CommandExecutor for TeamModifySuffixExecutor {
         let mut team = team.clone();
         let new_suffix = TextComponent::text(new_suffix_owned);
         team.player_suffix = new_suffix.clone();
+        scoreboard.discard_team_component(&team_name_owned, "MemberNameSuffix");
         let team_display_name = team.display_name.clone();
         scoreboard.update_team(&world, team);
 
