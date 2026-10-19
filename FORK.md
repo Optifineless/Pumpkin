@@ -149,12 +149,17 @@ honeycomb can still wax a blank sign. Mirrors vanilla 26.3
 ## Pressure-plate entity eligibility (#82)
 
 Stone pressure plates count living entities; wooden and weighted plates count all
-eligible entities. Every variant excludes spectators and entities whose block
-effects are disabled, with weighted plates filtering before saturation. The shared
-calculation covers collision activation and scheduled recounts. Mirrors vanilla
+eligible entities. Every variant excludes spectators, removed entities and entities
+that ignore block triggers, with weighted plates filtering before saturation. The
+shared calculation covers collision activation and scheduled recounts. Mirrors vanilla
 26.3 `PressurePlateBlock.getSignalStrength`,
-`WeightedPressurePlateBlock.getSignalStrength` and
-`BasePressurePlateBlock.getEntityCount`. In-game verification: Not yet.
+`WeightedPressurePlateBlock.getSignalStrength`,
+`BasePressurePlateBlock.getEntityCount` and `Entity.isIgnoringBlockTriggers`.
+Vanilla block-trigger overrides are retained for bats, marker armor stands,
+displays, interactions, markers and ominous item spawners; spectators remain
+separately filtered. Player spectator mode also maps to the new capability.
+Native API 8 (same version): `EntityBase` gains a default method; rebuild native
+plugins. In-game verification: Not yet.
 
 Management-enabled shutdown (#173) now stops the listener, WebSocket sessions and
 heartbeat so the final player, world and level.dat saves can finish. The authenticated

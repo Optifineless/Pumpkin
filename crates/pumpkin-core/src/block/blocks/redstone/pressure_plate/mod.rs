@@ -39,7 +39,11 @@ fn eligible_entity_count(
     world
         .get_all_at_box(detection_box)
         .iter()
-        .filter(|entity| !entity.is_spectator() && entity.get_entity().is_affected_by_blocks())
+        .filter(|entity| {
+            !entity.is_spectator()
+                && !entity.get_entity().is_removed()
+                && !entity.is_ignoring_block_triggers()
+        })
         .filter(|entity| {
             matches!(sensitivity, EntitySensitivity::Everything)
                 || entity.get_living_entity().is_some()

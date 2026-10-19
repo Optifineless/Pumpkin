@@ -5,10 +5,15 @@ use std::sync::atomic::Ordering::Relaxed;
 use super::*;
 use crate::{
     block::OnScheduledTickArgs,
-    entity::{Entity, EntityBase, death_test_world::DeathTestWorld, item::ItemEntity},
+    entity::{
+        Entity, EntityBase, area_effect_cloud::AreaEffectCloudEntity,
+        death_test_world::DeathTestWorld, item::ItemEntity,
+    },
     world::spawn_test_support::{proto, publish},
 };
-use pumpkin_data::{biome::Biome, entity::EntityType, item::Item, item_stack::ItemStack};
+use pumpkin_data::{
+    biome::Biome, effect::StatusEffect, entity::EntityType, item::Item, item_stack::ItemStack,
+};
 use pumpkin_util::{GameMode, math::vector2::Vector2};
 use pumpkin_world::world::BlockFlags;
 use rustc_hash::FxHashSet;
@@ -330,7 +335,11 @@ async fn b1019_g13_no_physics_entities_do_not_activate_plates() {
             f64::from(position.0.y),
             f64::from(position.0.z) + 0.5,
         ));
-        collide(&fixture, no_physics_item.as_ref());
+        assert!(
+            !no_physics_item
+                .get_entity()
+                .tick_block_collisions(no_physics_item.as_ref())
+        );
         assert_eq!(power(&world, block, &position), 0);
     }
     no_physics_item.get_entity().remove();
@@ -338,7 +347,7 @@ async fn b1019_g13_no_physics_entities_do_not_activate_plates() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1019_g13_no_physics_entity_is_excluded_during_recount() {
+async fn b1019_g13_no_physics_entity_is_counted_during_recount() {
     let fixture = DeathTestWorld::new().await;
     let world = fixture.world();
     add_chunk(&world);
@@ -350,7 +359,46 @@ async fn b1019_g13_no_physics_entity_is_excluded_during_recount() {
     assert_eq!(power(&world, &Block::OAK_PRESSURE_PLATE, &ignored_pos), 15);
     ignored_item.get_entity().no_physics.store(true, Relaxed);
     run_pressure_plate_ticks(&fixture, 20);
-    assert_eq!(power(&world, &Block::OAK_PRESSURE_PLATE, &ignored_pos), 0);
+    assert_eq!(power(&world, &Block::OAK_PRESSURE_PLATE, &ignored_pos), 15);
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g13_area_effect_cloud_recounts_active_plate() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    add_chunk(&world);
+
+    let plate_pos = BlockPos::new(4, 64, 8);
+    put_plate(&world, &Block::OAK_PRESSURE_PLATE, &plate_pos);
+    let player = fixture.player("pressure-plate-cloud-survival");
+    player.get_entity().set_pos(Vector3::new(4.5, 64.0, 8.5));
+    collide(&fixture, player.as_ref());
+    assert_eq!(power(&world, &Block::OAK_PRESSURE_PLATE, &plate_pos), 15);
+
+    let cloud = AreaEffectCloudEntity::create(
+        Entity::new(
+            world.clone(),
+            Vector3::new(5.5, 64.0, 8.5),
+            &EntityType::AREA_EFFECT_CLOUD,
+        ),
+        ItemStack::new(1, &Item::LINGERING_POTION),
+        vec![(&StatusEffect::POISON, 100, 0, false, true, true)],
+        600,
+        3.0,
+        20,
+        10,
+        -0.5,
+        0,
+    );
+    assert!(world.spawn_entity(cloud.clone()));
+    assert!(detection_box_at(&plate_pos).intersects(&cloud.entity.bounding_box.load()));
+    player.get_entity().set_pos(Vector3::new(40.5, 64.0, 8.5));
+
+    run_pressure_plate_ticks(&fixture, 20);
+
+    assert!(!cloud.entity.is_removed());
+    assert_eq!(power(&world, &Block::OAK_PRESSURE_PLATE, &plate_pos), 15);
     fixture.server.shutdown().await;
 }
 

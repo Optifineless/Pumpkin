@@ -570,6 +570,10 @@ impl EntityBase for ArmorStandEntity {
         !self.is_marker() && !self.get_entity().is_removed()
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        self.is_marker()
+    }
+
     fn kill(&self, _caller: &dyn EntityBase) {
         self.discard_equipment();
         self.get_entity().remove();

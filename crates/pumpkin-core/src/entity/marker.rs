@@ -52,6 +52,10 @@ impl EntityBase for MarkerEntity {
         &self.entity
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn get_living_entity(&self) -> Option<&LivingEntity> {
         None
     }
