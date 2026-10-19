@@ -8,14 +8,18 @@ use pumpkin_data::{
     Block, BlockDirection, BlockStateId,
     biome::Biome,
     block_properties::{BedPart, HorizontalFacing, WhiteBedLikeProperties},
+    damage::DamageType,
     entity::EntityPose,
     item::Item,
     item_stack::ItemStack,
     world::WorldEvent,
 };
 use pumpkin_inventory::Inventory;
-use pumpkin_protocol::java::client::play::CWorldEvent;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use pumpkin_protocol::{java::client::play::CWorldEvent, ser::NetworkReadExt};
+use pumpkin_util::{
+    GameMode,
+    math::{position::BlockPos, vector3::Vector3},
+};
 use pumpkin_world::world::BlockFlags;
 
 use super::World;
@@ -30,7 +34,9 @@ use crate::{
         BoxFuture, EventHandler, EventPriority, Payload,
         api::events::{
             block::{block_break::BlockBreakEvent, block_physics::BlockPhysicsEvent},
-            player::player_bed::PlayerBedLeaveEvent,
+            player::{
+                player_bed::PlayerBedLeaveEvent, player_gamemode_change::PlayerGamemodeChangeEvent,
+            },
         },
     },
     server::Server,
@@ -163,6 +169,81 @@ async fn straw_leave_callback_preserves_replacement_chest_and_invalid_pair() {
     assert_eq!(item_count(&fixture.world, &Item::DIAMOND), 0);
     assert_eq!(item_count(&fixture.world, &Item::STRAW_BED), 0);
     fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spectator_wake_leave_callback_keeps_nested_survival_transition() {
+    let fixture = PlayerFixture::new();
+    let mut client = sleeping(&fixture);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    register::<PlayerBedLeaveEvent>(&fixture.world, move |event| {
+        seen.fetch_add(1, Relaxed);
+        assert!(event.player.set_gamemode(GameMode::Survival));
+    });
+
+    client.take_packets();
+    assert!(client.player.set_gamemode(GameMode::Spectator));
+
+    assert_eq!(calls.load(Relaxed), 1);
+    assert_eq!(client.player.gamemode.load(), GameMode::Survival);
+    assert_awake(&client);
+    assert!(!client.player.get_entity().no_physics.load(Relaxed));
+    assert!(client.player.may_build());
+    {
+        let abilities = client.player.abilities.lock().unwrap();
+        assert!(!abilities.flying);
+        assert!(!abilities.allow_flying);
+        assert!(!abilities.invulnerable);
+        assert!(!abilities.creative);
+        assert!(abilities.allow_modify_world);
+    };
+
+    let packets = client.take_packets();
+    let game_modes = packets
+        .iter()
+        .filter_map(|packet| {
+            let mut reader = packet.as_ref();
+            (reader.get_var_int().unwrap().0
+                == pumpkin_data::packet::clientbound::play::GAME_EVENT.0
+                && reader.get_u8().unwrap() == 3)
+                .then(|| reader.get_f32_be().unwrap())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(game_modes, vec![GameMode::Survival as i32 as f32]);
+
+    let health_before = client.player.living_entity.health.load();
+    assert!(
+        client
+            .player
+            .damage(client.player.as_ref(), 2.0, DamageType::GENERIC)
+    );
+    assert_eq!(
+        client.player.living_entity.health.load(),
+        health_before - 2.0
+    );
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sleeping_spectator_change_preserves_gamemode_event_contract() {
+    for cancel in [true, false] {
+        let fixture = PlayerFixture::new();
+        let client = sleeping(&fixture);
+        register::<PlayerGamemodeChangeEvent>(&fixture.world, move |event| {
+            if cancel {
+                event.cancelled = true;
+            } else {
+                event.new_gamemode = GameMode::Survival;
+            }
+        });
+
+        assert_eq!(client.player.set_gamemode(GameMode::Spectator), !cancel);
+        assert_eq!(client.player.gamemode.load(), GameMode::Survival);
+        assert_eq!(client.player.sleeping_since.load(), Some(0));
+        assert_eq!(client.player.sleeping_bed_pos.load(), Some(HEAD));
+        fixture.finish().await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

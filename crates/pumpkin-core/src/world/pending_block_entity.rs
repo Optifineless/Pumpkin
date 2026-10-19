@@ -8,7 +8,9 @@ use rustc_hash::FxHashMap;
 
 use super::portal::frame_effects::RetiredBlockEntity;
 use super::{World, remove_pending_block_entity};
-use crate::block::entities::{BlockEntity, block_entity_from_nbt, capture::capture_legacy};
+use crate::block::entities::{
+    BlockEntity, block_entity_from_nbt, capture::capture_legacy, jukebox::JukeboxBlockEntity,
+};
 
 #[path = "block_entity_admission.rs"]
 mod admission;
@@ -310,6 +312,9 @@ impl World {
         let candidate = block_entity_from_nbt(&snapshot.nbt)?;
         let entity = self.promote_pending_block_entity(&snapshot, candidate)?;
         self.bind_block_entity_context(entity.as_ref());
+        if let Some(jukebox) = entity.as_any().downcast_ref::<JukeboxBlockEntity>() {
+            jukebox.notify_playback_power_if_changed();
+        }
         Some(entity)
     }
 

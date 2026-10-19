@@ -4,6 +4,7 @@ mod container_lifecycle;
 mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
+    jukebox::JukeboxBlockEntity,
 };
 use crate::server::watchdog::markers::Phase;
 use dashmap::DashMap;
@@ -5940,6 +5941,10 @@ impl World {
             chunk.mark_dirty(true);
         });
         drop(mutation);
+
+        if let Some(jukebox) = registered.as_any().downcast_ref::<JukeboxBlockEntity>() {
+            jukebox.notify_playback_power_if_changed();
+        }
 
         if published && let Some(nbt) = &block_entity_nbt {
             let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();

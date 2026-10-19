@@ -17,6 +17,39 @@ negative coordinates, then place one on an ascending rail; expect centered
 carts, with the ascending cart 0.5 blocks higher. Capture the rail and cart
 positions, and verify Survival consumes one item while Creative consumes none.
 
+## Owner review follow-ups, PRs #235, #238, #240 and #243 (PR #257 review round 2)
+
+Fire spread now publishes the new fire state to nearby clients. Players switching
+to Spectator while asleep wake immediately and must use a bed again after returning
+to Survival. If the bed-leave callback completes another gamemode change during
+that wake, the outer Spectator transition preserves the callback's final mode,
+abilities, physics and client state. Jukebox playback restored from active NBT
+powers adjacent redstone; starting and stopping playback notify neighbours when
+the power changes. Beacon beam scans fall back to build height when a stale surface
+height is below or level with the beacon, so they still find clear sky and an
+obstruction above the beacon. Saved-data meaning is unchanged. Mirrors vanilla 26.3
+`FireBlock` spread flag 3, `ServerPlayerGameMode.setGameMode` ability updates,
+`JukeboxBlockEntity` neighbour updates, and `BeaconBlockEntity.tick` height
+scanning. Immediate waking on a Spectator change is a fork behavior. In-game
+verification: **Not yet**.
+
+API 8 (same version): `JukeboxBlockEntity` gains runtime transition state for
+neighbour power publication; rebuild native plugins. No public method signatures,
+Wasm WIT or saved-data formats change.
+
+Play test: spread fire beside a nearby client and confirm the fire appears; sleep
+through the maturity threshold, switch to Spectator and back to Survival, then use
+a bed again to skip night. With a test bed-leave plugin that restores Survival,
+sleep in a bed and switch to Spectator; expect to wake with normal Survival damage
+and building actions. Reload a jukebox with an active record beside redstone dust
+and a comparator; expect full dust power while playing, zero after it stops, and
+comparator output matching the inserted record. On a beacon with a stale surface
+map at or just below the beacon, wait for the scan, select a paid power, then place
+stone above it; expect the beam and selection sound to stop after the scan reaches
+the stone. Vanilla's `ServerPlayerGameMode.setGameMode` updates mode and abilities
+without directly stopping sleep. No real-client or in-game verification is claimed
+here.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so
