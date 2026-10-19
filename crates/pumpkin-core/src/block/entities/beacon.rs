@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_util::sync::LockClass;
 
 use crate::block::entities::{BlockEntity, PropertyDelegate};
@@ -26,6 +26,8 @@ pub struct BeaconBlockEntity {
     pub levels: AtomicI32,
     pub dirty: AtomicBool,
     effects_lock: pumpkin_util::sync::Mutex<(), BeaconEffects>,
+    beam_active: AtomicBool,
+    checking_beam: AtomicBool,
 
     // Vanilla Parity Fields
     pub custom_name: Mutex<Option<String>>,
@@ -42,6 +44,43 @@ impl BeaconBlockEntity {
     pub const DATA_SECONDARY: usize = 2;
     pub const NUM_DATA_VALUES: usize = 3;
 
+    pub(crate) fn has_active_beam(&self) -> bool {
+        self.beam_active.load(Ordering::Relaxed)
+    }
+
+    fn update_beam(&self, world: &World) {
+        // BeaconBlockEntity.tick scans ten blocks per tick and publishes only completed beams.
+        let top = world.get_top_block(Vector2::new(self.position.0.x, self.position.0.z)) + 1;
+        let mut last = self.last_check_y.load(Ordering::Relaxed);
+        if last < self.position.0.y {
+            last = self.position.0.y - 1;
+            self.checking_beam.store(false, Ordering::Relaxed);
+        }
+        for y in last + 1..=(last + 10).min(top) {
+            let (block, state) =
+                world.get_block_and_state(&BlockPos::new(self.position.0.x, y, self.position.0.z));
+            // A stale heightmap can end a scan before it reaches the first beam section.
+            if y == self.position.0.y && block == &pumpkin_data::Block::BEACON {
+                self.checking_beam.store(true, Ordering::Relaxed);
+            }
+            // Colored beam glass has zero light dampening; bedrock is vanilla's exception.
+            if state.opacity >= 15 && block != &pumpkin_data::Block::BEDROCK {
+                self.checking_beam.store(false, Ordering::Relaxed);
+                last = top;
+                break;
+            }
+            last = y;
+        }
+        if last >= top {
+            self.beam_active.store(
+                self.checking_beam.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            last = world.dimension.min_y - 1;
+        }
+        self.last_check_y.store(last, Ordering::Relaxed);
+    }
+
     #[must_use]
     pub const fn new(position: BlockPos) -> Self {
         Self {
@@ -51,6 +90,8 @@ impl BeaconBlockEntity {
             levels: AtomicI32::new(0),
             dirty: AtomicBool::new(false),
             effects_lock: pumpkin_util::sync::Mutex::new(()),
+            beam_active: AtomicBool::new(false),
+            checking_beam: AtomicBool::new(false),
             custom_name: Mutex::new(None),
             lock_key: Mutex::new(None),
             last_check_y: AtomicI32::new(position.0.y - 1),
@@ -356,6 +397,8 @@ impl BlockEntity for BeaconBlockEntity {
             levels: AtomicI32::new(levels),
             dirty: AtomicBool::new(false),
             effects_lock: pumpkin_util::sync::Mutex::new(()),
+            beam_active: AtomicBool::new(false),
+            checking_beam: AtomicBool::new(false),
             custom_name: Mutex::new(custom_name),
             lock_key: Mutex::new(lock_key),
             last_check_y: AtomicI32::new(position.0.y - 1),
@@ -397,6 +440,7 @@ impl BlockEntity for BeaconBlockEntity {
     }
 
     fn tick(&self, world: &Arc<World>) {
+        self.update_beam(world);
         // Check properties every 80 ticks matching Java
         if world.get_time_of_day() % 80 == 0 {
             let levels = self.update_base(world);

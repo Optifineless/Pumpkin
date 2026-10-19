@@ -34,10 +34,14 @@ pub(super) type PublicationHook = Arc<dyn Fn() + Send + Sync>;
 #[cfg(test)]
 #[derive(Default)]
 pub struct PersistenceTestHooks {
+    pub(crate) entity_recapture:
+        std::sync::Mutex<Option<Arc<super::entity_unload::RecaptureTestHook>>>,
     pub(crate) lazy: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) activation: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) registration: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) publication: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) update_capture: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) update_packet_capture: std::sync::Mutex<Option<PublicationHook>>,
 }
 
 struct BlockEntityUnload {

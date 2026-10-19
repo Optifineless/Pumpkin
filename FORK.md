@@ -2,6 +2,48 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Owner review follow-ups, PRs #191 and #213 (#172, #63)
+
+Deferred lectern page and book-removal effects reserve mutation admission before
+touching the retained entity and terrain, then release it before notifications.
+Rejected block-entity registration images no longer broadcast stale client tags.
+Entity unloads keep one asynchronous storage recapture per chunk until completion,
+including across watcher generations, and recheck whether completion already supplied
+storage before claiming again; failures return to the ordinary tick retry.
+Paid beacon selections play the power-selection sound when the completed beam
+scan is active, including reselecting the same power. Beam obstruction checks
+scan ten blocks per tick, retaining bedrock and colored-glass behavior. Mirrors
+vanilla 26.3 `LecternBlockEntity.setPage`, `LecternBlock.signalPageChange/resetBookState`,
+`LevelChunk.getBlockEntityNbtForSaving`, `PersistentEntitySectionManager.processUnloads`
+and `BeaconBlockEntity.tick/dataAccess.set`.
+
+The two reported beacon persistence races are already prevented by full persistent
+captures and publication stamps on this base. New real-handler regressions cover
+overlapping paid selections and contended custom-name/lock captures through disk
+save/reload. Saved NBT meaning and Wasm WIT are unchanged. API 8 (same version):
+`EntityUnloads` adds recapture ownership, `Level` adds begin/finish recapture methods,
+and `BeaconBlockEntity` adds runtime beam-scan state; rebuild native plugins.
+Implemented by Codex (GPT-6.1 Sol). In-game verification: **Not yet**.
+
+Reviewed broader upstream [PR #3860](https://github.com/Pumpkin-MC/Pumpkin/pull/3860).
+Its full beacon port changes loaded `Levels` behavior; this scoped follow-up keeps
+the existing saved meaning and adds only the beam activity needed by selection sound.
+
+Lifecycle manifest refresh retains existing statuses and notes, updates three
+family hashes and moves twenty existing boundary keys. The only new row is
+`boundary:crates/pumpkin-core/src/world/lectern_update.rs:20::World::prepare_lectern_state_update`,
+marked `BoundaryCheckedLegacy`; it does not certify snapshot writer exclusion.
+The sync guardrail adds one test-only recapture callback slot, whose mutex guard
+drops before the callback runs or storage is awaited.
+
+Play test: turn pages and take a lectern book near simulation distance, return and
+restart; expect the final page/book state to remain and page turns to pulse redstone.
+Have two players pay for different beacon powers, save and restart; expect the final
+selection to remain. Pay on a beacon with a visible beam, then cover it with stone
+and wait for the beam to stop; expect the selection sound only with the beam.
+Record the page pulse, both beacon menus and the audible selection before/after
+covering the beacon. No deployment or real-client verification is claimed here.
+
 ## Held-item drop equipment publication (#163)
 
 Accepted Java and Bedrock held drops queue the current main hand for the normal

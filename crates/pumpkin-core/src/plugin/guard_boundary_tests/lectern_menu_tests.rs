@@ -246,3 +246,5 @@ async fn guard_boundary_lectern_queued_take_button_drops_once_after_lectern_vani
     assert_eq!(book_counts(&fixture, &original), (0, 1));
     close(fixture).await;
 }
+
+mod capture_tests;

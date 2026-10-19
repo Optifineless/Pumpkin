@@ -23,6 +23,14 @@ pub(super) struct EntityActivation {
     player: Option<Weak<Player>>,
 }
 
+#[cfg(test)]
+pub struct RecaptureTestHook {
+    pub(crate) scheduled: std::sync::atomic::AtomicUsize,
+    pub(crate) resume: tokio::sync::Semaphore,
+    pub(crate) before_claim: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    pub(crate) completed: std::sync::mpsc::Sender<()>,
+}
+
 impl World {
     pub(super) fn queue_entity_activation(
         &self,
@@ -94,11 +102,52 @@ impl World {
         if request.storage.is_none() && !members.is_empty() {
             // Reopened terrain can spawn roots after its previous entity storage was cleaned.
             // Request FRESH storage through the existing async unload path, then retry next tick.
-            let world = self.clone();
-            let pos = request.position;
-            self.level.spawn_task(async move {
-                world.remove_entities_in_chunks([pos]).await;
-            });
+            #[cfg(test)]
+            let hook = self
+                .persistence_test_hooks
+                .entity_recapture
+                .lock()
+                .unwrap()
+                .clone();
+            #[cfg(test)]
+            if let Some(hook) = &hook {
+                let before_claim = hook.before_claim.lock().unwrap().take();
+                if let Some(before_claim) = before_claim {
+                    before_claim();
+                }
+            }
+            if self.level.begin_entity_storage_recapture(request) {
+                let world = self.clone();
+                let request = request.clone();
+                #[cfg(test)]
+                if let Some(hook) = &hook {
+                    hook.scheduled.fetch_add(1, Ordering::SeqCst);
+                }
+                self.level.spawn_task(async move {
+                    #[cfg(test)]
+                    if let Some(hook) = &hook {
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(10),
+                            hook.resume.acquire(),
+                        )
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .forget();
+                    }
+                    if let Err(error) = world.level.get_entity_chunk(request.position).await {
+                        tracing::error!(
+                            "Entity unload cannot load chunk {:?}: {error}",
+                            request.position
+                        );
+                    }
+                    world.level.finish_entity_storage_recapture(&request);
+                    #[cfg(test)]
+                    if let Some(hook) = hook {
+                        let _ = hook.completed.send(());
+                    }
+                });
+            }
             return;
         }
         let ids: FxHashSet<_> = members

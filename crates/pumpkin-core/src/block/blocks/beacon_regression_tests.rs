@@ -561,3 +561,6 @@ async fn beacon_broken_while_open_keeps_payment_and_invalidates_menu() {
 
 #[path = "beacon_persistence_tests.rs"]
 mod persistence;
+
+#[path = "beacon_followup_tests.rs"]
+mod followups;

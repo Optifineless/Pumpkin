@@ -17,6 +17,7 @@ pub struct EntityUnloads {
     next_generation: u64,
     generations: FxHashMap<Vector2<i32>, u64>,
     pending: FxHashMap<Vector2<i32>, EntityUnload>,
+    storage_recaptures: FxHashMap<Vector2<i32>, u64>,
     retained_terrain: FxHashSet<Vector2<i32>>,
 }
 
@@ -60,6 +61,47 @@ pub struct EntityUnload {
 }
 
 impl Level {
+    /// Claims one storage recapture until it finishes, including across watcher changes.
+    pub fn begin_entity_storage_recapture(&self, request: &EntityUnload) -> bool {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // A copied storage=None request may outlive the completion that supplied its storage.
+        if unloads.generations.get(&request.position) != Some(&request.generation)
+            || !unloads
+                .pending
+                .get(&request.position)
+                .is_some_and(|pending| {
+                    pending.generation == request.generation && pending.storage.is_none()
+                })
+            || unloads.storage_recaptures.contains_key(&request.position)
+        {
+            return false;
+        }
+        unloads
+            .storage_recaptures
+            .insert(request.position, request.generation);
+        true
+    }
+
+    /// Completes only the claimed generation; a later unload retries on its own tick.
+    pub fn finish_entity_storage_recapture(&self, request: &EntityUnload) {
+        let mut unloads = self
+            .entity_unloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if unloads.storage_recaptures.get(&request.position) != Some(&request.generation) {
+            return;
+        }
+        unloads.storage_recaptures.remove(&request.position);
+        if let Some(pending) = unloads.pending.get_mut(&request.position)
+            && pending.generation == request.generation
+        {
+            pending.storage = self.get_entity_chunk_sync(&request.position);
+        }
+    }
+
     /// Retains this terrain incarnation until a reopened block-entity image is captured.
     /// Call outside block-entity admission and without a loaded-chunk entry guard.
     pub fn request_block_entity_recapture(&self, pos: Vector2<i32>, expected: &SyncChunk) -> bool {

@@ -44,6 +44,7 @@ pub mod explosion;
 pub(crate) mod fluid_lookup;
 mod forced_chunks;
 pub mod generation_cache;
+mod lectern_update;
 pub mod loot;
 pub mod map;
 pub(crate) mod neighbor_updater;
@@ -5942,7 +5943,9 @@ impl World {
                 hook();
             }
         }
-        if !self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(&registered)) {
+        let published =
+            self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(&registered));
+        if !published {
             tracing::warn!("Block entity persistence image rejected for {block_pos:?}");
         }
         self.level.read_chunk_sync(&chunk_pos, |chunk| {
@@ -5950,7 +5953,7 @@ impl World {
         });
         drop(mutation);
 
-        if let Some(nbt) = &block_entity_nbt {
+        if published && let Some(nbt) = &block_entity_nbt {
             let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
             self.broadcast_to_chunk(
                 chunk_pos,
@@ -6022,7 +6025,32 @@ impl World {
         // LevelChunk.getBlockEntityNbtForSaving persists complete state; chunk_data_nbt is packet-only.
         let stamp = self.next_block_entity_capture_stamp();
         let block_entity_nbt = block_entity.chunk_data_nbt();
+        #[cfg(test)]
+        {
+            let hook = self
+                .persistence_test_hooks
+                .update_packet_capture
+                .lock()
+                .unwrap()
+                .take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
         let persistent_nbt = self.capture_block_entity_snapshot(block_pos, block_entity);
+
+        #[cfg(test)]
+        {
+            let hook = self
+                .persistence_test_hooks
+                .update_capture
+                .lock()
+                .unwrap()
+                .take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
 
         let published =
             self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(block_entity));

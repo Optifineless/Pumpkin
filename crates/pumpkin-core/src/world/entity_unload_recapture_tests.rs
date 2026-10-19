@@ -20,6 +20,80 @@ use std::time::Duration;
 const CHEST: BlockPos = BlockPos::new(8, 64, 8);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn entity_unload_coalesces_storage_recapture_across_ticks_and_generations() {
+    for rewatch in [false, true] {
+        let fixture = Fixture::new();
+        let world = &fixture.world;
+        publish(world, proto(&Biome::PLAINS, &Block::STONE));
+        let pos = CHEST.chunk_position();
+        let cow = from_type(
+            &EntityType::COW,
+            Vector3::new(9.5, 64.0, 8.5),
+            world,
+            uuid::Uuid::new_v4(),
+        );
+        assert!(world.spawn_entity(cow.clone()));
+        assert!(world.level.get_entity_chunk_sync(&pos).is_none());
+        let (completed, wait_for_completed) = std::sync::mpsc::channel();
+        let hook = Arc::new(RecaptureTestHook {
+            scheduled: std::sync::atomic::AtomicUsize::new(0),
+            resume: tokio::sync::Semaphore::new(0),
+            before_claim: std::sync::Mutex::new(None),
+            completed,
+        });
+        *world
+            .persistence_test_hooks
+            .entity_recapture
+            .lock()
+            .unwrap() = Some(hook.clone());
+        world.level.request_entity_unloads([pos]);
+        for _ in 0..16 {
+            world.process_entity_chunk_lifecycle();
+        }
+        if rewatch {
+            world.level.watch_entity_chunks(&[pos]);
+            world.level.unwatch_entity_chunks(&[pos]);
+            for _ in 0..16 {
+                world.process_entity_chunk_lifecycle();
+            }
+        }
+        let scheduled = hook.scheduled.load(Ordering::SeqCst);
+        // Release every waiter even in the negative control before checking its count.
+        if scheduled != 1 {
+            hook.resume.add_permits(64);
+        }
+        assert_eq!(
+            scheduled, 1,
+            "one blocked recapture spawned duplicate tasks"
+        );
+        assert!(!cow.get_entity().is_removed());
+        let completing = hook.clone();
+        *hook.before_claim.lock().unwrap() = Some(Box::new(move || {
+            // Complete after this tick cloned storage=None, before it tries another claim.
+            completing.resume.add_permits(64);
+            wait_for_completed
+                .recv_timeout(Duration::from_secs(10))
+                .expect("first storage recapture did not complete");
+        }));
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !cow.get_entity().is_removed() {
+                world.process_entity_chunk_lifecycle();
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("storage recapture did not resume normal tick retirement");
+        assert!(world.level.pending_entity_unloads().is_empty());
+        assert_eq!(
+            hook.scheduled.load(Ordering::SeqCst),
+            if rewatch { 2 } else { 1 },
+            "a stale completion must leave the newer generation to retry once"
+        );
+        fixture.finish().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn entity_unload_recaptures_reopened_chest_before_terrain_save_without_save_all() {
     let fixture = Fixture::new();
     let world = &fixture.world;
