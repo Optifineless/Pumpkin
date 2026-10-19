@@ -24,6 +24,9 @@ mod equipment_packets;
 #[cfg(test)]
 mod ext_review_tests;
 mod fall_damage;
+mod fall_flying;
+#[cfg(test)]
+mod fall_flying_tests;
 #[cfg(test)]
 mod hand_use_tests;
 mod heal_or_harm;
@@ -1997,6 +2000,7 @@ impl LivingEntity {
         self.entity
             .fall_flying
             .store(nbt.get_bool("FallFlying").unwrap_or(false), Relaxed);
+        self.entity.fall_fly_ticks.store(0, Relaxed);
         {
             let nbt_effects = nbt.get_list("active_effects");
             if let Some(nbt_effects) = nbt_effects {
@@ -2079,6 +2083,7 @@ impl EntityBase for LivingEntity {
         self.combat_ticks.fetch_add(1, Relaxed);
         self.entity.tick(caller, server);
         self.tick_combat_memory();
+        self.tick_fall_flying(caller);
         if let Some(mob) = caller.get_mob() {
             mob.after_base_tick();
         }

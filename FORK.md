@@ -2,6 +2,32 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Elytra durability and flight validity (#72)
+
+Admitted gliding now checks usable equipped gliders on normal living ticks,
+emits `elytra_glide` every 10 flight ticks and applies one durability wear every
+20 through the existing equipment damage event and slot transaction. Landing,
+removing or invalidating the glider ends flight through the cancellable glide
+toggle event and synchronizes the owner and observers. Callback replacements
+and life/session changes reject stale wear. Flight transitions reset the runtime
+cadence; existing `FallFlying` saves and client-authoritative motion are unchanged.
+Mirrors vanilla 26.3 `LivingEntity.updateFallFlying/canGlide/canGlideUsing`.
+The recurring update retains `Entity.checkFallDistanceAccumulation`, using
+accepted client movement for players and existing velocity for other entities.
+The reported horizontal freeze remains unverified. Written by Codex.
+In-game verification: Not yet.
+
+API 8 (same version): `Entity` gains private runtime flight cadence state, changing
+its layout and containing entity layouts. Rebuild native plugins against this
+checkout; existing public signatures remain source compatible, and WIT is unchanged.
+
+Play test: glide in Survival with an unenchanted elytra; expect one durability
+lost per second of continuous flight. Land and restart; expect a fresh second
+before the next wear. Pick up or shift-click the chest elytra while airborne;
+expect both your view and a second player's view to leave the glide pose. Record
+the durability display and both views around removal; report horizontal motion
+separately. Creative flight and standing with an elytra should cost no durability.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
