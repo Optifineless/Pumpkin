@@ -33,6 +33,7 @@ pub struct JukeboxBlockEntity {
 
 const RECORD_ITEM_NBT_KEY: &str = "RecordItem";
 const TICKS_SINCE_SONG_STARTED_NBT_KEY: &str = "ticks_since_song_started";
+const JUKEBOX_SONG_FINISH_PADDING_TICKS: u64 = 20;
 
 impl BlockEntity for JukeboxBlockEntity {
     fn resource_location(&self) -> &'static str {
@@ -59,7 +60,7 @@ impl BlockEntity for JukeboxBlockEntity {
         let song_length_ticks = ticks_since_song_started
             .and_then(|ticks| {
                 Self::song_length(&record_stack)
-                    .filter(|length| ticks < *length)
+                    .filter(|length| !Self::song_has_finished(ticks, *length))
                     .map(|length| (ticks, length))
             })
             .unwrap_or((0, 0));
@@ -99,13 +100,13 @@ impl BlockEntity for JukeboxBlockEntity {
         // Increment ticks if we're playing
         let song_length = self.song_length_ticks.load(Ordering::Relaxed);
         if song_length > 0 {
-            let ticks = self
-                .ticks_since_song_started
-                .fetch_add(1, Ordering::Relaxed);
-            // Check if song has finished
-            if ticks >= song_length {
+            let ticks = self.ticks_since_song_started.load(Ordering::Relaxed);
+            if Self::song_has_finished(ticks, song_length) {
                 self.stop_playing();
                 // JukeboxSongPlayer.tick leaves the record when playback ends.
+            } else {
+                self.ticks_since_song_started
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -160,6 +161,12 @@ impl JukeboxBlockEntity {
         let playable = record.get_data_component::<JukeboxPlayableImpl>()?;
         let song_name = playable.song.rsplit(':').next()?;
         JukeboxSong::from_name(song_name).map(|song| song.length_in_ticks())
+    }
+
+    // JukeboxSong.hasFinished includes a 20-tick finish padding.
+    const fn song_has_finished(ticks_since_song_started: u64, song_length_ticks: u64) -> bool {
+        ticks_since_song_started
+            >= song_length_ticks.saturating_add(JUKEBOX_SONG_FINISH_PADDING_TICKS)
     }
 
     // JukeboxBlockEntity.setTheItem / notifyItemChangedInJukebox.
@@ -291,12 +298,7 @@ impl JukeboxBlockEntity {
 
     /// Check if a song is currently playing
     pub fn is_playing(&self) -> bool {
-        let song_length = self.song_length_ticks.load(Ordering::Relaxed);
-        if song_length == 0 {
-            return false;
-        }
-        let ticks = self.ticks_since_song_started.load(Ordering::Relaxed);
-        ticks < song_length
+        self.song_length_ticks.load(Ordering::Relaxed) > 0
     }
 
     fn mark_dirty(&self) {
@@ -447,7 +449,7 @@ mod playback_restore_tests {
     fn does_not_restore_finished_song() {
         let length = JukeboxSong::Pigstep.length_in_ticks();
         let entity = JukeboxBlockEntity::from_nbt(
-            &jukebox_nbt(Some(length as i64)),
+            &jukebox_nbt(Some((length + JUKEBOX_SONG_FINISH_PADDING_TICKS) as i64)),
             BlockPos::new(0, 64, 0),
         );
 

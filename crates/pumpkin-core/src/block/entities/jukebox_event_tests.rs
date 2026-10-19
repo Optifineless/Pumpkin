@@ -87,8 +87,9 @@ async fn jukebox_record_mutations_emit_one_block_change() {
     jukebox.set_record(disc.clone());
     assert_record(&world, &position, &changes, true, 1);
     jukebox.start_playing(1);
-    jukebox.tick(&world);
-    jukebox.tick(&world);
+    for _ in 0..22 {
+        jukebox.tick(&world);
+    }
     assert!(!jukebox.is_playing());
     assert!(!jukebox.get_record().is_empty());
     assert_record(&world, &position, &changes, true, 1);
@@ -180,6 +181,19 @@ fn add_test_jukebox(world: &Arc<World>, position: BlockPos) -> Arc<JukeboxBlockE
 fn save_block_entity(block_entity: &dyn BlockEntity) -> NbtCompound {
     let mut nbt = NbtCompound::new();
     block_entity.write_internal(&mut nbt);
+    nbt
+}
+
+fn jukebox_nbt_at_elapsed_ticks(
+    world: &Arc<World>,
+    position: BlockPos,
+    elapsed_ticks: u64,
+) -> NbtCompound {
+    let jukebox = add_test_jukebox(world, position);
+    jukebox.set_record(ItemStack::new(1, &Item::MUSIC_DISC_CAT));
+    jukebox.start_playing(JukeboxSong::Cat.length_in_ticks());
+    let mut nbt = save_block_entity(jukebox.as_ref());
+    nbt.put_long(TICKS_SINCE_SONG_STARTED_NBT_KEY, elapsed_ticks as i64);
     nbt
 }
 
@@ -287,7 +301,7 @@ async fn b1019_g20_active_playback_survives_factory_reload() {
         "reload must preserve elapsed ticks instead of restarting at zero"
     );
 
-    let finish_ticks = JukeboxSong::Cat.length_in_ticks() - 20;
+    let finish_ticks = JukeboxSong::Cat.length_in_ticks() + 1;
     for _ in 0..finish_ticks {
         installed.tick(&world);
     }
@@ -308,13 +322,14 @@ async fn b1019_g20_stopped_finished_missing_and_invalid_song_controls() {
     let ended = add_test_jukebox(&world, ended_position);
     ended.set_record(ItemStack::new(1, &Item::MUSIC_DISC_CAT));
     ended.start_playing(JukeboxSong::Cat.length_in_ticks());
-    for _ in 0..JukeboxSong::Cat.length_in_ticks() {
+    for _ in 0..=(JukeboxSong::Cat.length_in_ticks() + JUKEBOX_SONG_FINISH_PADDING_TICKS) {
         ended.tick(&world);
     }
     let ended_nbt = save_block_entity(ended.as_ref());
     assert_eq!(
         ended_nbt.get_long("ticks_since_song_started"),
-        Some(JukeboxSong::Cat.length_in_ticks() as i64)
+        None,
+        "completed playback does not retain an elapsed playback tag"
     );
     let ended_loaded = factory_reload_in_world(&world, &ended_nbt);
     let ended_loaded = ended_loaded
@@ -393,6 +408,87 @@ async fn b1019_g20_stopped_finished_missing_and_invalid_song_controls() {
         jukebox_comparator_output(&world, &invalid_position),
         Some(0)
     );
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g20_finish_padding_survives_factory_round_trip() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+
+    for (index, elapsed_ticks, expected_playing) in
+        [(0, 3700, true), (1, 3719, true), (2, 3720, false)]
+    {
+        let position = BlockPos::new(12 + index, 64, 8);
+        let nbt = jukebox_nbt_at_elapsed_ticks(&world, position, elapsed_ticks);
+        let loaded = factory_reload_in_world(&world, &nbt);
+        let loaded = loaded
+            .as_any()
+            .downcast_ref::<JukeboxBlockEntity>()
+            .expect("factory returns a jukebox block entity");
+
+        assert_eq!(
+            loaded.is_playing(),
+            expected_playing,
+            "elapsed={elapsed_ticks}"
+        );
+        assert!(!loaded.get_record().is_empty());
+        assert_eq!(
+            save_block_entity(loaded).get_long(TICKS_SINCE_SONG_STARTED_NBT_KEY),
+            expected_playing.then_some(elapsed_ticks as i64),
+            "the first save must preserve unfinished elapsed ticks and omit finished playback"
+        );
+
+        let saved = save_block_entity(loaded);
+        let reloaded = factory_reload_in_world(&world, &saved);
+        let reloaded = reloaded
+            .as_any()
+            .downcast_ref::<JukeboxBlockEntity>()
+            .expect("factory returns a jukebox block entity");
+        assert_eq!(
+            reloaded.is_playing(),
+            expected_playing,
+            "elapsed={elapsed_ticks}"
+        );
+        assert!(!reloaded.get_record().is_empty());
+        assert_eq!(
+            jukebox_weak_power(&world, &position),
+            if expected_playing { 15 } else { 0 }
+        );
+        assert_eq!(jukebox_comparator_output(&world, &position), Some(2));
+
+        if elapsed_ticks == 3700 {
+            for _ in 0..19 {
+                reloaded.tick(&world);
+            }
+            assert!(reloaded.is_playing());
+            assert_eq!(
+                save_block_entity(reloaded).get_long(TICKS_SINCE_SONG_STARTED_NBT_KEY),
+                Some(3719)
+            );
+
+            reloaded.tick(&world);
+            assert!(reloaded.is_playing());
+            assert_eq!(
+                save_block_entity(reloaded).get_long(TICKS_SINCE_SONG_STARTED_NBT_KEY),
+                Some(3720),
+                "vanilla checks completion before incrementing elapsed ticks"
+            );
+
+            reloaded.tick(&world);
+            assert!(!reloaded.is_playing());
+            assert!(
+                save_block_entity(reloaded)
+                    .get_long(TICKS_SINCE_SONG_STARTED_NBT_KEY)
+                    .is_none()
+            );
+            assert!(!reloaded.get_record().is_empty());
+            assert_eq!(jukebox_weak_power(&world, &position), 0);
+            assert_eq!(jukebox_comparator_output(&world, &position), Some(2));
+        }
+    }
 
     fixture.server.shutdown().await;
 }
