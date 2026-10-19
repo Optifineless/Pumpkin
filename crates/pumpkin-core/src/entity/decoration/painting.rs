@@ -12,9 +12,13 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::Metadata;
+use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::version::JavaMinecraftVersion;
+
+use super::hanging;
+use crate::server::Server;
 
 /// The world stores a painting facing as a horizontal value: 0 south, 1 west,
 /// 2 north, 3 east (`Direction.get2DDataValue`). The entity data, and the spawn
@@ -48,6 +52,7 @@ const fn facing_to_horizontal(direction: BlockDirection) -> u8 {
 pub struct PaintingEntity {
     pub entity: Entity,
     variant_id: AtomicU32,
+    survival_check_ticks: AtomicU32,
 }
 
 impl PaintingEntity {
@@ -61,6 +66,7 @@ impl PaintingEntity {
         Self {
             entity,
             variant_id: AtomicU32::new(variant.id()),
+            survival_check_ticks: AtomicU32::new(0),
         }
     }
 
@@ -74,8 +80,62 @@ impl PaintingEntity {
     }
 
     pub fn set_variant(&self, variant: PaintingVariant) {
+        if self.entity.is_removed() {
+            return;
+        }
+        let old = self.variant();
+        // Painting.calculateBoundingBox keeps the attachment cell when parity changes.
+        let offset = |size: u32| if size.is_multiple_of(2) { 0.5 } else { 0.0 };
+        let horizontal = self
+            .facing()
+            .rotate_counter_clockwise()
+            .to_offset()
+            .to_f64()
+            * (offset(variant.width()) - offset(old.width()));
+        self.entity.set_pos(
+            self.entity.pos.load()
+                + horizontal
+                + Vector3::new(0.0, offset(variant.height()) - offset(old.height()), 0.0),
+        );
         self.variant_id.store(variant.id(), Ordering::Relaxed);
+        self.entity.bounding_box.store(self.hanging_bounding_box());
         self.sync_variant();
+    }
+
+    pub(super) fn facing(&self) -> BlockDirection {
+        BlockDirection::from_index(self.entity.data.load(Ordering::Relaxed) as u8)
+            .filter(BlockDirection::is_horizontal)
+            .unwrap_or(BlockDirection::South)
+    }
+
+    // Painting.calculateBoundingBox, around Pumpkin's already wall-shifted saved center.
+    pub(super) fn hanging_bounding_box(&self) -> BoundingBox {
+        let facing = self.facing().to_offset();
+        let variant = self.variant();
+        let width = f64::from(variant.width());
+        hanging::box_of_size(
+            self.entity.pos.load(),
+            Vector3::new(
+                if facing.x == 0 { width } else { hanging::DEPTH },
+                f64::from(variant.height()),
+                if facing.z == 0 { width } else { hanging::DEPTH },
+            ),
+        )
+    }
+
+    pub fn survives(&self) -> bool {
+        let world = self.entity.world.load_full();
+        let facing = self.facing();
+        let bounds = self.hanging_bounding_box();
+        let support = hanging::support_box(bounds, facing);
+        if !hanging::terrain_available(&world, bounds.expand_all(1.0))
+            || !hanging::terrain_available(&world, support)
+        {
+            return true;
+        }
+        !hanging::has_level_collision(self, bounds)
+            && hanging::is_supported(&world, support)
+            && hanging::can_coexist(&self.entity, bounds, facing, false)
     }
 
     pub fn sync_variant(&self) {
@@ -188,9 +248,18 @@ impl PaintingEntity {
         fitting_variants.choose(&mut rng).copied()
     }
 
-    fn drop_and_remove(&self, caused_by: Option<&dyn EntityBase>) {
+    fn drop_and_remove(&self, caused_by: Option<&dyn EntityBase>, check_survival: bool) -> bool {
         let entity = &self.entity;
-        let world = entity.world.load();
+        if !hanging::break_allowed(entity, caused_by) || (check_survival && self.survives()) {
+            return false;
+        }
+        let world = entity.world.load_full();
+        if !world.try_remove_entity(self) {
+            return false;
+        }
+        if !world.level_info.load().game_rules.entity_drops {
+            return true;
+        }
         world.play_sound(
             Sound::EntityPaintingBreak,
             SoundCategory::Blocks,
@@ -204,14 +273,33 @@ impl PaintingEntity {
         });
 
         if !is_creative {
-            world.drop_stack(&entity.block_pos.load(), ItemStack::new(1, &Item::PAINTING));
+            let mut stack = ItemStack::new(1, &Item::PAINTING);
+            if let Some(name) = entity.custom_name.load().as_ref().clone() {
+                stack
+                    .set_data_component(pumpkin_data::data_component_impl::CustomNameImpl { name });
+            }
+            world.drop_stack(&entity.block_pos.load(), stack);
         }
 
-        entity.remove();
+        true
     }
 }
 
 impl EntityBase for PaintingEntity {
+    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
+        if self.entity.is_removed() {
+            return;
+        }
+        // BlockAttachedEntity.tick deliberately does not call Entity.tick.
+        self.entity.check_out_of_world(caller);
+        if hanging::at_check_interval(&self.survival_check_ticks)
+            && !self.entity.is_removed()
+            && !self.survives()
+        {
+            self.drop_and_remove(None, true);
+        }
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         let index = self.entity.data.load(Ordering::Relaxed) as u8;
         let direction = BlockDirection::from_index(index).unwrap_or(BlockDirection::South);
@@ -229,7 +317,10 @@ impl EntityBase for PaintingEntity {
             .or_else(|| nbt.get_string("Motive"))
             && let Some(variant) = PaintingVariant::from_name(variant_str)
         {
-            self.set_variant(variant);
+            // Saved Pos already includes the variant's parity offsets.
+            self.variant_id.store(variant.id(), Ordering::Relaxed);
+            self.entity.bounding_box.store(self.hanging_bounding_box());
+            self.sync_variant();
         }
     }
 
@@ -242,6 +333,7 @@ impl EntityBase for PaintingEntity {
     }
 
     fn init_data_tracker(&self) {
+        self.entity.bounding_box.store(self.hanging_bounding_box());
         self.sync_variant();
     }
 
@@ -266,15 +358,27 @@ impl EntityBase for PaintingEntity {
 
     fn damage_with_context(
         &self,
-        caller: &dyn EntityBase,
+        _caller: &dyn EntityBase,
         _amount: f32,
-        _damage_type: DamageType,
+        damage_type: DamageType,
         _position: Option<Vector3<f64>>,
         _source: Option<&dyn EntityBase>,
-        _cause: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
     ) -> bool {
-        self.drop_and_remove(Some(caller));
-        true
+        if self.entity.is_invulnerable_to(&damage_type, cause)
+            || (!self
+                .entity
+                .world
+                .load()
+                .level_info
+                .load()
+                .game_rules
+                .mob_griefing
+                && cause.is_some_and(|cause| cause.get_mob().is_some()))
+        {
+            return false;
+        }
+        self.drop_and_remove(cause, false)
     }
 
     fn can_hit(&self) -> bool {

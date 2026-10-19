@@ -887,3 +887,16 @@ crates/pumpkin-core/src/world/entity_unload_terrain_tests.rs::new::std::sync::Mu
 crates/pumpkin-wasm-host-common/src/block_entity_mutation_tests.rs::block_entity_host_mutations_reject_sealed_shutdown_before_final_capture::std::sync::Mutex::new#1
 # Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
 crates/pumpkin-wasm-host-common/src/block_entity_mutation_tests.rs::from_nbt::std::sync::Mutex::new#1
+
+# Test-only event recording and bounded channel gate; guards never enclose server callbacks.
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_java_attack_hanging_events_keep_payload_order_and_cancellation::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#2
+crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#3
+
+# PR #232 review: test-only event snapshots and 5-second channel gates; no production owner locks.
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_explosion_and_support_drop_filled_frame_once::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_explosion_and_support_drop_filled_frame_once::std::sync::Mutex::new#2
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_explosion_and_support_drop_filled_frame_once::std::sync::Mutex::new#3
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_filled_frame_hit_races_allowed_and_cancelled_support::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_filled_frame_hit_races_allowed_and_cancelled_support::std::sync::Mutex::new#2
