@@ -2310,6 +2310,7 @@ impl Player {
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
 
         self.living_entity.tick(self, server);
+        self.detect_equipment_updates();
 
         self.breath_manager.tick(self);
 

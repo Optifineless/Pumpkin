@@ -5,6 +5,8 @@
 crates/pumpkin-core/src/world/entity_unload_recapture_tests.rs::entity_unload_coalesces_storage_recapture_across_ticks_and_generations::std::sync::Mutex::new#1
 # Test-only event-order recorder; each guard is released before callbacks, packet sends or ticking.
 crates/pumpkin-core/src/net/java/play/consumable_use/tests.rs::register_consume_callback::std::sync::Mutex::new#1
+# Test-only glide event recorder; its snapshot guard ends before ticks and plugin callbacks.
+crates/pumpkin-core/src/entity/living/fall_flying_tests.rs::b1019_g15_real_ticks_wear_and_publish_equipped_glider_with_reset::std::sync::Mutex::default#1
 # Test-only hook pauses knot cleanup after its empty scan to make the attachment race deterministic.
 crates/pumpkin-core/src/entity/decoration/leash_knot.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::<module>::std::sync::Mutex::new#1
