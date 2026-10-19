@@ -27,7 +27,7 @@ use crate::entity::{
         species_avoidance::CatAvoidEntityGoal, swim::SwimGoal, tempt::TemptGoal,
         wander_around::WanderAroundGoal,
     },
-    mob::{Mob, MobEntity, interaction::MobInteraction},
+    mob::{Mob, MobEntity},
     passive::{
         animal::Animal,
         tamable::{TamableAnimal, TamableData},
@@ -261,6 +261,93 @@ impl CatEntity {
             .unwrap_or_default()
             .eat_sound(is_baby)
     }
+
+    fn interact_with_stack(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Option<Hand>,
+    ) -> bool {
+        let interaction =
+            super::animal_interaction::StackInteraction::new(player, hand, item_stack);
+        let item = item_stack.get_item();
+        let is_food = self.is_food(item_stack);
+
+        if self.is_tame() {
+            if self.get_owner_uuid() == Some(player.gameprofile.id) {
+                if item.has_tag(&tag::Item::MINECRAFT_CAT_COLLAR_DYES)
+                    || item.has_tag(&tag::Item::C_DYES)
+                {
+                    if let Some(color) = get_dye_color_from_item(item)
+                        && color != self.get_collar_color()
+                    {
+                        if !interaction.consume(player, item_stack) {
+                            return true;
+                        }
+                        self.set_collar_color(color);
+                        interaction.refresh(player, item_stack);
+                        return true;
+                    }
+                } else if is_food
+                    && self.mob_entity.living_entity.health.load()
+                        < self.mob_entity.living_entity.get_max_health()
+                {
+                    // TamableAnimal.feed captures effective nutrition before Mob.usePlayerItem.
+                    let healing = item_stack
+                        .get_data_component::<FoodImpl>()
+                        .map_or(1.0, |food| food.nutrition as f32);
+                    if !interaction.use_player_item(player, item_stack) {
+                        return true;
+                    }
+                    self.mob_entity.living_entity.heal(healing);
+                    self.play_eating_sound();
+                    interaction.refresh(player, item_stack);
+                    return true;
+                }
+
+                // Cat.mobInteract reaches Animal feeding before the owner's sitting fallback.
+                let parent_interaction = super::animal_interaction::interact(
+                    self,
+                    player,
+                    item_stack,
+                    self.eating_sound(),
+                    hand,
+                );
+                if !parent_interaction {
+                    self.set_sitting(!self.is_sitting());
+                    return true;
+                }
+                return parent_interaction;
+            }
+        } else if is_food {
+            if !interaction.use_player_item(player, item_stack) {
+                return true;
+            }
+            self.play_eating_sound();
+
+            let mut rng = rand::rng();
+            if rng.random_range(0..3) == 0 {
+                self.set_tame(true, Some(player.gameprofile.id));
+                self.set_sitting(true);
+                self.get_entity().world.load().send_entity_status(
+                    self.get_entity(),
+                    EntityStatus::TamingSucceeded,
+                    Some(ActorEventID::TamingSucceeded),
+                );
+            } else {
+                self.get_entity().world.load().send_entity_status(
+                    self.get_entity(),
+                    EntityStatus::TamingFailed,
+                    Some(ActorEventID::TamingFailed),
+                );
+            }
+
+            interaction.refresh(player, item_stack);
+            return true;
+        }
+
+        super::animal_interaction::interact(self, player, item_stack, self.eating_sound(), hand)
+    }
 }
 
 impl CustomSound for CatEntity {
@@ -402,7 +489,7 @@ impl Mob for CatEntity {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        self.mob_interact_with_hand(player, item_stack, Hand::Right)
+        self.interact_with_stack(player, item_stack, None)
     }
 
     fn mob_interact_with_hand(
@@ -411,79 +498,7 @@ impl Mob for CatEntity {
         item_stack: &mut ItemStack,
         hand: Hand,
     ) -> bool {
-        let interaction = MobInteraction::new(player, hand, item_stack);
-        let item = item_stack.get_item();
-        let is_food = self.is_food(item_stack);
-
-        if self.is_tame() {
-            if self.get_owner_uuid() == Some(player.gameprofile.id) {
-                if item.has_tag(&tag::Item::MINECRAFT_CAT_COLLAR_DYES)
-                    || item.has_tag(&tag::Item::C_DYES)
-                {
-                    if let Some(color) = get_dye_color_from_item(item)
-                        && color != self.get_collar_color()
-                    {
-                        if !interaction.consume(player, item_stack) {
-                            return true;
-                        }
-                        self.set_collar_color(color);
-                        interaction.refresh(player, item_stack);
-                        return true;
-                    }
-                } else if is_food
-                    && self.mob_entity.living_entity.health.load()
-                        < self.mob_entity.living_entity.get_max_health()
-                {
-                    // TamableAnimal.feed captures effective nutrition before Mob.usePlayerItem.
-                    let healing = item_stack
-                        .get_data_component::<FoodImpl>()
-                        .map_or(1.0, |food| food.nutrition as f32);
-                    if !interaction.use_player_item(player, item_stack) {
-                        return true;
-                    }
-                    self.mob_entity.living_entity.heal(healing);
-                    self.play_eating_sound();
-                    interaction.refresh(player, item_stack);
-                    return true;
-                }
-
-                // Cat.mobInteract reaches Animal feeding before the owner's sitting fallback.
-                let parent_interaction =
-                    self.animal_interact_with_hand(player, item_stack, self.eating_sound(), hand);
-                if !parent_interaction {
-                    self.set_sitting(!self.is_sitting());
-                    return true;
-                }
-                return parent_interaction;
-            }
-        } else if is_food {
-            if !interaction.use_player_item(player, item_stack) {
-                return true;
-            }
-            self.play_eating_sound();
-
-            let mut rng = rand::rng();
-            if rng.random_range(0..3) == 0 {
-                self.set_tame(true, Some(player.gameprofile.id));
-                self.set_sitting(true);
-                self.get_entity().world.load().send_entity_status(
-                    self.get_entity(),
-                    EntityStatus::TamingSucceeded,
-                    Some(ActorEventID::TamingSucceeded),
-                );
-            } else {
-                self.get_entity().world.load().send_entity_status(
-                    self.get_entity(),
-                    EntityStatus::TamingFailed,
-                    Some(ActorEventID::TamingFailed),
-                );
-            }
-
-            interaction.refresh(player, item_stack);
-            return true;
-        }
-
-        self.animal_interact_with_hand(player, item_stack, self.eating_sound(), hand)
+        self.interact_with_stack(player, item_stack, Some(hand))
     }
 }
 

@@ -14,7 +14,7 @@ use pumpkin_util::{GameMode, Hand, text::TextComponent};
 
 use super::{b1019_g08_test_support::Fixture, cow::CowEntity};
 use crate::{
-    entity::ageable::AgeableMob,
+    entity::{ageable::AgeableMob, mob::Mob},
     plugin::{
         BoxFuture, EventHandler, EventPriority,
         api::events::{
@@ -39,6 +39,28 @@ fn other_hand(hand: Hand) -> Hand {
     } else {
         Hand::Left
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g08_cow_handless_milking_uses_the_supplied_stack() {
+    let fixture = Fixture::new();
+    let target = fixture.mob(&EntityType::COW);
+    let cow = target.cast_any().downcast_ref::<CowEntity>().unwrap();
+    let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+    let offhand = ItemStack::new(1, &Item::STONE);
+    fixture.set_hand(Hand::Right, sword.clone());
+    fixture.set_hand(Hand::Left, offhand.clone());
+    let mut buckets = ItemStack::new(2, &Item::BUCKET);
+
+    assert!(Mob::mob_interact(cow, &fixture.player, &mut buckets));
+
+    assert_eq!(buckets.get_item(), &Item::BUCKET);
+    assert_eq!(buckets.item_count, 1);
+    assert_eq!(fixture.inventory_count(&Item::MILK_BUCKET), 1);
+    assert_eq!(fixture.dropped_count(&Item::MILK_BUCKET), 0);
+    assert!(fixture.hand(Hand::Right).are_equal(&sword));
+    assert!(fixture.hand(Hand::Left).are_equal(&offhand));
+    fixture.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

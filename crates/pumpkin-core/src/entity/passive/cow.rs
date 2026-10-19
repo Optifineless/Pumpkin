@@ -95,6 +95,45 @@ impl CowEntity {
             VarInt(sound_variant as u8 as i32),
         );
     }
+
+    fn interact_with_stack(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Option<pumpkin_util::Hand>,
+    ) -> bool {
+        if item_stack.get_item() == &Item::BUCKET && !self.is_baby() {
+            // AbstractCow.mobInteract uses ItemUtils.createFilledResult for the used hand.
+            let interaction =
+                super::animal_interaction::StackInteraction::new(player, hand, item_stack);
+            if !interaction.create_filled_result(
+                player,
+                item_stack,
+                ItemStack::new(1, &Item::MILK_BUCKET),
+                true,
+            ) {
+                return true;
+            }
+            let entity = &self.mob_entity.living_entity.entity;
+            let world = entity.world.load_full();
+            world.play_sound(
+                Sound::EntityCowMilk,
+                pumpkin_data::sound::SoundCategory::Neutral,
+                &entity.pos.load(),
+            );
+            interaction.refresh(player, item_stack);
+            return true;
+        }
+        let sound_variant = CowSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
+            .unwrap_or_default();
+        super::animal_interaction::interact(
+            self,
+            player,
+            item_stack,
+            sound_variant.ambient_sound(self.is_baby()),
+            hand,
+        )
+    }
 }
 
 impl CustomSound for CowEntity {
@@ -200,7 +239,7 @@ impl Mob for CowEntity {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        self.mob_interact_with_hand(player, item_stack, pumpkin_util::Hand::Right)
+        self.interact_with_stack(player, item_stack, None)
     }
 
     fn mob_interact_with_hand(
@@ -209,35 +248,6 @@ impl Mob for CowEntity {
         item_stack: &mut ItemStack,
         hand: pumpkin_util::Hand,
     ) -> bool {
-        if item_stack.get_item() == &Item::BUCKET && !self.is_baby() {
-            // AbstractCow.mobInteract uses ItemUtils.createFilledResult for the used hand.
-            let interaction =
-                crate::entity::mob::interaction::MobInteraction::new(player, hand, item_stack);
-            if !interaction.create_filled_result(
-                player,
-                item_stack,
-                ItemStack::new(1, &Item::MILK_BUCKET),
-                true,
-            ) {
-                return true;
-            }
-            let entity = &self.mob_entity.living_entity.entity;
-            let world = entity.world.load_full();
-            world.play_sound(
-                Sound::EntityCowMilk,
-                pumpkin_data::sound::SoundCategory::Neutral,
-                &entity.pos.load(),
-            );
-            interaction.refresh(player, item_stack);
-            return true;
-        }
-        let sound_variant = CowSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
-            .unwrap_or_default();
-        self.animal_interact_with_hand(
-            player,
-            item_stack,
-            sound_variant.ambient_sound(self.is_baby()),
-            hand,
-        )
+        self.interact_with_stack(player, item_stack, Some(hand))
     }
 }

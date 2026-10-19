@@ -18,6 +18,7 @@ use pumpkin_util::{GameMode, Hand};
 use crate::{
     entity::{
         EntityBase,
+        mob::Mob,
         passive::{b1019_g08_test_support::Fixture, cat::CatEntity},
         player::Player,
     },
@@ -43,6 +44,27 @@ fn owned_cat(fixture: &Fixture) -> Arc<dyn EntityBase> {
 
 fn as_cat(entity: &dyn EntityBase) -> &CatEntity {
     entity.cast_any().downcast_ref::<CatEntity>().unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g08_cat_handless_dyeing_uses_the_supplied_stack() {
+    let fixture = Fixture::new();
+    let entity = owned_cat(&fixture);
+    let cat = as_cat(entity.as_ref());
+    cat.set_collar_color(14);
+    let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+    let offhand = ItemStack::new(1, &Item::STONE);
+    fixture.set_hand(Hand::Right, sword.clone());
+    fixture.set_hand(Hand::Left, offhand.clone());
+    let mut dye = ItemStack::new(2, &Item::BLUE_DYE);
+
+    assert!(Mob::mob_interact(cat, &fixture.player, &mut dye));
+
+    assert_eq!(cat.get_collar_color(), 11);
+    assert_eq!(dye.item_count, 1);
+    assert!(fixture.hand(Hand::Right).are_equal(&sword));
+    assert!(fixture.hand(Hand::Left).are_equal(&offhand));
+    fixture.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

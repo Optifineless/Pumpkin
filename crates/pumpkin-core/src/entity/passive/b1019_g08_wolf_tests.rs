@@ -5,7 +5,7 @@
 
 use super::{b1019_g08_test_support::Fixture, tamable::TamableAnimal, wolf::WolfEntity};
 use crate::{
-    entity::Entity,
+    entity::{Entity, mob::Mob},
     plugin::{
         BoxFuture, EventHandler, EventPriority,
         api::events::{
@@ -38,6 +38,26 @@ fn wolf(fixture: &Fixture) -> Arc<WolfEntity> {
     wolf.mob_entity.living_entity.set_health(10.0);
     fixture.world.add_entity_silent(wolf.clone());
     wolf
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g08_wolf_handless_dyeing_uses_the_supplied_stack() {
+    let fixture = Fixture::new();
+    let wolf = wolf(&fixture);
+    wolf.set_collar_color(14);
+    let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+    let offhand = ItemStack::new(1, &Item::STONE);
+    fixture.set_hand(Hand::Right, sword.clone());
+    fixture.set_hand(Hand::Left, offhand.clone());
+    let mut dye = ItemStack::new(2, &Item::BLUE_DYE);
+
+    assert!(Mob::mob_interact(wolf.as_ref(), &fixture.player, &mut dye));
+
+    assert_eq!(wolf.get_collar_color(), 11);
+    assert_eq!(dye.item_count, 1);
+    assert!(fixture.hand(Hand::Right).are_equal(&sword));
+    assert!(fixture.hand(Hand::Left).are_equal(&offhand));
+    fixture.finish().await;
 }
 
 fn source_slot(hand: Hand) -> usize {

@@ -31,7 +31,6 @@ use crate::entity::{
     },
     mob::{
         Mob, MobEntity,
-        interaction::MobInteraction,
         neutral::{NeutralData, NeutralMob},
     },
     passive::{
@@ -150,6 +149,75 @@ impl WolfEntity {
             flags |= 0x04;
         }
         flags
+    }
+
+    fn interact_with_stack(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Option<Hand>,
+    ) -> bool {
+        let interaction =
+            super::animal_interaction::StackInteraction::new(player, hand, item_stack);
+        let item = item_stack.get_item();
+        let sound_variant = WolfSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
+            .unwrap_or_default();
+        let ambient = sound_variant.ambient_sound(self.is_baby());
+        if self.is_tame() {
+            if self.is_food(item_stack)
+                && self.mob_entity.living_entity.health.load()
+                    < self.mob_entity.living_entity.get_max_health()
+            {
+                // Wolf.mobInteract / TamableAnimal.feed read FOOD before consuming the last item.
+                let healing = item_stack
+                    .get_data_component::<FoodImpl>()
+                    .map_or(2.0, |food| 2.0 * food.nutrition as f32);
+                if !interaction.use_player_item(player, item_stack) {
+                    return true;
+                }
+                self.mob_entity.living_entity.heal(healing);
+                self.play_eating_sound(ambient);
+                interaction.refresh(player, item_stack);
+                return true;
+            }
+
+            if self.is_owned_by(&player.gameprofile.id) {
+                if let Some(color) = super::animal::get_dye_color_from_item(item)
+                    && color != self.get_collar_color()
+                {
+                    if !interaction.consume(player, item_stack) {
+                        return true;
+                    }
+                    self.set_collar_color(color);
+                    interaction.refresh(player, item_stack);
+                    return true;
+                }
+
+                let parent_interaction =
+                    super::animal_interaction::interact(self, player, item_stack, ambient, hand);
+                if !parent_interaction {
+                    self.set_ordered_to_sit(!self.is_ordered_to_sit());
+                    return true;
+                }
+                return parent_interaction;
+            }
+        } else if item == &Item::BONE && !self.mob_entity.is_attacking() {
+            if !interaction.consume(player, item_stack) {
+                return true;
+            }
+            let mut rng = rand::rng();
+            if rng.random_range(0..3) == 0 {
+                TamableAnimal::tame(self, player.gameprofile.id);
+                self.set_ordered_to_sit(true);
+                self.spawn_taming_particles(true);
+            } else {
+                self.spawn_taming_particles(false);
+            }
+            interaction.refresh(player, item_stack);
+            return true;
+        }
+
+        super::animal_interaction::interact(self, player, item_stack, ambient, hand)
     }
 }
 
@@ -342,7 +410,7 @@ impl Mob for WolfEntity {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
-        self.mob_interact_with_hand(player, item_stack, Hand::Right)
+        self.interact_with_stack(player, item_stack, None)
     }
 
     fn mob_interact_with_hand(
@@ -351,66 +419,7 @@ impl Mob for WolfEntity {
         item_stack: &mut ItemStack,
         hand: Hand,
     ) -> bool {
-        let interaction = MobInteraction::new(player, hand, item_stack);
-        let item = item_stack.get_item();
-        let sound_variant = WolfSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
-            .unwrap_or_default();
-        let ambient = sound_variant.ambient_sound(self.is_baby());
-        if self.is_tame() {
-            if self.is_food(item_stack)
-                && self.mob_entity.living_entity.health.load()
-                    < self.mob_entity.living_entity.get_max_health()
-            {
-                // Wolf.mobInteract / TamableAnimal.feed read FOOD before consuming the last item.
-                let healing = item_stack
-                    .get_data_component::<FoodImpl>()
-                    .map_or(2.0, |food| 2.0 * food.nutrition as f32);
-                if !interaction.use_player_item(player, item_stack) {
-                    return true;
-                }
-                self.mob_entity.living_entity.heal(healing);
-                self.play_eating_sound(ambient);
-                interaction.refresh(player, item_stack);
-                return true;
-            }
-
-            if self.is_owned_by(&player.gameprofile.id) {
-                if let Some(color) = super::animal::get_dye_color_from_item(item)
-                    && color != self.get_collar_color()
-                {
-                    if !interaction.consume(player, item_stack) {
-                        return true;
-                    }
-                    self.set_collar_color(color);
-                    interaction.refresh(player, item_stack);
-                    return true;
-                }
-
-                let parent_interaction =
-                    self.animal_interact_with_hand(player, item_stack, ambient, hand);
-                if !parent_interaction {
-                    self.set_ordered_to_sit(!self.is_ordered_to_sit());
-                    return true;
-                }
-                return parent_interaction;
-            }
-        } else if item == &Item::BONE && !self.mob_entity.is_attacking() {
-            if !interaction.consume(player, item_stack) {
-                return true;
-            }
-            let mut rng = rand::rng();
-            if rng.random_range(0..3) == 0 {
-                TamableAnimal::tame(self, player.gameprofile.id);
-                self.set_ordered_to_sit(true);
-                self.spawn_taming_particles(true);
-            } else {
-                self.spawn_taming_particles(false);
-            }
-            interaction.refresh(player, item_stack);
-            return true;
-        }
-
-        self.animal_interact_with_hand(player, item_stack, ambient, hand)
+        self.interact_with_stack(player, item_stack, Some(hand))
     }
 }
 
