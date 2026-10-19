@@ -28,11 +28,23 @@ impl DeathTestWorld {
             .await
     }
 
+    pub(crate) async fn with_end() -> Self {
+        Self::configured(
+            pumpkin_config::world::default_max_chained_neighbor_updates(),
+            true,
+        )
+        .await
+    }
+
     pub(crate) async fn with_neighbor_limit(limit: i32) -> Self {
+        Self::configured(limit, false).await
+    }
+
+    async fn configured(limit: i32, allow_end: bool) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let basic = BasicConfiguration {
             default_level_name: directory.path().to_string_lossy().into_owned(),
-            allow_end: false,
+            allow_end,
             ..BasicConfiguration::default()
         };
         let mut advanced = AdvancedConfiguration::default();

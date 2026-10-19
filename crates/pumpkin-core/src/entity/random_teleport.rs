@@ -135,7 +135,7 @@ impl LivingEntity {
 
 // EntityGetter.getEntityCollisions(null): vanilla canBeCollidedWith(null) overrides.
 // Pumpkin's generic Mob.is_collidable currently includes ordinary mobs, so do not use it here.
-fn blocks_teleport(entity: &dyn EntityBase) -> bool {
+pub fn blocks_teleport(entity: &dyn EntityBase) -> bool {
     if entity.is_spectator() || !entity.get_entity().is_alive() {
         return false;
     }

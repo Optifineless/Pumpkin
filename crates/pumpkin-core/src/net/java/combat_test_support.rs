@@ -25,6 +25,11 @@ impl TestPlayer {
             properties: ArcSwap::from_pointee(Vec::new()),
             profile_actions: None,
         };
+        Self::with_profile(world, gameprofile)
+    }
+
+    #[must_use]
+    pub fn with_profile(world: &Arc<World>, gameprofile: GameProfile) -> Self {
         let profile = gameprofile.clone();
         let (client, recv) = captured_client(gameprofile);
         let player = Arc::new(Player::new(

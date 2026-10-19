@@ -11,6 +11,17 @@ use super::World;
 
 mod destination;
 pub mod end;
+mod end_return;
+#[cfg(test)]
+mod end_return_loading_tests;
+#[cfg(test)]
+mod end_return_safety_tests;
+#[cfg(test)]
+mod end_return_session_tests;
+#[cfg(test)]
+mod end_return_test_support;
+#[cfg(test)]
+mod end_return_tests;
 pub(in crate::world) mod frame_effects;
 pub(crate) mod residency;
 mod search;
@@ -18,6 +29,8 @@ mod search;
 #[cfg(test)]
 mod callback_tests;
 pub mod nether;
+#[cfg(test)]
+mod nether_axis_tests;
 #[cfg(test)]
 mod pair_cleanup_tests;
 pub mod poi;
@@ -143,32 +156,18 @@ impl PortalType {
                         })
                         .await
                     } else {
-                        // Leaving the End through the exit portal: return to overworld spawn
-                        if let Some(player) =
-                            current_level.get_player_by_id(caller.get_entity().entity_id)
-                        {
-                            match player.client.as_ref() {
-                                crate::net::ClientPlatform::Java(client) => {
-                                    if let Ok(data) = client.serialize_packet(&pumpkin_protocol::java::client::play::CGameEvent::new(
-                                        pumpkin_protocol::java::client::play::GameEvent::WinGame,
-                                        1.0,
-                                    )) {
-                                        client.try_enqueue_packet(data);
-                                    }
-                                }
-                                crate::net::ClientPlatform::Bedrock(client) => {
-                                    if let Ok(data) = client.serialize_packet(
-                                        &pumpkin_protocol::bedrock::client::CShowCredits {
-                                            player_runtime_id: (caller.get_entity().entity_id
-                                                as u64)
-                                                .into(),
-                                            credits_state: 0.into(),
-                                        },
-                                    ) {
-                                        client.try_enqueue_packet(data);
-                                    }
-                                }
-                            }
+                        // Returning players use their personal spawn; other entities use world spawn.
+                        end_return::send_credits(current_level, caller);
+
+                        if caller.get_player().is_some() {
+                            let player =
+                                current_level.get_player_by_id(caller.get_entity().entity_id)?;
+                            return end_return::player_destination(
+                                current_level,
+                                dest_world,
+                                &player,
+                            )
+                            .await;
                         }
 
                         let info = dest_world.level_info.load();

@@ -132,6 +132,57 @@ decorations staying gone. Change a painting between odd/even sizes; expect its
 attachment to stay aligned. Survival painting attacks drop one item; Creative
 attacks drop none. Capture item counts, reload results and alignment in a recording.
 
+## Portal return destination and axis rotation (#73, #76)
+
+Returning players resolve their saved bed or anchor in its own dimension without
+spending an anchor charge. Missing, obstructed and absent personal spawns use an
+adjusted shared spawn on loaded terrain, preserving saved spawn coordinates and
+supported administrator-selected heights. Invalid saved spawns send the existing
+missing-spawn notification without rewriting the record. Entering-End platforms,
+non-player exits, credits and cancellable world-change events keep their paths.
+Mirrors Java 26.3 `EndPortalBlock.getPortalDestination`,
+`ServerPlayer.findRespawnPositionAndUseSpawnBlock(false)` and
+`PlayerSpawnFinder.findSpawn/fixupSpawnHeight`.
+
+PR #233 review: living End returns exhaust safe bed/anchor candidates before
+allowing dangerous cells or floors, and require collision support instead of
+legacy solidity. Wall signs over shafts cannot become respawn floors. Arrival
+height follows that support and yaw faces the saved spawn block, mirroring
+`AbstractBedBlock.findStandUpPosition`, `RespawnAnchorBlock.findStandUpPosition`,
+`DismountHelper.findSafeDismountLocation` and `ServerPlayer.RespawnPosAngle`.
+Consuming death respawn retains its existing selection and yaw. Tests cover
+registered End contact and actual Java/Bedrock transfers, lava and burning
+floors, sign shafts, and saved-spawn changes/world unload at the chunk-fetch
+boundary. Living End returns also require a charged anchor in a dimension where
+anchors work, or a bed whose dimension allows setting spawn, before searching
+for a stand-up position; ineligible records use shared spawn without changing
+the saved record or anchor charge. Implemented by Codex (GPT-6.1 Sol).
+In-game verification: Not yet.
+
+Play test: In Survival, return from the End with lava beside a charged Nether
+anchor and a dry supported alternative; expect the dry arrival, no new damage
+or fire, and the same charge count. Repeat with a bed whose first side has a
+wall sign over a deep shaft and whose opposite side has a stone floor; expect
+arrival on stone, facing the bed. Capture a recording of each arrival and the
+anchor charge count before and after. Also set an Overworld bed spawn, break the
+bed, place and charge an anchor at its saved head once, and arrange lava as the
+only stand-up candidate under a low roof; return from the End and expect the
+safe shared spawn, no new damage or fire, and the anchor still charged.
+
+Either Nether portal axis change adds 90 degrees to Pumpkin's absolute yaw;
+same-axis travel retains yaw. This narrowly adapts Zinedin Polic's correction in
+upstream PR [#3819](https://github.com/Pumpkin-MC/Pumpkin/pull/3819), commit
+`5cd3fe4d3d30ffbd7596b985b6eaf9a97c25add4`, preserving this fork's optional source
+axis, pitch, velocity and residency contracts. Mirrors
+`NetherPortalBlock.createDimensionTransition`.
+
+API 8 (same version): the shared collision predicates gain crate-internal
+visibility only; external public layouts/signatures, Wasm WIT and saved-data
+meanings are unchanged. Rebuild native plugins against this checkout; existing
+plugin sources remain compatible with the unchanged respawn method signature.
+The wider asynchronous portal/session race (#180) and death-respawn work (#205/#202) remain separate. Implemented by Codex.
+In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

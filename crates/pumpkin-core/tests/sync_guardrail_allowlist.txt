@@ -270,11 +270,11 @@ crates/pumpkin-core/src/entity/boss/ender_dragon.rs::new::std::sync::Mutex::new#
 crates/pumpkin-core/src/entity/boss/ender_dragon.rs::new::std::sync::Mutex::new#8
 crates/pumpkin-core/src/entity/boss/ender_dragon.rs::new::std::sync::Mutex::new#9
 crates/pumpkin-core/src/entity/boss/wither.rs::new::std::sync::Mutex::new#1
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#1
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#2
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#3
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#4
-crates/pumpkin-core/src/entity/death_test_world.rs::with_neighbor_limit::std::sync::RwLock::default#5
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#1
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#2
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#3
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#4
+crates/pumpkin-core/src/entity/death_test_world.rs::configured::std::sync::RwLock::default#5
 crates/pumpkin-core/src/entity/decoration/armor_stand_interaction_tests.rs::armor_stand_equipment_emits_one_event_per_change::std::sync::Mutex::default#1
 crates/pumpkin-core/src/entity/decoration/display.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-core/src/entity/decoration/display.rs::new::std::sync::Mutex::new#10
@@ -902,3 +902,12 @@ crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g
 crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_explosion_and_support_drop_filled_frame_once::std::sync::Mutex::new#3
 crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_filled_frame_hit_races_allowed_and_cancelled_support::std::sync::Mutex::new#1
 crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_filled_frame_hit_races_allowed_and_cancelled_support::std::sync::Mutex::new#2
+# Test-only completion gates and event observations; no production state or guard held across an await.
+# PR #233 test-only arrival oneshot; sender is taken and guard drops before callbacks/awaits.
+crates/pumpkin-core/src/world/portal/end_return_loading_tests.rs::b1019_g16_bedrock_end_return_transfers_to_personal_anchor::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/end_return_session_tests.rs::b1019_g16_session_replaced_during_end_destination::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/end_return_session_tests.rs::b1019_g16_session_replaced_during_end_destination::std::sync::Mutex::new#2
+crates/pumpkin-core/src/world/portal/end_return_test_support.rs::transfer::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_end_return_cancellation_and_redirection_keep_anchor_charges::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_non_player_end_return_keeps_shared_spawn_behavior::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/portal/nether_axis_tests.rs::transfer::std::sync::Mutex::new#1
