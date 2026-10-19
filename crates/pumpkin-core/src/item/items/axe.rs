@@ -18,6 +18,8 @@ use std::sync::Arc;
 
 pub struct AxeItem;
 
+const TRANSFORM_ATTEMPTS: usize = 3;
+
 impl ItemMetadata for AxeItem {
     fn ids() -> Box<[u16]> {
         tag::Item::MINECRAFT_AXES.1.into()
@@ -146,20 +148,22 @@ impl ItemBehaviour for AxeItem {
         hand: Hand,
     ) -> BlockActionResult {
         let world = player.world();
-        let current_state_id = world.get_block_state_id(&location);
-        let result = match super::block_transformer::prepare_transform(
-            &AXE,
-            player,
-            location,
-            face,
-            block,
-            hand,
-            current_state_id,
-        ) {
-            Ok(result) => result,
-            Err(action) => return action,
-        };
-        if let Some(result) = result {
+        for _ in 0..TRANSFORM_ATTEMPTS {
+            // BlockTransformer's CopyPropertiesProvider reads live properties on each attempt.
+            let current_state_id = world.get_block_state_id(&location);
+            let result = match super::block_transformer::prepare_transform(
+                &AXE,
+                player,
+                location,
+                face,
+                block,
+                hand,
+                current_state_id,
+            ) {
+                Ok(Some(result)) => result,
+                Ok(None) => return BlockActionResult::Pass,
+                Err(action) => return action,
+            };
             let is_door = block.has_tag(&tag::Block::MINECRAFT_DOORS);
             Self::transform_companions(&world, location, block, current_state_id, &result);
 
@@ -176,7 +180,8 @@ impl ItemBehaviour for AxeItem {
                 })
                 .is_none()
             {
-                return BlockActionResult::Pass;
+                // A same-block property update can still admit a freshly computed transform.
+                continue;
             }
             if player.gamemode.load() != GameMode::Creative {
                 let _ = item.damage_item(i32::from(result.entry.item_damage_per_use));

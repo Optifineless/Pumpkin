@@ -15,10 +15,35 @@ pub(super) struct WitherBossbar {
     executing: bool,
 }
 
+#[cfg(test)]
+impl WitherBossbar {
+    pub(super) const fn is_parked(&self) -> bool {
+        !self.executing && !self.actions.is_empty()
+    }
+}
+
 enum BossbarAction {
     Add(Arc<BossbarRecipient>, Bossbar),
     Health(Arc<BossbarRecipient>, f32),
     Remove(Arc<BossbarRecipient>),
+}
+
+impl BossbarAction {
+    const fn recipient(&self) -> &Arc<BossbarRecipient> {
+        match self {
+            Self::Add(recipient, _) | Self::Health(recipient, _) | Self::Remove(recipient) => {
+                recipient
+            }
+        }
+    }
+
+    fn same_session(&self, other: &Self) -> bool {
+        Arc::ptr_eq(self.recipient(), other.recipient())
+            || self
+                .recipient()
+                .player()
+                .is_some_and(|player| other.recipient().matches(&player))
+    }
 }
 
 impl Drop for WitherEntity {
@@ -61,6 +86,7 @@ impl WitherEntity {
     fn with_bossbar<R>(
         &self,
         world: &Arc<World>,
+        retry_failed: bool,
         update: impl FnOnce(&mut WitherBossbar) -> R,
     ) -> R {
         let (result, actions) = {
@@ -83,6 +109,7 @@ impl WitherEntity {
                     owner,
                     world: world.clone(),
                     actions: Some(actions.into()),
+                    retry_failed,
                 };
                 if let Err(dispatch) = crate::world::guard_effects::defer(move || request.run()) {
                     dispatch();
@@ -92,6 +119,8 @@ impl WitherEntity {
                     owner: self,
                     world,
                     actions: actions.into(),
+                    retained: std::collections::VecDeque::new(),
+                    retry_failed,
                     completed: false,
                 }
                 .run();
@@ -133,7 +162,7 @@ impl WitherEntity {
         world: &Arc<World>,
         recipient: &Arc<BossbarRecipient>,
     ) -> Option<Arc<Player>> {
-        self.with_bossbar(world, |state| {
+        self.with_bossbar(world, true, |state| {
             let index = state
                 .recipients
                 .iter()
@@ -181,7 +210,7 @@ impl WitherEntity {
             .collect();
         let mut bar = self.make_bossbar();
         bar.health = progress;
-        self.with_bossbar(world, |state| {
+        self.with_bossbar(world, true, |state| {
             for player in &current {
                 if let Some(recipient) = state.recipients.iter().find(|r| r.matches(player)) {
                     if !recipient.is_published() {
@@ -214,7 +243,7 @@ impl WitherEntity {
 
     // ServerBossEvent.removeAllPlayers must not rediscover a departed viewer by UUID.
     pub(super) fn remove_all_bossbar(&self, world: &Arc<World>) {
-        self.with_bossbar(world, |state| {
+        self.with_bossbar(world, true, |state| {
             for recipient in state.recipients.drain(..) {
                 state.actions.push(BossbarAction::Remove(recipient));
             }
@@ -227,6 +256,8 @@ struct WitherExecution<'a> {
     owner: &'a WitherEntity,
     world: &'a Arc<World>,
     actions: std::collections::VecDeque<BossbarAction>,
+    retained: std::collections::VecDeque<BossbarAction>,
+    retry_failed: bool,
     completed: bool,
 }
 
@@ -234,14 +265,25 @@ impl WitherExecution<'_> {
     fn run(mut self) {
         let mut first_panic = None;
         loop {
-            while let Some(action) = self.actions.front() {
+            while let Some(action) = self.actions.pop_front() {
+                // A returning session's new ADD must follow its previous subscription's REMOVE.
+                if self
+                    .retained
+                    .iter()
+                    .any(|pending| pending.same_session(&action))
+                {
+                    self.retained.push_back(action);
+                    continue;
+                }
+                let mut delivered = false;
                 // Retry a failed delivery once, including terminal REMOVE, without
                 // letting a persistently panicking recipient strand its successors.
                 for _ in 0..2 {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        self.owner.execute_bossbar_action(action, self.world);
+                        self.owner.execute_bossbar_action(&action, self.world);
                     }));
                     let Err(payload) = result else {
+                        delivered = true;
                         break;
                     };
                     if first_panic.is_none() {
@@ -252,7 +294,9 @@ impl WitherExecution<'_> {
                         std::mem::forget(nested);
                     }
                 }
-                self.actions.pop_front();
+                if !delivered {
+                    self.retained.push_back(action);
+                }
             }
             let mut state = self
                 .owner
@@ -261,9 +305,14 @@ impl WitherExecution<'_> {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.actions.extend(std::mem::take(&mut state.actions));
             if self.actions.is_empty() {
+                let retry = !self.retained.is_empty() && self.retry_failed;
+                state.actions = std::mem::take(&mut self.retained).into();
                 state.executing = false;
                 self.completed = true;
                 drop(state);
+                if retry {
+                    schedule_dispatch(self.owner, self.world);
+                }
                 if let Some(payload) = first_panic {
                     std::panic::resume_unwind(payload);
                 }
@@ -276,7 +325,13 @@ impl WitherExecution<'_> {
 impl Drop for WitherExecution<'_> {
     fn drop(&mut self) {
         if !self.completed {
-            restore_dispatch(self.owner, self.world, std::mem::take(&mut self.actions));
+            self.retained.append(&mut self.actions);
+            restore_dispatch(
+                self.owner,
+                self.world,
+                std::mem::take(&mut self.retained),
+                self.retry_failed,
+            );
         }
     }
 }
@@ -285,6 +340,7 @@ struct WitherDispatch {
     owner: Arc<WitherEntity>,
     world: Arc<World>,
     actions: Option<std::collections::VecDeque<BossbarAction>>,
+    retry_failed: bool,
 }
 
 impl WitherDispatch {
@@ -293,6 +349,8 @@ impl WitherDispatch {
             owner: &self.owner,
             world: &self.world,
             actions: self.actions.take().unwrap_or_default(),
+            retained: std::collections::VecDeque::new(),
+            retry_failed: self.retry_failed,
             completed: false,
         }
         .run();
@@ -302,7 +360,7 @@ impl WitherDispatch {
 impl Drop for WitherDispatch {
     fn drop(&mut self) {
         if let Some(actions) = self.actions.take() {
-            restore_dispatch(&self.owner, &self.world, actions);
+            restore_dispatch(&self.owner, &self.world, actions, self.retry_failed);
         }
     }
 }
@@ -311,6 +369,7 @@ fn restore_dispatch(
     owner: &WitherEntity,
     world: &Arc<World>,
     actions: std::collections::VecDeque<BossbarAction>,
+    retry_failed: bool,
 ) {
     let mut state = owner
         .bossbar_players
@@ -321,10 +380,17 @@ fn restore_dispatch(
     state.actions = actions;
     state.executing = false;
     drop(state);
+    if retry_failed {
+        schedule_dispatch(owner, world);
+    }
+}
+
+fn schedule_dispatch(owner: &WitherEntity, world: &Arc<World>) {
     if let Some(owner) = owner.self_reference.upgrade() {
         let world = world.clone();
         // An abandoned GuardEffects still borrows its TLS queue while dropping us.
         // Retry independently, after unlocking, even when this owner will never tick again.
-        std::thread::spawn(move || owner.with_bossbar(&world, |_| {}));
+        // Only one independent recovery; persistent failures remain queued for a later entry.
+        std::thread::spawn(move || owner.with_bossbar(&world, false, |_| {}));
     }
 }

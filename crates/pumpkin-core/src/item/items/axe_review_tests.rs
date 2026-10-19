@@ -8,7 +8,8 @@ use pumpkin_data::{
     Block,
     biome::Biome,
     block_properties::{
-        ChestLikeProperties, ChestType, DoubleBlockHalf, HorizontalFacing, OakDoorLikeProperties,
+        ChestLikeProperties, ChestType, DoubleBlockHalf, Half, HorizontalFacing,
+        OakDoorLikeProperties, StairsShape, WhiteWoolStairsLikeProperties,
     },
     item::Item,
     item_stack::ItemStack,
@@ -19,7 +20,7 @@ use pumpkin_util::{Hand, math::position::BlockPos, math::vector3::Vector3};
 use pumpkin_world::world::BlockFlags;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 const CLICKED: BlockPos = BlockPos::new(0, 64, 1);
@@ -92,6 +93,134 @@ fn damage(player: &TestPlayer) -> i32 {
         .inventory()
         .get_stack_in_hand(Hand::Right)
         .get_damage()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn axe_review_java_neighbor_shape_conflict_retries_from_live_stair() {
+    let (_directory, server, world, player) = fixture();
+    let mut observer = TestPlayer::new(&world);
+    world.players.store(Arc::new(vec![
+        player.player.clone(),
+        observer.player.clone(),
+    ]));
+    let mut clicked = WhiteWoolStairsLikeProperties::default(&Block::WAXED_CUT_COPPER_STAIRS);
+    clicked.facing = HorizontalFacing::North;
+    clicked.half = Half::Bottom;
+    clicked.shape = StairsShape::Straight;
+    world.set_block_state(
+        &CLICKED,
+        clicked.to_state_id(&Block::WAXED_CUT_COPPER_STAIRS),
+        BlockFlags::FORCE_STATE,
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let weak = Arc::downgrade(&world);
+    *world.persistence_test_hooks.transform_write.lock().unwrap() =
+        Some(Arc::new(move |position| {
+            if position == CLICKED && observed.fetch_add(1, Ordering::Relaxed) == 0 {
+                let world = weak.upgrade().unwrap();
+                let mut neighbor = WhiteWoolStairsLikeProperties::default(&Block::STONE_STAIRS);
+                neighbor.facing = HorizontalFacing::East;
+                neighbor.half = Half::Bottom;
+                world.set_block_state(
+                    &CLICKED.offset(Vector3::new(0, 0, -1)),
+                    neighbor.to_state_id(&Block::STONE_STAIRS),
+                    BlockFlags::NOTIFY_ALL,
+                );
+                assert_eq!(world.get_block(&CLICKED), &Block::WAXED_CUT_COPPER_STAIRS);
+                assert_eq!(
+                    WhiteWoolStairsLikeProperties::from_state_id(
+                        world.get_block_state_id(&CLICKED)
+                    )
+                    .shape,
+                    StairsShape::OuterRight,
+                    "ordinary neighbor notifications must change the observed clicked state"
+                );
+            }
+        }));
+    observer.take_packets();
+
+    use_on(&player, &server);
+
+    assert_eq!(world.get_block(&CLICKED), &Block::CUT_COPPER_STAIRS);
+    clicked.shape = StairsShape::OuterRight;
+    assert_eq!(
+        world.get_block_state_id(&CLICKED),
+        clicked.to_state_id(&Block::CUT_COPPER_STAIRS),
+        "retry must preserve the live stair properties"
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    assert_eq!(damage(&player), 1);
+    assert_eq!(
+        player
+            .player
+            .get_stat(StatisticCategory::Used, i32::from(Item::IRON_AXE.id)),
+        1
+    );
+    let packets: Vec<_> = observer
+        .take_packets()
+        .into_iter()
+        .map(|packet| packet.as_ref().get_var_int().unwrap().0)
+        .collect();
+    for kind in [
+        pumpkin_data::packet::clientbound::play::SOUND,
+        pumpkin_data::packet::clientbound::play::LEVEL_EVENT,
+    ] {
+        assert_eq!(
+            packets
+                .iter()
+                .filter(|id| **id == kind.to_id(pumpkin_data::packet::CURRENT_MC_VERSION))
+                .count(),
+            1,
+            "the successful transformation must publish each effect once"
+        );
+    }
+    world.level.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn axe_review_java_repeated_property_conflicts_are_bounded() {
+    let (_directory, server, world, player) = fixture();
+    world.set_block_state(
+        &CLICKED,
+        Block::WAXED_CUT_COPPER_STAIRS.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let weak = Arc::downgrade(&world);
+    *world.persistence_test_hooks.transform_write.lock().unwrap() =
+        Some(Arc::new(move |position| {
+            if position == CLICKED {
+                assert!(
+                    observed.fetch_add(1, Ordering::Relaxed) < 8,
+                    "unbounded axe retry"
+                );
+                let world = weak.upgrade().unwrap();
+                let mut live = WhiteWoolStairsLikeProperties::from_state_id(
+                    world.get_block_state_id(&CLICKED),
+                );
+                live.waterlogged = !live.waterlogged;
+                world.set_block_state(
+                    &CLICKED,
+                    live.to_state_id(&Block::WAXED_CUT_COPPER_STAIRS),
+                    BlockFlags::FORCE_STATE,
+                );
+            }
+        }));
+
+    use_on(&player, &server);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 3);
+    assert_eq!(world.get_block(&CLICKED), &Block::WAXED_CUT_COPPER_STAIRS);
+    assert_eq!(damage(&player), 0);
+    assert_eq!(
+        player
+            .player
+            .get_stat(StatisticCategory::Used, i32::from(Item::IRON_AXE.id)),
+        0
+    );
+    world.level.shutdown().await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
