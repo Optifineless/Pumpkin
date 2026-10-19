@@ -28,6 +28,8 @@ use std::{
 use tracing::{debug, error, info, trace, warn};
 
 mod active_chunks;
+mod bed_break;
+mod bed_use;
 mod block_entity_context;
 pub mod brightness;
 pub mod chunker;
@@ -5262,13 +5264,20 @@ impl World {
 
             if !flags.intersects(BlockFlags::MOVED | BlockFlags::UPDATE_KNOWN_SHAPE)
                 && update_limit > 0
+                && retired.is_none_or(|retired| {
+                    retired.bed_partner_is_unchanged(self, replaced_block_state_id)
+                })
             {
                 let mut neighbour_update_flags = flags;
                 neighbour_update_flags.remove(BlockFlags::NOTIFY_NEIGHBORS);
                 neighbour_update_flags.remove(BlockFlags::SKIP_REDSTONE_WIRE_STATE_REPLACEMENT);
                 // Suppressing drops for the changed block must not suppress drops
                 // from dependent blocks that lose their support (e.g. in Creative).
-                neighbour_update_flags.remove(BlockFlags::SKIP_DROPS);
+                if !old_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
+                    && old_block != &Block::STRAW_BED
+                {
+                    neighbour_update_flags.remove(BlockFlags::SKIP_DROPS);
+                }
                 self.block_registry.prepare_with_limit(
                     self,
                     position,
@@ -5350,6 +5359,19 @@ impl World {
             return None;
         }
 
+        if broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
+            || broken_block == &Block::STRAW_BED
+        {
+            return self.break_bed_block(
+                position,
+                cause,
+                cause,
+                flags,
+                update_limit,
+                broken_block_state.id,
+            );
+        }
+
         let mut flags = flags;
         if flags.contains(BlockFlags::SKIP_DROPS)
             && cause.is_some_and(|p| p.gamemode.load() == pumpkin_util::GameMode::Creative)
@@ -5414,32 +5436,7 @@ impl World {
             && broken_block != &Block::FIRE
             && broken_block != &Block::SOUL_FIRE
         {
-            let je_packet = CWorldEvent::new(
-                WorldEvent::ParticlesDestroyBlock as i32,
-                *position,
-                broken_state_id.as_u16().into(),
-                false,
-            );
-            let be_packet = CLevelEvent {
-                event_id: VarInt(LevelEvent::ParticlesDestroyBlock as i32),
-                position: position.to_centered_f64().to_f32_lossy(),
-                data: VarInt(BlockState::to_be_network_id(broken_state_id) as i32),
-            };
-            let chunk_pos = position.chunk_position();
-            if let Some(player) = cause {
-                // Java predicts its own break effect; Bedrock needs the server event.
-                if let ClientPlatform::Bedrock(client) = player.client.as_ref() {
-                    client.try_enqueue_client_packet(&be_packet);
-                }
-                self.broadcast_to_chunk_except_editioned(
-                    chunk_pos,
-                    &[player.get_entity().entity_uuid],
-                    &je_packet,
-                    &be_packet,
-                );
-            } else {
-                self.broadcast_to_chunk_editioned(chunk_pos, &je_packet, &be_packet);
-            }
+            self.send_block_destroy_effect(position, broken_state_id, cause);
         }
 
         Some(broken_state_id)

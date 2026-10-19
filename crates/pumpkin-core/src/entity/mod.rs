@@ -3083,6 +3083,10 @@ impl Entity {
     }
 
     pub fn set_pose(&self, pose: EntityPose) {
+        self.set_pose_if(pose, || true);
+    }
+
+    pub(crate) fn set_pose_if(&self, pose: EntityPose, is_current: impl Fn() -> bool) {
         if self.pose.load() == pose {
             return;
         }
@@ -3101,6 +3105,9 @@ impl Entity {
             }
         }
 
+        if !is_current() {
+            return;
+        }
         let dimension = Self::get_entity_dimensions(pose);
         let position = self.pos.load();
         let aabb = BoundingBox::new_from_pos(position.x, position.y, position.z, &dimension);

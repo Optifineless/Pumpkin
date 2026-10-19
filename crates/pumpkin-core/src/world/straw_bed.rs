@@ -58,7 +58,7 @@ impl World {
             position,
             expected,
             BlockStateId::AIR,
-            flags - BlockFlags::SKIP_DROPS,
+            flags,
             update_limit,
             Some(&retired_effects),
         );

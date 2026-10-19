@@ -1,5 +1,6 @@
 use std::sync::{Arc, MutexGuard, Weak};
 
+use pumpkin_data::BlockStateId;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::chunk::{ChunkData, io::Dirtiable};
@@ -217,33 +218,70 @@ impl World {
     }
 
     pub(super) fn remove_loaded_block_entity(&self, pos: &BlockPos) -> RetiredBlockEntity {
-        {
-            // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
-            let _loads = self.invalidate_pending_block_entity_load(pos);
-            let chunk_pos = pos.chunk_position();
-            let retired = self
-                .block_entities
-                .get_mut(&chunk_pos)
-                .and_then(|mut entities| entities.remove(pos));
-            let removed_pending = self
-                .level
-                .read_chunk_sync(&chunk_pos, |chunk| {
-                    let removed = remove_pending_block_entity(chunk, pos);
-                    if retired.is_some() {
-                        chunk.mark_dirty(true);
-                    }
-                    removed
-                })
-                .flatten();
-            self.custom_block_entity_data.remove(pos);
-            if retired.is_some() || removed_pending.is_some() {
-                self.block_entities
-                    .remove_if(&chunk_pos, |_, entities| entities.is_empty());
+        // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
+        let mut loads = self.invalidate_pending_block_entity_load(pos);
+        self.remove_block_entity_under_publication_gate(pos, &mut loads)
+    }
+
+    pub(super) fn remove_bed_states_if(
+        &self,
+        halves: &[(BlockPos, BlockStateId)],
+    ) -> Vec<(BlockPos, BlockStateId, RetiredBlockEntity)> {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if halves.iter().any(|(position, expected)| {
+            loads.unloading.contains_key(&position.chunk_position())
+                || self.get_block_state_id_if_loaded(position) != Some(*expected)
+        }) {
+            return Vec::new();
+        }
+        let mut committed = Vec::with_capacity(halves.len());
+        for &(position, expected) in halves {
+            if self
+                .write_block_state_if(&position, BlockStateId::AIR, |current| current == expected)
+                .is_none()
+            {
+                break;
             }
-            RetiredBlockEntity {
-                live: retired,
-                pending: removed_pending,
-            }
+            // Keep add_block_entity/pending promotion outside the raw-write/retirement gap.
+            // All native retirement callbacks run only after this gate is released.
+            let retired = self.remove_block_entity_under_publication_gate(&position, &mut loads);
+            committed.push((position, expected, retired));
+        }
+        committed
+    }
+
+    fn remove_block_entity_under_publication_gate(
+        &self,
+        pos: &BlockPos,
+        loads: &mut PendingBlockEntityLoads,
+    ) -> RetiredBlockEntity {
+        loads.snapshots.remove(pos);
+        let chunk_pos = pos.chunk_position();
+        let retired = self
+            .block_entities
+            .get_mut(&chunk_pos)
+            .and_then(|mut entities| entities.remove(pos));
+        let removed_pending = self
+            .level
+            .read_chunk_sync(&chunk_pos, |chunk| {
+                let removed = remove_pending_block_entity(chunk, pos);
+                if retired.is_some() {
+                    chunk.mark_dirty(true);
+                }
+                removed
+            })
+            .flatten();
+        self.custom_block_entity_data.remove(pos);
+        if retired.is_some() || removed_pending.is_some() {
+            self.block_entities
+                .remove_if(&chunk_pos, |_, entities| entities.is_empty());
+        }
+        RetiredBlockEntity {
+            live: retired,
+            pending: removed_pending,
         }
     }
 }

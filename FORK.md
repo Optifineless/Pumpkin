@@ -2,6 +2,30 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Bed removal, sleeping lifecycle and unsafe dimensions (#114, #35, #153)
+
+Breaking either ordinary or straw bed half yields one bed in Survival and none in Creative.
+Normal player ticking wakes a sleeper whose remembered bed disappeared, without
+restoring the bed or overwriting a callback's replacement. Ordinary beds consume
+the dimension's `destroy_on_use` rule before sleep admission and use the existing
+bad-respawn explosion; straw beds retain their own rule and destruction behavior.
+Mirrors vanilla 26.3 `AbstractBedBlock.useWithoutItem/playerWillDestroy`,
+`BedBlock.destroyOnUse`, and `LivingEntity.tick/checkBedExists/stopSleeping`.
+This supersedes only these issues' portion of old fork PR #102, whose shared
+destruction hook was already integrated; villager and other admission work stays
+separate. Reporter credits: visionglitcher and Uelq (#114), kalancelot / devilos
+(#153). Implemented by Codex (GPT-6.1 Sol).
+
+API 8 (same version): `Player` gains private runtime sleep-operation ownership;
+native plugins must rebuild against this checkout. Existing plugin source call
+sites remain compatible; public signatures, Wasm WIT, saved fields and existing
+save meanings are unchanged.
+Malformed use pairs with mismatched facing are rejected to avoid removing an
+unrelated half; this is stricter than the supplied vanilla opposite-part check.
+Removal uses the existing per-position chunk and block-entity publication owners;
+arbitrary raw native writes and global two-position atomicity remain legacy limits.
+In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

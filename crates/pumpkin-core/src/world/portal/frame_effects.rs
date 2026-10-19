@@ -59,6 +59,43 @@ impl RetiredBlockEffects {
             .is_none_or(|partner| world.get_block_state_id(&partner.position) == partner.state)
     }
 
+    pub(in crate::world) fn bed_partner_is_unchanged(
+        &self,
+        world: &World,
+        old: BlockStateId,
+    ) -> bool {
+        let block = Block::from_state_id(old);
+        !(block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) || block == &Block::STRAW_BED)
+            || self.partner_is_unchanged(world)
+    }
+
+    pub(in crate::world) fn orphaned_bed_partner(
+        &self,
+        world: &World,
+        position: &BlockPos,
+        old: BlockStateId,
+    ) -> Option<(BlockPos, BlockStateId)> {
+        let block = Block::from_state_id(old);
+        let partner = self.partner.as_ref()?;
+        if !(block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) || block == &Block::STRAW_BED)
+            || Block::from_state_id(partner.state) != block
+            || !self.partner_is_unchanged(world)
+        {
+            return None;
+        }
+        let part = WhiteBedLikeProperties::from_state_id(partner.state).part;
+        if WhiteBedLikeProperties::from_state_id(old).part == part {
+            return None;
+        }
+        let replacement = world.get_block_state_id(position);
+        if Block::from_state_id(replacement) == block
+            && WhiteBedLikeProperties::from_state_id(replacement).part != part
+        {
+            return None;
+        }
+        Some((partner.position, partner.state))
+    }
+
     /// Delivers pair notifications when a newer block occupies the retired position.
     pub(in crate::world) fn notify_replaced_pair(
         &self,
