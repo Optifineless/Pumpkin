@@ -413,6 +413,11 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         false
     }
 
+    /// Mirrors vanilla `Entity.isIgnoringBlockTriggers`; entity types override this when needed.
+    fn is_ignoring_block_triggers(&self) -> bool {
+        false
+    }
+
     fn is_collidable(&self, _entity: Option<Box<dyn EntityBase>>) -> bool {
         false
     }
@@ -4109,6 +4114,11 @@ impl EntityBase for Entity {
 
     fn get_entity(&self) -> &Entity {
         self
+    }
+
+    // OminousItemSpawner is not modeled separately yet, so it uses this vanilla override here.
+    fn is_ignoring_block_triggers(&self) -> bool {
+        self.entity_type == &EntityType::OMINOUS_ITEM_SPAWNER
     }
 
     fn get_living_entity(&self) -> Option<&LivingEntity> {

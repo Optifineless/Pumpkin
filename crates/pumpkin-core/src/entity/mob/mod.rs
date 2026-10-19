@@ -1618,6 +1618,11 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         &self.get_mob_entity().living_entity.entity
     }
 
+    // Bat.isIgnoringBlockTriggers always returns true in vanilla 26.3.
+    fn is_ignoring_block_triggers(&self) -> bool {
+        self.get_entity().entity_type == &EntityType::BAT
+    }
+
     fn get_living_entity(&self) -> Option<&LivingEntity> {
         Some(&self.get_mob_entity().living_entity)
     }

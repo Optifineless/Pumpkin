@@ -5951,6 +5951,10 @@ impl EntityBase for Player {
         self.gamemode.load() == GameMode::Spectator
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        self.is_spectator()
+    }
+
     fn can_hit(&self) -> bool {
         !self.is_spectator() && !self.living_entity.entity.is_removed()
     }

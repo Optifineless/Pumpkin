@@ -14,7 +14,7 @@ use crate::{
     world::World,
 };
 
-use super::{PressurePlate, detection_box_at};
+use super::{EntitySensitivity, PressurePlate, detection_box_at, eligible_entity_count};
 
 /// This is for Normal Pressure plates, so not Gold or Iron
 pub struct PressurePlateBlock;
@@ -82,11 +82,17 @@ impl PressurePlate for PressurePlateBlock {
         if props.powered { 15 } else { 0 }
     }
 
-    fn calculate_redstone_output(&self, world: &World, _block: &Block, pos: &BlockPos) -> u8 {
+    fn calculate_redstone_output(&self, world: &World, block: &Block, pos: &BlockPos) -> u8 {
         let aabb = detection_box_at(pos);
-        if !world.get_entities_at_box(&aabb).is_empty()
-            || !world.get_players_at_box(&aabb).is_empty()
+        let sensitivity = if tag::Block::MINECRAFT_STONE_PRESSURE_PLATES
+            .1
+            .contains(&block.id.as_u16())
         {
+            EntitySensitivity::Living
+        } else {
+            EntitySensitivity::Everything
+        };
+        if eligible_entity_count(world, &aabb, sensitivity) > 0 {
             return 15;
         }
         0

@@ -715,6 +715,10 @@ impl EntityBase for BlockDisplayEntity {
         &self.display.entity
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn get_living_entity(&self) -> Option<&LivingEntity> {
         None
     }
@@ -853,6 +857,10 @@ impl EntityBase for ItemDisplayEntity {
 
     fn get_entity(&self) -> &Entity {
         &self.display.entity
+    }
+
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
     }
 
     fn get_living_entity(&self) -> Option<&LivingEntity> {
@@ -1148,6 +1156,10 @@ impl EntityBase for TextDisplayEntity {
 
     fn get_entity(&self) -> &Entity {
         &self.display.entity
+    }
+
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
     }
 
     fn get_living_entity(&self) -> Option<&LivingEntity> {
