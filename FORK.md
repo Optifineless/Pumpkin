@@ -82,6 +82,11 @@ preserving PR #194. Implemented by Codex (GPT-6.1 Sol). In-game verification:
 Dragon contact now collects candidates once from the union of its four part
 boxes and filters out distant entities before cloning their Arcs. The global
 registry still inspects each entry once because it has no spatial index.
+NoAI dragons skip part contact effects. Reflected Thorns damage is admitted only
+when a Player caused it or its damage type is tagged to hurt dragons, and it uses
+body damage scaling. Mirrors vanilla 26.3 `EnderDragon.aiStep/hurtServer/hurt`;
+real-tick NoAI and Thorns regressions cover the new contact paths. In-game
+verification: **Not yet**.
 
 Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity
 still consumes tipped and spectral arrows. Mirrors vanilla 26.3

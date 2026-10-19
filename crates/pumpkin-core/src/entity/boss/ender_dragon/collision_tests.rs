@@ -8,14 +8,17 @@ use super::{EnderDragonEntity, phase::EnderDragonPhase};
 use crate::{
     entity::{
         Entity, EntityBase, LivingEntity,
-        mob::{creaking::CreakingEntity, zombie::zombie::ZombieEntity},
+        mob::{Mob, creaking::CreakingEntity, zombie::zombie::ZombieEntity},
     },
     net::java::combat_test_support::TestPlayer,
     plugin::{BoxFuture, EventHandler, EventPriority, entity::entity_damage::EntityDamageEvent},
     server::{Server, combat_test_support},
     world::World,
 };
-use pumpkin_data::{attributes::Attributes, damage::DamageType, entity::EntityType};
+use pumpkin_data::{
+    attributes::Attributes, damage::DamageType, data_component_impl::EquipmentSlot,
+    enchantment::Enchantment, entity::EntityType, item::Item, item_stack::ItemStack,
+};
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_util::{Difficulty, GameMode};
 use std::sync::{
@@ -144,6 +147,24 @@ async fn dragon_tick_does_not_hurt_or_push_spectator_player() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_ai_dragon_tick_does_not_hurt_or_push_contact_targets() {
+    let fixture = Fixture::new();
+    fixture.player.player.set_gamemode(GameMode::Creative);
+    fixture.tick_dragon();
+    fixture.dragon.set_phase(EnderDragonPhase::SitAttacking);
+    fixture.dragon.mob_entity.set_no_ai(true);
+    let head = fixture.zombie(Vector3::new(8.0, 64.0, 0.25));
+    let wing = fixture.zombie(Vector3::new(17.0, 65.0, 9.0));
+
+    fixture.tick_dragon();
+
+    assert_eq!(head.get_living_entity().unwrap().health.load(), 20.0);
+    assert_eq!(wing.get_living_entity().unwrap().health.load(), 20.0);
+    assert_eq!(wing.get_entity().velocity.load(), Vector3::default());
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dragon_tick_damages_survival_player_with_dragon_as_attacker() {
     let fixture = Fixture::new();
     fixture.player.player.living_entity.set_health(20.0);
@@ -246,6 +267,76 @@ async fn ender_dragon_tick_hits_head_and_wing_zombies_but_leaves_distant_zombie_
     assert_eq!(above.get_living_entity().unwrap().health.load(), 20.0);
     assert_eq!(above.get_entity().velocity.load(), Vector3::default());
     assert_eq!(frozen.get_entity().velocity.load(), Vector3::default());
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ender_dragon_contact_rejects_zombie_thorns_retaliation() {
+    let fixture = Fixture::new();
+    fixture.player.player.set_gamemode(GameMode::Creative);
+    fixture.tick_dragon();
+    fixture.dragon.set_phase(EnderDragonPhase::SitAttacking);
+    fixture.dragon.mob_entity.living_entity.set_health(1.0);
+    let head = fixture.zombie(Vector3::new(8.0, 64.0, 0.25));
+    let mut thorns_chestplate = ItemStack::new(1, &Item::IRON_CHESTPLATE);
+    // Level seven makes the bundled random_chance requirement certain in this regression.
+    thorns_chestplate.add_enchantment(&Enchantment::THORNS, 7);
+    head.get_mob_entity()
+        .set_item_slot(&EquipmentSlot::CHEST, thorns_chestplate);
+
+    fixture.tick_dragon();
+
+    assert_eq!(fixture.dragon.mob_entity.living_entity.health.load(), 1.0);
+    assert_ne!(
+        *fixture.dragon.phase.lock().unwrap(),
+        EnderDragonPhase::Dying
+    );
+    let worn = head
+        .get_living_entity()
+        .unwrap()
+        .entity_equipment
+        .lock()
+        .unwrap()
+        .get(&EquipmentSlot::CHEST);
+    assert!(
+        worn.get_damage() > 0,
+        "the Thorns retaliation must have fired"
+    );
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ender_dragon_root_thorns_damage_from_player_uses_body_scaling() {
+    let fixture = Fixture::new();
+    fixture.dragon.mob_entity.living_entity.set_health(20.0);
+    assert!(fixture.dragon.damage_with_context(
+        fixture.dragon.as_ref(),
+        8.0,
+        DamageType::THORNS,
+        None,
+        Some(fixture.player.player.as_ref()),
+        Some(fixture.player.player.as_ref()),
+    ));
+
+    assert_eq!(fixture.dragon.mob_entity.living_entity.health.load(), 17.0);
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ender_dragon_body_part_tag_admits_non_player_cause_and_scales_damage() {
+    let fixture = Fixture::new();
+    let cause = fixture.zombie(Vector3::new(30.0, 64.0, 8.0));
+    fixture.dragon.mob_entity.living_entity.set_health(20.0);
+    assert!(fixture.dragon.parts[2].damage_with_context(
+        fixture.dragon.as_ref(),
+        8.0,
+        DamageType::FIREWORKS,
+        None,
+        Some(cause.as_ref()),
+        Some(cause.as_ref()),
+    ));
+
+    assert_eq!(fixture.dragon.mob_entity.living_entity.health.load(), 17.0);
     fixture.finish().await;
 }
 

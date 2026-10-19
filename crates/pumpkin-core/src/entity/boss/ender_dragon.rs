@@ -1,6 +1,7 @@
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
-use pumpkin_data::{Block, BlockStateId};
+use pumpkin_data::tag::Taggable;
+use pumpkin_data::{Block, BlockStateId, tag};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
@@ -13,6 +14,10 @@ use crate::entity::{
     mob::{Mob, MobEntity},
     player::Player,
 };
+
+fn body_damage(amount: f32) -> f32 {
+    amount / 4.0 + amount.min(1.0)
+}
 
 mod collision;
 #[cfg(test)]
@@ -184,7 +189,7 @@ impl EntityBase for EnderDragonPart {
         let damage = if head_or_neck {
             amount
         } else {
-            amount / 4.0 + amount.min(1.0)
+            body_damage(amount)
         };
         dragon.damage_with_context(
             dragon.as_ref(),
@@ -750,10 +755,30 @@ impl Mob for EnderDragonEntity {
         self.ai_step();
     }
 
+    fn pre_damage(
+        &self,
+        damage_type: DamageType,
+        _source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+    ) -> bool {
+        // EnderDragon.hurtServer accepts a Player cause or the ALWAYS_HURTS_ENDER_DRAGONS tag.
+        cause.is_some_and(|cause| cause.get_player().is_some())
+            || damage_type.has_tag(&tag::DamageType::MINECRAFT_ALWAYS_HURTS_ENDER_DRAGONS)
+    }
+
+    fn modify_incoming_damage(&self, amount: f32, damage_type: DamageType) -> f32 {
+        if damage_type == DamageType::THORNS {
+            // Reflected Thorns targets the root, which vanilla routes through the body.
+            body_damage(amount)
+        } else {
+            amount
+        }
+    }
+
     fn post_tick(&self) {
-        // Vanilla aiStep moves before positioning parts and applying contact effects.
+        // Vanilla aiStep skips part positioning and contact in the NoAI branch.
         // Pumpkin's shared LivingEntity travel finishes after mob_tick returns.
-        if !self.mob_entity.living_entity.entity.is_removed() {
+        if !self.mob_entity.living_entity.entity.is_removed() && !self.mob_entity.is_no_ai() {
             self.tick_parts();
         }
     }
