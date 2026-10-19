@@ -87,18 +87,19 @@ impl MapManager {
             let _gate = gate;
             fs::create_dir_all(&folder)?;
             for (id, map) in maps {
+                let path = folder.join(format!("{id}.dat"));
+                let exists = path.exists();
                 let root = {
                     let map = map
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let root = map.to_saved_nbt(data_version);
                     // Persistence state is independent of the pixel-packet dirty flag.
-                    if map.saved_tag.as_ref() == Some(&root) {
+                    if map.saved_tag.as_ref() == Some(&root) && exists {
                         continue;
                     }
                     root
                 };
-                let path = folder.join(format!("{id}.dat"));
                 #[cfg(test)]
                 if let Some(barrier) = &barrier {
                     barrier.wait();
@@ -187,13 +188,15 @@ impl MapData {
         map.unlimited_tracking = data.get_bool("unlimitedTracking").unwrap_or(false);
         map.banners = data.get_list("banners").unwrap_or_default().to_vec();
         map.frames = data.get_list("frames").unwrap_or_default().to_vec();
+        map.saved_tag = Some(root.clone());
         map.rebuild_markers();
         Some(map)
     }
 
     fn to_saved_nbt(&self, data_version: i32) -> NbtCompound {
         // SavedDataStorage.collectDirtyTagsToSave wraps MapItemSavedData.CODEC in data/DataVersion.
-        let mut data = NbtCompound::new();
+        let mut root = self.saved_tag.clone().unwrap_or_default();
+        let mut data = root.get_compound("data").cloned().unwrap_or_default();
         data.put_string("dimension", self.dimension.minecraft_name.to_owned());
         data.put_int("xCenter", self.center_x);
         data.put_int("zCenter", self.center_z);
@@ -207,7 +210,6 @@ impl MapData {
         data.put_bool("unlimitedTracking", self.unlimited_tracking);
         data.put_list("banners", self.banners.clone());
         data.put_list("frames", self.frames.clone());
-        let mut root = NbtCompound::new();
         root.put_compound("data", data);
         root.put_int("DataVersion", data_version);
         root

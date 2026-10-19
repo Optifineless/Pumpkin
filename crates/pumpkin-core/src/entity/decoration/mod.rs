@@ -15,3 +15,6 @@ mod hanging_review_tests;
 mod hanging_support_tests;
 #[cfg(test)]
 mod hanging_test_support;
+
+#[cfg(test)]
+mod frame_map_tests;

@@ -600,6 +600,8 @@ crates/pumpkin-core/src/world/explosion/context_tests.rs::crystal_attacker_gets_
 crates/pumpkin-core/src/world/explosion/context_tests.rs::primed_tnt_reload_and_explosion_retain_the_igniter_and_direct_source::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/map.rs::create_map::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/map.rs::new::std::sync::Mutex::default#1
+# Map test-only load/save gates; take guards drop before worker I/O, waits or notifications.
+crates/pumpkin-core/src/world/map.rs::new::std::sync::Mutex::default#2
 crates/pumpkin-core/src/world/map/cache.rs::load_map::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/map/cache.rs::request_load::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#1

@@ -3,6 +3,50 @@ use pumpkin_data::{data_component_impl::CustomNameImpl, map_decoration::MapDecor
 use pumpkin_nbt::tag::NbtTag;
 
 impl MapData {
+    pub(super) fn removed_from_frame(&mut self, pos: pumpkin_util::math::position::BlockPos) {
+        // Saved IDs belong to the previous process. The attachment owner validates
+        // the live incarnation; MapFrame.frameId identifies saved records by position.
+        let removed: Vec<_> = self
+            .frames
+            .iter()
+            .filter_map(|tag| {
+                let frame = tag.extract_compound()?;
+                frame.get_int("entity_id")?;
+                (frame.get("pos").and_then(marker_position) == Some([pos.0.x, pos.0.y, pos.0.z]))
+                    .then(|| {
+                        self.marker(
+                            MapDecorationType::FRAME,
+                            [pos.0.x, pos.0.y, pos.0.z],
+                            frame.get_int("rotation").unwrap_or(0),
+                            None,
+                        )
+                    })
+                    .flatten()
+            })
+            .collect();
+        let before = self.frames.len();
+        self.frames.retain(|tag| {
+            tag.extract_compound()
+                .and_then(|frame| frame.get("pos"))
+                .and_then(marker_position)
+                != Some([pos.0.x, pos.0.y, pos.0.z])
+        });
+        if self.frames.len() != before {
+            for removed in removed {
+                if let Some(index) = self.decorations.iter().position(|marker| {
+                    marker.icon_type == removed.icon_type
+                        && marker.x == removed.x
+                        && marker.z == removed.z
+                        && marker.direction == removed.direction
+                        && marker.display_name == removed.display_name
+                }) {
+                    self.decorations.remove(index);
+                }
+            }
+            self.dirty = true;
+        }
+    }
+
     pub(super) fn rebuild_markers(&mut self) {
         // MapItemSavedData's loading constructor calls addDecoration for banners and frames.
         self.decorations.clear();

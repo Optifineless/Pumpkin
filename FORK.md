@@ -2,6 +2,30 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Detached framed-map markers (#294)
+
+Retired item-frame contents remove their saved frame record and FRAME icon through
+the map manager, retaining banners, other frames, pixels, names and unknown NBT.
+Cold maps keep one cleanup obligation per map/attachment until normal loading;
+shutdown drains reads and retries unresolved cleanup once before the existing map
+save gate. Attachment incarnations reject stale cleanup after replacement, and
+live NBT edits retain the old position. Creative, disabled-drop, Fixed and cancelled
+branches retain their supplied vanilla 26.3 `ItemFrame.dropItem/removeFramedMap`,
+`onKilled/readAdditionalSaveData` and `MapItemSavedData.removedFromFrame` behavior.
+No live frame-marker creation or rendering feature is added. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): `ItemFrameEntity` and `MapManager` gain private runtime
+attachment/cleanup state; rebuild native plugins. Public signatures, native API
+version, Wasm WIT and saved-data meanings stay compatible. Unknown saved root/map
+fields now survive map writes; no new saved fields are introduced.
+
+Play test: display an imported map in an ordinary/glow frame and break its support;
+expect one frame/map drop and its icon gone after save/restart, with another frame
+and a named banner unchanged. Repeat Creative attacks and support loss with
+entity drops disabled; expect cleanup without item drops. Fixed and cancelled
+frames retain their contents and markers. Capture the map, drops and restart result.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so
