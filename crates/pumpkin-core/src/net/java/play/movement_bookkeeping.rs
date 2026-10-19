@@ -14,6 +14,9 @@ impl JavaClient {
     }
 
     pub(super) fn check_player_fall(player: &Player, delta_y: f64, on_ground: bool) {
+        player
+            .get_entity()
+            .check_supporting_block(player, on_ground);
         let flying = player
             .abilities
             .lock()

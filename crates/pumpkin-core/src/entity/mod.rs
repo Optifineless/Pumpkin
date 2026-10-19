@@ -115,6 +115,7 @@ pub(crate) mod leashable;
 mod server_entity;
 pub mod shearable;
 pub mod spawn_util;
+mod supporting_block;
 pub mod synched_entity_data;
 pub mod tnt;
 pub mod r#type;

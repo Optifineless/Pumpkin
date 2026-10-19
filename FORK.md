@@ -10,6 +10,15 @@ actual support block's callback; neighboring noncontact slime no longer cancels 
 stone landing. Position and position+rotation use the same grounded-to-airborne,
 upward takeoff predicate for jump statistics and exhaustion.
 
+PR #231 review: admitted Java ground updates refresh the existing runtime support
+cache from collision shapes beneath the whole player footprint, including all
+zero-displacement variants. Edge contact with slime stays safe even at one health;
+noncontact slime still permits ordinary stone damage, and noncolliding shapes are
+excluded. Airborne updates clear cached support. This ports the selection from
+`Entity.checkSupportingBlock` and `CollisionGetter.findSupportingBlock`, including
+the nearest-center and greatest Y/Z/X tie rule; vanilla's prior-horizontal-position
+fallback remains unported. No public signature, layout or saved-data change.
+
 Mirrors vanilla 26.3 `Entity.checkFallDamage`,
 `ServerGamePacketListenerImpl.handlePlayerPositionChange` and
 `ServerPlayer.jumpFromGround`. Landing callbacks retain their distance until they
@@ -28,9 +37,11 @@ In-game verification: Not yet.
 
 Play test: drop exactly four blocks onto stone with and without turning; expect
 half a heart lost once. Repeat beside noncontact slime, then onto actual slime;
-expect normal stone damage and no slime damage. Compare walking/sprinting jumps
-with and without turning; expect identical jump statistics and hunger costs.
-Record the measured drop, landing blocks, health and jump-statistic changes.
+expect normal stone damage and no slime damage. Repeat with only the edge of the
+player's feet over slime and the center over air, including at half a heart;
+expect unchanged health and survival. Compare walking/sprinting jumps with and
+without turning; expect identical jump statistics and hunger costs. Record the
+measured drop, landing blocks, health and jump-statistic changes.
 
 ## Empty map centers (#45)
 
