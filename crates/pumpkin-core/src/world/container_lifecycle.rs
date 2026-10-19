@@ -35,20 +35,20 @@ pub(super) fn retire_entity_container(entity: &std::sync::Arc<dyn EntityBase>) {
 }
 
 impl World {
-    pub(super) fn retire_replaced_container(&self, replacement: &std::sync::Arc<dyn BlockEntity>) {
-        let Some(previous) = self.get_block_entity(&replacement.get_position()) else {
-            return;
-        };
-        if std::sync::Arc::ptr_eq(&previous, replacement) {
+    pub(super) fn retire_replaced_block_entity(
+        previous: &std::sync::Arc<dyn BlockEntity>,
+        replacement: &std::sync::Arc<dyn BlockEntity>,
+    ) {
+        if std::sync::Arc::ptr_eq(previous, replacement) {
             return;
         }
-        let Some(previous_inventory) = previous.clone().get_inventory() else {
-            retire_block_entity(&previous);
+        let Some(previous_inventory) = std::sync::Arc::clone(previous).get_inventory() else {
+            retire_block_entity(previous);
             return;
         };
         // LevelChunk.setBlockEntity retires the previous instance before replacing it.
         // A wrapper around the same backing container preserves its existing ownership.
-        if let Some(next_inventory) = replacement.clone().get_inventory()
+        if let Some(next_inventory) = std::sync::Arc::clone(replacement).get_inventory()
             && std::sync::Arc::ptr_eq(
                 &previous_inventory.slot_transaction(0),
                 &next_inventory.slot_transaction(0),

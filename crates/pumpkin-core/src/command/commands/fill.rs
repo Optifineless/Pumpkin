@@ -103,6 +103,9 @@ fn fill_blocks(
         from.0.z.max(to.0.z),
     );
     check_region_loaded(source, min, max)?;
+    let _mutation = world
+        .block_entity_mutation_permit(from)
+        .ok_or_else(|| ERROR_FAILED.create_without_context())?;
     let air = BlockInput {
         state: BlockStateId::AIR,
         properties: Vec::new(),

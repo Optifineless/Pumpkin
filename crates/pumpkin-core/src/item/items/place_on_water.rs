@@ -60,6 +60,9 @@ impl ItemBehaviour for PlaceOnWaterBlockItem {
         };
 
         let above_pos = hit_pos.up();
+        let Some(_mutation) = world.block_entity_mutation_permit(above_pos) else {
+            return false;
+        };
         let above_state = world.get_block_state(&above_pos);
         if above_state.is_air() {
             let (placed_block, sound) = if item.id == Item::LILY_PAD.id {

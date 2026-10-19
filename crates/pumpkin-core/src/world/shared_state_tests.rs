@@ -134,7 +134,7 @@ async fn lazy_chest_publication_keeps_one_inventory_through_click_unload_and_rel
     first.get_entity().set_pos(pos.to_centered_f64());
     second.get_entity().set_pos(pos.to_centered_f64());
     let constructed = Arc::new(Barrier::new(2));
-    *world.lazy_block_entity_hook.lock().unwrap() = Some(Arc::new(move || {
+    *world.persistence_test_hooks.lazy.lock().unwrap() = Some(Arc::new(move || {
         constructed.wait();
     }));
     let runtime = tokio::runtime::Handle::current();
@@ -149,7 +149,7 @@ async fn lazy_chest_publication_keeps_one_inventory_through_click_unload_and_rel
         });
         (one.join().unwrap(), two.join().unwrap())
     });
-    *world.lazy_block_entity_hook.lock().unwrap() = None;
+    *world.persistence_test_hooks.lazy.lock().unwrap() = None;
     assert!(
         Arc::ptr_eq(&inventories.0, &inventories.1),
         "both real chest opens must retain the same Arc"
@@ -202,7 +202,7 @@ fn pause_first_lazy_load(world: &World) -> (mpsc::Receiver<()>, mpsc::Sender<()>
     let (resume, proceed) = mpsc::channel();
     let proceed = Mutex::new(proceed);
     let calls = AtomicUsize::new(0);
-    *world.lazy_block_entity_hook.lock().unwrap() = Some(Arc::new(move || {
+    *world.persistence_test_hooks.lazy.lock().unwrap() = Some(Arc::new(move || {
         if calls.fetch_add(1, Relaxed) == 0 {
             paused.send(()).unwrap();
             proceed.lock().unwrap().recv().unwrap();
@@ -339,7 +339,7 @@ async fn losing_lazy_chest_initializer_preserves_live_custom_data_through_reload
         Some(pumpkin_nbt::tag::NbtTag::Int(2)),
         "losing initializer overwrote live plugin data"
     );
-    *world.lazy_block_entity_hook.lock().unwrap() = None;
+    *world.persistence_test_hooks.lazy.lock().unwrap() = None;
     first.close_handled_screen();
     second.close_handled_screen();
     unload_and_reload(&world, pos, chunk).await;

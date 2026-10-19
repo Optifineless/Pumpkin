@@ -547,6 +547,20 @@ crates/pumpkin-core/src/server/named_root_clock_tests.rs::check_autosave_targets
 crates/pumpkin-core/src/server/named_root_clock_tests/retention.rs::named_clock_nested_newer_retirement_survives_older_pending_callback::unknown::Mutex::new#1
 crates/pumpkin-core/src/server/named_root_clock_tests/retention.rs::named_clock_nested_newer_retirement_survives_older_pending_callback::unknown::Mutex::new#2
 crates/pumpkin-core/src/server/named_root_clock_tests/retention.rs::named_clock_new_owner_wins_old_unload_completion_and_path_alias::unknown::Mutex::new#1
+# The overlap fixture takes its one-shot resume receiver, then releases the mutex before channel waits.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_capture.rs::overlapping_same_arc_saves_keep_newer_chest_contents_after_reload::std::sync::Mutex::new#1
+# The fixture mutex protects a one-shot receiver; its guard is dropped before the capture barrier waits.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_support.rs::from_nbt::std::sync::Mutex::new#1
+# The save-all race fixture takes its receiver, then releases the mutex before channel send/receive.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_capture.rs::save_all_replacement_keeps_block_entity_custom_data_after_reload::std::sync::Mutex::new#1
+# The stop-seal fixture takes its one-shot receiver, then releases the mutex before channel send/receive.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::stop_seal_rejects_a_replacement_before_the_final_chest_capture::std::sync::Mutex::new#1
+# The unload-seal fixture takes its one-shot receiver and drops the guard before barrier waiting.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_retirement.rs::chunk_unload_retires_the_current_chest_before_item_command_mutation::std::sync::Mutex::new#1
+# The deferred-loot fixture owns a one-shot resume receiver; its guard drops before the save barrier.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_round5.rs::packet_update_cannot_replace_a_full_deferred_loot_image::std::sync::Mutex::new#1
+# The late-placement fixture owns a one-shot receiver and drops the guard before the unload barrier.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_round5_admission.rs::unload_admission_rejects_a_new_chest_before_terrain_commit::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/recipe.rs::new::std::sync::RwLock::new#1
 crates/pumpkin-core/src/server/scenario/lifecycle.rs::s2_disconnect_during_respawn_does_not_republish_closed_instance::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scenario/mod.rs::<module>::tokio::sync::Mutex::const_new#1
@@ -584,11 +598,9 @@ crates/pumpkin-core/src/world/map/cache.rs::request_load::std::sync::Mutex::new#
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#1
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#2
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#3
-crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::default#4
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#10
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#11
-crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#12
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#2
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#3
 crates/pumpkin-core/src/world/mod.rs::load::std::sync::Mutex::new#4
@@ -863,3 +875,17 @@ crates/pumpkin-wasm-host-common/src/equipment_tests.rs::wasm_non_player_main_han
 # wraps non-reentrant std locks; replacing this mutex directly would self-deadlock.
 # Owners contain no stack storage, acquire in Arc identity order, and release before effects.
 crates/pumpkin-inventory/src/inventory/slot_transaction.rs::default::parking_lot::ReentrantMutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_break.rs::paused_chest_unload::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_registration.rs::delayed_initial_registration_cannot_overwrite_a_retried_full_save::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/server/scenario/persistence/block_entity_save_unload.rs::new::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/world/entity_unload_terrain_tests.rs::from_nbt::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-core/src/world/entity_unload_terrain_tests.rs::new::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-wasm-host-common/src/block_entity_mutation_tests.rs::block_entity_host_mutations_reject_sealed_shutdown_before_final_capture::std::sync::Mutex::new#1
+# Round5 test-only capture/activation barrier owns its receiver; its slot guard drops before waiting or callbacks.
+crates/pumpkin-wasm-host-common/src/block_entity_mutation_tests.rs::from_nbt::std::sync::Mutex::new#1

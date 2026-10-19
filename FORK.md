@@ -219,14 +219,95 @@ Bedrock click-block and click-air use the hand declared by the packet, including
 
 ## Chest restart regression, #172
 
-The watch/last-unwatch/save/reload regression now drives the real terrain unload
-queue and checks that a final 17-diamond chest snapshot survives region reload.
-The existing #170 `claim_terrain_unload` retains terrain under admission, rechecks
+Deterministic regressions exercise two stale-publication windows through real
+container, entity-unload, save and reload paths. A captured chest image is discarded
+if its live instance was replaced before publication, mirroring
+`LevelChunk.getBlockEntityNbtForSaving`. An ordinary entity save drops a captured
+live image after retirement has marked the entity removed, leaving the tick-owned
+retirement record authoritative, mirroring
+`PersistentEntitySectionManager.storeChunkSections/unloadEntity`. The stop path
+joins the ticker and packet/server tasks before world shutdown captures and saves
+the final chest state. The earlier terrain unpublication route is already closed
+by #170 `claim_terrain_unload`, which retains terrain under admission, rechecks
 tickets and holder targets, and removes only the expected chunk incarnation,
-mirroring `ChunkMap.scheduleUnload` identity checks. This PR preserves that
-production implementation and adds only regression coverage. The proven race route
-is already closed on murgicraft; the historical intermittent S6 failure's connection
-to it remains unconfirmed. Written by Codex. In-game verification: **Not yet**.
+mirroring `ChunkMap.scheduleUnload` identity checks. Written by Codex. In-game
+verification: **Not yet**.
+
+The #191 follow-up closes the ordinary `/save-all` replacement window too: if the
+captured block entity was replaced, save retries from the currently registered
+instance and attaches its current `PumpkinCustomData` before publishing. This keeps
+replacement state for entities whose `chunk_data_nbt()` is `None`, and matches
+`LevelChunk.getBlockEntityNbtForSaving` resolving the current live entity. In-game
+verification: **Not yet**.
+
+The #191 round-three follow-up orders block-entity NBT publications by capture
+stamp, so an older save of the same live chest cannot overwrite a newer image.
+Chunk unload and server shutdown seal replacement admission before the final
+capture is published; a same-position replacement already in flight is captured,
+and later saves or replacements cannot overwrite that final image. The saved NBT
+layout and meaning are unchanged. In-game verification: **Not yet**.
+
+The #191 round-four follow-up keeps the loaded-chunk eviction fence until a new
+block-entity image is marked dirty, and retires each replacement inventory before
+the final unload or shutdown capture. Tests cover the actual `/item replace block`
+command during chunk unload and a retained-handle transfer during server stop,
+then reload the captured chest contents. In-game verification: **Not yet**.
+
+The #191 round-five follow-up publishes only complete persistent block-entity
+images; `chunk_data_nbt()` remains packet data. Capture stamps reset with the live
+instance, and ordinary saves keep retrying until they capture the current one.
+Unload and stop close mutation admission before their final capture. Block placement,
+replacement, sign edits, block interactions, jigsaw edits and custom block-entity data
+are fenced at their mutation entry points, including native sign/map setters and
+both Wasm host versions. Terrain stays retained through the final capture, and its
+incarnation remains sealed until activation or reload. Concurrent replacements retire
+the exact predecessor before swapping. Chunk packets project full saved images through
+each block entity's client serializer. Regression scenarios exercise deferred chest loot,
+late chest placement, sign edits during unload, replacement churn and concurrent
+container replacement through save or unload and reload. Entity saves also retry
+when saved records are activated into the live registry during serialization. The
+saved NBT layout, plugin method signatures and WIT are unchanged. The private native
+layouts and hidden host coordination use API 8 (same version); rebuild native plugins.
+Direct public field writes bypass the supported native setters' admission contract.
+In-game verification: **Not yet**.
+
+The #191 round-seven stopgap reopens completed block-entity retirement when the
+same terrain is still loaded. Writers restore the captured entity before replacing
+its block, and a fresh retirement generation retains terrain until the next entity
+phase captures the reopened state. This also works after entity storage has been
+cleaned; new roots request storage through the existing asynchronous unload path.
+Mutation admission temporarily excludes captures across the whole world so nested
+physics callbacks cannot lose blocks at another chunk boundary. Off-tick entry
+points wait at most 250 ms for an active capture; capture callbacks never wait on
+their own thread, and Wasm reports rejected writes or explosions as errors. End
+platform construction preflights its footprint before transit. Native API remains
+8 (same version); rebuild native plugins for the private admission layout change.
+Saved NBT and WIT are unchanged. Vanilla 26.3 `LevelChunk.setBlockState`,
+`getBlockEntityNbtForSaving` and `ChunkMap.scheduleUnload` provide the ordering;
+the full terrain-lifetime redesign remains issue #224. Written by Codex.
+In-game verification: **Not yet**.
+
+Play test: put items in a chest at the edge of simulation distance, return after
+it stops ticking, then explode it; expect one chest and its contents exactly once.
+Push a block across that edge with a piston and collect water there with a bucket;
+expect the block to move and the water to disappear only when the bucket fills.
+Place and fill a chest there, save, leave the area and return, then restart; expect
+the contents to remain. Record these border interactions and the reload.
+
+The #191 round-7d follow-up runs lectern page and book-removal world effects after
+the menu guard releases, using the same effect batch as anvils. Deferred effects
+check the original block entity is still live; a removed book still reaches the
+player's inventory or drops once when it is full, even if the lectern disappears.
+Mirrors vanilla 26.3 `LecternMenu.clickMenuButton`, `LecternBlockEntity.setPage`
+and `LecternBlock.signalPageChange/resetBookState`. Written by Codex
+(GPT-6.1 Sol). Saved NBT, native API and WIT are unchanged.
+In-game verification: **Not yet**.
+
+Play test: open a lectern with a multi-page book and turn pages; expect the page
+and redstone pulse to update without a server error. Take the book with space in
+your inventory, then repeat with a full inventory; expect exactly one book in
+your inventory or on the ground, and an empty, unpowered lectern. Record both
+book returns and a page-turn pulse.
 
 ## World normal/frozen service boundary, ticks M1
 

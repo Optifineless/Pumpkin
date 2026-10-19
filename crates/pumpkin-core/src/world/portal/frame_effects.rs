@@ -10,7 +10,9 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 
 use crate::block::entities::{BlockEntity, block_entity_from_nbt, block_entity_name};
-use crate::world::{World, guard_effects, neighbor_updater::UPDATE_LIMIT};
+use crate::world::{
+    BlockEntityMutationPermit, World, guard_effects, neighbor_updater::UPDATE_LIMIT,
+};
 
 /// Captures positional cleanup targets before deferred callbacks can replace them.
 pub(in crate::world) struct RetiredBlockEffects {
@@ -97,6 +99,22 @@ impl RetiredBlockEntity {
 
 // PortalForcer.createPortal writes the complete frame before creation ownership is
 // released. Retain Level.setBlock's post-write effects, but dispatch outside that owner.
+pub(super) fn frame_mutation_permits(
+    world: &Arc<World>,
+    lower_corner: BlockPos,
+) -> Option<Vec<BlockEntityMutationPermit<'_>>> {
+    let mut permits = Vec::new();
+    // PortalForcer frames/fallback clearing and EndPlatformFeature.createEndPlatform
+    // share this horizontal footprint; reserve it before either starts writing.
+    for chunk_x in ((lower_corner.0.x - 2) >> 4)..=((lower_corner.0.x + 2) >> 4) {
+        for chunk_z in ((lower_corner.0.z - 2) >> 4)..=((lower_corner.0.z + 2) >> 4) {
+            let position = BlockPos::new(chunk_x << 4, lower_corner.0.y, chunk_z << 4);
+            permits.push(world.block_entity_mutation_permit(position)?);
+        }
+    }
+    Some(permits)
+}
+
 pub(super) fn set_frame_block(
     world: &Arc<World>,
     position: &BlockPos,
@@ -110,6 +128,10 @@ pub(super) fn set_frame_block(
     if !world.is_in_build_limit(*position) {
         return;
     }
+    let Some(_mutation) = world.block_entity_mutation_permit(*position) else {
+        tracing::warn!("Portal frame update rejected while chunk is unloading at {position:?}");
+        return;
+    };
     let old = world
         .write_block_state_if(position, state, |_| true)
         .unwrap_or(Block::AIR.default_state.id);

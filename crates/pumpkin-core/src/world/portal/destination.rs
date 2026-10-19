@@ -105,10 +105,17 @@ impl PortalType {
             let effects = GuardEffects::new();
             let (build_pos, axis, fallback) =
                 NetherPortal::find_safe_location(&build_world, origin, axis)?;
+            let Some(mutations) =
+                super::frame_effects::frame_mutation_permits(&build_world, build_pos)
+            else {
+                tracing::warn!("Portal creation rejected while destination chunks are unloading");
+                return None;
+            };
             NetherPortal::build_portal_frame(&build_world, build_pos, axis, fallback);
             // Publish all portal POIs before reentrant physics callbacks can search again.
             drop(creation);
             drop(effects);
+            drop(mutations);
             Some(ResidentPortal {
                 portal: PortalSearchResult {
                     lower_corner: build_pos,

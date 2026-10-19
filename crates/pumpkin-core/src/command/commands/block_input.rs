@@ -9,6 +9,11 @@ use std::sync::Arc;
 
 /// Places parsed state and block entity data using vanilla BlockInput.place's callbacks.
 pub(super) fn place(input: &BlockInput, world: &Arc<World>, pos: &BlockPos, strict: bool) -> bool {
+    // BlockInput.place can create a skipped block entity after World::set_block_state returns.
+    let Some(_mutation) = world.block_entity_mutation_permit(*pos) else {
+        tracing::warn!("Block placement rejected while chunk is unloading at {pos:?}");
+        return false;
+    };
     let mut state = input.state;
     if !strict {
         state = world.update_from_neighbor_shapes(state, pos);

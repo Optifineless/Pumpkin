@@ -161,9 +161,15 @@ async fn set_block_state_with_store(
     plugin
         .store
         .pump_blocking(&mut host, move || {
+            let _mutation = world
+                .block_entity_mutation_permit(internal_pos)
+                .ok_or_else(|| {
+                    wasmtime::Error::msg("Block write rejected during chunk capture or shutdown")
+                })?;
             world.set_block_state(&internal_pos, state_id, internal_flags);
+            Ok(())
         })
-        .await
+        .await?
 }
 
 pub(crate) const fn to_wasm_block_direction(dir: InternalBlockDirection) -> WitBlockDirection {
@@ -1194,8 +1200,16 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         let pos = pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
         plugin
             .store
-            .pump_blocking(&mut host, move || world.explode(pos, power, interaction))
-            .await
+            .pump_blocking(&mut host, move || {
+                let _mutation = world
+                    .block_entity_mutation_permit(pos.to_block_pos())
+                    .ok_or_else(|| {
+                        wasmtime::Error::msg("Explosion rejected during chunk capture or shutdown")
+                    })?;
+                world.explode(pos, power, interaction);
+                Ok(())
+            })
+            .await?
     }
 
     async fn spawn_entity(

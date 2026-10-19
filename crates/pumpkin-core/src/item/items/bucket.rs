@@ -460,6 +460,9 @@ impl ItemBehaviour for EmptyBucketItem {
         let Some((pickup_pos, item)) = bucket_pickup_target(&world, block_pos, direction) else {
             return false;
         };
+        let Some(_mutation) = world.block_entity_mutation_permit(pickup_pos) else {
+            return false;
+        };
 
         if let Some(server) = world.server.upgrade()
             && let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
@@ -614,6 +617,9 @@ impl ItemBehaviour for FilledBucketItem {
             direction,
             player.get_entity().is_sneaking(),
         ) else {
+            return false;
+        };
+        let Some(_mutation) = world.block_entity_mutation_permit(destination) else {
             return false;
         };
         if let Some(server) = world.server.upgrade()

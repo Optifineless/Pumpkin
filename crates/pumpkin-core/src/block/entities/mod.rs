@@ -38,6 +38,7 @@ pub mod jukebox;
 pub mod lectern;
 pub mod map;
 pub mod mob_spawner;
+mod mutation_context;
 pub mod piston;
 pub mod shulker_box;
 pub mod sign;

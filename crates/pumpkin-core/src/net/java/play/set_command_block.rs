@@ -148,6 +148,12 @@ impl JavaClient {
             props.conditional = command.is_conditional();
 
             let new_state_id = props.to_state_id(block_type);
+            // ServerGamePacketListenerImpl.handleSetCommandBlock updates terrain and the entity
+            // together: hold the block-entity mutation permit until the new entity is published.
+            let Some(mutation) = world.block_entity_mutation_permit(pos) else {
+                warn!("Command block update rejected while chunk is unloading at {pos:?}");
+                return;
+            };
             if world
                 .set_block_state_if(
                     &command.pos,
@@ -171,7 +177,10 @@ impl JavaClient {
             }
 
             let published_block_entity: Arc<dyn BlockEntity> = command_block;
-            if !publish_command_block_entity(&world, pos, new_state_id, &published_block_entity) {
+            let published =
+                publish_command_block_entity(&world, pos, new_state_id, &published_block_entity);
+            drop(mutation);
+            if !published {
                 return;
             }
 

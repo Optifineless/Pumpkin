@@ -494,7 +494,7 @@ impl CommandExecutor for PlaceStructureExecutor {
                             );
 
                             for nbt in chunk.pending_block_entities.drain(..) {
-                                placer.block_entity_nbts.push(nbt);
+                                placer.add_block_entity(nbt);
                             }
                         }
                     }
@@ -609,7 +609,7 @@ impl CommandExecutor for PlaceFeatureExecutor {
         );
 
         for nbt in chunk.pending_block_entities.drain(..) {
-            placer.block_entity_nbts.push(nbt);
+            placer.add_block_entity(nbt);
         }
 
         placer.finalize();
