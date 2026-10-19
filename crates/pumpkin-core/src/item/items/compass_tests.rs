@@ -590,3 +590,6 @@ async fn b1020_g02_refusal_and_cancellation_controls_preserve_inventory() {
     assert!(compass_item_entities(&fixture.world).is_empty());
     fixture.finish().await;
 }
+
+#[path = "compass_conservation_tests.rs"]
+mod conservation;

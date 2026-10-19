@@ -1035,11 +1035,18 @@ binding copy the original component patch with a fresh stack UID and replace its
 lodestone tracker; a full Survival inventory drops the bound copy, while a full
 Creative inventory discards it. Mirrors vanilla 26.3 `CompassItem.useOn`,
 `ItemStack.transmuteCopyIgnoreEmpty` and `Inventory.add`. No public API, WIT or
-saved-data changes. In-game verification: Not yet.
+saved-data changes. Survival stacked binding withdraws from the exact hand slot
+before insertion, so a bound copy that matches its source can merge without
+increasing the total count. A real `handle_use_item_on` regression covers both
+hands, repeated same-target uses, and free/full inventory layouts. In-game
+verification: Not yet.
 
 Play test: Bind a named singleton in each hand with a full inventory; expect the
-same named compass to remain held with the new tracker and no drop. Bind a named
-stack and rebind it; expect the copy to retain its name and component removals.
+same named compass to remain held with the new tracker and no drop. Combine two
+identically named compasses bound to the same lodestone, then click it repeatedly
+in either hand with space and with a full inventory; expect exactly two
+compasses with the name and custom settings intact. Bind a named stack and
+rebind it; expect the copy to retain its name and component removals.
 Repeat in Creative with space and with a full inventory; expect a bound copy in
 the free slot and no ground copy when full. Capture the holder and a nearby
 observer.
