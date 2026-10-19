@@ -50,6 +50,73 @@ the stone. Vanilla's `ServerPlayerGameMode.setGameMode` updates mode and abiliti
 without directly stopping sleep. No real-client or in-game verification is claimed
 here.
 
+## Owner review follow-ups for #239, #242 and #243
+
+PR #256 review round 2: axe use retries a rejected clicked write up to three
+total attempts, recomputing from the live state while retaining the original
+block identity. A neighboring stair's shape update no longer loses wax removal;
+replacement blocks still reject the action. Wear, statistics and effects occur
+once after success. Twice-panicking Wither deliveries retain failed actions and
+their per-recipient successors, finish other recipients, and get one independent
+recovery dispatch. Further failures remain queued for a later entry rather than
+spawning an unbounded retry chain.
+
+Checked against official vanilla 26.3 `BlockTransformer.transformBlock`,
+`CopyPropertiesProvider.getState`, `StairBlock.updateShape/getStairsShape`
+and `ServerBossEvent.removePlayer/removeAllPlayers` (embedded server SHA-256
+`a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
+Conditional retries and panic recovery adapt those semantics to fork concurrency
+and native callbacks. Native API 8, public layouts, WIT and saved-data meaning
+are unchanged. Written by GPT-6.1 Sol (Codex Cloud). In-game verification: **Not yet**.
+
+Real Java use and Wither tick/retirement regressions cover the neighboring stair,
+axe retry exhaustion, terminal delivery, persistent failure parking and returning
+sessions. Negative controls against the original production code leave the stair
+waxed and exhaust the bounded wait for terminal REMOVE. Test synchronization uses
+write seams and cooperative poll budgets, without sleeps. Restricting ordering to
+one subscription instead of its player session delivers ADD/HEALTH/REMOVE; the
+returning-session regression requires REMOVE/ADD/HEALTH.
+
+Play test: sneak-use an axe on a waxed copper stair while another player places
+an adjoining stair; expect the wax to disappear, the corner shape to remain and
+one durability use. Capture the stair shape, wax-removal effects and durability.
+
+Axe transformations condition every clicked and companion write on its observed
+state. Rejected clicked writes do not consume durability or publish transform
+effects; hoe and shovel transformations use the same admission, including rooted
+dirt drops and campfire extinction. Honeycomb already used conditional writes.
+Door companion ordering remains unchanged to preserve paired-block callbacks.
+
+Final lectern retirement reconciles `has_book` and clears `powered` when its
+captured inventory has no book, keeping a queued take consistent across reload.
+Wither dispatch releases ownership after native packet panics, preserves pending
+successors and retries abandoned batches independently of another tick or save.
+Registration and update packets share the block-entity publication order, skip
+replaced incarnations, and send after mutation ownership releases. Committed tags
+also survive an abandoned outer effect batch.
+
+These preserve saved-data meaning. API 8 (same version): private World admission
+state gains an ordered client-notification queue; rebuild native plugins. Public
+signatures and Wasm WIT are unchanged. Mirrors the concurrency boundaries around
+vanilla 26.3 axe/hoe/shovel use, `LecternBlock.resetBookState`,
+`LevelChunk.getBlockEntityNbtForSaving` and `ServerBossEvent` delivery. Decompiled
+26.3 source was unavailable; no new Java-source parity verification is claimed.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: **Not yet**.
+
+All ten real-entry regressions have recorded failing negative controls. Bypassing
+tool predicates overwrites replacements and produces stale root drops/wear;
+omitting retirement reconciliation reloads an occupied empty lectern. Original
+Wither dispatch strands health/terminal cleanup, original registration delivery
+sends older text last, and canceling a committed notification loses its final tag.
+The controls retain the test seams and restore production files afterward.
+
+Play test: scrape both halves of a stocked copper chest and a copper door while
+another player replaces a half; expect the replacement to remain and each
+successful use to wear the tool once. Take a lectern book near simulation distance
+and restart; expect one book returned and an empty, unpowered lectern. Kill a
+Wither and replace a sign while another player watches; expect the bar to disappear
+and the final sign text to remain. Record the item counts, reload, HUD and sign.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

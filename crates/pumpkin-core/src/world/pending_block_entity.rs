@@ -32,6 +32,9 @@ impl LockClass for PendingBlockEntityLoadsLock {
 #[cfg(test)]
 pub(super) type PublicationHook = Arc<dyn Fn() + Send + Sync>;
 
+#[cfg(test)]
+pub(super) type TransformWriteHook = Arc<dyn Fn(BlockPos) + Send + Sync>;
+
 // Test hooks copy/take their callbacks before invocation; none retains its slot mutex.
 #[cfg(test)]
 #[derive(Default)]
@@ -41,6 +44,8 @@ pub struct PersistenceTestHooks {
     pub(crate) lazy: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) activation: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) registration: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) registration_published: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) transform_write: std::sync::Mutex<Option<TransformWriteHook>>,
     pub(crate) publication: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) update_capture: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) update_packet_capture: std::sync::Mutex<Option<PublicationHook>>,
@@ -63,6 +68,9 @@ pub(super) struct PendingBlockEntityLoads {
     unloading: FxHashMap<Vector2<i32>, BlockEntityUnload>,
     active_mutations: FxHashMap<Vector2<i32>, usize>,
     stop_admission: bool,
+    pub(super) notifications:
+        std::collections::VecDeque<super::block_entity_notifications::BlockEntityNotification>,
+    pub(super) notifying: bool,
 }
 
 /// Reserves a synchronous world mutation so chunk retirement can defer to its next tick.
@@ -131,6 +139,17 @@ impl World {
         loop {
             let stamp = self.next_block_entity_capture_stamp();
             let nbt = self.capture_block_entity_snapshot(pos, &expected);
+            if retiring {
+                // Retirement excludes writers; release registry guards before terrain leaves.
+                let chunk = self
+                    .level
+                    .loaded_chunks
+                    .get(&pos.chunk_position())
+                    .map(|entry| Arc::clone(entry.value()));
+                if let Some(chunk) = chunk {
+                    super::lectern_update::reconcile_retiring_lectern(&chunk, pos, &nbt);
+                }
+            }
             match self.try_publish_block_entity_snapshot(pos, &expected, &nbt, stamp, retiring) {
                 SnapshotPublication::Published
                 | SnapshotPublication::Missing
@@ -245,6 +264,7 @@ impl World {
         nbt: &NbtCompound,
         stamp: u64,
         expected: Option<&Arc<dyn BlockEntity>>,
+        notification: Option<super::block_entity_notifications::BlockEntityNotification>,
     ) -> bool {
         let chunk_pos = pos.chunk_position();
         let mut loads = self
@@ -282,6 +302,9 @@ impl World {
         });
         if published.is_some() {
             loads.published_capture_stamps.insert(pos, stamp);
+            if let Some(notification) = notification {
+                loads.notifications.push_back(notification);
+            }
         }
         drop(loads);
         if published.is_some() {
