@@ -4,12 +4,12 @@ use crate::block::registry::BlockActionResult;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use pumpkin_data::data_component::DataComponent;
-use pumpkin_data::data_component_impl::{DataComponentImpl, LodestoneTarget, LodestoneTrackerImpl};
+use pumpkin_data::data_component_impl::{LodestoneTarget, LodestoneTrackerImpl};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockDirection};
+use pumpkin_util::GameMode;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
@@ -40,7 +40,8 @@ impl ItemBehaviour for CompassItem {
                 &location.to_f64(),
             );
 
-            let mut lodestone_compass = ItemStack::new(1, &Item::COMPASS);
+            let gamemode = player.gamemode.load();
+            let replace_existing_stack = gamemode != GameMode::Creative && item.item_count == 1;
             let tracker = LodestoneTrackerImpl {
                 target: Some(LodestoneTarget {
                     dimension: world.dimension.minecraft_name.to_string(),
@@ -50,16 +51,19 @@ impl ItemBehaviour for CompassItem {
                 }),
                 tracked: true,
             };
-            lodestone_compass
-                .patch
-                .push((DataComponent::LodestoneTracker, Some(tracker.to_dyn())));
 
-            item.decrement_unless_creative(player.gamemode.load(), 1);
-            let was_added = player
-                .inventory
-                .insert_stack_anywhere(&mut lodestone_compass);
-            if !was_added && !lodestone_compass.is_empty() {
-                world.drop_stack(&player.position().to_block_pos(), lodestone_compass);
+            if replace_existing_stack {
+                item.set_data_component(tracker);
+            } else {
+                let mut lodestone_compass = item.copy_with_count(1);
+                item.decrement_unless_creative(gamemode, 1);
+                lodestone_compass.set_data_component(tracker);
+                let was_added = player
+                    .inventory
+                    .insert_stack_anywhere(&mut lodestone_compass);
+                if !was_added && !lodestone_compass.is_empty() && gamemode != GameMode::Creative {
+                    world.drop_stack(&player.position().to_block_pos(), lodestone_compass);
+                }
             }
             BlockActionResult::Success
         } else {
@@ -71,3 +75,7 @@ impl ItemBehaviour for CompassItem {
         self
     }
 }
+
+#[cfg(test)]
+#[path = "compass_tests.rs"]
+mod tests;

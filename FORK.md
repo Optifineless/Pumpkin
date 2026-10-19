@@ -1027,3 +1027,19 @@ damage or restore cleared effect metadata. Mirrors vanilla 26.3
 `LivingEntity.addEffect/onEffectAdded/onEffectUpdated` and
 `MobEffect.addAttributeModifiers`. Public API 8, layouts and saved-data meaning are
 unchanged. In-game verification: **Not yet**.
+
+## Lodestone compass component preservation (#43)
+
+Survival singleton binding updates the used stack in place. Stack and Creative
+binding copy the original component patch with a fresh stack UID and replace its
+lodestone tracker; a full Survival inventory drops the bound copy, while a full
+Creative inventory discards it. Mirrors vanilla 26.3 `CompassItem.useOn`,
+`ItemStack.transmuteCopyIgnoreEmpty` and `Inventory.add`. No public API, WIT or
+saved-data changes. In-game verification: Not yet.
+
+Play test: Bind a named singleton in each hand with a full inventory; expect the
+same named compass to remain held with the new tracker and no drop. Bind a named
+stack and rebind it; expect the copy to retain its name and component removals.
+Repeat in Creative with space and with a full inventory; expect a bound copy in
+the free slot and no ground copy when full. Capture the holder and a nearby
+observer.
