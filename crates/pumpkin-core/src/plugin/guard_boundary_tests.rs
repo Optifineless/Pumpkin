@@ -556,5 +556,6 @@ mod menu_session_tests;
 mod merchant_packets;
 mod merchant_reopen;
 mod ordered_delivery;
+mod registration_broadcast_tests;
 mod saved_login_tests;
 mod unbatched_owners;

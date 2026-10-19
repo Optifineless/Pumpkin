@@ -1,5 +1,8 @@
 # Reviewed baseline of raw synchronization and blocking bridge sites.
 # New entries require a justification comment; see rules B1 and B3.
+# Follow-up recapture test only: owns a one-shot completion-race callback slot.
+# Its mutex guard drops before invoking the callback or awaiting the storage fetch.
+crates/pumpkin-core/src/world/entity_unload_recapture_tests.rs::entity_unload_coalesces_storage_recapture_across_ticks_and_generations::std::sync::Mutex::new#1
 # Test-only hook pauses knot cleanup after its empty scan to make the attachment race deterministic.
 crates/pumpkin-core/src/entity/decoration/leash_knot.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::<module>::std::sync::Mutex::new#1

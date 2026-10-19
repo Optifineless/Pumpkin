@@ -57,6 +57,9 @@ impl LecternController for LecternPageController {
         let position = self.position;
         // LecternMenu.setData / LecternBlockEntity.setPage commit after the menu unlocks.
         let effect = move || {
+            let Some(mutation) = world.block_entity_mutation_permit(position) else {
+                return;
+            };
             if !world.is_live_block_entity(&block_entity) {
                 return;
             }
@@ -70,7 +73,12 @@ impl LecternController for LecternPageController {
             }
             entity.page.store(page as usize, Ordering::Relaxed);
             entity.mark_dirty();
-            LecternBlock::pulse(&world, &position);
+            let update = world.prepare_lectern_state_update(position, true, None);
+            drop(mutation);
+            if let Some(update) = update {
+                update();
+                LecternBlock::finish_page_turn(&world, &position);
+            }
         };
         if let Err(effect) = defer(effect) {
             effect();
@@ -82,13 +90,21 @@ impl LecternController for LecternPageController {
         let block_entity = self.block_entity.clone();
         let position = self.position;
         let effect = move || {
+            let Some(mutation) = world.block_entity_mutation_permit(position) else {
+                return;
+            };
             if !world.is_live_block_entity(&block_entity) {
                 return;
             }
             if let Some(entity) = block_entity.as_any().downcast_ref::<LecternBlockEntity>() {
                 entity.page.store(0, Ordering::Relaxed);
             }
-            LecternBlock::set_has_book(&world, &position, false);
+            let update = world.prepare_lectern_state_update(position, false, Some(false));
+            drop(mutation);
+            if let Some(update) = update {
+                update();
+                LecternBlock::update_neighbors_below(&world, &position);
+            }
         };
         if let Err(effect) = defer(effect) {
             effect();
@@ -134,18 +150,11 @@ impl LecternBlock {
         world.update_neighbors(&position.down(), None);
     }
 
-    /// Emits the vanilla page-turn redstone pulse: powered for two game ticks.
-    pub(crate) fn pulse(world: &Arc<World>, position: &BlockPos) {
-        let (block, state_id) = world.get_block_and_state_id(position);
-        if block != &Block::LECTERN {
-            return;
-        }
-        let mut props = LecternLikeProperties::from_state_id(state_id);
-        props.powered = true;
-        world.set_block_state(position, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+    /// Notifies the vanilla two-tick page-turn pulse after mutation admission ends.
+    fn finish_page_turn(world: &Arc<World>, position: &BlockPos) {
         Self::update_neighbors_below(world, position);
         world.schedule_block_tick(
-            block,
+            &Block::LECTERN,
             *position,
             Self::PAGE_TURN_PULSE_TICKS,
             TickPriority::Normal,

@@ -5,7 +5,7 @@ use pumpkin_inventory::beacon_screen_handler::BeaconScreenHandler;
 use pumpkin_protocol::java::server::play::SSetBeacon;
 
 enum UpdateResult {
-    Applied(Option<(Arc<World>, Arc<dyn BlockEntity>)>),
+    Applied(Option<(Arc<World>, Arc<dyn BlockEntity>, bool)>),
     NoPayment,
     InvalidEffects,
 }
@@ -58,8 +58,9 @@ impl JavaClient {
                         .as_ref()
                         .and_then(|entity| entity.clone().downcast::<BeaconBlockEntity>().ok());
                     let updated = if let Some(beacon) = beacon {
+                        let play_sound = beacon.has_active_beam();
                         beacon.set_effects(primary_id, secondary_id);
-                        Some((player.world(), beacon as Arc<dyn BlockEntity>))
+                        Some((player.world(), beacon as Arc<dyn BlockEntity>, play_sound))
                     } else {
                         beacon_handler.beacon_data.set_property(
                             BeaconBlockEntity::DATA_PRIMARY as i32,
@@ -86,12 +87,21 @@ impl JavaClient {
 
         // BeaconMenu.updateEffects calls blockEntityChanged. Admission is below the
         // screen lock in the lock hierarchy, so refresh the saved image only after unlocking.
-        if let UpdateResult::Applied(Some((world, entity))) = &result
+        if let UpdateResult::Applied(Some((world, entity, play_sound))) = &result
             && world
                 .get_block_entity(&entity.get_position())
                 .is_some_and(|live| Arc::ptr_eq(&live, entity))
         {
             world.update_block_entity(entity);
+            // BeaconBlockEntity.dataAccess.set(1) sounds for every paid primary selection
+            // with a beam, including reselecting the current power.
+            if *play_sound {
+                world.play_block_sound(
+                    pumpkin_data::sound::Sound::BlockBeaconPowerSelect,
+                    pumpkin_data::sound::SoundCategory::Blocks,
+                    entity.get_position(),
+                );
+            }
         }
 
         if matches!(result, UpdateResult::InvalidEffects) {
