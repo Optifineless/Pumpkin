@@ -11,14 +11,13 @@ use std::sync::{
 use pumpkin_data::{
     Block,
     biome::Biome,
-    data_component_impl::{
-        CookingFuelImpl, CustomNameImpl, FloatProvider, IntProvider, UseRemainderImpl,
-    },
+    data_component_impl::{CookingFuelImpl, FloatProvider, IntProvider},
     item::Item,
     item_stack::ItemStack,
 };
 use pumpkin_inventory::Inventory;
-use pumpkin_util::{math::position::BlockPos, math::vector2::Vector2, text::TextComponent};
+use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+use pumpkin_util::{math::position::BlockPos, math::vector2::Vector2};
 use pumpkin_world::world::BlockFlags;
 
 use crate::{
@@ -149,54 +148,69 @@ async fn b1019_g01_lava_remainder_and_fuel_controls() {
 }
 
 #[tokio::test]
-async fn b1019_g01_lava_template_overflow_keeps_components_once() {
+async fn b1019_g01_use_remainder_cannot_override_crafting_remainders() {
     run(|fixture| {
         let world = fixture.world();
         prepare_world(&world);
-
-        let entity = furnace(&world, BlockPos::new(8, 64, 8));
-        entity.set_stack(0, ItemStack::new(1, &Item::RAW_IRON));
-        let mut remainder = ItemStack::new(2, &Item::DIAMOND);
-        remainder.set_data_component(CustomNameImpl {
-            name: TextComponent::text("fuel remainder template"),
-        });
-        let mut fuel = ItemStack::new(2, &Item::LAVA_BUCKET);
-        fuel.set_data_component(CookingFuelImpl {
-            burn_time: IntProvider::Inline(20),
-            speed_multiplier: FloatProvider::Inline(1.0),
-        });
-        fuel.set_data_component(UseRemainderImpl {
-            remainder: None,
-            template: Some(Box::new(remainder)),
-        });
-        entity.set_stack(1, fuel);
+        let cases = [
+            (&Item::COAL, 1, &Item::AIR),
+            (&Item::LAVA_BUCKET, 1, &Item::BUCKET),
+            (&Item::LAVA_BUCKET, 2, &Item::LAVA_BUCKET),
+            (&Item::MILK_BUCKET, 1, &Item::BUCKET),
+            (&Item::WATER_BUCKET, 1, &Item::BUCKET),
+            (&Item::DRAGON_BREATH, 1, &Item::GLASS_BOTTLE),
+            (&Item::HONEY_BOTTLE, 1, &Item::GLASS_BOTTLE),
+        ];
+        let mut furnaces = Vec::new();
+        for (index, (item, count, expected)) in cases.into_iter().enumerate() {
+            let entity = furnace(&world, BlockPos::new(8 + index as i32, 64, 8));
+            entity.set_stack(0, ItemStack::new(1, &Item::RAW_IRON));
+            // Decode supported custom-item state through the real saved-item parser.
+            let mut remainder = NbtCompound::new();
+            remainder.put_string("id", "minecraft:diamond".to_string());
+            remainder.put_int("count", 2);
+            let mut components = NbtCompound::new();
+            components.put_compound("minecraft:use_remainder", remainder);
+            let mut saved_fuel = NbtCompound::new();
+            saved_fuel.put_string("id", item.registry_key.to_string());
+            saved_fuel.put_int("count", count);
+            saved_fuel.put_compound("components", components);
+            let mut fuel = ItemStack::read_item_stack(&saved_fuel).unwrap();
+            if fuel.get_data_component::<CookingFuelImpl>().is_none() {
+                fuel.set_data_component(CookingFuelImpl {
+                    burn_time: IntProvider::Inline(20),
+                    speed_multiplier: FloatProvider::Inline(1.0),
+                });
+            }
+            entity.set_stack(1, fuel);
+            furnaces.push((entity, expected));
+        }
 
         tick(fixture, 1);
 
-        let remaining_fuel = entity.get_stack(1);
-        assert_eq!(remaining_fuel.item, &Item::LAVA_BUCKET);
-        assert_eq!(remaining_fuel.item_count, 1);
+        for (entity, expected) in furnaces {
+            assert!(entity.is_burning());
+            let fuel = entity.get_stack(1);
+            if expected == &Item::AIR {
+                assert!(fuel.is_empty(), "coal must not create a use remainder");
+            } else {
+                assert_eq!(fuel.item, expected);
+                assert_eq!(fuel.item_count, 1);
+            }
+        }
         let dropped: Vec<_> = world
             .entities
             .load()
             .iter()
             .filter_map(|entity| entity.get_item_entity())
-            .filter_map(|entity| {
-                let stack = entity.get_item_stack().lock().unwrap().clone();
-                (stack.item == &Item::DIAMOND).then_some(stack)
-            })
+            .map(|entity| entity.get_item_stack().lock().unwrap().clone())
             .collect();
-        assert_eq!(dropped.len(), 1, "the template remainder must drop once");
-        assert_eq!(dropped[0].item_count, 2);
         assert_eq!(
-            dropped[0]
-                .get_data_component::<CustomNameImpl>()
-                .unwrap()
-                .name
-                .clone()
-                .get_text(),
-            "fuel remainder template"
+            dropped.len(),
+            1,
+            "only the stacked lava overflows a remainder"
         );
+        assert!(dropped[0].are_equal(&ItemStack::new(1, &Item::BUCKET)));
     })
     .await;
 }
@@ -287,7 +301,7 @@ async fn b1019_g01_speed_change_survives_factory_reload_and_legacy_default() {
         assert_eq!(restored_smoker.get_stack(2).item_count, 2);
 
         let mut old_save = nbt;
-        old_save.child_tags.remove("cooking_speed_multiplier");
+        old_save.child_tags.remove("speed_multiplier");
         let legacy = block_entity_from_nbt(&old_save).expect("factory should read old saves");
         let legacy_smoker = legacy
             .as_any()
@@ -296,6 +310,63 @@ async fn b1019_g01_speed_change_survives_factory_reload_and_legacy_default() {
         assert_eq!(legacy_smoker.get_speed_multiplier(), 1.0);
         assert_eq!(legacy_smoker.get_cooking_total_time(), 100);
         assert_eq!(legacy_smoker.get_cooking_time_spent(), 51);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn b1019_g01_vanilla_speed_schema_survives_next_recipe() {
+    run(|fixture| {
+        let world = fixture.world();
+        prepare_world(&world);
+        let position = BlockPos::new(8, 64, 8);
+        world.set_block_state(
+            &position,
+            Block::SMOKER.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+
+        // AbstractFurnaceBlockEntity.saveAdditional's literal schema, independent of our writer.
+        // Short timers retain this fork's existing encoding; vanilla accepts numeric tags.
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", "minecraft:smoker".to_string());
+        nbt.put_int("x", 8);
+        nbt.put_int("y", 64);
+        nbt.put_int("z", 8);
+        nbt.put_short("cooking_time_spent", 51);
+        nbt.put_short("cooking_total_time", 100);
+        nbt.put_short("lit_time_remaining", 750);
+        nbt.put_short("lit_total_time", 800);
+        nbt.put_float("speed_multiplier", 2.0);
+        let mut input = NbtCompound::new();
+        input.put_byte("Slot", 0);
+        input.put_string("id", "minecraft:potato".to_string());
+        input.put_int("count", 10);
+        nbt.put_list("Items", vec![NbtTag::Compound(input)]);
+        let restored = block_entity_from_nbt(&nbt).unwrap();
+        let entity = restored
+            .as_any()
+            .downcast_ref::<SmokerBlockEntity>()
+            .unwrap();
+        assert_eq!(entity.get_speed_multiplier(), 2.0);
+        world.add_block_entity(restored.clone());
+
+        let mut saved = NbtCompound::new();
+        entity.write_internal(&mut saved);
+        for written in [saved, entity.chunk_data_nbt().unwrap()] {
+            assert_eq!(written.get_float("speed_multiplier"), Some(2.0));
+            assert!(written.get("cooking_speed_multiplier").is_none());
+        }
+        tick(fixture, 48);
+        assert!(entity.get_stack(2).is_empty());
+        tick(fixture, 1);
+        assert_eq!(entity.get_stack(2).item_count, 1);
+        assert_eq!(entity.get_cooking_total_time(), 100);
+        tick(fixture, 99);
+        assert_eq!(entity.get_stack(2).item_count, 1);
+        tick(fixture, 1);
+        assert_eq!(entity.get_stack(2).item, &Item::BAKED_POTATO);
+        assert_eq!(entity.get_stack(2).item_count, 2);
     })
     .await;
 }

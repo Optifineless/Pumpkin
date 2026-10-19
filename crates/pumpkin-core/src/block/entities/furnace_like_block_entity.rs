@@ -1,4 +1,4 @@
-use pumpkin_data::{item::Item, item_stack::ItemStack, recipes::CookingRecipe};
+use pumpkin_data::{item_stack::ItemStack, recipes::CookingRecipe};
 
 use crate::block::entities::{BlockEntity, PropertyDelegate};
 pub use pumpkin_inventory::ExperienceContainer;
@@ -37,15 +37,13 @@ pub trait CookingBlockEntityBase:
     fn craft_recipe(&self, recipe: Option<&CookingRecipe>) -> bool;
 }
 
-pub(crate) fn get_fuel_remainder(fuel: &ItemStack) -> Option<ItemStack> {
-    // A component template carries its own count and components; create a fresh stack just as
-    // AbstractFurnaceBlockEntity.consumeFuel does for an ItemStackTemplate.
-    fuel.get_data_component::<pumpkin_data::data_component_impl::UseRemainderImpl>()
-        .and_then(pumpkin_data::data_component_impl::UseRemainderImpl::create)
-        .or_else(|| {
-            // Lava buckets have a static item crafting remainder in Vanilla item data.
-            (fuel.item.id == Item::LAVA_BUCKET.id).then(|| ItemStack::new(1, &Item::BUCKET))
-        })
+/// Creates the item crafting remainder used by the exported cooking macros.
+#[doc(hidden)]
+#[must_use]
+pub fn get_fuel_remainder(fuel: &ItemStack) -> Option<ItemStack> {
+    // AbstractFurnaceBlockEntity.consumeFuel reads Item.getCraftingRemainder, not USE_REMAINDER.
+    let remainder = pumpkin_inventory::crafting::crafting_remainder(fuel.item);
+    (!remainder.is_empty()).then_some(remainder)
 }
 
 #[macro_export]
@@ -652,7 +650,7 @@ macro_rules! impl_block_entity_for_cooking {
                         .map_or(0, |lit_time_remaining| lit_time_remaining as u16),
                 );
                 let speed_multiplier = std::sync::atomic::AtomicU32::new(
-                    nbt.get_float("cooking_speed_multiplier")
+                    nbt.get_float("speed_multiplier")
                         .unwrap_or(1.0)
                         .to_bits(),
                 );
@@ -691,7 +689,7 @@ macro_rules! impl_block_entity_for_cooking {
                 nbt.put_short("cooking_time_spent", self.get_cooking_time_spent() as i16);
                 nbt.put_short("lit_total_time", self.get_lit_total_time() as i16);
                 nbt.put_short("lit_time_remaining", self.get_lit_time_remaining() as i16);
-                nbt.put_float("cooking_speed_multiplier", self.get_speed_multiplier());
+                nbt.put_float("speed_multiplier", self.get_speed_multiplier());
 
                 // Save RecipesUsed in vanilla format (map of recipe ID -> craft count)
                 {
@@ -742,7 +740,7 @@ macro_rules! impl_block_entity_for_cooking {
                 nbt.put_short("cooking_time_spent", self.get_cooking_time_spent() as i16);
                 nbt.put_short("lit_total_time", self.get_lit_total_time() as i16);
                 nbt.put_short("lit_time_remaining", self.get_lit_time_remaining() as i16);
-                nbt.put_float("cooking_speed_multiplier", self.get_speed_multiplier());
+                nbt.put_float("speed_multiplier", self.get_speed_multiplier());
 
                 if let Ok(recipes) = self.recipes_used.lock() {
                     if !recipes.is_empty() {
