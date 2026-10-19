@@ -309,6 +309,16 @@ impl World {
         Some(entity)
     }
 
+    /// `Container.stillValidBlockEntity` identity against the live registry only. Menu
+    /// validity runs under screen guards, so it never promotes a pending image (admission).
+    pub(crate) fn is_live_block_entity(&self, entity: &Arc<dyn BlockEntity>) -> bool {
+        let pos = entity.get_position();
+        self.block_entities
+            .get(&pos.chunk_position())
+            .and_then(|entities| entities.get(&pos).cloned())
+            .is_some_and(|live| Arc::ptr_eq(&live, entity))
+    }
+
     fn has_pending_block_entity_image(&self, pos: &BlockPos) -> bool {
         let chunk = self
             .level

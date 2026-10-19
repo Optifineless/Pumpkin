@@ -54,9 +54,7 @@ impl ScreenHandlerFactory for ShulkerBoxScreenFactory {
             };
             // Container.stillValidBlockEntity: identity, level, then interaction range + 4.
             Arc::ptr_eq(&world, &player.world())
-                && world
-                    .get_block_entity(&entity.get_position())
-                    .is_some_and(|live| Arc::ptr_eq(&live, &entity))
+                && world.is_live_block_entity(&entity)
                 && player
                     .can_interact_with_block_at(&entity.get_position(), DEFAULT_DISTANCE_BUFFER)
         }));
