@@ -61,6 +61,9 @@ impl BrewingStandBlockEntity {
         ) else {
             return false;
         };
+        if uses <= 0 {
+            return false;
+        }
 
         let mut fuel_power = uses;
         if let Some(server) = world.server.upgrade() {

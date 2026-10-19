@@ -16,10 +16,12 @@ events retain cancellation, with stock revalidated after callbacks.
 Mirrors vanilla 26.3 `BrewingStandBlockEntity.serverTick/doBrew/getUses/getSpeedMultiplier/loadAdditional/saveAdditional`,
 `BrewingStandMenu`, and `BrewingFuel`/`ResolvableInt`/`ResolvableFloat` codecs.
 The context-provider evaluator handles the binomial rule used by blaze powder's
-default 20-use provider. An unsupported registered provider leaves its fuel item
-in place, while missing references and legitimate zero results retain vanilla's
-zero-use behavior. Addresses B1 from PR #246 review; broader context-provider
-engine parity remains outside these two issues.
+default 20-use provider. A fuel `uses` provider that errors or resolves to zero
+or less leaves the fuel item and fuel totals unchanged, preventing repeated
+payment on later ticks. Numeric-looking holder references and other unsupported
+provider forms can still leave the stand idle. This addresses the payment-loss
+part of PR #246 review; broader context-provider parity and the reviewed event
+payload widths remain outside this fix.
 
 API 8 (same version): rebuild native plugins for the brewing stand layout and
 `BrewingFuelImpl` marker-to-payload change (replace unit construction with

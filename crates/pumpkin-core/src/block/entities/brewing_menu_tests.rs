@@ -163,7 +163,16 @@ async fn b1019_g02_binomial_default_provider_starts_brew_and_keeps_second_powder
 async fn b1019_g02_unsupported_registered_fuel_provider_keeps_fuel_item() {
     let fixture = BrewingFixture::new().await;
     let mut uses = NbtCompound::new();
-    uses.put_string("type", "minecraft:unsupported".into());
+    uses.put_string("type", "minecraft:conditional".into());
+    uses.put_string("condition", "minecraft:block/fast_cooking".into());
+    uses.put_string(
+        "on_false",
+        "minecraft:cooking/normal_burn_time_reduction_factor".into(),
+    );
+    uses.put_string(
+        "on_true",
+        "minecraft:cooking/fast_burn_time_reduction_factor".into(),
+    );
     fixture
         .host
         .server
@@ -178,12 +187,15 @@ async fn b1019_g02_unsupported_registered_fuel_provider_keeps_fuel_item() {
         uses: BrewingFuelProvider::Id(Cow::Borrowed("test:unsupported_uses")),
         speed_multiplier: BrewingFuelProvider::Constant(1.0),
     });
+    let expected_fuel = fuel.clone();
     fixture.stand.set_stack(4, fuel);
 
-    fixture.ticks(1);
+    fixture.ticks(3);
 
     assert_properties(&fixture.stand, [0, 0, 0, 0]);
-    assert_eq!(fixture.stand.get_stack(4).item_count, 2);
+    assert!(fixture.stand.get_stack(4).are_equal(&expected_fuel));
+    assert_eq!(fixture.stand.get_stack(4).uid, expected_fuel.uid);
+    assert_eq!(fixture.stand.get_stack(3).item_count, 1);
     fixture.shutdown().await;
 }
 
@@ -199,10 +211,12 @@ async fn b1019_g02_missing_fuel_providers_use_zero_uses_and_unit_speed_defaults(
         uses: BrewingFuelProvider::Id(Cow::Borrowed("test:missing_uses")),
         speed_multiplier: BrewingFuelProvider::Constant(2.0),
     });
+    let expected_missing_fuel = fuel.clone();
     fixture.stand.set_stack(4, fuel);
-    fixture.ticks(1);
+    fixture.ticks(3);
     assert_properties(&fixture.stand, [0, 0, 0, 0]);
-    assert_eq!(fixture.stand.get_stack(4).item_count, 1);
+    assert!(fixture.stand.get_stack(4).are_equal(&expected_missing_fuel));
+    assert_eq!(fixture.stand.get_stack(4).uid, expected_missing_fuel.uid);
     assert_eq!(fixture.stand.get_stack(3).item_count, 1);
     let mut player = fixture.open_menu();
     assert_eq!(
@@ -219,12 +233,14 @@ async fn b1019_g02_missing_fuel_providers_use_zero_uses_and_unit_speed_defaults(
         uses: BrewingFuelProvider::Id(Cow::Borrowed("7")),
         speed_multiplier: BrewingFuelProvider::Constant(2.0),
     });
+    let expected_zero_fuel = fuel.clone();
     fixture.stand.set_stack(4, fuel);
-    fixture.ticks(1);
+    fixture.ticks(3);
     player.player.tick(&fixture.host.server);
     assert_properties(&fixture.stand, [0, 0, 0, 0]);
     assert!(property_packets(&mut player).is_empty());
-    assert_eq!(fixture.stand.get_stack(4).item_count, 1);
+    assert!(fixture.stand.get_stack(4).are_equal(&expected_zero_fuel));
+    assert_eq!(fixture.stand.get_stack(4).uid, expected_zero_fuel.uid);
     assert_eq!(fixture.stand.get_stack(3).item_count, 1);
     let mut overflow = NbtCompound::new();
     overflow.put_string("type", "minecraft:sum".into());
