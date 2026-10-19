@@ -1,4 +1,5 @@
 pub(crate) mod death_loot;
+pub(crate) mod interaction;
 use super::{Entity, EntityBase, ai::pathfinder::Navigator, living::LivingEntity};
 use crate::entity::ai::brain::Brain;
 use crate::entity::ai::brain::memory::PackedMemories;
@@ -1280,6 +1281,16 @@ pub trait Mob: EntityBase + Send + Sync {
         self.get_mob_entity().mob_interact(self, player, item_stack)
     }
 
+    /// Handles species interaction using the hand that supplied the observed stack.
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        _hand: pumpkin_util::Hand,
+    ) -> bool {
+        self.mob_interact(player, item_stack)
+    }
+
     fn tame(&self, player: &Arc<Player>) {
         let mob = self.get_mob_entity();
         let mut event = crate::plugin::api::events::entity::entity_tame::EntityTameEvent::new(
@@ -1584,7 +1595,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         hand: pumpkin_util::Hand,
     ) -> bool {
         crate::entity::shearable::interact_with_hand(self, player, item_stack, hand)
-            .unwrap_or_else(|| self.mob_interact(player, item_stack))
+            .unwrap_or_else(|| self.mob_interact_with_hand(player, item_stack, hand))
     }
 
     fn interact_at_with_hand(

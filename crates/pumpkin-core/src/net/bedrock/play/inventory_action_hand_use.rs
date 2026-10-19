@@ -283,9 +283,16 @@ impl BedrockClient {
                     return false;
                 };
                 let item_id = stack.item.id;
-                let interacted = event
-                    .target
-                    .interact_with_hand(player, &mut stack, Hand::Right);
+                let (interacted, committed) = crate::entity::mob::interaction::with_hand_commit(
+                    player,
+                    usize::from(selected),
+                    before,
+                    || {
+                        event
+                            .target
+                            .interact_with_hand(player, &mut stack, Hand::Right)
+                    },
+                );
                 let stand_swap = interacted
                     && event
                         .target
@@ -296,25 +303,27 @@ impl BedrockClient {
                         .item_registry
                         .use_on_entity(&mut stack, player, event.target);
                 }
-                if !stack.are_equal(before) && !stand_swap {
+                if committed.unwrap_or_else(|| !stack.are_equal(before)) && !stand_swap {
                     player.increment_stat(
                         pumpkin_data::statistic::StatisticCategory::Used,
                         i32::from(item_id),
                         1,
                     );
                 }
-                write_back_hand_item(
-                    player,
-                    Hand::Right,
-                    usize::from(selected),
-                    before,
-                    &stack,
-                    if stand_swap {
-                        HandMutation::EquipmentTransfer
-                    } else {
-                        HandMutation::ItemUse
-                    },
-                );
+                if committed.is_none() {
+                    write_back_hand_item(
+                        player,
+                        Hand::Right,
+                        usize::from(selected),
+                        before,
+                        &stack,
+                        if stand_swap {
+                            HandMutation::EquipmentTransfer
+                        } else {
+                            HandMutation::ItemUse
+                        },
+                    );
+                }
             }
             ActionType::Attack => player.attack(&event.target),
         }

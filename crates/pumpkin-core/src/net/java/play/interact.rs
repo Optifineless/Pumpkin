@@ -35,6 +35,16 @@ impl JavaClient {
                 // ServerGamePacketListenerImpl.handleInteract does not set spectator cameras.
                 return;
             }
+            let hand_admission = (action != ActionType::Attack)
+                .then(|| Hand::from_packet_id(interact.hand.map_or(0, |hand| hand.0)).ok())
+                .flatten()
+                .map(|hand| {
+                    crate::entity::mob::interaction::MobInteraction::new(
+                        player,
+                        hand,
+                        &player.inventory().get_stack_in_hand(hand),
+                    )
+                });
             send_cancellable_blocking! {{
                 server;
                 PlayerInteractEntityEvent::new(
@@ -102,12 +112,22 @@ impl JavaClient {
                                 self.try_kick(&TextComponent::text("InvalidHand"));
                                 return;
                             };
-                            let source_slot = super::hand_use_result::hand_slot(player, hand);
-                            let mut stack = player.inventory().get_stack_in_hand(hand);
+                            if crate::entity::mob::interaction::uses_committed_hand(event.target.as_ref())
+                                && hand_admission.as_ref().is_some_and(|source| !source.is_current(player))
+                            {
+                                return;
+                            }
+                            let (source_slot, mut stack) = if crate::entity::mob::interaction::uses_committed_hand(event.target.as_ref())
+                                && let Some(source) = &hand_admission
+                            {
+                                (source.source_slot(), source.observed().clone())
+                            } else {
+                                (super::hand_use_result::hand_slot(player, hand), player.inventory().get_stack_in_hand(hand))
+                            };
 
                             let item_id = stack.item.id;
                             let before = stack.clone();
-                            let interacted = if event.action == ActionType::InteractAt {
+                            let (interacted, committed) = crate::entity::mob::interaction::with_hand_commit(player, source_slot, &before, || if event.action == ActionType::InteractAt {
                                 match event.target_position {
                                     Some(position) => {
                                         event.target.interact_at_with_hand(player, &mut stack, position, hand)
@@ -116,17 +136,19 @@ impl JavaClient {
                                 }
                             } else {
                                 event.target.interact_with_hand(player, &mut stack, hand)
-                            };
+                            });
                             let stand_swap = interacted && event.target.cast_any().is::<crate::entity::decoration::armor_stand::ArmorStandEntity>();
                             if !interacted {
                                 server
                                     .item_registry
                                     .use_on_entity(&mut stack, player, event.target);
                             }
-                            super::hand_use_result::write_back_and_sync_hand_item(player, hand, source_slot, &before, &stack,
+                            if committed.is_none() {
+                                super::hand_use_result::write_back_and_sync_hand_item(player, hand, source_slot, &before, &stack,
                                 if stand_swap { super::hand_use_result::HandMutation::EquipmentTransfer }
                                 else { super::hand_use_result::HandMutation::ItemUse });
-                            if !stand_swap && !stack.are_equal(&before) {
+                            }
+                            if !stand_swap && committed.unwrap_or_else(|| !stack.are_equal(&before)) {
                                 player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
                             }
                         }

@@ -2,6 +2,27 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Cat, wolf and cow hand interactions (#41, #42, #48)
+
+Healthy tame cats reach Animal feeding before the owner's sitting fallback.
+Wolf food heals twice its effective nutrition, with the vanilla missing-FOOD
+fallback; bones remain wild-wolf taming items. Adult cows exchange the actual
+used hand's bucket for milk, including stacked and Creative inputs; babies refuse.
+Mob uses conditionally commit their originating inventory slot before callbacks,
+retain component-bearing food remainders, and preserve callback inventory edits.
+Existing interaction and regain-health events retain their order and cancellation.
+The species age clock, breeding inheritance and saved-data meanings are unchanged.
+
+Mirrors vanilla 26.3 `Cat.mobInteract`, `Wolf.mobInteract`, `TamableAnimal.feed`,
+`Animal.mobInteract`, `AbstractCow.mobInteract` and `ItemUtils.createFilledResult`.
+Selectively reimplements the relevant #116/#176 work with current inventory owners;
+the cow result follows BarilTomasDev's upstream #3940 idea (`81441b4eee3b66ce`).
+API 8 (same version): additive provided `Mob::mob_interact_with_hand` and
+`Animal::animal_interact_with_hand` methods change native trait vtables. Existing
+implementations retain their defaults; rebuild native plugins against this tree.
+Generic exchange signatures and Wasm WIT are unchanged. Written by Codex.
+In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

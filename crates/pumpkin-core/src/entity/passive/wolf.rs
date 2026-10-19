@@ -3,6 +3,7 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
+use pumpkin_data::data_component_impl::FoodImpl;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -11,6 +12,7 @@ use pumpkin_data::wolf_sound_variant::WolfSoundVariant;
 use pumpkin_data::wolf_variant::WolfVariant;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
+use pumpkin_util::Hand;
 use rand::RngExt;
 
 use crate::entity::custom_sound::CustomSound;
@@ -29,6 +31,7 @@ use crate::entity::{
     },
     mob::{
         Mob, MobEntity,
+        interaction::MobInteraction,
         neutral::{NeutralData, NeutralMob},
     },
     passive::{
@@ -159,7 +162,7 @@ impl AgeableMob for WolfEntity {
 impl Animal for WolfEntity {
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         let item = item_stack.get_item();
-        item.has_tag(&tag::Item::MINECRAFT_WOLF_FOOD) || item == &Item::BONE
+        item.has_tag(&tag::Item::MINECRAFT_WOLF_FOOD)
     }
 }
 
@@ -339,6 +342,16 @@ impl Mob for WolfEntity {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
+        self.mob_interact_with_hand(player, item_stack, Hand::Right)
+    }
+
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        hand: Hand,
+    ) -> bool {
+        let interaction = MobInteraction::new(player, hand, item_stack);
         let item = item_stack.get_item();
         let sound_variant = WolfSoundVariant::from_id(self.sound_variant.load(Ordering::Relaxed))
             .unwrap_or_default();
@@ -348,9 +361,16 @@ impl Mob for WolfEntity {
                 && self.mob_entity.living_entity.health.load()
                     < self.mob_entity.living_entity.get_max_health()
             {
-                item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                self.mob_entity.living_entity.heal(2.0);
+                // Wolf.mobInteract / TamableAnimal.feed read FOOD before consuming the last item.
+                let healing = item_stack
+                    .get_data_component::<FoodImpl>()
+                    .map_or(2.0, |food| 2.0 * food.nutrition as f32);
+                if !interaction.use_player_item(player, item_stack) {
+                    return true;
+                }
+                self.mob_entity.living_entity.heal(healing);
                 self.play_eating_sound(ambient);
+                interaction.refresh(player, item_stack);
                 return true;
             }
 
@@ -358,12 +378,16 @@ impl Mob for WolfEntity {
                 if let Some(color) = super::animal::get_dye_color_from_item(item)
                     && color != self.get_collar_color()
                 {
+                    if !interaction.consume(player, item_stack) {
+                        return true;
+                    }
                     self.set_collar_color(color);
-                    item_stack.decrement_unless_creative(player.gamemode.load(), 1);
+                    interaction.refresh(player, item_stack);
                     return true;
                 }
 
-                let parent_interaction = self.animal_interact(player, item_stack, ambient);
+                let parent_interaction =
+                    self.animal_interact_with_hand(player, item_stack, ambient, hand);
                 if !parent_interaction {
                     self.set_ordered_to_sit(!self.is_ordered_to_sit());
                     return true;
@@ -371,7 +395,9 @@ impl Mob for WolfEntity {
                 return parent_interaction;
             }
         } else if item == &Item::BONE && !self.mob_entity.is_attacking() {
-            item_stack.decrement_unless_creative(player.gamemode.load(), 1);
+            if !interaction.consume(player, item_stack) {
+                return true;
+            }
             let mut rng = rand::rng();
             if rng.random_range(0..3) == 0 {
                 TamableAnimal::tame(self, player.gameprofile.id);
@@ -380,10 +406,11 @@ impl Mob for WolfEntity {
             } else {
                 self.spawn_taming_particles(false);
             }
+            interaction.refresh(player, item_stack);
             return true;
         }
 
-        self.animal_interact(player, item_stack, ambient)
+        self.animal_interact_with_hand(player, item_stack, ambient, hand)
     }
 }
 

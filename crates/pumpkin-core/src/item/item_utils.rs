@@ -101,7 +101,7 @@ fn transfer_held_item(
 pub fn create_filled_result(
     input: &mut ItemStack,
     player: &Player,
-    mut output: ItemStack,
+    output: ItemStack,
     limit_creative_stack_size: bool,
 ) -> bool {
     let inventory = player.inventory();
@@ -113,8 +113,57 @@ pub fn create_filled_result(
     }) else {
         return false;
     };
-    if !owner.is_live() {
+    let Some(result) =
+        commit_filled_result(input, player, output, limit_creative_stack_size, source)
+    else {
         return false;
+    };
+    drop(guard);
+    result.publish(player, input);
+    true
+}
+
+/// Holds publication work for a filled exchange already committed under inventory ownership.
+pub(crate) struct FilledResult {
+    source: usize,
+    overflow: ItemStack,
+    publish: bool,
+}
+
+impl FilledResult {
+    pub(crate) fn publish(self, player: &Player, input: &ItemStack) {
+        if !self.publish {
+            return;
+        }
+        player
+            .inventory_changed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        player.sync_hand_slot(self.source, input.clone());
+        if !self.overflow.is_empty() {
+            player
+                .world()
+                .drop_stack(&player.position().to_block_pos(), self.overflow);
+        }
+    }
+}
+
+/// Commits the generic exchange at an admitted source, leaving all callbacks to publication.
+/// The caller holds the source inventory owner until this returns.
+pub(crate) fn commit_filled_result(
+    input: &mut ItemStack,
+    player: &Player,
+    mut output: ItemStack,
+    limit_creative_stack_size: bool,
+    source: usize,
+) -> Option<FilledResult> {
+    let inventory = player.inventory();
+    let owner = inventory.slot_transaction(source);
+    let current = inventory.get_stack(source);
+    if current.uid != input.uid || !current.are_equal(input) {
+        return None;
+    }
+    if !owner.is_live() {
+        return None;
     }
     if limit_creative_stack_size && player.has_infinite_materials() {
         if !(0..inventory.size()).any(|slot| {
@@ -124,8 +173,11 @@ pub fn create_filled_result(
         }) {
             inventory.insert_stack_anywhere(&mut output);
         }
-        drop(guard);
-        return true;
+        return Some(FilledResult {
+            source,
+            overflow: ItemStack::EMPTY.clone(),
+            publish: false,
+        });
     }
     let expected = input.clone();
     input.decrement_unless_creative(player.gamemode.load(), 1);
@@ -144,17 +196,11 @@ pub fn create_filled_result(
         inventory.insert_stack_anywhere(&mut output);
     }
     *input = inventory.get_stack(source);
-    drop(guard);
-    player
-        .inventory_changed
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    player.sync_hand_slot(source, input.clone());
-    if !output.is_empty() {
-        player
-            .world()
-            .drop_stack(&player.position().to_block_pos(), output);
-    }
-    true
+    Some(FilledResult {
+        source,
+        overflow: output,
+        publish: true,
+    })
 }
 
 /// Claims one item from the observed hand before publishing a use effect.
