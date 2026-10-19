@@ -869,3 +869,10 @@ crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_jav
 crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#1
 crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#2
 crates/pumpkin-core/src/entity/decoration/hanging_attack_tests.rs::b1019_g19_simultaneous_java_hit_and_support_retirement_drop_once::std::sync::Mutex::new#3
+
+# PR #232 review: test-only event snapshots and 5-second channel gates; no production owner locks.
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_explosion_and_support_drop_filled_frame_once::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_explosion_and_support_drop_filled_frame_once::std::sync::Mutex::new#2
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_explosion_and_support_drop_filled_frame_once::std::sync::Mutex::new#3
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_filled_frame_hit_races_allowed_and_cancelled_support::std::sync::Mutex::new#1
+crates/pumpkin-core/src/entity/decoration/hanging_frame_review_tests.rs::b1019_g19_review_filled_frame_hit_races_allowed_and_cancelled_support::std::sync::Mutex::new#2

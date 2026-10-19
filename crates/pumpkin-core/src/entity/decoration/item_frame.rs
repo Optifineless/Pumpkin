@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::entity::player::Player;
@@ -27,6 +27,7 @@ use crate::{block::blocks::redstone::is_diode, server::Server};
 pub struct ItemFrameEntity {
     entity: Entity,
     item_stack: Mutex<Arc<ItemStack>>,
+    item_revision: AtomicU64,
     /// Rotation of the displayed item, always in `0..8`.
     rotation: AtomicU8,
     /// The direction the frame faces, i.e. the axis pointing away from the
@@ -51,6 +52,7 @@ impl ItemFrameEntity {
         let frame = Self {
             entity,
             item_stack: Mutex::new(Arc::new(ItemStack::EMPTY.clone())),
+            item_revision: AtomicU64::new(0),
             rotation: AtomicU8::new(0),
             facing: AtomicU8::new(facing),
             item_drop_chance: AtomicCell::new(1.0),
@@ -92,14 +94,26 @@ impl ItemFrameEntity {
 
     pub(super) fn hanging_bounding_box(&self) -> BoundingBox {
         self.create_bounding_box(
-            self.get_item()
+            self.snapshot_item()
                 .get_data_component::<pumpkin_data::data_component_impl::MapIdImpl>()
                 .is_some(),
         )
     }
 
     fn recalculate_bounding_box(&self) {
-        self.entity.bounding_box.store(self.hanging_bounding_box());
+        let item = self.snapshot_item();
+        let has_map = item
+            .get_data_component::<pumpkin_data::data_component_impl::MapIdImpl>()
+            .is_some();
+        let current = self
+            .item_stack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if Arc::ptr_eq(&current, &item) {
+            self.entity
+                .bounding_box
+                .store(self.create_bounding_box(has_map));
+        }
     }
 
     pub fn survives(&self) -> bool {
@@ -240,6 +254,24 @@ impl ItemFrameEntity {
             .clone()
     }
 
+    fn sync_item(&self) {
+        let (item, revision) = {
+            let item = self
+                .item_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (item.clone(), self.item_revision.load(Ordering::Acquire))
+        };
+        // Component cloning/serialization may replace the item again. Publish only
+        // this revision, with the check inside the metadata publication lock.
+        self.entity.synched_data.set_if_current_revision(
+            pumpkin_data::tracked_data::item_frame::ITEM,
+            ItemStackSerializer::from(item.as_ref().clone()),
+            &self.item_revision,
+            revision,
+        );
+    }
+
     pub fn set_item(&self, item_stack: ItemStack, update_neighbours: bool) {
         self.try_set_item(item_stack, update_neighbours, false);
     }
@@ -255,7 +287,9 @@ impl ItemFrameEntity {
         }
 
         let play_sound = !item_stack.is_empty();
-        let item_serializer = ItemStackSerializer::from(item_stack.clone());
+        let has_map = item_stack
+            .get_data_component::<pumpkin_data::data_component_impl::MapIdImpl>()
+            .is_some();
         let mut current = self
             .item_stack
             .lock()
@@ -264,14 +298,13 @@ impl ItemFrameEntity {
             return false;
         }
         let retired = std::mem::replace(&mut *current, Arc::new(item_stack));
+        self.item_revision.fetch_add(1, Ordering::Release);
+        self.entity
+            .bounding_box
+            .store(self.create_bounding_box(has_map));
         drop(current);
         drop(retired);
-        self.recalculate_bounding_box();
-
-        self.entity.set_synced_data(
-            pumpkin_data::tracked_data::item_frame::ITEM,
-            item_serializer,
-        );
+        self.sync_item();
 
         if play_sound {
             self.entity.play_sound(self.get_add_item_sound());
@@ -425,15 +458,15 @@ impl ItemFrameEntity {
             {
                 return false;
             }
-            std::mem::replace(&mut *item, empty)
+            let retired = std::mem::replace(&mut *item, empty);
+            self.item_revision.fetch_add(1, Ordering::Release);
+            self.entity
+                .bounding_box
+                .store(self.create_bounding_box(false));
+            retired
         };
+        self.sync_item();
         let item_stack = Arc::unwrap_or_clone(item_stack);
-        self.recalculate_bounding_box();
-        let item_serializer = ItemStackSerializer::from(ItemStack::EMPTY.clone());
-        self.entity.set_synced_data(
-            pumpkin_data::tracked_data::item_frame::ITEM,
-            item_serializer,
-        );
 
         let is_creative_player = caused_by.is_some_and(|s| {
             s.cast_any()
@@ -525,6 +558,7 @@ impl EntityBase for ItemFrameEntity {
             return;
         }
         let retired = stack.map(|stack| std::mem::replace(&mut *item, stack));
+        self.item_revision.fetch_add(1, Ordering::Release);
         self.rotation.store(rotation, Ordering::Relaxed);
         self.facing.store(facing, Ordering::Relaxed);
         // The spawn packet's data field carries the frame's direction.
@@ -535,6 +569,7 @@ impl EntityBase for ItemFrameEntity {
         drop(item);
         drop(retired);
         self.recalculate_bounding_box();
+        self.sync_item();
     }
 
     fn get_entity(&self) -> &Entity {
@@ -551,13 +586,8 @@ impl EntityBase for ItemFrameEntity {
 
     fn init_data_tracker(&self) {
         self.recalculate_bounding_box();
-        let item_serializer = ItemStackSerializer::from(self.get_item());
         let rotation = self.get_rotation() as i32;
-
-        self.entity.set_synced_data(
-            pumpkin_data::tracked_data::item_frame::ITEM,
-            item_serializer,
-        );
+        self.sync_item();
         self.entity
             .set_synced_data(pumpkin_data::tracked_data::item_frame::ROTATION, rotation);
     }

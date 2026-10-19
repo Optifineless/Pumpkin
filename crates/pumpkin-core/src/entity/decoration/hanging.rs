@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::AtomicU32, atomic::Ordering};
+use std::sync::{Arc, LazyLock, atomic::AtomicU32, atomic::Ordering};
 
 use crate::{
     block::blocks::redstone::is_diode,
@@ -7,6 +7,7 @@ use crate::{
     world::World,
 };
 use pumpkin_data::BlockDirection;
+use pumpkin_data::painting_variant::PaintingVariant;
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
 use super::{item_frame::ItemFrameEntity, painting::PaintingEntity};
@@ -14,6 +15,13 @@ use super::{item_frame::ItemFrameEntity, painting::PaintingEntity};
 const CHECK_INTERVAL: u32 = 100;
 pub(super) const WALL_OFFSET: f64 = 0.46875;
 pub(super) const DEPTH: f64 = 0.0625;
+// Generic teleports can leave a decoration's cached box at its entity dimensions.
+// Expand by the largest possible hanging extent before rejecting a candidate.
+static MAX_HANGING_EXTENT: LazyLock<f64> = LazyLock::new(|| {
+    f64::from(PaintingVariant::all().iter().fold(2, |size, variant| {
+        size.max(variant.width()).max(variant.height())
+    })) / 2.0
+});
 
 /// BlockAttachedEntity.tick uses a postincrement, checking on the 101st fresh tick.
 pub(super) fn at_check_interval(ticks: &AtomicU32) -> bool {
@@ -128,7 +136,14 @@ pub(super) fn can_coexist(
     let entities = world.entities.load_full();
     !entities.iter().any(|other| {
         let base = other.get_entity();
-        if std::ptr::eq(base, entity) || base.is_removed() {
+        if std::ptr::eq(base, entity)
+            || base.is_removed()
+            || !base
+                .bounding_box
+                .load()
+                .expand_all(*MAX_HANGING_EXTENT)
+                .intersects(&bounds)
+        {
             return false;
         }
         let geometry = other

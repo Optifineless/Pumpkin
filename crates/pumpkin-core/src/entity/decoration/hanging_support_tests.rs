@@ -255,7 +255,7 @@ async fn b1019_g19_overlapping_hanging_entities_retire_without_duplicate_drops()
     );
     let frame = fixture.place(
         &Item::ITEM_FRAME,
-        BlockPos::new(6, 65, 8),
+        BlockPos::new(7, 65, 8),
         BlockDirection::South,
         None,
     );

@@ -426,12 +426,20 @@ async fn b1019_g19_java_frame_interaction_and_attacks_drop_contents_once() {
     fixture.finish().await;
 }
 
+struct CloneGate {
+    first: AtomicBool,
+    entered: mpsc::Sender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+}
+
 struct FrameCloneReentry {
     component: CustomDataImpl,
     frame: Weak<dyn EntityBase>,
     armed: Arc<AtomicBool>,
     calls: Arc<AtomicUsize>,
     replacement: Option<&'static Item>,
+    when_empty: Option<bool>,
+    gate: Option<Arc<CloneGate>>,
 }
 
 impl DataComponentImpl for FrameCloneReentry {
@@ -440,14 +448,26 @@ impl DataComponentImpl for FrameCloneReentry {
     }
 
     fn clone_dyn(&self) -> Box<dyn DataComponentImpl> {
-        if self.armed.swap(false, Ordering::SeqCst) {
-            self.calls.fetch_add(1, Ordering::Relaxed);
+        if let Some(gate) = &self.gate
+            && gate.first.swap(false, Ordering::SeqCst)
+        {
+            gate.entered.send(()).unwrap();
+            gate.release.lock().unwrap().recv_timeout(DEADLINE).unwrap();
+        }
+        if self.armed.load(Ordering::SeqCst) {
             let frame = self.frame.upgrade().unwrap();
             let concrete = frame.cast_any().downcast_ref::<ItemFrameEntity>().unwrap();
-            if let Some(item) = self.replacement {
-                concrete.set_item(ItemStack::new(1, item), false);
-            } else {
-                concrete.set_fixed(true);
+            if self
+                .when_empty
+                .is_none_or(|empty| (concrete.get_analog_output() == 0) == empty)
+                && self.armed.swap(false, Ordering::SeqCst)
+            {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                if let Some(item) = self.replacement {
+                    concrete.set_item(ItemStack::new(1, item), false);
+                } else {
+                    concrete.set_fixed(true);
+                }
             }
         }
         Box::new(Self {
@@ -456,6 +476,8 @@ impl DataComponentImpl for FrameCloneReentry {
             armed: self.armed.clone(),
             calls: self.calls.clone(),
             replacement: self.replacement,
+            when_empty: self.when_empty,
+            gate: self.gate.clone(),
         })
     }
 
@@ -501,6 +523,8 @@ async fn b1019_g19_java_attack_component_clone_reenters_frame_without_guard() {
             armed: armed.clone(),
             calls: calls.clone(),
             replacement,
+            when_empty: None,
+            gate: None,
         });
         let concrete = frame.cast_any().downcast_ref::<ItemFrameEntity>().unwrap();
         concrete.set_item(stack, false);
@@ -534,3 +558,6 @@ async fn b1019_g19_java_attack_component_clone_reenters_frame_without_guard() {
         fixture.finish().await;
     }
 }
+
+#[path = "hanging_frame_review_tests.rs"]
+mod review;

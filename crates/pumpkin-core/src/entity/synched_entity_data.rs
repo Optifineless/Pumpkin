@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use bytes::BufMut;
@@ -142,6 +142,26 @@ impl SynchedEntityData {
         tracked: TrackedData,
         value: T,
     ) -> bool {
+        self.set_revision(tracked, value, None)
+    }
+
+    /// Serializes unlocked, then rejects a superseded owner revision at publication.
+    pub(crate) fn set_if_current_revision<T: MetadataSerializer + Clone + Send + Sync + 'static>(
+        &self,
+        tracked: TrackedData,
+        value: T,
+        revision: &AtomicU64,
+        expected: u64,
+    ) -> bool {
+        self.set_revision(tracked, value, Some((revision, expected)))
+    }
+
+    fn set_revision<T: MetadataSerializer + Clone + Send + Sync + 'static>(
+        &self,
+        tracked: TrackedData,
+        value: T,
+        revision: Option<(&AtomicU64, u64)>,
+    ) -> bool {
         let holder = SerializerHolder { value };
         let new_canonical = holder.write_canonical(tracked.id, tracked.r#type);
 
@@ -149,14 +169,20 @@ impl SynchedEntityData {
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(item) = items.get_mut(&tracked) {
+        if revision.is_some_and(|(current, expected)| current.load(Ordering::Acquire) != expected) {
+            drop(items);
+            return false;
+        }
+        let retired = if let Some(item) = items.get_mut(&tracked) {
             if item.canonical_bytes == new_canonical {
+                drop(items);
                 return false;
             }
             item.canonical_bytes = new_canonical;
-            item.serializer = Arc::new(holder);
+            let retired = std::mem::replace(&mut item.serializer, Arc::new(holder));
             item.dirty = true;
             item.is_default = false;
+            Some(retired)
         } else {
             items.insert(
                 tracked,
@@ -168,8 +194,11 @@ impl SynchedEntityData {
                     is_default: false,
                 },
             );
-        }
+            None
+        };
         self.is_dirty.store(true, Ordering::Release);
+        drop(items);
+        drop(retired);
         true
     }
 

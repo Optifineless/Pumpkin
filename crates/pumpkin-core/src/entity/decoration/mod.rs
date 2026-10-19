@@ -10,6 +10,8 @@ pub mod painting;
 #[cfg(test)]
 mod hanging_attack_tests;
 #[cfg(test)]
+mod hanging_review_tests;
+#[cfg(test)]
 mod hanging_support_tests;
 #[cfg(test)]
 mod hanging_test_support;

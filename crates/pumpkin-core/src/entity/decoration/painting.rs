@@ -83,6 +83,20 @@ impl PaintingEntity {
         if self.entity.is_removed() {
             return;
         }
+        let old = self.variant();
+        // Painting.calculateBoundingBox keeps the attachment cell when parity changes.
+        let offset = |size: u32| if size.is_multiple_of(2) { 0.5 } else { 0.0 };
+        let horizontal = self
+            .facing()
+            .rotate_counter_clockwise()
+            .to_offset()
+            .to_f64()
+            * (offset(variant.width()) - offset(old.width()));
+        self.entity.set_pos(
+            self.entity.pos.load()
+                + horizontal
+                + Vector3::new(0.0, offset(variant.height()) - offset(old.height()), 0.0),
+        );
         self.variant_id.store(variant.id(), Ordering::Relaxed);
         self.entity.bounding_box.store(self.hanging_bounding_box());
         self.sync_variant();
@@ -303,7 +317,10 @@ impl EntityBase for PaintingEntity {
             .or_else(|| nbt.get_string("Motive"))
             && let Some(variant) = PaintingVariant::from_name(variant_str)
         {
-            self.set_variant(variant);
+            // Saved Pos already includes the variant's parity offsets.
+            self.variant_id.store(variant.id(), Ordering::Relaxed);
+            self.entity.bounding_box.store(self.hanging_bounding_box());
+            self.sync_variant();
         }
     }
 

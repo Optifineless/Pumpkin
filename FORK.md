@@ -19,6 +19,29 @@ Survival queries are additive. Native plugins must rebuild; existing source
 signatures, saved tags and Wasm WIT stay compatible. The check counter is not
 saved, as in vanilla. Implemented by Codex. In-game verification: Not yet.
 
+PR #232 review: coexistence checks prefilter distant entities conservatively,
+including decorations whose cached bounds were reset by teleport. Frame geometry
+reads shared items without component cloning. Item metadata publication rejects
+superseded revisions after unlocked component callbacks; no new nested lock
+ownership is introduced. Runtime painting variant changes preserve the attachment
+when width/height parity changes; saved `Pos` keeps its existing center meaning,
+and live NBT edits still refresh bounds and metadata. API 8 (same version): frame
+layout gains a runtime item revision; native plugins must rebuild. Saved tags and
+Wasm WIT are unchanged. Implemented by Codex. In-game verification: Not yet.
+
+Backlog: timed world borders still expose their target size to server collision
+and containment. The pre-existing shared border model has no transition clock,
+effective-size accessor or remaining-duration initialization. Correcting that
+model, interrupted transitions and command readers is a separate border change.
+
+Play test: place filled ordinary/glow frames and a large painting, remove their
+support (including one painting corner), and expect each eligible item once after
+about five seconds. Cancel break hooks, attack while support breaks, and unload
+and reload; expect canceled/Fixed frames and their contents to remain, with broken
+decorations staying gone. Change a painting between odd/even sizes; expect its
+attachment to stay aligned. Survival painting attacks drop one item; Creative
+attacks drop none. Capture item counts, reload results and alignment in a recording.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
