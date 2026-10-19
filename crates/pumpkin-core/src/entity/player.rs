@@ -4149,6 +4149,12 @@ impl Player {
 
         let gamemode = event.new_gamemode;
         self.gamemode.store(gamemode);
+        if gamemode == GameMode::Spectator
+            && (self.sleeping_since.load().is_some() || self.sleeping_bed_pos.load().is_some())
+        {
+            // ServerPlayer.setGameMode stops sleeping when a player enters Spectator.
+            self.wake_up();
+        }
         // TODO: Fix this when mojang fixes it
         // This is intentional to keep the pure vanilla mojang experience
         // self.previous_gamemode.store(self.previous_gamemode.load());

@@ -175,6 +175,7 @@ async fn scheduled_fire_b1019_g10_gates_from_source_position() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn scheduled_fire_b1019_g10_spreads_to_air_when_unrestricted() {
     let fixture = FireFixture::new();
+    let mut observer = TestPlayer::new(&fixture.world);
     let source = BlockPos::new(8, 64, 8);
     let target = source.north();
     fixture.set_fire_radius(-1);
@@ -182,11 +183,19 @@ async fn scheduled_fire_b1019_g10_spreads_to_air_when_unrestricted() {
     fixture.set_block(target.down(), Block::NETHERRACK.default_state.id);
     fixture.set_block(target.north(), oak_slab(false));
     fixture.set_fire(source, 0);
+    observer.take_packets();
 
     fixture.schedule_fire(source);
     fixture.tick_with_seed(seed_for_air_spread(100));
+    fixture.world.flush_block_updates();
 
     assert_eq!(fixture.world.get_block(&target), &Block::FIRE);
+    let fire_state_id = fixture.world.get_block_state_id(&target).as_u16();
+    let updates = capture_block_updates(&observer.take_packets());
+    assert!(
+        updates.contains(&(target, fire_state_id)),
+        "spread updates were {updates:?}"
+    );
     fixture.shutdown().await;
 }
 

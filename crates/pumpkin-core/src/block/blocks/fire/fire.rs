@@ -494,10 +494,11 @@ impl BlockBehaviour for FireBlock {
                                     }
                                 }
 
+                                // Vanilla FireBlock uses setBlock(..., 3) for a spread.
                                 let _ = world.set_block_state_if(
                                     &offset_pos,
                                     new_state_id,
-                                    BlockFlags::NOTIFY_NEIGHBORS,
+                                    BlockFlags::NOTIFY_ALL,
                                     |state| state == target_state_id,
                                 );
                             }

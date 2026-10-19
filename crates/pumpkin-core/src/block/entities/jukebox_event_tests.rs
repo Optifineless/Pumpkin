@@ -6,7 +6,7 @@ use crate::block::{
 
 use crate::{
     block::entities::block_entity_from_nbt,
-    entity::death_test_world::DeathTestWorld,
+    entity::{death_test_world::DeathTestWorld, player::Player},
     plugin::{
         BoxFuture, EventHandler, EventPriority, api::events::world::generic_game::GenericGameEvent,
     },
@@ -167,6 +167,13 @@ fn jukebox_comparator_output(world: &Arc<World>, position: &BlockPos) -> Option<
     })
 }
 
+fn jukebox_wire_power(world: &World, position: &BlockPos) -> u8 {
+    pumpkin_data::block_properties::RedstoneWireLikeProperties::from_state_id(
+        world.get_block_state_id(position),
+    )
+    .power
+}
+
 fn add_test_jukebox(world: &Arc<World>, position: BlockPos) -> Arc<JukeboxBlockEntity> {
     world.set_block_state(
         &position,
@@ -223,11 +230,51 @@ fn block_entity_packet_len(block_entity: &dyn BlockEntity) -> usize {
         .len()
 }
 
+fn insert_disc_via_player_action(
+    fixture: &DeathTestWorld,
+    world: &Arc<World>,
+    position: &BlockPos,
+    player: &Arc<Player>,
+    disc: &mut ItemStack,
+) {
+    player.inventory().set_held_item(disc.clone());
+    let cursor = pumpkin_util::math::vector3::Vector3::new(0.5, 1.0, 0.5);
+    let hit = BlockHitResult {
+        face: &BlockDirection::Up,
+        cursor_pos: &cursor,
+    };
+    assert!(matches!(
+        JukeboxBlock.use_with_item(UseWithItemArgs {
+            server: &fixture.server,
+            world,
+            block: &Block::JUKEBOX,
+            position,
+            player,
+            hit: &hit,
+            item_stack: disc,
+            equipment_slot: &pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND,
+        }),
+        crate::block::registry::BlockActionResult::Success
+    ));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g20_active_playback_survives_factory_reload() {
     let (fixture, jukebox, changes) = create_jukebox().await;
     let world = fixture.world();
     let position = jukebox.get_position();
+    let wire_position = position.east();
+    world.set_block_state(
+        &wire_position.down(),
+        Block::STONE.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    world.set_block_state(
+        &wire_position,
+        Block::REDSTONE_WIRE.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    assert_eq!(jukebox_wire_power(&world, &wire_position), 0);
     let player = fixture.player("JukeboxReload");
     player.watched_section.store(Cylindrical::new(
         Vector2::new(0, 0),
@@ -240,25 +287,7 @@ async fn b1019_g20_active_playback_survives_factory_reload() {
         .expect("the fixture player uses Java");
 
     let mut disc = ItemStack::new(1, &Item::MUSIC_DISC_CAT);
-    player.inventory().set_held_item(disc.clone());
-    let cursor = pumpkin_util::math::vector3::Vector3::new(0.5, 1.0, 0.5);
-    let hit = BlockHitResult {
-        face: &BlockDirection::Up,
-        cursor_pos: &cursor,
-    };
-    assert!(matches!(
-        JukeboxBlock.use_with_item(UseWithItemArgs {
-            server: &fixture.server,
-            world: &world,
-            block: &Block::JUKEBOX,
-            position: &position,
-            player: &player,
-            hit: &hit,
-            item_stack: &mut disc,
-            equipment_slot: &pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND,
-        }),
-        crate::block::registry::BlockActionResult::Success
-    ));
+    insert_disc_via_player_action(&fixture, &world, &position, &player, &mut disc);
     assert_eq!(changes.load(Ordering::Relaxed), 1);
 
     for _ in 0..20 {
@@ -273,6 +302,13 @@ async fn b1019_g20_active_playback_survives_factory_reload() {
 
     let restored = block_entity_from_nbt(&nbt).expect("saved jukebox should load through factory");
     let expected_packet_len = block_entity_packet_len(restored.as_ref());
+    // Leave dust unpowered so the restored active record must propagate its output.
+    world.set_block_state(
+        &wire_position,
+        Block::REDSTONE_WIRE.default_state.id,
+        BlockFlags::FORCE_STATE,
+    );
+    assert_eq!(jukebox_wire_power(&world, &wire_position), 0);
     let packets_before_reload = client.pending_bytes.load(Ordering::Relaxed);
     world.add_block_entity(restored.clone());
     let packets_after_reload = client.pending_bytes.load(Ordering::Relaxed);
@@ -294,6 +330,7 @@ async fn b1019_g20_active_playback_survives_factory_reload() {
     assert!(restored.get_record().are_equal(&record));
     assert!(restored.is_playing());
     assert_eq!(jukebox_weak_power(&world, &position), 15);
+    assert_eq!(jukebox_wire_power(&world, &wire_position), 15);
     assert_eq!(jukebox_comparator_output(&world, &position), Some(2));
     assert_eq!(
         save_block_entity(restored).get_long("ticks_since_song_started"),
@@ -307,7 +344,24 @@ async fn b1019_g20_active_playback_survives_factory_reload() {
     }
     assert!(!restored.is_playing());
     assert_eq!(jukebox_weak_power(&world, &position), 0);
+    assert_eq!(jukebox_wire_power(&world, &wire_position), 0);
     assert!(!restored.get_record().is_empty());
+    assert_eq!(jukebox_comparator_output(&world, &position), Some(2));
+
+    let stopped_nbt = save_block_entity(restored);
+    assert_eq!(
+        stopped_nbt.get_long(TICKS_SINCE_SONG_STARTED_NBT_KEY),
+        None,
+        "stopped playback omits its elapsed-tick tag"
+    );
+    let stopped_reload = factory_reload_in_world(&world, &stopped_nbt);
+    let stopped_reload = stopped_reload
+        .as_any()
+        .downcast_ref::<JukeboxBlockEntity>()
+        .expect("factory returns a jukebox block entity");
+    assert!(!stopped_reload.is_playing());
+    assert_eq!(jukebox_wire_power(&world, &wire_position), 0);
+    assert_eq!(jukebox_weak_power(&world, &position), 0);
     assert_eq!(jukebox_comparator_output(&world, &position), Some(2));
     fixture.server.shutdown().await;
 }
