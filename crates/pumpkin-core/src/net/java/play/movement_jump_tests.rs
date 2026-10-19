@@ -20,7 +20,11 @@ use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
 use pumpkin_world::chunk::ChunkData;
 
 use crate::{
-    entity::{EntityBase, death_test_world::DeathTestWorld, player::statistics::CustomStatistic},
+    entity::{
+        EntityBase,
+        death_test_world::DeathTestWorld,
+        player::{Player, statistics::CustomStatistic},
+    },
     net::java::combat_test_support::TestPlayer,
     plugin::{
         BoxFuture, EventHandler, EventPriority, entity::entity_exhaustion::EntityExhaustionEvent,
@@ -62,11 +66,25 @@ fn grounded_player(world: &Arc<World>, sprinting: bool) -> TestPlayer {
 }
 
 fn move_up(fixture: &TestPlayer, server: &Arc<Server>, y: f64, on_ground: bool, turning: bool) {
+    send_up(&fixture.player, server, y, on_ground, turning);
+
+    // Establish packet acceptance and matching geometry before testing accounting.
+    let entity = fixture.player.get_entity();
+    assert_eq!(entity.pos.load(), Vector3::new(8.5, y, 8.5));
+    assert_eq!(entity.on_ground.load(Relaxed), on_ground);
+    if turning {
+        assert_eq!(entity.yaw.load(), 90.0);
+        assert_eq!(entity.pitch.load(), 20.0);
+    }
+}
+
+fn send_up(player: &Arc<Player>, server: &Arc<Server>, y: f64, on_ground: bool, turning: bool) {
+    let client = player.client.java().expect("movement fixture uses Java");
     let position = Vector3::new(8.5, y, 8.5);
     let collision = if on_ground { FLAG_ON_GROUND } else { 0 };
     if turning {
-        fixture.client().handle_position_rotation(
-            &fixture.player,
+        client.handle_position_rotation(
+            player,
             server,
             &SPlayerPositionRotation {
                 position,
@@ -76,23 +94,14 @@ fn move_up(fixture: &TestPlayer, server: &Arc<Server>, y: f64, on_ground: bool, 
             },
         );
     } else {
-        fixture.client().handle_position(
-            &fixture.player,
+        client.handle_position(
+            player,
             server,
             &SPlayerPosition {
                 position,
                 collision,
             },
         );
-    }
-
-    // Establish packet acceptance and matching geometry before testing accounting.
-    let entity = fixture.player.get_entity();
-    assert_eq!(entity.pos.load(), position);
-    assert_eq!(entity.on_ground.load(Relaxed), on_ground);
-    if turning {
-        assert_eq!(entity.yaw.load(), 90.0);
-        assert_eq!(entity.pitch.load(), 20.0);
     }
 }
 
@@ -184,6 +193,68 @@ async fn b1019_g09_jump_exhaustion_cancellation_keeps_jump_statistic() {
             move_up(&player, &fixture.server, 64.75, false, turning);
             assert_accounting(&player, 1, 0.0);
             assert_eq!(calls.load(Relaxed), before + 1);
+        }
+    }
+    shutdown(&fixture).await;
+}
+
+struct ReenterTakeoff {
+    player: Arc<Player>,
+    turning: bool,
+    calls: AtomicUsize,
+}
+
+impl EventHandler<EntityExhaustionEvent> for ReenterTakeoff {
+    fn handle_blocking<'a>(
+        &'a self,
+        server: &'a Arc<Server>,
+        event: &'a mut EntityExhaustionEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.entity_id == self.player.entity_id() && self.calls.fetch_add(1, Relaxed) == 0 {
+            send_up(&self.player, server, 64.75, false, self.turning);
+        }
+        Box::pin(async {})
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_reentrant_exhaustion_counts_one_takeoff() {
+    let fixture = test_world().await;
+    for turning in [false, true] {
+        for nested_turning in [false, true] {
+            for sprinting in [false, true] {
+                let player = grounded_player(&fixture.world(), sprinting);
+                let callback = Arc::new(ReenterTakeoff {
+                    player: player.player.clone(),
+                    turning: nested_turning,
+                    calls: AtomicUsize::new(0),
+                });
+                fixture
+                    .server
+                    .plugin_manager
+                    .register::<EntityExhaustionEvent, _>(
+                        callback.clone(),
+                        EventPriority::Normal,
+                        true,
+                    );
+                send_up(&player.player, &fixture.server, 64.42, false, turning);
+                assert_accounting(&player, 1, if sprinting { 0.2 } else { 0.05 });
+                assert_eq!(callback.calls.load(Relaxed), 1);
+                assert_eq!(
+                    player.player.get_entity().pos.load(),
+                    Vector3::new(8.5, 64.75, 8.5)
+                );
+                assert!(!player.player.get_entity().on_ground.load(Relaxed));
+                assert!(
+                    player
+                        .player
+                        .awaiting_teleport
+                        .lock()
+                        .expect("teleport lock")
+                        .is_none()
+                );
+                assert!(!player.player.client.closed());
+            }
         }
     }
     shutdown(&fixture).await;

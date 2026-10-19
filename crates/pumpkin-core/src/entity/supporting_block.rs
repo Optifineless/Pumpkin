@@ -2,7 +2,12 @@ use super::{Entity, EntityBase};
 use pumpkin_util::math::{boundingbox::BoundingBox, vector3::Vector3};
 
 impl Entity {
-    pub(crate) fn check_supporting_block(&self, caller: &dyn EntityBase, on_ground: bool) {
+    pub(crate) fn check_supporting_block(
+        &self,
+        caller: &dyn EntityBase,
+        on_ground: bool,
+        movement: Vector3<f64>,
+    ) {
         let support = if on_ground {
             // Entity.checkSupportingBlock first probes the current collision footprint.
             let bounds = self.bounding_box.load();
@@ -11,7 +16,13 @@ impl Entity {
                 Vector3::new(bounds.max.x, bounds.min.y, bounds.max.z),
             );
             let world = self.world.load_full();
-            world.find_supporting_block(caller, footprint)
+            world.find_supporting_block(caller, footprint).or_else(|| {
+                // Vertical collision can ground the player before horizontal motion leaves its edge.
+                world.find_supporting_block(
+                    caller,
+                    footprint.shift(Vector3::new(-movement.x, 0.0, -movement.z)),
+                )
+            })
         } else {
             None
         };

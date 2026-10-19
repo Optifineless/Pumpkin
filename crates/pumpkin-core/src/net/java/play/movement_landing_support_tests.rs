@@ -188,3 +188,89 @@ async fn b1019_g09_r2_nearer_noncolliding_slab_does_not_mask_slime() {
         assert_safe_landing(&fixture, 1.0);
     }
 }
+
+fn moving_off_slime(packet: LandingPacket, health: f32) {
+    let fixture = edge_slime(health);
+    fixture
+        .player()
+        .get_entity()
+        .set_pos(Vector3::new(5.11, 5.0, 4.5));
+    movement(&fixture, 5.11, 1.6, false, packet);
+    assert!((fixture.player().living_entity.fall_distance.load() - 3.4).abs() < 1.0E-6);
+    movement(&fixture, 5.31, 1.0, true, packet);
+    assert!(fixture.player().get_entity().bounding_box.load().min.x > 5.0);
+    assert_safe_landing(&fixture, health);
+    assert_eq!(
+        fixture.player().get_entity().supporting_block_pos.load(),
+        Some(BlockPos::new(4, 0, 4))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_position_moving_off_slime_keeps_full_health() {
+    moving_off_slime(LandingPacket::Position, 20.0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_turning_moving_off_slime_keeps_full_health() {
+    moving_off_slime(LandingPacket::PositionRotation, 20.0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_position_moving_off_slime_does_not_kill() {
+    moving_off_slime(LandingPacket::Position, 1.0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_turning_moving_off_slime_does_not_kill() {
+    moving_off_slime(LandingPacket::PositionRotation, 1.0);
+}
+
+fn unsupported_ground_preserves_fall(packet: LandingPacket) {
+    let fixture = MovementTest::new(&Block::STONE, false);
+    fixture
+        .player()
+        .get_entity()
+        .set_pos(Vector3::new(4.5, 9.0, 4.5));
+    for (y, distance) in [(7.0, 2.0), (5.0, 4.0), (3.0, 6.0)] {
+        movement(&fixture, 4.5, y, false, LandingPacket::Position);
+        movement(&fixture, 4.5, y, true, packet);
+        assert_eq!(
+            fixture.player().get_entity().supporting_block_pos.load(),
+            None
+        );
+        assert_eq!(
+            fixture.player().living_entity.fall_distance.load(),
+            distance
+        );
+        assert_eq!(fixture.player().living_entity.health.load(), 20.0);
+        assert_eq!(
+            fixture
+                .player()
+                .get_custom_stat(pumpkin_data::statistic::CustomStatistic::FallOneCm),
+            0
+        );
+    }
+    movement(&fixture, 4.5, 1.0, true, LandingPacket::Position);
+    fixture.assert_landed(15.0, 800);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_flags_only_unsupported_ground_preserves_fall() {
+    unsupported_ground_preserves_fall(LandingPacket::Ground);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_rotation_only_unsupported_ground_preserves_fall() {
+    unsupported_ground_preserves_fall(LandingPacket::Rotation);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_same_position_unsupported_ground_preserves_fall() {
+    unsupported_ground_preserves_fall(LandingPacket::Position);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g09_r3_same_turning_position_unsupported_ground_preserves_fall() {
+    unsupported_ground_preserves_fall(LandingPacket::PositionRotation);
+}

@@ -52,7 +52,7 @@ impl JavaClient {
         let je_packet = CHeadRot::new(entity_id.into(), yaw as u8);
         world.send_to_tracking_players(entity, &je_packet);
         if admitted {
-            Self::check_player_fall(player, 0.0, rotation.ground);
+            Self::check_player_fall(player, Vector3::new(0.0, 0.0, 0.0), rotation.ground);
         }
     }
 }

@@ -22,7 +22,7 @@ impl JavaClient {
             .on_ground
             .store(ground.on_ground, Ordering::Relaxed);
         if admitted {
-            Self::check_player_fall(player, 0.0, ground.on_ground);
+            Self::check_player_fall(player, Vector3::new(0.0, 0.0, 0.0), ground.on_ground);
         }
     }
 }

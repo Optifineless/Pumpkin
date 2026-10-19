@@ -84,6 +84,7 @@ impl LivingEntity {
                 }
             }
             if ground && self.fall_distance.load() > 0.0 {
+                // TODO(#231 B3): Hand off a distinct landing completed during an active callback.
                 self.damage_owner
                     .claim_landing(self.fall_distance.load())
                     .map(|claim| Landing {
