@@ -1186,6 +1186,17 @@ Play test:
 - Sneak-use an axe on one half of a stocked double copper chest; expect both halves to reach the same copper stage, both inventories to remain stocked, and a hopper to pull from either half. Capture both block states, the inventories, and the hopper transfer.
 - Use a shovel on a lit campfire in Survival; expect it to go out and the shovel durability to drop by one. Repeat in Creative; expect no durability loss. An unlit campfire should stay unchanged. Capture the hotbar before and after.
 
+| [#14](https://github.com/Optifineless/Pumpkin/issues/14) Lava bucket fuel remainder | Fuel consumption uses the item's crafting remainder independently of stack use-remainder overrides; lava returns a bucket and overflow drops once. The shared mapping preserves all five vanilla 26.3 item templates (count one, default components). Mirrors vanilla 26.3 `AbstractFurnaceBlockEntity.consumeFuel`. | Not yet |
+| [#15](https://github.com/Optifineless/Pumpkin/issues/15) Smoker and blast furnace cooking speed | The actual appliance recipe kind is used throughout; the admitted fuel's resolved `CookingFuel` speed scales cook duration, preserves partial completion across fuel changes, and is reused after crafting. With coal, smokers and blast furnaces cook eight admitted items per fuel; normal furnaces retain speed 1. Saved speed uses vanilla `speed_multiplier`, defaulting to 1.0 when absent. Mirrors vanilla 26.3 `AbstractFurnaceBlockEntity.serverTick/getTotalCookTime/loadAdditional/saveAdditional`. | Not yet |
+
+In-game verification: Not yet.
+
+Play test (#14/#15): smelt raw iron with a lava bucket; expect one empty bucket
+in the fuel slot. Cook eight potatoes in a smoker and eight iron ore in a blast
+furnace using one coal each; expect all eight to finish. Save and restart midway
+through a smoker's coal burn; expect the same cooking pace afterward. Capture
+the fuel slot and cooking before and after restart.
+
 ## Known regressions under investigation
 
 Offline Java identities now follow `UUIDUtil.createOfflinePlayerUUID`: MD5 of UTF-8
@@ -1325,6 +1336,9 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 ## Native plugin API 8
 
 - API 8 (same version): block-item use adds `ItemBehaviour::use_on_block_with_hand` and `ItemRegistry::use_on_block_with_hand` so item callbacks receive the packet hand; the default trait method preserves existing callback behavior, while the trait vtable changes. Rebuild native plugins against this checkout; Wasm WIT is unchanged. In-game verification: Not yet.
+
+- API 8 (same version): issues #14 and #15 add private speed state to furnace block entity layouts and methods to the public `CookingBlockEntityBase` trait/vtable. Native plugins using these types or trait objects must rebuild against this checkout; saved speed uses vanilla `speed_multiplier` and defaults to 1.0 for old saves. The exported cooking macros remain usable from external crates through a public, documentation-hidden fuel helper and the shared item crafting-remainder resolver. Wasm WIT is unchanged. In-game verification: Not yet.
+
 - API 8 (same version): #141 adds `PlayerInventory::replace_stack_if_unchanged` for identity-checked hand writeback. Rebuild native plugins against this checkout; saved data and Wasm WIT are unchanged. In-game verification **Not yet**.
 
 - API 8 (same version): the tick watchdog changes `Server` layout through its crate-private `watchdog` field and adds `Server::start_watchdog`. Rebuild native plugins; Wasm WIT is unchanged. In-game verification **Not yet**.

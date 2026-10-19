@@ -241,9 +241,12 @@ pub(super) fn default_remainders(inventory: &dyn RecipeInputInventory) -> Vec<It
         .collect()
 }
 
-fn crafting_remainder(item: &Item) -> ItemStack {
+/// Creates an item's crafting remainder independently of stack use-remainder components.
+#[must_use]
+pub fn crafting_remainder(item: &Item) -> ItemStack {
     // CraftingRecipe.defaultCraftingReminder reads Item.getCraftingRemainder, not USE_REMAINDER.
     // Items.java:1940,1945,1956,2405,2730 hardcodes these five craftRemainder registrations.
+    // Each uses ItemStackTemplate(Item): count one and an empty component patch.
     let remainder = if [
         Item::WATER_BUCKET.id,
         Item::LAVA_BUCKET.id,

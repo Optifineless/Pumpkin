@@ -15,4 +15,5 @@ mod special_recipes;
 
 mod result_slot_transaction;
 
+pub use recipe_matching::crafting_remainder;
 pub use result_slot_transaction::CraftingCommit;

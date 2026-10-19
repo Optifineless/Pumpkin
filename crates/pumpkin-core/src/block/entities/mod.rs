@@ -561,3 +561,7 @@ mod test {
 
 #[cfg(test)]
 mod container_event_tests;
+
+#[cfg(test)]
+#[path = "furnace_like_block_entity_tests.rs"]
+mod furnace_like_block_entity_tests;
