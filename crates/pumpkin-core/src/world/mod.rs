@@ -55,6 +55,7 @@ pub mod raid;
 pub mod random_sequences;
 #[cfg(test)]
 mod shared_state_tests;
+mod sleep_status;
 #[cfg(test)]
 mod snapshot_boundary_tests;
 mod spawn_insertion;
@@ -210,6 +211,8 @@ mod owner_service;
 #[cfg(test)]
 mod scheduled_ticks_tests;
 pub mod scoreboard;
+#[cfg(test)]
+mod sleep_status_tests;
 #[cfg(test)]
 mod spawn_plugin_tests;
 #[cfg(test)]
@@ -4096,34 +4099,13 @@ impl World {
     /// Returns true if enough players are sleeping and we should skip the night.
     pub fn should_skip_night(&self) -> bool {
         let players = self.players.load();
-
-        let player_count = players.len();
-        let sleeping_player_count = players
-            .iter()
-            .filter(|player| {
-                player
-                    .sleeping_since
-                    .load()
-                    .is_some_and(|since| since >= 100)
-            })
-            .count();
-        drop(players);
-
-        if player_count == 0 {
-            return false;
-        }
-
         let sleep_percentage = self
             .level_info
             .load()
             .game_rules
             .players_sleeping_percentage
             .clamp(0, 100);
-        let required_sleeping =
-            ((player_count as f64 * sleep_percentage as f64) / 100.0).ceil() as usize;
-        let required_sleeping = required_sleeping.max(1);
-
-        sleeping_player_count >= required_sleeping
+        sleep_status::are_enough_sleeping(&players, sleep_percentage)
     }
 
     // NOTE: This function doesn't actually await on anything, it just spawns two tokio tasks
