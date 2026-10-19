@@ -1,4 +1,5 @@
 use super::dolphin_movement::{DolphinBreathAirGoal, DolphinJumpGoal, MAX_AIR_SUPPLY};
+use super::dolphin_swim_with_player::DolphinSwimWithPlayerGoal;
 use crate::entity::ai::control::smooth_swimming_look_control::SmoothSwimmingLookControl;
 use crate::entity::ai::{
     control::smooth_swimming_move_control::SmoothSwimmingMoveControl, pathfinder::Navigator,
@@ -70,6 +71,8 @@ impl DolphinEntity {
             goal_selector.add_goal(5, Box::new(DolphinJumpGoal::default()));
 
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.6));
+            // Dolphin.registerGoals: DolphinSwimWithPlayerGoal(this, 4.0).
+            goal_selector.add_goal(2, Box::new(DolphinSwimWithPlayerGoal::default()));
             goal_selector.add_goal(2, Box::new(MeleeAttackGoal::new(1.2, true)));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.2, TEMPT_ITEMS, false)));
             // Dolphin.registerGoals: RandomSwimmingGoal(this, 1.0, 10).

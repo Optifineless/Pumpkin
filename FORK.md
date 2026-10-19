@@ -954,3 +954,15 @@ PR #141 round 6: Java and Bedrock placements claim the pinned source after cance
 ## PR #177 glass-bottle source-water pickup
 
 Glass bottles use the nearest block-outline or source-fluid hit with the main-hand collision context and the player's block interaction range. Only a source-water block can be collected; flowing water and waterlogged-only fluid remain unchanged. The cancellable pre-use event sees the same hit used by the bottle action. World-border and spawn protection are checked before effects; the neutral fill sound, `FLUID_PICKUP`, statistic and exact-slot bottle transaction follow vanilla 26.3 order. Dragon-breath pickup keeps precedence, and overflow potion drops use the player's drop position through `create_filled_result`. Mirrors `BottleItem.use/turnBottleIntoItem`, `Item.getPlayerPOVHitResult`, `BlockGetter.clip` and `ServerLevel.mayInteract`. No public plugin API changes. In-game verification: **Not yet**.
+
+## Dolphin swim-with-player goal (#157)
+
+Dolphins acquire the nearest noncombat player within 10 blocks, ignoring line of sight, when that player is swimming and is not the dolphin's combat target. They look toward and follow that player at speed 4, stop within 2.5 blocks, and continue while the player stays within 16 blocks. Starting the goal and its one-in-six swimming refresh grant 100 ticks of Dolphin's Grace through the existing effect event and packet path; the player is revalidated after callbacks before the effect commits. Mirrors vanilla 26.3 `Dolphin.SWIM_WITH_PLAYER_TARGETING`, `DolphinSwimWithPlayerGoal` and `Dolphin.registerGoals`. No public plugin API, saved-data or WIT changes. In-game verification: Not yet.
+
+PR #228 review: effect insertion, dependent attributes, visibility, particle metadata
+and the absorption start hook now commit under one synchronous combat owner before
+packet publication. A concurrent `/effect clear` cannot leave permanent Strength
+damage or restore cleared effect metadata. Mirrors vanilla 26.3
+`LivingEntity.addEffect/onEffectAdded/onEffectUpdated` and
+`MobEffect.addAttributeModifiers`. Public API 8, layouts and saved-data meaning are
+unchanged. In-game verification: **Not yet**.

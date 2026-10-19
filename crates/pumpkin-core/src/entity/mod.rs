@@ -2866,6 +2866,13 @@ impl Entity {
     }
 
     fn set_flag(&self, flag: Flag, value: bool) {
+        self.set_flag_state(flag, value);
+        if flag.to_bedrock().is_some() {
+            self.send_bedrock_flags();
+        }
+    }
+
+    fn set_flag_state(&self, flag: Flag, value: bool) {
         let index = flag as u8;
         let mask = (1i8).wrapping_shl(index as u32);
         let new_je_flags = if value {
@@ -2898,29 +2905,31 @@ impl Entity {
                     self.bedrock_flags_two.fetch_and(mask, Ordering::Relaxed);
                 }
             }
-
-            let world = self.world.load();
-            let chunk_pos = self.chunk_pos.load();
-            let mut metadata = SyncedActorDataList(std::collections::HashMap::new());
-            metadata.set(
-                entity_data_key::FLAGS,
-                MetadataValue::Int64(self.bedrock_flags.load(Ordering::Relaxed)),
-            );
-            metadata.set(
-                entity_data_key::FLAGS_TWO,
-                MetadataValue::Int64(self.bedrock_flags_two.load(Ordering::Relaxed)),
-            );
-            let packet = CSetActorData {
-                target_runtime_id: VarULong(self.entity_id as u64),
-                actor_data: metadata,
-                synced_properties: PropertySyncData {
-                    int_entries_list: std::collections::HashMap::new(),
-                    float_entries_list: std::collections::HashMap::new(),
-                },
-                tick: VarULong(0),
-            };
-            world.broadcast_to_chunk_bedrock(chunk_pos, &packet);
         }
+    }
+
+    fn send_bedrock_flags(&self) {
+        let world = self.world.load();
+        let chunk_pos = self.chunk_pos.load();
+        let mut metadata = SyncedActorDataList(std::collections::HashMap::new());
+        metadata.set(
+            entity_data_key::FLAGS,
+            MetadataValue::Int64(self.bedrock_flags.load(Ordering::Relaxed)),
+        );
+        metadata.set(
+            entity_data_key::FLAGS_TWO,
+            MetadataValue::Int64(self.bedrock_flags_two.load(Ordering::Relaxed)),
+        );
+        let packet = CSetActorData {
+            target_runtime_id: VarULong(self.entity_id as u64),
+            actor_data: metadata,
+            synced_properties: PropertySyncData {
+                int_entries_list: std::collections::HashMap::new(),
+                float_entries_list: std::collections::HashMap::new(),
+            },
+            tick: VarULong(0),
+        };
+        world.broadcast_to_chunk_bedrock(chunk_pos, &packet);
     }
 
     /// Plays sound at this entity's position with the entity's sound category
