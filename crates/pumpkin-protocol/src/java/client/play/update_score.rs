@@ -70,7 +70,7 @@ impl ClientPacket for CUpdateScore {
             write.write_string(&self.objective_name)?;
             write.write_var_int(&self.value)?;
             write.write_option(&self.display_name, |w, t| w.write_component(t, version))?;
-            write.write_option(&self.number_format, |w, n| n.write(w))
+            write.write_option(&self.number_format, |w, n| n.write_for_version(w, version))
         } else if *version <= pumpkin_util::version::JavaMinecraftVersion::V_1_7_6 {
             write.write_u8(0)?;
             write.write_string(&self.objective_name)?;

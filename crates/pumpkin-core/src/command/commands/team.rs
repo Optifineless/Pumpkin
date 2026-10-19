@@ -15,7 +15,6 @@ use pumpkin_data::translation;
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::color::NamedColor;
 
 const DESCRIPTION: &str = "Manages teams.";
 const PERMISSION: &str = "minecraft:command.team";
@@ -62,6 +61,11 @@ const NAMETAG_VISIBILITY_UNCHANGED_ERROR: CommandErrorType<0> = CommandErrorType
 const COLLISION_RULE_UNCHANGED_ERROR: CommandErrorType<0> = CommandErrorType::new(
     translation::java::COMMANDS_TEAM_OPTION_COLLISIONRULE_UNCHANGED,
     translation::java::COMMANDS_TEAM_OPTION_COLLISIONRULE_UNCHANGED,
+);
+
+const DEATH_MESSAGE_VISIBILITY_UNCHANGED_ERROR: CommandErrorType<0> = CommandErrorType::new(
+    translation::java::COMMANDS_TEAM_OPTION_DEATHMESSAGEVISIBILITY_UNCHANGED,
+    translation::java::COMMANDS_TEAM_OPTION_DEATHMESSAGEVISIBILITY_UNCHANGED,
 );
 
 const FRIENDLY_FIRE_ALREADY_ENABLED_ERROR: CommandErrorType<0> = CommandErrorType::new(
@@ -114,10 +118,12 @@ impl CommandExecutor for TeamAddExecutor {
         let new_team = Team {
             name: team_name_owned,
             display_name: display_name_clone.clone(),
-            options: 0,
+            // PlayerTeam enables friendly fire and seeing friendly invisibles by default.
+            options: 0x03,
             nametag_visibility: NameTagVisibility::Always,
+            deathmessage_visibility: NameTagVisibility::Always,
             collision_rule: CollisionRule::Always,
-            color: NamedColor::White,
+            color: None,
             player_prefix: TextComponent::empty(),
             player_suffix: TextComponent::empty(),
             players: vec![],
@@ -476,11 +482,11 @@ impl CommandExecutor for TeamModifyColorResetExecutor {
         };
 
         let mut team = team.clone();
-        if team.color == NamedColor::White {
+        if team.color.is_none() {
             return Err(COLOR_UNCHANGED_ERROR.create_without_context());
         }
 
-        team.color = NamedColor::White;
+        team.color = None;
         let team_display_name = team.display_name.clone();
         scoreboard.update_team(&world, team);
 
@@ -520,11 +526,11 @@ impl CommandExecutor for TeamModifyColorExecutor {
         };
 
         let mut team = team.clone();
-        if team.color == new_color {
+        if team.color == Some(new_color) {
             return Err(COLOR_UNCHANGED_ERROR.create_without_context());
         }
 
-        team.color = new_color;
+        team.color = Some(new_color);
         let team_display_name = team.display_name.clone();
         scoreboard.update_team(&world, team);
 
@@ -851,7 +857,7 @@ impl CommandExecutor for TeamModifyNametagVisibilityExecutor {
 }
 
 struct TeamModifyDeathMessageVisibilityExecutor {
-    value: &'static str,
+    value: NameTagVisibility,
 }
 
 impl CommandExecutor for TeamModifyDeathMessageVisibilityExecutor {
@@ -862,7 +868,7 @@ impl CommandExecutor for TeamModifyDeathMessageVisibilityExecutor {
         let team_name_owned = team_name.to_string();
         let value = self.value;
 
-        let scoreboard = world
+        let mut scoreboard = world
             .scoreboard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -873,18 +879,25 @@ impl CommandExecutor for TeamModifyDeathMessageVisibilityExecutor {
             );
         };
 
+        // TeamCommand.setDeathMessageVisibility also rejects an unchanged option.
+        if team.deathmessage_visibility == value {
+            return Err(DEATH_MESSAGE_VISIBILITY_UNCHANGED_ERROR.create_without_context());
+        }
+        let mut team = team.clone();
+        team.deathmessage_visibility = value;
         let team_display_name = team.display_name.clone();
-
+        scoreboard.update_team(&world, team);
+        drop(scoreboard);
         context.source.send_feedback(
             TextComponent::translate_cross(
                 translation::java::COMMANDS_TEAM_OPTION_DEATHMESSAGEVISIBILITY_SUCCESS,
                 translation::java::COMMANDS_TEAM_OPTION_DEATHMESSAGEVISIBILITY_SUCCESS,
-                [team_display_name, TextComponent::text(value.to_string())],
+                [team_display_name, TextComponent::text(value.to_str())],
             ),
             true,
         );
 
-        Ok(1)
+        Ok(0)
     }
 }
 
@@ -1064,21 +1077,23 @@ fn modify_branch() -> LiteralArgumentBuilder {
             .then(
                 literal("deathMessageVisibility")
                     .then(
-                        literal("always")
-                            .executes(TeamModifyDeathMessageVisibilityExecutor { value: "always" }),
+                        literal("always").executes(TeamModifyDeathMessageVisibilityExecutor {
+                            value: NameTagVisibility::Always,
+                        }),
                     )
                     .then(
-                        literal("never")
-                            .executes(TeamModifyDeathMessageVisibilityExecutor { value: "never" }),
+                        literal("never").executes(TeamModifyDeathMessageVisibilityExecutor {
+                            value: NameTagVisibility::Never,
+                        }),
                     )
                     .then(literal("hideForOtherTeams").executes(
                         TeamModifyDeathMessageVisibilityExecutor {
-                            value: "hideForOtherTeams",
+                            value: NameTagVisibility::HideForOtherTeams,
                         },
                     ))
                     .then(literal("hideForOwnTeam").executes(
                         TeamModifyDeathMessageVisibilityExecutor {
-                            value: "hideForOwnTeam",
+                            value: NameTagVisibility::HideForOwnTeam,
                         },
                     )),
             )

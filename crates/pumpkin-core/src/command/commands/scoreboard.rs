@@ -19,6 +19,9 @@ use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
 
+#[path = "scoreboard_display.rs"]
+mod display;
+
 const DESCRIPTION: &str = "Manages scoreboard objectives and players.";
 const PERMISSION: &str = "minecraft:command.scoreboard";
 
@@ -630,6 +633,8 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
             .requires(PERMISSION)
             .then(
                 literal("objectives")
+                    .then(display::objectives_modify())
+                    .then(display::objectives_setdisplay())
                     .then(
                         literal("add").then(
                             argument(ARG_OBJECTIVE, StringArgumentType::SingleWord).then(
@@ -660,6 +665,7 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
             )
             .then(
                 literal("players")
+                    .then(display::players_display())
                     .then(
                         literal("set").then(
                             argument(ARG_TARGETS, ScoreHolderArgumentType::Multiple).then(

@@ -21,11 +21,11 @@ impl LocatorBarIcon {
         // Waypoint.Icon.cloneAndAssignStyle keeps explicit color ahead of the team override.
         let mut icon = self.clone();
         if icon.color.is_none() {
-            icon.color = entity.get_team().map(|team| {
-                if team.color == NamedColor::Black {
+            icon.color = entity.get_team().and_then(|team| team.color).map(|color| {
+                if color == NamedColor::Black {
                     BLACK_TEAM_COLOR
                 } else {
-                    let rgb = team.color.to_rgb();
+                    let rgb = color.to_rgb();
                     i32::from_be_bytes([0, rgb.red, rgb.green, rgb.blue])
                 }
             });

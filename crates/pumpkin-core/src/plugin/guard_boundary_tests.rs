@@ -54,6 +54,7 @@ impl Fixture {
         let player = TestPlayer::new(&world);
         player.player.permission_lvl.store(PermissionLvl::Four);
         player.client().set_player(player.player.clone());
+        player.player.send_scoreboard();
         combat_test_support::publish_empty_chunk(
             &world,
             pumpkin_util::math::vector2::Vector2::new(0, 0),

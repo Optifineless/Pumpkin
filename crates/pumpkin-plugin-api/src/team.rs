@@ -292,6 +292,9 @@ impl<'a> Team<'a> {
 }
 
 /// Extension trait for [`Scoreboard`] providing team operations.
+///
+/// Obtain the scoreboard from a world to manage server teams. Every dimension's
+/// world scoreboard refers to the same persistent objectives, teams and members.
 pub trait ScoreboardTeamExt {
     /// Registers and creates a new team on the scoreboard.
     fn register_new_team(&self, name: &str, settings: TeamSettings) -> Team<'_>;

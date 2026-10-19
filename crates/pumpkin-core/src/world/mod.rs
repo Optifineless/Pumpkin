@@ -352,8 +352,8 @@ pub struct World {
     pub(crate) ticking_experience_orbs: arc_swap::ArcSwapOption<Vec<Arc<dyn EntityBase>>>,
     dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
     spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
-    /// The world's scoreboard, used for tracking scores, objectives, and display information.
-    pub scoreboard: owner_mutex::OwnerMutex<Scoreboard, pumpkin_util::sync::Scoreboard>,
+    /// The server scoreboard, shared with every other dimension.
+    pub scoreboard: scoreboard::SharedScoreboard,
     /// The world's worldborder, defining the playable area and controlling its expansion or contraction.
     pub worldborder: owner_mutex::OwnerMutex<Worldborder, pumpkin_util::sync::WorldBorder>,
     /// The world's time, including counting ticks for weather, time cycles, and statistics.
@@ -544,7 +544,7 @@ impl World {
             pending_entity_activations: crossbeam::queue::SegQueue::new(),
             dragon_parts: DashMap::new(),
             spawn_uuids: std::sync::Mutex::default(),
-            scoreboard: owner_mutex::OwnerMutex::new(Scoreboard::default()),
+            scoreboard: Scoreboard::shared_from_server(&server),
             worldborder: owner_mutex::OwnerMutex::new(Worldborder::new(
                 0.0,
                 0.0,
@@ -3329,6 +3329,7 @@ impl World {
         // Actors come from the tracker, in range only.
         self.pair_new_player_with_tracked_entities(&player);
 
+        player.send_scoreboard();
         player.has_played_before.store(true, Ordering::Relaxed);
 
         // 3. Trigger Join Event and Broadcast Join Message

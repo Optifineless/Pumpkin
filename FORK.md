@@ -2,6 +2,35 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Server scoreboard persistence
+
+Every dimension shares the server's scoreboard. Objective, score, display-slot and
+team updates reach players across dimensions; joining players receive the shared
+state once, and dimension changes retain it. Autosave, `/save-all` and shutdown
+snapshot dirty state and atomically save the Overworld's
+`data/minecraft/scoreboard.dat`. A failed load disables scoreboard saves for that
+run, preserving the original file. Older versions load matching fields with one
+warning and no data fixer; newer unsupported versions are preserved unchanged.
+
+The saved codec follows vanilla 26.3 `ScoreboardSaveData.Packed`, `Objective.Packed`,
+`Scoreboard.PackedScore`, `Score.Packed`, `PlayerTeam.Packed` and `DisplaySlot.CODEC`.
+It retains unknown criteria, full text/style data, number formats, score locks,
+all team options and memberships, and all 19 display slots. Display and format
+commands expose the persisted settings. The world-data version is corrected from
+26.2's 4903 to 26.3's 5023, checked against the official server jar's `version.json`.
+
+API 8 (same version): `Server`, `World`, `Scoreboard`, `ScoreboardObjective` and
+`Team` layouts change, including the shared `World.scoreboard` handle; native
+plugins must be rebuilt. Wasm API versions and existing player display overlays
+are retained. Automatic criterion updates and `/trigger` semantics are unchanged.
+Written by Codex. In-game verification: Not yet.
+
+Play test: show an objective in the sidebar, put players in the Overworld and
+Nether on the same team, and change a score and team prefix; expect both players
+to see the changes. Move between dimensions; expect one team and the same sidebar.
+Stop and restart; expect scores, formatting, team settings and membership to
+survive. Capture the cross-dimension updates and the restored sidebar after restart.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

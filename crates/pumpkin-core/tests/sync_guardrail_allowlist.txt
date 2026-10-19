@@ -1,5 +1,8 @@
 # Reviewed baseline of raw synchronization and blocking bridge sites.
 # New entries require a justification comment; see rules B1 and B3.
+# Scoreboard disk saves serialize publication with an async I/O-only gate; gameplay
+# never takes this gate, and the scoreboard owner is released before serialization/I/O.
+crates/pumpkin-core/src/server/scoreboard_storage.rs::load_scoreboard::tokio::sync::Mutex::new#1
 # Test-only hook pauses knot cleanup after its empty scan to make the attachment race deterministic.
 crates/pumpkin-core/src/entity/decoration/leash_knot.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::<module>::std::sync::Mutex::new#1
