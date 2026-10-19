@@ -15,8 +15,11 @@ events retain cancellation, with stock revalidated after callbacks.
 
 Mirrors vanilla 26.3 `BrewingStandBlockEntity.serverTick/doBrew/getUses/getSpeedMultiplier/loadAdditional/saveAdditional`,
 `BrewingStandMenu`, and `BrewingFuel`/`ResolvableInt`/`ResolvableFloat` codecs.
-The existing context-provider evaluator supplies registered providers; broader
-context-provider engine parity remains outside these two issues.
+The context-provider evaluator handles the binomial rule used by blaze powder's
+default 20-use provider. An unsupported registered provider leaves its fuel item
+in place, while missing references and legitimate zero results retain vanilla's
+zero-use behavior. Addresses B1 from PR #246 review; broader context-provider
+engine parity remains outside these two issues.
 
 API 8 (same version): rebuild native plugins for the brewing stand layout and
 `BrewingFuelImpl` marker-to-payload change (replace unit construction with

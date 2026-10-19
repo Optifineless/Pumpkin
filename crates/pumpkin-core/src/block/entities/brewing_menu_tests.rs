@@ -133,6 +133,61 @@ async fn b1019_g02_component_fuel_samples_custom_providers_and_publishes_changed
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g02_binomial_default_provider_starts_brew_and_keeps_second_powder() {
+    let fixture = BrewingFixture::new().await;
+    let mut uses = NbtCompound::new();
+    uses.put_string("type", "minecraft:binomial".into());
+    uses.put_int("n", 20);
+    uses.put_float("p", 1.0);
+    fixture
+        .host
+        .server
+        .datapack_manager
+        .insert_context_int_provider(
+            "minecraft:brewing/uses_default".into(),
+            NbtTag::Compound(uses),
+        );
+    fixture.ingredients(
+        potion(&Item::POTION, &Potion::WATER),
+        ItemStack::new(1, &Item::NETHER_WART),
+    );
+
+    fixture.ticks(1);
+
+    assert_properties(&fixture.stand, [400, 19, 400, 20]);
+    assert_eq!(fixture.stand.get_stack(4).item_count, 1);
+    fixture.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1019_g02_unsupported_registered_fuel_provider_keeps_fuel_item() {
+    let fixture = BrewingFixture::new().await;
+    let mut uses = NbtCompound::new();
+    uses.put_string("type", "minecraft:unsupported".into());
+    fixture
+        .host
+        .server
+        .datapack_manager
+        .insert_context_int_provider("test:unsupported_uses".into(), NbtTag::Compound(uses));
+    fixture.ingredients(
+        potion(&Item::POTION, &Potion::WATER),
+        ItemStack::new(1, &Item::NETHER_WART),
+    );
+    let mut fuel = ItemStack::new(2, &Item::DIAMOND);
+    fuel.set_data_component(BrewingFuelImpl {
+        uses: BrewingFuelProvider::Id(Cow::Borrowed("test:unsupported_uses")),
+        speed_multiplier: BrewingFuelProvider::Constant(1.0),
+    });
+    fixture.stand.set_stack(4, fuel);
+
+    fixture.ticks(1);
+
+    assert_properties(&fixture.stand, [0, 0, 0, 0]);
+    assert_eq!(fixture.stand.get_stack(4).item_count, 2);
+    fixture.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g02_missing_fuel_providers_use_zero_uses_and_unit_speed_defaults() {
     let fixture = BrewingFixture::new().await;
     fixture.ingredients(
@@ -189,7 +244,11 @@ async fn b1019_g02_missing_fuel_providers_use_zero_uses_and_unit_speed_defaults(
     player.player.tick(&fixture.host.server);
     assert_properties(&fixture.stand, [0, 0, 0, 0]);
     assert!(property_packets(&mut player).is_empty());
-    assert_eq!(fixture.stand.get_stack(4).item_count, 1);
+    assert_eq!(
+        fixture.stand.get_stack(4).item_count,
+        2,
+        "an out-of-range registered provider does not pay fuel"
+    );
     assert_eq!(fixture.stand.get_stack(3).item_count, 1);
     let mut fuel = ItemStack::new(2, &Item::DIAMOND);
     fuel.set_data_component(BrewingFuelImpl {

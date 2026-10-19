@@ -158,12 +158,14 @@ pub fn evaluate_block_providers(
         depth: Cell::new(0),
     };
     let uses = match uses {
-        NbtTag::String(id) => resolve_int_provider_id(id, &context),
+        // Vanilla ResolvableInt.get(context, 0) uses zero when a reference is missing.
+        NbtTag::String(id) => context_int_provider_tag(id, &context).map_or(Ok(0), |tag| {
+            evaluate_registered_int_provider(&tag, &context)
+        }),
         tag => evaluate_tag_int(tag, &context),
     }
     .ok()
-    .and_then(|value| i32::try_from(value).ok())
-    .unwrap_or(0);
+    .and_then(|value| i32::try_from(value).ok())?;
     let speed_is_reference = matches!(speed, NbtTag::String(_));
     let speed = match speed {
         NbtTag::String(id) => {
@@ -309,25 +311,32 @@ fn evaluate_score_provider_float(
 }
 
 fn resolve_int_provider_id(id: &str, ctx: &ComputeContext) -> Result<i64, CommandSyntaxError> {
+    let tag = context_int_provider_tag(id, ctx)
+        .ok_or_else(|| ERROR_EVALUATION_FAILED.create_without_context())?;
+    evaluate_registered_int_provider(&tag, ctx)
+}
+
+fn context_int_provider_tag(id: &str, ctx: &ComputeContext) -> Option<NbtTag> {
+    ctx.datapack_manager.and_then(|dm| {
+        dm.get_context_int_provider(id).or_else(|| {
+            if id.contains(':') {
+                None
+            } else {
+                dm.get_context_int_provider(&format!("minecraft:{id}"))
+            }
+        })
+    })
+}
+
+fn evaluate_registered_int_provider(
+    tag: &NbtTag,
+    ctx: &ComputeContext,
+) -> Result<i64, CommandSyntaxError> {
     if ctx.depth.get() >= MAX_PROVIDER_DEPTH {
         return Err(ERROR_EVALUATION_FAILED.create_without_context());
     }
-
-    let tag = ctx
-        .datapack_manager
-        .and_then(|dm| {
-            dm.get_context_int_provider(id).or_else(|| {
-                if id.contains(':') {
-                    None
-                } else {
-                    dm.get_context_int_provider(&format!("minecraft:{id}"))
-                }
-            })
-        })
-        .ok_or_else(|| ERROR_EVALUATION_FAILED.create_without_context())?;
-
     ctx.depth.set(ctx.depth.get() + 1);
-    let res = evaluate_tag_int(&tag, ctx);
+    let res = evaluate_tag_int(tag, ctx);
     ctx.depth.set(ctx.depth.get() - 1);
     res
 }
@@ -622,6 +631,32 @@ fn evaluate_compound_int(
                 return Err(ERROR_EVALUATION_FAILED.create_without_context());
             }
             Ok(rand::rng().random_range(min..=max))
+        }
+        Some("binomial") => {
+            // Mirrors Java 26.3 BinomialDistributionGenerator.getIntUnsafe.
+            let n = evaluate_tag_int(
+                compound
+                    .get("n")
+                    .ok_or_else(|| ERROR_EVALUATION_FAILED.create_without_context())?,
+                ctx,
+            )?;
+            let n =
+                i32::try_from(n).map_err(|_| ERROR_EVALUATION_FAILED.create_without_context())?;
+            #[allow(clippy::cast_possible_truncation)]
+            let p = evaluate_tag_float(
+                compound
+                    .get("p")
+                    .ok_or_else(|| ERROR_EVALUATION_FAILED.create_without_context())?,
+                ctx,
+            )? as f32;
+            let mut result = 0;
+            let mut rng = rand::rng();
+            for _ in 0..n {
+                if rng.random::<f32>() < p {
+                    result += 1;
+                }
+            }
+            Ok(i64::from(result))
         }
         Some("score") => evaluate_score_provider_int(compound, ctx),
         _ => compound.get("value").map_or_else(
