@@ -87,6 +87,11 @@ when a Player caused it or its damage type is tagged to hurt dragons, and it use
 body damage scaling. Mirrors vanilla 26.3 `EnderDragon.aiStep/hurtServer/hurt`;
 real-tick NoAI and Thorns regressions cover the new contact paths. In-game
 verification: **Not yet**.
+The registered `/kill` command removes a dragon directly and settles the tracked
+Ender Dragon fight, matching vanilla `EnderDragon.kill`; ordinary damage
+admission remains unchanged. A regression dispatches the real command against a
+healthy dragon and checks removal and fight state. Implemented by Codex (GPT-6
+Luna). In-game verification: **Not yet**.
 
 Infinity bow shots mark free ordinary arrows as creative-only pickup, while Infinity
 still consumes tipped and spectral arrows. Mirrors vanilla 26.3

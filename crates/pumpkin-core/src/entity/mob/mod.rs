@@ -911,6 +911,15 @@ pub trait Mob: EntityBase + Send + Sync {
     /// Runs species baseTick work after Entity updates water contact and before travel.
     fn after_base_tick(&self) {}
 
+    /// Handles explicit kill requests, separately from ordinary damage admission.
+    fn mob_kill(&self, caller: &dyn EntityBase) {
+        if self.get_living_entity().is_some() {
+            caller.damage(caller, f32::MAX, DamageType::GENERIC_KILL);
+        } else {
+            self.get_entity().remove();
+        }
+    }
+
     fn get_preferred_weapon_type(&self) -> Option<&'static pumpkin_data::tag::Tag> {
         None
     }
@@ -1447,6 +1456,10 @@ pub trait Mob: EntityBase + Send + Sync {
 impl<T: Mob + Send + 'static> EntityBase for T {
     fn get_mob(&self) -> Option<&dyn Mob> {
         Some(self)
+    }
+
+    fn kill(&self, caller: &dyn EntityBase) {
+        Mob::mob_kill(self, caller);
     }
 
     fn is_pushed_by_fluids(&self) -> bool {

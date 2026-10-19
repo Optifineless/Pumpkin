@@ -1,9 +1,11 @@
 use crate::command::{CommandSender, CommandSource};
-use crate::entity::EntityBase;
+use crate::entity::{Entity, EntityBase, boss::ender_dragon::EnderDragonEntity};
 use crate::net::java::combat_test_support::TestPlayer;
 use crate::server::{Server, combat_test_support};
 use crate::world::World;
-use pumpkin_data::{biome::Biome, item::Item, item_stack::ItemStack};
+use pumpkin_data::{
+    biome::Biome, dimension::Dimension, entity::EntityType, item::Item, item_stack::ItemStack,
+};
 use pumpkin_protocol::java::server::play::SChatCommand;
 use pumpkin_util::{GameMode, PermissionLvl, math::vector2::Vector2, math::vector3::Vector3};
 use pumpkin_world::chunk::io::Dirtiable;
@@ -118,6 +120,77 @@ async fn execute_as_implicit_clear_targets_executing_entity() -> TestResult {
             assert!(fixture.bob.player.inventory.held_item().is_empty());
         }
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn kill_command_removes_healthy_dragon_and_records_fight_kill() -> TestResult {
+    let fixture = Fixture::new()?;
+    let end_directory = tempfile::tempdir()?;
+    let end_world = Arc::new(World::load(
+        pumpkin_world::level::Level::from_root_folder(
+            &pumpkin_config::world::LevelConfig::default(),
+            end_directory.path().to_path_buf(),
+            0,
+            Dimension::THE_END,
+        ),
+        fixture.server.level_info.clone(),
+        Dimension::THE_END,
+        fixture.server.block_registry.clone(),
+        Arc::downgrade(&fixture.server),
+    ));
+    combat_test_support::publish_empty_chunk(&end_world, Vector2::new(0, 0));
+    let player = TestPlayer::new(&end_world);
+    player.player.permission_lvl.store(PermissionLvl::Four);
+    end_world
+        .players
+        .store(Arc::new(vec![player.player.clone()]));
+    fixture
+        .server
+        .worlds
+        .store(Arc::new(vec![fixture.world.clone(), end_world.clone()]));
+
+    let dragon = EnderDragonEntity::new(Entity::new(
+        end_world.clone(),
+        Vector3::new(0.0, 128.0, 0.0),
+        &EntityType::ENDER_DRAGON,
+    ));
+    let dragon_id = dragon.get_entity().entity_uuid;
+    assert!(end_world.spawn_entity(dragon.clone() as Arc<dyn EntityBase>));
+    crate::world::dragon_fight::DragonFight::with_fight(
+        end_world.dragon_fight.as_ref().unwrap(),
+        &end_world,
+        |fight| {
+            fight.dragon_uuid = Some(dragon_id);
+            fight.dragon_killed = false;
+            fight.previously_killed = true;
+            fight.exit_portal_location =
+                Some(pumpkin_util::math::position::BlockPos::new(0, 64, 0));
+        },
+    );
+
+    assert_eq!(dragon.mob_entity.living_entity.health.load(), 200.0);
+    assert_eq!(
+        fixture
+            .server
+            .command_dispatcher
+            .load()
+            .execute_input(
+                "kill @e[type=minecraft:ender_dragon,limit=1]",
+                &player.player.get_command_source(&fixture.server),
+            )
+            .expect("kill command"),
+        1
+    );
+    assert!(dragon.get_entity().is_removed());
+    {
+        let fight = end_world.dragon_fight.as_ref().unwrap().lock().unwrap();
+        assert!(fight.dragon_killed && fight.previously_killed);
+        assert_eq!(fight.dragon_uuid, None);
+    };
+
+    end_world.level.shutdown().await?;
+    fixture.world.level.shutdown().await?;
     Ok(())
 }
 

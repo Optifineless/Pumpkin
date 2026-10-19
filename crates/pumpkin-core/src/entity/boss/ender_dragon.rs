@@ -766,6 +766,20 @@ impl Mob for EnderDragonEntity {
             || damage_type.has_tag(&tag::DamageType::MINECRAFT_ALWAYS_HURTS_ENDER_DRAGONS)
     }
 
+    fn mob_kill(&self, _caller: &dyn EntityBase) {
+        // EnderDragon.kill removes the dragon directly, then settles EnderDragonFight.
+        let entity = self.get_entity();
+        let world = entity.world.load();
+        let dragon_uuid = entity.entity_uuid;
+        entity.remove();
+
+        if let Some(fight_mutex) = &world.dragon_fight {
+            crate::world::dragon_fight::DragonFight::with_fight(fight_mutex, &world, |fight| {
+                fight.set_dragon_killed(&world, dragon_uuid);
+            });
+        }
+    }
+
     fn modify_incoming_damage(&self, amount: f32, damage_type: DamageType) -> f32 {
         if damage_type == DamageType::THORNS {
             // Reflected Thorns targets the root, which vanilla routes through the body.
