@@ -4,6 +4,8 @@ mod container_menu_block_effects;
 mod death;
 mod equipment_updates;
 mod experience_orb;
+#[cfg(test)]
+mod held_drop_tests;
 mod inventory_sync;
 mod known_movement;
 mod mace;
@@ -4582,6 +4584,8 @@ impl Player {
         if dropped_stack.is_empty() {
             return;
         }
+        // LivingEntity.detectEquipmentUpdates reads the current hand after the committed drop.
+        self.queue_equipment_updates(&[EquipmentSlot::MAIN_HAND]);
         let updated_stack = self.inventory.get_stack(source_slot);
         self.drop_item(dropped_stack);
 
