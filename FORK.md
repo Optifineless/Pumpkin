@@ -2,6 +2,23 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Campfire storage and start admission (#85, #86)
+
+Lit and unlit campfires accept valid food into a free slot. Start-event admission
+runs before payment; cancellation and callback replacements preserve input and
+storage. Accepted durations commit with the existing atomic held-item transfer.
+Cold food waits for lighting and retains vanilla cooldown. Mirrors vanilla 26.3
+`CampfireBlock.useItemOn` and `CampfireBlockEntity.placeFood`.
+
+The optional `CookingStarted` byte array records admitted slots, including literal
+zero/negative plugin durations, so reload does not repeat their start event.
+Missing entries default to false: old positive totals/progress remain unchanged,
+and old nonpositive totals retain the cancellable fallback. Existing item and
+timer tags keep their meaning. API 8 (same version): `CampfireBlockEntity` gains
+private admission state; rebuild native plugins. Public signatures and Wasm WIT
+are unchanged. Implemented by Codex (GPT-6.1 Sol).
+In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

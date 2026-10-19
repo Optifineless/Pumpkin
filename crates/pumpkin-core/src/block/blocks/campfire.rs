@@ -7,6 +7,7 @@ use pumpkin_data::{
     fluid::Fluid,
     recipes::{CookingRecipeKind, get_cooking_recipe_with_ingredient},
 };
+use pumpkin_inventory::Inventory;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_world::tick::TickPriority;
 
@@ -30,12 +31,7 @@ impl BlockBehaviour for CampfireBlock {
     }
 
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        let state = args.world.get_block_state(args.position);
-        if !CampfireLikeProperties::from_state_id(state.id).lit {
-            return BlockActionResult::PassToDefaultBlockAction;
-        }
-
-        let Some(_) = get_cooking_recipe_with_ingredient(
+        let Some(recipe) = get_cooking_recipe_with_ingredient(
             args.item_stack.item,
             CookingRecipeKind::CampfireCooking,
         ) else {
@@ -49,15 +45,17 @@ impl BlockBehaviour for CampfireBlock {
             return BlockActionResult::PassToDefaultBlockAction;
         };
 
-        for slot in 0..CampfireBlockEntity::SLOT_COUNT {
-            // CampfireBlockEntity.placeFood commits the held source and cooking slot together.
-            if !crate::item::item_utils::place_held_item(
+        if let Some(slot) =
+            (0..CampfireBlockEntity::SLOT_COUNT).find(|&slot| campfire.get_stack(slot).is_empty())
+        {
+            if !campfire.place_food(
                 args.item_stack,
                 args.player,
-                campfire,
+                args.world,
                 slot,
+                recipe.cookingtime,
             ) {
-                continue;
+                return BlockActionResult::Consume;
             }
 
             args.player.increment_stat(
@@ -69,7 +67,8 @@ impl BlockBehaviour for CampfireBlock {
             return BlockActionResult::Success;
         }
 
-        BlockActionResult::PassToDefaultBlockAction
+        // CampfireBlock.useItemOn consumes valid food interactions even when all slots are full.
+        BlockActionResult::Consume
     }
 
     fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
