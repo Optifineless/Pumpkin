@@ -38,21 +38,20 @@ impl BlockBehaviour for DripstoneBlock {
     fn on_landed_upon(&self, args: OnLandedUponArgs<'_>) {
         // PointedDripstoneBlock.fallOn; adapted from upstream #3416 to vanilla 26.3.
         const STALAGMITE_FALL_DAMAGE_MODIFIER: f32 = 2.0;
-        let Some(living) = args.entity.get_living_entity() else {
+        if args.entity.get_living_entity().is_none() {
             return;
-        };
+        }
         if let Some(distance) = Self::stalagmite_fall_distance(
             args.world.get_block_state_id(args.position),
             f64::from(args.fall_distance),
         ) {
-            living.handle_fall_damage_from(
-                args.entity,
+            args.handle_fall_damage_from(
                 distance as f32,
                 STALAGMITE_FALL_DAMAGE_MODIFIER,
                 DamageType::STALAGMITE,
             );
         } else {
-            living.handle_fall_damage(args.entity, args.fall_distance, 1.0);
+            args.handle_fall_damage(args.fall_distance, 1.0);
         }
     }
 

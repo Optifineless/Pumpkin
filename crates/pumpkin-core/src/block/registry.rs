@@ -1291,11 +1291,13 @@ impl BlockRegistry {
     ) {
         let pumpkin_block = self.get_pumpkin_block(block.id);
         if let Some(pumpkin_block) = pumpkin_block {
+            let _released = crate::entity::living::damage_transaction::suspend_damage();
             pumpkin_block.on_landed_upon(OnLandedUponArgs {
                 world,
                 position,
                 fall_distance,
                 entity,
+                expected_landing: None,
             });
         }
     }

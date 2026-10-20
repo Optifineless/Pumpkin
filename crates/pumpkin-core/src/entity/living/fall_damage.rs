@@ -1,4 +1,4 @@
-use super::{EntityBase, LivingEntity};
+use super::{EntityBase, FallContext, LivingEntity};
 use pumpkin_data::{
     attributes::Attributes,
     damage::DamageType,
@@ -14,6 +14,33 @@ impl LivingEntity {
         damage_per_distance: f32,
         damage_type: DamageType,
     ) {
+        self.handle_landing_fall_damage_from(
+            caller,
+            fall_distance,
+            damage_per_distance,
+            damage_type,
+            None,
+        );
+    }
+
+    pub(crate) fn handle_landing_fall_damage_from(
+        &self,
+        caller: &dyn EntityBase,
+        fall_distance: f32,
+        damage_per_distance: f32,
+        damage_type: DamageType,
+        expected: Option<&FallContext>,
+    ) {
+        let context = {
+            let _owner = self.own_damage();
+            let context = expected
+                .cloned()
+                .unwrap_or_else(|| FallContext::capture(self));
+            if !context.is_current(self, caller) {
+                return;
+            }
+            context
+        };
         let may_fly = caller.get_player().is_some_and(|player| {
             player
                 .abilities
@@ -24,14 +51,6 @@ impl LivingEntity {
         if may_fly || self.is_immune_to_fall_damage() {
             return;
         }
-        let (lifecycle, world, position) = {
-            let _owner = self.own_damage();
-            (
-                self.damage_lifecycle(),
-                self.entity.world.load_full(),
-                self.entity.pos.load(),
-            )
-        };
 
         // Player.causeFallDamage awards distance before Player.isInvulnerableTo gates hurt.
         if fall_distance >= 2.0
@@ -46,7 +65,7 @@ impl LivingEntity {
 
         let damage = {
             let _owner = self.own_damage();
-            if !self.fall_context_current(caller, lifecycle, &world, position) {
+            if !context.is_current(self, caller) {
                 return;
             }
             let fall_distance = self
@@ -65,12 +84,15 @@ impl LivingEntity {
             damage
         };
         if damage > 0.0 {
+            {
+                let _owner = self.own_damage();
+                if !context.is_current(self, caller) {
+                    return;
+                }
+            }
             // LivingEntity.causeFallDamage plays the damage-based sound even if hurt rejects it.
             self.entity.play_sound(Self::get_fall_sound(damage as i32));
-            let _owner = self.own_damage();
-            if self.fall_context_current(caller, lifecycle, &world, position) {
-                self.damage(caller, damage, damage_type);
-            }
+            self.hurt_fall_for_context(caller, damage, damage_type, &context);
         }
     }
 }

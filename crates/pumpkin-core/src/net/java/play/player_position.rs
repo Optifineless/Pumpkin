@@ -102,6 +102,14 @@ impl JavaClient {
                 let entity = &player.get_entity();
                 let last_pos = entity.pos.load();
                 player.get_entity().set_pos(pos);
+                let delta = Vector3::new(
+                    pos.x - last_pos.x,
+                    pos.y - last_pos.y,
+                    pos.z - last_pos.z,
+                );
+                let upward_reset = Self::begin_upward_fall_reset(
+                    player, delta, packet.collision & FLAG_ON_GROUND != 0,
+                );
 
                 let distance = last_pos.squared_distance_to_vec(&pos).sqrt();
                 let cm = (distance * 100.0) as i32;
@@ -110,11 +118,6 @@ impl JavaClient {
                     player.increment_stat(StatisticCategory::Custom, stat as i32, cm);
                 }
 
-                let delta = Vector3::new(
-                    pos.x - last_pos.x,
-                    pos.y - last_pos.y,
-                    pos.z - last_pos.z,
-                );
                 Self::check_jump(player, delta.y, packet.collision & FLAG_ON_GROUND != 0);
 
                 let new_on_ground = packet.collision & FLAG_ON_GROUND != 0;
@@ -155,6 +158,7 @@ impl JavaClient {
                 }
                 player.known_movement.record(delta);
                 player.progress_motion(delta);
+                Self::finish_upward_fall_reset(player, upward_reset);
             }
 
             'cancelled: {
@@ -226,6 +230,14 @@ impl JavaClient {
                 let entity = &player.get_entity();
                 let last_pos = entity.pos.load();
                 player.get_entity().set_pos(pos);
+                let delta = Vector3::new(
+                    pos.x - last_pos.x,
+                    pos.y - last_pos.y,
+                    pos.z - last_pos.z,
+                );
+                let upward_reset = Self::begin_upward_fall_reset(
+                    player, delta, packet.collision & FLAG_ON_GROUND != 0,
+                );
 
                 let distance = last_pos.squared_distance_to_vec(&pos).sqrt();
                 let cm = (distance * 100.0) as i32;
@@ -234,11 +246,6 @@ impl JavaClient {
                     player.increment_stat(StatisticCategory::Custom, stat as i32, cm);
                 }
 
-                let delta = Vector3::new(
-                    pos.x - last_pos.x,
-                    pos.y - last_pos.y,
-                    pos.z - last_pos.z,
-                );
                 Self::check_jump(player, delta.y, packet.collision & FLAG_ON_GROUND != 0);
 
                 entity.set_rotation(wrap_degrees(packet.yaw) % 360.0, wrap_degrees(packet.pitch));
@@ -292,6 +299,7 @@ impl JavaClient {
                 }
                 player.known_movement.record(delta);
                 player.progress_motion(delta);
+                Self::finish_upward_fall_reset(player, upward_reset);
             }
 
             'cancelled: {

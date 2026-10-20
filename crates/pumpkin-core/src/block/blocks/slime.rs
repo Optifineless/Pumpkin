@@ -9,9 +9,7 @@ pub struct SlimeBlock;
 
 impl BlockBehaviour for SlimeBlock {
     fn on_landed_upon(&self, args: OnLandedUponArgs<'_>) {
-        if let Some(living) = args.entity.get_living_entity() {
-            living.handle_fall_damage(args.entity, args.fall_distance, 0.0);
-        }
+        args.handle_fall_damage(args.fall_distance, 0.0);
     }
 
     fn update_entity_movement_after_fall_on(&self, args: UpdateEntityMovementAfterFallOnArgs<'_>) {

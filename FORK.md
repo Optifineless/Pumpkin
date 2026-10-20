@@ -2,6 +2,36 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Fall accounting stays in the admitted life (#319, #347)
+
+Accepted Java position and position+rotation packets clear earlier fall distance
+after upward movement finishes ordinary fall bookkeeping. Rejected, cancelled and
+pending-teleport packets retain their distance. Supporting-block damage carries
+the original landing's life, live session, exact world and entity position through
+the callback into damage admission. Landings stale at block damage entry cannot
+charge a replacement life's fall statistics, impulse state, sound or health.
+Existing landing claims, final descent, particles, reentrant descent and block
+reductions remain in use.
+This mirrors the supplied vanilla 26.3 `ServerGamePacketListenerImpl.handlePlayerPositionChange`,
+`Entity.checkFallDamage`, `LivingEntity.causeFallDamage` and block `fallOn` chain;
+the expected-life guard adapts it to the fork's reentrant callbacks.
+
+API 8 (same version): `OnLandedUponArgs` gains optional `expected_landing`, changing
+its public layout and struct-literal source compatibility. Rebuild native plugins;
+direct struct constructors add `expected_landing: None`. Landing overrides must
+preserve the supplied context and forward damage through the args'
+`handle_fall_damage`/`handle_fall_damage_from` methods. Public direct living fall-damage
+methods retain their signatures and deliberately use the current life. Wasm WIT,
+API version and saved-data fields/defaults/meaning are unchanged. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: descend four blocks, launch upward before landing, then fall one block
+onto stone; expect no damage. Fall five blocks continuously; expect normal damage.
+Repeat while turning and on hay/bed. With a landing plugin paused before forwarding
+damage, respawn and release the old callback; expect unchanged replacement health,
+fall state and no old fall sound. Record the launch/landing, hearts and plugin gate,
+including an unchanged-life release that damages once.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.

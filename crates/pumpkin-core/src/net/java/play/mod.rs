@@ -277,9 +277,13 @@ mod movement_jump_tests;
 #[cfg(test)]
 mod movement_landing_callback_tests;
 #[cfg(test)]
+mod movement_landing_life_tests;
+#[cfg(test)]
 mod movement_landing_support_tests;
 #[cfg(test)]
 mod movement_landing_tests;
+#[cfg(test)]
+mod movement_upward_reset_tests;
 pub mod paddle_boat;
 pub mod pick_item;
 pub mod ping_request;

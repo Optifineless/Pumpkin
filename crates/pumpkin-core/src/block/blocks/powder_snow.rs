@@ -85,6 +85,9 @@ pub(crate) fn inside_collision_shape_for_entity(
 
 impl BlockBehaviour for PowderSnowBlock {
     fn on_landed_upon(&self, args: OnLandedUponArgs<'_>) {
+        if !args.landing_is_current() {
+            return;
+        }
         if let Some(living) = args.entity.get_living_entity()
             && args.fall_distance >= 4.0
         {

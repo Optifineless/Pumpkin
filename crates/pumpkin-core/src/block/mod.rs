@@ -142,9 +142,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn player_placed(&self, _args: PlayerPlacedArgs<'_>) {}
 
     fn on_landed_upon(&self, args: OnLandedUponArgs<'_>) {
-        if let Some(living) = args.entity.get_living_entity() {
-            living.handle_fall_damage(args.entity, args.fall_distance, 1.0);
-        }
+        args.handle_fall_damage(args.fall_distance, 1.0);
     }
 
     fn update_entity_movement_after_fall_on(&self, args: UpdateEntityMovementAfterFallOnArgs<'_>) {
@@ -372,6 +370,42 @@ pub struct OnLandedUponArgs<'a> {
     pub position: &'a BlockPos,
     pub fall_distance: f32,
     pub entity: &'a dyn EntityBase,
+    /// Preserve this context when forwarding damage from an admitted landing.
+    pub expected_landing: Option<&'a crate::entity::living::FallContext>,
+}
+
+impl OnLandedUponArgs<'_> {
+    /// Applies ordinary fall damage in the life that admitted this landing.
+    pub fn handle_fall_damage(&self, distance: f32, modifier: f32) {
+        self.handle_fall_damage_from(distance, modifier, pumpkin_data::damage::DamageType::FALL);
+    }
+
+    /// Applies the supporting block's damage source in the admitted life.
+    pub fn handle_fall_damage_from(
+        &self,
+        distance: f32,
+        modifier: f32,
+        source: pumpkin_data::damage::DamageType,
+    ) {
+        if let Some(living) = self.entity.get_living_entity() {
+            living.handle_landing_fall_damage_from(
+                self.entity,
+                distance,
+                modifier,
+                source,
+                self.expected_landing,
+            );
+        }
+    }
+
+    pub(crate) fn landing_is_current(&self) -> bool {
+        self.expected_landing.is_none_or(|expected| {
+            self.entity.get_living_entity().is_some_and(|living| {
+                let _owner = living.own_damage();
+                expected.is_current(living, self.entity)
+            })
+        })
+    }
 }
 
 pub struct UpdateEntityMovementAfterFallOnArgs<'a> {

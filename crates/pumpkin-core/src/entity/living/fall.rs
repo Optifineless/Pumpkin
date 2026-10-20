@@ -3,19 +3,39 @@ use crate::{block::OnLandedUponArgs, world::World};
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::Arc;
 
-struct Landing {
-    claim: u64,
-    lifecycle: u64,
-    distance: f32,
-    particle_distance: f32,
+/// Identifies the life, session, world and position that admitted a fall.
+#[derive(Clone)]
+pub struct FallContext {
+    pub(super) lifecycle: u64,
     world: Arc<World>,
     position: Vector3<f64>,
+}
+
+impl FallContext {
+    pub(crate) fn capture(living: &LivingEntity) -> Self {
+        Self {
+            lifecycle: living.damage_lifecycle(),
+            world: living.entity.world.load_full(),
+            position: living.entity.pos.load(),
+        }
+    }
+
+    pub(crate) fn is_current(&self, living: &LivingEntity, caller: &dyn EntityBase) -> bool {
+        living.fall_context_current(caller, self.lifecycle, &self.world, self.position)
+    }
+}
+
+struct Landing {
+    claim: u64,
+    context: FallContext,
+    distance: f32,
+    particle_distance: f32,
 }
 
 impl Landing {
     fn is_current(&self, living: &LivingEntity, caller: &dyn EntityBase) -> bool {
         living.damage_owner.landing_is_current(self.claim)
-            && living.fall_context_current(caller, self.lifecycle, &self.world, self.position)
+            && self.context.is_current(living, caller)
     }
 
     fn can_continue(&self, living: &LivingEntity, caller: &dyn EntityBase) -> bool {
@@ -94,11 +114,9 @@ impl LivingEntity {
                     .claim_landing(self.fall_distance.load())
                     .map(|claim| Landing {
                         claim,
-                        lifecycle: self.damage_lifecycle(),
+                        context: FallContext::capture(self),
                         distance: self.fall_distance.load(),
                         particle_distance,
-                        world: self.entity.world.load_full(),
-                        position: self.entity.pos.load(),
                     })
             } else {
                 if ground {
@@ -111,8 +129,8 @@ impl LivingEntity {
             self.dispatch_landing(caller, &landing, dont_damage);
             let _owner = self.own_damage();
             if self.damage_owner.landing_is_current(landing.claim)
-                && self.damage_lifecycle() == landing.lifecycle
-                && self.fall_session_current(caller, &landing.world, false)
+                && self.damage_lifecycle() == landing.context.lifecycle
+                && self.fall_session_current(caller, &landing.context.world, false)
                 && !self.damage_owner.landing_has_descent()
                 && self.fall_distance.load() == landing.distance
             {
@@ -129,6 +147,7 @@ impl LivingEntity {
     }
 
     fn dispatch_landing(&self, caller: &dyn EntityBase, landing: &Landing, dont_damage: bool) {
+        let _released = super::damage_transaction::suspend_damage();
         if !landing.can_continue(self, caller) {
             return;
         }
@@ -149,16 +168,28 @@ impl LivingEntity {
             return;
         }
         let position = self.entity.get_pos_with_y_offset(0.2).0;
-        let block = landing.world.get_block(&position);
-        if let Some(behavior) = landing.world.block_registry.get_pumpkin_block(block.id) {
+        let block = landing.context.world.get_block(&position);
+        if let Some(behavior) = landing
+            .context
+            .world
+            .block_registry
+            .get_pumpkin_block(block.id)
+        {
             behavior.on_landed_upon(OnLandedUponArgs {
-                world: &landing.world,
+                world: &landing.context.world,
                 position: &position,
                 fall_distance: landing.distance,
                 entity: caller,
+                expected_landing: Some(&landing.context),
             });
         } else {
-            self.handle_fall_damage(caller, landing.distance, 1.0);
+            self.handle_landing_fall_damage_from(
+                caller,
+                landing.distance,
+                1.0,
+                pumpkin_data::damage::DamageType::FALL,
+                Some(&landing.context),
+            );
         }
     }
 }

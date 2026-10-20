@@ -25,6 +25,7 @@ mod equipment_packets;
 #[cfg(test)]
 mod ext_review_tests;
 mod fall;
+pub use fall::FallContext;
 mod fall_damage;
 mod fall_flying;
 #[cfg(test)]

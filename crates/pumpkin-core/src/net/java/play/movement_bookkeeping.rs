@@ -1,11 +1,37 @@
 use crate::{
-    entity::{EntityBase, player::Player},
+    entity::{EntityBase, living::FallContext, player::Player},
     net::java::JavaClient,
 };
 use pumpkin_util::{GameMode, math::vector3::Vector3};
 use std::sync::atomic::Ordering;
 
 impl JavaClient {
+    pub(super) fn begin_upward_fall_reset(
+        player: &Player,
+        movement: Vector3<f64>,
+        on_ground: bool,
+    ) -> Option<(FallContext, f32)> {
+        // Grounded movement already resets through fall's landing claim and descent checks.
+        if movement.y <= 0.0 || on_ground {
+            return None;
+        }
+        let living = &player.living_entity;
+        let _owner = living.own_damage();
+        Some((FallContext::capture(living), living.fall_distance.load()))
+    }
+
+    pub(super) fn finish_upward_fall_reset(player: &Player, reset: Option<(FallContext, f32)>) {
+        let Some((context, distance)) = reset else {
+            return;
+        };
+        let living = &player.living_entity;
+        let _owner = living.own_damage();
+        if context.is_current(living, player) && living.fall_distance.load() == distance {
+            // ServerGamePacketListenerImpl.handlePlayerPositionChange resets after fall accounting.
+            living.fall_distance.store(0.0);
+        }
+    }
+
     // ServerGamePacketListenerImpl.handlePlayerPositionChange uses the same takeoff for every variant.
     pub(super) fn check_jump(player: &Player, delta_y: f64, on_ground: bool) {
         // Claim the takeoff before jump dispatches reentrant exhaustion callbacks.

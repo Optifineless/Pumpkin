@@ -137,6 +137,31 @@ impl LivingEntity {
         })
     }
 
+    // Carry the supporting block's original life into ordinary damage admission.
+    pub(super) fn hurt_fall_for_context(
+        &self,
+        caller: &dyn EntityBase,
+        amount: f32,
+        damage_type: DamageType,
+        expected: &super::FallContext,
+    ) -> bool {
+        let _owner = self.own_damage();
+        if !expected.is_current(self, caller) {
+            return false;
+        }
+        self.hurt_server_inner(HurtRequest {
+            caller,
+            amount,
+            damage_type,
+            position: None,
+            source: None,
+            cause: None,
+            expected_lifecycle: Some(expected.lifecycle),
+            ender_pearl_transfer: false,
+            before_hurt: || {},
+        })
+    }
+
     /// Resets pearl fall state and damages only the captured life under damage admission.
     pub(crate) fn hurt_ender_pearl_for_lifecycle(
         &self,

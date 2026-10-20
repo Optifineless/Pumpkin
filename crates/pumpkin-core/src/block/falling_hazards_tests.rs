@@ -205,6 +205,7 @@ async fn falling_onto_a_stalagmite_tip_deals_stalagmite_damage() {
         cow.get_entity()
             .set_damage_immunity(pumpkin_data::damage::DamageType::FALL, true);
         DripstoneBlock.on_landed_upon(OnLandedUponArgs {
+            expected_landing: None,
             world: &world,
             position: &pos,
             fall_distance: 3.0,
