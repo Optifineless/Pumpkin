@@ -12,14 +12,17 @@ use pumpkin_data::{
     biome::Biome,
     block_properties::{
         DoorHinge, DoubleBlockHalf, Half, HorizontalFacing, OakDoorLikeProperties,
-        OakTrapdoorLikeProperties,
+        OakTrapdoorLikeProperties, WaterLikeProperties,
     },
     item::Item,
     item_stack::ItemStack,
 };
 use pumpkin_inventory::Inventory;
 use pumpkin_protocol::{VarInt, java::server::play::SUseItemOn};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use pumpkin_util::{
+    GameMode,
+    math::{position::BlockPos, vector3::Vector3},
+};
 use pumpkin_world::world::BlockFlags;
 use std::sync::Arc;
 
@@ -64,6 +67,32 @@ impl PlacementFixture {
             .player
             .inventory()
             .set_stack(0, ItemStack::new(1, item));
+    }
+
+    fn give_count(&self, item: &'static Item, count: u8) {
+        self.player
+            .player
+            .inventory()
+            .set_stack(0, ItemStack::new(count, item));
+    }
+
+    fn set_state(&self, position: BlockPos, state: pumpkin_data::BlockStateId) {
+        self.world.set_block_state(
+            &position,
+            state,
+            BlockFlags::FORCE_STATE | BlockFlags::UPDATE_KNOWN_SHAPE,
+        );
+    }
+
+    fn clear_door_volume(&self, lower: BlockPos) {
+        for x in (lower.0.x - 1)..=(lower.0.x + 1) {
+            for z in (lower.0.z - 1)..=(lower.0.z + 1) {
+                for y in lower.0.y..=(lower.0.y + 1) {
+                    self.set_block(BlockPos::new(x, y, z), &Block::AIR);
+                }
+            }
+        }
+        self.set_block(lower.down(), &Block::STONE);
     }
 
     fn use_item_on(&self, position: BlockPos, face: BlockDirection, cursor: Vector3<f32>) {
@@ -176,6 +205,254 @@ async fn door_hinge_placement_uses_upper_obstructions_and_preserves_controls() {
         adjacent_state.hinge,
         DoorHinge::Right,
         "the existing lower door takes precedence over the click tie-break"
+    );
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g06_lantern_uses_context_and_flowing_water() {
+    let fixture = PlacementFixture::new(180.0);
+    let position = BlockPos::new(8, 64, 8);
+    let clicked = position.west();
+    let place = |fixture: &PlacementFixture, block: &'static Block, item: &'static Item| {
+        fixture.give_count(item, 2);
+        fixture.use_item_on(clicked, BlockDirection::East, Vector3::new(1.0, 0.5, 0.5));
+        let state = pumpkin_data::block_properties::LanternLikeProperties::from_state_id(
+            fixture.world.get_block_state_id(&position),
+        );
+        assert_eq!(fixture.world.get_block(&position), block);
+        assert_eq!(fixture.player.player.inventory().get_stack(0).item_count, 1);
+        state
+    };
+
+    let prepare = |fixture: &PlacementFixture, target: &'static Block| {
+        fixture.set_block(clicked, &Block::STONE);
+        fixture.set_block(position.down(), &Block::STONE);
+        fixture.set_block(position, target);
+        fixture.set_block(position.up(), &Block::STONE);
+        fixture.player.player.get_entity().set_rotation(180.0, 75.0);
+    };
+
+    prepare(&fixture, &Block::AIR);
+    let standing = place(&fixture, &Block::LANTERN, &Item::LANTERN);
+    assert!(
+        !standing.r#hanging,
+        "looking down with both supports must stand"
+    );
+    assert!(!standing.r#waterlogged, "dry lantern must remain dry");
+
+    prepare(&fixture, &Block::WATER);
+    fixture
+        .player
+        .player
+        .get_entity()
+        .set_rotation(180.0, -75.0);
+    let hanging = place(&fixture, &Block::SOUL_LANTERN, &Item::SOUL_LANTERN);
+    assert!(hanging.r#hanging, "looking up with both supports must hang");
+    assert!(
+        hanging.r#waterlogged,
+        "source water must waterlog the lantern"
+    );
+
+    let mut flowing_water = WaterLikeProperties::default(&Block::WATER);
+    flowing_water.level = 1;
+    prepare(&fixture, &Block::AIR);
+    fixture.set_state(position, flowing_water.to_state_id(&Block::WATER));
+    let flowing = place(&fixture, &Block::LANTERN, &Item::LANTERN);
+    assert!(
+        flowing.r#waterlogged,
+        "flowing water must waterlog the lantern"
+    );
+
+    prepare(&fixture, &Block::AIR);
+    fixture
+        .player
+        .player
+        .get_entity()
+        .set_rotation(180.0, -75.0);
+    fixture.player.player.gamemode.store(GameMode::Creative);
+    fixture.give_count(&Item::SOUL_LANTERN, 2);
+    fixture.use_item_on(clicked, BlockDirection::East, Vector3::new(1.0, 0.5, 0.5));
+    let creative = pumpkin_data::block_properties::LanternLikeProperties::from_state_id(
+        fixture.world.get_block_state_id(&position),
+    );
+    assert!(creative.r#hanging);
+    assert_eq!(fixture.world.get_block(&position), &Block::SOUL_LANTERN);
+    assert_eq!(fixture.player.player.inventory().get_stack(0).item_count, 2);
+
+    fixture.player.player.gamemode.store(GameMode::Survival);
+    prepare(&fixture, &Block::AIR);
+    fixture.set_block(position.down(), &Block::AIR);
+    let fallback = place(&fixture, &Block::LANTERN, &Item::LANTERN);
+    assert!(
+        fallback.r#hanging,
+        "unsupported preferred floor must use the ceiling"
+    );
+
+    prepare(&fixture, &Block::AIR);
+    fixture.set_block(position.down(), &Block::AIR);
+    fixture.set_block(position.up(), &Block::AIR);
+    fixture.give_count(&Item::LANTERN, 2);
+    fixture.use_item_on(clicked, BlockDirection::East, Vector3::new(1.0, 0.5, 0.5));
+    assert!(fixture.world.get_block_state(&position).is_air());
+    assert_eq!(fixture.player.player.inventory().get_stack(0).item_count, 2);
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g06_door_hinge_midpoint_is_inclusive() {
+    let fixture = PlacementFixture::new(180.0);
+    let lower = BlockPos::new(8, 64, 8);
+    let cases = [
+        (
+            180.0,
+            HorizontalFacing::North,
+            true,
+            DoorHinge::Left,
+            DoorHinge::Right,
+        ),
+        (
+            0.0,
+            HorizontalFacing::South,
+            true,
+            DoorHinge::Right,
+            DoorHinge::Left,
+        ),
+        (
+            270.0,
+            HorizontalFacing::East,
+            false,
+            DoorHinge::Left,
+            DoorHinge::Right,
+        ),
+        (
+            90.0,
+            HorizontalFacing::West,
+            false,
+            DoorHinge::Right,
+            DoorHinge::Left,
+        ),
+    ];
+
+    for (yaw, facing, tie_on_x, below_midpoint, above_midpoint) in cases {
+        fixture.player.player.get_entity().set_rotation(yaw, 0.0);
+        for (value, expected) in [
+            (0.5, DoorHinge::Left),
+            (0.499, below_midpoint),
+            (0.501, above_midpoint),
+        ] {
+            fixture.clear_door_volume(lower);
+            fixture.give_count(&Item::OAK_DOOR, 2);
+            let (x, z) = if tie_on_x { (value, 0.5) } else { (0.5, value) };
+            fixture.use_item_on(lower.down(), BlockDirection::Up, Vector3::new(x, 1.0, z));
+
+            assert_eq!(fixture.world.get_block(&lower), &Block::OAK_DOOR);
+            assert_eq!(fixture.world.get_block(&lower.up()), &Block::OAK_DOOR);
+            let lower_state =
+                OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&lower));
+            let upper_state =
+                OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&lower.up()));
+            assert_eq!(lower_state.facing, facing);
+            assert_eq!(lower_state.half, DoubleBlockHalf::Lower);
+            assert_eq!(upper_state.half, DoubleBlockHalf::Upper);
+            assert_eq!(lower_state.hinge, expected, "{facing:?} hit {value}");
+            assert_eq!(upper_state.hinge, expected, "upper {facing:?} hit {value}");
+            assert_eq!(fixture.player.player.inventory().get_stack(0).item_count, 1);
+        }
+    }
+
+    fixture.player.player.get_entity().set_rotation(180.0, 0.0);
+    for (side, y_offset, expected) in [
+        (BlockDirection::West, 0, DoorHinge::Left),
+        (BlockDirection::West, 1, DoorHinge::Left),
+        (BlockDirection::East, 0, DoorHinge::Right),
+        (BlockDirection::East, 1, DoorHinge::Right),
+    ] {
+        fixture.clear_door_volume(lower);
+        fixture.set_block(
+            BlockPos::new(
+                lower.0.x + side.to_offset().x,
+                lower.0.y + y_offset,
+                lower.0.z + side.to_offset().z,
+            ),
+            &Block::STONE,
+        );
+        fixture.place_door(lower, 0.5);
+        let state = OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&lower));
+        assert_eq!(
+            state.hinge, expected,
+            "obstruction {side:?} at y+{y_offset}"
+        );
+    }
+
+    fixture.clear_door_volume(lower);
+    fixture.place_door(lower, 0.5);
+    let adjacent = lower.offset(HorizontalFacing::North.rotate_clockwise().to_offset());
+    fixture.place_door(adjacent, 0.5);
+    let adjacent_state =
+        OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&adjacent));
+    assert_eq!(adjacent_state.hinge, DoorHinge::Right);
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g06_door_hinge_uses_placement_relative_hit() {
+    let fixture = PlacementFixture::new(270.0);
+    let lower = BlockPos::new(8, 64, 8);
+    fixture.clear_door_volume(lower);
+    fixture.set_block(lower.north(), &Block::GLASS_PANE);
+    fixture.give_count(&Item::OAK_DOOR, 2);
+    fixture.use_item_on(
+        lower.north(),
+        BlockDirection::South,
+        Vector3::new(0.5, 0.5, 1.0),
+    );
+    let state = OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&lower));
+    let upper_state =
+        OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&lower.up()));
+    assert_eq!(fixture.world.get_block(&lower), &Block::OAK_DOOR);
+    assert_eq!(fixture.world.get_block(&lower.up()), &Block::OAK_DOOR);
+    assert_eq!(state.facing, HorizontalFacing::East);
+    assert_eq!(state.half, DoubleBlockHalf::Lower);
+    assert_eq!(
+        state.hinge,
+        DoorHinge::Left,
+        "hit must be relative to the placement cell"
+    );
+    assert_eq!(upper_state.half, DoubleBlockHalf::Upper);
+    assert_eq!(upper_state.hinge, DoorHinge::Left);
+    assert_eq!(fixture.player.player.inventory().get_stack(0).item_count, 1);
+
+    fixture.clear_door_volume(lower);
+    fixture.player.player.get_entity().set_rotation(180.0, 0.0);
+    fixture.set_block(lower.up(), &Block::STONE);
+    fixture.give_count(&Item::OAK_DOOR, 2);
+    fixture.use_item_on(
+        lower.down(),
+        BlockDirection::Up,
+        Vector3::new(0.5, 1.0, 0.5),
+    );
+    assert!(fixture.world.get_block_state(&lower).is_air());
+    assert_eq!(fixture.player.player.inventory().get_stack(0).item_count, 2);
+
+    fixture.clear_door_volume(lower);
+    fixture.set_block(lower.north(), &Block::REDSTONE_BLOCK);
+    fixture.give_count(&Item::OAK_DOOR, 2);
+    fixture.use_item_on(
+        lower.down(),
+        BlockDirection::Up,
+        Vector3::new(0.5, 1.0, 0.5),
+    );
+    let powered = OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&lower));
+    let powered_upper =
+        OakDoorLikeProperties::from_state_id(fixture.world.get_block_state_id(&lower.up()));
+    assert!(powered.powered && powered.open, "powered placement state");
+    assert!(
+        powered_upper.powered && powered_upper.open,
+        "powered upper state"
     );
 
     fixture.server.shutdown().await;

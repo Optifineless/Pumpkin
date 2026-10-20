@@ -3,6 +3,7 @@ use super::{
     experience_orb::ExperienceOrbEntity,
     living::{LivingEntity, attribute_modifier_slot_matches},
     mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE,
+    player::Player,
 };
 use crate::world::loot::{LootContextParameters, build_entity_death_loot_context};
 use pumpkin_data::{
@@ -16,7 +17,7 @@ use pumpkin_data::{
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use pumpkin_util::{GameMode, math::vector3::Vector3};
 use rand::RngExt;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{Arc, atomic::Ordering::Relaxed};
 
 /// Returns equipment slots in the order used by vanilla EquipmentSlot.VALUES.
 pub(crate) const fn equipment_slots_in_vanilla_order() -> [EquipmentSlot; 8] {
@@ -118,8 +119,11 @@ impl LivingEntity {
     ) {
         let _owner = self.own_damage();
         let lifecycle = self.damage_lifecycle();
-        let world = self.entity.world.load();
-        let Some(dyn_self) = world.get_entity_by_id(self.entity.entity_id) else {
+        let world = self.entity.world.load_full();
+        let Some(dyn_self) = world
+            .get_entity_by_id(self.entity.entity_id)
+            .filter(|entity| std::ptr::eq(entity.get_entity(), &raw const self.entity))
+        else {
             return;
         };
         if self
@@ -127,6 +131,11 @@ impl LivingEntity {
             .compare_exchange(false, true, Relaxed, Relaxed)
             .is_ok()
         {
+            // Raider.die removes current membership before LivingEntity.die and loot.
+            crate::world::raid_loot::raider_die(dyn_self.as_ref(), cause.or(source));
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
             self.movement_input.store(Vector3::default());
             self.jumping.store(false, Relaxed);
 
@@ -139,7 +148,7 @@ impl LivingEntity {
 
             // LivingEntity.hurtServer plays the death sound only for a fresh cooldown hit.
             world.send_entity_status(&self.entity, EntityStatus::Death, Some(ActorEventID::Death));
-            let death_message = self.prepare_death_message(&*dyn_self, damage_type, source, cause);
+            let death_message = self.prepare_death_message(&dyn_self, damage_type, source, cause);
             if !self.death_lifecycle_current(lifecycle) {
                 return;
             }
@@ -359,9 +368,12 @@ impl LivingEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .get(&slot);
-            if !mob_equipment_drop_eligible(&item, player_killed, preserved)
-                || rng.random::<f32>() >= modified_chance
-            {
+            if !mob_equipment_drop_eligible(&item, player_killed, preserved) || {
+                let draw = rng.random::<f32>();
+                #[cfg(test)]
+                let draw = captain_banner_tests::equipment_draw(draw);
+                draw >= modified_chance
+            } {
                 continue;
             }
             let mut item = self
@@ -467,15 +479,15 @@ impl LivingEntity {
 
     fn prepare_death_message(
         &self,
-        caller: &dyn EntityBase,
+        caller: &Arc<dyn EntityBase>,
         damage_type: DamageType,
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> Option<pumpkin_util::text::TextComponent> {
-        let message = Self::get_death_message(caller, damage_type, source, cause);
-        if let Some(player) = caller.get_player() {
+        let message = Self::get_death_message(caller.as_ref(), damage_type, source, cause);
+        if caller.get_player().is_some() {
             let world = self.entity.world.load();
-            if let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
+            if let Ok(player_arc) = Arc::downcast::<Player>(caller.clone())
                 && let Some(server) = world.server.upgrade()
             {
                 // ServerPlayer.die builds its message before inventory drops; honor Pumpkin's cancellation.
@@ -505,8 +517,30 @@ impl LivingEntity {
             if world.level_info.load().game_rules.show_death_messages
                 && let Some(server) = world.server.upgrade()
             {
+                // ServerPlayer.die / PlayerList team broadcasts are server-wide.
+                // Snapshot membership before sends can enter packet plugins.
+                let team = server
+                    .scoreboard
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_entity_team(&player.gameprofile.name)
+                    .map(|team| (team.deathmessage_visibility, team.players.clone()));
                 for recipient in server.get_all_players() {
-                    recipient.send_system_message(&message);
+                    use crate::world::scoreboard::NameTagVisibility;
+                    let visible = team.as_ref().is_none_or(|(visibility, members)| {
+                        let same_team = members.contains(&recipient.gameprofile.name);
+                        match visibility {
+                            NameTagVisibility::Always => true,
+                            NameTagVisibility::Never => false,
+                            NameTagVisibility::HideForOwnTeam => !same_team,
+                            NameTagVisibility::HideForOtherTeams => {
+                                same_team && recipient.gameprofile.id != player.gameprofile.id
+                            }
+                        }
+                    });
+                    if visible {
+                        recipient.send_system_message(&message);
+                    }
                 }
             }
         } else if self.entity.custom_name.load().is_some() {
@@ -525,3 +559,6 @@ impl LivingEntity {
     reason = "Regression tests require existing entities and successful locks"
 )]
 mod tests;
+
+#[cfg(test)]
+mod captain_banner_tests;

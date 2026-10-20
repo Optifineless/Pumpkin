@@ -6,7 +6,6 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::translation;
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::GameMode;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 
@@ -15,8 +14,8 @@ use crate::block::UpdateEntityMovementAfterFallOnArgs;
 use crate::block::bounce_entity_after_fall;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
-    BlockBehaviour, BrokenArgs, CanPlaceAtArgs, NormalUseArgs, OnPlaceArgs, OnStateReplacedArgs,
-    PathComputationType, PlacedArgs,
+    BlockBehaviour, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, NormalUseArgs, OnPlaceArgs,
+    PathComputationType, PlacedArgs, PlayerWillDestroyArgs,
 };
 use crate::entity::{Entity, EntityBase, player::Player};
 use crate::world::World;
@@ -120,57 +119,15 @@ impl BlockBehaviour for BedBlock {
         }
     }
 
-    fn broken(&self, args: BrokenArgs<'_>) {
-        let bed_props = BedProperties::from_state_id(args.state.id);
-        let other_half_pos = if bed_props.part == BedPart::Head {
-            args.position
-                .offset(bed_props.facing.opposite().to_offset())
-        } else {
-            args.position.offset(bed_props.facing.to_offset())
-        };
-        let neighbor_state_id = args.world.get_block_state_id(&other_half_pos);
-        if neighbor_state_id.to_block_id() != args.block.id {
-            args.world.update_neighbors(&other_half_pos, None);
-            return;
-        }
-
-        let is_creative = args.player.gamemode.load() == GameMode::Creative;
-        let flags = if bed_props.part == BedPart::Foot && !is_creative {
-            // Breaking foot in survival -> allow head to drop
-            BlockFlags::NOTIFY_ALL
-        } else {
-            // Breaking head OR creative mode -> skip drops
-            BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
-        };
-
-        args.world
-            .break_block(&other_half_pos, Some(args.player), flags);
+    fn player_will_destroy(&self, args: PlayerWillDestroyArgs<'_>) {
+        super::bed_pair::player_will_destroy(args);
     }
 
-    fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
-        if args.moved {
-            return;
-        }
-
-        let bed_props = BedProperties::from_state_id(args.old_state_id);
-        let other_half_pos = if bed_props.part == BedPart::Head {
-            args.position
-                .offset(bed_props.facing.opposite().to_offset())
-        } else {
-            args.position.offset(bed_props.facing.to_offset())
-        };
-
-        let (other_block, other_state) = args.world.get_block_and_state(&other_half_pos);
-        if other_block == args.block {
-            let other_props = BedProperties::from_state_id(other_state.id);
-            if other_props.part != bed_props.part {
-                args.world.break_block(
-                    &other_half_pos,
-                    None,
-                    BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
-                );
-            }
-        }
+    fn get_state_for_neighbor_update(
+        &self,
+        args: GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        super::bed_pair::update_shape(&args)
     }
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
@@ -190,25 +147,22 @@ impl BedBlock {
         block: &Block,
         position: &BlockPos,
     ) -> BlockActionResult {
-        let state_id = world.get_block_state_id(position);
+        let Some((bed_head_pos, bed_foot_pos, state_id)) = world.bed_pair_for_use(block, *position)
+        else {
+            return BlockActionResult::Consume;
+        };
         let bed_props = BedProperties::from_state_id(state_id);
 
-        let (bed_head_pos, bed_foot_pos) = if bed_props.part == BedPart::Head {
-            (
-                *position,
-                position.offset(bed_props.facing.opposite().to_offset()),
-            )
-        } else {
-            (position.offset(bed_props.facing.to_offset()), *position)
-        };
-
-        // Explode if bed rule explodes (EnvironmentAttributes.BED_RULE)
-        if world.dimension.bed_rule.explodes {
-            world.break_block(&bed_head_pos, None, BlockFlags::SKIP_DROPS);
-            world.break_block(&bed_foot_pos, None, BlockFlags::SKIP_DROPS);
-
-            world.explode_bad_respawn(bed_head_pos.to_centered_f64());
-
+        // AbstractBedBlock.useWithoutItem dispatches BedBlock.destroyOnUse before sleep admission.
+        if world.dimension.bed_rule.destroy_on_use {
+            if let Some(message) = world.dimension.bed_rule.error_message
+                && let Ok(message) = serde_json::from_str(message)
+            {
+                player.send_system_message_raw(&message, true);
+            }
+            if world.destroy_bed_on_use(bed_head_pos, bed_foot_pos, state_id) {
+                world.explode_bad_respawn(bed_head_pos.to_centered_f64());
+            }
             return BlockActionResult::SuccessServer;
         }
 
@@ -343,7 +297,7 @@ impl BedBlock {
             pumpkin_data::statistic::CustomStatistic::SleepInBed as i32,
             1,
         );
-        Self::set_occupied(true, world, block, position, state_id);
+        Self::set_occupied(true, world, block, &bed_head_pos, state_id);
 
         BlockActionResult::SuccessServer
     }

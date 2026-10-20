@@ -846,7 +846,7 @@ impl EntityTracker {
 
     // ServerEntity.sendChanges calls entity code serially. Never retain a shard guard
     // across entity ownership or callbacks: death loot can insert into the same shard.
-    fn snapshot(&self) -> Vec<Arc<TrackedEntity>> {
+    pub(super) fn snapshot(&self) -> Vec<Arc<TrackedEntity>> {
         self.entity_map
             .iter()
             .map(|entry| entry.value().clone())

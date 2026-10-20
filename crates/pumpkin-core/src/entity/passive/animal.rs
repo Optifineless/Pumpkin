@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 
 use crate::entity::{mob::Mob, player::Player};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::vector3::Vector3;
 
 pub trait Animal: Mob {
     fn is_food(&self, item_stack: &ItemStack) -> bool;
@@ -51,65 +48,18 @@ pub trait Animal: Mob {
         item_stack: &mut ItemStack,
         ambient_sound: Sound,
     ) -> bool {
-        let mob_entity = self.get_mob_entity();
-        if self.is_food(item_stack) {
-            let age = mob_entity
-                .living_entity
-                .entity
-                .age
-                .load(std::sync::atomic::Ordering::Relaxed);
+        super::animal_interaction::interact(self, player, item_stack, ambient_sound, None)
+    }
 
-            if age >= 0 && mob_entity.is_breeding_ready() && !mob_entity.is_in_love() {
-                item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-
-                mob_entity.set_love_ticks(600, Some(player.gameprofile.id));
-                let entity = &mob_entity.living_entity.entity;
-                let world = entity.world.load();
-                let pos = entity.pos.load();
-
-                world.send_entity_status(
-                    entity,
-                    pumpkin_data::entity::EntityStatus::InLoveHearts,
-                    Some(ActorEventID::InLoveHearts),
-                );
-
-                world.spawn_particle(
-                    pos + Vector3::new(0.0, f64::from(entity.height()), 0.0),
-                    Vector3::new(0.5, 0.5, 0.5),
-                    1.0,
-                    7,
-                    Particle::Heart,
-                );
-                world.play_sound(ambient_sound, SoundCategory::Neutral, &entity.pos.load());
-                return true;
-            }
-
-            if age < 0 {
-                item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                let speedup = (-age / 10).max(1);
-                mob_entity
-                    .living_entity
-                    .entity
-                    .age
-                    .fetch_add(speedup, std::sync::atomic::Ordering::Relaxed);
-
-                let entity = &mob_entity.living_entity.entity;
-                let world = entity.world.load();
-                let pos = entity.pos.load();
-
-                world.spawn_particle(
-                    pos + Vector3::new(0.0, f64::from(entity.height()), 0.0),
-                    Vector3::new(0.5, 0.5, 0.5),
-                    1.0,
-                    7,
-                    Particle::HappyVillager,
-                );
-                self.play_eating_sound(ambient_sound);
-                return true;
-            }
-        }
-
-        mob_entity.mob_interact(self, player, item_stack)
+    /// Runs Animal feeding with a committed originating hand before its effects.
+    fn animal_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        ambient_sound: Sound,
+        hand: pumpkin_util::Hand,
+    ) -> bool {
+        super::animal_interaction::interact(self, player, item_stack, ambient_sound, Some(hand))
     }
 }
 

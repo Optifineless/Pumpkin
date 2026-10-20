@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod damage_tests;
 #[cfg(test)]
+mod ender_pearl_teleport_tests;
+#[cfg(test)]
 mod flight_review_tests;
 #[cfg(test)]
 mod hit_review_tests;

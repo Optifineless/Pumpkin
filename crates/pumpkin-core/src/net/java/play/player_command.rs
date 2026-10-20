@@ -48,15 +48,21 @@ impl JavaClient {
                 debug!("todo");
             }
             Action::StartFlyingElytra => {
-                let fall_flying = entity.check_fall_flying();
-                if entity.is_fall_flying() != fall_flying {
+                if entity.check_fall_flying()
+                    && player.living_entity.can_start_fall_flying(player.as_ref())
+                {
                     let mut event = crate::plugin::api::events::entity::entity_toggle_glide::EntityToggleGlideEvent::new(
                         entity.entity_id,
-                        fall_flying,
+                        true,
                     );
                     server.plugin_manager.fire_blocking(server, &mut event);
-                    if !event.cancelled {
-                        entity.set_fall_flying(event.is_gliding);
+                    // Recheck after plugin callbacks in case they moved the player or changed gear.
+                    if !event.cancelled
+                        && event.is_gliding
+                        && entity.check_fall_flying()
+                        && player.living_entity.can_start_fall_flying(player.as_ref())
+                    {
+                        entity.set_fall_flying(true);
                     }
                 }
             }

@@ -28,7 +28,8 @@ impl<E: Payload, F: Fn(&mut E) + Send + Sync> EventHandler<E> for Handler<F> {
         Box::pin(async {})
     }
 }
-fn register<E: Payload + Send + Sync + 'static>(
+/// Registers a blocking plugin callback for entity regression tests.
+pub(super) fn register<E: Payload + Send + Sync + 'static>(
     server: &Server,
     action: impl Fn(&mut E) + Send + Sync + 'static,
 ) {

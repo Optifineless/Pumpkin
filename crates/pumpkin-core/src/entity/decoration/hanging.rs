@@ -97,14 +97,8 @@ fn has_border_collision(entity: &Entity, bounds: BoundingBox) -> bool {
             .worldborder
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let half = border.new_diameter / 2.0;
-        let limit = f64::from(border.portal_teleport_boundary);
-        (
-            (border.center_x - half).max(-limit),
-            (border.center_x + half).min(limit),
-            (border.center_z - half).max(-limit),
-            (border.center_z + half).min(limit),
-        )
+        let (min_x, min_z, max_x, max_z) = border.bounds(0.0);
+        (min_x, max_x, min_z, max_z)
     };
     let position = entity.pos.load();
     let margin = (bounds.max.x - bounds.min.x)

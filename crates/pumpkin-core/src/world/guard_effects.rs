@@ -14,7 +14,7 @@ use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{BClientPacket, ClientPacket};
 use pumpkin_util::sync::assert_no_guards_held;
 
-use crate::{net::ClientPlatform, world::World};
+use crate::{entity::player::Player, net::ClientPlatform, world::World};
 
 type Effect = Box<dyn FnOnce() + Send>;
 thread_local! {
@@ -307,8 +307,15 @@ pub(crate) fn send(client: Arc<ClientPlatform>, bytes: Bytes) {
 }
 
 pub(crate) fn broadcast_je(world: &World, packet: &impl ClientPacket) {
+    broadcast_players_je(world.players.load().iter(), packet);
+}
+
+fn broadcast_players_je<'a>(
+    players: impl IntoIterator<Item = &'a Arc<Player>>,
+    packet: &impl ClientPacket,
+) {
     if let Some(bytes) = serialize_je(packet) {
-        for player in world.players.load().iter() {
+        for player in players {
             if player.client.java().is_some() {
                 send(player.client.clone(), bytes.clone());
             }
@@ -346,9 +353,13 @@ pub(crate) fn send_editioned(
     }
 }
 
-pub(crate) fn broadcast_editioned(world: &World, je: &impl ClientPacket, be: &impl BClientPacket) {
+fn broadcast_players_editioned<'a>(
+    players: impl IntoIterator<Item = &'a Arc<Player>>,
+    je: &impl ClientPacket,
+    be: &impl BClientPacket,
+) {
     let java = serialize_je(je);
-    for player in world.players.load().iter() {
+    for player in players {
         let bytes = match player.client.as_ref() {
             ClientPlatform::Java(_) => java.clone(),
             ClientPlatform::Bedrock(client) => match client.serialize_packet(be) {
@@ -363,6 +374,26 @@ pub(crate) fn broadcast_editioned(world: &World, je: &impl ClientPacket, be: &im
             send(player.client.clone(), bytes);
         }
     }
+}
+
+pub(crate) fn broadcast_scoreboard_je(world: &World, packet: &impl ClientPacket) {
+    broadcast_players_je(scoreboard_players(world).iter(), packet);
+}
+
+pub(crate) fn broadcast_scoreboard_editioned(
+    world: &World,
+    je: &impl ClientPacket,
+    be: &impl BClientPacket,
+) {
+    broadcast_players_editioned(scoreboard_players(world).iter(), je, be);
+}
+
+fn scoreboard_players(world: &World) -> Vec<Arc<Player>> {
+    // ServerScoreboard sends each mutation to PlayerList, across every dimension.
+    world.server.upgrade().map_or_else(
+        || world.players.load().iter().cloned().collect(),
+        |server| server.scoreboard_players(),
+    )
 }
 
 impl Default for GuardEffects {

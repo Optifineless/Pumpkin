@@ -2,6 +2,552 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Fresh ordinary-horse statistics (#115, slice 1)
+
+Fresh ordinary horses initialize individual max health, movement speed and jump
+strength before existing ageable/mob finalization, matching vanilla 26.3
+`Horse.randomizeAttributes` and `AbstractHorse.finalizeSpawn`. Health uses the two
+bounded integer draws (15–30 HP); speed and jump retain three independent draws
+and Java's widened float constants. Current health clamps to the new maximum
+without healing damaged structure templates. Coat and age behavior remain.
+
+The default-ON emergency switch affects only fresh finalization:
+
+```toml
+[horse_spawn_stats]
+enabled = true
+```
+
+Setting it false restores generated defaults for new births.
+Saved horses, including old 53-HP, custom damaged and legacy no-attribute records,
+retain their existing meaning under either setting. Explicit-NBT summons still
+bypass finalization; egg entity data still applies afterward. No migration,
+rolled marker, riding simulation, taming or other #115 behavior is included.
+
+API 8 (same version): the additive public `HorseSpawnStatsConfig` and
+`AdvancedConfiguration::horse_spawn_stats` field change native configuration and
+containing layouts. Rebuild native plugins against this checkout; source users
+constructing exhaustive configuration literals must supply the new field or use
+`Default`. The provided `Mob::mob_java_spawn_attributes` hook adds a native
+vtable entry; source implementations inherit its empty default. Only ordinary
+horses supply the initial health/speed/jump bases and modifiers on every Java
+spawn pairing, including loaded and explicitly overridden values. Tracker
+ownership and other species are unchanged. Existing method signatures and Wasm
+WIT are unchanged. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: spawn fresh natural, egg and no-NBT summon horses; expect varied
+15–30 max HP and full current HP. Save a custom damaged horse and restart; expect
+its UUID, health, bases and modifiers unchanged. Disable the switch and create
+new horses; expect prior generated defaults, while saved horses remain unchanged.
+Record the births and restart, and capture UUID, Health and attribute values.
+
+## Game-event source context foundation, slice 1 (#162)
+
+Fishing use, item release and death-protection game events retain their originating
+entity through the existing plugin callback. Successful death-protection teleports
+retain their departure position. Built-in forwarding resolves the callback's final
+key and position, honors cancellation, and rejects invalid coordinates or a stale
+entity, life, world or player session. Source-less emissions remain valid and
+unknown keys remain visible to plugins. `[sculk_game_events] enabled = true` is the
+default; false disables only the new typed forwarding. No saved-data format changes.
+
+API 8 (same version): the additive public `AdvancedConfiguration.sculk_game_events`
+field changes native configuration layout. The public
+`sculk_game_events::SculkGameEventsConfig` type is new. Native plugins must rebuild;
+source users constructing `AdvancedConfiguration` with a
+complete struct literal must add the field or use `..Default::default()`. Existing
+event types, constructors, public method signatures and Wasm WIT are unchanged.
+Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+This is partial groundwork: STEP emission, listener lifecycle, vibration admission
+and travel, ordinary/calibrated sensor activation, shrieker/Warden consumers, anger,
+sonic attacks and world generation remain separate work. It does not close #162
+or fix #156/#128, and walking still does not activate sensors through this path.
+
+Play test: cast and reel a rod, stop using an item, and trigger a supported
+death-protection teleport; expect the same fishing, item, consumption and teleport
+behavior. Repeat with the setting false; expect the same gameplay and plugin
+notification counts. Record those actions and plugin notifications on the candidate
+build. No sensor activation repair is claimed.
+
+## Stable Bedrock score identities (#289)
+
+The shared scoreboard assigns transient IDs to logical holder/objective pairs.
+Updates, display tracking, cloned snapshots and joins retain the same live ID;
+single resets, holder resets and objective deletion retire it without reuse.
+Loaded vanilla scores receive IDs before publication. Exhaustion omits new
+Bedrock entries while retaining existing IDs and Java/logical score behavior.
+This adapts vanilla 26.3 `Scoreboard.getOrCreatePlayerScore`, score resets and
+`ServerScoreboard.getStartTrackingPackets` to the existing Bedrock codec.
+The owner notification queue, Java packets, saved-data schema and Wasm WIT are
+unchanged. The separate legacy `BedrockScoreboard` still publishes empty entry
+lists and does not use this path. Implemented by GPT-6.1 Sol (Codex Cloud).
+
+API 8 (same version): private runtime state changes the public `Scoreboard`
+layout; native plugins must rebuild. Public method signatures and source
+compatibility are unchanged. In-game verification: Not yet.
+
+Play test: display two objectives containing the same holder to Java and Bedrock
+observers in different dimensions, repeatedly change the values, then rejoin;
+expect one current line per objective. Reset one score, reset the holder, hide
+and show an objective, then delete/recreate it and its scores; expect only the
+intended lines to disappear and no duplicates after reconstruction. Import an
+existing scoreboard, save and restart; expect the logical scores, formatting
+and display slots to survive. Record both clients and capture score update and
+removal IDs, including the join and restart snapshots.
+
+## Canonical furnace timers and legacy saves (#299)
+
+Furnaces, blast furnaces and smokers load and save all four timer fields as
+vanilla 26.3 Ints and retain signed i32 values throughout ticking, speed scaling
+and menu properties. Old fork Short tags retain their historical unsigned-u16
+bit meaning, including values above 32767, and export as Ints. Missing timers
+default to zero; missing speed remains 1.0. Signed cooling mirrors
+`AbstractFurnaceBlockEntity.serverTick` and `Mth.clamp`, including progress one
+cooling to zero. Items, recipes used, speed, remainder ordering and existing
+inventory ownership stay intact. Both persistent capture and chunk packet NBT
+use Int tags. Java container packets keep their existing short wire encoding.
+
+API 8 (same version): the public furnace/blast/smoker layouts replace four
+`AtomicU16` fields with `AtomicI32`. `CookingBlockEntityBase` timer getters,
+setters and `get_total_cook_time` now use i32, changing native signatures and
+trait-object ABI. Rebuild all native plugins against this checkout; source
+users must update u16 arguments/results and exported cooking-macro backing
+fields to i32/AtomicI32. Wasm WIT stays unchanged: its existing u16 getters
+project the low 16 bits without changing durable state. Event payloads stay
+u32; nonpositive signed burn durations cannot consume fuel. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: import lit vanilla furnaces, blast furnaces and smokers containing
+partly cooked items, then restart; expect cooking and remaining heat to resume
+with the same stock. Load an old fork save with a high timer, restart again,
+and expect preserved progress and item counts. Record all three menus before
+and after restart and capture the saved timer tags as Ints.
+
+## Experimental minecart creation and overlap refusal (#316)
+
+Minecart item placement follows vanilla 26.3 `MinecartItem.useOn`,
+`AbstractMinecart.createMinecart/getCurrentBlockPosOrRailBelow` and
+`NewMinecartBehavior.adjustToRails/isDecending`: the existing minecart improvements
+feature selects initial rail alignment, including slopes, curves and rotation.
+Experimental placement rejects intersecting minecarts using the full aligned box;
+legacy height and overlap behavior stay unchanged. In-flight item placements reserve
+their aligned space without retaining a mutex through callbacks. Spawn admission
+revalidates the actor, life, world, source hand and rail incarnation before payment;
+cancelled or stale creation keeps the item. Dispenser, load/summon constructors and
+movement physics are unchanged. API 8 (same version): public layouts/signatures,
+native source compatibility, Wasm WIT and saved-data meaning are unchanged.
+Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: with minecart improvements enabled, place a cart on flat, ascending and
+curved rails; expect the initial alignment and rotation to follow the track. Use
+another cart on occupied rail in Survival; expect one cart and no second charge.
+Repeat with both hands, cart variants and two players placing together. Disable the
+feature; expect legacy placement height and overlapping placement. Record cart
+position/rotation and item counts, including a plugin-cancelled spawn if available.
+
+## Entity-item hooks do not start use cooldowns (#154)
+
+Passing Java and Bedrock entity interactions no longer start a stack's
+`USE_COOLDOWN` from the registry after the item hook. This matches vanilla
+26.3 `Player.interactOn` and `ItemStack.interactLivingEntity`, which call the
+entity-item hook without `applyAfterUseComponentSideEffects`. Existing cooldown
+admission and ordinary successful-use cooldowns remain in place. Real Java
+handler regressions cover both hands, Survival and Creative, named and
+ineligible name-tag cases, cancellation, active cooldowns and close pearl impact.
+Native API 8, public signatures/layouts, Wasm WIT and saved data are unchanged.
+The reporter's original client sequence has not been captured.
+
+In-game verification: Not yet.
+
+Play test: Hold pearls and look at a nearby cow. Right-click its hitbox, then
+right-click air; expect the first action to leave the pearl and cooldown alone,
+and the second to throw one pearl and start its cooldown. Repeat in each hand and
+in Survival and Creative. Capture the hand counts, projectile insertion, visible
+cooldown and, for a close throw, the impact and teleport.
+
+## Extinguished campfire cooking progress (#304)
+
+Unlit campfires subtract two progress ticks, then clamp each positive slot to
+zero and its own saved cooking duration. This mirrors vanilla 26.3
+`CampfireBlockEntity.cooldownTick` and preserves the existing cooking events,
+transaction owner and NBT fields. Negative plugin or imported durations follow
+Java's clamp order without panicking. Native API 8, public layouts and
+signatures, Wasm WIT and saved-data meaning are unchanged. In-game verification:
+Not yet.
+
+Play test: use a plugin that cancels campfire cooking, let progress pass its
+duration, extinguish the campfire with a shovel, then relight it. Expect cooling
+to stop at the duration, resume cooking normally, and preserve the uncooked
+food until cooking succeeds. Capture the campfire NBT, food stacks and any drops.
+
+## Bed respawn collision surfaces (#36)
+
+Bed respawn now follows the vanilla 26.3 yaw-selected candidate order, including
+bunk beds and both bed-surface candidates. It derives landing height from the
+collision shape and checks player clearance, invalid-spawn blocks and the full
+world-border bounds. Anchor and forced-spawn behavior, saved spawn data and
+respawn ownership are unchanged. Mirrors `AbstractBedBlock.findStandUpPosition`,
+`findBunkBedStandUpPosition`, `DismountHelper.findSafeDismountLocation` and
+`BlockGetter.getBlockFloorHeight`. Native API 8, public signatures and Wasm WIT
+are unchanged.
+
+PR #391 review round 2: lower bunk candidates now include straw beds, matching
+vanilla 26.3 `AbstractBedBlock.isBunkBed`, which checks the `AbstractBedBlock`
+family; `StrawBedBlock` extends that class but is not in the `minecraft:beds`
+tag. The mixed white-over-straw death-respawn regression exercises the Java
+respawn command and leaves only a lower exit clear. The saved-bed End-return
+fixture now expects the yaw-selected safe exit at floor height: x=9.5 for yaw
+27 and 180, x=7.5 for yaw 0, matching `AbstractBedBlock.findStandUpPosition`
+and `ServerPlayer.findRespawnAndUseSpawnBlock` (vanilla 26.3). Negative controls:
+the old geometry assertion failed with actual `(9.5, 64.0, 8.5)` versus
+expected `(7.5, 64.1, 8.5)`; the tag-only bunk check landed on the upper bed at
+`(8.5, 64.5625, 7.5)` instead of the lower exit `(9.5, 63.0, 7.5)`. Saved-data
+meaning, API 8, public signatures and Wasm WIT are unchanged.
+
+In-game verification: Not yet.
+
+Play test: set a bed spawn, enclose the bed in stone while leaving clear space
+above it, then die and respawn; expect to land on the bed surface with no block
+collision. Repeat with an open exit, a white bed above a straw bed, and different
+saved yaws; expect the first safe exit in the saved-yaw order. Capture the
+respawn position and the bed layout.
+
+## Minecart placement centers once (#129)
+
+Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
+retain the vanilla rail height and ascending-rail offset. Positive and negative
+coordinates now place carts over the clicked rail. Mirrors vanilla 26.3
+`MinecartItem.useOn`. Upstream draft PR #3794 contains the same placement
+correction within broader minecart physics work; this fork change is limited to
+placement. Native API 8, Wasm WIT and saved data are unchanged.
+In-game verification: Not yet.
+
+Play test: place each minecart item on isolated flat rails at positive and
+negative coordinates, then place one on an ascending rail; expect centered
+carts, with the ascending cart 0.5 blocks higher. Capture the rail and cart
+positions, and verify Survival consumes one item while Creative consumes none.
+
+## Owner review follow-ups, PRs #235, #238, #240 and #243 (PR #257 review round 2)
+
+Fire spread now publishes the new fire state to nearby clients. Players switching
+to Spectator while asleep wake immediately and must use a bed again after returning
+to Survival. If the bed-leave callback completes another gamemode change during
+that wake, the outer Spectator transition preserves the callback's final mode,
+abilities, physics and client state. Jukebox playback restored from active NBT
+powers adjacent redstone; starting and stopping playback notify neighbours when
+the power changes. Beacon beam scans fall back to build height when a stale surface
+height is below or level with the beacon, so they still find clear sky and an
+obstruction above the beacon. Saved-data meaning is unchanged. Mirrors vanilla 26.3
+`FireBlock` spread flag 3, `ServerPlayerGameMode.setGameMode` ability updates,
+`JukeboxBlockEntity` neighbour updates, and `BeaconBlockEntity.tick` height
+scanning. Immediate waking on a Spectator change is a fork behavior. In-game
+verification: **Not yet**.
+
+API 8 (same version): `JukeboxBlockEntity` gains runtime transition state for
+neighbour power publication; rebuild native plugins. No public method signatures,
+Wasm WIT or saved-data formats change.
+
+Play test: spread fire beside a nearby client and confirm the fire appears; sleep
+through the maturity threshold, switch to Spectator and back to Survival, then use
+a bed again to skip night. With a test bed-leave plugin that restores Survival,
+sleep in a bed and switch to Spectator; expect to wake with normal Survival damage
+and building actions. Reload a jukebox with an active record beside redstone dust
+and a comparator; expect full dust power while playing, zero after it stops, and
+comparator output matching the inserted record. On a beacon with a stale surface
+map at or just below the beacon, wait for the scan, select a paid power, then place
+stone above it; expect the beam and selection sound to stop after the scan reaches
+the stone. Vanilla's `ServerPlayerGameMode.setGameMode` updates mode and abilities
+without directly stopping sleep. No real-client or in-game verification is claimed
+here.
+
+## Owner review follow-ups for #239, #242 and #243
+
+PR #256 review round 2: axe use retries a rejected clicked write up to three
+total attempts, recomputing from the live state while retaining the original
+block identity. A neighboring stair's shape update no longer loses wax removal;
+replacement blocks still reject the action. Wear, statistics and effects occur
+once after success. Twice-panicking Wither deliveries retain failed actions and
+their per-recipient successors, finish other recipients, and get one independent
+recovery dispatch. Further failures remain queued for a later entry rather than
+spawning an unbounded retry chain.
+
+Checked against official vanilla 26.3 `BlockTransformer.transformBlock`,
+`CopyPropertiesProvider.getState`, `StairBlock.updateShape/getStairsShape`
+and `ServerBossEvent.removePlayer/removeAllPlayers` (embedded server SHA-256
+`a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
+Conditional retries and panic recovery adapt those semantics to fork concurrency
+and native callbacks. Native API 8, public layouts, WIT and saved-data meaning
+are unchanged. Written by GPT-6.1 Sol (Codex Cloud). In-game verification: **Not yet**.
+
+Real Java use and Wither tick/retirement regressions cover the neighboring stair,
+axe retry exhaustion, terminal delivery, persistent failure parking and returning
+sessions. Negative controls against the original production code leave the stair
+waxed and exhaust the bounded wait for terminal REMOVE. Test synchronization uses
+write seams and cooperative poll budgets, without sleeps. Restricting ordering to
+one subscription instead of its player session delivers ADD/HEALTH/REMOVE; the
+returning-session regression requires REMOVE/ADD/HEALTH.
+
+Play test: sneak-use an axe on a waxed copper stair while another player places
+an adjoining stair; expect the wax to disappear, the corner shape to remain and
+one durability use. Capture the stair shape, wax-removal effects and durability.
+
+Axe transformations condition every clicked and companion write on its observed
+state. Rejected clicked writes do not consume durability or publish transform
+effects; hoe and shovel transformations use the same admission, including rooted
+dirt drops and campfire extinction. Honeycomb already used conditional writes.
+Door companion ordering remains unchanged to preserve paired-block callbacks.
+
+Final lectern retirement reconciles `has_book` and clears `powered` when its
+captured inventory has no book, keeping a queued take consistent across reload.
+Wither dispatch releases ownership after native packet panics, preserves pending
+successors and retries abandoned batches independently of another tick or save.
+Registration and update packets share the block-entity publication order, skip
+replaced incarnations, and send after mutation ownership releases. Committed tags
+also survive an abandoned outer effect batch.
+
+These preserve saved-data meaning. API 8 (same version): private World admission
+state gains an ordered client-notification queue; rebuild native plugins. Public
+signatures and Wasm WIT are unchanged. Mirrors the concurrency boundaries around
+vanilla 26.3 axe/hoe/shovel use, `LecternBlock.resetBookState`,
+`LevelChunk.getBlockEntityNbtForSaving` and `ServerBossEvent` delivery. Decompiled
+26.3 source was unavailable; no new Java-source parity verification is claimed.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: **Not yet**.
+
+All ten real-entry regressions have recorded failing negative controls. Bypassing
+tool predicates overwrites replacements and produces stale root drops/wear;
+omitting retirement reconciliation reloads an occupied empty lectern. Original
+Wither dispatch strands health/terminal cleanup, original registration delivery
+sends older text last, and canceling a committed notification loses its final tag.
+The controls retain the test seams and restore production files afterward.
+
+Play test: scrape both halves of a stocked copper chest and a copper door while
+another player replaces a half; expect the replacement to remain and each
+successful use to wear the tool once. Take a lectern book near simulation distance
+and restart; expect one book returned and an empty, unpowered lectern. Kill a
+Wither and replace a sign while another player watches; expect the bar to disappear
+and the final sign text to remain. Record the item counts, reload, HUD and sign.
+
+## Configured biome source for structure lookup (#121)
+
+Cherry-picked upstream [#4029](https://github.com/Pumpkin-MC/Pumpkin/pull/4029),
+`8677986a5876cdcc77bf674d4114aa75b5e32329` by WhiteProject1, preserving its author.
+Locate uses the generator's configured biome source and generation column heights,
+including End, Nether and fixed-biome worlds. Fork regressions exercise the registered
+locate executor, cold locate/start/reference ordering, real End City templates,
+invalid sites and bounded concurrent publication. Start and reference contexts use
+the raw generator bounds from vanilla 26.3 `WorldGenerationContext`, independently
+of column clipping. Concurrent cache misses return the first published mutable
+piece collection or absent result; upstream #3335's broader concurrency change is
+not included. Saved-data meaning, plugin events, public API 8 and Wasm WIT are
+unchanged. Fork follow-up and tests implemented by Codex (GPT-6.1 Sol).
+PR #315 review: locate resolves the set's first successful weighted entry before
+matching requested structures, including failed-entry fallback. Impossible requests
+are rejected against the configured biome source before scanning; vanilla's terrain
+column, rotated jigsaw center and monument surrounding-biome checks precede deferred
+noise-height sampling. Shared cache keys, generation/reference behavior, saved-data
+meaning and API 8 layouts remain unchanged. Full-radius command regressions enforce
+zero sampler constructions for impossible sources; winner/order and ordinary village
+controls cover the successful path. Follow-up implemented by GPT-6.1 Sol (Codex Cloud).
+Guardrail bookkeeping refreshes only the command-family hash and moves the existing
+jigsaw collector mutex key; prior statuses remain intact and no lock is added.
+Disabled-set filtering and precomputed per-dimension placement preparation remain
+separate backlog work; existing generated chunks are not repaired.
+
+Play test: in the Overworld run `/locate structure minecraft:end_city`; expect not
+found promptly while the world keeps ticking. Locate a village and visit the reported
+position in newly generated terrain; expect a village. In a Nether test world with
+seed 0 and fixed nether_wastes, stand at X=64, Z=896 and locate a fortress; expect a
+different chunk, with a bastion at the original chunk. Capture command feedback and
+the visited structures. In-game verification: Not yet.
+
+## Live player state after drop callbacks and skin settings (#163, #291, #296)
+
+Held drops reconcile live equipment after cancelled or aborted callbacks, without
+consuming replacement stock. The existing tick publisher rejects retired player
+instances. Java Q and Control-Q reset attack recharge after every drop attempt,
+including empty hands and cancellation. Initial tab portraits use the actual hat
+setting; accepted changes reach online observers in every dimension through the
+existing player-list owner. Settings guards release before callbacks and sends.
+Mirrors vanilla 26.3 `ServerPlayer.drop`, `LivingEntity.detectEquipmentUpdates`,
+`ClientboundPlayerInfoUpdatePacket.Entry`, and
+`ServerGamePacketListenerImpl.handleClientInformation`.
+API 8 (same version): public signatures/layouts and native source compatibility
+are unchanged; no new rebuild requirement. Wasm WIT and saved-data meaning are
+unchanged. Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: with a nearby observer, use a drop hook that replaces a spear with a
+sword, then one that cancels and selects another slot; expect preserved stock,
+matching sword damage/recharge and the observer's current hand. Press Q and
+Control-Q after charging an attack, including an empty hand or denied drop;
+expect recharge to restart. Disable the hat layer before an observer joins, then
+toggle it with observers in the Overworld and Nether; expect every tab portrait
+to follow the setting without duplicate entries. Record both player views,
+inventory/ground counts, the recharge indicator and both tabs.
+
+## Enchanting offer minima and additional rolls (#270, #271)
+
+Enchanting offers below their slot's minimum cost are disabled before their
+clues and properties are published. Additional enchantments compare the next
+random roll with the full adjusted cost, then halve the cost after each
+successful extra selection. Mirrors vanilla 26.3 `EnchantmentMenu.slotsChanged`
+and `EnchantmentHelper.selectEnchantment`. Existing payment, seed conversion,
+book removal, one-book slot limit and plugin events are unchanged. No plugin API,
+WIT or saved-data changes. Implemented by Codex (GPT-6).
+
+In-game verification: Not yet.
+
+Play test: Use an enchanting table with zero or one bookshelf and enough XP;
+expect offers below their slot minimum to appear disabled and remain unchanged
+after clicking. Add fifteen bookshelves and enchant a sword and a stack of books;
+expect higher offers to work, compatible additional enchantments to match Java,
+and only one book to be enchanted from the stack. Capture the table properties,
+resulting items and XP/lapis changes.
+
+## Captain banner drops and ominous bottles (#279, #280)
+
+Patrol finalization, raid-wave leadership, replacement leadership and
+`/raid spawnleader` preserve captain head banners with vanilla's 2.0 drop chance.
+The registered pillager loot table now admits the raider predicate and ominous
+bottle amplifier modifier. Death snapshots require the patrol-leader flag and
+the actual canonical head stack, and include both raid membership and a raid at
+the position. Amplifiers use the existing named loot stream and integer provider,
+clamped to 0..4. An unsaved raid tick view keeps positional loot queries valid
+during callbacks while the tick owns the raid map, and stops become visible
+before their callbacks. Mirrors vanilla 26.3 `PatrollingMonster.finalizeSpawn`,
+`Raid.setLeader`, `Raider.isCaptain/hasRaid`, `RaiderPredicate.matches` and
+`SetOminousBottleAmplifierFunction.run`. Existing drop gates, plugin events and
+saved tags retain their meaning. The canonical banner provider is shared with
+PR #221; its appearance and codecs remain that PR's responsibility.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): public `EntityLootState` adds two optional raider snapshot
+fields; `Raid` and `Raids` gain private runtime tick-view state. Rebuild native
+plugins. Exhaustive loot-state literals must supply the fields or use
+`..Default::default()`. External raid struct literals cease to compile; use
+`Raid::new` or `Raids::default()` instead. Constructor/default callers remain
+source compatible. Native API version, trait vtables, Wasm WIT and save formats
+are unchanged.
+
+Play test: kill a patrol captain outside a raid; expect one captain banner and
+one ominous bottle. Kill raid-wave and replacement captains; expect the banner
+and no bottle during the raid. Kill an ordinary pillager or a leader wearing a
+plain white banner; expect no bottle. Disable mob drops and repeat; expect no
+equipment or bottle drops. Capture each death, ground items and bottle level.
+Existing patrol finalization has no automatic spawn caller on this base; these
+changes fix its equipment assignment without adding a separate spawn feature.
+PR #332 review: Raid Omen releases the raid mutex before statistic callbacks.
+Replacement leaders require an active raid, vacant leadership and a living,
+pickup-eligible exact captain banner; nearby pillagers preserve bottles and junk.
+Saved RaidId resolves through the registry, and death removes current membership
+before loot, including during raid-tick callbacks. Both omitted raider predicate
+fields default to false, as in the vanilla codec. API 8 (same version): Raids adds
+private pending membership state; rebuild native plugins. Saved tags and native
+API version remain unchanged. Source bodies, state audit and regression results:
+[PR #332 round 2](.fork/pr332-review.md). In-game verification: Not yet.
+
+Play test: kill a patrol captain with another pillager beside it; expect the bottle
+and banner to remain outside a raid. In a raid, let a pillager collect a dropped
+captain banner after its pickup delay; expect one replacement captain, while the
+bottle remains. Capture the deaths, ground items and replacement leader.
+
+## Detached framed-map markers (#294)
+
+Retired item-frame contents remove their saved frame record and FRAME icon through
+the map manager, retaining banners, other frames, pixels, names and unknown NBT.
+Cold maps keep one cleanup obligation per map/attachment until normal loading;
+shutdown drains reads and retries unresolved cleanup once before the existing map
+save gate. Attachment incarnations reject stale cleanup after replacement, and
+live NBT edits retain the old position. Creative, disabled-drop, Fixed and cancelled
+branches retain their supplied vanilla 26.3 `ItemFrame.dropItem/removeFramedMap`,
+`onKilled/readAdditionalSaveData` and `MapItemSavedData.removedFromFrame` behavior.
+No live frame-marker creation or rendering feature is added. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): `ItemFrameEntity` and `MapManager` gain private runtime
+attachment/cleanup state; rebuild native plugins. Public signatures, native API
+version, Wasm WIT and saved-data meanings stay compatible. Unknown saved root/map
+fields now survive map writes; no new saved fields are introduced.
+
+PR #331 review: existing-ID `MapManager::create_map` again returns the cached
+handle without locking the map, including when its native caller already holds
+that mutex. Deferred frame cleanup remains with retirement, load completion and
+shutdown retry, preserving its obligation while the map is busy. API 8 (same
+version); public signatures, layouts and saved-data meanings are unchanged by
+this follow-up. In-game verification: Not yet.
+
+PR #331 round 3: loader cleanup only tries a busy map mutex and retains pending
+work for the next server tick, load or save. Frame destruction queues runtime
+ownership retirement without taking the cleanup mutex; unattached frames do
+nothing. Position-only live NBT edits retire the old attachment, while metadata
+edits retaining the same map and position preserve its saved icon. Failed map
+reads wait five seconds before automatic retry; creation and explicit import/load
+can recover immediately. API 8 (same version): `MapManager` gains private runtime
+queue/backoff state; rebuild native plugins. Public signatures, Wasm WIT and saved
+fields/meanings are unchanged. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet. Duplicate-UUID summon ownership, current-attack
+cancellation and the pre-existing missing live marker rotation/ID refresh remain
+backlog.
+
+Play test: display an imported map in an ordinary/glow frame and break its support;
+expect one frame/map drop and its icon gone after save/restart, with another frame
+and a named banner unchanged. Repeat Creative attacks and support loss with
+entity drops disabled; expect cleanup without item drops. Fixed and cancelled
+frames retain their contents and markers. Capture the map, drops and restart result.
+
+## Item-provided block sounds (#18, #265, #266)
+
+Player heads retain their valid `note_block_sound` component through placement,
+ordinary drops and reload. Note events play that identifier from the block center
+in RECORDS at volume 3 and pitch 1; unconfigured heads fail the event silently.
+Tagged heads used on a note block's top face reach ordinary placement and its
+existing hand payment and cancellation rules. Other clicks retain tuning.
+Mirrors vanilla 26.3 `NoteBlock.useItemOn/triggerEvent/getCustomSoundId` and
+`SkullBlockEntity` implicit components and load/save methods.
+
+Explicit registered `jukebox_playable` patches save as vanilla's direct song
+identifier and accept earlier fork compounds. Existing invalid fork references
+retain their stopped-record meaning. Real insertion and disk reload preserve the
+chosen song and active elapsed ticks; ordinary default discs are unchanged.
+Mirrors `JukeboxPlayable.CODEC/tryInsertIntoJukebox` and
+`JukeboxBlockEntity.loadAdditional`. Arbitrary inline songs are not represented.
+Native API 8, public layouts/signatures and Wasm WIT are unchanged.
+
+PR #336 review: Java item packets now use the synced jukebox-song registry's
+holder ID plus one, with matching registered-reference decoding. Stopped legacy
+song patches stay in saves and use the item's default component on clients;
+all stack, template and trade-cost writers omit those unregistered additions.
+Bedrock's existing item conversion sends no song patch. Regressions restore saved
+jukebox NBT, eject through a real right-click and independently decode the actual
+item metadata and full inventory packets, including the stopped legacy case.
+Mirrors vanilla 26.3 `JukeboxPlayable/JukeboxSong.STREAM_CODEC` and
+`ByteBufCodecs.holder`. No public API or saved-data meaning changes.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Review play test: with a second Java player nearby, restart with a disc configured
+to play Cat in a jukebox, then eject it, pick it up and open the inventory. Expect
+both players to stay connected; reinsert the disc and expect Cat. Repeat with an
+old stopped record; expect it to remain stopped without disconnecting either
+player. Capture the ejection and inventory on both clients.
+
+Upstream #3728 partially overlaps with legacy jukebox writing, and #3507 includes
+skull components in a broader redesign. This change keeps the scoped existing
+paths. The separate restored-power/D17 follow-up remains owned by fork #257;
+the coordinator must settle that subset before closing all of #18.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: place a configured player head on a note block in Survival; expect one
+head payment, no tuning, and its custom sound when attacked or powered. Repeat
+after breaking/replacing the head and after a restart; expect the same sound.
+Use an unconfigured head; expect silence. Insert a disc with a registered-song
+patch, save and restart mid-song; expect the same disc/song and retained progress.
+Capture sound, placement/payment and the reload sequence with Java and Bedrock
+clients before opening the PR yourself.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so
@@ -94,6 +640,42 @@ rounded up to game ticks. Both Wasm hosts now honor the existing WIT's tick
 durations and live-size getters; WIT and packet layouts are unchanged.
 Written by GPT-6.1 Sol (Codex Cloud).
 In-game verification: Not yet.
+
+## Border and End fallback geometry (#181, #295, #305, #306)
+
+Hanging survival and shared End-return search use the live border bounds,
+including its absolute portal limit. Block checks test the coordinate itself;
+portal clamps floor the float-clamped position and keep the center-block result
+for collapsed sub-block ranges, consistent with upstream PR #3475. End fallback
+checks contained fluid height against the player body while retaining the
+existing full-column fluid rejection. End-return candidates follow vanilla's
+`PlayerSpawnFinder.findSpawnPosition` border exemption for a null entity, so a
+border outside the shared spawn cannot force the vertical fallback to the build
+ceiling. Non-finite border bounds use a finite center-block fallback in
+`clamp_block`. Mirrors vanilla 26.3 `WorldBorder` and `PlayerSpawnFinder`.
+Plugin API 8, Wasm WIT and saved-data meanings are unchanged.
+In-game verification: Not yet.
+
+PR #335 integration onto `batch-1019k2`: the half-block border centered at
+(1, -1) clamps (100, -100) to block (1, -2). Vanilla 26.3
+`WorldBorder.clampToBounds` clamps floating coordinates before
+`BlockPos.containing` floors them; the valid Z minimum is -1.25, so the old
+(1, -1) expectation was incorrect. End-return fixtures await chunk publication
+before installing their stone floors, with empty flat generation keeping setup
+bounded and independent of terrain-generation ordering. API 8 (same version).
+Integration by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: Set a timed border resize with a four-wide painting near its edge;
+expect it to survive while the live border still contains it, then retire when
+the border reaches it. Return from the End with a waterlogged sign in the shared
+spawn body space; expect a dry arrival, while a dry sign and fluid below the
+player remain valid controls. At a diameter-10 border, use a water bottle on
+source water at x=4; expect it to fill, with x=3 also filling and x=5 denied.
+Set a diameter-10.4 border and enter a Nether portal from a scaled coordinate
+beyond it; expect the destination search to retain upper block 5. Return from
+the End at shared spawn (6,64,0) with a diameter-10 border centered at (0,0),
+then use `/worldborder set 1` with spawn (0,64,0); expect a Y64 arrival without
+fall damage in both cases.
 
 ## Held-item drop equipment publication (#163)
 
@@ -442,6 +1024,518 @@ Set `doBlockDrops` false and shoot a patterned pot containing a diamond; expect
 only the diamond. Restore the rule and repeat; expect its faces and the diamond.
 Record the extensions and collected stock. Real-client verification is pending.
 
+PR #330 review round 6 is a semantic merge of `2a821729f` with `murgicraft`
+`dec07fc01`, retaining #339's bed-break reservation and the pot destruction claim.
+Beds return through their existing break path before pot preparation; other blocks
+keep the generic path. Beds, pots and ordinary block-entity removal now share
+`remove_block_entity_under_publication_gate`. It retires the pending/live entity,
+snapshot, published capture stamp and custom data under the existing publication
+gate. Bed unload checks, bed-break/use reservations, expected state and terrain
+identity checks remain unchanged. Pot mutation admission and the publication gate
+end before loot, native callbacks and packets; no lock-order edge is added.
+Public layouts/signatures, API 8, Wasm WIT and saved-data meaning are unchanged.
+The lifecycle refresh moves 19 boundary keys and updates five family hashes;
+all 92 existing statuses and notes remain unchanged, with no new rows.
+Written by Codex (GPT-6), with independent finding verification by subagents.
+In-game verification: **Not yet**.
+
+The prior-round callback-visibility and duplicate-break-event limitations above
+remain design backlog. Piston destruction can also commit earlier admitted breaks
+before a later refusal aborts movement: the stock drops normally, but providing
+all-or-nothing destruction needs a transaction across plugin callbacks, replacement
+claims and paired-block cleanup. This behavior predates this semantic merge;
+the refusal abort was introduced in round 4, not in the original piston loop.
+Strict face-template validation is also pre-existing (#236): saved count-65 sherd
+templates currently split into 64+1. Vanilla `ItemStackTemplate.create` instead
+uses `ItemStack.validateStrict`, including effective component and nested-stack
+validation. That shared validation and its saved-template compatibility decision
+remain separate work. Child-component codec hashes, explicit Bedrock pattern
+overrides and independently saved projectile `can_break` remain the documented
+backlog. This merge does not claim those parity gaps are fixed.
+
+
+## Cauldron filled-bucket transactions (#29, #30, #31)
+
+Filled water, lava and powder-snow buckets apply to all four cauldron kinds;
+water buckets top up levels 1/2 to level 3. The existing BucketEmpty event can
+veto every fill before effects. Water above, including flowing or waterlogged
+water, consumes lava/snow use without filling or exchanging items. Source-slot
+identity, player life and target checks preserve callback replacements. Input
+and result commit under one inventory owner; payment and statistics precede
+world callbacks. Mirrors Java 26.3
+`CauldronInteractions.addDefaultInteractions`, `emptyBucket`, the three fill
+interactions and `isUnderWater`. Bottle/washing behavior is unchanged.
+
+Written by Codex, with focused fixture patterns adapted from Optifineless420k’s
+[PR #116](https://github.com/Optifineless/Pumpkin/pull/116); supersedes only that
+PR’s #29–#31 portion. API 8 (same version): exported layouts, shared item-exchange
+and block-hand-result signatures, WIT and saved formats are unchanged.
+In-game verification: Not yet.
+
+Conditional terrain admission precedes item/stat publication, preserving the
+fork's existing filled-terrain observation in those callbacks. Physics callbacks
+wait for payment and statistics. This differs from serial vanilla's intermediate
+terrain visibility during item/stat callbacks; no event framework is redesigned.
+
+## Consumable fallback after refused crop placement (#158)
+
+Java carrot and potato use starts eating in the requested hand when crop
+placement refuses without consuming the action. Planting, consuming block
+interactions, explicit failures, protection and cancelled events retain
+precedence. Hunger, cooldown and existing active-use admission are shared with
+air use; callback replacements and selection changes are revalidated before
+starting. Mirrors vanilla 26.3 `BlockItem.useOn`, `Item.useOn/use` and
+`ServerPlayerGameMode.useItemOn`. API 8 (same version): the richer placement
+outcome is internal; public signatures, layouts, saved data and Wasm WIT are
+unchanged. Written by Codex (GPT-6.1 Sol). In-game verification: Not yet.
+
+## Ground mob collision step-up (#87)
+
+Grounded mobs retry horizontally blocked movement at actual collision-shape
+heights within their effective STEP_HEIGHT, choosing the first candidate that
+improves horizontal progress. This lets ordinary mobs leave dirt paths and lets
+Endermen use their one-block allowance. Mirrors vanilla 26.3 `Entity.collide`,
+`collectCandidateStepUpHeights` and `collideWithShapes`. Final-footprint support
+and incident vertical velocity reach the existing fall/landing hooks; ceilings,
+airborne collisions and bounded collision sweeps remain respected. Player
+position authority, plugin events, native API 8, WIT and save formats are unchanged.
+Written by Codex Cloud. In-game verification: Not yet.
+
+Play test: lure a cow off a dirt path onto stone; expect smooth ascent without
+jumping. Repeat over slabs/stairs and with an Enderman at a one-block ledge;
+expect ascent within each mob's step allowance. Lower STEP_HEIGHT below the lip;
+expect no automatic step. Add a low ceiling; expect obstruction. Record both.
+
+
+## Campfire storage and start admission (#85, #86)
+
+Lit and unlit campfires accept valid food into a free slot. Start-event admission
+runs before payment; cancellation and callback replacements preserve input and
+storage. Accepted durations commit with the existing atomic held-item transfer.
+Cold food waits for lighting and retains vanilla cooldown. Mirrors vanilla 26.3
+`CampfireBlock.useItemOn` and `CampfireBlockEntity.placeFood`.
+
+The optional `CookingStarted` byte array records admitted slots, including literal
+zero/negative plugin durations, so reload does not repeat their start event.
+Missing entries default to false: old positive totals/progress remain unchanged,
+and old nonpositive totals retain the cancellable fallback. Existing item and
+timer tags keep their meaning. API 8 (same version): `CampfireBlockEntity` gains
+private admission state; rebuild native plugins. Public signatures and Wasm WIT
+are unchanged. Implemented by Codex (GPT-6.1 Sol).
+In-game verification: Not yet.
+
+## Admitted movement and landing bookkeeping (#112, #77, #74)
+
+Accepted Java movement counts the last descending segment before landing, including
+supported zero-displacement ground-only and rotation-only packets. All landings
+retain the actual support block's callback; neighboring noncontact slime no longer
+cancels a stone landing. Position and position+rotation use the same grounded-to-airborne,
+upward takeoff predicate for jump statistics and exhaustion.
+
+PR #231 review: admitted Java ground updates refresh the existing runtime support
+cache from collision shapes beneath the whole player footprint, including all
+zero-displacement variants. Edge contact with slime stays safe even at one health;
+noncontact slime still permits ordinary stone damage, and noncolliding shapes are
+excluded. Airborne updates clear cached support. This ports the selection from
+`Entity.checkSupportingBlock` and `CollisionGetter.findSupportingBlock`, including
+the nearest-center and greatest Y/Z/X tie rule. When the final footprint has no
+support, the probe retries at the prior horizontal position while keeping final Y,
+so moving off a slime edge during landing retains its callback. Unsupported
+zero-displacement ground claims defer fall consumption. Takeoff commits airborne
+state before jump/exhaustion callbacks, so reentrant movement counts it once.
+No public signature, layout or saved-data change.
+
+Round 3 backlog: B3's second complete landing during a fall callback needs a
+reservation handoff; the pre-existing lifecycle gap before damage admission
+(owner comment 4315144035) remains out of scope.
+
+Mirrors vanilla 26.3 `Entity.checkFallDamage`,
+`ServerGamePacketListenerImpl.handlePlayerPositionChange` and
+`ServerPlayer.jumpFromGround`. Landing callbacks retain their distance until they
+finish; private combat-owner reservations prevent duplicate consumption and keep
+new descent, replacement lives and replacement sessions safe across callbacks.
+Mace landing particles retain the ServerPlayer override's pre-accumulation distance.
+Water, climbable, honey and scaffolding paths, damage admission, plugin cancellation
+and the existing floor/epsilon formula remain in use. `FallDistance`, statistics
+and hunger saves retain their existing tags, defaults and meaning.
+
+API 8 (same version): public signatures, vtables and embedded layouts are unchanged;
+new runtime reservation state lives behind the existing private damage-owner Arc.
+Native plugin source remains compatible; rebuild native plugins against this
+checkout. Wasm WIT is unchanged. Implemented by Codex (GPT-6.1 Sol).
+In-game verification: Not yet.
+
+Play test: drop exactly four blocks onto stone with and without turning; expect
+half a heart lost once. Repeat beside noncontact slime, then onto actual slime;
+expect normal stone damage and no slime damage. Repeat with only the edge of the
+player's feet over slime and the center over air, including at half a heart;
+expect unchanged health and survival. Also move past that edge during the final
+descent at full and half-a-heart health; expect no damage or death. Compare
+walking/sprinting jumps with and without turning; expect identical jump statistics
+and hunger costs. Record the measured drop, landing blocks, health and jump-statistic
+changes.
+
+## Sponge fluid traversal and depth (#80, #81)
+
+Sponge absorption follows vanilla 26.3 `SpongeBlock.removeWaterBreadthFirstSearch` and `BlockPos.breadthFirstTraversal`: connected water uses graph depth six and at most 64 absorbed blocks. Waterlogged hosts keep their block while losing water; kelp and seagrass use their normal loot handling and are removed. The cancellable sponge event remains before mutation, with current states rechecked after callbacks. Aquatic plants are conditionally removed before their drops are published, so synchronous item-spawn callbacks cannot duplicate the observed plant. Cancelled drops still leave the plant removed, and callback replacements survive. No saved-data or public API change.
+
+In-game verification: Not yet.
+
+Play test: Place a dry sponge beside a waterlogged slab, kelp, seagrass and a seven-block water line. Expect the slab to stay dry, kelp to drop normally, seagrass to be removed, the first six water blocks to disappear, and the seventh to remain.
+
+## Sponge wet conversion (#325)
+
+When a dry sponge absorbs water, its wet-state change notifies clients and runs normal shape updates without sending an extra ordinary neighbor callback from the sponge. Deferred callbacks from drained water remain. Mirrors vanilla 26.3 `SpongeBlock.tryAbsorbWater`; no API or saved-data change.
+
+In-game verification: Not yet.
+
+Play test: Place a dry sponge beside a short connected water line with redstone
+or another neighbor-sensitive block beside it; expect the water to drain, the
+sponge to turn wet, and the sound to play once. Place water beside a dry sponge;
+expect it to absorb. Put water beside a wet sponge; expect the water to remain.
+## Server scoreboard persistence
+
+Every dimension shares the server's scoreboard. Objective, score, display-slot and
+team updates reach players across dimensions; joining players receive the shared
+state once, and dimension changes retain it. Autosave, `/save-all` and shutdown
+snapshot dirty state and atomically save the Overworld's
+`data/minecraft/scoreboard.dat`. A failed load disables scoreboard saves for that
+run, preserving the original file. Older versions load matching fields with one
+warning and no data fixer; newer unsupported versions are preserved unchanged.
+
+The saved codec follows vanilla 26.3 `ScoreboardSaveData.Packed`, `Objective.Packed`,
+`Scoreboard.PackedScore`, `Score.Packed`, `PlayerTeam.Packed` and `DisplaySlot.CODEC`.
+It retains unknown criteria, full text/style data, number formats, score locks,
+all team options and memberships, and all 19 display slots. Display and format
+commands expose the persisted settings. The world-data version is corrected from
+26.2's 4903 to 26.3's 5023, checked against the official server jar's `version.json`.
+
+Review round 3 separates storage from display. Every saved component keeps its
+exact raw NBT in the existing persistence sidecar, including unusual or malformed
+text and full events. Runtime displays and Java scoreboard packet serializers
+project only literal/translated text, fallback, recursive arguments/extras, named
+or ASCII RGB colors, five boolean decorations and valid resource-location fonts.
+Events, insertion, selectors, score/NBT/keybind/object contents, shadow colors and
+unknown fields stay on disk and never enter imported displays or command feedback.
+Unsupported empty objective/team names display their storage name. Styled and fixed
+number formats use the same subset. Session-created subset text retains its display.
+UTF-8 hex colors return parse errors instead of panicking in either color parser.
+Malformed NBT or wrong record/component outer types still fail the whole load and
+disable saves. This is a deliberate display restriction, without changing saved
+component meaning; it replaces round 2's incomplete client-codec validation gate.
+
+Review round 4 discards a field's saved raw data when runtime update methods
+change it or a command explicitly replaces it, including A to B to A before or
+between saves. Other components retain their original NBT. Display projections stop
+at 128 emitted container levels and use a conservative 32 KiB budget that includes modified
+UTF-8 strings and component overhead. Raw storage remains complete. Login sends
+teams followed by deduplicated displayed objectives and their scores; hidden
+updates stay server-side until a display slot starts tracking them. Tracking
+mirrors `PlayerList.updateEntireScoreboard` and `ServerScoreboard`'s tracking
+methods. Native API 8 (same version), its public surface and on-disk codecs are
+unchanged by this round. In-game verification: Not yet.
+
+Accepted API 8 exception: a same-value component assignment through a whole-settings
+plugin update may retain that field's original raw NBT because the API carries no
+field-replacement intent. The affected setters are:
+
+- Wasm `scoreboard::Scoreboard::update_team` for `TeamSettings.display_name`,
+  `prefix` and `suffix`, including SDK `Team::update_settings`,
+  `Team::set_display_name`, `Team::set_prefix` and `Team::set_suffix`;
+  Wasm `scoreboard::Scoreboard::update_objective` for `display_name`.
+- Native `Scoreboard::update_team` for `display_name`, `player_prefix` and
+  `player_suffix`; `Scoreboard::update_objective` for `display_name` and
+  `number_format`; `Scoreboard::update_objective_with_number_format` for `display_name`;
+  `Scoreboard::update_score` for `display_name` and `number_format`, and
+  `Scoreboard::update_score_with_number_format` for `display_name`.
+
+Native `Scoreboard::get_objective_mut` and `Scoreboard::get_team_mut` compare
+component fields with their imported baseline before each borrow. Only fields
+already changed lose their raw sidecars; unrelated and no-op borrows preserve
+them. Save packing also detects the final outstanding changes. Separate-borrow
+A to B to A replacements stay replaced. A same-value replacement, or A to B to A
+entirely within one borrow, carries no observable replacement intent and may keep
+the original raw field. Commands and explicit number-format replacement setters
+invalidate only the replaced field, including same-value replacements.
+
+Review round 5 also constructs Bedrock titles only during Bedrock packet
+serialization. Rendered text shares one 32 KiB output budget across the complete
+component tree without materializing argument strings; bounded traversal also stops repeated
+empty arguments. The scoreboard file reader counts each compound and list once,
+including the root, with vanilla NbtAccounter's 512-container limit. Other NBT
+readers and their limits are unchanged. Full raw text remains on disk.
+NBT serialization keeps scalar encoding off recursive container stack frames so
+newly accepted 512-container documents can also be saved on normal worker stacks.
+Native API 8 (same version), public methods and layouts are unchanged in this round.
+In-game verification: Not yet.
+
+Review round 6 uses one private output/traversal budget for plain text, styled
+console feedback and logs, both translation-string helpers, Java legacy text,
+Bedrock raw/legacy text and titles, and custom translation materialization
+(including hover text). Substitutions are visited by reference; formatting and
+hyperlink bytes count toward the 32 KiB limit, and empty expansions stop at the
+shared traversal limit. Translation table copies are bounded before allocation.
+Raw persistence codecs remain lossless. API 8 (same version): no public methods,
+types or layouts change in this round.
+Native components needing no server-only custom translation pass unchanged
+through serialization, including entity names and text-display saves. The input
+scan is iterative and does not expand or copy component payloads.
+
+Review round 7 preserves native parents, siblings, extras and styles in storage
+even when they contain Custom descendants. Only generated Custom expansions
+consume the materialization budget; entity CustomName, text-display JSON and the
+public NBT storage encoders retain unrelated native payloads. Display and
+console rendering retain their shared limits. Materialized click/hover events
+and font identifiers are complete or omitted, never shortened; this keeps valid
+UUIDs, registry IDs, URLs and commands valid at budget boundaries. Mirrors
+`ComponentSerialization.createCodec`, `HoverEvent.EntityTooltipInfo.CODEC` and
+`ClickEvent` codecs in vanilla 26.3. Native mutable scoreboard borrows now retain
+untouched raw text as described above. API 8 (same version): no public methods,
+types or layouts change. In-game verification: Not yet.
+
+The native renderer retains the fork's existing missing-argument clamping;
+vanilla 26.3 `TranslatableContents.decompose/getArgument` instead displays an
+invalid template literally. This round bounds that existing behavior rather
+than changing ordinary translations. A saved native S20 objective is covered
+through startup, Java join, the actual Console `scoreboard players get` command,
+mutation and save; safe S5 controls reproduce the old unbounded output.
+In-game verification: Not yet. Play test: query an imported translated objective
+from the console, then join and save; expect prompt, shortened feedback, a normal
+join and unchanged saved display data. Capture the console query and sidebar.
+
+Not addressed (backlog): live `displayautoupdate` holder-name resolution; numeric
+translation arguments in display projection; Bedrock team-coloured slots,
+objective lifecycle slot assignments. Allocation-derived shared-scoreboard
+score-entry IDs are addressed by #289 above.
+The Wasm whole-settings API also cannot distinguish a round-tripped default
+white from an intentional white update on an uncoloured team. Its existing
+preservation rule remains: to explicitly set white, update to a nonwhite colour
+first, then white (or create the team with white). A one-call intent distinction
+needs a separate design. These parity gaps do not change the retained raw save.
+
+If the namespaced file is absent, supported pre-26.1 worlds import
+`data/scoreboard.dat`; successful later saves publish the namespaced file without
+removing the legacy original. A corrupt namespaced file never falls back to legacy.
+Death announcements now obey the victim's saved server-team visibility across all
+dimensions, preserving the victim's death-screen packet. Routing mirrors 26.3
+`ServerPlayer.die` and `PlayerList.broadcastSystemToTeam/AllExceptTeam` (including
+excluding the victim from the restricted own-team announcement). Projection is a
+fork display policy; storage/migration follow `ScoreboardSaveData.Packed` and
+`DimensionStorageFileFix`. Checked against the official 26.3 inner server JAR
+SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`,
+decompiled with Vineflower 1.11.2.
+
+Backlog: the new `displayautoupdate` flag remains persisted but does not refresh
+live holder names. Complete parity with `Scoreboard`'s `ScoreAccess.set` needs
+pre-lock live-holder snapshots across numeric commands, triggers, criteria,
+execute-store callbacks and plugin-facing writes. The existing entity/player
+name renderers also omit team decoration. A partial command-only update would
+leave those paths inconsistent; this nonblocking work is outside this review fix.
+
+API 8 (same version): `Server`, `World`, `Scoreboard`, `ScoreboardObjective` and
+`Team` layouts change, including the shared `World.scoreboard` handle; native
+plugins must be rebuilt. Wasm API versions and existing player display overlays
+are retained. Automatic criterion updates and `/trigger` semantics are unchanged.
+Written by Codex. In-game verification: Not yet.
+
+Play test: show an objective in the sidebar, put players in the Overworld and
+Nether on the same team, and change a score and team prefix; expect both players
+to see the changes. Move between dimensions; expect one team and the same sidebar.
+Stop and restart; expect scores, formatting, team settings and membership to
+survive. Capture the cross-dimension updates and the restored sidebar after restart.
+With unusual saved text, start the server and join; expect safe text (or the
+objective/team name), no disconnect, and the original component data retained
+through `/save-all` and shutdown. For a structurally corrupt scoreboard, expect
+an error, a successful join with an empty imported scoreboard and saves disabled.
+Import a pre-26.1 world and expect its old scoreboard before making any changes.
+Set `deathMessageVisibility` to `never`, `hideForOwnTeam` and `hideForOtherTeams`;
+kill a member and check recipients in another dimension. Capture the safe sidebar,
+restored legacy scoreboard and each announcement audience. In-game verification:
+Not yet. Review fixes by Codex; native API remains 8 with no additional layout
+changes in this round.
+
+Round 4 play test: import a prefix A with an old click action, run `/team modify
+red prefix B`, optionally `/save-all`, then `/team modify red prefix A`; save and
+restart, and expect plain A with no old click action. Join a world containing a
+large hidden objective and expect a normal login with no hidden sidebar. Display
+that objective and expect safely shortened text; clear its last display slot and
+expect it to disappear. Capture the successful join and sidebar transitions.
+
+
+
+## Trigger score formatting (#307)
+
+Simple, add and set `/trigger` now mutate the existing unlocked score's value and
+lock it, retaining its display component, number format and saved opaque fields.
+Additions use wrapping `i32` arithmetic, matching Java integer semantics. Mirrors
+vanilla 26.3 `TriggerCommand.simpleTrigger/addValue/setValue`; no native API, WIT,
+packet format or saved-data schema changes. In-game verification: Not yet.
+
+Play test: give a trigger score a custom display and fixed or styled number format,
+enable it, and run the simple, add and set forms; expect the value to change, the
+score to lock again, and the sidebar formatting to remain visible. Capture the
+score update from a nearby observer.
+
+## Cat, wolf and cow hand interactions (#41, #42, #48)
+
+Healthy tame cats reach Animal feeding before the owner's sitting fallback.
+Wolf food heals twice its effective nutrition, with the vanilla missing-FOOD
+fallback; bones remain wild-wolf taming items. Adult cows exchange the actual
+used hand's bucket for milk, including stacked and Creative inputs; babies refuse.
+Mob uses conditionally commit their originating inventory slot before callbacks,
+retain component-bearing food remainders, and preserve callback inventory edits.
+Existing interaction and regain-health events retain their order and cancellation.
+The species age clock, breeding inheritance and saved-data meanings are unchanged.
+
+PR #249 review restores handless `Mob::mob_interact`, `EntityBase::interact` and
+default `EntityBase::interact_at` calls on caller-supplied stacks, including
+detached stacks, through the shared species handlers. Direct
+`Animal::animal_interact` retains caller-stack feeding. Alive and shearing checks
+remain ahead of species dispatch; packet hand transactions retain their existing
+validation. API 8 (same version), with no new public API or layout changes.
+In-game verification: Not yet.
+
+Mirrors vanilla 26.3 `Cat.mobInteract`, `Wolf.mobInteract`, `TamableAnimal.feed`,
+`Animal.mobInteract`, `AbstractCow.mobInteract` and `ItemUtils.createFilledResult`.
+Selectively reimplements the relevant #116/#176 work with current inventory owners;
+the cow result follows BarilTomasDev's upstream #3940 idea (`81441b4eee3b66ce`).
+API 8 (same version): additive provided `Mob::mob_interact_with_hand` and
+`Animal::animal_interact_with_hand` methods change native trait vtables. Existing
+implementations retain their defaults; rebuild native plugins against this tree.
+Generic exchange signatures and Wasm WIT are unchanged. Written by Codex.
+In-game verification: Not yet.
+
+
+## Brewing remainders and Java 26.3 menu (#16, #119)
+
+Successful brewing returns the reagent's crafting remainder to its emptied slot,
+or drops it after inventory ownership is released when reagents remain. Fuel uses
+the same remainder rule. The real brewing menu publishes remaining brew time,
+remaining fuel, total brew time and total fuel in vanilla order. Fuel component
+providers supply uses and speed; brewing remains a countdown, including after
+loading old fork short/byte saves. New saves use vanilla int counters and optional
+totals/speed default to 400, 20 and 1.0 on old saves. Existing fuel, start and brew
+events retain cancellation, with stock revalidated after callbacks.
+
+Mirrors vanilla 26.3 `BrewingStandBlockEntity.serverTick/doBrew/getUses/getSpeedMultiplier/loadAdditional/saveAdditional`,
+`BrewingStandMenu`, and `BrewingFuel`/`ResolvableInt`/`ResolvableFloat` codecs.
+The context-provider evaluator handles the binomial rule used by blaze powder's
+default 20-use provider. A fuel `uses` provider that errors or resolves to zero
+or less leaves the fuel item and fuel totals unchanged, preventing repeated
+payment on later ticks. Numeric-looking holder references and other unsupported
+provider forms can still leave the stand idle. This addresses the payment-loss
+part of PR #246 review; broader context-provider parity and the reviewed event
+payload widths remain outside this fix.
+
+API 8 (same version): rebuild native plugins for the brewing stand layout and
+`BrewingFuelImpl` marker-to-payload change (replace unit construction with
+`Default` or explicit providers; `read_data` is no longer const). `Eq`/`Hash`
+remain available and speed constants compare and hash their float bits. The
+crafting-remainder helper is now public and the brewing menu's `DATA_COUNT` is four. Wasm WIT is
+unchanged. Written by Codex (GPT-6.1 Sol). In-game verification: Not yet.
+## Bed removal, sleeping lifecycle and unsafe dimensions (#114, #35, #153)
+
+Breaking either ordinary or straw bed half yields one bed in Survival and none in Creative.
+Normal player ticking wakes a sleeper whose remembered bed disappeared, without
+restoring the bed or overwriting a callback's replacement. Ordinary beds consume
+the dimension's `destroy_on_use` rule before sleep admission and use the existing
+bad-respawn explosion; straw beds retain their own rule and destruction behavior.
+Mirrors vanilla 26.3 `AbstractBedBlock.useWithoutItem/playerWillDestroy`,
+`BedBlock.destroyOnUse`, and `LivingEntity.tick/checkBedExists/stopSleeping`.
+This supersedes only these issues' portion of old fork PR #102, whose shared
+destruction hook was already integrated; villager and other admission work stays
+separate. Reporter credits: visionglitcher and Uelq (#114), kalancelot / devilos
+(#153). Implemented by Codex (GPT-6.1 Sol).
+
+API 8 (same version): `Player` gains private runtime sleep-operation ownership;
+native plugins must rebuild against this checkout. Existing plugin source call
+sites remain compatible; public signatures, Wasm WIT, saved fields and existing
+save meanings are unchanged.
+Malformed use pairs with mismatched facing are rejected to avoid removing an
+unrelated half; this is stricter than the supplied vanilla opposite-part check.
+Removal uses the existing per-position chunk and block-entity publication owners;
+arbitrary raw native writes and global two-position atomicity remain legacy limits.
+PR #230 review: bed loot listeners again observe the bed before removal, preserving
+conditional `BlockDropItemEvent` cancellation. A nonblocking operation snapshot
+rejects recursive and concurrent duplicate breaks; changed cells retain callback
+replacements and discard uncommitted loot. Callbacks and item spawning hold no
+publication guard. API 8 (same version): `World` gains private runtime bed-break
+admission state under its existing publication gate; rebuild native plugins.
+Saved fields and Wasm WIT are unchanged.
+PR #230 round 3: player breaks admit both halves with the original actor and
+spawn protection, retaining partner cancellation without an environmental retry.
+Wake ownership uses operation/lifecycle identity rather than the ticking sleep
+timer, and cancelled Standing transitions retain the remembered sleep state.
+Unsafe use explodes after any committed half; unrelated neighbour shape updates
+still run when a captured partner changed. Checked against vanilla 26.3
+`BedBlock.destroyOnUse`, `LivingEntity.hurtServer/stopSleeping` and `Level.setBlock`.
+B4 remains BACKLOG by coordinator decision: no existing per-cell mutation identity
+distinguishes an equal-state replacement during loot callbacks; new revision
+infrastructure is out of scope. This limitation was introduced in round 2.
+The older raw-removal spawn-boundary gap (L1) remains outside this change;
+player-driven partner admission now checks protection explicitly.
+PR #230 round 4: bed-specific `SKIP_DROPS` no longer reaches unrelated neighbour
+shape updates, so attached blocks that lose support still drop their items.
+The bed pair's own teardown continues to suppress its duplicate drop. Mirrors
+vanilla 26.3 `Level.setBlock`; a Java regression pays for a spore blossom under
+an elevated straw-bed head, then breaks the head in Survival and checks one of
+each item. In-game verification: Not yet.
+Unsafe-dimension bed use also reserves both halves across its break events, so a
+recursive or concurrent use cannot dispatch the same pair's events repeatedly.
+The regression re-enters Java bed use from a break callback and checks for one
+pair admission. In-game verification: Not yet.
+In-game verification: Not yet.
+
+Play test: place ordinary and straw beds, break either half in Survival and expect
+one bed item; repeat in Creative and expect none. With a plugin that cancels bed
+loot by checking the event's world and position, break the head and expect no item.
+Record the breaks and resulting drops on the candidate build.
+Repeat with Java and Bedrock and a protection plugin; expect both break events to
+name the breaker and a cancelled/protected partner to remain. Leave an intact bed
+while another player hits the sleeper; expect waking to finish. Use a bed in the
+Nether or End and expect the explosion, including when only one half is consumed.
+Place a straw bed on temporary supports, remove them, crouch-place a spore blossom
+under the head, then break the head in Survival; expect one bed and one blossom.
+
+## Elytra durability and flight validity (#72)
+
+Admitted gliding now checks usable equipped gliders on normal living ticks,
+emits `elytra_glide` every 10 flight ticks and applies one durability wear every
+20 through the existing equipment damage event and slot transaction. Landing,
+removing or invalidating the glider ends flight through the cancellable glide
+toggle event and synchronizes the owner and observers. Callback replacements
+and life/session changes reject stale wear. Flight transitions reset the runtime
+cadence; existing `FallFlying` saves and client-authoritative motion are unchanged.
+Mirrors vanilla 26.3 `LivingEntity.updateFallFlying/canGlide/canGlideUsing`.
+`StartFlyingElytra` also follows `Player.tryToStartFallFlying`: it starts only
+when the player is airborne, not already gliding or in liquid, and has a usable
+equipped glider without levitation.
+The recurring update retains `Entity.checkFallDistanceAccumulation`, using
+accepted client movement for players and existing velocity for other entities.
+PR #253 rebase retains #231's supported-landing admission and the single bounded
+player-tick equipment publisher. Wear still commits every 20 flight ticks;
+observers receive that queued change on the following normal detection, matching
+`LivingEntity.tick` before `aiStep/updateFallFlying`. The glide-start regression
+uses a real stone landing while retaining its health and fall-distance assertions.
+The current-base rebase uses #202's exact active-world instance check for flight
+continuations. #195's UUID lookup can still find a detached player through tracking;
+that feedback lookup does not admit another wear or glide event. The regression
+covers both tracking-only detachment and #202's `mark_departing` removal during
+the damage callback. Existing removal/life checks and storage retirement remain.
+The reported horizontal freeze remains unverified. Written by Codex.
+In-game verification: Not yet.
+
+API 8 (same version): `Entity` gains private runtime flight cadence state, changing
+its layout and containing entity layouts. Rebuild native plugins against this
+checkout; existing public signatures remain source compatible, and WIT is unchanged.
+
+Play test: glide in Survival with an unenchanted elytra; expect one durability
+lost per second of continuous flight. Land and restart; expect a fresh second
+before the next wear. Pick up or shift-click the chest elytra while airborne;
+expect both your view and a second player's view to leave the glide pose. Record
+the durability display and both views around removal; report horizontal motion
+separately. Creative flight and standing with an elytra should cost no durability.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block
@@ -521,12 +1615,70 @@ signature remains unchanged. Mirrors vanilla 26.3
 `LeashFenceKnotEntity.interact`, `LeashFenceKnotEntity.getOrCreateKnot`,
 `LeadItem.bindPlayerMobs` and `Leashable` leash methods. In-game verification:
 **Not yet**.
+## Binding Curse armor removal (#198)
+
+Java inventory clicks and Bedrock stack requests keep armor with the generated
+`prevent_armor_change` enchantment effect equipped outside Creative, mirroring
+vanilla 26.3 `ArmorSlot.mayPickup` and `EnchantmentHelper.has`. Bedrock checks
+removal under the same inventory owners as the write and corrects rejected client
+predictions after release. Packet regressions cover cursed armor, ordinary armor
+and Creative removal. Implemented by Codex (GPT-6.1 Sol).
+Owner-review follow-up (#203) checks every request's take rules before its first
+action, including armor equipped earlier in the same request. Rejections after
+shape validation correct the active container as well as player stock; malformed
+container, preview and alias requests receive only their error response.
+API 8 (same version): `Slot::can_take_stack` adds staged pickup validation and
+`ResultSlot::simulate_crafts` exposes the shared detached-grid payment simulation;
+native plugins must be rebuilt. No saved-data meaning changes.
+
+General request rollback on a concurrent writer's late conditional-commit failure
+remains a pre-existing backlog: murgicraft's `inventory_commit::commit` already
+rejects changed UIDs/content after earlier actions can commit. This follow-up
+retains live revalidation and does not hold owners across crafting/trade callbacks.
+Vanilla 26.3 decompiled sources were unavailable for this follow-up; the armor
+rule follows the existing `ArmorSlot.mayPickup` / `EnchantmentHelper.has` port,
+and Bedrock corrections follow the fork's existing container addressing.
+In-game verification: **Not yet**.
+
+Issue #207: denied legacy Bedrock armor drops now return an error and force the
+unchanged authoritative armor, inventory, crafting and cursor contents. Rejected
+multi-action requests correct the active 2x2/3x3 crafting input/output or generic
+container, preserving any earlier valid commits. Correction snapshots use ordered
+inventory owners and revalidate the live player/menu after release; each packet
+reads current stock, including an unchanged cursor. Java QuickMove rechecks
+`can_take_stack` on the lock-pinned source before withdrawal. Mirrors the supplied
+vanilla 26.3 `ArmorSlot.mayPickup`, `Slot.tryRemove/safeTake` and
+`AbstractContainerMenu.doClick/sendAllDataToRemote`; Bedrock addresses reuse the
+existing packet encoders and mappings. Implemented by GPT-6.1 Sol (Codex Cloud).
+
+API 8 (same version): the player-checked transfer entry is additive within the
+inventory crate; the existing merchant transfer signature, public trait vtables,
+layouts, Wasm WIT and saved-data meanings are unchanged. Existing native source
+remains compatible; no new rebuild requirement. In-game verification: Not yet.
+
+Play test: in Survival, try legacy drop and shift-click on Binding Curse armor;
+expect it to remain equipped with the cursor and crafting grid showing server
+contents. Repeat with ordinary armor and with cursed armor in Creative; expect
+removal to work. Craft, then attempt a denied armor take in one Bedrock request;
+expect any paid craft to remain, all ingredient/output counts to correct and no
+extra items. Repeat at a crafting table and chest. Record the inventory, cursor,
+armor and ground items before and after rejection, with a nearby observer.
 
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 
 ## Door and trapdoor placement (#22, #23)
 
 Door hinge scoring checks full-block obstructions beside the door at both lower and upper levels, while preserving adjacent-door precedence and the click-position tie-break. Mirrors vanilla 26.3 `DoorBlock.getHinge`. Fixes [#22](https://github.com/Optifineless/Pumpkin/issues/22). In-game verification: **Not yet**.
+
+Door hinge ties reconstruct the absolute hit from the clicked block and relative
+packet hit, then use vanilla's inclusive midpoint comparisons. Lanterns follow
+the vanilla nearest-looking placement context, select the first supported floor
+or ceiling side, waterlog in source or flowing water, and return air immediately
+when their selected support is removed. Mirrors vanilla 26.3
+`DoorBlock.getHinge` and `LanternBlock.getStateForPlacement/canSurvive/updateShape`.
+Fixes [#267](https://github.com/Optifineless/Pumpkin/issues/267),
+[#268](https://github.com/Optifineless/Pumpkin/issues/268), and
+[#269](https://github.com/Optifineless/Pumpkin/issues/269). In-game verification: Not yet.
 
 An adjacent side placement makes a trapdoor face the horizontal block face that was clicked. Replacing the clicked block and clicking a vertical face retain vanilla's opposite-player-facing branch. Mirrors vanilla 26.3 `TrapDoorBlock.getStateForPlacement`. Fixes [#23](https://github.com/Optifineless/Pumpkin/issues/23). In-game verification: **Not yet**.
 Ender Dragon wing contact pushes any living entity and can deal 5 mob-attack
@@ -555,8 +1707,8 @@ still consumes tipped and spectral arrows. Mirrors vanilla 26.3
 `BowItem.releaseUsing`, `ProjectileWeaponItem.draw/useAmmo` and
 `AbstractArrow` construction. Fixes #92. In-game verification: **Not yet**.
 
-Lantern survival and delayed cleanup use the support side selected by the stored
-`HANGING` state, and ladder placement retains replaced water as `WATERLOGGED`.
+Lantern survival uses the support side selected by the stored `HANGING` state,
+and ladder placement retains replaced water as `WATERLOGGED`.
 Mirrors vanilla 26.3 `LanternBlock.canSurvive/getConnectedDirection/updateShape`
 and `LadderBlock.getStateForPlacement/updateShape`. Fixes #51 and #54.
 In-game verification: **Not yet**.
@@ -1045,9 +2197,11 @@ G10 implementation: Codex (GPT-6 Luna).
 |:--|:--|:--|
 | [#27](https://github.com/Optifineless/Pumpkin/issues/27) | Excludes Spectator players from the night-skip denominator and sleeper count while keeping Creative players active. Recounts the live roster and gamemodes each environment tick, mirroring vanilla 26.3 `SleepStatus.update/sleepersNeeded`. No public plugin API or saved-data changes. In-game verification: Not yet. | Not yet |
 | [#20](https://github.com/Optifineless/Pumpkin/issues/20) | Axe, hoe and shovel transformations generate from the `blocks` array in the 26.3 asset wrapper; Java item-use-on applies stripping, copper scraping/unwaxing, tilling, rooted-dirt loot and path creation. Copper chest stage changes now update both connected block states while retaining both inventories; door transformations preserve both halves without writing above them. Shovels lose one durability when extinguishing a lit campfire in Survival, and none in Creative. Mirrors vanilla 26.3 `CopperChestBlock.updateShape`, `CampfireBlock` and `ShovelItem`. In-game verification: Not yet. | Not yet |
+| [#70](https://github.com/Optifineless/Pumpkin/issues/70) Ender pearl teleports keep old fall distance | Vanilla 26.3 `ThrownEnderpearl.onHit`: accepted teleports clear fall distance and mace impulse context before five damage and teleport sound. Cross-world transfers preserve health, register hurt feedback before damage, and send the destination position before its spatial sound; cancelled transfers preserve state and stay silent. | Not yet |
 | [#21](https://github.com/Optifineless/Pumpkin/issues/21) Waxing copper slabs preserves top, bottom and double types and compatible waterlogging; shared waxed block conversion retains other matching state properties. Mirrors vanilla 26.3 `HoneycombItem.getWaxed` and `Block.withPropertiesOf`. | Not yet |
 | [#159](https://github.com/Optifineless/Pumpkin/issues/159) Always Active command blocks evaluate their activation condition before the first scheduled impulse tick; conditional blocks still require a successful predecessor, and repeating blocks keep their current-condition snapshot and next-condition refresh ordering. Mirrors vanilla 26.3 CommandBlockEntity.scheduleTick/markConditionMet and CommandBlock.tick. The reporter's sustained Always Active repeating silence remains unconfirmed and is not established as fixed by this scoped repair. | Not yet |
 | [#159](https://github.com/Optifineless/Pumpkin/issues/159) Always Active command blocks capture the predecessor predicate before the first scheduled activation and publish that state with the replacement block entity. New activations mirror vanilla 26.3 `CommandBlockEntity.setAutomatic/onModeSwitch/scheduleTick`, invoked in `ServerGamePacketListenerImpl.handleSetCommandBlock`; `CommandBlock.tick` consumes the captured predicate for this tick before refreshing the next repeating predicate. Unchanged automatic saves and switches away from repeating preserve any queued predicate without scheduling a new activation. The reporter's sustained Always Active repeating silence remains unconfirmed and is not established as fixed by this scoped repair. | Not yet |
+| [#83](https://github.com/Optifineless/Pumpkin/issues/83) Target blocks keep their weak hit signal but do not strongly power adjacent solid blocks; [#84](https://github.com/Optifineless/Pumpkin/issues/84) arrows, spectral arrows and tridents pulse for 20 ticks, while other projectiles such as snowballs pulse for 8. A second hit does not extend the first scheduled clear time. Mirrors vanilla 26.3 `TargetBlock.ownSignal`, inherited `BlockBehaviour.getDirectSignal` and `TargetBlock.updateRedstoneOutput`. In-game verification: Not yet. | Not yet |
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also fixes the existing-knot downcast used by player-to-knot transfers. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved` and `LeadItem.bindPlayerMobs`; species-specific `canBeLeashed` eligibility is not yet ported. | Not yet |
 | [#37](https://github.com/Optifineless/Pumpkin/issues/37) Right-clicking a leash knot deadlocks interaction | Knot clicks release leash-holder locks before leash changes, transfer eligible leashes in either direction, defer empty-knot cleanup until after player packet handling, and preserve leads when tying existing leashes to fences. Also applies species `canBeLeashed` rules before transfers, avoids publishing fence knots for ineligible leashes, treats cancelled knot shearing as handled without durability loss, and skips leash distance physics across worlds. Mirrors vanilla 26.3 `LeashFenceKnotEntity.interact/getKnot/notifyLeasheeRemoved`, `LeadItem.bindPlayerMobs`, `Leashable.canHaveALeashAttachedTo/canBeLeashed/tickLeash`, and `Mob.canBeLeashed`. | Not yet |
 | [#63](https://github.com/Optifineless/Pumpkin/issues/63) Right-clicking a beacon cannot open its payment menu | Beacon interactions open a per-viewer menu for powered and unpowered beacons. The menu accepts only singleton items from `minecraft:beacon_payment_items`, validates effect selections, syncs levels and encoded effects, and returns unpaid payment on close, replacement or disconnect. Payment remains transient and is not added to beacon saves. Paid selections refresh the saved block-entity image after releasing the menu lock; effect pairs are committed and captured together, following vanilla 26.3 `BeaconMenu.updateEffects`. Native API 8 stays at the same version; rebuild native plugins for the added runtime fields. Implemented by Codex (GPT-6 Luna), with the PR #213 round 3 persistence fix by Codex (GPT-6.1 Sol). | Not yet |
@@ -1057,6 +2211,17 @@ PR #227 owner-review follow-up. No native plugin API or saved-data meaning chang
 Play test:
 - Sneak-use an axe on one half of a stocked double copper chest; expect both halves to reach the same copper stage, both inventories to remain stocked, and a hopper to pull from either half. Capture both block states, the inventories, and the hopper transfer.
 - Use a shovel on a lit campfire in Survival; expect it to go out and the shovel durability to drop by one. Repeat in Creative; expect no durability loss. An unlit campfire should stay unchanged. Capture the hotbar before and after.
+
+| [#14](https://github.com/Optifineless/Pumpkin/issues/14) Lava bucket fuel remainder | Fuel consumption uses the item's crafting remainder independently of stack use-remainder overrides; lava returns a bucket and overflow drops once. The shared mapping preserves all five vanilla 26.3 item templates (count one, default components). Mirrors vanilla 26.3 `AbstractFurnaceBlockEntity.consumeFuel`. | Not yet |
+| [#15](https://github.com/Optifineless/Pumpkin/issues/15) Smoker and blast furnace cooking speed | The actual appliance recipe kind is used throughout; the admitted fuel's resolved `CookingFuel` speed scales cook duration, preserves partial completion across fuel changes, and is reused after crafting. With coal, smokers and blast furnaces cook eight admitted items per fuel; normal furnaces retain speed 1. Saved speed uses vanilla `speed_multiplier`, defaulting to 1.0 when absent. Mirrors vanilla 26.3 `AbstractFurnaceBlockEntity.serverTick/getTotalCookTime/loadAdditional/saveAdditional`. | Not yet |
+
+In-game verification: Not yet.
+
+Play test (#14/#15): smelt raw iron with a lava bucket; expect one empty bucket
+in the fuel slot. Cook eight potatoes in a smoker and eight iron ore in a blast
+furnace using one coal each; expect all eight to finish. Save and restart midway
+through a smoker's coal burn; expect the same cooking pace afterward. Capture
+the fuel slot and cooking before and after restart.
 
 ## Known regressions under investigation
 
@@ -1116,6 +2281,10 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 
 | Change | Checked in-game |
 |:--|:--|
+| Destroyed mounts eject surviving passengers before removal so each rider becomes a saved root and survives chunk reload; chunk unload still serializes the complete riding tree before detaching it. Older fork and vanilla saves keep the same passenger-tree NBT and still load. Mirrors `Entity.remove` / `Entity.setRemoved` and `Entity.ejectPassengers` (audit row 5) | Not yet |
+| Logout marks only the departing player instance removed, so target goals drop that stale target and mobs stop attacking its old location. Mirrors `PlayerList.remove` and `TargetGoal.canContinueToUse` (R31, audit row 7) | Not yet |
+| Respawn removal and cross-world publication use the exact player instance, so a late task cannot remove or republish a rejoined session. Rejected destination admission preserves source membership and chunk streaming without rollback publication. Accepted transfers commit the saved dimension and position together before the respawn hook, including disconnect during the hook. Hardcore respawn revalidates the exact active session after game-mode callbacks before either tracker publication, so completed callback removal cannot resurrect a player (PR #202 round 2, written by Codex). Mirrors `PlayerList.remove`, `PlayerList.respawn` and `ServerGamePacketListenerImpl.handleClientCommand` (audit row 15; PR #202 owner review). Native API 8 and saved-data meanings stay unchanged. | Not yet |
+| Respawn releases the old riding links before publishing the reset player, and entering Spectator dismounts immediately so position packets move the player. Like Vanilla `ServerPlayer.die`, death processing keeps the riding link until `PlayerList.respawn` removes the old entity. Mirrors `PlayerList.respawn`, `Entity.setRemoved` / `Entity.unRide`, and `ServerPlayer.setGameMode` / `Entity.stopRiding` (audit row 16) | Not yet |
 | Scheduled block and fluid ticks use elapsed game time while chunks are outside simulation distance; overdue ticks run when simulation resumes, with a 65,536 budget per type, clean chunks resave elapsed or drained tick lists, both schedulers retire before public chunk removal without allocating empty wheels, late producers append to the frozen image and newer mutations retry publication, and completed unload/save/reload preserves relative delays until first simulation. Pending reload copies run off the Tokio worker, clock-only progress permits a finite save to finish while queue mutations still retry, block/biome/light edits version saved content independently of clock dirtiness, and both saved tick lists share one game-time snapshot (PR #147; PR #136 review) | Not yet |
 | [#110] Charged respawn anchors set a Nether spawn or explode in unsafe dimensions when used without glowstone | Not yet; positional `RESPAWN_ANCHOR_WORKS` environment-attribute overrides are not evaluated |
 | Bedrock block use and placement consume from the packet's hand once, with off-hand owner slots, observer equipment and modifiers synchronized after transaction actions; mirrors `ServerPlayerGameMode.useItemOn` and `LivingEntity.detectEquipmentUpdates` | Not yet |
@@ -1197,6 +2366,9 @@ Fixes with no upstream issue number, and what the owner saw when testing them.
 ## Native plugin API 8
 
 - API 8 (same version): block-item use adds `ItemBehaviour::use_on_block_with_hand` and `ItemRegistry::use_on_block_with_hand` so item callbacks receive the packet hand; the default trait method preserves existing callback behavior, while the trait vtable changes. Rebuild native plugins against this checkout; Wasm WIT is unchanged. In-game verification: Not yet.
+
+- API 8 (same version): issues #14 and #15 add private speed state to furnace block entity layouts and methods to the public `CookingBlockEntityBase` trait/vtable. Native plugins using these types or trait objects must rebuild against this checkout; saved speed uses vanilla `speed_multiplier` and defaults to 1.0 for old saves. The exported cooking macros remain usable from external crates through a public, documentation-hidden fuel helper and the shared item crafting-remainder resolver. Wasm WIT is unchanged. In-game verification: Not yet.
+
 - API 8 (same version): #141 adds `PlayerInventory::replace_stack_if_unchanged` for identity-checked hand writeback. Rebuild native plugins against this checkout; saved data and Wasm WIT are unchanged. In-game verification **Not yet**.
 
 - API 8 (same version): the tick watchdog changes `Server` layout through its crate-private `watchdog` field and adds `Server::start_watchdog`. Rebuild native plugins; Wasm WIT is unchanged. In-game verification **Not yet**.
@@ -1435,6 +2607,18 @@ Callback reconciliation retains changed attribute identities in the existing equ
 
 PR #141 round 6: Java and Bedrock placements claim the pinned source after cancellable placement callbacks and before installing the block. Moved or replaced stacks reject placement and correct predicted blocks; a changed target refunds the claim without overwriting callback stock. Block-entity components come only from the claimed source, and Creative keeps its item. Mirrors vanilla 26.3 `BlockItem.place/placeBlock/updateBlockEntityComponents` and `ServerGamePacketListenerImpl.handleUseItemOn`; Pumpkin claims before effects to preserve vanilla's same-stack payment across callbacks. API 8 (same version); native plugins calling `BlockRegistry::place_block` must stop performing an additional payment. Saved data and Wasm WIT are unchanged. In-game verification: **Not yet**.
 
+## Pitcher-crop bonemeal admission (#10)
+
+Pitcher-crop bonemeal now shares vanilla 26.3 `PitcherCropBlock.canGrow` checks
+for age, light, upper build height and available space. It resolves clicks on
+either half, rechecks after `BlockFertilizeEvent`, and keeps an obstructing block
+and the bone meal unchanged when growth is rejected. In-game verification: Not yet.
+
+Play test: Bone meal an age-two pitcher crop with open space above it; expect a
+two-block crop and one bone meal used. Put a diamond block above an age-two crop
+and bone meal it; expect the diamond, crop age and bone-meal count to stay the
+same. Bone meal the upper half of an age-three crop; expect it to reach age four.
+
 ## PR #177 glass-bottle source-water pickup
 
 Glass bottles use the nearest block-outline or source-fluid hit with the main-hand collision context and the player's block interaction range. Only a source-water block can be collected; flowing water and waterlogged-only fluid remain unchanged. The cancellable pre-use event sees the same hit used by the bottle action. World-border and spawn protection are checked before effects; the neutral fill sound, `FLUID_PICKUP`, statistic and exact-slot bottle transaction follow vanilla 26.3 order. Dragon-breath pickup keeps precedence, and overflow potion drops use the player's drop position through `create_filled_result`. Mirrors `BottleItem.use/turnBottleIntoItem`, `Item.getPlayerPOVHitResult`, `BlockGetter.clip` and `ServerLevel.mayInteract`. No public plugin API changes. In-game verification: **Not yet**.
@@ -1442,6 +2626,12 @@ Glass bottles use the nearest block-outline or source-fluid hit with the main-ha
 ## Dolphin swim-with-player goal (#157)
 
 Dolphins acquire the nearest noncombat player within 10 blocks, ignoring line of sight, when that player is swimming and is not the dolphin's combat target. They look toward and follow that player at speed 4, stop within 2.5 blocks, and continue while the player stays within 16 blocks. Starting the goal and its one-in-six swimming refresh grant 100 ticks of Dolphin's Grace through the existing effect event and packet path; the player is revalidated after callbacks before the effect commits. Mirrors vanilla 26.3 `Dolphin.SWIM_WITH_PLAYER_TARGETING`, `DolphinSwimWithPlayerGoal` and `Dolphin.registerGoals`. No public plugin API, saved-data or WIT changes. In-game verification: Not yet.
+
+Issue #157 follow-up: visibility applies the target predicate's normal distance scaling while line of sight remains ignored; initial Grace accepts exactly 10 blocks, continuation remains strictly inside 16 blocks, and the follow goal at priority 2 can preempt melee at priority 6. Regression tests cover invisible and visible acquisition, both distance boundaries, an already-running melee goal, ordinary combat-target continuation, and panic-goal interruption. Public API 8, saved data and WIT are unchanged. In-game verification: Not yet.
+
+PR #339 round 2 removes random jump, wander and look candidates from the melee-priority setup and resets entity age before each direct tick so the full selector runs. The companion continuation and panic scenario retains the intact selector. No runtime behavior changed.
+
+Play test: With a sprint-swimming player and a dolphin, verify an invisible player at five blocks is not acquired while a visible player at five blocks and an invisible player nearby are acquired. Verify initial Grace at exactly 10 blocks, no acquisition just outside 10, continued following just inside 16, and stopping at exactly 16. Give the dolphin a combat target, then bring a different swimmer nearby; following should preempt melee and grant Grace. Finally hit the dolphin with a panic-causing source near water; escape behavior should interrupt following.
 
 PR #228 review: effect insertion, dependent attributes, visibility, particle metadata
 and the absorption start hook now commit under one synchronous combat owner before
@@ -1479,3 +2669,13 @@ rebind it; expect the copy to retain its name and component removals.
 Repeat in Creative with space and with a full inventory; expect a bound copy in
 the free slot and no ground copy when full. Capture the holder and a nearby
 observer.
+
+## PR #195 owner review
+
+World setup sends current health instead of healing dimension travelers to twenty. Respawn still restores maximum health explicitly. Pearl arrivals register entity tracking before damage while remaining outside destination player ticks until the effects finish. Lethal hits resolve the tracked arrival and retain its player reference for the cancellable death event, inventory drops and death packet before publication. Damage admission retires its pending hurt before releasing the serial owner. No saved-data meaning, native public type/layout, or plugin API version changes. Written by Codex (GPT-6.1 Sol). In-game verification: **Not yet**.
+
+Round 2 keeps login and respawn loading immunity for every damage type. Only an accepted pearl transfer whose player was already loaded receives permission for that individual hit, including callback revalidation; damage triggered inside a callback gets no such permission. Public entity/player lookup resolves the tracked arrival in its current world before destination ticks begin, so protection handlers can identify and cancel its damage. The death path uses that same identity-checked lookup. No saved-data meaning or public native type/layout changes; API 8 stays unchanged. In-game verification: **Not yet**.
+
+Checked against official Java 26.3 `ServerPlayer.isInvulnerableTo/teleport`, `ServerGamePacketListenerImpl.hasClientLoaded/teleport` and `ThrownEnderpearl.onHit`, decompiled with Vineflower 1.12.0 (inner server JAR SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
+
+Play test: with four hearts, land a pearl in another dimension; expect one and a half hearts, one hurt animation and the teleport sound on arrival. Have a nearby spectator record the arrival and hurt animation. Change dimensions normally at four hearts; expect four hearts afterward. Cancel a pearl transfer with a teleport plugin; expect unchanged health and fall state and no teleport sound. After a mace smash, pearl upward and then fall normally; expect ordinary fall damage. Rejoin at two hearts while a friend releases your stasis pearl before the loading screen finishes; expect to survive at two hearts. With a protection plugin cancelling pearl damage after looking up the victim, land a cross-dimension pearl at two hearts; expect to survive at two hearts.

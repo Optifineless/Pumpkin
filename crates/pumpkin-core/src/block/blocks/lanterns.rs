@@ -3,6 +3,7 @@ use crate::block::{
     OnScheduledTickArgs, PathComputationType,
 };
 use crate::world::World;
+use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{
     BlockDirection, BlockState, BlockStateId, block_properties::LanternLikeProperties, tag,
@@ -18,12 +19,24 @@ pub struct LanternBlock;
 impl BlockBehaviour for LanternBlock {
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = pumpkin_data::block_properties::LanternLikeProperties::default(args.block);
-        props.r#waterlogged = args.replacing.water_source();
+        let (fluid, _) = args.world.get_fluid_and_fluid_state(args.position);
+        props.r#waterlogged = fluid.matches_type(&Fluid::WATER);
 
-        let block_up_state = args.world.get_block_state(&args.position.up());
-        if block_up_state.is_center_solid(BlockDirection::Down) {
-            props.r#hanging = true;
-        }
+        // OnPlaceArgs.direction points back to the clicked support; BlockPlaceContext takes
+        // the clicked face, so invert it before using the shared vanilla context ordering.
+        let directions = crate::block::blocks::vine::get_nearest_looking_directions(
+            args.player,
+            args.position == &args.use_item_on.position,
+            args.direction.opposite(),
+        );
+        let Some(direction) = directions.into_iter().find(|direction| match direction {
+            BlockDirection::Up => can_survive(args.world, args.position, true),
+            BlockDirection::Down => can_survive(args.world, args.position, false),
+            _ => false,
+        }) else {
+            return BlockStateId::AIR;
+        };
+        props.r#hanging = direction == BlockDirection::Up;
 
         props.to_state_id(args.block)
     }
@@ -38,11 +51,26 @@ impl BlockBehaviour for LanternBlock {
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
         let props = LanternLikeProperties::from_state_id(args.state_id);
-        if !can_survive(args.world, args.position, props.r#hanging) {
-            args.world
-                .schedule_block_tick(args.block, *args.position, 1, TickPriority::Normal);
+        if props.r#waterlogged {
+            args.world.schedule_fluid_tick(
+                &Fluid::WATER,
+                *args.position,
+                Fluid::WATER.flow_speed as u8,
+                TickPriority::Normal,
+            );
         }
-        args.state_id
+        let support_direction = if props.r#hanging {
+            BlockDirection::Up
+        } else {
+            BlockDirection::Down
+        };
+        if args.direction == support_direction
+            && !can_survive(args.world, args.position, props.r#hanging)
+        {
+            BlockStateId::AIR
+        } else {
+            args.state_id
+        }
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {

@@ -55,6 +55,7 @@ pub mod weathering_copper;
 // Decorative & furnishings
 pub mod banners;
 pub mod bed;
+mod bed_pair;
 pub mod carpet;
 pub mod chiseled_bookshelf;
 pub mod conduit;
@@ -148,6 +149,8 @@ pub mod growing_plant;
 mod beacon_regression_tests;
 #[cfg(test)]
 mod hunt_plants_tests;
+#[cfg(test)]
+mod note_sound_tests;
 #[cfg(test)]
 mod note_tests;
 #[cfg(test)]

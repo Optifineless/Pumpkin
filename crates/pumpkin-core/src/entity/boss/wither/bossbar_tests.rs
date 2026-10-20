@@ -431,3 +431,6 @@ async fn b1020_g03_wither_range_health_and_normal_death_controls() {
     })
     .await;
 }
+
+#[path = "bossbar_review_tests.rs"]
+mod review_tests;

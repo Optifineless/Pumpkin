@@ -353,3 +353,64 @@ async fn r6_java_normal_shulker_pays_once() -> TestResult {
 async fn r6_java_creative_shulker_keeps_stock() -> TestResult {
     java_placement(Hand::Right, Edit::None, true).await
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g06_bedrock_door_placement_control() -> TestResult {
+    let fixture = HandUseFixture::new().await;
+    let player = fixture.owner.player.clone();
+    let lower = BlockPos::new(8, 64, 8);
+    let world = fixture.world.world();
+    for position in [lower.down(), lower, lower.up()] {
+        world.set_block_state(
+            &position,
+            if position == lower.down() {
+                Block::STONE.default_state.id
+            } else {
+                Block::AIR.default_state.id
+            },
+            pumpkin_world::world::BlockFlags::FORCE_STATE
+                | pumpkin_world::world::BlockFlags::UPDATE_KNOWN_SHAPE,
+        );
+    }
+    player.get_entity().set_pos(Vector3::new(8.5, 64.0, 10.5));
+    player.get_entity().set_rotation(180.0, 0.0);
+    player.inventory().set_selected_slot(4);
+    let stack = ItemStack::new(2, &Item::OAK_DOOR);
+    player.inventory().set_stack(4, stack.clone());
+    let packet = click_block_packet(
+        &player,
+        HandSlot::Mainhand,
+        lower.down(),
+        &stack,
+        vec![action(
+            Some(WINDOW_ID_INVENTORY),
+            4,
+            NetworkItemDescriptor::from(&stack),
+            NetworkItemDescriptor::from(ItemStack::EMPTY),
+        )],
+    );
+    fixture
+        .owner
+        .client()
+        .handle_inventory_action(&player, packet);
+
+    fixture
+        .verify_and_close(|fixture| {
+            assert_eq!(world.get_block(&lower), &Block::OAK_DOOR);
+            assert_eq!(world.get_block(&lower.up()), &Block::OAK_DOOR);
+            let lower_state = pumpkin_data::block_properties::OakDoorLikeProperties::from_state_id(
+                world.get_block_state_id(&lower),
+            );
+            assert_eq!(
+                lower_state.facing,
+                pumpkin_data::block_properties::HorizontalFacing::North,
+            );
+            assert_eq!(
+                fixture.owner.player.inventory().get_stack(4).item_count,
+                1,
+                "Bedrock placement pays once through its handler"
+            );
+            Ok(())
+        })
+        .await
+}

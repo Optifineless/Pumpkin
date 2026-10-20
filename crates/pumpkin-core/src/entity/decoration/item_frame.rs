@@ -17,7 +17,9 @@ use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::vector3::Vector3;
 
 use super::hanging;
+use crate::world::map::FrameAttachment;
 use crate::{block::blocks::redstone::is_diode, server::Server};
+use pumpkin_data::data_component_impl::MapIdImpl;
 
 /// An item frame or glow item frame.
 ///
@@ -28,6 +30,7 @@ pub struct ItemFrameEntity {
     entity: Entity,
     item_stack: Mutex<Arc<ItemStack>>,
     item_revision: AtomicU64,
+    map_attachment: AtomicCell<Option<FrameAttachment>>,
     /// Rotation of the displayed item, always in `0..8`.
     rotation: AtomicU8,
     /// The direction the frame faces, i.e. the axis pointing away from the
@@ -53,6 +56,7 @@ impl ItemFrameEntity {
             entity,
             item_stack: Mutex::new(Arc::new(ItemStack::EMPTY.clone())),
             item_revision: AtomicU64::new(0),
+            map_attachment: AtomicCell::new(None),
             rotation: AtomicU8::new(0),
             facing: AtomicU8::new(facing),
             item_drop_chance: AtomicCell::new(1.0),
@@ -172,7 +176,9 @@ impl ItemFrameEntity {
         {
             return false;
         }
+        let cleanup = self.change_map_attachment(None, true);
         drop(item_guard);
+        self.finish_map_cleanup(cleanup);
         world.finish_entity_removal(self);
         self.entity.play_sound(self.get_break_sound());
         self.drop_item(cause, true);
@@ -287,9 +293,10 @@ impl ItemFrameEntity {
         }
 
         let play_sound = !item_stack.is_empty();
-        let has_map = item_stack
-            .get_data_component::<pumpkin_data::data_component_impl::MapIdImpl>()
-            .is_some();
+        let map_id = item_stack
+            .get_data_component::<MapIdImpl>()
+            .map(|map| map.id);
+        let has_map = map_id.is_some();
         let mut current = self
             .item_stack
             .lock()
@@ -302,7 +309,12 @@ impl ItemFrameEntity {
         self.entity
             .bounding_box
             .store(self.create_bounding_box(has_map));
+        let cleanup_old = self.map_attachment.load().is_some_and(|old| {
+            Some(old.map_id) != map_id || old.pos != self.entity.block_pos.load()
+        });
+        let cleanup = self.change_map_attachment(map_id, cleanup_old);
         drop(current);
+        self.finish_map_cleanup(cleanup);
         drop(retired);
         self.sync_item();
 
@@ -316,6 +328,47 @@ impl ItemFrameEntity {
             world.update_neighbors(&pos, None);
         }
         true
+    }
+
+    // Called only while the item transaction is held. Keep the old attachment
+    // position even when Entity.read_nbt has already installed a new Pos.
+    fn change_map_attachment(&self, map_id: Option<i32>, cleanup: bool) -> Option<i32> {
+        let old = self.map_attachment.load();
+        let new = map_id.map(|map_id| FrameAttachment {
+            map_id,
+            pos: self.entity.block_pos.load(),
+            frame: self.entity.entity_uuid,
+            runtime_id: self.entity.entity_id,
+            revision: self.item_revision.load(Ordering::Acquire),
+        });
+        if let Some(server) = self.entity.world.load().server.upgrade() {
+            server
+                .map_manager
+                .change_frame_attachment(old, new, cleanup);
+        }
+        self.map_attachment.store(new);
+        old.filter(|_| cleanup).map(|old| old.map_id)
+    }
+
+    fn finish_map_cleanup(&self, id: Option<i32>) {
+        if let Some(id) = id
+            && let Some(server) = self.entity.world.load().server.upgrade()
+        {
+            server.map_manager.finish_frame_cleanup(id);
+        }
+    }
+
+    fn remove_framed_map(&self, attachment: Option<FrameAttachment>, cleanup: bool) {
+        if let Some(old) = attachment
+            && let Some(server) = self.entity.world.load().server.upgrade()
+        {
+            server
+                .map_manager
+                .change_frame_attachment(Some(old), None, cleanup);
+            if cleanup {
+                server.map_manager.finish_frame_cleanup(old.map_id);
+            }
+        }
     }
 
     pub fn get_rotation(&self) -> u8 {
@@ -447,7 +500,7 @@ impl ItemFrameEntity {
         }
 
         let empty = Arc::new(ItemStack::EMPTY.clone());
-        let item_stack = {
+        let (item_stack, attachment) = {
             let mut item = self
                 .item_stack
                 .lock()
@@ -463,7 +516,7 @@ impl ItemFrameEntity {
             self.entity
                 .bounding_box
                 .store(self.create_bounding_box(false));
-            retired
+            (retired, self.map_attachment.swap(None))
         };
         self.sync_item();
         let item_stack = Arc::unwrap_or_clone(item_stack);
@@ -473,13 +526,12 @@ impl ItemFrameEntity {
                 .downcast_ref::<Player>()
                 .is_some_and(Player::is_creative)
         });
-
-        if is_creative_player {
-            return true;
-        }
-
         let world = self.entity.world.load_full();
-        if !world.level_info.load().game_rules.entity_drops {
+        let entity_drops = world.level_info.load().game_rules.entity_drops;
+        // ItemFrame.dropItem reads policy after setItem/copy callbacks. The owner
+        // rejects this retired token if a callback installed a newer attachment.
+        self.remove_framed_map(attachment, entity_drops || caused_by.is_none());
+        if !entity_drops || is_creative_player {
             return true;
         }
         let pos = self.entity.block_pos.load();
@@ -495,6 +547,17 @@ impl ItemFrameEntity {
             }
         }
         true
+    }
+}
+
+impl Drop for ItemFrameEntity {
+    fn drop(&mut self) {
+        // Chunk unload retires only runtime ownership; its saved marker remains.
+        if let Some(attachment) = self.map_attachment.load()
+            && let Some(server) = self.entity.world.load().server.upgrade()
+        {
+            server.map_manager.enqueue_frame_unload(attachment);
+        }
     }
 }
 
@@ -541,10 +604,15 @@ impl EntityBase for ItemFrameEntity {
     }
 
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
+        let observed = self.snapshot_item();
         let stack = nbt
             .get_compound("Item")
             .and_then(ItemStack::read_item_stack)
-            .map(Arc::new);
+            .unwrap_or_else(|| ItemStack::EMPTY.clone());
+        // ItemFrame.readAdditionalSaveData uses ItemStack.matches, including components.
+        let cleanup_old = !observed.is_empty() && !stack.are_equal(observed.as_ref());
+        let map_id = stack.get_data_component::<MapIdImpl>().map(|map| map.id);
+        let stack = Arc::new(stack);
         let rotation = (nbt.get_byte("ItemRotation").unwrap_or(0) as u8) % 8;
         let facing = nbt.get_byte("Facing").unwrap_or(0) as u8 % 6;
         let drop_chance = nbt.get_float("ItemDropChance").unwrap_or(1.0);
@@ -554,10 +622,10 @@ impl EntityBase for ItemFrameEntity {
             .item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if self.entity.is_removed() {
+        if self.entity.is_removed() || !Arc::ptr_eq(&item, &observed) {
             return;
         }
-        let retired = stack.map(|stack| std::mem::replace(&mut *item, stack));
+        let retired = std::mem::replace(&mut *item, stack);
         self.item_revision.fetch_add(1, Ordering::Release);
         self.rotation.store(rotation, Ordering::Relaxed);
         self.facing.store(facing, Ordering::Relaxed);
@@ -566,10 +634,37 @@ impl EntityBase for ItemFrameEntity {
         self.item_drop_chance.store(drop_chance);
         self.invisible.store(invisible, Ordering::Relaxed);
         self.fixed.store(fixed, Ordering::Relaxed);
+        let cleanup_old = cleanup_old
+            || self
+                .map_attachment
+                .load()
+                .is_some_and(|old| old.pos != self.entity.block_pos.load());
+        let cleanup = self.change_map_attachment(map_id, cleanup_old);
         drop(item);
+        self.finish_map_cleanup(cleanup);
         drop(retired);
         self.recalculate_bounding_box();
         self.sync_item();
+    }
+
+    fn tick_in_void(&self, caller: &dyn EntityBase) {
+        self.kill(caller);
+    }
+
+    fn kill(&self, _caller: &dyn EntityBase) {
+        let world = self.entity.world.load_full();
+        let item = self
+            .item_stack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !world.try_mark_entity_removed(&self.entity) {
+            return;
+        }
+        // ItemFrame.onKilled is independent of dropItem's Fixed/no-drop branches.
+        let cleanup = self.change_map_attachment(None, true);
+        drop(item);
+        self.finish_map_cleanup(cleanup);
+        world.finish_entity_removal(self);
     }
 
     fn get_entity(&self) -> &Entity {

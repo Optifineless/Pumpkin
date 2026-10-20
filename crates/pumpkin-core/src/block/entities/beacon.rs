@@ -50,7 +50,15 @@ impl BeaconBlockEntity {
 
     fn update_beam(&self, world: &World) {
         // BeaconBlockEntity.tick scans ten blocks per tick and publishes only completed beams.
-        let top = world.get_top_block(Vector2::new(self.position.0.x, self.position.0.z)) + 1;
+        let heightmap_top =
+            world.get_top_block(Vector2::new(self.position.0.x, self.position.0.z)) + 1;
+        // A WorldSurface below the beacon is stale, so scan to build height rather than hiding
+        // an obstruction above the beacon behind that low ceiling.
+        let top = if heightmap_top <= self.position.0.y {
+            world.get_top_y()
+        } else {
+            heightmap_top
+        };
         let mut last = self.last_check_y.load(Ordering::Relaxed);
         if last < self.position.0.y {
             last = self.position.0.y - 1;

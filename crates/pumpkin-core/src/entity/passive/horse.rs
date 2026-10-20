@@ -163,6 +163,28 @@ impl Animal for HorseEntity {
 }
 
 impl Mob for HorseEntity {
+    fn mob_java_spawn_attributes(
+        &self,
+    ) -> Option<Vec<pumpkin_protocol::java::client::play::Property>> {
+        Some(self.spawn_attributes())
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<crate::world::World>,
+        view: &crate::world::spawn_view::SpawnView<'_>,
+        group_data: Option<crate::entity::mob::spawn::SpawnGroupData>,
+    ) -> Option<crate::entity::mob::spawn::SpawnGroupData> {
+        if world
+            .server
+            .upgrade()
+            .is_none_or(|server| server.advanced_config.horse_spawn_stats.enabled)
+        {
+            self.randomize_attributes();
+        }
+        crate::entity::mob::movement::finalize_spawn_after_species(self, world, view, group_data)
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

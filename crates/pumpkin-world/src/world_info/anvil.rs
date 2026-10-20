@@ -20,9 +20,8 @@ use crate::world_info::{
     data_files::{
         minecraft_data_dir, read_game_rules, read_wandering_trader, read_weather,
         read_world_clocks, read_world_gen_settings, write_custom_boss_events_stub,
-        write_game_rules, write_scheduled_events_stub, write_scoreboard_stub,
-        write_stopwatches_stub, write_wandering_trader, write_weather, write_world_clocks,
-        write_world_gen_settings,
+        write_game_rules, write_scheduled_events_stub, write_stopwatches_stub,
+        write_wandering_trader, write_weather, write_world_clocks, write_world_gen_settings,
     },
     default_data_packs,
 };
@@ -518,10 +517,6 @@ impl WorldInfoWriter for AnvilLevelInfo {
             (
                 "scheduled_events.dat",
                 write_scheduled_events_stub(level_folder, data_version),
-            ),
-            (
-                "scoreboard.dat",
-                write_scoreboard_stub(level_folder, data_version),
             ),
             (
                 "stopwatches.dat",
@@ -1179,7 +1174,6 @@ mod test {
         let data_dir = temp_dir.path().join("data").join("minecraft");
         let expected_files = [
             "game_rules.dat",
-            "scoreboard.dat",
             "stopwatches.dat",
             "wandering_trader.dat",
             "world_clocks.dat",
@@ -1196,6 +1190,9 @@ mod test {
                 "Expected file {file_name} to exist in data/minecraft/"
             );
         }
+
+        // ScoreboardSaveData belongs to the server, not the level-info stub writer.
+        assert!(!data_dir.join("scoreboard.dat").exists());
 
         // Verify world_gen_settings.dat read
         let loaded_wgs =

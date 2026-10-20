@@ -201,6 +201,30 @@ async fn b1020_g01_spectator_does_not_block_mature_sleeper() {
     fixture.finish().await;
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020_g01_spectator_switch_wakes_mature_sleeper() {
+    let mut fixture = NightSkipFixture::new(None);
+    let sleeper = fixture.add_player_at_bed(FIRST_BED);
+    fixture.admit_sleep(&sleeper, FIRST_BED, 1);
+    fixture.tick_player(&sleeper, SLEEP_TICKS);
+    assert_eq!(sleeper.player.sleeping_since.load(), Some(100));
+
+    set_gamemode(&sleeper, GameMode::Spectator);
+    assert_eq!(sleeper.player.sleeping_since.load(), None);
+    assert_eq!(sleeper.player.sleeping_bed_pos.load(), None);
+    assert!(sleeper.player.get_entity().pose.load() != pumpkin_data::entity::EntityPose::Sleeping);
+
+    set_gamemode(&sleeper, GameMode::Survival);
+    fixture.world.tick_environment();
+    assert_stayed_at_night(&fixture.world);
+
+    fixture.admit_sleep(&sleeper, FIRST_BED, 2);
+    fixture.tick_player(&sleeper, SLEEP_TICKS);
+    fixture.world.tick_environment();
+    assert_advanced_to_next_day(&fixture.world);
+    fixture.finish().await;
+}
+
 async fn percentage_case(sleeping_gamemode: GameMode) -> bool {
     let mut fixture = NightSkipFixture::new(Some(50));
     let sleeper = fixture.add_player_at_bed(FIRST_BED);

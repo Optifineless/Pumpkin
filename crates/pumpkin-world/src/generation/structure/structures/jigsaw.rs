@@ -977,6 +977,18 @@ impl StructureGenerator for JigsawGenerator {
         &self,
         context: StructureGeneratorContext<'_>,
     ) -> Option<StructurePosition> {
+        self.get_structure_position_with_biome_check(context, None)
+    }
+}
+
+impl JigsawGenerator {
+    pub(in crate::generation::structure) fn get_structure_position_with_biome_check(
+        &self,
+        context: StructureGeneratorContext<'_>,
+        biome_check: Option<
+            &mut crate::generation::structure::biome_check::StructureBiomeCheck<'_, '_>,
+        >,
+    ) -> Option<StructurePosition> {
         let mut context = context;
         let structure = context
             .structure_key
@@ -1052,7 +1064,7 @@ impl StructureGenerator for JigsawGenerator {
             &self.start_pool
         };
 
-        JigsawPlacement::add_pieces(
+        JigsawPlacement::add_pieces_with_biome_check(
             &mut context,
             start_pool,
             start_jigsaw,
@@ -1064,6 +1076,7 @@ impl StructureGenerator for JigsawGenerator {
             dimension_padding,
             liquid_settings,
             &pool_alias_lookup,
+            biome_check,
         )
     }
 }

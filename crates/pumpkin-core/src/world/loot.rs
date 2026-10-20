@@ -12,6 +12,10 @@ use random::{LootRandom, with_random};
 use registry::{item_holders, registry_key, resolve_table, table_holders};
 use std::collections::BTreeSet;
 mod block_context;
+#[cfg(test)]
+mod captain_raid_tick_tests;
+#[cfg(test)]
+mod captain_tests;
 mod context;
 pub(super) use context::snapshot_entity;
 mod fishing_context;

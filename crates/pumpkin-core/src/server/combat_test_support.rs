@@ -12,6 +12,25 @@ fn make_player_data_storage(path: &std::path::Path, enabled: bool) -> ServerPlay
     ServerPlayerData::new(path.join("players"), Duration::from_secs(300), enabled)
 }
 
+fn management_services(
+    basic: &BasicConfiguration,
+    advanced: &AdvancedConfiguration,
+) -> (
+    Arc<crate::net::management::hub::ManagementHub>,
+    tokio_util::sync::CancellationToken,
+) {
+    let settings = Arc::new(crate::net::management::hub::ManagementSettings::new(
+        basic,
+        advanced,
+        &advanced.networking.management,
+    ));
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let hub = Arc::new(
+        crate::net::management::hub::ManagementHub::new_with_shutdown(settings, shutdown.clone()),
+    );
+    (hub, shutdown)
+}
+
 fn vanilla_data() -> VanillaData {
     VanillaData {
         banned_ip_list: RwLock::default(),
@@ -45,18 +64,8 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
     let advanced_config = AdvancedConfiguration::default();
     let telemetry_config = TelemetryConfig::default();
     let vanilla_data = vanilla_data();
-    let management_settings = Arc::new(crate::net::management::hub::ManagementSettings::new(
-        &basic_config,
-        &advanced_config,
-        &advanced_config.networking.management,
-    ));
-    let management_shutdown = tokio_util::sync::CancellationToken::new();
-    let management_hub = Arc::new(
-        crate::net::management::hub::ManagementHub::new_with_shutdown(
-            management_settings,
-            management_shutdown.clone(),
-        ),
-    );
+    let (management_hub, management_shutdown) =
+        management_services(&basic_config, &advanced_config);
     let permission_manager = Arc::new(PermissionManager::new());
     let command_dispatcher = ArcSwap::from_pointee(default_dispatcher(
         &permission_manager,
@@ -66,6 +75,7 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
     let level_data = level_data(path);
     let level_info = Arc::new(ArcSwap::from_pointee(level_data));
     let map_manager = MapManager::load(path).unwrap();
+    let (scoreboard, scoreboard_storage) = super::scoreboard_storage::load_scoreboard(path);
     map_manager.reconcile_counter(level_info.load().map_id);
     let listing = std::sync::Mutex::new(CachedStatus::new(
         &basic_config,
@@ -94,6 +104,9 @@ pub fn server_with_player_data(path: &std::path::Path, player_data_enabled: bool
         datapack_manager: Arc::new(crate::data::datapack::DatapackManager::new()),
         enchantment_manager: Arc::new(enchantment::EnchantmentManager::new()),
         worlds: ArcSwap::from_pointee(vec![]),
+        scoreboard,
+        scoreboard_audience: ArcSwap::from_pointee(vec![]),
+        scoreboard_storage,
         weather_data: Arc::new(std::sync::Mutex::new(
             pumpkin_world::world_info::data_files::WeatherData::from_level_data(&level_info.load()),
         )),

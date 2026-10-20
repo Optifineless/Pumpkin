@@ -186,6 +186,49 @@ async fn ordinary_unload_and_restart_restore_nested_riders_and_equipment() {
 }
 
 #[tokio::test]
+async fn removed_mount_detaches_surviving_passenger_before_save_reload() {
+    let fixture = Fixture::new();
+    let world = &fixture.world;
+    let mount = entity(&fixture, &EntityType::ZOMBIE_NAUTILUS);
+    let rider = entity(&fixture, &EntityType::DROWNED);
+    let rider_uuid = rider.get_entity().entity_uuid;
+    spawn_mount::attach_unpublished(&mount, rider.clone());
+    assert!(world.spawn_entity_with_passengers(&mount));
+
+    let pos = Vector2::new(0, 0);
+    let chunk = world.level.get_entity_chunk(pos).await.unwrap();
+    world.make_chunk_entities_live(&chunk, None);
+    mount.get_entity().remove();
+
+    assert!(rider.get_entity().get_vehicle().is_none());
+    assert!(
+        world
+            .entities
+            .load()
+            .iter()
+            .any(|entity| Arc::ptr_eq(entity, &rider))
+    );
+
+    world.remove_entities_in_chunks([pos]).await;
+    world.process_entity_chunk_lifecycle();
+    assert!(world.entities.load().is_empty());
+    let saved = chunk.data.lock().unwrap().clone();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].get_uuid("UUID"), Some(rider_uuid));
+    assert!(saved[0].get_list("Passengers").is_none());
+
+    world.level.clean_entity_chunks([pos]);
+    let fixture = fixture.restart().await;
+    let world = &fixture.world;
+    let chunk = world.level.get_entity_chunk(pos).await.unwrap();
+    world.make_chunk_entities_live(&chunk, None);
+    assert_eq!(world.entities.load().len(), 1);
+    let restored = world.get_entity_by_uuid(rider_uuid).unwrap();
+    assert!(restored.get_entity().get_vehicle().is_none());
+    fixture.finish().await;
+}
+
+#[tokio::test]
 async fn restored_tree_skips_unknown_passengers() {
     use pumpkin_nbt::tag::NbtTag;
     let fixture = Fixture::new();

@@ -16,7 +16,13 @@ pub mod beacon;
 pub mod bed;
 pub mod bell;
 pub mod blasting_furnace;
+#[cfg(test)]
+mod brewing_menu_tests;
 pub mod brewing_stand;
+#[cfg(test)]
+mod brewing_stand_test_support;
+#[cfg(test)]
+mod brewing_stand_tests;
 pub mod chest;
 pub mod chest_like_block_entity;
 pub mod chiseled_bookshelf;
@@ -35,6 +41,8 @@ mod hopper_container;
 mod hopper_transfer;
 pub mod jigsaw_block;
 pub mod jukebox;
+#[cfg(test)]
+mod jukebox_component_tests;
 pub mod lectern;
 pub mod map;
 pub mod mob_spawner;
@@ -561,3 +569,10 @@ mod test {
 
 #[cfg(test)]
 mod container_event_tests;
+
+#[cfg(test)]
+#[path = "furnace_like_block_entity_tests.rs"]
+mod furnace_like_block_entity_tests;
+
+#[cfg(test)]
+mod jukebox_packet_tests;

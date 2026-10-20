@@ -3,10 +3,18 @@
     reason = "These regressions require valid server fixtures"
 )]
 
-use super::dolphin_swim_with_player::DolphinSwimWithPlayerGoal;
+use super::{
+    dolphin_movement::DolphinJumpGoal, dolphin_swim_with_player::DolphinSwimWithPlayerGoal,
+};
 use crate::{
     entity::{
-        EntityBase, ai::goal::wander_around::WanderAroundGoal, death_test_world::DeathTestWorld,
+        EntityBase,
+        ai::goal::{
+            Goal, escape_danger::EscapeDangerGoal, look_around::RandomLookAroundGoal,
+            look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal,
+            wander_around::WanderAroundGoal,
+        },
+        death_test_world::DeathTestWorld,
         player::Player,
     },
     net::java::combat_test_support::TestPlayer,
@@ -18,16 +26,23 @@ use crate::{
     world::World,
 };
 use pumpkin_data::{
-    effect::StatusEffect, entity::EntityType, packet::clientbound::play::UPDATE_MOB_EFFECT,
+    Block, damage::DamageType, effect::StatusEffect, entity::EntityType,
+    packet::clientbound::play::UPDATE_MOB_EFFECT, potion::Effect, tag::Taggable,
 };
 use pumpkin_protocol::{
-    codec::var_int::VarInt, java::client::play::CUpdateMobEffect, ser::NetworkReadExt,
+    codec::var_int::VarInt,
+    java::{
+        client::play::CUpdateMobEffect,
+        server::play::{Action, SPlayerCommand, SPlayerPosition},
+    },
+    ser::NetworkReadExt,
 };
-use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_world::chunk::ChunkData;
+use pumpkin_world::world::BlockFlags;
 use std::sync::{
     Arc,
-    atomic::{AtomicUsize, Ordering::Relaxed},
+    atomic::{AtomicU32, AtomicUsize, Ordering::Relaxed},
 };
 
 fn add_chunk(world: &Arc<World>) {
@@ -35,6 +50,110 @@ fn add_chunk(world: &Arc<World>) {
         .level
         .loaded_chunks
         .insert(Vector2::new(0, 0), ChunkData::empty_sync(0, 0));
+}
+
+fn add_chunk_at(world: &Arc<World>, x: i32, z: i32) {
+    let chunk_pos = Vector2::new(x, z);
+    if !world.level.loaded_chunks.contains_key(&chunk_pos) {
+        world
+            .level
+            .loaded_chunks
+            .insert(chunk_pos, ChunkData::empty_sync(x, z));
+    }
+}
+
+fn add_water_for_player(world: &Arc<World>, position: Vector3<f64>) {
+    let x = position.x.floor() as i32;
+    let y = position.y.floor() as i32;
+    let z = position.z.floor() as i32;
+    add_chunk_at(world, x.div_euclid(16), z.div_euclid(16));
+    for water_y in y..=y + 2 {
+        world.set_block_state(
+            &BlockPos::new(x, water_y, z),
+            Block::WATER.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+    }
+}
+
+fn move_player(fixture: &DeathTestWorld, client: &TestPlayer, position: Vector3<f64>) {
+    client.client().handle_position(
+        &client.player,
+        &fixture.server,
+        &SPlayerPosition {
+            position,
+            collision: 0,
+        },
+    );
+    client.player.tick(&fixture.server);
+}
+
+fn start_sprinting_swimmer(fixture: &DeathTestWorld, client: &TestPlayer, position: Vector3<f64>) {
+    add_water_for_player(&fixture.world(), position);
+    move_player(fixture, client, position);
+    client.client().handle_player_command(
+        &client.player,
+        &SPlayerCommand {
+            entity_id: client.player.entity_id().into(),
+            action: Action::StartSprinting,
+            jump_boost: VarInt(0),
+        },
+        &fixture.server,
+    );
+    assert!(client.player.get_entity().is_sprinting());
+    assert!(client.player.is_swimming());
+}
+
+fn move_sprinting_swimmer(fixture: &DeathTestWorld, client: &TestPlayer, position: Vector3<f64>) {
+    add_water_for_player(&fixture.world(), position);
+    move_player(fixture, client, position);
+    assert!(client.player.is_swimming());
+}
+
+fn spawn_dolphin_with_refresh_roll(
+    fixture: &DeathTestWorld,
+    initial_roll: u32,
+) -> (Arc<dyn EntityBase>, Arc<AtomicU32>) {
+    let roll = Arc::new(AtomicU32::new(initial_roll));
+    let dolphin = DolphinSwimWithPlayerGoal::with_default_refresh_roll(roll.clone(), || {
+        spawn_dolphin(fixture)
+    });
+    (dolphin, roll)
+}
+
+fn is_goal_running<G: Goal + 'static>(dolphin: &Arc<dyn EntityBase>) -> bool {
+    dolphin
+        .get_mob()
+        .unwrap()
+        .get_mob_entity()
+        .goals_selector
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_goal_running::<G>()
+}
+
+fn add_invisibility(player: &Player) {
+    player.living_entity.add_effect(Effect {
+        effect_type: &StatusEffect::INVISIBILITY,
+        duration: 200,
+        amplifier: 0,
+        ambient: false,
+        show_particles: false,
+        show_icon: true,
+        blend: false,
+    });
+}
+
+fn effect_packet_count(packets: &[bytes::Bytes]) -> usize {
+    packets
+        .iter()
+        .filter(|packet| {
+            let mut packet = packet.as_ref();
+            packet
+                .get_var_int()
+                .is_ok_and(|id| id.0 == UPDATE_MOB_EFFECT.0)
+        })
+        .count()
 }
 
 fn spawn_dolphin(fixture: &DeathTestWorld) -> Arc<dyn EntityBase> {
@@ -106,7 +225,11 @@ fn assert_grace_duration(player: &Player, duration: i32) {
         .living_entity
         .get_effect(&StatusEffect::DOLPHINS_GRACE);
     assert!(effect.is_some(), "eligible swimmer did not receive Grace");
-    assert_eq!(effect.map_or(-1, |effect| effect.duration), duration);
+    assert_eq!(
+        effect.as_ref().map_or(-1, |effect| effect.duration),
+        duration
+    );
+    assert_eq!(effect.as_ref().map(|effect| effect.amplifier), Some(0));
 }
 
 struct MovePlayerOnGrace {
@@ -398,6 +521,270 @@ async fn b1019_g21_effect_callback_cannot_commit_after_player_disconnects() {
             .iter()
             .any(|player| Arc::ptr_eq(player, &client.player))
     );
+    assert!(!has_effect_packet(&client.take_packets()));
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g05_dolphin_visibility_scaled_acquisition() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    add_chunk(&world);
+    let mut client = TestPlayer::new(&world);
+    start_sprinting_swimmer(&fixture, &client, Vector3::new(5.0, 64.0, 0.0));
+    add_invisibility(&client.player);
+    assert!(client.player.get_entity().invisible.load(Relaxed));
+    let (dolphin, _) = spawn_dolphin_with_refresh_roll(&fixture, 1);
+    let expected_packet = grace_packet(&client);
+    client.take_packets();
+
+    tick_dolphin(&fixture, &dolphin);
+    assert!(client.player.is_swimming());
+    assert!(
+        !client
+            .player
+            .living_entity
+            .has_effect(&StatusEffect::DOLPHINS_GRACE),
+        "an invisible swimmer at five blocks must fail scaled acquisition"
+    );
+    assert!(!is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert!(!has_effect_packet(&client.take_packets()));
+
+    assert!(
+        client
+            .player
+            .living_entity
+            .remove_effect(&StatusEffect::INVISIBILITY)
+    );
+    client.take_packets();
+    tick_dolphin(&fixture, &dolphin);
+    assert_grace_duration(&client.player, 100);
+    assert!(client.take_packets().contains(&expected_packet));
+
+    move_sprinting_swimmer(&fixture, &client, Vector3::new(17.0, 64.0, 0.0));
+    tick_dolphin(&fixture, &dolphin);
+    assert!(!is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert!(
+        client
+            .player
+            .living_entity
+            .remove_effect(&StatusEffect::DOLPHINS_GRACE)
+    );
+    add_invisibility(&client.player);
+    move_sprinting_swimmer(&fixture, &client, Vector3::new(1.5, 64.0, 0.0));
+    client.take_packets();
+
+    tick_dolphin(&fixture, &dolphin);
+    assert!(client.player.get_entity().invisible.load(Relaxed));
+    assert_grace_duration(&client.player, 100);
+    assert!(client.take_packets().contains(&expected_packet));
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g05_dolphin_ten_block_start_grants_grace() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    add_chunk(&world);
+    let mut client = TestPlayer::new(&world);
+    start_sprinting_swimmer(&fixture, &client, Vector3::new(10.0, 64.0, 0.0));
+    let (dolphin, roll) = spawn_dolphin_with_refresh_roll(&fixture, 1);
+    let expected_packet = grace_packet(&client);
+    client.take_packets();
+
+    tick_dolphin(&fixture, &dolphin);
+    assert_grace_duration(&client.player, 100);
+    let initial_packets = client.take_packets();
+    assert!(initial_packets.contains(&expected_packet));
+    assert_eq!(effect_packet_count(&initial_packets), 1);
+    assert!(is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+
+    move_sprinting_swimmer(&fixture, &client, Vector3::new(17.0, 64.0, 0.0));
+    tick_dolphin(&fixture, &dolphin);
+    assert!(!is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert!(
+        client
+            .player
+            .living_entity
+            .remove_effect(&StatusEffect::DOLPHINS_GRACE)
+    );
+    client.take_packets();
+    move_sprinting_swimmer(&fixture, &client, Vector3::new(10.01, 64.0, 0.0));
+    tick_dolphin(&fixture, &dolphin);
+    assert!(
+        !client
+            .player
+            .living_entity
+            .has_effect(&StatusEffect::DOLPHINS_GRACE),
+        "acquisition outside ten blocks must not grant Grace"
+    );
+    assert!(!is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert!(!has_effect_packet(&client.take_packets()));
+
+    move_sprinting_swimmer(&fixture, &client, Vector3::new(5.0, 64.0, 0.0));
+    tick_dolphin(&fixture, &dolphin);
+    assert_grace_duration(&client.player, 100);
+    client.take_packets();
+    roll.store(0, Relaxed);
+    move_sprinting_swimmer(&fixture, &client, Vector3::new(15.99, 64.0, 0.0));
+    set_grace_duration(&client.player, 1);
+    client.take_packets();
+    tick_dolphin(&fixture, &dolphin);
+    assert_grace_duration(&client.player, 100);
+    assert!(has_effect_packet(&client.take_packets()));
+
+    move_sprinting_swimmer(&fixture, &client, Vector3::new(16.0, 64.0, 0.0));
+    set_grace_duration(&client.player, 1);
+    client.take_packets();
+    tick_dolphin(&fixture, &dolphin);
+    assert!(!is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert_grace_duration(&client.player, 1);
+    assert!(!has_effect_packet(&client.take_packets()));
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g05_follow_preempts_melee_and_preserves_vanilla_continuation() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    add_chunk(&world);
+    add_chunk_at(&world, 1, 0);
+    let mut attacker = TestPlayer::new(&world);
+    let mut swimmer = TestPlayer::new(&world);
+    world.players.store(Arc::new(vec![
+        attacker.player.clone(),
+        swimmer.player.clone(),
+    ]));
+    start_sprinting_swimmer(&fixture, &swimmer, Vector3::new(20.0, 64.0, 0.0));
+    move_player(&fixture, &attacker, Vector3::new(5.0, 64.0, 0.0));
+    let (dolphin, _) = spawn_dolphin_with_refresh_roll(&fixture, 1);
+    let dolphin_entity = dolphin.get_entity();
+    world.level_time.lock().unwrap().world_age = 20;
+    let target: Arc<dyn EntityBase> = attacker.player.clone();
+    dolphin
+        .get_mob()
+        .unwrap()
+        .get_mob_entity()
+        .set_target(Some(target));
+    {
+        let mob = dolphin.get_mob().unwrap();
+        let mut selector = mob
+            .get_mob_entity()
+            .goals_selector
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Keep random jump, swimming and look goals from affecting this priority test. The
+        // companion continuation test exercises the production selector with every goal present.
+        selector.remove_goal::<DolphinJumpGoal>(mob);
+        selector.remove_goal::<WanderAroundGoal>(mob);
+        selector.remove_goal::<LookAtEntityGoal>(mob);
+        selector.remove_goal::<RandomLookAroundGoal>(mob);
+    };
+    assert_eq!(world.get_world_age(), 20);
+    assert!(!attacker.player.is_swimming());
+    assert!(attacker.player.living_entity.is_alive());
+    assert!(
+        dolphin
+            .get_mob()
+            .unwrap()
+            .get_mob_entity()
+            .get_target()
+            .is_some()
+    );
+
+    for _ in 0..4 {
+        // Direct fixture ticks do not advance age; zero forces full selector evaluation instead
+        // of Mob::server_ai_step's age/entity-id throttle.
+        dolphin_entity.age.store(0, Relaxed);
+        tick_dolphin(&fixture, &dolphin);
+        if is_goal_running::<MeleeAttackGoal>(&dolphin) {
+            break;
+        }
+    }
+    assert!(is_goal_running::<MeleeAttackGoal>(&dolphin));
+    assert!(!is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+
+    move_sprinting_swimmer(&fixture, &swimmer, Vector3::new(3.0, 64.0, 0.0));
+    let expected_packet = grace_packet(&swimmer);
+    attacker.take_packets();
+    swimmer.take_packets();
+    dolphin_entity.age.store(0, Relaxed);
+    tick_dolphin(&fixture, &dolphin);
+    assert!(
+        is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin),
+        "priority-2 following must preempt an already-running melee goal"
+    );
+    assert!(!is_goal_running::<MeleeAttackGoal>(&dolphin));
+    assert_grace_duration(&swimmer.player, 100);
+    assert!(swimmer.take_packets().contains(&expected_packet));
+
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g05_vanilla_continuation_and_panic_controls() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    add_chunk(&world);
+    let mut client = TestPlayer::new(&world);
+    start_sprinting_swimmer(&fixture, &client, Vector3::new(5.0, 64.0, 0.0));
+    let (dolphin, roll) = spawn_dolphin_with_refresh_roll(&fixture, 1);
+    world.level_time.lock().unwrap().world_age = 20;
+    let expected_packet = grace_packet(&client);
+    client.take_packets();
+
+    tick_dolphin(&fixture, &dolphin);
+    assert!(is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert!(!is_goal_running::<MeleeAttackGoal>(&dolphin));
+    assert!(
+        dolphin
+            .get_living_entity()
+            .is_some_and(|living| living.get_last_damage_type().is_none()),
+        "no panic-causing hit should be present during the continuation control"
+    );
+
+    let target: Arc<dyn EntityBase> = client.player.clone();
+    dolphin
+        .get_mob()
+        .unwrap()
+        .get_mob_entity()
+        .set_target(Some(target));
+    roll.store(0, Relaxed);
+    set_grace_duration(&client.player, 1);
+    client.take_packets();
+    tick_dolphin(&fixture, &dolphin);
+    assert!(is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert!(!is_goal_running::<MeleeAttackGoal>(&dolphin));
+    assert_grace_duration(&client.player, 100);
+    assert!(client.take_packets().contains(&expected_packet));
+
+    let water = Vector3::new(1.0, 64.0, 0.0);
+    add_water_for_player(&world, water);
+    assert!(dolphin.get_living_entity().unwrap().damage(
+        client.player.as_ref(),
+        1.0,
+        DamageType::IN_FIRE
+    ));
+    dolphin.set_on_fire_for(1.0);
+    assert!(dolphin.get_entity().fire_ticks.load(Relaxed) > 0);
+    assert!(
+        dolphin
+            .get_living_entity()
+            .and_then(crate::entity::living::LivingEntity::get_last_damage_type)
+            .is_some_and(
+                |damage| damage.has_tag(&pumpkin_data::tag::DamageType::MINECRAFT_PANIC_CAUSES)
+            )
+    );
+    set_grace_duration(&client.player, 1);
+    client.take_packets();
+
+    tick_dolphin(&fixture, &dolphin);
+    assert!(is_goal_running::<EscapeDangerGoal>(&dolphin));
+    assert!(!is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin));
+    assert_grace_duration(&client.player, 1);
     assert!(!has_effect_packet(&client.take_packets()));
 
     fixture.server.shutdown().await;

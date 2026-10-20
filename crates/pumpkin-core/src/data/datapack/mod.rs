@@ -112,6 +112,11 @@ impl Default for DatapackManager {
 }
 
 impl DatapackManager {
+    #[cfg(test)]
+    pub(crate) fn load_vanilla_consume_effect_tags_for_test(&self) {
+        self.load_consume_effect_tags(&[], &[]);
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self {

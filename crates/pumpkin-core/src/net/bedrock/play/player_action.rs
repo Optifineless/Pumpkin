@@ -242,7 +242,10 @@ impl BedrockClient {
             {
                 let player_c = player.clone();
                 player.spawn_task(async move {
-                    player_c.world().respawn_player(&player_c, false).await;
+                    player_c
+                        .world()
+                        .respawn_player_with_outcome(&player_c, false, false)
+                        .await;
                 });
             }
             // TODO

@@ -162,13 +162,13 @@ fn search_radius(world: &World, suggestion: BlockPos) -> i32 {
             .worldborder
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let half = border.new_diameter / 2.0;
+        let (min_x, min_z, max_x, max_z) = border.bounds(0.0);
         let x = f64::from(suggestion.0.x);
         let z = f64::from(suggestion.0.z);
-        (x - (border.center_x - half))
-            .min(border.center_x + half - x)
-            .min(z - (border.center_z - half))
-            .min(border.center_z + half - z)
+        (x - min_x)
+            .min(max_x - x)
+            .min(z - min_z)
+            .min(max_z - z)
             .floor() as i64
     };
     if distance <= 1 {
@@ -239,15 +239,20 @@ fn no_collision_no_liquid(world: &World, pos: BlockPos) -> bool {
         world.for_each_collision_shape(state, &cell, None, &mut |shape| {
             collision |= shape.at_pos(cell).intersects(&bounds);
         });
-        if collision
-            || (state.is_liquid()
-                && BoundingBox::new_array([0.0; 3], [1.0; 3])
-                    .at_pos(cell)
-                    .intersects(&bounds))
-        {
+        let (fluid, fluid_state) = world.get_fluid_and_fluid_state(&cell);
+        let fluid_collision = if fluid_state.is_empty {
+            false
+        } else {
+            let height = f64::from(world.get_fluid_height(&cell, fluid, &fluid_state));
+            let min = cell.0.to_f64();
+            BoundingBox::new(min, min + Vector3::new(1.0, height, 1.0)).intersects(&bounds)
+        };
+        if collision || fluid_collision {
             return false;
         }
     }
+    // PlayerSpawnFinder.findSpawnPosition calls noCollision(null, playerBox, true),
+    // which exempts a null entity from world-border collision.
     !world
         .get_entities_at_box(&bounds.expand(
             COLLISION_EPSILON,

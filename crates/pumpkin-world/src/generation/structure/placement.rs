@@ -1,7 +1,7 @@
 use pumpkin_data::structures::{
     ConcentricRingsStructurePlacement, FrequencyReductionMethod, RandomSpreadStructurePlacement,
     SpreadType, StructurePlacement, StructurePlacementCalculator, StructurePlacementType,
-    StructureSet,
+    StructureSet, WeightedEntry,
 };
 use pumpkin_util::{
     math::floor_div,
@@ -38,6 +38,39 @@ pub struct GlobalStructureCache {
     structure_starts: OnceLock<DashMap<(StructureKeys, i32, i32), Option<StructurePosition>>>,
 }
 
+/// Returns the deterministic weighted fallback order for structures in a set.
+pub(crate) fn weighted_structure_order(
+    entries: &[WeightedEntry],
+    seed: u64,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> Vec<WeightedEntry> {
+    let mut candidates = entries.to_vec();
+    let large_feature_seed = get_large_feature_seed(seed, chunk_x, chunk_z);
+    let mut random = LegacyRand::from_seed(large_feature_seed);
+    let mut total_weight: u32 = candidates.iter().map(|entry| entry.weight).sum();
+    let mut ordered = Vec::with_capacity(candidates.len());
+
+    while !candidates.is_empty() {
+        let mut roll = random.next_bounded_i32(total_weight as i32);
+        let mut selected_idx = 0;
+
+        for (index, entry) in candidates.iter().enumerate() {
+            roll -= entry.weight as i32;
+            if roll < 0 {
+                selected_idx = index;
+                break;
+            }
+        }
+
+        let selected = candidates.remove(selected_idx);
+        total_weight -= selected.weight;
+        ordered.push(selected);
+    }
+
+    ordered
+}
+
 struct RingTask {
     initial_x: i32,
     initial_z: i32,
@@ -65,7 +98,8 @@ impl GlobalStructureCache {
     }
 
     /// Returns the memoized structure start for the given structure and start chunk,
-    /// computing it via `compute` on the first request and caching the result.
+    /// computing it outside cache guards on a miss and reusing the first published result.
+    /// Callers must use this generator's biome source, heights and generation context.
     ///
     /// Because a structure's placement depends only on its start chunk and the world
     /// seed, every chunk whose references overlap that structure can reuse the cached
@@ -82,8 +116,15 @@ impl GlobalStructureCache {
             return cached.value().clone();
         }
         let computed = compute();
-        cache.insert((key, chunk_x, chunk_z), computed.clone());
-        computed
+        // Pieces are mutable during placement. Concurrent misses must share the
+        // first published collector, including an already published absent start.
+        let published = cache
+            .entry((key, chunk_x, chunk_z))
+            .or_insert_with(|| computed.clone())
+            .value()
+            .clone();
+        drop(computed);
+        published
     }
 
     /// Calculates the 128 ring positions matching vanilla Minecraft's

@@ -217,9 +217,12 @@ impl JavaClient {
                 }
                 Status::DropItem => {
                     player.drop_held_item(false);
+                    // ServerPlayer.drop resets recharge after the drop, including empty/cancelled drops.
+                    player.last_attacked_ticks.store(0, Ordering::Relaxed);
                 }
                 Status::DropItemStack => {
                     player.drop_held_item(true);
+                    player.last_attacked_ticks.store(0, Ordering::Relaxed);
                 }
                 Status::ReleaseItemInUse => {
                     let item_in_use = player

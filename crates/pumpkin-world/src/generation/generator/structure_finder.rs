@@ -102,7 +102,6 @@ pub fn find_nearest_structure(
 /// and `/locate structure` use this instead of pointing at a placement-only
 /// candidate whose biome may reject the requested structure.
 #[must_use]
-#[expect(clippy::too_many_lines)]
 pub fn find_nearest_structure_start(
     origin: BlockPos,
     structure_set: &StructureSet,
@@ -110,23 +109,10 @@ pub fn find_nearest_structure_start(
     max_search_radius: i32,
     generator: &WorldGenerator,
 ) -> Option<(BlockPos, pumpkin_data::structures::StructureKeys)> {
-    use crate::{
-        biome::{BiomeSupplier, MultiNoiseBiomeSupplier},
-        generation::{
-            noise::router::{
-                multi_noise_sampler::MultiNoiseSampler,
-                surface_height_sampler::{
-                    SurfaceHeightEstimateSampler, SurfaceHeightSamplerBuilderOptions,
-                },
-            },
-            structure::{
-                lazily_generate_structure,
-                placement::should_generate_structure,
-                structures::{StructureGeneratorContext, create_chunk_random},
-            },
-        },
+    use crate::generation::structure::{
+        locate_start::{has_possible_biome, winner_at},
+        placement::should_generate_structure,
     };
-    use pumpkin_data::structures::Structure;
 
     let WorldGenerator::Noise(noise_generator) = generator else {
         return None;
@@ -135,6 +121,16 @@ pub fn find_nearest_structure_start(
     else {
         return None;
     };
+
+    // ChunkGeneratorStructureState.generatePositions intersects each requested
+    // structure with the configured source before preparing any placement scan.
+    let possible = noise_generator.biome_supplier.possible_biomes();
+    if !target_structures
+        .iter()
+        .any(|key| has_possible_biome(*key, &possible))
+    {
+        return None;
+    }
 
     let chunk_origin_x = origin.0.x >> 4;
     let chunk_origin_z = origin.0.z >> 4;
@@ -167,51 +163,10 @@ pub fn find_nearest_structure_start(
                     continue;
                 }
 
-                for &key in target_structures {
-                    let start =
-                        global_cache.get_or_compute_structure_start(key, chunk_x, chunk_z, || {
-                            let settings = noise_generator.settings;
-                            let mut height_sampler = SurfaceHeightEstimateSampler::generate(
-                                &noise_generator.base_router.surface_estimator,
-                                &SurfaceHeightSamplerBuilderOptions::new(
-                                    settings.shape.min_y as i32,
-                                    settings.shape.height as i32,
-                                    (settings.shape.height
-                                        / settings.shape.vertical_cell_block_count() as u16)
-                                        as usize,
-                                ),
-                            );
-                            let mut biome_sampler = MultiNoiseSampler::generate(
-                                &noise_generator.base_router.multi_noise,
-                            );
-                            let biome_supplier: &dyn BiomeSupplier =
-                                &MultiNoiseBiomeSupplier::OVERWORLD;
-                            let context = StructureGeneratorContext {
-                                seed: world_seed,
-                                chunk_x,
-                                chunk_z,
-                                random: create_chunk_random(world_seed, chunk_x, chunk_z),
-                                sea_level: settings.sea_level,
-                                min_y: (settings.shape.min_y as i32)
-                                    .max(noise_generator.dimension.min_y),
-                                height: settings
-                                    .shape
-                                    .height
-                                    .min(noise_generator.dimension.height as u16),
-                                height_sampler: Some(&mut height_sampler),
-                                structure_key: Some(key),
-                            };
-                            lazily_generate_structure(
-                                &key,
-                                Structure::get(&key),
-                                context,
-                                biome_supplier,
-                                &mut biome_sampler,
-                            )
-                        });
-                    let Some(_start) = start else {
-                        continue;
-                    };
+                if let Some(key) =
+                    winner_at(noise_generator, structure_set, &possible, chunk_x, chunk_z)
+                    && target_structures.contains(&key)
+                {
                     // Vanilla getLocatePos: chunkPos.getMinBlockX(), 0, chunkPos.getMinBlockZ()
                     let locate_x = chunk_x << 4;
                     let locate_z = chunk_z << 4;

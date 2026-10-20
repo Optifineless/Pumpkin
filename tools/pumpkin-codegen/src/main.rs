@@ -61,6 +61,7 @@ mod game_event;
 mod game_rules;
 mod instrument;
 mod item;
+mod item_brewing_fuel;
 mod item_nbt;
 mod jukebox_song;
 pub mod loot_table;

@@ -5,6 +5,7 @@ mod decorated_pot_break;
 mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
+    jukebox::JukeboxBlockEntity,
 };
 use crate::server::watchdog::markers::Phase;
 use dashmap::DashMap;
@@ -29,12 +30,18 @@ use std::{
 use tracing::{debug, error, info, trace, warn};
 
 mod active_chunks;
+mod bed_break;
+mod bed_use;
 #[cfg(test)]
 mod block_entity_capture_window_tests;
 mod block_entity_context;
+mod block_entity_notifications;
+#[cfg(test)]
+mod block_entity_registration_tests;
 pub mod brightness;
 #[cfg(test)]
 mod bucket_retirement_tests;
+mod cauldron;
 pub mod chunker;
 pub(crate) mod collision_shapes;
 mod dragon_parts;
@@ -53,8 +60,13 @@ pub(crate) mod neighbor_updater;
 mod particle_senders;
 mod pending_block_entity;
 pub(crate) use pending_block_entity::BlockEntityMutationPermit;
+mod player_lookup;
+mod player_respawn;
+#[cfg(test)]
+pub(crate) use player_respawn::test_support as respawn_test_support;
 pub mod portal;
 pub mod raid;
+pub(crate) mod raid_loot;
 pub mod random_sequences;
 #[cfg(test)]
 mod shared_state_tests;
@@ -203,9 +215,12 @@ pub mod entity_tracker;
 pub mod environment;
 mod experience_orbs;
 mod fishing_hook;
-mod game_events;
+pub(crate) mod game_events;
 pub(crate) mod generation_spawning;
 pub mod guard_effects;
+#[cfg(test)]
+#[path = "../entity/passive/horse_spawn_stats_persistence_tests.rs"]
+mod horse_spawn_stats_persistence_tests;
 #[cfg(test)]
 mod minecart_stall_tests;
 pub mod natural_spawner;
@@ -364,8 +379,8 @@ pub struct World {
     pub(crate) ticking_experience_orbs: arc_swap::ArcSwapOption<Vec<Arc<dyn EntityBase>>>,
     dragon_parts: DashMap<i32, Arc<crate::entity::boss::ender_dragon::EnderDragonPart>>,
     spawn_uuids: std::sync::Mutex<FxHashSet<uuid::Uuid>>,
-    /// The world's scoreboard, used for tracking scores, objectives, and display information.
-    pub scoreboard: owner_mutex::OwnerMutex<Scoreboard, pumpkin_util::sync::Scoreboard>,
+    /// The server scoreboard, shared with every other dimension.
+    pub scoreboard: scoreboard::SharedScoreboard,
     /// The world's worldborder, defining the playable area and controlling its expansion or contraction.
     pub worldborder: owner_mutex::OwnerMutex<Worldborder, pumpkin_util::sync::WorldBorder>,
     /// The world's time, including counting ticks for weather, time cycles, and statistics.
@@ -553,7 +568,7 @@ impl World {
             pending_entity_activations: crossbeam::queue::SegQueue::new(),
             dragon_parts: DashMap::new(),
             spawn_uuids: std::sync::Mutex::default(),
-            scoreboard: owner_mutex::OwnerMutex::new(Scoreboard::default()),
+            scoreboard: Scoreboard::shared_from_server(&server),
             worldborder: owner_mutex::OwnerMutex::new(Worldborder::new(
                 0.0,
                 0.0,
@@ -1694,25 +1709,7 @@ impl World {
         self.update_active_chunks();
         Phase::Environment.enter();
         self.tick_environment();
-        let mut raids = {
-            let mut guard = self
-                .raids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::take(&mut *guard)
-        };
-        raids.tick(self);
-        {
-            let mut guard = self
-                .raids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (id, raid) in guard.raid_map.drain() {
-                raids.raid_map.insert(id, raid);
-            }
-            raids.next_id = raids.next_id.max(guard.next_id);
-            *guard = raids;
-        };
+        raid_loot::tick_raids(self);
 
         let t_chunks = std::time::Instant::now();
         Phase::ChunkTicks.enter();
@@ -3218,6 +3215,7 @@ impl World {
         // Actors come from the tracker, in range only.
         self.pair_new_player_with_tracked_entities(&player);
 
+        player.send_scoreboard();
         player.has_played_before.store(true, Ordering::Relaxed);
 
         // 3. Trigger Join Event and Broadcast Join Message
@@ -3673,7 +3671,8 @@ impl World {
         chunker::update_position(player);
         // Update commands
 
-        player.set_health(20.0);
+        // ServerPlayer dimension changes preserve health; respawn resets it explicitly.
+        player.send_health_update();
     }
 
     pub fn explode(
@@ -3807,8 +3806,26 @@ impl World {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    /// Respawns `player` into this world (or its resolved respawn dimension).
+    ///
+    /// Kept with its native plugin API 8 signature; internal callers use
+    /// [`Self::respawn_player_with_outcome`].
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        let _ = self.respawn_player_with_outcome(player, alive, false).await;
+    }
+
+    /// Returns `false` when the respawn was abandoned because the player's session
+    /// ended or the destination rejected it.
+    #[allow(clippy::too_many_lines)]
+    pub(crate) async fn respawn_player_with_outcome(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+        alive: bool,
+        hardcore_spectator: bool,
+    ) -> bool {
+        if !self.can_respawn_player(player) {
+            return false;
+        }
         let last_pos = player.get_entity().last_pos.load();
         let death_dimension = ResourceLocation::from(player.world().dimension.minecraft_name);
         let death_location = BlockPos(Vector3::new(
@@ -3841,6 +3858,9 @@ impl World {
         let (position, yaw, pitch, respawn_dimension) = if let Some(respawn) =
             player.calculate_respawn_point().await
         {
+            if !self.can_respawn_player(player) {
+                return false;
+            }
             (
                 respawn.position,
                 respawn.yaw,
@@ -3858,6 +3878,9 @@ impl World {
                 player
                     .send_client_packet(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
                     .await;
+                if !self.can_respawn_player(player) {
+                    return false;
+                }
                 let mut guard = player
                     .respawn_point
                     .lock()
@@ -3878,7 +3901,10 @@ impl World {
                 .await
                 .is_none()
             {
-                return;
+                return false;
+            }
+            if !self.can_respawn_player(player) {
+                return false;
             }
             let top = default_world.get_top_block(Vector2::new(spawn_x, spawn_z));
             let pos_y = if top > default_world.dimension.min_y {
@@ -3905,6 +3931,9 @@ impl World {
         );
         if let Some(ref s) = server {
             s.plugin_manager.fire(s, &mut spawn_loc_event).await;
+        }
+        if !self.can_respawn_player(player) {
+            return false;
         }
         let position = spawn_loc_event.spawn_pos;
 
@@ -3944,6 +3973,9 @@ impl World {
                     cancelled: false,
                 };
                 s.plugin_manager.fire(s, &mut event).await;
+                if !self.can_respawn_player(player) {
+                    return false;
+                }
 
                 if event.cancelled {
                     (None, position, yaw, pitch)
@@ -3960,17 +3992,12 @@ impl World {
                             self.dimension.minecraft_name, destination.dimension.minecraft_name
                         );
 
-                        // Detach from the old world before publishing into the new one, so no
-                        // observer sees the player in a world whose chunk manager doesn't match.
-                        self.remove_player(player, false).await;
-                        player.unload_watched_chunks(self).await;
-                        player.change_world_chunks(&self.level, &destination);
-                        player.living_entity.entity.set_world(destination.clone());
-                        destination.players.rcu(|current_list| {
-                            let mut new_list = (**current_list).clone();
-                            new_list.push(player.clone());
-                            new_list
-                        });
+                        if !self
+                            .transfer_respawning_player(player, &destination, position)
+                            .await
+                        {
+                            return false;
+                        }
                     }
 
                     (Some(destination), position, yaw, pitch)
@@ -3996,6 +4023,13 @@ impl World {
             |new_world| (new_world.clone(), position, yaw, pitch),
         );
 
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
+
+        // PlayerList.respawn removes the old entity before publishing its replacement.
+        player.get_entity().unride_for_respawn();
+
         // Notify plugins that the player has respawned (non-cancellable).
         if let Some(server) = self.server.upgrade() {
             server
@@ -4013,6 +4047,9 @@ impl World {
                     ),
                 )
                 .await;
+        }
+        if !target_world.can_respawn_player(player) {
+            return false;
         }
 
         // Send respawn packet with target dimension (using send_packet_now to ensure proper order)
@@ -4032,6 +4069,9 @@ impl World {
                 data_kept,
             ))
             .await;
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
 
         // Inform the client of the default spawn position so the client doesn't
         // fall back to (0, 2, 0) while the world reloads (fixes rubberbanding).
@@ -4063,6 +4103,9 @@ impl World {
                 },
             )
             .await;
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
 
         player.restore_inventory_after_respawn(alive);
         player.living_entity.reset_state();
@@ -4076,6 +4119,15 @@ impl World {
         player.get_entity().set_pos(position);
         player.get_entity().set_rotation(yaw, pitch);
         player.get_entity().last_pos.store(position);
+
+        if hardcore_spectator {
+            // ServerGamePacketListenerImpl.handleClientCommand persists hardcore mode before chunk waits.
+            player.set_gamemode(pumpkin_util::GameMode::Spectator);
+        }
+        // Game-mode callbacks may complete departure before tracker publication.
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
 
         // TODO: difficulty, exp bar, status effect
 
@@ -4096,11 +4148,16 @@ impl World {
         target_world.send_world_info(player);
         target_world.send_center_chunk(player).await;
 
+        if !target_world.can_respawn_player(player) {
+            return true;
+        }
+
         // Send teleport packet after at least the center chunk was delivered
         // cancellation leaves the current position untouched.
         let _ = player.request_teleport(position, yaw, pitch);
 
         target_world.refresh_java_player_for_bedrock(player).await;
+        true
     }
 
     /// Returns true if enough players are sleeping and we should skip the night.
@@ -4244,7 +4301,9 @@ impl World {
                 return Some(player.clone());
             }
         }
-        None
+        self.entity_tracker
+            .get_tracked_entity(id)
+            .and_then(|tracked| self.player_from_tracking(&tracked))
     }
 
     /// Gets an entity by an entity id
@@ -4254,12 +4313,8 @@ impl World {
                 return Some(entity.clone());
             }
         }
-        for player in self.players.load().iter() {
-            if player.get_entity().entity_id == id {
-                return Some(player.clone() as Arc<dyn EntityBase>);
-            }
-        }
-        None
+        self.get_player_by_id(id)
+            .map(|player| player as Arc<dyn EntityBase>)
     }
 
     /// Gets a `Player` by a username
@@ -4269,7 +4324,7 @@ impl World {
                 return Some(player.clone());
             }
         }
-        None
+        self.find_tracked_player(|player| player.gameprofile.name.eq_ignore_ascii_case(name))
     }
 
     // Gets all entities at a Box
@@ -4324,10 +4379,11 @@ impl World {
     /// An `Option<Arc<Player>>` containing the player if found, or `None` if not.
     pub fn get_player_by_uuid(&self, id: uuid::Uuid) -> Option<Arc<Player>> {
         self.players
-            .load()
+            .load_full()
             .iter()
             .find(|p| p.gameprofile.id == id)
             .cloned()
+            .or_else(|| self.find_tracked_player(|player| player.gameprofile.id == id))
     }
 
     /// Retrieves an entity by their unique UUID.
@@ -4618,8 +4674,10 @@ impl World {
         self.players.rcu(|current_list| {
             removed_player = None;
             let mut new_list = (**current_list).clone();
-            // Find the player before we filter them out
-            let pos = new_list.iter().position(|p| Arc::ptr_eq(p, player));
+            // PlayerList.remove affects this connection's instance, not a later login with its UUID.
+            let pos = new_list
+                .iter()
+                .position(|current| Arc::ptr_eq(current, player));
             if let Some(pos) = pos {
                 removed_player = Some(new_list.remove(pos));
             }
@@ -4739,6 +4797,8 @@ impl World {
             tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
             return self.get_block_state_id(position);
         };
+        #[cfg(test)]
+        self.before_state_write_test(*position);
         let replaced_block_state_id = self
             .write_block_state_if(position, block_state_id, |_| true)
             .unwrap_or(Block::AIR.default_state.id);
@@ -4919,8 +4979,8 @@ impl World {
                 let mut neighbour_update_flags = flags;
                 neighbour_update_flags.remove(BlockFlags::NOTIFY_NEIGHBORS);
                 neighbour_update_flags.remove(BlockFlags::SKIP_REDSTONE_WIRE_STATE_REPLACEMENT);
-                // Suppressing drops for the changed block must not suppress drops
-                // from dependent blocks that lose their support (e.g. in Creative).
+                // Level.setBlock clears SKIP_DROPS before neighbour shape propagation;
+                // paired-bed teardown keeps suppression on its explicit break path.
                 neighbour_update_flags.remove(BlockFlags::SKIP_DROPS);
                 self.block_registry.prepare_with_limit(
                     self,
@@ -4935,6 +4995,9 @@ impl World {
                     position,
                     neighbour_update_flags,
                     update_limit - 1,
+                    retired.and_then(|retired| {
+                        retired.bed_partner_to_skip(self, replaced_block_state_id)
+                    }),
                 );
                 self.block_registry.prepare_with_limit(
                     self,
@@ -5014,7 +5077,21 @@ impl World {
             return None;
         }
 
+        if broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
+            || broken_block == &Block::STRAW_BED
+        {
+            return self.break_bed_block(
+                position,
+                cause,
+                cause,
+                flags,
+                update_limit,
+                broken_block_state.id,
+            );
+        }
+
         let ordinary_pot = self.prepare_pot_break(position, broken_block_state.id, pot.is_none());
+
         let mut flags = flags;
         if flags.contains(BlockFlags::SKIP_DROPS)
             && cause.is_some_and(|p| p.gamemode.load() == pumpkin_util::GameMode::Creative)
@@ -5082,32 +5159,7 @@ impl World {
             && broken_block != &Block::FIRE
             && broken_block != &Block::SOUL_FIRE
         {
-            let je_packet = CWorldEvent::new(
-                WorldEvent::ParticlesDestroyBlock as i32,
-                *position,
-                broken_state_id.as_u16().into(),
-                false,
-            );
-            let be_packet = CLevelEvent {
-                event_id: VarInt(LevelEvent::ParticlesDestroyBlock as i32),
-                position: position.to_centered_f64().to_f32_lossy(),
-                data: VarInt(BlockState::to_be_network_id(broken_state_id) as i32),
-            };
-            let chunk_pos = position.chunk_position();
-            if let Some(player) = cause {
-                // Java predicts its own break effect; Bedrock needs the server event.
-                if let ClientPlatform::Bedrock(client) = player.client.as_ref() {
-                    client.try_enqueue_client_packet(&be_packet);
-                }
-                self.broadcast_to_chunk_except_editioned(
-                    chunk_pos,
-                    &[player.get_entity().entity_uuid],
-                    &je_packet,
-                    &be_packet,
-                );
-            } else {
-                self.broadcast_to_chunk_editioned(chunk_pos, &je_packet, &be_packet);
-            }
+            self.send_block_destroy_effect(position, broken_state_id, cause);
         }
 
         Some(broken_state_id)
@@ -5942,8 +5994,16 @@ impl World {
                 hook();
             }
         }
-        let published =
-            self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(&registered));
+        let (notification, request) = self
+            .prepare_block_entity_notification(block_pos, &registered, block_entity_nbt)
+            .unzip();
+        let published = self.publish_block_entity_nbt(
+            block_pos,
+            &persistent_nbt,
+            stamp,
+            Some(&registered),
+            notification,
+        );
         if !published {
             tracing::warn!("Block entity persistence image rejected for {block_pos:?}");
         }
@@ -5952,16 +6012,24 @@ impl World {
         });
         drop(mutation);
 
-        if published && let Some(nbt) = &block_entity_nbt {
-            let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
-            self.broadcast_to_chunk(
-                chunk_pos,
-                &CBlockEntityData::new(
-                    registered.get_position(),
-                    VarInt(registered.get_id() as i32),
-                    bytes.as_ref().into(),
-                ),
-            );
+        if let Some(jukebox) = registered.as_any().downcast_ref::<JukeboxBlockEntity>() {
+            jukebox.notify_playback_power_if_changed();
+        }
+
+        #[cfg(test)]
+        if published {
+            let hook = self
+                .persistence_test_hooks
+                .registration_published
+                .lock()
+                .unwrap()
+                .take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+        if published && let Some(request) = request {
+            request.dispatch();
         }
     }
 
@@ -5974,7 +6042,7 @@ impl World {
             return;
         };
         let stamp = self.next_block_entity_capture_stamp();
-        if !self.publish_block_entity_nbt(block_pos, nbt, stamp, None) {
+        if !self.publish_block_entity_nbt(block_pos, nbt, stamp, None, None) {
             tracing::warn!(
                 "Block entity NBT addition rejected while chunk is unloading at {block_pos:?}"
             );
@@ -6051,8 +6119,16 @@ impl World {
             }
         }
 
-        let published =
-            self.publish_block_entity_nbt(block_pos, &persistent_nbt, stamp, Some(block_entity));
+        let (notification, request) = self
+            .prepare_block_entity_notification(block_pos, block_entity, block_entity_nbt)
+            .unzip();
+        let published = self.publish_block_entity_nbt(
+            block_pos,
+            &persistent_nbt,
+            stamp,
+            Some(block_entity),
+            notification,
+        );
         self.level.read_chunk_sync(&chunk_pos, |chunk| {
             chunk.mark_dirty(true);
         });
@@ -6062,16 +6138,8 @@ impl World {
                 "Block entity update rejected for detached or replaced entity at {block_pos:?}"
             );
         }
-        if published && let Some(nbt) = &block_entity_nbt {
-            let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
-            self.broadcast_to_chunk(
-                chunk_pos,
-                &CBlockEntityData::new(
-                    block_entity.get_position(),
-                    VarInt(block_entity.get_id() as i32),
-                    bytes.as_ref().into(),
-                ),
-            );
+        if published && let Some(request) = request {
+            request.dispatch();
         }
     }
 
@@ -6644,13 +6712,11 @@ impl World {
     }
 
     pub fn emit_game_event(&self, event_key: impl Into<String>, position: Vector3<f64>) {
-        let mut event = crate::plugin::api::events::world::generic_game::GenericGameEvent::new(
-            event_key.into(),
+        self.emit_game_event_with_context(
+            event_key,
             position,
+            game_events::GameEventContext::default(),
         );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
     }
 
     pub async fn unload(self: &Arc<Self>) {

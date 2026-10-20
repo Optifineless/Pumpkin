@@ -1,3 +1,4 @@
+use crate::block::entities::skull::SkullBlockEntity;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
     AttackArgs, GetStateForNeighborUpdateArgs, NormalUseArgs, OnNeighborUpdateArgs, OnPlaceArgs,
@@ -6,8 +7,10 @@ use crate::block::{
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{Axis, NoteblockInstrument};
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_data::{Block, block_properties::NoteBlockLikeProperties};
+use pumpkin_data::tag::Taggable;
+use pumpkin_data::{Block, BlockDirection, block_properties::NoteBlockLikeProperties, tag};
 use pumpkin_macros::pumpkin_block;
+use pumpkin_util::identifier::Identifier;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 
@@ -115,9 +118,18 @@ impl BlockBehaviour for NoteBlock {
         );
     }
 
-    fn use_with_item(&self, _args: UseWithItemArgs<'_>) -> BlockActionResult {
-        // TODO
-        BlockActionResult::PassToDefaultBlockAction
+    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
+        // NoteBlock.useItemOn lets top instruments reach ordinary BlockItem placement.
+        if args
+            .item_stack
+            .item
+            .has_tag(&tag::Item::MINECRAFT_NOTEBLOCK_TOP_INSTRUMENTS)
+            && *args.hit.face == BlockDirection::Up
+        {
+            BlockActionResult::Pass
+        } else {
+            BlockActionResult::PassToDefaultBlockAction
+        }
     }
 
     fn on_synced_block_event(&self, args: OnSyncedBlockEventArgs<'_>) -> bool {
@@ -130,14 +142,33 @@ impl BlockBehaviour for NoteBlock {
         } else {
             1.0 // default pitch
         };
-        // check hasCustomSound
-        args.world.play_sound_raw(
-            convert_instrument_to_sound(instrument) as u16,
-            SoundCategory::Records,
-            &args.position.to_f64(),
-            3.0,
-            pitch,
-        );
+        let position = args.position.to_centered_f64();
+        // NoteBlock.triggerEvent/getCustomSoundId reads the skull above the note block.
+        if instrument == NoteblockInstrument::CustomHead {
+            let sound = args
+                .world
+                .get_block_entity(&args.position.up())
+                .and_then(|entity| {
+                    let skull = entity.as_any().downcast_ref::<SkullBlockEntity>()?;
+                    skull.note_block_sound.lock().ok()?.clone()
+                });
+            let Some(sound) = sound.and_then(|sound| Identifier::parse(&sound).ok()) else {
+                return false;
+            };
+            args.world.play_custom_sound(
+                &sound.to_string(),
+                SoundCategory::Records,
+                &position,
+                3.0,
+                pitch,
+            );
+            return true;
+        }
+        let Some(sound) = convert_instrument_to_sound(instrument) else {
+            return false;
+        };
+        args.world
+            .play_sound_raw(sound as u16, SoundCategory::Records, &position, 3.0, pitch);
         true
     }
 
@@ -166,8 +197,8 @@ impl BlockBehaviour for NoteBlock {
     }
 }
 
-const fn convert_instrument_to_sound(instrument: NoteblockInstrument) -> Sound {
-    match instrument {
+const fn convert_instrument_to_sound(instrument: NoteblockInstrument) -> Option<Sound> {
+    Some(match instrument {
         NoteblockInstrument::Harp => Sound::BlockNoteBlockHarp,
         NoteblockInstrument::Basedrum => Sound::BlockNoteBlockBasedrum,
         NoteblockInstrument::Snare => Sound::BlockNoteBlockSnare,
@@ -190,12 +221,12 @@ const fn convert_instrument_to_sound(instrument: NoteblockInstrument) -> Sound {
         NoteblockInstrument::Dragon => Sound::BlockNoteBlockImitateEnderDragon,
         NoteblockInstrument::WitherSkeleton => Sound::BlockNoteBlockImitateWitherSkeleton,
         NoteblockInstrument::Piglin => Sound::BlockNoteBlockImitatePiglin,
-        NoteblockInstrument::CustomHead => Sound::UiButtonClick,
+        NoteblockInstrument::CustomHead => return None,
         NoteblockInstrument::Trumpet => Sound::BlockNoteBlockTrumpet,
         NoteblockInstrument::TrumpetExposed => Sound::BlockNoteBlockTrumpetExposed,
         NoteblockInstrument::TrumpetOxidized => Sound::BlockNoteBlockTrumpetOxidized,
         NoteblockInstrument::TrumpetWeathered => Sound::BlockNoteBlockTrumpetWeathered,
-    }
+    })
 }
 
 // Mirrors vanilla 26.3 `NoteBlockInstrument.Type.BASE_BLOCK`.

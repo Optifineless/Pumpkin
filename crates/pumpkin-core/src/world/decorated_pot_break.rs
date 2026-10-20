@@ -239,7 +239,7 @@ impl<'a> DecoratedPotBreak<'a> {
         }
         // The existing publication gate ties identity, terrain CAS and saved/live retirement.
         world.write_block_state_if(position, replacement, |state| state == self.expected)?;
-        Some(world.remove_loaded_block_entity_with_gate(position, &mut loads))
+        Some(world.remove_block_entity_under_publication_gate(position, &mut loads))
     }
 }
 

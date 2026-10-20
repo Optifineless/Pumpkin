@@ -24,6 +24,14 @@ impl LivingEntity {
         if may_fly || self.is_immune_to_fall_damage() {
             return;
         }
+        let (lifecycle, world, position) = {
+            let _owner = self.own_damage();
+            (
+                self.damage_lifecycle(),
+                self.entity.world.load_full(),
+                self.entity.pos.load(),
+            )
+        };
 
         // Player.causeFallDamage awards distance before Player.isInvulnerableTo gates hurt.
         if fall_distance >= 2.0
@@ -36,21 +44,33 @@ impl LivingEntity {
             );
         }
 
-        let fall_distance = self
-            .impulse
-            .effective_fall_distance(fall_distance, self.entity.pos.load().y);
-        let safe_fall_distance = self.get_attribute_value(&Attributes::SAFE_FALL_DISTANCE);
-        let unsafe_fall_distance = f64::from(fall_distance) + 1.0E-6 - safe_fall_distance;
+        let damage = {
+            let _owner = self.own_damage();
+            if !self.fall_context_current(caller, lifecycle, &world, position) {
+                return;
+            }
+            let fall_distance = self
+                .impulse
+                .effective_fall_distance(fall_distance, self.entity.pos.load().y);
+            let safe_fall_distance = self.get_attribute_value(&Attributes::SAFE_FALL_DISTANCE);
+            let unsafe_fall_distance = f64::from(fall_distance) + 1.0E-6 - safe_fall_distance;
 
-        // LivingEntity.calculateFallDamage applies the entity's attribute after the block modifier.
-        let multiplier = self.get_attribute_value(&Attributes::FALL_DAMAGE_MULTIPLIER);
-        let damage =
-            (unsafe_fall_distance * f64::from(damage_per_distance) * multiplier).floor() as f32;
+            // LivingEntity.calculateFallDamage applies the entity's attribute after the block modifier.
+            let multiplier = self.get_attribute_value(&Attributes::FALL_DAMAGE_MULTIPLIER);
+            let damage =
+                (unsafe_fall_distance * f64::from(damage_per_distance) * multiplier).floor() as f32;
+            if damage > 0.0 {
+                self.impulse.reset();
+            }
+            damage
+        };
         if damage > 0.0 {
-            self.impulse.reset();
             // LivingEntity.causeFallDamage plays the damage-based sound even if hurt rejects it.
             self.entity.play_sound(Self::get_fall_sound(damage as i32));
-            self.damage(caller, damage, damage_type);
+            let _owner = self.own_damage();
+            if self.fall_context_current(caller, lifecycle, &world, position) {
+                self.damage(caller, damage, damage_type);
+            }
         }
     }
 }

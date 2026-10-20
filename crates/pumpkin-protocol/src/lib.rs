@@ -424,21 +424,41 @@ pub enum NumberFormat {
 
 impl NumberFormat {
     pub fn write(&self, write: &mut impl ser::NetworkWriteExt) -> Result<(), ser::WritingError> {
+        self.write_for_version(write, &JavaMinecraftVersion::V_26_3)
+    }
+
+    pub fn write_for_version(
+        &self,
+        write: &mut impl ser::NetworkWriteExt,
+        version: &JavaMinecraftVersion,
+    ) -> Result<(), ser::WritingError> {
         match self {
             Self::Blank => write.write_var_int(&0.into()),
-            Self::Styled(_style) => {
+            Self::Styled(style) => {
                 write.write_var_int(&1.into())?;
-                // TODO: Style write
-                Ok(())
+                // StyledFormat.TYPE uses Style.Serializer.TRUSTED_STREAM_CODEC (NBT).
+                let mut component = TextComponent::empty();
+                *component.0.style = style.clone();
+                let mut fields = pumpkin_util::text::display_projection::component(&component, "")
+                    .0
+                    .to_nbt_compound_for_version(version);
+                fields.child_tags.remove("text");
+                write.write_compound_nbt_with_version(Some(&fields), version)
             }
             Self::Fixed(text) => {
                 write.write_var_int(&2.into())?;
-                write.write_slice(&text.encode())?;
-                Ok(())
+                write.write_component(
+                    &pumpkin_util::text::display_projection::component(text, ""),
+                    version,
+                )
             }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "codec/number_format_tests.rs"]
+mod number_format_tests;
 
 /// For the first 8 values set means relative value while unset means absolute
 #[derive(Debug, PartialEq, Eq, Hash)]
