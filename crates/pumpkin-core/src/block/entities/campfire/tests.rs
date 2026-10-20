@@ -15,6 +15,8 @@ use pumpkin_util::GameMode;
 use pumpkin_world::world::BlockFlags;
 use std::{future::Future, sync::atomic::AtomicUsize, time::Duration};
 
+mod cooldown_tests;
+
 const POS: BlockPos = BlockPos::new(8, 65, 8);
 
 async fn bounded(test: impl Future<Output = ()>) {
