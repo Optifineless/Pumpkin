@@ -89,10 +89,11 @@ async fn b1019_g16_end_return_uses_saved_bed_from_both_save_formats() {
             .await
             .unwrap()
             .unwrap();
+        let expected_x = if yaw == 0.0 { 7.5 } else { 9.5 };
         assert_eq!(
             valid.position,
-            Vector3::new(7.5, 64.1, 8.5),
-            "fixture bed must validate away from shared spawn"
+            Vector3::new(expected_x, 64.0, 8.5),
+            "vanilla 26.3 AbstractBedBlock.findStandUpPosition selects a yaw-ordered clear exit"
         );
         assert_eq!(valid.yaw, yaw);
         transfer(&fixture, &mut client).await;

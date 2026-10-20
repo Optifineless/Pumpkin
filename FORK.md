@@ -114,6 +114,38 @@ duration, extinguish the campfire with a shovel, then relight it. Expect cooling
 to stop at the duration, resume cooking normally, and preserve the uncooked
 food until cooking succeeds. Capture the campfire NBT, food stacks and any drops.
 
+## Bed respawn collision surfaces (#36)
+
+Bed respawn now follows the vanilla 26.3 yaw-selected candidate order, including
+bunk beds and both bed-surface candidates. It derives landing height from the
+collision shape and checks player clearance, invalid-spawn blocks and the full
+world-border bounds. Anchor and forced-spawn behavior, saved spawn data and
+respawn ownership are unchanged. Mirrors `AbstractBedBlock.findStandUpPosition`,
+`findBunkBedStandUpPosition`, `DismountHelper.findSafeDismountLocation` and
+`BlockGetter.getBlockFloorHeight`. Native API 8, public signatures and Wasm WIT
+are unchanged.
+
+PR #391 review round 2: lower bunk candidates now include straw beds, matching
+vanilla 26.3 `AbstractBedBlock.isBunkBed`, which checks the `AbstractBedBlock`
+family; `StrawBedBlock` extends that class but is not in the `minecraft:beds`
+tag. The mixed white-over-straw death-respawn regression exercises the Java
+respawn command and leaves only a lower exit clear. The saved-bed End-return
+fixture now expects the yaw-selected safe exit at floor height: x=9.5 for yaw
+27 and 180, x=7.5 for yaw 0, matching `AbstractBedBlock.findStandUpPosition`
+and `ServerPlayer.findRespawnAndUseSpawnBlock` (vanilla 26.3). Negative controls:
+the old geometry assertion failed with actual `(9.5, 64.0, 8.5)` versus
+expected `(7.5, 64.1, 8.5)`; the tag-only bunk check landed on the upper bed at
+`(8.5, 64.5625, 7.5)` instead of the lower exit `(9.5, 63.0, 7.5)`. Saved-data
+meaning, API 8, public signatures and Wasm WIT are unchanged.
+
+In-game verification: Not yet.
+
+Play test: set a bed spawn, enclose the bed in stone while leaving clear space
+above it, then die and respawn; expect to land on the bed surface with no block
+collision. Repeat with an open exit, a white bed above a straw bed, and different
+saved yaws; expect the first safe exit in the saved-yaw order. Capture the
+respawn position and the bed layout.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
