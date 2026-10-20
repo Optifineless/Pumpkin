@@ -6,6 +6,36 @@ use crate::{
 use pumpkin_data::game_event::GameEvent;
 use serde_json::json;
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g09_projectile_block_drops_rule_keeps_container_contents_separate() {
+    for block_drops in [false, true] {
+        let fixture = Fixture::new();
+        let position = crafted_content_pot(&fixture);
+        fixture.world.level_info.rcu(|info| {
+            let mut next = (**info).clone();
+            next.game_rules.block_drops = block_drops;
+            next
+        });
+        shoot(&fixture, position, ItemStack::new(1, &Item::ARROW));
+        if block_drops {
+            assert_shattered(&fixture, position);
+        } else {
+            assert_eq!(fixture.world.get_block(&position), &Block::AIR);
+            assert!(fixture.world.get_block_entity(&position).is_none());
+            for item in [
+                &Item::DECORATED_POT,
+                &Item::BRICK,
+                &Item::ANGLER_POTTERY_SHERD,
+                &Item::ARCHER_POTTERY_SHERD,
+            ] {
+                assert_eq!(item_count(&fixture.world, item), 0, "{}", item.registry_key);
+            }
+            assert_eq!(item_count(&fixture.world, &Item::DIAMOND), 1);
+        }
+        fixture.shutdown().await;
+    }
+}
+
 fn load_projectile_loot(fixture: &Fixture) {
     let pack = fixture
         .directory

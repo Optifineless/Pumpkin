@@ -12,6 +12,8 @@ pub mod piston_extension;
 pub mod piston_head;
 
 #[cfg(test)]
+mod dependent_destroy_tests;
+#[cfg(test)]
 mod retired_chunk_tests;
 
 const MAX_MOVABLE_BLOCKS: usize = 12;

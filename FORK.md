@@ -402,6 +402,46 @@ there, power the piston; expect one original face set and diamond, the new pot
 and emerald intact, and the piston still retracted. Capture the move, piston and
 collected drops before opening or updating the PR.
 
+PR #330 review round 5: pistons retain the planned destruction states and accept
+a later target already cleared to air or fluid after an admitted break in the
+same pass. Actual rejected breaks and non-fluid replacements still abort, and
+every cleared destination is rechecked before movement. This covers paired
+flowers, doors, beds and aquatic plants without dropping the round-4 replacement
+protection. Surviving tripwire targets can change connections before their own
+admitted break. Mirrors vanilla 26.3 `PistonBaseBlock.moveBlocks` and paired-block
+shape cleanup. Pot block-loot spawning now honors `BLOCK_DROPS`, matching
+`Block.popResource`; stored contents still scatter separately. No saved-data,
+public layout, native API 8 or Wasm WIT changes. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: **Not yet**.
+The lifecycle refresh changes only the world-family fingerprint; all existing
+statuses and notes remain unchanged, with no new rows or lock-order edges.
+
+Compared with upstream/master `fb7c8e223`: open PR #4047 also corrects piston
+shape-update flags as part of a broader animation/persistence change; #4026
+covers retraction. This review keeps the fork's current shape-update order;
+those wider animation, persistence and retraction ports remain separate.
+
+The pre-existing EMPTY-pot compatibility policy remains as documented above.
+Drop callbacks still observe the already-claimed terrain, and overlapping break
+callbacks can both run before one removal wins. Changing either callback contract
+requires a separate cancellation-aware admission/snapshot design; delaying the
+current removal would restore reentrant duplication. No guard may span callbacks.
+
+Negative control on `dfcb98e98`, with the new regressions retained: the
+`b1020b_g09` filter passed all 42 existing tests and failed the rose-bush, door,
+seagrass and `BLOCK_DROPS` regressions. The flower and door blocked extension,
+cleared seagrass water was broken again, and disabled block drops still spawned
+two bricks. With the fixes and tripwire control, the filter passes all 47 tests.
+Tests use powered synced piston events and actual arrow collision.
+
+Play test: place an east-facing piston with two slime blocks stacked vertically
+directly in front, and a rose bush in front of both slime blocks on
+dirt. Power the piston from behind; expect both slime blocks to move and one rose
+bush to drop. Repeat with a door and the piston behind the upper slime block.
+Set `doBlockDrops` false and shoot a patterned pot containing a diamond; expect
+only the diamond. Restore the rule and repeat; expect its faces and the diamond.
+Record the extensions and collected stock. Real-client verification is pending.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

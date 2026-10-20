@@ -183,7 +183,10 @@ impl<'a> DecoratedPotBreak<'a> {
                 );
             }
             for stack in pot_loot(world, position, retired.live.as_deref(), &params) {
-                world.drop_stack(position, stack);
+                // Block.popResource checks BLOCK_DROPS; container scattering is separate.
+                if world.level_info.load().game_rules.block_drops {
+                    world.drop_stack(position, stack);
+                }
             }
             crate::block::drop_experience(
                 world,
