@@ -393,6 +393,15 @@ ceiling. Non-finite border bounds use a finite center-block fallback in
 Plugin API 8, Wasm WIT and saved-data meanings are unchanged.
 In-game verification: Not yet.
 
+PR #335 integration onto `batch-1019k2`: the half-block border centered at
+(1, -1) clamps (100, -100) to block (1, -2). Vanilla 26.3
+`WorldBorder.clampToBounds` clamps floating coordinates before
+`BlockPos.containing` floors them; the valid Z minimum is -1.25, so the old
+(1, -1) expectation was incorrect. End-return fixtures await chunk publication
+before installing their stone floors, with empty flat generation keeping setup
+bounded and independent of terrain-generation ordering. API 8 (same version).
+Integration by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
 Play test: Set a timed border resize with a four-wide painting near its edge;
 expect it to survive while the live border still contains it, then retire when
 the border reaches it. Return from the End with a waterlogged sign in the shared

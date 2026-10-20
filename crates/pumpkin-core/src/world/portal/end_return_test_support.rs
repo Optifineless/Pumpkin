@@ -12,10 +12,7 @@ use std::{
 use futures::future::BoxFuture;
 use pumpkin_data::{Block, biome::Biome, dimension::Dimension};
 use pumpkin_nbt::{NbtCompound, tag::NbtTag};
-use pumpkin_util::{
-    math::{position::BlockPos, vector2::Vector2},
-    world_seed::Seed,
-};
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::{
     chunk_system::chunk_state::Chunk,
     generation::{
@@ -62,13 +59,26 @@ impl Fixture {
         assert_eq!(end.dimension, Dimension::THE_END);
         let mut retained = Vec::new();
         for world in [&overworld, &end, &nether] {
+            world
+                .level
+                .set_world_gen(Arc::new(WorldGenerator::Flat(Box::new(
+                    FlatGenerator::new(
+                        world.level.seed,
+                        world.dimension.clone(),
+                        Vec::new(),
+                        Biome::PLAINS.registry_id.to_owned(),
+                    ),
+                ))));
             let mut residency = PortalChunkResidency::new(world.level.clone());
             residency.add_area(PERSONAL, 2);
+            // Finish scheduler publication before installing the synthetic floor.
+            residency.load().await.unwrap();
             publish_floor(world, Vector2::new(0, 0));
             retained.push(residency);
         }
         let mut platform = PortalChunkResidency::new(end.level.clone());
         platform.add_area(BlockPos::new(100, 49, 0), 3);
+        platform.load().await.unwrap();
         for z in [-1, 0] {
             publish_floor(&end, Vector2::new(6, z));
         }
@@ -124,12 +134,7 @@ impl Fixture {
 }
 
 fn publish_floor(world: &World, pos: Vector2<i32>) {
-    let generator = WorldGenerator::Flat(Box::new(FlatGenerator::new(
-        Seed(0),
-        world.dimension.clone(),
-        Vec::new(),
-        Biome::PLAINS.registry_id.to_owned(),
-    )));
+    let generator = world.level.world_gen();
     let mut proto = ProtoChunk::new(pos.x, pos.y, &generator);
     for x in 0..16 {
         for z in 0..16 {

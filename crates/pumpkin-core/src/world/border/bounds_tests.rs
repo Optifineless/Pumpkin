@@ -274,7 +274,8 @@ async fn b1020_g04_static_and_narrow_border_controls() {
         assert_eq!(narrow.clamp_block(100, -100), (0, 0));
     }
     let off_grid_narrow = Worldborder::new(1.0, -1.0, 0.5, 0, 5, 15);
-    assert_eq!(off_grid_narrow.clamp_block(100, -100), (1, -1));
+    // WorldBorder.clampToBounds floors the float-clamped Z minimum, -1.25.
+    assert_eq!(off_grid_narrow.clamp_block(100, -100), (1, -2));
     fixture.finish().await;
 }
 
