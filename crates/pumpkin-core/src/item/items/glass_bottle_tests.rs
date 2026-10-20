@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
+#[path = "glass_bottle_b1020d_g12_tests.rs"]
+mod b1020d_g12;
 #[path = "glass_bottle_test_support.rs"]
 mod support;
 
