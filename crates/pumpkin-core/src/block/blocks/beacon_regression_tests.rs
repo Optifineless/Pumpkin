@@ -423,8 +423,21 @@ async fn beacon_unpaid_payment_returns_once_on_close_replacement_and_disconnect(
     let after_disconnect = emerald_count(&fixture.player.player);
     assert_eq!(
         (after_close, after_replacement, after_disconnect),
-        (1, 2, 3)
+        (1, 2, 2)
     );
+    // BeaconMenu.removed drops a departing player's unpaid payment into the world.
+    let dropped = fixture
+        .world
+        .entities
+        .load()
+        .iter()
+        .filter_map(|entity| entity.get_item_entity())
+        .map(|item| item.get_item_stack().lock().unwrap().clone())
+        .filter(|stack| stack.item == &Item::EMERALD)
+        .map(|stack| u32::from(stack.item_count))
+        .sum::<u32>();
+    assert_eq!(dropped, 1);
+    assert_eq!(after_disconnect + dropped, 3);
     fixture.finish().await;
 }
 
