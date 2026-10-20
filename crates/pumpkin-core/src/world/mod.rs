@@ -52,6 +52,14 @@ pub mod explosion;
 pub(crate) mod fluid_lookup;
 mod forced_chunks;
 pub mod generation_cache;
+#[cfg(test)]
+mod happy_ghast_flight_tests;
+#[cfg(test)]
+mod happy_ghast_home_tests;
+#[cfg(test)]
+mod happy_ghast_tempt_tests;
+#[cfg(test)]
+mod happy_ghast_test_support;
 mod lectern_update;
 pub mod loot;
 pub mod map;

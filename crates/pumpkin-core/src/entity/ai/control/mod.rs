@@ -4,6 +4,7 @@ use pumpkin_util::math::subtract_angles;
 pub mod body_rotation_control;
 pub mod fish_move_control;
 pub mod flying_move_control;
+pub(crate) mod happy_ghast_look_control;
 pub mod jump_control;
 pub mod look_control;
 pub mod move_control;
@@ -36,6 +37,9 @@ pub trait MoveControlTrait: Control {
     fn set_wanted_position(&mut self, _x: f64, _y: f64, _z: f64, _speed_modifier: f64) {}
 
     fn strafe(&mut self, _forward: f32, _right: f32) {}
+
+    /// Cancel a direct movement request without changing the last destination.
+    fn set_wait(&mut self) {}
 
     /// Last requested destination and speed, including while waiting for a hop.
     fn wanted_position(&self) -> (pumpkin_util::math::vector3::Vector3<f64>, f64) {

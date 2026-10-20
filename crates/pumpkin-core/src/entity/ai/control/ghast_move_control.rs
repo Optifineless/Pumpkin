@@ -88,7 +88,7 @@ fn can_reach(mob: &dyn Mob, travel: Vector3<f64>) -> bool {
 
 // Traverse the moving minimum corner, testing a conservative box at each crossed cell.
 // The shape sweep rejects the extra boundary cells; reads grow with travel length, not box volume.
-fn visit_swept_blocks(
+pub(crate) fn visit_swept_blocks(
     bounds: BoundingBox,
     delta: Vector3<f64>,
     mut visit: impl FnMut(&BlockPos) -> bool,
@@ -120,7 +120,11 @@ fn visit_swept_blocks(
     }
 }
 
-fn swept_collision(bounds: BoundingBox, delta: Vector3<f64>, obstacle: BoundingBox) -> bool {
+pub(crate) fn swept_collision(
+    bounds: BoundingBox,
+    delta: Vector3<f64>,
+    obstacle: BoundingBox,
+) -> bool {
     use pumpkin_util::math::vector3::Axis;
     bounds.intersects(&obstacle)
         || [Axis::X, Axis::Y, Axis::Z].into_iter().any(|axis| {

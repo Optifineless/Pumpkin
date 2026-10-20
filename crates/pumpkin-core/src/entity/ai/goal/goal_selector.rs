@@ -18,6 +18,14 @@ pub struct GoalSelector {
 
 impl GoalSelector {
     #[cfg(test)]
+    pub(crate) fn goal_count<G: Goal + 'static>(&self) -> usize {
+        self.goals
+            .iter()
+            .filter(|goal| goal.type_id == TypeId::of::<G>())
+            .count()
+    }
+
+    #[cfg(test)]
     pub(crate) fn is_goal_running<G: Goal + 'static>(&self) -> bool {
         self.goals
             .iter()

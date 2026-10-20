@@ -946,3 +946,21 @@ crates/pumpkin-core/src/entity/vehicle/minecart/creation.rs::<module>::std::sync
 # Test-only one-shot gate slots: take each channel then drop the guard before await.
 crates/pumpkin-core/src/item/items/minecart_creation_callback_tests.rs::b1020c_g12_concurrent_placement_reserves_aligned_space_without_callback_lock::std::sync::Mutex::new#1
 crates/pumpkin-core/src/item/items/minecart_creation_callback_tests.rs::b1020c_g12_concurrent_placement_reserves_aligned_space_without_callback_lock::std::sync::Mutex::new#2
+
+# test-only entity-local random stream; copied draws; no events, sends or awaits while held
+crates/pumpkin-core/src/entity/passive/happy_ghast.rs::new::std::sync::Mutex::default#1
+
+# test-only VanillaData fields required by existing Server fixture; initialized empty before Server::new; no retained guards
+crates/pumpkin-core/src/world/happy_ghast_test_support.rs::server::std::sync::RwLock::default#1
+
+# test-only VanillaData fields required by existing Server fixture; initialized empty before Server::new; no retained guards
+crates/pumpkin-core/src/world/happy_ghast_test_support.rs::server::std::sync::RwLock::default#2
+
+# test-only VanillaData fields required by existing Server fixture; initialized empty before Server::new; no retained guards
+crates/pumpkin-core/src/world/happy_ghast_test_support.rs::server::std::sync::RwLock::default#3
+
+# test-only VanillaData fields required by existing Server fixture; initialized empty before Server::new; no retained guards
+crates/pumpkin-core/src/world/happy_ghast_test_support.rs::server::std::sync::RwLock::default#4
+
+# test-only VanillaData fields required by existing Server fixture; initialized empty before Server::new; no retained guards
+crates/pumpkin-core/src/world/happy_ghast_test_support.rs::server::std::sync::RwLock::default#5

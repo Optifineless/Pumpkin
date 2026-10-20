@@ -31,6 +31,7 @@ pub mod resource_pack;
 
 pub use chat::{AntiSpamConfig, ChatConfig};
 pub use commands::{CommandOverride, CommandsConfig};
+pub use happy_ghast::HappyGhastConfig;
 pub use networking::auth::AuthenticationConfig;
 pub use networking::bedrock::BedrockConfig;
 pub use networking::compression::CompressionConfig;
@@ -47,6 +48,9 @@ pub use telemetry::TelemetryConfig;
 pub mod telemetry;
 
 mod commands;
+mod happy_ghast;
+#[cfg(test)]
+mod happy_ghast_tests;
 
 mod chat;
 /// Chunk loading and saving configuration options.
@@ -150,6 +154,8 @@ impl LoadConfiguration for PumpkinConfig {
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)]
 pub struct AdvancedConfiguration {
+    /// Adult Happy Ghast flight and roaming settings.
+    pub happy_ghast: HappyGhastConfig,
     /// Logging-related configuration such as log levels and output behaviour.
     pub logging: LoggingConfig,
     /// Resource pack configuration, including enforcement and pack metadata.

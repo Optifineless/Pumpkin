@@ -22,6 +22,13 @@ use crate::entity::{
     player::Player,
 };
 
+#[path = "happy_ghast_flight.rs"]
+mod flight;
+#[path = "happy_ghast_goals.rs"]
+mod goals;
+#[path = "happy_ghast_home.rs"]
+mod home;
+
 pub const HAPPY_GHAST_FOOD: &[&Item] = &[&Item::SNOWBALL];
 
 /// Represents a Happy Ghast, a passive flying mob.
@@ -29,6 +36,13 @@ pub const HAPPY_GHAST_FOOD: &[&Item] = &[&Item::SNOWBALL];
 /// Wiki: <https://minecraft.wiki/w/Happy_Ghast>
 pub struct HappyGhastEntity {
     pub mob_entity: MobEntity,
+    weak_self: Weak<Self>,
+    flight_enabled: bool,
+    adult_flight: AtomicBool,
+    home: crossbeam::atomic::AtomicCell<home::Home>,
+    facing_target: crossbeam::atomic::AtomicCell<Option<pumpkin_util::math::vector3::Vector3<f64>>>,
+    #[cfg(test)]
+    pub(crate) random_draws: std::sync::Mutex<std::collections::VecDeque<f64>>,
     pub ageable_data: AgeableData,
     pub server_still_timeout: AtomicI32,
     pub leash_holder_time: AtomicI32,
@@ -37,24 +51,62 @@ pub struct HappyGhastEntity {
 }
 
 impl HappyGhastEntity {
+    #[cfg(test)]
+    pub(crate) fn floating_goal_count(&self) -> usize {
+        self.mob_entity
+            .goals_selector
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .goal_count::<goals::RandomFloatAroundGoal>()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn temptation_running(&self) -> bool {
+        self.mob_entity
+            .goals_selector
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_goal_running::<goals::TemptGoal>()
+    }
+
     pub fn new(entity: Entity) -> Arc<Self> {
+        let flight_enabled = entity
+            .world
+            .load()
+            .server
+            .upgrade()
+            .is_none_or(|server| server.advanced_config.happy_ghast.enabled);
         let mob_entity = MobEntity::new(entity);
-        let happy_ghast = Self {
+        let mob_arc = Arc::new_cyclic(|weak| Self {
+            weak_self: weak.clone(),
+            flight_enabled,
+            adult_flight: AtomicBool::new(false),
+            home: crossbeam::atomic::AtomicCell::new(home::Home::default()),
+            facing_target: crossbeam::atomic::AtomicCell::new(None),
+            #[cfg(test)]
+            random_draws: std::sync::Mutex::default(),
             mob_entity,
             ageable_data: AgeableData::default(),
             server_still_timeout: AtomicI32::new(0),
             leash_holder_time: AtomicI32::new(0),
             is_leash_holder: AtomicBool::new(false),
             stays_still: AtomicBool::new(false),
+        });
+        mob_arc.install_legacy_goals();
+        mob_arc.reconcile_flight();
+        mob_arc
+    }
+
+    fn install_legacy_goals(&self) {
+        let Some(mob_arc) = self.weak_self.upgrade() else {
+            return;
         };
-        let mob_arc = Arc::new(happy_ghast);
         let mob_weak: Weak<dyn Mob> = {
-            let mob_arc: Arc<dyn Mob> = mob_arc.clone();
+            let mob_arc: Arc<dyn Mob> = mob_arc;
             Arc::downgrade(&mob_arc)
         };
-
         {
-            let mut goal_selector = mob_arc
+            let mut goal_selector = self
                 .mob_entity
                 .goals_selector
                 .lock()
@@ -77,8 +129,6 @@ impl HappyGhastEntity {
             );
             goal_selector.add_goal(4, Box::new(RandomLookAroundGoal::default()));
         };
-
-        mob_arc
     }
 
     pub fn set_server_still_timeout(&self, timeout: i32) {
@@ -148,6 +198,7 @@ impl Mob for HappyGhastEntity {
     }
 
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        self.home.load().write(nbt);
         nbt.put_int(
             "still_timeout",
             self.server_still_timeout.load(Ordering::Relaxed),
@@ -155,9 +206,8 @@ impl Mob for HappyGhastEntity {
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
-        if let Some(timeout) = nbt.get_int("still_timeout") {
-            self.set_server_still_timeout(timeout);
-        }
+        self.home.store(home::Home::read(nbt));
+        self.set_server_still_timeout(nbt.get_int("still_timeout").unwrap_or(0));
     }
 
     fn get_mob_entity(&self) -> &MobEntity {
@@ -198,6 +248,55 @@ impl Mob for HappyGhastEntity {
                 }
             }
         }
+    }
+
+    fn after_base_tick(&self) {
+        self.reconcile_flight();
+    }
+
+    fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
+        if self.uses_adult_flight() {
+            self.facing_target.store(
+                self.mob_entity
+                    .get_target()
+                    .map(|target| target.get_entity().pos.load()),
+            );
+            self.check_restriction();
+            if self.is_on_still_timeout() {
+                // Release navigation before the runner takes MoveControl; no leash momentum exists yet.
+                self.mob_entity
+                    .navigator
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .stop();
+            }
+        }
+    }
+
+    fn can_tick_navigation(&self) -> bool {
+        !self.uses_adult_flight()
+    }
+
+    fn custom_travel(&self, caller: &dyn EntityBase) -> bool {
+        if !self.uses_adult_flight() {
+            return false;
+        }
+        let speed = self
+            .mob_entity
+            .living_entity
+            .get_attribute_value(&pumpkin_data::attributes::Attributes::FLYING_SPEED)
+            as f32
+            * 5.0
+            / 3.0;
+        crate::entity::mob::movement::travel_flying(self, caller, speed, speed, speed)
+    }
+
+    fn check_fall_damage(&self) -> bool {
+        self.uses_adult_flight()
+    }
+
+    fn mob_on_climbable(&self) -> bool {
+        false
     }
 
     fn mob_init_data_tracker(&self) {

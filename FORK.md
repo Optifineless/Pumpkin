@@ -2,6 +2,35 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Adult Happy Ghast flight, slice 1 (#111)
+
+Adults use vanilla 26.3 careful Ghast movement, floating, direct temptation and
+home-restricted random flight through the existing AI and flying-travel owners.
+`[happy_ghast] enabled = true` is the default, including for existing TOML files;
+set it to false and restart to restore the old adult setup. Ghastlings keep their
+existing setup. Neither temptation hand is consumed. BODY equipment already
+loaded by the common codec selects food-only temptation and the smaller home.
+
+Homes are one private snapshot saved as additive vanilla `home_pos` int-array and
+`home_radius` tags. Old fork/vanilla records keep their existing age, timeout,
+equipment and entity fields; absent local state resets explicitly. Disabled mode
+preserves saved state. Older readers ignore the new tags and may discard the
+nonessential roaming anchor on a subsequent save. This does not fix the concurrent
+position/storage-chunk race #368 or tracking/session teardown #344. Existing shared
+biological-age/elapsed-tick ownership and still-timeout ordering remain unchanged.
+The current leash owner has no angular-momentum state to reset.
+
+API 8 (same version): rebuild native plugins for `HappyGhastEntity` and
+`AdvancedConfiguration` layout changes and the provided `MoveControlTrait::set_wait`
+vtable addition. Existing controller implementations remain source-compatible;
+construct Happy Ghasts with `new` and use configuration defaults for the added
+field. Wasm WIT is unchanged. Implemented by Codex (GPT-6.1 Sol).
+
+Ghastling brain/following, harness transactions, mounting/piloting, the full
+player-on-top/still transition, precise tracking, adult feeding/breeding, weather
+healing and the separate Wither report remain pending slices.
+In-game verification: Not yet.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
