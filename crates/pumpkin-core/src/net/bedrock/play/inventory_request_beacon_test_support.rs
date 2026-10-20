@@ -132,7 +132,7 @@ impl Fixture {
             vec![Action::Place {
                 count: 1,
                 source,
-                destination: slot(ContainerName::BeaconPayment, 0),
+                destination: slot(ContainerName::BeaconPayment, 27),
             }],
             0,
         );
@@ -144,6 +144,17 @@ impl Fixture {
         let inserted = self.payment().get_stack(0);
         assert_eq!(inserted.item_count, 1, "menu setup control");
         assert!(inserted.are_items_and_components_equal(&payment));
+    }
+
+    pub(super) fn selection_actions(&self, primary: i32, secondary: i32) -> Vec<Action> {
+        // Dragonfly handleBeaconPayment: the client predicts one Destroy after
+        // selection; BeaconInventoryTranslator maps payment to UI slot 27.
+        let mut source = slot(ContainerName::BeaconPayment, 27);
+        source.stack_id = self.payment().get_stack(0).uid.get();
+        vec![
+            selection(primary, secondary),
+            Action::Destroy { count: 1, source },
+        ]
     }
 
     pub(super) fn sounds(&mut self) -> usize {
@@ -221,6 +232,17 @@ pub(super) fn dispatch(
     assert_eq!(VarUInt::read(&mut response).unwrap().0, 1);
     let result = u8::read(&mut response).unwrap();
     assert_eq!(VarInt::read(&mut response).unwrap().0, -1);
+    if result != 0 {
+        assert!(
+            !bool::read(&mut response).unwrap(),
+            "rejection has no success slots"
+        );
+        assert!(response.is_empty());
+        super::super::workstation_correction_test_support::assert_correction(
+            &packets,
+            &owner.player,
+        );
+    }
     (packets, result)
 }
 
@@ -238,14 +260,15 @@ pub(super) fn assert_payment_response(packets: &[bytes::Bytes]) {
     );
     assert_eq!(VarUInt::read(&mut response).unwrap().0, 1);
     assert_eq!(
-        FullContainerName::read(&mut response)
-            .unwrap()
-            .container_name,
-        ContainerName::BeaconPayment
+        FullContainerName::read(&mut response).unwrap(),
+        FullContainerName {
+            container_name: ContainerName::BeaconPayment,
+            dynamic_id: None
+        }
     );
     assert_eq!(VarUInt::read(&mut response).unwrap().0, 1);
-    assert_eq!(u8::read(&mut response).unwrap(), 0);
-    assert_eq!(u8::read(&mut response).unwrap(), 0);
+    assert_eq!(u8::read(&mut response).unwrap(), 27);
+    assert_eq!(u8::read(&mut response).unwrap(), 27);
     assert_eq!(u8::read(&mut response).unwrap(), 0);
     assert!(
         !bool::read(&mut response).unwrap(),

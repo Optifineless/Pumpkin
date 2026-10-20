@@ -8,10 +8,17 @@
 use std::io::Cursor;
 
 use bytes::Bytes;
-use pumpkin_data::{Block, biome::Biome, item::Item, item_stack::ItemStack};
+use pumpkin_data::{
+    Block,
+    biome::Biome,
+    data_component_impl::{BannerPatternsImpl, CustomNameImpl},
+    item::Item,
+    item_stack::ItemStack,
+};
 use pumpkin_inventory::{
     Inventory, loom_screen_handler::LoomScreenHandler, screen_handler::SharedScreenHandler,
 };
+use pumpkin_nbt::{Nbt, NbtCompound, tag::NbtTag};
 use pumpkin_protocol::{
     bedrock::{
         client::{
@@ -26,13 +33,13 @@ use pumpkin_protocol::{
             },
             item_stack_request::{
                 ItemStackRequest, ItemStackRequestAction as Action,
-                ItemStackRequestSlotInfo as RequestSlot, SItemStackRequest,
+                ItemStackRequestSlotInfo as RequestSlot, SItemStackRequest, StackRequestItem,
             },
         },
     },
     codec::{var_int::VarInt, var_uint::VarUInt},
     packet::Packet,
-    serial::PacketRead,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_util::{Hand, math::position::BlockPos, math::vector3::Vector3};
 
@@ -118,7 +125,7 @@ impl LoomFixture {
         let action = Action::Place {
             count,
             source: slot(ContainerName::Inventory, inventory_slot, &expected),
-            destination: slot(name, 0, ItemStack::EMPTY),
+            destination: slot(name, inventory_slot, ItemStack::EMPTY),
         };
         let updates = self.submit(-1, vec![action], 0);
         assert!(
@@ -141,7 +148,7 @@ impl LoomFixture {
         assert!(
             updates.iter().any(|update| {
                 update.name == name
-                    && update.slot == 0
+                    && update.slot == inventory_slot
                     && update.uid == actual.uid.get()
                     && update.count == count
             }),
@@ -182,26 +189,31 @@ impl LoomFixture {
     }
 
     pub fn craft_actions(&self, pattern: &str, repetitions: u8, cursor: bool) -> Vec<Action> {
-        // Protocol 2193 schemas define fields; registry keys and request-owned negative
-        // CreatedOutput IDs are synthetic fixtures, not a captured Bedrock client trace.
+        // Source-derived client sequence: Geyser LoomInventoryTranslator and
+        // BannerPattern; protocol 2193 CraftResultsDeprecated schema.
+        // Dragonfly creates single loom results at CreatedOutput/50.
         vec![
             Action::Loom {
                 pattern_id: pattern.into(),
                 repetitions,
             },
-            Action::Consume {
-                count: repetitions,
-                source: slot(ContainerName::LoomInput, 0, &self.input(0)),
+            Action::CraftResultsDeprecated {
+                result_items: vec![self.predicted_banner(pattern)],
+                times_crafted: repetitions,
             },
             Action::Consume {
                 count: repetitions,
-                source: slot(ContainerName::LoomDye, 0, &self.input(1)),
+                source: slot(ContainerName::LoomInput, 9, &self.input(0)),
+            },
+            Action::Consume {
+                count: repetitions,
+                source: slot(ContainerName::LoomDye, 10, &self.input(1)),
             },
             Action::Take {
                 count: repetitions,
                 source: RequestSlot {
                     stack_id: -10,
-                    ..slot(ContainerName::CreatedOutput, 0, ItemStack::EMPTY)
+                    ..slot(ContainerName::CreatedOutput, 50, ItemStack::EMPTY)
                 },
                 destination: if cursor {
                     slot(ContainerName::Cursor, 0, &self.cursor())
@@ -216,6 +228,54 @@ impl LoomFixture {
         ]
     }
 
+    fn predicted_banner(&self, pattern: &str) -> StackRequestItem {
+        // Geyser BannerItem.convertBannerPattern uses Bedrock IDs and reversed
+        // dye IDs in Patterns. Retain the fixture's original layers and name.
+        let input = self.input(0);
+        let mut layers = input
+            .get_data_component::<BannerPatternsImpl>()
+            .map_or_else(Vec::new, |patterns| {
+                patterns
+                    .layers
+                    .iter()
+                    .map(|layer| {
+                        let mut tag = NbtCompound::new();
+                        assert_eq!(layer.pattern, "minecraft:stripe_top");
+                        tag.put_string("Pattern", "ts".into());
+                        tag.put_int("Color", 15 - i32::from(layer.color.id()));
+                        NbtTag::Compound(tag)
+                    })
+                    .collect()
+            });
+        let mut added = NbtCompound::new();
+        added.put_string("Pattern", pattern.into());
+        added.put_int("Color", 1); // Bedrock red.
+        layers.push(NbtTag::Compound(added));
+        let mut tag = NbtCompound::new();
+        tag.put_list("Patterns", layers);
+        if let Some(name) = input.get_data_component::<CustomNameImpl>() {
+            let mut display = NbtCompound::new();
+            display.put_string("Name", name.name.clone().get_text());
+            tag.put_compound("display", display);
+        }
+        // ItemInstanceUserData: versioned network NBT, empty placement filters.
+        let mut extra_data = Vec::new();
+        (-1i16).write(&mut extra_data).unwrap();
+        1u8.write(&mut extra_data).unwrap();
+        Nbt::new(String::new(), tag)
+            .write_to_writer_bedrock(&mut extra_data)
+            .unwrap();
+        0i32.write(&mut extra_data).unwrap();
+        0i32.write(&mut extra_data).unwrap();
+        StackRequestItem {
+            identifier: Some("minecraft:banner".into()),
+            metadata_value: VarInt(15),
+            count: 1,
+            block_runtime_id: VarUInt(0),
+            extra_data,
+        }
+    }
+
     pub fn submit(&mut self, id: i32, actions: Vec<Action>, expected: u8) -> Vec<ResponseSlot> {
         let (result, updates) = self.dispatch(id, actions);
         assert_eq!(result, expected, "workstation result status");
@@ -223,6 +283,11 @@ impl LoomFixture {
     }
 
     pub fn dispatch(&mut self, id: i32, actions: Vec<Action>) -> (u8, Vec<ResponseSlot>) {
+        self.send(id, actions);
+        self.response(id)
+    }
+
+    pub fn send(&mut self, id: i32, actions: Vec<Action>) {
         self.bedrock.take_packets();
         self.bedrock.client().handle_item_stack_request(
             &self.bedrock.player,
@@ -236,6 +301,9 @@ impl LoomFixture {
             },
         );
         self.last_packets = self.bedrock.take_packets();
+    }
+
+    fn response(&self, id: i32) -> (u8, Vec<ResponseSlot>) {
         let mut decoded = Vec::new();
         for packet in &self.last_packets {
             let mut reader = Cursor::new(&packet[1..]);
@@ -246,9 +314,13 @@ impl LoomFixture {
             assert_eq!(VarUInt::read(&mut reader).unwrap().0, 1);
             let result = u8::read(&mut reader).unwrap();
             assert_eq!(VarInt::read(&mut reader).unwrap().0, id);
-            if bool::read(&mut reader).unwrap() {
+            let has_containers = bool::read(&mut reader).unwrap();
+            assert_eq!(has_containers, result == 0);
+            if has_containers {
                 for _ in 0..VarUInt::read(&mut reader).unwrap().0 {
-                    let name = FullContainerName::read(&mut reader).unwrap().container_name;
+                    let full_name = FullContainerName::read(&mut reader).unwrap();
+                    assert_eq!(full_name.dynamic_id, None);
+                    let name = full_name.container_name;
                     for _ in 0..VarUInt::read(&mut reader).unwrap().0 {
                         let requested = u8::read(&mut reader).unwrap();
                         let slot = u8::read(&mut reader).unwrap();
@@ -259,9 +331,9 @@ impl LoomFixture {
                         } else {
                             0
                         };
-                        String::read(&mut reader).unwrap();
-                        String::read(&mut reader).unwrap();
-                        VarInt::read(&mut reader).unwrap();
+                        assert_eq!(String::read(&mut reader).unwrap(), "");
+                        assert_eq!(String::read(&mut reader).unwrap(), "");
+                        assert_eq!(VarInt::read(&mut reader).unwrap().0, 0);
                         decoded.push(ResponseSlot {
                             name,
                             slot,
@@ -278,14 +350,37 @@ impl LoomFixture {
     }
 
     pub fn assert_correction(&self) {
-        assert!(
-            self.last_packets.iter().any(|packet| {
-                let mut reader = Cursor::new(&packet[1..]);
-                VarUInt::read(&mut reader).unwrap();
-                VarUInt::read(&mut reader).unwrap().0 == CInventoryContent::PACKET_ID as u32
-            }),
-            "failure must use the existing inventory correction path"
+        super::super::workstation_correction_test_support::assert_correction(
+            &self.last_packets,
+            &self.bedrock.player,
         );
+    }
+
+    pub fn assert_updates(&self, updates: &[ResponseSlot], cursor: bool) {
+        let destination = if cursor {
+            (ContainerName::Cursor, 0, self.cursor())
+        } else {
+            (
+                ContainerName::Inventory,
+                12,
+                self.bedrock.player.inventory().get_stack(12),
+            )
+        };
+        let expected = [
+            destination,
+            (ContainerName::LoomInput, 9, self.input(0)),
+            (ContainerName::LoomDye, 10, self.input(1)),
+            (ContainerName::LoomMaterial, 11, self.input(2)),
+            (ContainerName::LoomResultPreview, 50, self.preview()),
+            (ContainerName::CreatedOutput, 50, ItemStack::EMPTY.clone()),
+        ]
+        .map(|(name, slot, stack)| ResponseSlot {
+            name,
+            slot,
+            count: stack.item_count,
+            uid: if stack.is_empty() { 0 } else { stack.uid.get() },
+        });
+        assert_eq!(updates, expected, "complete authoritative loom response");
     }
 
     pub fn snapshot(&self) -> Vec<ItemStack> {

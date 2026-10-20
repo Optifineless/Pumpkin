@@ -150,6 +150,8 @@ pub mod request_ability;
 pub mod request_chunk_radius;
 pub mod respawn;
 pub mod set_local_player_as_initialized;
+#[cfg(test)]
+mod workstation_correction_test_support;
 
 #[cfg(test)]
 mod created_output_conservation_tests;

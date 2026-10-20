@@ -65,19 +65,17 @@ async fn b1020c_g06_bedrock_beacon_payment_selects_and_persists() {
         } else {
             0
         };
-        // No client capture supplied: zero is the supported fixture's absent marker.
+        // Primary implementation sources document zero absence and Destroy/27.
         for _ in 0..2 {
             fixture.pay();
             fixture.sounds();
-            let packets = request(
-                &mut fixture.owner,
-                vec![selection(primary.to_bedrock_id(), secondary)],
-                0,
-            );
+            let actions = fixture.selection_actions(primary.to_bedrock_id(), secondary);
+            let (packets, status) = dispatch(&mut fixture.owner, actions);
             assert!(
                 fixture.payment().get_stack(0).is_empty(),
                 "paid selection must consume exactly one payment"
             );
+            assert_eq!(status, 0);
             assert_eq!(fixture.owner.player.inventory.get_stack(9).item_count, 1);
             assert_eq!(
                 fixture.effects(),
@@ -185,6 +183,7 @@ async fn b1020c_g06_beacon_request_rejects_without_partial_debit() {
         assert_eq!(fixture.sounds(), 0);
         assert_eq!(result, 1, "invalid beacon sequence must report failure");
     }
+    reject_predicted_destroy(&mut fixture);
     request(
         &mut fixture.owner,
         vec![selection(StatusEffect::SPEED.to_bedrock_id(), 0)],
@@ -228,6 +227,63 @@ async fn b1020c_g06_beacon_request_rejects_without_partial_debit() {
         1,
     );
     assert_eq!(fixture.payment().get_stack(0).item_count, 1);
+    fixture.finish().await;
+}
+
+fn reject_predicted_destroy(fixture: &mut Fixture) {
+    for invalid in 0..7 {
+        let mut actions = fixture.selection_actions(StatusEffect::SPEED.to_bedrock_id(), 0);
+        if let Action::Destroy { count, source } = &mut actions[1] {
+            match invalid {
+                0 => *count = 2,
+                1 => source.stack_id += 1,
+                2 => source.slot_id = 0,
+                3 => source.container_name.container_name = ContainerName::Inventory,
+                4 => source.container_name.dynamic_id = Some(1),
+                5 => *count = 0,
+                _ => {}
+            }
+        }
+        if invalid == 6 {
+            actions.extend(
+                fixture
+                    .selection_actions(StatusEffect::SPEED.to_bedrock_id(), 0)
+                    .into_iter()
+                    .skip(1),
+            );
+        }
+        let before = fixture.payment().get_stack(0);
+        request(&mut fixture.owner, actions, 1);
+        assert!(fixture.payment().get_stack(0).are_equal(&before));
+        assert_eq!(fixture.payment().get_stack(0).uid, before.uid);
+        assert_eq!(fixture.effects(), (-1, -1));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020c_g06_beacon_disconnect_retains_payment_and_effects() {
+    let mut fixture = Fixture::new(1).await;
+    fixture.pay();
+    let before = fixture.payment().get_stack(0);
+    let actions = fixture.selection_actions(StatusEffect::SPEED.to_bedrock_id(), 0);
+    fixture.sounds();
+    fixture.owner.close().await;
+    fixture.owner.client().handle_item_stack_request(
+        &fixture.owner.player,
+        SItemStackRequest {
+            requests: vec![ItemStackRequest {
+                request_id: VarInt(-1),
+                actions,
+                filter_strings: Vec::new(),
+                filter_cause: 0,
+            }],
+        },
+    );
+    let after = fixture.payment().get_stack(0);
+    assert!(after.are_equal(&before));
+    assert_eq!(after.uid, before.uid);
+    assert_eq!(fixture.effects(), (-1, -1));
+    assert_eq!(fixture.sounds(), 0);
     fixture.finish().await;
 }
 
