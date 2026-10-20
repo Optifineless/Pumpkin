@@ -12,10 +12,7 @@ use std::{
 use futures::future::BoxFuture;
 use pumpkin_data::{Block, biome::Biome, dimension::Dimension};
 use pumpkin_nbt::{NbtCompound, tag::NbtTag};
-use pumpkin_util::{
-    math::{position::BlockPos, vector2::Vector2},
-    world_seed::Seed,
-};
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::{
     chunk_system::chunk_state::Chunk,
     generation::{
@@ -41,7 +38,7 @@ pub(super) const PORTAL: BlockPos = BlockPos::new(8, 80, 8);
 pub(super) const PERSONAL: BlockPos = BlockPos::new(8, 64, 8);
 pub(super) const DEADLINE: Duration = Duration::from_secs(45);
 
-pub(super) struct Fixture {
+pub struct Fixture {
     pub server: Arc<Server>,
     pub overworld: Arc<World>,
     pub end: Arc<World>,
@@ -62,13 +59,26 @@ impl Fixture {
         assert_eq!(end.dimension, Dimension::THE_END);
         let mut retained = Vec::new();
         for world in [&overworld, &end, &nether] {
+            world
+                .level
+                .set_world_gen(Arc::new(WorldGenerator::Flat(Box::new(
+                    FlatGenerator::new(
+                        world.level.seed,
+                        world.dimension.clone(),
+                        Vec::new(),
+                        Biome::PLAINS.registry_id.to_owned(),
+                    ),
+                ))));
             let mut residency = PortalChunkResidency::new(world.level.clone());
             residency.add_area(PERSONAL, 2);
+            // Finish scheduler publication before installing the synthetic floor.
+            residency.load().await.unwrap();
             publish_floor(world, Vector2::new(0, 0));
             retained.push(residency);
         }
         let mut platform = PortalChunkResidency::new(end.level.clone());
         platform.add_area(BlockPos::new(100, 49, 0), 3);
+        platform.load().await.unwrap();
         for z in [-1, 0] {
             publish_floor(&end, Vector2::new(6, z));
         }
@@ -103,6 +113,18 @@ impl Fixture {
         client
     }
 
+    pub async fn prepare_shared_spawn_floor(&mut self, suggestion: BlockPos) {
+        let mut residency = PortalChunkResidency::new(self.overworld.level.clone());
+        residency.add_area(suggestion, 2);
+        residency.load().await.unwrap();
+        for x in (suggestion.0.x - 1) >> 4..=(suggestion.0.x + 1) >> 4 {
+            for z in (suggestion.0.z - 1) >> 4..=(suggestion.0.z + 1) >> 4 {
+                publish_floor(&self.overworld, Vector2::new(x, z));
+            }
+        }
+        self.retained.push(residency);
+    }
+
     pub async fn finish(self) {
         drop(self.retained);
         tokio::time::timeout(DEADLINE, self.server.shutdown())
@@ -112,12 +134,7 @@ impl Fixture {
 }
 
 fn publish_floor(world: &World, pos: Vector2<i32>) {
-    let generator = WorldGenerator::Flat(Box::new(FlatGenerator::new(
-        Seed(0),
-        world.dimension.clone(),
-        Vec::new(),
-        Biome::PLAINS.registry_id.to_owned(),
-    )));
+    let generator = world.level.world_gen();
     let mut proto = ProtoChunk::new(pos.x, pos.y, &generator);
     for x in 0..16 {
         for z in 0..16 {
@@ -195,7 +212,7 @@ impl EventHandler<PlayerChangedWorldEvent> for Arrived {
     }
 }
 
-pub(super) async fn transfer(fixture: &Fixture, client: &mut TestPlayer) {
+pub async fn transfer(fixture: &Fixture, client: &mut TestPlayer) {
     let (done, completed) = oneshot::channel();
     fixture
         .server

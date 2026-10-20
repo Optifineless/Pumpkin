@@ -32,6 +32,7 @@ use pumpkin_world::{
 use tokio::sync::oneshot;
 
 use crate::{
+    command::CommandSender,
     entity::{Entity, EntityBase, death_test_world::DeathTestWorld, living::LivingEntity},
     world::World,
 };
@@ -186,6 +187,54 @@ async fn portal_travel(existing: bool) {
         );
         assert_eq!(destination.get_block(&frame), &Block::NETHER_PORTAL);
     }
+    fixture.server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g10_fractional_border_clamps_portal_candidate() {
+    let fixture = DeathTestWorld::new().await;
+    let source = fixture.world();
+    let destination = fixture
+        .server
+        .get_world_from_dimension(&Dimension::THE_NETHER);
+    save_destination(&destination, false).await;
+    let command_source = CommandSender::Console
+        .into_source(&fixture.server)
+        .with_world(destination.clone());
+    fixture
+        .server
+        .command_dispatcher
+        .load()
+        .execute_input("worldborder set 10.4", &command_source)
+        .unwrap();
+
+    let traveler = Entity::new(
+        source.clone(),
+        Vector3::new(80.0, 80.0, 0.0),
+        &EntityType::COW,
+    );
+    let transition = tokio::time::timeout(
+        Duration::from_secs(60),
+        super::PortalType::Nether.get_portal_destination(
+            &source,
+            destination.clone(),
+            &traveler,
+            None,
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(Arc::ptr_eq(&transition.new_world, &destination));
+    assert_eq!(
+        transition.position.x, 5.0,
+        "scaled x=10 clamps to the fractional upper block 5"
+    );
+    assert_eq!(
+        destination.worldborder.lock().unwrap().clamp_block(-100, 0),
+        (-6, 0),
+        "the negative fractional edge floors to block -6"
+    );
     fixture.server.shutdown().await;
 }
 

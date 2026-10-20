@@ -19,13 +19,15 @@ mod end_return_safety_tests;
 #[cfg(test)]
 mod end_return_session_tests;
 #[cfg(test)]
-mod end_return_test_support;
+pub(crate) mod end_return_test_support;
 #[cfg(test)]
 mod end_return_tests;
 pub(in crate::world) mod frame_effects;
 pub(crate) mod residency;
 mod search;
 
+#[cfg(test)]
+mod border_geometry_tests;
 #[cfg(test)]
 mod callback_tests;
 pub mod nether;
