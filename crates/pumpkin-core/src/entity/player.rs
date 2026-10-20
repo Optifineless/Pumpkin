@@ -1,4 +1,5 @@
 pub mod advancement;
+mod bed_respawn;
 mod container_menu;
 mod container_menu_block_effects;
 mod death;
@@ -258,7 +259,6 @@ impl BedrockPlayer<'_> {
     }
 }
 use pumpkin_data::attributes::Attributes;
-use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::{EquipmentSlot, ToolImpl};
 use pumpkin_data::effect::StatusEffect;
@@ -1366,74 +1366,6 @@ impl Player {
         self.find_respawn_and_use_spawn_block(true)
             .await
             .map(|(respawn, _world)| respawn)
-    }
-
-    /// Find a valid spawn position around a bed.
-    /// Vanilla uses a complex algorithm based on bed facing direction.
-    /// We use a simplified version that tries cardinal directions first.
-    fn find_bed_spawn_position(
-        world: &Arc<crate::world::World>,
-        bed_pos: &BlockPos,
-        facing: HorizontalFacing,
-    ) -> Option<Vector3<f64>> {
-        // Get offsets based on bed facing direction (vanilla-like order)
-        let offsets = Self::get_bed_spawn_offsets(facing);
-
-        for (dx, dz) in offsets {
-            let check_pos = BlockPos(Vector3::new(
-                bed_pos.0.x + dx,
-                bed_pos.0.y,
-                bed_pos.0.z + dz,
-            ));
-
-            if let Some(pos) = Self::find_respawn_pos(world, &check_pos) {
-                return Some(pos);
-            }
-
-            // Also try one block down (for beds on elevated platforms)
-            let check_pos_down = BlockPos(Vector3::new(
-                bed_pos.0.x + dx,
-                bed_pos.0.y - 1,
-                bed_pos.0.z + dz,
-            ));
-            if let Some(pos) = Self::find_respawn_pos(world, &check_pos_down) {
-                return Some(pos);
-            }
-        }
-
-        // Try on the bed itself as last resort
-        if let Some(pos) = Self::find_respawn_pos(world, bed_pos) {
-            return Some(pos);
-        }
-
-        None
-    }
-
-    /// Get spawn position offsets around a bed based on facing direction.
-    /// This is a simplified version of vanilla's getAroundBedOffsets.
-    fn get_bed_spawn_offsets(facing: HorizontalFacing) -> Vec<(i32, i32)> {
-        let (fx, fz) = match facing {
-            HorizontalFacing::North => (0, -1),
-            HorizontalFacing::South => (0, 1),
-            HorizontalFacing::West => (-1, 0),
-            HorizontalFacing::East => (1, 0),
-        };
-
-        // Clockwise rotation
-        let (rx, rz) = (-fz, fx);
-
-        vec![
-            (rx, rz),                   // Right of bed
-            (-rx, -rz),                 // Left of bed
-            (rx - fx, rz - fz),         // Right-back
-            (-rx - fx, -rz - fz),       // Left-back
-            (-fx, -fz),                 // Behind foot
-            (-fx * 2, -fz * 2),         // Further behind
-            (rx + fx, rz + fz),         // Right-front
-            (-rx + fx, -rz + fz),       // Left-front
-            (fx, fz),                   // In front
-            (rx - fx * 2, rz - fz * 2), // Far right-back
-        ]
     }
 
     /// Find a valid spawn position around a respawn anchor.

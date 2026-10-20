@@ -1,4 +1,7 @@
-use super::{CalculatedRespawnPoint, Player, RespawnPoint, Vector2, Vector3, debug, stand_up, tag};
+use super::{
+    CalculatedRespawnPoint, Player, RespawnPoint, Vector2, Vector3, bed_respawn, debug, stand_up,
+    tag,
+};
 use crate::world::{World, portal::residency::run_portal_job};
 use pumpkin_data::{Block, tag::Taggable};
 use pumpkin_world::chunk_system::residency::ChunkResidency;
@@ -125,11 +128,8 @@ impl Player {
             let bed_props = BedProperties::from_state_id(state_id);
             let facing = bed_props.facing;
 
-            let position = if consume_spawn_block {
-                Self::find_bed_spawn_position(world, pos, facing)
-            } else {
-                stand_up::bed_stand_up(world, *pos, facing, respawn_point.yaw)
-            };
+            let position =
+                bed_respawn::find_bed_spawn_position(world, *pos, facing, respawn_point.yaw);
             return position
                 .map(|position| respawn_point_at(respawn_point, position, consume_spawn_block));
         }

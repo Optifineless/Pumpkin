@@ -2,6 +2,24 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Bed respawn collision surfaces (#36)
+
+Bed respawn now follows the vanilla 26.3 yaw-selected candidate order, including
+bunk beds and both bed-surface candidates. It derives landing height from the
+collision shape and checks player clearance, invalid-spawn blocks and the full
+world-border bounds. Anchor and forced-spawn behavior, saved spawn data and
+respawn ownership are unchanged. Mirrors `AbstractBedBlock.findStandUpPosition`,
+`findBunkBedStandUpPosition`, `DismountHelper.findSafeDismountLocation` and
+`BlockGetter.getBlockFloorHeight`. Native API 8, public signatures and Wasm WIT
+are unchanged.
+
+In-game verification: Not yet.
+
+Play test: set a bed spawn, enclose the bed in stone while leaving clear space
+above it, then die and respawn; expect to land on the bed surface with no block
+collision. Repeat with an open exit and with a bunk bed; expect the first safe
+exit in the saved-yaw order. Capture the respawn position and the bed layout.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
