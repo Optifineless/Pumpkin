@@ -1224,6 +1224,45 @@ Nether or End and expect the explosion, including when only one half is consumed
 Place a straw bed on temporary supports, remove them, crouch-place a spore blossom
 under the head, then break the head in Survival; expect one bed and one blossom.
 
+## Elytra durability and flight validity (#72)
+
+Admitted gliding now checks usable equipped gliders on normal living ticks,
+emits `elytra_glide` every 10 flight ticks and applies one durability wear every
+20 through the existing equipment damage event and slot transaction. Landing,
+removing or invalidating the glider ends flight through the cancellable glide
+toggle event and synchronizes the owner and observers. Callback replacements
+and life/session changes reject stale wear. Flight transitions reset the runtime
+cadence; existing `FallFlying` saves and client-authoritative motion are unchanged.
+Mirrors vanilla 26.3 `LivingEntity.updateFallFlying/canGlide/canGlideUsing`.
+`StartFlyingElytra` also follows `Player.tryToStartFallFlying`: it starts only
+when the player is airborne, not already gliding or in liquid, and has a usable
+equipped glider without levitation.
+The recurring update retains `Entity.checkFallDistanceAccumulation`, using
+accepted client movement for players and existing velocity for other entities.
+PR #253 rebase retains #231's supported-landing admission and the single bounded
+player-tick equipment publisher. Wear still commits every 20 flight ticks;
+observers receive that queued change on the following normal detection, matching
+`LivingEntity.tick` before `aiStep/updateFallFlying`. The glide-start regression
+uses a real stone landing while retaining its health and fall-distance assertions.
+The current-base rebase uses #202's exact active-world instance check for flight
+continuations. #195's UUID lookup can still find a detached player through tracking;
+that feedback lookup does not admit another wear or glide event. The regression
+covers both tracking-only detachment and #202's `mark_departing` removal during
+the damage callback. Existing removal/life checks and storage retirement remain.
+The reported horizontal freeze remains unverified. Written by Codex.
+In-game verification: Not yet.
+
+API 8 (same version): `Entity` gains private runtime flight cadence state, changing
+its layout and containing entity layouts. Rebuild native plugins against this
+checkout; existing public signatures remain source compatible, and WIT is unchanged.
+
+Play test: glide in Survival with an unenchanted elytra; expect one durability
+lost per second of continuous flight. Land and restart; expect a fresh second
+before the next wear. Pick up or shift-click the chest elytra while airborne;
+expect both your view and a second player's view to leave the glide pose. Record
+the durability display and both views around removal; report horizontal motion
+separately. Creative flight and standing with an elytra should cost no durability.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

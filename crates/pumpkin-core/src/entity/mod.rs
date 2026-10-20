@@ -982,6 +982,8 @@ pub struct Entity {
     pub glowing: AtomicBool,
     /// Indicates whether the entity is flying due to a fall
     pub fall_flying: AtomicBool,
+    // LivingEntity.fallFlyTicks is runtime-only and resets at each flight transition.
+    fall_fly_ticks: AtomicI32,
     /// The entity's current velocity vector, aka knockback
     pub velocity: AtomicCell<Vector3<f64>>,
     /// Tracks a horizontal collision
@@ -1160,6 +1162,7 @@ impl Entity {
             world: ArcSwap::new(world),
             sprinting: AtomicBool::new(false),
             fall_flying: AtomicBool::new(false),
+            fall_fly_ticks: AtomicI32::new(0),
             yaw: AtomicCell::new(0.0),
             head_yaw: AtomicCell::new(0.0),
             body_yaw: AtomicCell::new(0.0),
@@ -2771,6 +2774,7 @@ impl Entity {
     pub fn set_fall_flying(&self, fall_flying: bool) {
         assert_ne!(self.fall_flying.load(Relaxed), fall_flying);
         self.fall_flying.store(fall_flying, Relaxed);
+        self.fall_fly_ticks.store(0, Relaxed);
         self.set_flag(Flag::FallFlying, fall_flying);
     }
     pub fn is_fall_flying(&self) -> bool {
@@ -3717,6 +3721,7 @@ impl Entity {
     pub fn reset_state(&self) {
         self.pose.store(EntityPose::Standing);
         self.fall_flying.store(false, Relaxed);
+        self.fall_fly_ticks.store(0, Relaxed);
         self.extinguish();
         self.set_on_fire(false);
     }

@@ -16,6 +16,8 @@ crates/pumpkin-core/src/entity/passive/b1019_g08_wolf_tests.rs::callback_edit::s
 # Scoreboard disk saves serialize publication with an async I/O-only gate; gameplay
 # never takes this gate, and the scoreboard owner is released before serialization/I/O.
 crates/pumpkin-core/src/server/scoreboard_storage.rs::load_scoreboard::tokio::sync::Mutex::new#1
+# Test-only glide event recorder; its snapshot guard ends before ticks and plugin callbacks.
+crates/pumpkin-core/src/entity/living/fall_flying_tests.rs::b1019_g15_real_ticks_wear_and_publish_equipped_glider_with_reset::std::sync::Mutex::default#1
 # Test-only hook pauses knot cleanup after its empty scan to make the attachment race deterministic.
 crates/pumpkin-core/src/entity/decoration/leash_knot.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::<module>::std::sync::Mutex::new#1
