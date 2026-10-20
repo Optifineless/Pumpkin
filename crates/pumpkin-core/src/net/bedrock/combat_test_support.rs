@@ -60,6 +60,24 @@ impl TestBedrockPlayer {
         }
         packets
     }
+    /// Completes real transport barriers while a bounded player operation runs.
+    pub async fn with_outgoing_writer<F: std::future::Future>(
+        &mut self,
+        operation: F,
+    ) -> F::Output {
+        tokio::pin!(operation);
+        loop {
+            tokio::select! {
+                result = &mut operation => return result,
+                Some(packet) = self.packets.recv() => {
+                    decrement_pending_bytes(&self.client().pending_bytes, packet.data.len());
+                    if let Some(done) = packet.completion {
+                        let _ = done.send(());
+                    }
+                }
+            }
+        }
+    }
     pub async fn close(&self) {
         self.client().session.close().await;
     }
