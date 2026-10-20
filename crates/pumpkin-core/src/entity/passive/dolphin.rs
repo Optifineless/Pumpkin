@@ -73,7 +73,7 @@ impl DolphinEntity {
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.6));
             // Dolphin.registerGoals: DolphinSwimWithPlayerGoal(this, 4.0).
             goal_selector.add_goal(2, Box::new(DolphinSwimWithPlayerGoal::default()));
-            goal_selector.add_goal(2, Box::new(MeleeAttackGoal::new(1.2, true)));
+            goal_selector.add_goal(6, Box::new(MeleeAttackGoal::new(1.2, true)));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.2, TEMPT_ITEMS, false)));
             // Dolphin.registerGoals: RandomSwimmingGoal(this, 1.0, 10).
             goal_selector.add_goal(4, Box::new(WanderAroundGoal::swimming(1.0, 10)));
