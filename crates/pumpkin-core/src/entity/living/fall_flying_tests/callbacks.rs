@@ -30,28 +30,53 @@ async fn b1019_g15_glide_event_callback_removal_is_revalidated() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g15_retired_session_during_wear_rejects_old_continuation() {
-    let f = Fixture::new();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let called = calls.clone();
-    f.server
-        .plugin_manager
-        .register::<PlayerItemDamageEvent, _>(
-            Arc::new(DamageCallback(move |event: &mut PlayerItemDamageEvent| {
-                called.fetch_add(1, Relaxed);
-                event.player.world().players.store(Arc::new(Vec::new()));
+    for mark_departing in [false, true] {
+        let f = Fixture::new();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let called = calls.clone();
+        f.server
+            .plugin_manager
+            .register::<PlayerItemDamageEvent, _>(
+                Arc::new(DamageCallback(move |event: &mut PlayerItemDamageEvent| {
+                    called.fetch_add(1, Relaxed);
+                    if mark_departing {
+                        event.player.mark_departing();
+                    } else {
+                        let world = event.player.world();
+                        world.players.store(Arc::new(Vec::new()));
+                        assert!(
+                            world
+                                .get_player_by_uuid(event.player.gameprofile.id)
+                                .is_some_and(|tracked| Arc::ptr_eq(&tracked, &event.player)),
+                            "detached session must remain discoverable through tracking"
+                        );
+                    }
+                })),
+                EventPriority::Normal,
+                true,
+            );
+        let glides = Arc::new(AtomicUsize::new(0));
+        let emitted = glides.clone();
+        f.server.plugin_manager.register::<GenericGameEvent, _>(
+            Arc::new(GameCallback(move |event: &mut GenericGameEvent| {
+                if event.event_key == "elytra_glide" {
+                    emitted.fetch_add(1, Relaxed);
+                }
             })),
             EventPriority::Normal,
             true,
         );
-    f.start();
-    f.tick(20);
-    assert_eq!(calls.load(Relaxed), 1);
-    assert_eq!(
-        f.owner.player.inventory.get_slot(38).get_damage(),
-        0,
-        "retired session received old wear"
-    );
-    f.close().await;
+        f.start();
+        f.tick(20);
+        assert_eq!(calls.load(Relaxed), 1);
+        assert_eq!(
+            f.owner.player.inventory.get_slot(38).get_damage(),
+            0,
+            "retired session received old wear"
+        );
+        assert_eq!(glides.load(Relaxed), 1, "retired session emitted old glide");
+        f.close().await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -122,6 +147,13 @@ async fn b1019_g15_start_flight_requires_a_usable_glider_before_fall_distance_cl
         let started_flying = player.get_entity().is_fall_flying();
         f.tick(1);
         let fall_distance_after_tick = player.living_entity.fall_distance.load();
+        // #231 requires actual support for a zero-displacement landing.
+        let support = pumpkin_util::math::position::BlockPos::floored_v(player.position()).down();
+        f.world.set_block_state(
+            &support,
+            pumpkin_data::Block::STONE.default_state.id,
+            pumpkin_world::world::BlockFlags::FORCE_STATE,
+        );
         dispatch(
             player,
             &f.server,
@@ -167,7 +199,7 @@ async fn b1019_g15_saved_fall_flying_retains_meaning_and_restarts_runtime_cadenc
         "loaded flight inherited an unsaved partial cadence"
     );
     f.tick(1);
-    f.assert_damage_published(38, &EquipmentSlot::CHEST, 1);
+    f.assert_damage_published_next_tick(38, &EquipmentSlot::CHEST, 1);
     f.close().await;
 }
 
@@ -186,7 +218,7 @@ async fn b1019_g15_custom_hand_glider_rechecks_selection_after_damage_callback()
     f.equip(0, glider, &EquipmentSlot::MAIN_HAND);
     f.start();
     f.tick(20);
-    f.assert_damage_published(0, &EquipmentSlot::MAIN_HAND, 1);
+    f.assert_damage_published_next_tick(0, &EquipmentSlot::MAIN_HAND, 1);
     let server = Arc::downgrade(&f.server);
     let calls = Arc::new(AtomicUsize::new(0));
     let called = calls.clone();
@@ -205,7 +237,7 @@ async fn b1019_g15_custom_hand_glider_rechecks_selection_after_damage_callback()
             true,
         );
     f.clear_packets();
-    f.tick(20);
+    f.tick(19);
     assert_eq!(calls.load(Relaxed), 1);
     assert_eq!(f.owner.player.inventory.get_selected_slot(), 1);
     assert_eq!(
@@ -256,7 +288,7 @@ async fn b1019_g15_stop_toggle_honors_cancellation_and_callback_equipment_repair
             f.tick(13);
             assert_eq!(f.owner.player.inventory.get_slot(38).get_damage(), 0);
             f.tick(1);
-            f.assert_damage_published(38, &EquipmentSlot::CHEST, 1);
+            f.assert_damage_published_next_tick(38, &EquipmentSlot::CHEST, 1);
             remove_chest(&f.owner.player, &f.server, SlotActionType::QuickMove);
         }
         f.tick(1);

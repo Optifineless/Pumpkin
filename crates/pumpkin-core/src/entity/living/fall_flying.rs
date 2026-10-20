@@ -141,13 +141,13 @@ impl LivingEntity {
             && !self.dead.load(Relaxed)
             && self.health.load() > 0.0
             && caller.get_player().is_none_or(|player| {
+                // UUID lookup also finds tracking-only pearl arrivals, not active tick owners.
                 !player.client.closed()
                     && self
                         .entity
                         .world
                         .load_full()
-                        .get_player_by_uuid(player.gameprofile.id)
-                        .is_some_and(|current| std::ptr::eq(current.as_ref(), player))
+                        .contains_player_instance(player)
             })
     }
 
