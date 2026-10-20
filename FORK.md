@@ -742,8 +742,11 @@ attacks drop none. Capture item counts, reload results and alignment in a record
 Slice 4a only: canonical POI save compatibility; durable HOME registration/ownership remains pending.
 
 The real POI region/storage loader accepts vanilla 26.3 `pos` int-arrays before
-legacy fork x/y/z triples and saves canonical positions, exact type strings and
-literal signed ticket counts. Old valid POI saves load with unchanged meaning.
+legacy fork x/y/z triples. Writes use integer x/y/z, exact type strings and
+literal signed ticket counts so rollback target `murgicraft-baseline-202610-1`
+(`b48caaf06`) reads every saved POI without coordinate collisions. Canonical
+`pos` is removed on write after taking precedence on read. Old valid POI saves
+load with unchanged meaning.
 Missing tickets default to 0; missing Valid defaults to false for canonical/empty
 sections and true only for recognizable legacy-only sections. Mixed sections
 without Valid are retained for repair. Missing schema stays distinguishable on
@@ -757,6 +760,14 @@ Normal save reports refusal before modifying the original region file; valid
 neighbor chunks remain queryable/editable, but publication of that region waits
 for repair. I/O/framing failures retain an unavailable state rather than becoming
 writable empty regions. This is not a data fixer or a terrain consistency scan.
+
+PR #395 round 2: a failed region is logged and retained while every independent
+healthy region is still saved. The facade returns collected failures after the
+pass; failed dirty regions remain dirty for retry. Regressions exercise real
+storage saves through the rollback build's copied decoder and a corrupt region
+between two healthy regions through repeated save/restart cycles. API 8 (same
+version): no public signature or layout changes in this round. In-game
+verification: Not yet.
 
 Import/retention/capture audit: `poi/codec.rs` validates complete chunks before
 index publication; `PoiRegion::add/remove` reject retained storage; region save

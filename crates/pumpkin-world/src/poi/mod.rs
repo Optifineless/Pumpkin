@@ -473,17 +473,31 @@ impl PoiStorage {
         std::fs::create_dir_all(&self.folder)?;
 
         let mut saved = 0;
+        let mut failures = Vec::new();
         for ((rx, rz), region) in &mut self.regions {
             let was_dirty = region.is_dirty();
             let path = self.folder.join(format!("r.{rx}.{rz}.mca"));
-            region.save(&path)?;
-            saved += usize::from(was_dirty);
+            match region.save(&path) {
+                Ok(()) => saved += usize::from(was_dirty),
+                Err(error) => {
+                    warn!("Failed to save POI region {}: {error}", path.display());
+                    failures.push(format!("{}: {error}", path.display()));
+                }
+            }
         }
 
         if saved > 0 {
             info!("Saved {saved} POI region(s)");
         }
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!(
+                "Failed to save {} POI region(s): {}",
+                failures.len(),
+                failures.join("; ")
+            )))
+        }
     }
 
     /// Get count of loaded regions

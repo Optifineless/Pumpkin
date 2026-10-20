@@ -80,10 +80,11 @@ fn record(record: &NbtCompound) -> io::Result<PoiEntry> {
 }
 
 fn write_record(mut source: NbtCompound, entry: &PoiEntry) -> NbtTag {
-    for alias in ["x", "y", "z"] {
-        source.child_tags.remove(alias);
-    }
-    source.put("pos", NbtTag::IntArray(vec![entry.x, entry.y, entry.z]));
+    // Rollback build b48caaf06 only reads x/y/z; canonical-only output loses POIs.
+    source.child_tags.remove("pos");
+    source.put_int("x", entry.x);
+    source.put_int("y", entry.y);
+    source.put_int("z", entry.z);
     source.put_string("type", entry.poi_type.clone());
     source.put_int("free_tickets", entry.free_tickets);
     NbtTag::Compound(source)
@@ -245,8 +246,9 @@ impl PoiRegion {
             if let NbtTag::Compound(section) = tag
                 && let Some(NbtTag::List(records)) = section.child_tags.get_mut("Records")
                 && !records.iter().any(|raw| {
-                    raw.extract_compound().and_then(|r| r.get_int_array("pos"))
-                        == Some(&[entry.x, entry.y, entry.z])
+                    raw.extract_compound()
+                        .and_then(|raw| record(raw).ok())
+                        .is_some_and(|old| old.pos() == entry.pos())
                 })
             {
                 records.push(write_record(NbtCompound::new(), entry));

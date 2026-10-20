@@ -14,6 +14,9 @@ const HOME: &str = "minecraft:home";
 const PORTAL: &str = "minecraft:nether_portal";
 const STATION: &str = "minecraft:librarian";
 
+#[path = "review_tests.rs"]
+mod review_tests;
+
 fn pos(x: i32, y: i32, z: i32) -> BlockPos {
     BlockPos(Vector3::new(x, y, z))
 }
@@ -140,13 +143,20 @@ fn assert_record(source: &Nbt, section: &str, p: [i32; 3], kind: &str, tickets: 
         .unwrap()
         .iter()
         .filter_map(NbtTag::extract_compound)
-        .find(|r| r.get_int_array("pos") == Some(p.as_slice()));
-    assert!(found.is_some(), "saved canonical position/type envelope");
+        .find(|r| [r.get_int("x"), r.get_int("y"), r.get_int("z")] == p.map(Some));
+    assert!(
+        found.is_some(),
+        "saved rollback-compatible position/type envelope"
+    );
     let record = found.unwrap();
     assert_eq!(
-        record.get_int_array("pos"),
-        Some(p.as_slice()),
-        "canonical pos int-array"
+        [
+            record.get_int("x"),
+            record.get_int("y"),
+            record.get_int("z")
+        ],
+        p.map(Some),
+        "rollback-readable int triple"
     );
     assert_eq!(record.get_string("type"), Some(kind));
     assert_eq!(
@@ -154,10 +164,7 @@ fn assert_record(source: &Nbt, section: &str, p: [i32; 3], kind: &str, tickets: 
         Some(tickets),
         "literal ticket count"
     );
-    assert!(
-        !record.has("x") && !record.has("y") && !record.has("z"),
-        "no legacy aliases"
-    );
+    assert!(!record.has("pos"), "no stale canonical position");
 }
 
 #[test]
@@ -342,7 +349,7 @@ fn villager_s4_legacy_coordinates_migrate_once_without_ticket_reset() {
         for (x, y, z, kind, tickets) in &expected {
             assert_record(&source, &(y >> 4).to_string(), [*x, *y, *z], kind, *tickets);
         }
-        assert_eq!(source, migrated, "second canonical payload is idempotent");
+        assert_eq!(source, migrated, "second normalized payload is idempotent");
     }
 }
 
@@ -477,6 +484,14 @@ fn villager_s4_section_envelope_and_unknown_data_survive_real_save() {
     {
         section.put_string("extension:section", "keep".to_string());
     }
+    let mut expected = source.clone();
+    if let Some(NbtTag::Compound(sections)) = expected.child_tags.get_mut("Sections")
+        && let Some(NbtTag::Compound(section)) = sections.child_tags.get_mut("-2")
+    {
+        let mut record = legacy([-1, -17, -1], "extension:unknown", 42);
+        record.put_string("extension:record", "stock".to_string());
+        section.put_list("Records", vec![NbtTag::Compound(record)]);
+    }
     write_mca(&path, &[(1023, source.clone())]);
     for _ in 0..2 {
         save_region(&path);
@@ -494,7 +509,7 @@ fn villager_s4_section_envelope_and_unknown_data_survive_real_save() {
         );
         assert_eq!(
             saved.get_compound("Sections"),
-            source.get_compound("Sections"),
+            expected.get_compound("Sections"),
             "validity, empty sections and unknown raw fields"
         );
         assert_eq!(saved.get_int("murgicraft:poi_schema"), Some(1));
