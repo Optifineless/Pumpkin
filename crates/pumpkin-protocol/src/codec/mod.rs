@@ -2,6 +2,7 @@ pub mod bit_set;
 pub mod bitset;
 mod bucket_variants;
 pub mod data_component;
+pub mod item_nbt;
 pub mod item_stack_seralizer;
 mod item_stack_validation;
 // incoming-stack tests also cover item 7 templates.

@@ -1,6 +1,7 @@
 use super::util::write_compound_nbt;
 use crate::block::entities::block_entity_from_nbt;
 use pumpkin_protocol::codec::bit_set::BitSet;
+use pumpkin_protocol::codec::item_nbt::project_item_nbt_for_client;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::ser::NetworkWriteExt;
 use pumpkin_protocol::ser::WritingError;
@@ -206,6 +207,7 @@ pub fn write_chunk_data(
         // Decode and call the per-type packet projection after releasing the pending-map guard.
         let client_nbt = block_entity_from_nbt(nbt)
             .and_then(|entity| entity.chunk_data_nbt())
+            .map(project_item_nbt_for_client)
             .filter(|nbt| !nbt.is_empty());
         write.write_compound_nbt_with_version(client_nbt.as_ref(), version)?;
     }

@@ -63,16 +63,34 @@ fn mob_visibility_saved_stack_preserves_single_list_tag_and_removal() -> Result<
 }
 
 #[test]
-fn mob_visibility_saved_stack_rejects_invalid_components() {
+#[expect(
+    clippy::unwrap_used,
+    reason = "Malformed component preservation fixtures"
+)]
+fn mob_visibility_saved_stack_preserves_invalid_components() {
+    let assert_opaque = |saved: NbtCompound| {
+        let stack = ItemStack::read_item_stack(&saved).unwrap();
+        assert!(!stack.has_data_component(DataComponent::MobVisibility));
+        let mut written = NbtCompound::new();
+        stack.write_item_stack(&mut written);
+        let encode = |nbt: &NbtCompound| {
+            let mut bytes = Vec::new();
+            nbt.get_compound("components")
+                .unwrap()
+                .get("minecraft:mob_visibility")
+                .unwrap()
+                .clone()
+                .serialize(&mut pumpkin_nbt::serializer::NbtWriteHelperJava::new(
+                    &mut bytes,
+                ))
+                .unwrap();
+            bytes
+        };
+        assert_eq!(encode(&saved), encode(&written));
+    };
     let valid_target = NbtTag::String("minecraft:skeleton".into());
     for visibility in [-0.01, -0.0, 10.01, f32::NAN, f32::INFINITY] {
-        assert!(
-            ItemStack::read_item_stack(&saved_stack(
-                valid_target.clone(),
-                NbtTag::Float(visibility)
-            ))
-            .is_none()
-        );
+        assert_opaque(saved_stack(valid_target.clone(), NbtTag::Float(visibility)));
     }
     for targets in [
         NbtTag::Int(1),
@@ -82,9 +100,9 @@ fn mob_visibility_saved_stack_rejects_invalid_components() {
         NbtTag::List(vec![valid_target.clone(), NbtTag::Int(1)]),
         NbtTag::List(vec![NbtTag::String("minecraft:missing".into())]),
     ] {
-        assert!(ItemStack::read_item_stack(&saved_stack(targets, NbtTag::Float(0.5))).is_none());
+        assert_opaque(saved_stack(targets, NbtTag::Float(0.5)));
     }
-    assert!(ItemStack::read_item_stack(&saved_stack(valid_target, NbtTag::End)).is_none());
+    assert_opaque(saved_stack(valid_target, NbtTag::End));
 }
 
 #[test]

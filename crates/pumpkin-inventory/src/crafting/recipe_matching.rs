@@ -286,6 +286,7 @@ fn decorated_pot(count: usize, inventory: &dyn RecipeInputInventory) -> Option<I
             item: ingredient.item,
             count: 1,
             patch: ingredient.patch,
+            raw_components: ingredient.raw_components,
         })
     });
     let mut result = ItemStack::new(1, &Item::DECORATED_POT);

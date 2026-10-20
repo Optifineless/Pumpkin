@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use crate::ClientPacket;
+use crate::codec::item_nbt::project_item_nbt_for_client;
 use crate::codec::var_int::VarInt;
 use crate::packet::MultiVersionJavaPacket;
 use crate::ser::{NetworkWriteExt, WritingError};
@@ -143,7 +144,8 @@ impl ClientPacket for CChunkData<'_> {
             write.write_u8(be.packed_xz)?;
             write.write_i16_be(be.y)?;
             write.write_var_int(&be.type_id)?;
-            write.write_compound_nbt_with_version(Some(&be.data), version)?;
+            let data = project_item_nbt_for_client(be.data.clone());
+            write.write_compound_nbt_with_version(Some(&data), version)?;
         }
 
         self.light_data.write(&mut write, version)?;

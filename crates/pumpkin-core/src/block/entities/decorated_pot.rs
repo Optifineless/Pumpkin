@@ -30,6 +30,7 @@ pub(crate) fn legacy_brick_decorations() -> PotDecorationsImpl {
         item: &Item::BRICK,
         count: 1,
         patch: Vec::new(),
+        raw_components: Vec::new(),
     };
     PotDecorationsImpl {
         decorations: std::array::from_fn(|_| Some(brick.clone())),

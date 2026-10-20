@@ -8,6 +8,7 @@ use crate::{server::Server, world::World};
 use pumpkin_data::Block;
 use pumpkin_inventory::Inventory;
 use pumpkin_protocol::bedrock::server::inventory_transaction::UseItemTransactionData;
+use pumpkin_protocol::codec::item_nbt::project_item_nbt_for_client;
 
 // UseOnContext retains the admitted hand/stack and hit result through useItemOn callbacks.
 struct AdmittedItemUse<'a> {
@@ -154,7 +155,8 @@ impl BedrockClient {
             {
                 self.try_enqueue_client_packet(
                     &pumpkin_protocol::bedrock::client::block_actor_data::CBlockActorData::new(
-                        position, actor_data,
+                        position,
+                        project_item_nbt_for_client(actor_data),
                     ),
                 );
             }

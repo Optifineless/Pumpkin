@@ -19,6 +19,7 @@ use std::num::NonZero;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 mod categories;
+pub(crate) mod raw_components;
 
 /// The outcome of a [`ItemStack::damage_item`] call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +45,8 @@ pub struct ItemStack {
     pub item_count: u8,
     pub item: &'static Item,
     pub patch: Vec<(DataComponent, Option<Box<dyn DataComponentImpl>>)>,
+    /// Undecodable persistent entries, excluded from gameplay and network component patches.
+    pub raw_components: Vec<(Box<str>, NbtTag)>,
 
     // unique ID for Bedrock network; don't serialize
     // Should always be a positive value for non-empty stacks
@@ -120,6 +123,7 @@ impl ItemStack {
             item_count,
             item,
             patch: Vec::new(),
+            raw_components: Vec::new(),
 
             uid: ITEM_STACK_ID_GEN.next_id(),
         }
@@ -135,6 +139,7 @@ impl ItemStack {
             item_count,
             item,
             patch: component,
+            raw_components: Vec::new(),
 
             uid: ITEM_STACK_ID_GEN.next_id(),
         }
@@ -149,6 +154,7 @@ impl ItemStack {
             item_count,
             item,
             patch: Vec::new(),
+            raw_components: Vec::new(),
 
             uid: match NonZero::new(1) {
                 Some(v) => v,
@@ -178,6 +184,9 @@ impl ItemStack {
     pub fn get_data_component_mut<T: DataComponentImpl + 'static>(&mut self) -> Option<&mut T> {
         let to_get_id = T::get_enum();
         if let Some(index) = self.patch.iter().position(|(id, _)| *id == to_get_id) {
+            if self.patch[index].1.is_some() {
+                self.discard_raw_component(to_get_id);
+            }
             return self.patch[index]
                 .1
                 .as_mut()
@@ -193,6 +202,7 @@ impl ItemStack {
             }
         }
         if let Some((id, component)) = cloned {
+            self.discard_raw_component(to_get_id);
             self.patch.push((id, component));
             return self
                 .patch
@@ -237,6 +247,7 @@ impl ItemStack {
     }
 
     pub fn set_lore(&mut self, lines: Vec<pumpkin_util::text::TextComponent>) {
+        self.discard_raw_component(DataComponent::Lore);
         let lore = Some(Box::new(crate::data_component_impl::LoreImpl { lines }) as _);
         if let Some((_, component)) = self
             .patch
@@ -251,6 +262,7 @@ impl ItemStack {
 
     pub fn set_data_component<T: DataComponentImpl + 'static>(&mut self, component: T) {
         let to_set_id = T::get_enum();
+        self.discard_raw_component(to_set_id);
         let boxed = Some(Box::new(component) as _);
         if let Some((_, c)) = self.patch.iter_mut().find(|(id, _)| *id == to_set_id) {
             *c = boxed;
@@ -260,6 +272,7 @@ impl ItemStack {
     }
 
     pub fn remove_data_component(&mut self, to_remove_id: DataComponent) {
+        self.discard_raw_component(to_remove_id);
         if let Some((_, c)) = self.patch.iter_mut().find(|(id, _)| *id == to_remove_id) {
             *c = None;
         } else {
@@ -275,10 +288,17 @@ impl ItemStack {
         self.set_lore(lines);
     }
 
+    fn discard_raw_component(&mut self, id: DataComponent) {
+        self.raw_components.retain(|(name, _)| {
+            DataComponent::try_from_name(name.strip_prefix('!').unwrap_or(name)) != Some(id)
+        });
+    }
+
     pub const EMPTY: &'static Self = &Self {
         item_count: 0,
         item: &Item::AIR,
         patch: Vec::new(),
+        raw_components: Vec::new(),
 
         uid: NonZero::<i32>::MIN, // white lie - Bedrock `uid` is never sent if the stack is empty
     };
@@ -335,6 +355,7 @@ impl ItemStack {
     }
 
     pub fn set_damage(&mut self, damage: i32) {
+        self.discard_raw_component(DataComponent::Damage);
         let damage = damage.max(0);
         if damage == 0 {
             self.patch.retain(|(id, _)| *id != DataComponent::Damage);
@@ -473,6 +494,7 @@ impl ItemStack {
     }
 
     pub fn set_custom_name(&mut self, name: String) {
+        self.discard_raw_component(DataComponent::CustomName);
         use crate::data_component_impl::CustomNameImpl;
         let component = Some(
             CustomNameImpl {
@@ -504,6 +526,7 @@ impl ItemStack {
     }
 
     pub fn remove_custom_name(&mut self) {
+        self.discard_raw_component(DataComponent::CustomName);
         self.patch
             .retain(|(id, _)| *id != DataComponent::CustomName);
     }
@@ -530,6 +553,7 @@ impl ItemStack {
     }
 
     pub fn set_repair_cost(&mut self, cost: i32) {
+        self.discard_raw_component(DataComponent::RepairCost);
         if cost <= 0 {
             self.patch
                 .retain(|(id, _)| *id != DataComponent::RepairCost);
@@ -595,6 +619,7 @@ impl ItemStack {
     }
 
     fn set_custom_data_component(&mut self, custom_data: NbtCompound) {
+        self.discard_raw_component(DataComponent::CustomData);
         let component = Some(CustomDataImpl { data: custom_data }.to_dyn());
         if let Some((_, data)) = self
             .patch
@@ -628,7 +653,10 @@ impl ItemStack {
             return;
         };
 
-        namespace_data.child_tags.remove(key);
+        if namespace_data.child_tags.remove(key).is_none() && !namespace_data.is_empty() {
+            return;
+        }
+        self.discard_raw_component(DataComponent::CustomData);
         if !namespace_data.is_empty() {
             custom_data
                 .child_tags
@@ -727,7 +755,9 @@ impl ItemStack {
             return false;
         }
 
-        if self.patch.len() != other.patch.len() {
+        if self.patch.len() != other.patch.len()
+            || !raw_components::raw_components_equal(&self.raw_components, &other.raw_components)
+        {
             return false;
         }
 
@@ -736,7 +766,13 @@ impl ItemStack {
             'out: for (other_id, other_data) in &other.patch {
                 if id == other_id {
                     if let (Some(data), Some(other_data)) = (data, other_data) {
-                        if !data.equal(other_data.as_ref()) {
+                        if !data.equal(other_data.as_ref())
+                            || !raw_components::embedded_raw_components_equal(
+                                *id,
+                                data.as_ref(),
+                                other_data.as_ref(),
+                            )
+                        {
                             return false;
                         }
                         not_found = false;
@@ -838,6 +874,10 @@ impl ItemStack {
             }
         }
 
+        for (name, data) in &self.raw_components {
+            tag.put(name, data.clone());
+        }
+
         // Store custom data like enchantments, display name, etc. would go here
         compound.put_compound("components", tag);
     }
@@ -868,14 +908,21 @@ impl ItemStack {
         // Process any additional data in the components compound
         if let Some(tag) = compound.get_compound("components") {
             for (name, data) in &tag.child_tags {
-                if let Some(name) = name.strip_prefix("!") {
-                    item_stack
-                        .patch
-                        .push((DataComponent::try_from_name(name)?, None));
-                } else {
-                    let id = DataComponent::try_from_name(name)?;
-                    item_stack.patch.push((id, Some(read_data(id, data)?)));
+                let component_name = name.strip_prefix('!').unwrap_or(name);
+                if let Some(id) = DataComponent::try_from_name(component_name) {
+                    if name.starts_with('!') {
+                        item_stack.patch.push((id, None));
+                        // Retain noncanonical removal payloads without changing removal behavior.
+                        if data.extract_compound().is_some_and(NbtCompound::is_empty) {
+                            continue;
+                        }
+                    } else if let Some(decoded) = read_data(id, data) {
+                        item_stack.patch.push((id, Some(decoded)));
+                        continue;
+                    }
                 }
+                raw_components::warn_preserved_component(name);
+                item_stack.raw_components.push((name.clone(), data.clone()));
             }
         }
 

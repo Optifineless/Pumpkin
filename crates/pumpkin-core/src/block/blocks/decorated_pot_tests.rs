@@ -135,6 +135,7 @@ fn decoration(item: &'static Item, count: i32) -> PotDecoration {
         item,
         count,
         patch: Vec::new(),
+        raw_components: Vec::new(),
     }
 }
 

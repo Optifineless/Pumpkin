@@ -1,6 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use pumpkin_nbt::{Nbt, compound::NbtCompound};
+use pumpkin_protocol::codec::item_nbt::project_item_nbt_for_client;
 use pumpkin_protocol::java::{
     client::play::CTagQueryResponse,
     server::play::{SBlockEntityTagQuery, SEntityTagQuery},
@@ -17,7 +18,8 @@ impl JavaClient {
             block_entity.write_nbt(&mut compound);
         }
 
-        let nbt_bytes = Nbt::new(String::new(), compound).write_unnamed();
+        let nbt_bytes =
+            Nbt::new(String::new(), project_item_nbt_for_client(compound)).write_unnamed();
         self.try_send_packet(&CTagQueryResponse::new(packet.transaction_id, &nbt_bytes));
     }
 
@@ -31,7 +33,8 @@ impl JavaClient {
             entity.write_nbt(&mut compound);
         }
 
-        let nbt_bytes = Nbt::new(String::new(), compound).write_unnamed();
+        let nbt_bytes =
+            Nbt::new(String::new(), project_item_nbt_for_client(compound)).write_unnamed();
         self.try_send_packet(&CTagQueryResponse::new(packet.transaction_id, &nbt_bytes));
     }
 }

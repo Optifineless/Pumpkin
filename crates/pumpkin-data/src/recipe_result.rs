@@ -17,6 +17,7 @@ impl RecipeResultStruct {
         let mut stack = ItemStack::new(self.count.saturating_add(extra_count), item);
         if let Some(original) = original {
             stack.patch.clone_from(&original.patch);
+            stack.raw_components.clone_from(&original.raw_components);
         }
         if let Some(components) = self.components
             && let Ok(value) = serde_json::from_str::<serde_json::Value>(components)

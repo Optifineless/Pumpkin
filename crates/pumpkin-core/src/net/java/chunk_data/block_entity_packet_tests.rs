@@ -52,6 +52,71 @@ fn marker(value: &str) -> NbtCompound {
 }
 
 #[test]
+fn raw_components_initial_chunk_nbt_omits_raw_without_changing_saved_image() {
+    use crate::raw_component_packet_tests::{POSITION, assert_client_items, saved_barrel};
+
+    let mut chunk = ChunkData::empty(0, 0);
+    let saved = saved_barrel();
+    chunk
+        .pending_block_entities
+        .get_mut()
+        .unwrap()
+        .insert(POSITION, saved.clone());
+    let encoded = encoded_block_entities(&chunk);
+    assert_eq!(encoded.len(), 1);
+    assert_client_items(encoded[0].tag.as_ref().unwrap());
+    assert_eq!(
+        chunk
+            .pending_block_entities
+            .get_mut()
+            .unwrap()
+            .get(&POSITION),
+        Some(&saved)
+    );
+}
+
+#[test]
+fn raw_components_protocol_chunk_nbt_omits_raw_without_changing_saved_image() {
+    use crate::raw_component_packet_tests::saved_barrel;
+    use pumpkin_protocol::{
+        VarInt,
+        java::client::play::{ChunkBlockEntity, ChunkHeightmaps, LightData},
+    };
+
+    let saved = saved_barrel();
+    let packet = pumpkin_protocol::java::client::play::CChunkData::new(
+        0,
+        0,
+        ChunkHeightmaps::default(),
+        &[],
+        vec![ChunkBlockEntity::new(0x88, 64, VarInt(1), saved.clone())],
+        LightData::default(),
+    );
+    let mut encoded = Vec::new();
+    packet
+        .write_packet_data(&mut encoded, &JavaMinecraftVersion::V_26_3)
+        .unwrap();
+    for name in [
+        "minecraft:future_container",
+        "minecraft:future_thing",
+        "!test:future",
+    ] {
+        assert!(
+            !encoded
+                .windows(name.len())
+                .any(|bytes| bytes == name.as_bytes())
+        );
+    }
+    let application_blob = b"test:application_blob";
+    assert!(
+        encoded
+            .windows(application_blob.len())
+            .any(|bytes| bytes == application_blob)
+    );
+    assert_eq!(packet.block_entities[0].data, saved);
+}
+
+#[test]
 fn block_entity_chunk_packet_projects_full_persistent_images_without_changing_them() {
     let chunk = ChunkData::empty(0, 0);
     let chest_pos = BlockPos::new(1, 64, 2);

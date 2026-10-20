@@ -939,3 +939,7 @@ mod inventory_transaction_bow_tests;
 
 #[cfg(test)]
 mod inventory_transaction_use_tests;
+#[cfg(test)]
+mod raw_component_packet_tests;
+#[cfg(test)]
+mod raw_component_persistence_tests;

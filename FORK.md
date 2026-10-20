@@ -2,6 +2,54 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Undecodable saved item components (#399)
+
+Item stacks retain unknown component names, unknown removal markers and values
+that their registered component decoder cannot read. These entries stay opaque
+on the server and save under their original names and NBT tags in `components`.
+Player inventories and equipment, ender chests, block/entity inventories, drops,
+frames, villager stock and nested containers share this behavior. Bundles,
+shulkers, charged projectiles, use remainders, recipe transformations and pot face templates
+retain it recursively. Decodable components and malformed item ID/count handling
+keep their existing meaning. This deliberately extends vanilla 26.3
+`ItemStack.MAP_CODEC`, `ItemStackTemplate.MAP_CODEC` and `DataComponentPatch.CODEC`.
+
+Stacks merge only when their opaque entries also match, by name, tag type and
+payload, including float bits and nested entries. Compound key order does not
+affect equality. Tags retain their values and types; the existing NBT compound
+reader uses an unordered map, so original compound wire order is not retained.
+Explicit component setters/removers or a successful mutable component lookup
+replace that component's opaque value; unrelated edits preserve it. Diagnostics
+use a bounded lock-free cache of 1,024 name fingerprints, warning once for each
+admitted name per process and suppressing further names when full.
+
+Java and Bedrock item encoders omit opaque entries. Generic entity/block-entity
+NBT components containing nested opaque item components are withheld from item
+packets as a whole; their server and saved copies remain intact. Arbitrary
+`custom_data` retains its existing encoding. Chunk, block-entity update and
+operator NBT-query packets also strip opaque item entries from outgoing copies,
+including nested inventories; known removals retain their decoded meaning.
+Survival inventory actions operate
+on server stacks and retain the hidden entries. **Creative limit:** Java's
+client-authored slot replacements, clones and Creative drops contain only the
+visible components, without a reliable source identity. Such replacements can
+erase hidden data, and new Creative copies/drops cannot recover it. Ordinary
+Bedrock moves retain server data; Creative catalog creation makes new items.
+
+API 8 (same version): `ItemStack` and `PotDecoration` gain public
+`raw_components` storage, changing native layouts and struct literals. Rebuild
+native plugins and initialize that field when constructing literals; existing
+component methods keep their decoded-component behavior. Wasm WIT and the native
+API version are unchanged. Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: import tagged stacks into your inventory, ender chest, a barrel, a
+shulker and a ground drop. In Survival, split and move them, save, restart and
+expect the same counts and saved hidden tags. Try merging visually identical
+stacks with different hidden tags; expect them to stay separate. Record the
+counts before and after restart, and retain the saved component tags. Avoid
+Creative inventory edits when checking preservation.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.

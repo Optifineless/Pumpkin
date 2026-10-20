@@ -533,6 +533,7 @@ pub struct PotDecoration {
         crate::data_component::DataComponent,
         Option<Box<dyn DataComponentImpl>>,
     )>,
+    pub raw_components: Vec<(Box<str>, NbtTag)>,
 }
 
 impl PotDecoration {
@@ -547,6 +548,7 @@ impl PotDecoration {
                 item,
                 count: 1,
                 patch: Vec::new(),
+                raw_components: Vec::new(),
             });
         }
 
@@ -564,14 +566,20 @@ impl PotDecoration {
         }
 
         let mut patch = Vec::new();
+        let mut raw_components = Vec::new();
         if let Some(components) = compound.get("components") {
             let components = components.extract_compound()?;
             let mut seen = [false; 256];
             for (name, value) in &components.child_tags {
+                let original_name = name;
                 let (name, removed) = name
                     .strip_prefix('!')
                     .map_or((name.as_ref(), false), |name| (name, true));
-                let id = crate::data_component::DataComponent::try_from_name(name)?;
+                let Some(id) = crate::data_component::DataComponent::try_from_name(name) else {
+                    crate::item_stack::raw_components::warn_preserved_component(original_name);
+                    raw_components.push((original_name.clone(), value.clone()));
+                    continue;
+                };
                 if !Self::is_persistent_component(id)
                     || std::mem::replace(&mut seen[usize::from(id.to_id())], true)
                 {
@@ -583,12 +591,22 @@ impl PotDecoration {
                     }
                     None
                 } else {
-                    Some(crate::data_component_impl::read_data(id, value)?)
+                    let Some(decoded) = crate::data_component_impl::read_data(id, value) else {
+                        crate::item_stack::raw_components::warn_preserved_component(original_name);
+                        raw_components.push((original_name.clone(), value.clone()));
+                        continue;
+                    };
+                    Some(decoded)
                 };
                 patch.push((id, value));
             }
         }
-        Some(Self { item, count, patch })
+        Some(Self {
+            item,
+            count,
+            patch,
+            raw_components,
+        })
     }
 
     /// Persists the template while omitting default count and empty component fields.
@@ -608,6 +626,9 @@ impl PotDecoration {
                 None => components
                     .put_compound(format!("!{}", id.to_name()).as_str(), NbtCompound::new()),
             }
+        }
+        for (name, value) in &self.raw_components {
+            components.put(name, value.clone());
         }
         if !components.child_tags.is_empty() {
             compound.put_compound("components", components);
@@ -630,6 +651,7 @@ impl PotDecoration {
     pub fn to_item_stack(&self) -> crate::item_stack::ItemStack {
         let mut stack = crate::item_stack::ItemStack::new(self.count as u8, self.item);
         stack.patch.clone_from(&self.patch);
+        stack.raw_components.clone_from(&self.raw_components);
         stack
     }
 }
@@ -644,12 +666,21 @@ impl PartialEq for PotDecoration {
     fn eq(&self, other: &Self) -> bool {
         self.item.id == other.item.id
             && self.count == other.count
+            && crate::item_stack::raw_components::raw_components_equal(
+                &self.raw_components,
+                &other.raw_components,
+            )
             && self.patch.len() == other.patch.len()
             && self.patch.iter().all(|(id, value)| {
                 other.patch.iter().any(|(other_id, other_value)| {
                     id == other_id
                         && match (value, other_value) {
-                            (Some(value), Some(other_value)) => value.equal(other_value.as_ref()),
+                            (Some(value), Some(other_value)) => value.equal(other_value.as_ref())
+                                && crate::item_stack::raw_components::embedded_raw_components_equal(
+                                    *id,
+                                    value.as_ref(),
+                                    other_value.as_ref(),
+                                ),
                             (None, None) => true,
                             _ => false,
                         }
@@ -772,6 +803,7 @@ mod decorated_pot_tests {
                 item,
                 count,
                 patch: Vec::new(),
+                raw_components: Vec::new(),
             })
         };
         let original = PotDecorationsImpl {

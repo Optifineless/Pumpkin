@@ -8,7 +8,13 @@ mod item_components;
 
 #[path = "jukebox_playable.rs"]
 mod jukebox_playable;
-pub(super) use jukebox_playable::can_serialize_component;
+#[path = "raw_components.rs"]
+mod raw_components;
+
+pub(super) fn can_serialize_component(id: DataComponent, data: &dyn DataComponentImpl) -> bool {
+    jukebox_playable::can_serialize_component(id, data)
+        && raw_components::can_serialize_component(id, data)
+}
 
 #[path = "book_components.rs"]
 mod book_components;
@@ -2505,6 +2511,7 @@ impl DataComponentCodec<Self> for PotDecorationsImpl {
                     item: stack.item,
                     count: i32::from(stack.item_count),
                     patch: stack.patch,
+                    raw_components: stack.raw_components,
                 });
             }
         }

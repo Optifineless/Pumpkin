@@ -73,6 +73,8 @@ mod merchant_callback_tests;
 #[cfg(test)]
 mod quick_craft_tests;
 #[cfg(test)]
+mod raw_component_tests;
+#[cfg(test)]
 mod result_container_tests;
 #[cfg(test)]
 mod shared_slot_tests;

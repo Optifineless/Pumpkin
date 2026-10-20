@@ -854,7 +854,14 @@ impl OptionalItemStackHash {
                 .iter()
                 .filter(|(_, data)| data.is_none())
                 .count();
-            let to_add = other.patch.len() - to_remove;
+            let to_add = other
+                .patch
+                .iter()
+                .filter(|(id, data)| {
+                    data.as_ref()
+                        .is_some_and(|data| can_serialize_component(*id, data.as_ref()))
+                })
+                .count();
             if to_add != hash.components.added.len() || to_remove != hash.components.removed.len() {
                 return false;
             }
@@ -864,6 +871,9 @@ impl OptionalItemStackHash {
             for (other_id, data) in &other.patch {
                 let wire_id = VarInt::from(other_id.to_id());
                 if let Some(data) = data {
+                    if !can_serialize_component(*other_id, data.as_ref()) {
+                        continue;
+                    }
                     let checksum = data.get_hash();
                     if !claim_matching(
                         &hash.components.added,

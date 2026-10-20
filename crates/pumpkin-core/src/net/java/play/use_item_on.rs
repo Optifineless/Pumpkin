@@ -2,6 +2,7 @@
 use super::*;
 use crate::block::registry::PlacementOutcome;
 use crate::item::registry::should_try_block_placement;
+use pumpkin_protocol::codec::item_nbt::project_item_nbt_for_client;
 use pumpkin_protocol::java::client::play::CBlockEntityData;
 
 impl JavaClient {
@@ -270,7 +271,8 @@ impl JavaClient {
             if let Some(block_entity) = world.get_block_entity(&position)
                 && let Some(nbt) = block_entity.chunk_data_nbt()
             {
-                let bytes = pumpkin_nbt::Nbt::from(nbt).write_unnamed();
+                let bytes =
+                    pumpkin_nbt::Nbt::from(project_item_nbt_for_client(nbt)).write_unnamed();
                 player.try_send_client_packet(&CBlockEntityData::new(
                     position,
                     VarInt(block_entity.get_id() as i32),

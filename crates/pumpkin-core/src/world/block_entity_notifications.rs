@@ -1,5 +1,6 @@
 //! Client tags follow the same commit order as persistent block-entity images.
 
+use pumpkin_protocol::codec::item_nbt::project_item_nbt_for_client;
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicBool, Ordering},
@@ -48,7 +49,7 @@ impl World {
             ready: ready.clone(),
             position,
             expected: Arc::downgrade(entity),
-            bytes: pumpkin_nbt::Nbt::from(nbt).write_unnamed(),
+            bytes: pumpkin_nbt::Nbt::from(project_item_nbt_for_client(nbt)).write_unnamed(),
         };
         Some((
             notification,

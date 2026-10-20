@@ -1,4 +1,5 @@
 pub(crate) use explosion::ExplosionDamageSource;
+use pumpkin_protocol::codec::item_nbt::project_item_nbt_for_client;
 use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 mod container_lifecycle;
 mod storage_failure;
@@ -1962,7 +1963,8 @@ impl World {
                 if let Some(block_entity) = self.get_block_entity(&block_pos)
                     && let Some(nbt) = block_entity.chunk_data_nbt()
                 {
-                    let bytes = pumpkin_nbt::Nbt::from(nbt).write_unnamed();
+                    let bytes =
+                        pumpkin_nbt::Nbt::from(project_item_nbt_for_client(nbt)).write_unnamed();
                     self.broadcast_to_chunk(
                         chunk_pos,
                         &CBlockEntityData::new(
@@ -1975,7 +1977,7 @@ impl World {
                 if let Some(data) = self.bedrock_block_entity_data(block_state_id, block_pos) {
                     self.broadcast_to_chunk_bedrock(
                         chunk_pos,
-                        &CBlockActorData::new(block_pos, data),
+                        &CBlockActorData::new(block_pos, project_item_nbt_for_client(data)),
                     );
                 }
             } else {
@@ -1997,7 +1999,9 @@ impl World {
                     );
                     let actor_packet = self
                         .bedrock_block_entity_data(*block_state_id, *block_pos)
-                        .map(|data| CBlockActorData::new(*block_pos, data));
+                        .map(|data| {
+                            CBlockActorData::new(*block_pos, project_item_nbt_for_client(data))
+                        });
                     bedrock_packets.push((update_packet, actor_packet));
                 }
 
@@ -2035,7 +2039,8 @@ impl World {
                     if let Some(block_entity) = self.get_block_entity(block_pos)
                         && let Some(nbt) = block_entity.chunk_data_nbt()
                     {
-                        let bytes = pumpkin_nbt::Nbt::from(nbt).write_unnamed();
+                        let bytes = pumpkin_nbt::Nbt::from(project_item_nbt_for_client(nbt))
+                            .write_unnamed();
                         self.broadcast_to_chunk(
                             chunk_pos,
                             &CBlockEntityData::new(

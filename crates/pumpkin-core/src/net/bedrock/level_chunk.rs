@@ -1,3 +1,4 @@
+use pumpkin_protocol::codec::item_nbt::project_item_nbt_for_client;
 use std::io::{Error, Write};
 use xxhash_rust::xxh64::xxh64;
 
@@ -59,7 +60,9 @@ pub type EncodedChunk = (Vec<u8>, Vec<ChunkBlob>);
 fn encode_block_actors(block_actors: &[NbtCompound]) -> Result<Vec<u8>, Error> {
     let mut encoded = Vec::new();
     for block_actor in block_actors {
-        encoded.write_all(&Nbt::from(block_actor.clone()).write_bedrock())?;
+        encoded.write_all(
+            &Nbt::from(project_item_nbt_for_client(block_actor.clone())).write_bedrock(),
+        )?;
     }
     Ok(encoded)
 }
@@ -206,6 +209,17 @@ mod tests {
 
     use super::{CLevelChunk, VERSION};
     use pumpkin_protocol::serial::PacketWrite;
+
+    #[test]
+    fn raw_components_bedrock_chunk_actor_nbt_omits_raw_without_changing_saved_image() {
+        use crate::raw_component_packet_tests::{assert_client_items, saved_barrel};
+
+        let saved = saved_barrel();
+        let encoded = super::encode_block_actors(std::slice::from_ref(&saved)).unwrap();
+        let mut reader = NbtReadHelperBedrock::new(Cursor::new(encoded));
+        assert_client_items(&Nbt::read(&mut reader).unwrap().root_tag);
+        assert_eq!(saved, saved_barrel());
+    }
 
     fn read_var_uint(data: &[u8], offset: &mut usize) -> u32 {
         let mut value = 0;
