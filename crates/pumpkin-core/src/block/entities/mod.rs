@@ -563,3 +563,6 @@ mod test {
 
 #[cfg(test)]
 mod container_event_tests;
+
+#[cfg(test)]
+mod jukebox_packet_tests;

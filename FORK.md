@@ -20,6 +20,23 @@ Mirrors `JukeboxPlayable.CODEC/tryInsertIntoJukebox` and
 `JukeboxBlockEntity.loadAdditional`. Arbitrary inline songs are not represented.
 Native API 8, public layouts/signatures and Wasm WIT are unchanged.
 
+PR #336 review: Java item packets now use the synced jukebox-song registry's
+holder ID plus one, with matching registered-reference decoding. Stopped legacy
+song patches stay in saves and use the item's default component on clients;
+all stack, template and trade-cost writers omit those unregistered additions.
+Bedrock's existing item conversion sends no song patch. Regressions restore saved
+jukebox NBT, eject through a real right-click and independently decode the actual
+item metadata and full inventory packets, including the stopped legacy case.
+Mirrors vanilla 26.3 `JukeboxPlayable/JukeboxSong.STREAM_CODEC` and
+`ByteBufCodecs.holder`. No public API or saved-data meaning changes.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Review play test: with a second Java player nearby, restart with a disc configured
+to play Cat in a jukebox, then eject it, pick it up and open the inventory. Expect
+both players to stay connected; reinsert the disc and expect Cat. Repeat with an
+old stopped record; expect it to remain stopped without disconnecting either
+player. Capture the ejection and inventory on both clients.
+
 Upstream #3728 partially overlaps with legacy jukebox writing, and #3507 includes
 skull components in a broader redesign. This change keeps the scoped existing
 paths. The separate restored-power/D17 follow-up remains owned by fork #257;
