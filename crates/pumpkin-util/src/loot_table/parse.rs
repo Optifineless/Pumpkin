@@ -288,6 +288,16 @@ impl Parser<'_> {
                             supported = false;
                         }
                     }
+                    "type_specific/raider" => {
+                        if part.as_object().is_none_or(|fields| {
+                            ["has_raid", "is_captain"].iter().any(|key| {
+                                fields.get(*key).is_some_and(|value| !value.is_boolean())
+                            })
+                        }) {
+                            self.unsupported.insert("raider predicate parts".to_owned());
+                            supported = false;
+                        }
+                    }
                     "flags" => {
                         if let Some(flags) = part.as_object() {
                             for name in flags.keys() {
@@ -392,6 +402,7 @@ impl Parser<'_> {
             kind,
             "sequence"
                 | "set_count"
+                | "set_ominous_bottle_amplifier"
                 | "apply_bonus"
                 | "looting_enchant"
                 | "enchanted_count_increase"
