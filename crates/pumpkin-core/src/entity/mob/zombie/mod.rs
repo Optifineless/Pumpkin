@@ -28,6 +28,10 @@ pub mod husk;
 pub mod zombie;
 pub mod zombie_villager;
 
+#[cfg(test)]
+#[path = "b1020d_g02_door_tests.rs"]
+mod b1020d_g02_door_tests;
+
 pub struct ZombieEntityBase {
     pub mob_entity: MobEntity,
     pub can_break_doors: AtomicBool,
@@ -41,6 +45,17 @@ impl ZombieEntityBase {
 
     pub fn with_can_break_doors(entity: Entity, can_break_doors: bool) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        let can_break_doors = {
+            let mut navigator = mob_entity
+                .navigator
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let can_break_doors = can_break_doors
+                && navigator.can_navigate_ground()
+                && mob_entity.living_entity.entity.entity_type != &EntityType::DROWNED;
+            navigator.set_can_open_doors(can_break_doors);
+            can_break_doors
+        };
         let zombie = Self {
             mob_entity,
             can_break_doors: AtomicBool::new(can_break_doors),
@@ -111,6 +126,19 @@ impl ZombieEntityBase {
     }
 
     pub fn set_can_break_doors(&self, can_break_doors: bool, mob: &dyn Mob) {
+        let can_break_doors = {
+            let mut navigator = self
+                .mob_entity
+                .navigator
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let can_break_doors = can_break_doors
+                && navigator.can_navigate_ground()
+                && self.mob_entity.living_entity.entity.entity_type != &EntityType::DROWNED;
+            navigator.set_can_open_doors(can_break_doors);
+            can_break_doors
+        };
+
         if self
             .can_break_doors
             .swap(can_break_doors, Ordering::Relaxed)
@@ -197,11 +225,6 @@ impl ZombieEntityBase {
             |enabled| {
                 let enabled = enabled && caller.get_entity().entity_type != &EntityType::DROWNED;
                 self.set_can_break_doors(enabled, caller);
-                self.mob_entity
-                    .navigator
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .set_can_open_doors(enabled);
             },
         ))
     }
@@ -331,9 +354,8 @@ impl Mob for ZombieEntityBase {
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
         self.set_baby(nbt.get_bool("IsBaby").unwrap_or(false));
-        if let Some(can_break_doors) = nbt.get_bool("CanBreakDoors") {
-            self.set_can_break_doors(can_break_doors, self);
-        }
+        // Mirrors Zombie.readAdditionalSaveData's getBooleanOr("CanBreakDoors", false).
+        self.set_can_break_doors(nbt.get_bool("CanBreakDoors").unwrap_or(false), self);
     }
 }
 
