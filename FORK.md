@@ -2,6 +2,21 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Extinguished campfire cooking progress (#304)
+
+Unlit campfires subtract two progress ticks, then clamp each positive slot to
+zero and its own saved cooking duration. This mirrors vanilla 26.3
+`CampfireBlockEntity.cooldownTick` and preserves the existing cooking events,
+transaction owner and NBT fields. Negative plugin or imported durations follow
+Java's clamp order without panicking. Native API 8, public layouts and
+signatures, Wasm WIT and saved-data meaning are unchanged. In-game verification:
+Not yet.
+
+Play test: use a plugin that cancels campfire cooking, let progress pass its
+duration, extinguish the campfire with a shovel, then relight it. Expect cooling
+to stop at the duration, resume cooking normally, and preserve the uncooked
+food until cooking succeeds. Capture the campfire NBT, food stacks and any drops.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
