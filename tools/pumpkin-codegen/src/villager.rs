@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
 use serde_json::Value;
-use std::fs;
+use std::{fs, path::Path};
 
 #[derive(Deserialize)]
 struct VillagerDataJson {
@@ -85,14 +85,19 @@ where
 }
 
 pub fn build() -> TokenStream {
+    let assets_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    build_from_assets(&assets_dir)
+}
+
+fn build_from_assets(assets_dir: &Path) -> TokenStream {
     let data: VillagerDataJson =
-        serde_json::from_str(&fs::read_to_string("../../assets/villager_data.json").unwrap())
+        serde_json::from_str(&fs::read_to_string(assets_dir.join("villager_data.json")).unwrap())
             .expect("Failed to parse villager_data.json");
 
     // Load trade sets from datapack
-    let trade_set_dir = std::path::Path::new("../../assets/datapack/data/minecraft/trade_set");
+    let trade_set_dir = assets_dir.join("datapack/data/minecraft/trade_set");
     let mut trade_sets: IndexMap<String, TradeSetJson> = IndexMap::new();
-    walk_json_files(trade_set_dir, trade_set_dir, &mut |key, content| {
+    walk_json_files(&trade_set_dir, &trade_set_dir, &mut |key, content| {
         if let Ok(trade_set) = serde_json::from_str::<TradeSetJson>(&content) {
             trade_sets.insert(format!("minecraft:{key}"), trade_set.clone());
             trade_sets.insert(key, trade_set);
@@ -100,10 +105,9 @@ pub fn build() -> TokenStream {
     });
 
     // Load trade tags from datapack
-    let trade_tags_dir =
-        std::path::Path::new("../../assets/datapack/data/minecraft/tags/villager_trade");
+    let trade_tags_dir = assets_dir.join("datapack/data/minecraft/tags/villager_trade");
     let mut raw_trade_tags: IndexMap<String, Vec<String>> = IndexMap::new();
-    walk_json_files(trade_tags_dir, trade_tags_dir, &mut |key, content| {
+    walk_json_files(&trade_tags_dir, &trade_tags_dir, &mut |key, content| {
         #[derive(Deserialize)]
         struct TagFile {
             values: Vec<Value>,
@@ -162,9 +166,9 @@ pub fn build() -> TokenStream {
     }
 
     // Load individual villager trades from datapack
-    let trades_dir = std::path::Path::new("../../assets/datapack/data/minecraft/villager_trade");
+    let trades_dir = assets_dir.join("datapack/data/minecraft/villager_trade");
     let mut villager_trades: IndexMap<String, TradeJson> = IndexMap::new();
-    walk_json_files(trades_dir, trades_dir, &mut |key, content| {
+    walk_json_files(&trades_dir, &trades_dir, &mut |key, content| {
         if let Ok(trade) = serde_json::from_str::<TradeJson>(&content) {
             villager_trades.insert(format!("minecraft:{key}"), trade.clone());
             villager_trades.insert(key, trade);
@@ -224,7 +228,7 @@ pub fn build() -> TokenStream {
         let gives = quote! { VillagerTradeItem { item: &crate::item::Item::#gives_item, count: #gives_count } };
 
         let max_uses = trade.max_uses.unwrap_or(16.0) as i32;
-        let xp = trade.xp.unwrap_or(2.0) as i32;
+        let xp = trade.xp.unwrap_or(1.0) as i32;
         let price_multiplier = trade.reputation_discount.unwrap_or(0.05);
 
         let modifier = trade
@@ -573,3 +577,7 @@ pub fn build() -> TokenStream {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "villager_b1020d_g15.rs"]
+mod b1020d_g15_tests;

@@ -72,6 +72,22 @@ behavior. Repeat with the setting false; expect the same gameplay and plugin
 notification counts. Record those actions and plugin notifications on the candidate
 build. No sensor activation repair is claimed.
 
+## Vanilla XP for omitted villager trade XP (#351)
+
+Built-in villager trade generation and runtime datapack trade resolution now
+default omitted definition XP to 1, matching vanilla 26.3
+`VillagerTrade.CODEC`. Explicit XP values remain unchanged; the built-in fletcher
+emerald-to-arrow trade is covered. Imported and saved `MerchantOffer` XP remains
+stored as before, separate from trade-definition defaults. No save data or public
+plugin API changes.
+
+In-game verification: Not yet.
+
+Play test: Trade once with a fletcher's emerald-for-arrows offer whose datapack
+definition omits XP; expect the villager's XP progress to increase by one. Repeat
+with datapack offers specifying XP 0 and 7; expect no progress and seven progress
+points respectively. Capture the offer and villager XP bar before and after.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
