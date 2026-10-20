@@ -7,7 +7,7 @@ use super::{
     render::{Budget, visit_native_template},
     style::Style,
 };
-use crate::translation::get_render_translation;
+use crate::translation::{Locale, get_render_translation};
 
 pub(super) fn needs_translation(value: &TextComponentBase) -> bool {
     // Inspect existing input only, without recursion, cloning or expansion. Native
@@ -39,7 +39,11 @@ fn literal(text: String) -> TextComponentBase {
     TextComponent::text(text).0
 }
 
-fn materialize(value: &TextComponentBase, budget: &mut Budget, depth: usize) -> TextComponentBase {
+pub(super) fn materialize(
+    value: &TextComponentBase,
+    budget: &mut Budget,
+    depth: usize,
+) -> TextComponentBase {
     // Include structural overhead so empty substitutions cannot create an enormous tree.
     if !budget.enter(depth) || !budget.reserve(COMPONENT_OVERHEAD) {
         return literal(String::new());
@@ -50,54 +54,53 @@ fn materialize(value: &TextComponentBase, budget: &mut Budget, depth: usize) -> 
             text: budget.text(text).to_owned().into(),
         },
         TextContent::Custom { key, with, locale } => {
-            let template = get_render_translation(key, *locale, None);
-            let mut first = None;
-            if budget.scan(template.len()) {
-                visit_native_template(&template, with.len().max(1), |text, argument| {
-                    if budget.full() {
-                        return false;
-                    }
-                    if first.is_none() {
-                        first = Some(budget.text(text).to_owned());
-                    } else if !text.is_empty() && budget.reserve(COMPONENT_OVERHEAD) {
-                        extra.push(literal(budget.text(text).to_owned()));
-                    }
-                    if let Some(argument) = argument.and_then(|index| with.get(index)) {
-                        if budget.full() {
-                            return false;
-                        }
-                        extra.push(materialize(argument, budget, depth + 1));
-                    }
-                    !budget.full()
-                });
-            }
-            TextContent::Text {
-                text: first.unwrap_or_default().into(),
-            }
+            custom(key, with, *locale, budget, depth, &mut extra)
         }
         TextContent::Translate {
             translate,
             bedrock_translate,
             with,
-        } => TextContent::Translate {
-            translate: budget.text(translate).to_owned().into(),
-            bedrock_translate: bedrock_translate
-                .as_ref()
-                .map(|key| budget.text(key).to_owned().into()),
-            with: children(with, budget, depth + 1),
-        },
+        } => {
+            if budget.reserve(translate.len())
+                && bedrock_translate
+                    .as_ref()
+                    .is_none_or(|key| budget.reserve(key.len()))
+            {
+                TextContent::Translate {
+                    translate: translate.clone(),
+                    bedrock_translate: bedrock_translate.clone(),
+                    with: children(with, budget, depth + 1),
+                }
+            } else {
+                TextContent::Text { text: "".into() }
+            }
+        }
         TextContent::EntityNames {
             selector,
             separator,
-        } => TextContent::EntityNames {
-            selector: budget.text(selector).to_owned().into(),
-            separator: separator
-                .as_ref()
-                .map(|text| budget.text(text).to_owned().into()),
-        },
-        TextContent::Keybind { keybind } => TextContent::Keybind {
-            keybind: budget.text(keybind).to_owned().into(),
-        },
+        } => {
+            if budget.reserve(selector.len())
+                && separator
+                    .as_ref()
+                    .is_none_or(|text| budget.reserve(text.len()))
+            {
+                TextContent::EntityNames {
+                    selector: selector.clone(),
+                    separator: separator.clone(),
+                }
+            } else {
+                TextContent::Text { text: "".into() }
+            }
+        }
+        TextContent::Keybind { keybind } => {
+            if budget.reserve(keybind.len()) {
+                TextContent::Keybind {
+                    keybind: keybind.clone(),
+                }
+            } else {
+                TextContent::Text { text: "".into() }
+            }
+        }
         content @ (TextContent::Opaque { component } | TextContent::Translatable { component }) => {
             if budget.compound(&component.0, depth + 1) {
                 content.clone()
@@ -120,6 +123,40 @@ fn materialize(value: &TextComponentBase, budget: &mut Budget, depth: usize) -> 
         content: Box::new(content),
         style: Box::new(style(&value.style, budget, depth + 1)),
         extra,
+    }
+}
+
+fn custom(
+    key: &str,
+    with: &[TextComponentBase],
+    locale: Locale,
+    budget: &mut Budget,
+    depth: usize,
+    extra: &mut Vec<TextComponentBase>,
+) -> TextContent {
+    let template = get_render_translation(key, locale, None);
+    let mut first = None;
+    if budget.scan(template.len()) {
+        visit_native_template(&template, with.len().max(1), |text, argument| {
+            if budget.full() {
+                return false;
+            }
+            if first.is_none() {
+                first = Some(budget.text(text).to_owned());
+            } else if !text.is_empty() && budget.reserve(COMPONENT_OVERHEAD) {
+                extra.push(literal(budget.text(text).to_owned()));
+            }
+            if let Some(argument) = argument.and_then(|index| with.get(index)) {
+                if budget.full() {
+                    return false;
+                }
+                extra.push(materialize(argument, budget, depth + 1));
+            }
+            !budget.full()
+        });
+    }
+    TextContent::Text {
+        text: first.unwrap_or_default().into(),
     }
 }
 
@@ -150,9 +187,15 @@ fn style(value: &Style, budget: &mut Budget, depth: usize) -> Style {
         insertion: value
             .insertion
             .as_ref()
-            .map(|text| budget.text(text).to_owned()),
-        font: value.font.as_ref().map(|text| budget.text(text).to_owned()),
-        click_event: value.click_event.as_ref().map(|event| click(event, budget)),
+            .and_then(|text| atomic_text(text, budget)),
+        font: value
+            .font
+            .as_ref()
+            .and_then(|text| atomic_text(text, budget)),
+        click_event: value
+            .click_event
+            .as_ref()
+            .and_then(|event| click(event, budget)),
         hover_event: value
             .hover_event
             .as_ref()
@@ -160,45 +203,55 @@ fn style(value: &Style, budget: &mut Budget, depth: usize) -> Style {
     }
 }
 
-fn click(value: &ClickEvent, budget: &mut Budget) -> ClickEvent {
-    match value {
-        ClickEvent::OpenUrl { url } => ClickEvent::OpenUrl {
-            url: budget.text(url).to_owned().into(),
-        },
-        ClickEvent::OpenFile { path } => ClickEvent::OpenFile {
-            path: budget.text(path).to_owned().into(),
-        },
-        ClickEvent::RunCommand { command } => ClickEvent::RunCommand {
-            command: budget.text(command).to_owned().into(),
-        },
-        ClickEvent::SuggestCommand { command } => ClickEvent::SuggestCommand {
-            command: budget.text(command).to_owned().into(),
-        },
-        ClickEvent::CopyToClipboard { value } => ClickEvent::CopyToClipboard {
-            value: budget.text(value).to_owned().into(),
-        },
-        ClickEvent::ChangePage { page } => ClickEvent::ChangePage { page: *page },
-    }
+fn atomic_text(value: &str, budget: &mut Budget) -> Option<String> {
+    budget.reserve(value.len()).then(|| value.to_owned())
+}
+
+fn click(value: &ClickEvent, budget: &mut Budget) -> Option<ClickEvent> {
+    let bytes = match value {
+        ClickEvent::OpenUrl { url } => url.len(),
+        ClickEvent::OpenFile { path } => path.len(),
+        ClickEvent::RunCommand { command } | ClickEvent::SuggestCommand { command } => {
+            command.len()
+        }
+        ClickEvent::CopyToClipboard { value } => value.len(),
+        ClickEvent::ChangePage { .. } => 0,
+    };
+    // ClickEvent codecs interpret the complete payload, never a string prefix.
+    (budget.reserve(COMPONENT_OVERHEAD) && budget.reserve(bytes)).then(|| value.clone())
 }
 
 fn hover(value: &HoverEvent, budget: &mut Budget, depth: usize) -> Option<HoverEvent> {
-    if !budget.enter(depth) {
+    if !budget.enter(depth) || !budget.reserve(COMPONENT_OVERHEAD) {
         return None;
     }
-    Some(match value {
+    let event = match value {
         HoverEvent::ShowText { value } => HoverEvent::ShowText {
             value: children(value, budget, depth + 1),
         },
-        HoverEvent::ShowEntity { id, uuid, name } => HoverEvent::ShowEntity {
-            id: budget.text(id).to_owned().into(),
-            uuid: budget.text(uuid).to_owned().into(),
-            name: name
-                .as_ref()
-                .map(|values| children(values, budget, depth + 1)),
-        },
-        HoverEvent::ShowItem { id, count } => HoverEvent::ShowItem {
-            id: budget.text(id).to_owned().into(),
-            count: *count,
-        },
-    })
+        HoverEvent::ShowEntity { id, uuid, name } => {
+            // HoverEvent.EntityTooltipInfo.CODEC requires the original registry ID and UUID.
+            if !budget.reserve(id.len()) || !budget.reserve(uuid.len()) {
+                return None;
+            }
+            HoverEvent::ShowEntity {
+                id: id.clone(),
+                uuid: uuid.clone(),
+                name: name
+                    .as_ref()
+                    .map(|values| children(values, budget, depth + 1)),
+            }
+        }
+        HoverEvent::ShowItem { id, count } => {
+            if !budget.reserve(id.len()) {
+                return None;
+            }
+            HoverEvent::ShowItem {
+                id: id.clone(),
+                count: *count,
+            }
+        }
+    };
+    // A partially materialized hover name/text is not a complete event payload.
+    (!budget.full()).then_some(event)
 }

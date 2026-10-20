@@ -273,6 +273,21 @@ fn render_budget_native_storage_encoders_remain_lossless() {
     // TextDisplayEntity::write_custom_nbt saves text through generic serde.
     let json = serde_json::to_value(&literal).unwrap();
     assert_eq!(json["text"].as_str(), Some(text.as_str()));
+    let mixed = literal
+        .clone()
+        .add_child(TextComponent::from_content(TextContent::Custom {
+            key: "x".into(),
+            with: vec![],
+            locale: Locale::EnUs,
+        }));
+    let json = serde_json::to_value(&mixed).unwrap();
+    assert_eq!(json["text"].as_str().map(str::len), Some(text.len()));
+    assert_eq!(json["extra"][0]["text"], "x");
+    let saved = mixed.to_nbt_tag_for_version(&JavaMinecraftVersion::V_26_3);
+    assert_eq!(
+        saved.extract_compound().unwrap().get_string("text"),
+        Some(text.as_str())
+    );
     let native = TextComponent::from_content(TextContent::Translate {
         translate: "commands.seed.success".into(),
         bedrock_translate: None,
@@ -281,5 +296,70 @@ fn render_budget_native_storage_encoders_remain_lossless() {
     assert_eq!(
         native.to_nbt_tag_for_version(&JavaMinecraftVersion::V_26_3),
         super::component_codec::write_component(&native)
+    );
+}
+
+#[test]
+fn render_budget_structured_style_payloads_are_atomic() {
+    use super::{click::ClickEvent, hover::HoverEvent};
+    let payload = "minecraft:polished_blackstone_brick_slab";
+    let custom = TextComponent::from_content(TextContent::Custom {
+        key: "x".into(),
+        with: vec![],
+        locale: Locale::EnUs,
+    });
+    let near = TextComponent::text("A".repeat(32_360)).add_child(custom);
+    for event in [
+        ClickEvent::OpenUrl {
+            url: "https://example.org/complete/resource".into(),
+        },
+        ClickEvent::OpenFile {
+            path: payload.into(),
+        },
+        ClickEvent::RunCommand {
+            command: payload.into(),
+        },
+        ClickEvent::SuggestCommand {
+            command: payload.into(),
+        },
+        ClickEvent::CopyToClipboard {
+            value: payload.into(),
+        },
+    ] {
+        let output = near.clone().click_event(event.clone()).0.to_translated();
+        assert!(output.style.click_event.is_none_or(|value| value == event));
+    }
+    let mut font = near.clone();
+    font.0.style.font = Some(payload.into());
+    assert!(
+        font.0
+            .to_translated()
+            .style
+            .font
+            .is_none_or(|value| value == payload)
+    );
+    let event = HoverEvent::ShowItem {
+        id: payload.into(),
+        count: Some(1),
+    };
+    assert!(
+        near.clone()
+            .hover_event(event.clone())
+            .0
+            .to_translated()
+            .style
+            .hover_event
+            .is_none_or(|value| value == event)
+    );
+    let event = HoverEvent::ShowText {
+        value: vec![TextComponent::text("A".repeat(1_000)).0],
+    };
+    assert!(
+        near.hover_event(event.clone())
+            .0
+            .to_translated()
+            .style
+            .hover_event
+            .is_none_or(|value| value == event)
     );
 }

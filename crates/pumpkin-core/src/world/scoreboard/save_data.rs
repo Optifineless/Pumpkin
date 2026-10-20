@@ -20,6 +20,31 @@ impl<T> SavedRecord<T> {
     }
 }
 
+impl SavedRecord<ScoreboardObjective> {
+    pub(super) fn discard_changed_components(&mut self, current: &ScoreboardObjective) {
+        if current.display_name != self.baseline.display_name {
+            self.discard("DisplayName");
+        }
+        if current.number_format != self.baseline.number_format {
+            self.discard("format");
+        }
+    }
+}
+
+impl SavedRecord<Team> {
+    pub(super) fn discard_changed_components(&mut self, current: &Team) {
+        if current.display_name != self.baseline.display_name {
+            self.discard("DisplayName");
+        }
+        if current.player_prefix != self.baseline.player_prefix {
+            self.discard("MemberNamePrefix");
+        }
+        if current.player_suffix != self.baseline.player_suffix {
+            self.discard("MemberNameSuffix");
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct PersistentData {
     root: NbtCompound,

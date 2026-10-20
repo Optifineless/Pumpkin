@@ -168,12 +168,11 @@ impl Scoreboard {
     }
 
     pub fn get_objective_mut(&mut self, name: &str) -> Option<&mut ScoreboardObjective> {
-        if self.objectives.contains_key(name) {
-            self.mark_dirty();
+        if let Some(current) = self.objectives.get(name) {
             if let Some(saved) = self.persistence.objectives.get_mut(name) {
-                saved.discard("DisplayName");
-                saved.discard("format");
+                saved.discard_changed_components(current);
             }
+            self.mark_dirty();
         }
         self.objectives.get_mut(name)
     }
@@ -234,13 +233,11 @@ impl Scoreboard {
     }
 
     pub fn get_team_mut(&mut self, name: &str) -> Option<&mut Team> {
-        if self.teams.contains_key(name) {
-            self.mark_dirty();
+        if let Some(current) = self.teams.get(name) {
             if let Some(saved) = self.persistence.teams.get_mut(name) {
-                for field in ["DisplayName", "MemberNamePrefix", "MemberNameSuffix"] {
-                    saved.discard(field);
-                }
+                saved.discard_changed_components(current);
             }
+            self.mark_dirty();
         }
         self.teams.get_mut(name)
     }

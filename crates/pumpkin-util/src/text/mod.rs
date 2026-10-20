@@ -26,6 +26,7 @@ pub(crate) mod render;
 pub(crate) mod render_budget;
 #[cfg(test)]
 mod render_budget_tests;
+mod storage;
 pub mod style;
 mod translatable;
 #[cfg(test)]
@@ -90,7 +91,7 @@ impl<'de> Deserialize<'de> for TextComponent {
 
 impl Serialize for TextComponent {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_newtype_struct("TextComponent", &self.0.clone().to_translated())
+        serializer.serialize_newtype_struct("TextComponent", &storage::component(self.0.clone()))
     }
 }
 
@@ -1332,10 +1333,7 @@ impl TextComponent {
         &self,
         version: &JavaMinecraftVersion,
     ) -> pumpkin_nbt::NbtCompound {
-        self.0
-            .clone()
-            .to_translated()
-            .to_nbt_compound_for_version(version)
+        storage::component(self.0.clone()).to_nbt_compound_for_version(version)
     }
 
     /// Converts this component to an `NbtTag` for a specific Minecraft version.
@@ -1344,10 +1342,7 @@ impl TextComponent {
         &self,
         version: &JavaMinecraftVersion,
     ) -> pumpkin_nbt::tag::NbtTag {
-        self.0
-            .clone()
-            .to_translated()
-            .to_nbt_tag_for_version(version)
+        storage::component(self.0.clone()).to_nbt_tag_for_version(version)
     }
 
     /// Converts this component to a JSON string for a specific Minecraft version.

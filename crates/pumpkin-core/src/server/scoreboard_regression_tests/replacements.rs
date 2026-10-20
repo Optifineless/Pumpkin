@@ -235,3 +235,53 @@ async fn scoreboard_regression_native_borrows_discard_replaced_components() {
     let (board, _) = super::super::scoreboard_storage::load_scoreboard(directory.path());
     assert_native_replacements(&board.lock().unwrap().to_save_data());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scoreboard_regression_unrelated_native_borrows_preserve_saved_components() {
+    let directory = tempfile::tempdir().unwrap();
+    let original = native_fixture();
+    write_fixture(directory.path(), original.clone());
+    with_worlds(directory.path(), None, |server, _worlds| async move {
+        {
+            let mut board = server.scoreboard.lock().unwrap();
+            let objective = board.get_objective_mut("saved").unwrap();
+            objective.display_auto_update = true;
+            let team = board.get_team_mut("saved").unwrap();
+            team.options = 1;
+            team.color = Some(pumpkin_util::text::color::NamedColor::Blue);
+            assert!(board.get_objective_mut("untouched").is_some());
+            let _untouched_team = board.get_team_mut("untouched").unwrap();
+        }
+        save(&server).await;
+    })
+    .await;
+    let (board, _) = super::super::scoreboard_storage::load_scoreboard(directory.path());
+    let reloaded = board.lock().unwrap().to_save_data();
+    for section in ["Objectives", "Teams"] {
+        for tag in payload(&original).get_list(section).unwrap() {
+            let record = tag.extract_compound().unwrap();
+            let restored = reloaded
+                .get_list(section)
+                .unwrap()
+                .iter()
+                .filter_map(NbtTag::extract_compound)
+                .find(|item| item.get_string("Name") == record.get_string("Name"))
+                .unwrap();
+            for field in [
+                "DisplayName",
+                "format",
+                "MemberNamePrefix",
+                "MemberNameSuffix",
+            ] {
+                assert_eq!(restored.get(field), record.get(field), "{section}/{field}");
+            }
+        }
+    }
+    let board = board.lock().unwrap();
+    assert!(board.get_objective("saved").unwrap().display_auto_update);
+    assert_eq!(board.get_team("saved").unwrap().options, 1);
+    assert_eq!(
+        board.get_team("saved").unwrap().color,
+        Some(pumpkin_util::text::color::NamedColor::Blue)
+    );
+}

@@ -8,6 +8,7 @@ use std::{fs, path::Path, sync::Arc, time::Duration};
 
 mod death_visibility;
 mod display_bounds;
+mod entity_text;
 mod legacy;
 mod lifecycle;
 mod loaded;

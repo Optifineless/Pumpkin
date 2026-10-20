@@ -58,10 +58,13 @@ field-replacement intent. The affected setters are:
   `Scoreboard::update_score` for `display_name` and `number_format`, and
   `Scoreboard::update_score_with_number_format` for `display_name`.
 
-Native `Scoreboard::get_objective_mut` and `Scoreboard::get_team_mut` discard
-that record's raw component sidecars before handing out a mutable reference.
-This conservatively replaces its display components even if the caller only
-changes another field. Commands and explicit number-format replacement setters
+Native `Scoreboard::get_objective_mut` and `Scoreboard::get_team_mut` compare
+component fields with their imported baseline before each borrow. Only fields
+already changed lose their raw sidecars; unrelated and no-op borrows preserve
+them. Save packing also detects the final outstanding changes. Separate-borrow
+A to B to A replacements stay replaced. A same-value replacement, or A to B to A
+entirely within one borrow, carries no observable replacement intent and may keep
+the original raw field. Commands and explicit number-format replacement setters
 invalidate only the replaced field, including same-value replacements.
 
 Review round 5 also constructs Bedrock titles only during Bedrock packet
@@ -86,6 +89,18 @@ types or layouts change in this round.
 Native components needing no server-only custom translation pass unchanged
 through serialization, including entity names and text-display saves. The input
 scan is iterative and does not expand or copy component payloads.
+
+Review round 7 preserves native parents, siblings, extras and styles in storage
+even when they contain Custom descendants. Only generated Custom expansions
+consume the materialization budget; entity CustomName, text-display JSON and the
+public NBT storage encoders retain unrelated native payloads. Display and
+console rendering retain their shared limits. Materialized click/hover events
+and font identifiers are complete or omitted, never shortened; this keeps valid
+UUIDs, registry IDs, URLs and commands valid at budget boundaries. Mirrors
+`ComponentSerialization.createCodec`, `HoverEvent.EntityTooltipInfo.CODEC` and
+`ClickEvent` codecs in vanilla 26.3. Native mutable scoreboard borrows now retain
+untouched raw text as described above. API 8 (same version): no public methods,
+types or layouts change. In-game verification: Not yet.
 
 The native renderer retains the fork's existing missing-argument clamping;
 vanilla 26.3 `TranslatableContents.decompose/getArgument` instead displays an
