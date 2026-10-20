@@ -2438,3 +2438,18 @@ Round 2 keeps login and respawn loading immunity for every damage type. Only an 
 Checked against official Java 26.3 `ServerPlayer.isInvulnerableTo/teleport`, `ServerGamePacketListenerImpl.hasClientLoaded/teleport` and `ThrownEnderpearl.onHit`, decompiled with Vineflower 1.12.0 (inner server JAR SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
 
 Play test: with four hearts, land a pearl in another dimension; expect one and a half hearts, one hurt animation and the teleport sound on arrival. Have a nearby spectator record the arrival and hurt animation. Change dimensions normally at four hearts; expect four hearts afterward. Cancel a pearl transfer with a teleport plugin; expect unchanged health and fall state and no teleport sound. After a mace smash, pearl upward and then fall normally; expect ordinary fall damage. Rejoin at two hearts while a friend releases your stasis pearl before the loading screen finishes; expect to survive at two hearts. With a protection plugin cancelling pearl damage after looking up the victim, land a cross-dimension pearl at two hearts; expect to survive at two hearts.
+
+## Zombie door-breaking state (#366)
+
+Zombie door breaking now keeps `CanBreakDoors`, ground-navigation permission and
+one `BreakDoorGoal` in sync through construction, the public setter, NBT loading
+and fresh-spawn finalization. Non-ground navigators and drowned remain disabled;
+Hard difficulty, `mobGriefing` and the existing door-break event remain intact.
+Mirrors vanilla 26.3 `Zombie.setCanBreakDoors` and
+`Zombie.readAdditionalSaveData`. No saved-data or native API changes.
+In-game verification: Not yet.
+
+Play test: In Hard with `mobGriefing` enabled, spawn a zombie beside a closed
+wooden door with a target beyond it; expect it to break the door and continue
+through. Repeat with door breaking disabled, an iron door, Normal difficulty,
+and `mobGriefing` disabled; expect the door to remain closed.

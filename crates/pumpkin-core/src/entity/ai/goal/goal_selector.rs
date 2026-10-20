@@ -24,6 +24,14 @@ impl GoalSelector {
             .any(|goal| goal.type_id == TypeId::of::<G>() && goal.running)
     }
 
+    #[cfg(test)]
+    pub(crate) fn goal_count<G: Goal + 'static>(&self) -> usize {
+        self.goals
+            .iter()
+            .filter(|goal| goal.type_id == TypeId::of::<G>())
+            .count()
+    }
+
     pub fn add_goal<G: Goal + 'static>(&mut self, priority: u8, goal: Box<G>) {
         self.goals
             .push(PrioritizedGoal::new(TypeId::of::<G>(), priority, goal));
