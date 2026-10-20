@@ -297,10 +297,16 @@ impl Worldborder {
         let clamp = |value: i32, min: f64, max: f64, center: f64| {
             // WorldBorder.clampVec3ToBound clamps before BlockPos.containing floors.
             let upper = max - f64::from(1.0e-5f32);
-            if upper < min {
-                // A collapsed interval has no valid float clamp range; keep the
-                // established center-block result for sub-block borders.
+            let fallback = if center.is_finite() {
                 center.floor() as i32
+            } else {
+                0
+            };
+            if !min.is_finite() || !upper.is_finite() || !center.is_finite() || upper < min {
+                // A collapsed interval has no valid float clamp range; keep the
+                // established center-block result for sub-block borders and
+                // malformed non-finite border bounds.
+                fallback
             } else {
                 f64::from(value).clamp(min, upper).floor() as i32
             }

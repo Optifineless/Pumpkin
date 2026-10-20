@@ -103,6 +103,18 @@ impl Fixture {
         client
     }
 
+    pub async fn prepare_shared_spawn_floor(&mut self, suggestion: BlockPos) {
+        let mut residency = PortalChunkResidency::new(self.overworld.level.clone());
+        residency.add_area(suggestion, 2);
+        residency.load().await.unwrap();
+        for x in (suggestion.0.x - 1) >> 4..=(suggestion.0.x + 1) >> 4 {
+            for z in (suggestion.0.z - 1) >> 4..=(suggestion.0.z + 1) >> 4 {
+                publish_floor(&self.overworld, Vector2::new(x, z));
+            }
+        }
+        self.retained.push(residency);
+    }
+
     pub async fn finish(self) {
         drop(self.retained);
         tokio::time::timeout(DEADLINE, self.server.shutdown())

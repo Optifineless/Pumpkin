@@ -132,6 +132,62 @@ async fn end_return_radius_uses_live_extent() {
     fixture.finish().await;
 }
 
+async fn end_return_border_spawn(spawn_x: i32, diameter: i32) {
+    let mut fixture = end_return_test_support::Fixture::new().await;
+    fixture
+        .prepare_shared_spawn_floor(BlockPos::new(spawn_x, 64, 0))
+        .await;
+    fixture.server.level_info.rcu(|info| {
+        let mut info = (**info).clone();
+        info.spawn_x = spawn_x;
+        info.spawn_y = 64;
+        info.spawn_z = 0;
+        info.game_rules.respawn_radius = 0;
+        info
+    });
+    let border = fixture.overworld.worldborder.lock().unwrap();
+    assert_eq!(
+        (border.center_x, border.center_z),
+        (0.0, 0.0),
+        "the fixture border is centered at the requested origin"
+    );
+    drop(border);
+    run_command(
+        &fixture.server,
+        &fixture.overworld,
+        &format!("worldborder set {diameter}"),
+    );
+
+    let mut client = end_return_test_support::Fixture::returning_player(&fixture);
+    let player = client.player.clone();
+    let health = player.living_entity.health.load();
+    end_return_test_support::transfer(&fixture, &mut client).await;
+
+    let position = player.position();
+    assert_eq!(position.y, 64.0, "End return must use the supported floor");
+    let support = BlockPos::new(position.x.floor() as i32, 63, position.z.floor() as i32);
+    assert!(
+        fixture.overworld.get_block_state(&support).is_solid(),
+        "End return must arrive above solid ground"
+    );
+    player.get_entity().tick(player.as_ref(), &fixture.server);
+    assert_eq!(
+        player.living_entity.health.load(),
+        health,
+        "safe-height End return must not deal fall damage"
+    );
+    assert_eq!(player.living_entity.fall_distance.load(), 0.0);
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g10_end_return_border_exemption_keeps_supported_spawn() {
+    // The shared spawn lies beyond the diameter-10 border, and the second case
+    // is narrower than the player's body in either horizontal axis.
+    end_return_border_spawn(6, 10).await;
+    end_return_border_spawn(0, 1).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1020b_g10_hanging_survival_and_spawn_radius_use_live_extent() {
     hanging_resize(false).await;

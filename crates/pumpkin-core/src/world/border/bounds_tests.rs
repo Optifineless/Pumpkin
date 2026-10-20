@@ -28,6 +28,16 @@ fn assert_bounds(border: &Worldborder, expected: (f64, f64, f64, f64)) {
     );
 }
 
+#[test]
+fn b1020b_g10_clamp_block_nan_diameter_does_not_panic() {
+    for border in [
+        Worldborder::new(0.0, 0.0, f64::NAN, 0, 5, 15),
+        Worldborder::new(f64::NAN, f64::NAN, 10.0, 0, 5, 15),
+    ] {
+        assert_eq!(border.clamp_block(100, -100), (0, 0));
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1020_g04_clamps_share_the_moving_extent() {
     let fixture = Fixture::new();
