@@ -937,3 +937,10 @@ crates/pumpkin-core/src/world/portal/end_return_test_support.rs::transfer::std::
 crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_end_return_cancellation_and_redirection_keep_anchor_charges::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_non_player_end_return_keeps_shared_spawn_behavior::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/portal/nether_axis_tests.rs::transfer::std::sync::Mutex::new#1
+
+# Item-placement geometry reservations only: insert/remove under this short mutex;
+# the logical reservation retains no guard through callbacks, payment or publication.
+crates/pumpkin-core/src/entity/vehicle/minecart/creation.rs::<module>::std::sync::Mutex::new#1
+# Test-only one-shot gate slots: take each channel then drop the guard before await.
+crates/pumpkin-core/src/item/items/minecart_creation_callback_tests.rs::b1020c_g12_concurrent_placement_reserves_aligned_space_without_callback_lock::std::sync::Mutex::new#1
+crates/pumpkin-core/src/item/items/minecart_creation_callback_tests.rs::b1020c_g12_concurrent_placement_reserves_aligned_space_without_callback_lock::std::sync::Mutex::new#2
