@@ -5,11 +5,16 @@ use pumpkin_data::{
     data_component_impl::EquipmentSlot,
     effect::StatusEffect,
     fluid::Fluid,
+    game_event::GameEvent,
     recipes::{CookingRecipeKind, get_cooking_recipe_with_ingredient},
+    sound::{Sound, SoundCategory},
+    tag::{self, Taggable},
+    world::WorldEvent,
 };
 use pumpkin_inventory::Inventory;
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::tick::TickPriority;
+use pumpkin_util::GameMode;
+use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 
 use crate::block::entities::campfire::CampfireBlockEntity;
 use crate::{
@@ -30,45 +35,38 @@ impl BlockBehaviour for CampfireBlock {
         args.world.add_block_entity(Arc::new(entity));
     }
 
-    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        let Some(recipe) = get_cooking_recipe_with_ingredient(
+    fn use_with_item(&self, mut args: UseWithItemArgs<'_>) -> BlockActionResult {
+        if let Some(recipe) = get_cooking_recipe_with_ingredient(
             args.item_stack.item,
             CookingRecipeKind::CampfireCooking,
-        ) else {
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
-
-        let Some(block_entity) = args.world.get_block_entity(args.position) else {
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
-        let Some(campfire) = block_entity.as_any().downcast_ref::<CampfireBlockEntity>() else {
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
-
-        if let Some(slot) =
-            (0..CampfireBlockEntity::SLOT_COUNT).find(|&slot| campfire.get_stack(slot).is_empty())
+        ) && let Some(block_entity) = args.world.get_block_entity(args.position)
+            && let Some(campfire) = block_entity.as_any().downcast_ref::<CampfireBlockEntity>()
         {
-            if !campfire.place_food(
-                args.item_stack,
-                args.player,
-                args.world,
-                slot,
-                recipe.cookingtime,
-            ) {
-                return BlockActionResult::Consume;
+            if let Some(slot) = (0..CampfireBlockEntity::SLOT_COUNT)
+                .find(|&slot| campfire.get_stack(slot).is_empty())
+            {
+                if !campfire.place_food(
+                    args.item_stack,
+                    args.player,
+                    args.world,
+                    slot,
+                    recipe.cookingtime,
+                ) {
+                    return BlockActionResult::Consume;
+                }
+                args.player.increment_stat(
+                    pumpkin_data::statistic::StatisticCategory::Custom,
+                    pumpkin_data::statistic::CustomStatistic::InteractWithCampfire as i32,
+                    1,
+                );
+                args.world.update_block_entity(&block_entity);
+                return BlockActionResult::Success;
             }
-
-            args.player.increment_stat(
-                pumpkin_data::statistic::StatisticCategory::Custom,
-                pumpkin_data::statistic::CustomStatistic::InteractWithCampfire as i32,
-                1,
-            );
-            args.world.update_block_entity(&block_entity);
-            return BlockActionResult::Success;
+            // CampfireBlock.useItemOn consumes food even when all slots are full.
+            return BlockActionResult::Consume;
         }
 
-        // CampfireBlock.useItemOn consumes valid food interactions even when all slots are full.
-        BlockActionResult::Consume
+        douse_campfire(&mut args)
     }
 
     fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
@@ -144,6 +142,87 @@ impl BlockBehaviour for CampfireBlock {
     // TODO: onProjectileHit
 }
 
+fn douse_campfire(args: &mut UseWithItemArgs<'_>) -> BlockActionResult {
+    // CampfireBlock.useItemOn runs before BlockTransformer's shield-intent guard.
+    if !args
+        .item_stack
+        .item
+        .has_tag(&tag::Item::MINECRAFT_DOUSES_CAMPFIRES)
+    {
+        return BlockActionResult::PassToDefaultBlockAction;
+    }
+    let observed = args.world.get_block_state_id(args.position);
+    if Block::from_state_id(observed) != args.block {
+        return BlockActionResult::PassToDefaultBlockAction;
+    }
+    let mut properties = CampfireLikeProperties::from_state_id(observed);
+    if !properties.lit {
+        return BlockActionResult::PassToDefaultBlockAction;
+    }
+    properties.lit = false;
+    #[cfg(test)]
+    before_douse_write(args.world, *args.position);
+    if args.world.get_block_state_id(args.position) != observed {
+        return BlockActionResult::Consume;
+    }
+    args.world
+        .sync_world_event(WorldEvent::SoundExtinguishFire, *args.position, 0);
+    if args.world.get_block_state_id(args.position) != observed {
+        return BlockActionResult::Consume;
+    }
+    args.world.play_sound_fine(
+        Sound::BlockFireExtinguish,
+        SoundCategory::Ambient,
+        &args.position.to_f64(),
+        0.5,
+        2.0,
+    );
+    if args.world.get_block_state_id(args.position) != observed {
+        return BlockActionResult::Consume;
+    }
+    args.world.emit_game_event(
+        GameEvent::BlockChange.name(),
+        args.position.to_centered_f64(),
+    );
+    // CampfireBlock.douse publishes before setting LIT; callbacks can replace the source.
+    if args
+        .world
+        .set_block_state_if(
+            args.position,
+            properties.to_state_id(args.block),
+            BlockFlags::NOTIFY_ALL,
+            |current| current == observed,
+        )
+        .is_none()
+    {
+        return BlockActionResult::Consume;
+    }
+    if args.player.gamemode.load() != GameMode::Creative {
+        let _ = args.item_stack.damage_item(1);
+    }
+    BlockActionResult::Success
+}
+
 fn is_signal_fire_base_block(block: &Block) -> bool {
     block == &Block::HAY_BLOCK
 }
+
+#[cfg(test)]
+fn before_douse_write(
+    world: &crate::world::World,
+    position: pumpkin_util::math::position::BlockPos,
+) {
+    let hook = world
+        .persistence_test_hooks
+        .transform_write
+        .lock()
+        .unwrap()
+        .clone();
+    if let Some(hook) = hook {
+        hook(position);
+    }
+}
+
+#[cfg(test)]
+#[path = "b1020d_g10_campfire_tests.rs"]
+mod b1020d_g10_tests;
