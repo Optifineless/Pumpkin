@@ -18,7 +18,7 @@ pub async fn run_portal_job<T: Send + 'static>(
     }
 }
 
-pub(super) struct PortalChunkResidency {
+pub struct PortalChunkResidency {
     level: Arc<Level>,
     tickets: ChunkResidency,
 }
@@ -29,14 +29,14 @@ pub(super) struct ResidentPortal {
 }
 
 impl PortalChunkResidency {
-    pub(super) fn new(level: Arc<Level>) -> Self {
+    pub(crate) fn new(level: Arc<Level>) -> Self {
         Self {
             tickets: ChunkResidency::new(level.chunk_loading.clone()),
             level,
         }
     }
 
-    pub(super) fn add_area(&mut self, center: BlockPos, radius: i32) {
+    pub(crate) fn add_area(&mut self, center: BlockPos, radius: i32) {
         self.tickets.add_all(
             ((center.0.x - radius) >> 4..=(center.0.x + radius) >> 4).flat_map(|x| {
                 ((center.0.z - radius) >> 4..=(center.0.z + radius) >> 4)
@@ -45,7 +45,7 @@ impl PortalChunkResidency {
         );
     }
 
-    pub(super) async fn load(&self) -> Option<()> {
+    pub(crate) async fn load(&self) -> Option<()> {
         for pos in self.tickets.chunks() {
             self.level.get_or_fetch_chunk(*pos, |_| ()).await.ok()?;
         }

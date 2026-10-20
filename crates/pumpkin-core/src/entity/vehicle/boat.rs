@@ -18,6 +18,8 @@ use crate::entity::vehicle::vehicle::VehicleEntity;
 
 #[path = "boat_damage.rs"]
 mod damage;
+#[path = "boat_effects.rs"]
+mod effects;
 
 pub struct BoatEntity {
     pub vehicle: VehicleEntity,
@@ -76,16 +78,18 @@ impl EntityBase for BoatEntity {
         if !self.is_current_boat(&world) {
             return;
         }
-        self.vehicle.entity.tick_block_collisions(caller);
-        if !self.is_current_boat(&world) {
-            return;
+        // AbstractBoat.tick applies inside-block effects twice.
+        for _ in 0..2 {
+            self.tick_boat_block_effects(caller, &world);
+            if !self.is_current_boat(&world) {
+                return;
+            }
         }
-
         let underwater = self.ticks_underwater.load();
-        if self.vehicle.entity.touching_water.load(Ordering::Relaxed) {
+        if self.is_underwater(&world) {
             self.ticks_underwater.store((underwater + 1.0).min(60.0));
-        } else if underwater > 0.0 {
-            self.ticks_underwater.store((underwater - 1.0).max(0.0));
+        } else {
+            self.ticks_underwater.store(0.0);
         }
     }
 

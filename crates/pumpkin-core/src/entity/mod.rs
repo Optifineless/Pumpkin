@@ -1512,7 +1512,7 @@ impl Entity {
         self.yaw.store(yaw);
     }
 
-    fn default_portal_cooldown(&self) -> u32 {
+    pub(crate) fn default_portal_cooldown(&self) -> u32 {
         if self.entity_type == &EntityType::PLAYER {
             10
         } else {

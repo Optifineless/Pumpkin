@@ -32,7 +32,7 @@ impl EventHandler<EntityCombustEvent> for Ignition {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1020d_g06_boat_lava_contact_ticks_reach_damage() {
+async fn b1020d_g06_r2_single_lava_cell_first_tick_drops_named_concrete_vehicle() {
     for (kind, item) in [
         (&EntityType::OAK_BOAT, &Item::OAK_BOAT),
         (&EntityType::BAMBOO_RAFT, &Item::BAMBOO_RAFT),
@@ -40,7 +40,7 @@ async fn b1020d_g06_boat_lava_contact_ticks_reach_damage() {
         (&EntityType::BAMBOO_CHEST_RAFT, &Item::BAMBOO_CHEST_RAFT),
     ] {
         let fixture = Fixture::new();
-        fixture.fill_contact(&Block::LAVA);
+        fixture.set_block(BlockPos::new(8, 64, 8), &Block::LAVA);
         let vessel = fixture.boat(kind);
         let observed = Recorder::register(&fixture.server);
         let ignition = Arc::new(Ignition::default());
@@ -56,29 +56,30 @@ async fn b1020d_g06_boat_lava_contact_ticks_reach_damage() {
         );
         assert_eq!(
             observed.damage_count(),
-            1,
-            "loaded lava must reach the real 4.0 vehicle damage boundary exactly once per tick"
+            2,
+            "AbstractBoat.tick applies the contacted lava cell twice before its first tick ends"
         );
         assert_eq!(
             *observed.observed.lock().unwrap(),
-            vec![Observed::Update, Observed::Damage(4.0, None)]
+            vec![
+                Observed::Update,
+                Observed::Damage(4.0, None),
+                Observed::Damage(4.0, None),
+                Observed::Destroy(None)
+            ]
         );
         assert_eq!(
             *ignition.0.lock().unwrap(),
-            vec![(vessel.get_entity().entity_id, 15.0)],
+            vec![(vessel.get_entity().entity_id, 15.0); 2],
             "contact must use the real lava ignition effect"
         );
         assert!(vessel.get_entity().touching_lava.load(Ordering::Relaxed));
         assert!(vessel.get_entity().fire_ticks.load(Ordering::Relaxed) > 0);
-        assert_eq!(boat(vessel.as_ref()).vehicle.get_damage(), 40.0);
-        assert!(vessel.get_entity().is_alive());
-        fixture.tick(1);
-        assert_eq!(observed.damage_count(), 2);
         assert_eq!(observed.destroy_count(), 1);
         assert_eq!(
             boat(vessel.as_ref()).vehicle.get_damage(),
-            79.0,
-            "vehicle wobble must decay before this tick's lava damage"
+            80.0,
+            "both accepted damage applications occur before another vehicle wobble decay"
         );
         assert!(vessel.get_entity().removal_reason.load() == Some(RemovalReason::Discarded));
         fixture.assert_named_drop(item);
@@ -117,14 +118,14 @@ async fn b1020d_g06_air_water_and_fire_immunity_are_unaffected_controls() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1020d_g06_cancelled_lava_damage_observes_boundary_and_leaves_live_boat() {
     let fixture = Fixture::new();
-    fixture.fill_contact(&Block::LAVA);
+    fixture.set_block(BlockPos::new(8, 64, 8), &Block::LAVA);
     let vessel = fixture.boat(&EntityType::BAMBOO_CHEST_RAFT);
     let observed = Recorder::register(&fixture.server);
     observed.cancel_damage.store(true, Ordering::Relaxed);
     fixture.tick(3);
     assert_eq!(
         observed.damage_count(),
-        3,
+        6,
         "cancellation control must observe the actual contact/damage boundary"
     );
     assert_eq!(observed.destroy_count(), 0);
@@ -133,7 +134,7 @@ async fn b1020d_g06_cancelled_lava_damage_observes_boundary_and_leaves_live_boat
     assert_eq!(boat(vessel.as_ref()).vehicle.get_damage(), 0.0);
     assert!(fixture.drops().is_empty());
     observed.cancel_damage.store(false, Ordering::Relaxed);
-    fixture.tick(2);
+    fixture.tick(1);
     assert_eq!(
         observed.destroy_count(),
         1,

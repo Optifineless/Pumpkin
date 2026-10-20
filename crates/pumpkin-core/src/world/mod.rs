@@ -37,6 +37,8 @@ mod block_entity_context;
 mod block_entity_notifications;
 #[cfg(test)]
 mod block_entity_registration_tests;
+mod boat_destruction;
+mod boat_portal;
 pub mod brightness;
 #[cfg(test)]
 mod bucket_retirement_tests;
@@ -58,6 +60,7 @@ pub mod map;
 pub(crate) mod neighbor_updater;
 mod particle_senders;
 mod pending_block_entity;
+mod player_arrival;
 pub(crate) use pending_block_entity::BlockEntityMutationPermit;
 mod player_lookup;
 mod player_respawn;
@@ -1789,6 +1792,10 @@ impl World {
 
                 for (entity, entity_chunk) in batch {
                     let inner = entity.get_entity();
+                    // A prepared portal job can transfer a passenger after this tick's snapshot.
+                    if inner.is_removed() || !Arc::ptr_eq(&inner.world.load_full(), self) {
+                        continue;
+                    }
                     let _phase =
                         marker.entity(inner.entity_id, inner.entity_type.id, Phase::EntityTicks);
                     entity.get_entity().age.fetch_add(1, Relaxed);

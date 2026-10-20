@@ -618,14 +618,13 @@ impl Server {
             return Err("Cannot unload the primary/default world".to_string());
         }
 
-        let player_count = world_to_unload.players.load().len();
-        if player_count > 0 {
+        drop(worlds);
+        if let Err(player_count) = world_to_unload.begin_named_world_unload().await {
             return Err(format!(
                 "Cannot unload world '{name}': {player_count} players are still in this world"
             ));
         }
 
-        drop(worlds);
         world_to_unload.shutdown().await;
         world_to_unload.unload().await;
 

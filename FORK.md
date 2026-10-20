@@ -4,8 +4,8 @@ This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained fo
 
 ## Boat damage, concrete drops and lava ticks (#354)
 
-Boats run the existing Entity base/fluid and inside-block chain once after the
-normal vehicle update, including lava ignition/damage and ordinary portal handling.
+Boats update Entity base/fluid currents once after the normal vehicle update and
+apply both inside-block effect passes, including lava ignition/damage and portals.
 The boat-local base orchestration stops after retirement callbacks before publishing
 fire metadata, while reusing the existing Entity portal and fluid operations.
 Destruction drops one concrete generated boat, raft or chest-variant item with its
@@ -29,6 +29,40 @@ plugin; expect a live boat and normal wobble decay. Repeat with simultaneous hit
 then unload/reload and restart; expect one current boat or one drop, without
 duplicates. Check ordinary portal travel. Record both the attacker and an observer,
 including item names/counts, lava damage, cancellation and reload.
+
+PR #405 review round 2: the boarding timer counts water above the whole hull and
+resets immediately on surfacing, matching `AbstractBoat.isUnderwater/tick`.
+Completed portal travel replaces the concrete boat in the destination registry;
+passengers retain their canonical state and inventory ownership, player arrivals
+use the existing cancellable world-change path, and refused arrivals cannot leave
+cross-world riding links. Destination residency, pending UUIDs, packet caches and
+both worlds' save generations are checked before publication. Generic
+cross-dimension teleport outside boat portals remains separate pre-existing work.
+
+Boat destruction prepares both cancellable item-spawn callbacks before claiming
+removal, then commits the concrete item and removal in one synchronous admission.
+If a callback unloads the world first, damage completion is refused and the saved
+boat remains; if destruction commits first, retirement captures the item. Spawn
+cancellation in a current world still destroys the boat without an item. No lock,
+guard or mutation permit crosses these callbacks. Mirrors `VehicleEntity.destroy`
+and `Entity.teleportCrossDimension`, adapted to the fork's concurrent lifecycle.
+The vehicle item uses the boat's exact position, matching `Entity.spawnAtLocation`.
+Lava contacts run both vanilla effect passes without applying currents twice;
+accepted damage destroys a fresh boat during its first lava tick.
+
+API 8 (same version): the private `World` layout gains logical player-arrival
+reservations; native plugins must rebuild. Public signatures, saved NBT meaning
+and Wasm WIT are unchanged. Regressions exercise ordinary world ticks and Java
+boarding, completed portal travel with mob, container and player passengers, and
+uncancelled spawn-callback named-world unload/reload. In-game verification: Not yet.
+
+Play test: float a boat for at least three seconds, then board it; expect normal
+boarding. Submerge it for three seconds, surface it, then board again. Send named
+boats and rafts through Nether portals, empty and with riders; expect the matching
+destination, intact passenger inventory, and one boat after save/reload. Unload a
+playerless test world from an item-spawn plugin callback while breaking a named
+boat; reload it and expect the original boat when destruction was refused, or one
+matching named item when destruction committed. Record both portal ends and reload.
 
 ## Stable Bedrock score identities (#289)
 

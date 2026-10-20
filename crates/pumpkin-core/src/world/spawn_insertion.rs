@@ -10,7 +10,7 @@ use crate::entity::{EntityBase, decoration::leash_knot::LeashKnotEntity, player:
 type ExistingMount = (Arc<dyn EntityBase>, Arc<dyn EntityBase>);
 
 // Reserve UUIDs before plugin callbacks, without retaining a mutex across their re-entry.
-struct SpawnReservation<'a> {
+pub(super) struct SpawnReservation<'a> {
     world: &'a World,
     ids: FxHashSet<uuid::Uuid>,
 }
@@ -50,7 +50,10 @@ impl World {
         self.insert_reserved_entity_batch(&reservation, members, None, &[])
     }
 
-    fn reserve_spawn_uuids(&self, members: &[Arc<dyn EntityBase>]) -> Option<SpawnReservation<'_>> {
+    pub(super) fn reserve_spawn_uuids(
+        &self,
+        members: &[Arc<dyn EntityBase>],
+    ) -> Option<SpawnReservation<'_>> {
         let ids: FxHashSet<_> = members
             .iter()
             .map(|member| member.get_entity().entity_uuid)

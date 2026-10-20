@@ -54,7 +54,8 @@ impl BoatEntity {
         if !self.is_current_boat(world) {
             return;
         }
-        entity.update_fluid_state(caller);
+        // Entity.baseTick updates currents once; inside-block passes own fluid effects.
+        entity.update_fluid_interaction(caller);
         if !self.is_current_boat(world) {
             return;
         }
@@ -98,6 +99,7 @@ impl BoatEntity {
     pub(super) fn is_current_boat(&self, world: &Arc<World>) -> bool {
         let entity = &self.vehicle.entity;
         entity.is_alive()
+            && !world.level.cancel_token.is_cancelled()
             && Arc::ptr_eq(&entity.world.load_full(), world)
             && world
                 .get_entity_by_id(entity.entity_id)
@@ -118,7 +120,7 @@ impl BoatEntity {
         }
         // Entity retirement uses this existing capture gate before withdrawing the registry.
         // Hold it only over leaf state/first-removal commits, never over their effects.
-        let permit = world.block_entity_mutation_permit(self.vehicle.entity.block_pos.load())?;
+        let permit = world.reserve_block_entity_mutation(self.vehicle.entity.block_pos.load())?;
         if !entity.is_alive()
             || !Arc::ptr_eq(&entity.world.load_full(), world)
             || !world
@@ -301,21 +303,7 @@ impl BoatEntity {
         if let Some(name) = self.vehicle.entity.custom_name.load().as_ref().as_ref() {
             stack.set_data_component(CustomNameImpl { name: name.clone() });
         }
-        let position = self.vehicle.entity.block_pos.load();
-        let Some(permit) = self.boat_commit_permit(world) else {
-            return false;
-        };
-        let claimed = world.try_mark_entity_removed(&self.vehicle.entity);
-        drop(permit);
-        if !claimed {
-            return false;
-        }
-        // VehicleEntity.destroy kills before spawnAtLocation. Only the first-removal winner
-        // owns both detached cleanup and the optional single vehicle item, never cargo.
-        world.finish_entity_removal(self);
-        if !creative && world.level_info.load().game_rules.entity_drops {
-            world.drop_stack(&position, stack);
-        }
-        true
+        let drop_item = !creative && world.level_info.load().game_rules.entity_drops;
+        world.destroy_boat_with_drop(self, drop_item.then_some(stack))
     }
 }

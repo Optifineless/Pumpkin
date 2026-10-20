@@ -23,7 +23,7 @@ impl World {
         Some(permit)
     }
 
-    pub(in crate::world) fn reserve_block_entity_mutation(
+    pub(crate) fn reserve_block_entity_mutation(
         &self,
         pos: BlockPos,
     ) -> Option<BlockEntityMutationPermit<'_>> {

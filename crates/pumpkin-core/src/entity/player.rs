@@ -3229,8 +3229,11 @@ impl Player {
                 position,
                 yaw,
                 pitch,
-                None::<fn(&Arc<Self>, bool)>,
-                None::<fn(&Arc<World>, Vector3<f64>)>,
+                (
+                    None::<fn(&Arc<Self>, bool)>,
+                    None::<fn(&Arc<World>, Vector3<f64>)>,
+                    false,
+                ),
             )
             .await;
     }
@@ -3254,26 +3257,25 @@ impl Player {
             position,
             yaw,
             pitch,
-            Some(commit_hook),
-            Some(after_commit_hook),
+            (Some(commit_hook), Some(after_commit_hook), false),
         )
         .await
     }
 
     #[expect(clippy::too_many_lines)]
-    async fn teleport_world_inner<F, G>(
+    pub(super) async fn teleport_world_inner<F, G>(
         self: &Arc<Self>,
         new_world: Arc<World>,
         position: Vector3<f64>,
         yaw: Option<f32>,
         pitch: Option<f32>,
-        mut commit_hook: Option<F>,
-        mut after_commit_hook: Option<G>,
+        hooks: (Option<F>, Option<G>, bool),
     ) -> TeleportWorldOutcome
     where
         F: FnOnce(&Arc<Self>, bool) + Send,
         G: FnOnce(&Arc<World>, Vector3<f64>) + Send,
     {
+        let (mut commit_hook, mut after_commit_hook, reserve_arrival) = hooks;
         let defer_arrival_publication = commit_hook.is_some();
         let current_world = self.living_entity.entity.world.load_full();
         let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
@@ -3310,6 +3312,14 @@ impl Player {
                 {
                     return TeleportWorldOutcome::NotCommitted;
                 }
+                let arrival = if reserve_arrival {
+                    let Some(arrival) = new_world.reserve_player_arrival(self.gameprofile.id) else {
+                        return TeleportWorldOutcome::NotCommitted;
+                    };
+                    Some(arrival)
+                } else {
+                    None
+                };
                 self.invalidate_sleep_operation();
                 let was_loaded = self.has_client_loaded();
                 self.set_client_loaded(false);
@@ -3323,6 +3333,7 @@ impl Player {
                         new_list
                     });
                 }
+                drop(arrival);
                 self.unload_watched_chunks(&current_world).await;
 
                 self.change_world_chunks(&current_world.level, &new_world);

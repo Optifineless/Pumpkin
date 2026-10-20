@@ -71,8 +71,9 @@ pub(super) struct PendingBlockEntityLoads {
     published_capture_stamps: FxHashMap<BlockPos, u64>,
     // Retirement closes mutation and pending-promotion admission before the final capture.
     unloading: FxHashMap<Vector2<i32>, BlockEntityUnload>,
-    active_mutations: FxHashMap<Vector2<i32>, usize>,
-    stop_admission: bool,
+    pub(super) active_mutations: FxHashMap<Vector2<i32>, usize>,
+    pub(super) stop_admission: bool,
+    pub(super) player_arrivals: FxHashSet<uuid::Uuid>,
     pub(super) notifications:
         std::collections::VecDeque<super::block_entity_notifications::BlockEntityNotification>,
     pub(super) notifying: bool,

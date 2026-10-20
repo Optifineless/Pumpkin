@@ -14,6 +14,28 @@ pub(super) enum TeleportWorldOutcome {
 }
 
 impl Player {
+    pub(crate) async fn teleport_boat_passenger(
+        self: &Arc<Self>,
+        world: Arc<World>,
+        position: Vector3<f64>,
+        yaw: f32,
+        pitch: f32,
+    ) {
+        let _ = self
+            .teleport_world_inner(
+                world,
+                position,
+                Some(yaw),
+                Some(pitch),
+                (
+                    None::<fn(&Arc<Self>, bool)>,
+                    None::<fn(&Arc<World>, Vector3<f64>)>,
+                    true,
+                ),
+            )
+            .await;
+    }
+
     /// Resolves the plugin-approved destination before any teleport side effects.
     pub(super) fn accept_teleport_destination(
         &self,
