@@ -214,7 +214,7 @@ pub mod entity_tracker;
 pub mod environment;
 mod experience_orbs;
 mod fishing_hook;
-mod game_events;
+pub(crate) mod game_events;
 pub(crate) mod generation_spawning;
 pub mod guard_effects;
 #[cfg(test)]
@@ -6699,13 +6699,11 @@ impl World {
     }
 
     pub fn emit_game_event(&self, event_key: impl Into<String>, position: Vector3<f64>) {
-        let mut event = crate::plugin::api::events::world::generic_game::GenericGameEvent::new(
-            event_key.into(),
+        self.emit_game_event_with_context(
+            event_key,
             position,
+            game_events::GameEventContext::default(),
         );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
     }
 
     pub async fn unload(self: &Arc<Self>) {

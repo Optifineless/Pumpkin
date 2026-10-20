@@ -42,6 +42,36 @@ its UUID, health, bases and modifiers unchanged. Disable the switch and create
 new horses; expect prior generated defaults, while saved horses remain unchanged.
 Record the births and restart, and capture UUID, Health and attribute values.
 
+## Game-event source context foundation, slice 1 (#162)
+
+Fishing use, item release and death-protection game events retain their originating
+entity through the existing plugin callback. Successful death-protection teleports
+retain their departure position. Built-in forwarding resolves the callback's final
+key and position, honors cancellation, and rejects invalid coordinates or a stale
+entity, life, world or player session. Source-less emissions remain valid and
+unknown keys remain visible to plugins. `[sculk_game_events] enabled = true` is the
+default; false disables only the new typed forwarding. No saved-data format changes.
+
+API 8 (same version): the additive public `AdvancedConfiguration.sculk_game_events`
+field changes native configuration layout. The public
+`sculk_game_events::SculkGameEventsConfig` type is new. Native plugins must rebuild;
+source users constructing `AdvancedConfiguration` with a
+complete struct literal must add the field or use `..Default::default()`. Existing
+event types, constructors, public method signatures and Wasm WIT are unchanged.
+Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+This is partial groundwork: STEP emission, listener lifecycle, vibration admission
+and travel, ordinary/calibrated sensor activation, shrieker/Warden consumers, anger,
+sonic attacks and world generation remain separate work. It does not close #162
+or fix #156/#128, and walking still does not activate sensors through this path.
+
+Play test: cast and reel a rod, stop using an item, and trigger a supported
+death-protection teleport; expect the same fishing, item, consumption and teleport
+behavior. Repeat with the setting false; expect the same gameplay and plugin
+notification counts. Record those actions and plugin notifications on the candidate
+build. No sensor activation repair is claimed.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.

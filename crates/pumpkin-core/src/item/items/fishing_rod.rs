@@ -141,9 +141,14 @@ fn cause_use_vibration(rod: &ItemStack, player: &Player, event: GameEvent) {
         .get_data_component::<UseEffectsImpl>()
         .is_some_and(|effects| effects.interact_vibrations)
     {
-        player
-            .world()
-            .emit_game_event(event.name(), player.position());
+        player.world().emit_game_event_with_context(
+            event.name(),
+            player.position(),
+            crate::world::game_events::GameEventContext {
+                source: Some(player.get_entity()),
+                affected_state: None,
+            },
+        );
     }
 }
 

@@ -27,6 +27,8 @@ pub mod networking;
 pub mod plugins;
 /// Recipe system configuration options.
 pub mod recipe;
+/// Built-in game-event forwarding configuration.
+pub mod sculk_game_events;
 
 /// Resource pack configuration options.
 pub mod resource_pack;
@@ -153,6 +155,8 @@ impl LoadConfiguration for PumpkinConfig {
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)]
 pub struct AdvancedConfiguration {
+    /// Built-in game events; plugin notifications are always preserved.
+    pub sculk_game_events: sculk_game_events::SculkGameEventsConfig,
     /// Logging-related configuration such as log levels and output behaviour.
     pub logging: LoggingConfig,
     /// Resource pack configuration, including enforcement and pack metadata.
