@@ -14,6 +14,8 @@ use pumpkin_protocol::bedrock::{
 use super::item_stack_request::{SlotUpdate, map_bedrock_container_slot, record_update};
 use crate::entity::player::Player;
 
+const BEDROCK_RESULT_SLOT: u8 = 50;
+
 struct Selection<'a> {
     pattern: &'a str,
     repetitions: u8,
@@ -35,6 +37,23 @@ impl<'a> Selection<'a> {
         if *repetitions == 0 {
             return None;
         }
+        // Geyser's LoomInventoryTranslator receives result prediction immediately
+        // after CraftLoom. Its item data never authorizes or supplies our output.
+        let suffix = if let Some((
+            Action::CraftResultsDeprecated {
+                result_items,
+                times_crafted,
+            },
+            rest,
+        )) = suffix.split_first()
+        {
+            if result_items.len() != 1 || times_crafted != repetitions {
+                return None;
+            }
+            rest
+        } else {
+            suffix
+        };
         let mut output = None;
         let mut consumes = [None, None];
         for action in suffix {
@@ -160,13 +179,11 @@ fn preview(
         staged.input_inventory.set_stack(index, input);
     }
     staged.slots_changed();
-    let pattern = selection
-        .pattern
-        .strip_prefix("minecraft:")
-        .unwrap_or(selection.pattern);
-    let index = staged.selectable_patterns.iter().position(|key| {
-        key == selection.pattern || key.strip_prefix("minecraft:") == Some(pattern)
-    })?;
+    let pattern = java_pattern(selection.pattern)?;
+    let index = staged
+        .selectable_patterns
+        .iter()
+        .position(|key| key.strip_prefix("minecraft:") == Some(pattern))?;
     if !staged.on_button_click(player.as_ref(), i32::try_from(index).ok()?) {
         return None;
     }
@@ -262,20 +279,16 @@ fn record_outputs(
     selection: &Selection<'_>,
     updates: &mut Vec<SlotUpdate>,
 ) {
-    for (index, name) in [
-        ContainerName::LoomInput,
-        ContainerName::LoomDye,
-        ContainerName::LoomMaterial,
-        ContainerName::LoomResultPreview,
+    // Geyser LoomInventoryTranslator.javaSlotToBedrockContainer UI addresses.
+    for (index, (name, slot_id)) in [
+        (ContainerName::LoomInput, 9),
+        (ContainerName::LoomDye, 10),
+        (ContainerName::LoomMaterial, 11),
+        (ContainerName::LoomResultPreview, BEDROCK_RESULT_SLOT),
     ]
     .into_iter()
     .enumerate()
     {
-        let slot_id = if index < 2 {
-            selection.consumes[index].map_or(0, |slot| slot.slot_id)
-        } else {
-            0
-        };
         record_update(
             updates,
             FullContainerName {
@@ -305,7 +318,58 @@ fn record_outputs(
             container_name: ContainerName::CreatedOutput,
             dynamic_id: None,
         },
-        0,
+        BEDROCK_RESULT_SLOT,
         ItemStack::EMPTY,
     );
+}
+
+// Geyser BannerPattern edition identifiers; the live selectable registry still
+// authorizes the translated pattern, including its required material item.
+fn java_pattern(bedrock: &str) -> Option<&'static str> {
+    Some(match bedrock {
+        "b" => "base",
+        "bl" => "square_bottom_left",
+        "br" => "square_bottom_right",
+        "tl" => "square_top_left",
+        "tr" => "square_top_right",
+        "bs" => "stripe_bottom",
+        "ts" => "stripe_top",
+        "ls" => "stripe_left",
+        "rs" => "stripe_right",
+        "cs" => "stripe_center",
+        "ms" => "stripe_middle",
+        "drs" => "stripe_downright",
+        "dls" => "stripe_downleft",
+        "ss" => "small_stripes",
+        "cr" => "cross",
+        "sc" => "straight_cross",
+        "bt" => "triangle_bottom",
+        "tt" => "triangle_top",
+        "bts" => "triangles_bottom",
+        "tts" => "triangles_top",
+        "ld" => "diagonal_left",
+        "rd" => "diagonal_up_right",
+        "lud" => "diagonal_up_left",
+        "rud" => "diagonal_right",
+        "mc" => "circle",
+        "mr" => "rhombus",
+        "vh" => "half_vertical",
+        "hh" => "half_horizontal",
+        "vhr" => "half_vertical_right",
+        "hhb" => "half_horizontal_bottom",
+        "bo" => "border",
+        "cbo" => "curly_border",
+        "gra" => "gradient",
+        "gru" => "gradient_up",
+        "bri" => "bricks",
+        "glb" => "globe",
+        "cre" => "creeper",
+        "sku" => "skull",
+        "flo" => "flower",
+        "moj" => "mojang",
+        "pig" => "piglin",
+        "flw" => "flow",
+        "gus" => "guster",
+        _ => return None,
+    })
 }

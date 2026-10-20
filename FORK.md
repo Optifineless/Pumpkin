@@ -6,14 +6,21 @@ This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained fo
 
 Ordinary Bedrock beacon selections now translate generated edition effect IDs,
 validate the live menu and tier, consume one accepted payment, and use Java's
-existing effect/save/sound operation. Loom requests resolve current selectable
-registry patterns, stage stock and destination capacity, and pay each banner
+existing effect/save/sound operation. The client's single predicted Destroy at
+BeaconPayment/27 is validated before that sole debit. Loom requests translate
+Bedrock pattern identifiers before checking current selectable registry patterns,
+stage stock and destination capacity, and pay each banner
 through the existing result-slot take, retaining pattern items and banner components.
 Malformed, stale, unpaid and unsupported sequences fail before debiting stock.
 Mirrors the supplied vanilla 26.3 `BeaconMenu.updateEffects`, `LoomMenu`
-selection/result-slot chain and `Slot.safeTake/onTake`. The synthetic protocol
-2193 fixtures use zero for absent beacon effects, registry-key loom strings and
-request-owned negative CreatedOutput IDs; real 1.26.51 client captures remain
+selection/result-slot chain and `Slot.safeTake/onTake`. Round 2 source-derived
+protocol 2193 fixtures follow Dragonfly's BeaconPayment/Destroy sequence and
+Geyser's CraftLoom/CraftResultsDeprecated sequence with Bedrock `bs`/`flo` IDs.
+Predicted result contents remain advisory; specialized replies address payment
+27, loom inputs 9/10/11, and preview/CreatedOutput 50. Tests decode complete
+success updates and existing inventory/menu/cursor corrections, and cover
+cancelled statistics and disconnected requests. Generic menu correction
+addressing remains owned by PR #382. Real 1.26.51 client captures remain
 unverified. API 8 (same version): public layouts/signatures and native source
 compatibility are unchanged; no new rebuild requirement. WIT and saved-data
 meaning are unchanged.
@@ -26,7 +33,9 @@ ordinary and item-required banner patterns, including repeated crafts; expect
 one banner and dye per result, preserved layers/name and a retained pattern item.
 Try full destinations and invalid/stale requests; expect unchanged stock. Record
 the menus, counts, sound and powers after reopening/restarting, and capture the
-actual absent-effect marker, pattern string and output/Consume request sequence.
+actual absent-effect marker, pattern string, result metadata and output/Consume
+request sequence. After each acknowledgment, repeat the selection or craft and
+check that every menu count stays synchronized, including a cursor destination.
 
 ## Stable Bedrock score identities (#289)
 
