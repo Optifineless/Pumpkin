@@ -2388,6 +2388,8 @@ Dolphins acquire the nearest noncombat player within 10 blocks, ignoring line of
 
 Issue #157 follow-up: visibility applies the target predicate's normal distance scaling while line of sight remains ignored; initial Grace accepts exactly 10 blocks, continuation remains strictly inside 16 blocks, and the follow goal at priority 2 can preempt melee at priority 6. Regression tests cover invisible and visible acquisition, both distance boundaries, an already-running melee goal, ordinary combat-target continuation, and panic-goal interruption. Public API 8, saved data and WIT are unchanged. In-game verification: Not yet.
 
+PR #339 round 2 removes random jump, wander and look candidates from the melee-priority setup and resets entity age before each direct tick so the full selector runs. The companion continuation and panic scenario retains the intact selector. No runtime behavior changed.
+
 Play test: With a sprint-swimming player and a dolphin, verify an invisible player at five blocks is not acquired while a visible player at five blocks and an invisible player nearby are acquired. Verify initial Grace at exactly 10 blocks, no acquisition just outside 10, continued following just inside 16, and stopping at exactly 16. Give the dolphin a combat target, then bring a different swimmer nearby; following should preempt melee and grant Grace. Finally hit the dolphin with a panic-causing source near water; escape behavior should interrupt following.
 
 PR #228 review: effect insertion, dependent attributes, visibility, particle metadata

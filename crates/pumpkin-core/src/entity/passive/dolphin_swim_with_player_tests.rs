@@ -3,12 +3,15 @@
     reason = "These regressions require valid server fixtures"
 )]
 
-use super::dolphin_swim_with_player::DolphinSwimWithPlayerGoal;
+use super::{
+    dolphin_movement::DolphinJumpGoal, dolphin_swim_with_player::DolphinSwimWithPlayerGoal,
+};
 use crate::{
     entity::{
         EntityBase,
         ai::goal::{
-            Goal, escape_danger::EscapeDangerGoal, melee_attack::MeleeAttackGoal,
+            Goal, escape_danger::EscapeDangerGoal, look_around::RandomLookAroundGoal,
+            look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal,
             wander_around::WanderAroundGoal,
         },
         death_test_world::DeathTestWorld,
@@ -658,12 +661,7 @@ async fn b1020b_g05_follow_preempts_melee_and_preserves_vanilla_continuation() {
     start_sprinting_swimmer(&fixture, &swimmer, Vector3::new(20.0, 64.0, 0.0));
     move_player(&fixture, &attacker, Vector3::new(5.0, 64.0, 0.0));
     let (dolphin, _) = spawn_dolphin_with_refresh_roll(&fixture, 1);
-    // Block DolphinJumpGoal's step-zero clearance check without changing the production selector.
-    world.set_block_state(
-        &dolphin.get_entity().block_pos.load().up(),
-        Block::STONE.default_state.id,
-        BlockFlags::FORCE_STATE,
-    );
+    let dolphin_entity = dolphin.get_entity();
     world.level_time.lock().unwrap().world_age = 20;
     let target: Arc<dyn EntityBase> = attacker.player.clone();
     dolphin
@@ -671,6 +669,20 @@ async fn b1020b_g05_follow_preempts_melee_and_preserves_vanilla_continuation() {
         .unwrap()
         .get_mob_entity()
         .set_target(Some(target));
+    {
+        let mob = dolphin.get_mob().unwrap();
+        let mut selector = mob
+            .get_mob_entity()
+            .goals_selector
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Keep random jump, swimming and look goals from affecting this priority test. The
+        // companion continuation test exercises the production selector with every goal present.
+        selector.remove_goal::<DolphinJumpGoal>(mob);
+        selector.remove_goal::<WanderAroundGoal>(mob);
+        selector.remove_goal::<LookAtEntityGoal>(mob);
+        selector.remove_goal::<RandomLookAroundGoal>(mob);
+    };
     assert_eq!(world.get_world_age(), 20);
     assert!(!attacker.player.is_swimming());
     assert!(attacker.player.living_entity.is_alive());
@@ -684,6 +696,9 @@ async fn b1020b_g05_follow_preempts_melee_and_preserves_vanilla_continuation() {
     );
 
     for _ in 0..4 {
+        // Direct fixture ticks do not advance age; zero forces full selector evaluation instead
+        // of Mob::server_ai_step's age/entity-id throttle.
+        dolphin_entity.age.store(0, Relaxed);
         tick_dolphin(&fixture, &dolphin);
         if is_goal_running::<MeleeAttackGoal>(&dolphin) {
             break;
@@ -696,6 +711,7 @@ async fn b1020b_g05_follow_preempts_melee_and_preserves_vanilla_continuation() {
     let expected_packet = grace_packet(&swimmer);
     attacker.take_packets();
     swimmer.take_packets();
+    dolphin_entity.age.store(0, Relaxed);
     tick_dolphin(&fixture, &dolphin);
     assert!(
         is_goal_running::<DolphinSwimWithPlayerGoal>(&dolphin),

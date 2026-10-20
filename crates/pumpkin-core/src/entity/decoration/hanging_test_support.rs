@@ -117,7 +117,8 @@ impl Fixture {
     }
 
     pub fn drops(&self, item: &Item) -> u32 {
-        self.world
+        let world_count = self
+            .world
             .entities
             .load()
             .iter()
@@ -130,7 +131,15 @@ impl Fixture {
                     0
                 }
             })
-            .sum()
+            .sum::<u32>();
+        let inventory = self.player.player.inventory();
+        let carried_count = (0..inventory.size())
+            .map(|slot| inventory.get_stack(slot))
+            .filter(|stack| stack.item == item)
+            .map(|stack| u32::from(stack.item_count))
+            .sum::<u32>();
+
+        world_count + carried_count
     }
 
     pub async fn finish(self) {
