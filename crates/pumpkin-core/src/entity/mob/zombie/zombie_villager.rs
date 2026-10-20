@@ -198,11 +198,6 @@ impl ZombieVillagerEntity {
             entity.invulnerable.load(Ordering::Relaxed),
             Ordering::Relaxed,
         );
-        if self.is_baby() {
-            villager_entity
-                .age
-                .store(entity.age.load(Ordering::Relaxed), Ordering::Relaxed);
-        }
         if let Some(custom_name) = &**entity.custom_name.load() {
             villager_entity.set_custom_name(custom_name.clone());
             villager_entity
@@ -234,6 +229,7 @@ impl ZombieVillagerEntity {
         // ZombieVillager.finishConversion restores data before offers; a profession change clears them.
         villager.set_villager_data(data);
         villager.mob_read_nbt(&nbt);
+        villager.set_baby(self.is_baby());
         // Conversion finalizes villager data even when no unknown names needed an NBT override.
         villager
             .villager_data_finalized

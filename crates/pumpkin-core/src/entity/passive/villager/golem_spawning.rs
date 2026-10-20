@@ -189,7 +189,7 @@ impl VillagerEntity {
         let scheduled = entity
             .world
             .load()
-            .villager_activity(&entity.block_pos.load(), entity.age.load(Relaxed) < 0);
+            .villager_activity(&entity.block_pos.load(), self.is_baby());
         // Villager's activity requirements -> Brain.setActiveActivityIfPossible defaults to IDLE.
         match scheduled {
             Activity::Work if self.get_job_site().is_none() => Activity::Idle,
@@ -266,7 +266,7 @@ impl VillagerEntity {
         nearby: &[Arc<dyn EntityBase>],
         random: &mut impl rand::Rng,
     ) {
-        if self.get_entity().age.load(Relaxed) < 0
+        if self.is_baby()
             || self.get_entity().pose.load() == EntityPose::Sleeping
             || self.is_trading.load(Relaxed)
             || !matches!(

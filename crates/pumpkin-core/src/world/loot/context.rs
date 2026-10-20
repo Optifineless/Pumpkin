@@ -147,7 +147,7 @@ pub(super) fn snapshot_entity(
     };
     // EntityFlagsPredicate.matches and SheepPredicate.matches.
     // MobEntity.set_baby_flag also mirrors non-ageable baby flags into negative age.
-    let baby = entity.get_mob().is_some() && raw.age.load(Relaxed) < 0;
+    let baby = entity.get_mob().is_some() && entity.is_semantic_baby();
     state.flags.extend([
         ("is_on_fire".to_owned(), raw.is_on_fire()),
         ("is_on_ground".to_owned(), raw.on_ground.load(Relaxed)),

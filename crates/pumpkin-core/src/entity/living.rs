@@ -284,10 +284,13 @@ impl LivingEntity {
     }
 
     pub(super) fn get_pitch(&self) -> f32 {
-        let is_baby = self
-            .get_mob()
-            .and_then(|x| x.as_ageable())
-            .is_some_and(AgeableMob::is_baby);
+        let is_baby = if self.entity.entity_type == &EntityType::VILLAGER {
+            super::passive::villager::VillagerEntity::sound_baby(&self.entity)
+        } else {
+            self.get_mob()
+                .and_then(|x| x.as_ageable())
+                .is_some_and(AgeableMob::is_baby)
+        };
 
         let mut rng = rand::rng();
         if is_baby {

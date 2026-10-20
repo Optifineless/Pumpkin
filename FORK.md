@@ -697,6 +697,45 @@ Give a villager with an unknown saved profession a lectern; expect its librarian
 profession to survive two restarts. Import a zombie librarian, cure it, and expect
 the same remembered trades before and after restarting.
 
+## Villager biological age and growth boundary, breeding slice 6 (#370)
+
+Villagers own biological `Age`, `ForcedAge` and `AgeLocked` independently of
+elapsed entity ticks. One live world tick grows an unlocked baby or decreases a
+positive cooldown, including a locked adult cooldown; zero remains zero. Job,
+trade, activity, sound, initial metadata and body/eye/navigation dimensions use
+the same biological state. Both client editions receive the baby boundary in
+both directions; sleeping keeps the existing sleeping dimensions and waking
+reselects the age body. Existing Brain memories/TTL, offers and HOME remain.
+Summon/data hydration precedes publication, entity-use eggs configure -24000
+before admission/payment, and cures transfer the zombie baby flag after restoring
+villager data and offers, without copying zombie elapsed time.
+
+Age tags use vanilla Int/Int/Boolean types, with missing defaults 0/0/false.
+`murgicraft:VillagerAgeSchema` version 1 distinguishes migrated biological state
+from unmarked input. Malformed age tags and unsupported versions retain their
+exact parsed tag types/values without enabling age mutations. One checked
+level-30 owner captures age separately from food, inventory and HOME; existing
+mark-before-capture retirement includes admitted age writes and rejects old
+incarnations. No offline catch-up runs. The #226 companion at ancestor
+`2e789a125` already supplies canonical/legacy registry data, unknown-name
+retention and `VillagerDataFinalized`; this slice reuses it unchanged.
+
+Mirrors the supplied vanilla 26.3 `AgeableMob.setAge/aiStep/readAdditionalSaveData`,
+`Villager.ageBoundaryReached/getDefaultDimensions`, spawn-egg baby configuration
+and zombie conversion flag transfer. Pumpkin has no general `findFreePosition`
+growth collision adjustment or boat `hasEnoughSpaceFor` facility; those remain
+unimplemented, with existing collision/dismount behavior preserved. Generic
+animal aging, feeding and forced-growth particles remain #370 follow-ups.
+Coherent food ownership, full canBreed, child construction/admission and breeding
+remain later slices; no gameplay birth path is enabled here.
+
+API 8 (same version): the public VillagerEntity layout gains an age owner,
+with an owned snapshot and biological setters; Mob/EntityBase gain defaulted
+semantic/geometry hooks. Rust implementations retain source compatibility;
+native plugins must rebuild. Existing generic Entity and both Wasm age APIs
+still mean elapsed ticks; no WIT changes or biological-age API is added to Wasm.
+Implemented by Codex. In-game verification: Not yet.
+
 ## Hanging support lifecycle and painting attacker (#44, #47)
 
 Paintings and ordinary item frames check support, block collision and hanging

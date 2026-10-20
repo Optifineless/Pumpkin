@@ -263,11 +263,15 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         Vector3::from_yaw_pitch(entity.yaw.load(), entity.pitch.load())
     }
 
+    fn is_semantic_baby(&self) -> bool {
+        self.get_entity().age.load(Ordering::Relaxed) < 0
+    }
+
     fn init_data_tracker(&self) {
         let entity = self.get_entity();
 
         // If the internal age is negative, it's a baby
-        let is_baby = entity.age.load(Ordering::Relaxed) < 0;
+        let is_baby = self.is_semantic_baby();
 
         if is_baby {
             let mut bedrock_meta = SyncedActorDataList::new();
@@ -1258,11 +1262,19 @@ impl Entity {
         let mut metadata = SyncedActorDataList::new();
         metadata.set(
             entity_data_key::WIDTH,
-            MetadataValue::Float(self.entity_type.dimension[0]),
+            MetadataValue::Float(if self.entity_type == &EntityType::VILLAGER {
+                self.width()
+            } else {
+                self.entity_type.dimension[0]
+            }),
         );
         metadata.set(
             entity_data_key::HEIGHT,
-            MetadataValue::Float(self.entity_type.dimension[1]),
+            MetadataValue::Float(if self.entity_type == &EntityType::VILLAGER {
+                self.height()
+            } else {
+                self.entity_type.dimension[1]
+            }),
         );
         metadata.set(entity_data_key::SCALE, MetadataValue::Float(1.0));
         metadata.set(
@@ -1431,7 +1443,9 @@ impl Entity {
 
     pub fn get_eye_height(&self) -> f64 {
         // Vanilla Entity.getEyeHeight uses the entity's dimensions, not player poses.
-        f64::from(if self.entity_type == &EntityType::PLAYER {
+        f64::from(if self.entity_type == &EntityType::VILLAGER {
+            self.entity_dimension.load().eye_height
+        } else if self.entity_type == &EntityType::PLAYER {
             Self::get_entity_dimensions(self.pose.load()).eye_height
         } else {
             self.entity_type.eye_height
@@ -3030,15 +3044,33 @@ impl Entity {
             }
         }
 
-        if !is_current() {
+        if !is_current() || (self.entity_type == &EntityType::VILLAGER && self.is_removed()) {
             return;
         }
-        let dimension = Self::get_entity_dimensions(pose);
+        let dimension = passive::villager::VillagerEntity::pose_dimensions(self, pose)
+            .unwrap_or_else(|| Self::get_entity_dimensions(pose));
         let position = self.pos.load();
         let aabb = BoundingBox::new_from_pos(position.x, position.y, position.z, &dimension);
         self.pose.store(pose);
         self.bounding_box.store(aabb);
         self.entity_dimension.store(dimension);
+        if !passive::villager::VillagerEntity::pose_changed(self, pose) {
+            return;
+        }
+        if self.entity_type == &EntityType::VILLAGER
+            && (!is_current()
+                || self.is_removed()
+                || self.pose.load() != pose
+                || passive::villager::VillagerEntity::pose_dimensions(self, pose).is_none_or(
+                    |current| {
+                        current.width.to_bits() != dimension.width.to_bits()
+                            || current.height.to_bits() != dimension.height.to_bits()
+                            || current.eye_height.to_bits() != dimension.eye_height.to_bits()
+                    },
+                ))
+        {
+            return;
+        }
         let pose = pose as i32;
         let mut bedrock_meta = SyncedActorDataList::new();
         bedrock_meta.set(entity_data_key::POSE_INDEX, MetadataValue::Int(pose));
@@ -3584,7 +3616,9 @@ impl Entity {
                 let mut found = None;
 
                 'search: for (pose, y_offsets) in poses_and_heights {
-                    let dims = Self::get_entity_dimensions(pose);
+                    let dims =
+                        passive::villager::VillagerEntity::pose_dimensions(passenger_entity, pose)
+                            .unwrap_or_else(|| Self::get_entity_dimensions(pose));
 
                     for y_offset in y_offsets {
                         for &(ox, oz) in &offsets {
@@ -3635,7 +3669,11 @@ impl Entity {
                     ];
 
                     for pose in poses {
-                        let dims = Self::get_entity_dimensions(pose);
+                        let dims = passive::villager::VillagerEntity::pose_dimensions(
+                            passenger_entity,
+                            pose,
+                        )
+                        .unwrap_or_else(|| Self::get_entity_dimensions(pose));
                         let bbox = BoundingBox::new_from_pos(
                             self.pos.load().x,
                             vehicle_top,

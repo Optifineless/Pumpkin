@@ -337,7 +337,11 @@ fn explorer_map_target(
     })
 }
 
+mod age;
+pub use age::VillagerAgeSnapshot;
+
 pub struct VillagerEntity {
+    age_state: age::VillagerAge,
     pub mob_entity: MobEntity,
     golem_scan_ticks: AtomicI32,
     golem_spawn_lock: std::sync::Mutex<()>,
@@ -423,6 +427,7 @@ impl VillagerEntity {
 
         let villager = Self {
             mob_entity,
+            age_state: age::VillagerAge::default(),
             golem_scan_ticks: AtomicI32::new(golem_spawning::initial_scan_delay()),
             golem_spawn_lock: std::sync::Mutex::new(()),
             villager_data: std::sync::Mutex::new(villager_data),
@@ -1140,7 +1145,7 @@ impl VillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let profession = data.profession_enum();
-        let is_adult = self.get_entity().age.load(Ordering::Relaxed) >= 0;
+        let is_adult = !self.is_baby();
 
         if profession == VillagerProfession::Nitwit || !is_adult {
             if let Some(site) = self.get_job_site() {
@@ -1840,6 +1845,7 @@ impl Mob for VillagerEntity {
     }
 
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
+        self.write_age_nbt(nbt);
         self.write_villager_nbt(nbt);
     }
 
@@ -1950,6 +1956,7 @@ impl Mob for VillagerEntity {
 
         self.read_inventory_nbt(nbt);
         self.read_gossips_nbt(nbt);
+        self.read_age_nbt(nbt);
     }
 
     fn get_mob_entity(&self) -> &MobEntity {
@@ -1974,6 +1981,7 @@ impl Mob for VillagerEntity {
         )
         .write(&mut metadata, &version)
         .ok()?;
+        self.append_age_spawn_metadata(&mut metadata, version)?;
         metadata.push(255);
         Some(metadata.into_boxed_slice())
     }
@@ -2054,9 +2062,7 @@ impl Mob for VillagerEntity {
         let bedrock_metadata = Self::bedrock_metadata(data, self.xp.load(Ordering::Relaxed));
         entity.set_synced_data(tracked_data::villager::VILLAGER_DATA, data);
         entity.send_bedrock_actor_data(&bedrock_metadata);
-        if entity.age.load(Ordering::Relaxed) < 0 {
-            entity.set_synced_data(tracked_data::villager::BABY_ID, true);
-        }
+        self.init_age_tracker();
     }
 
     fn on_damage(
@@ -2086,15 +2092,36 @@ impl Mob for VillagerEntity {
         }
     }
 
+    fn mob_is_baby(&self) -> bool {
+        self.is_baby()
+    }
+
+    fn spawn_as_baby(&self) -> bool {
+        self.set_baby(true)
+    }
+
+    fn mob_age_dimensions(&self, pose: EntityPose) -> Option<crate::entity::EntityDimensions> {
+        Some(self.age_dimensions(pose))
+    }
+
+    fn mob_refresh_age_dimensions(&self, pose: EntityPose) {
+        self.refresh_age_dimensions(pose);
+    }
+
     fn mob_tick(&self, _caller: &dyn EntityBase) {
+        self.tick_biological_age();
         self.villager_mob_tick();
     }
 
-    fn mob_interact(&self, player: &Arc<Player>, _item_stack: &mut ItemStack) -> bool {
+    fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
+        // Villager.mobInteract delegates its spawn egg before the baby/trade gates.
+        if item_stack.item.id == Item::VILLAGER_SPAWN_EGG.id {
+            return false;
+        }
         if self.is_trading.load(Ordering::Relaxed) {
             return false;
         }
-        if self.get_entity().age.load(Ordering::Relaxed) < 0 {
+        if self.is_baby() {
             self.set_unhappy();
             return true;
         }

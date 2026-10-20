@@ -22,8 +22,8 @@ use pumpkin_data::BlockDirection;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::EquipmentSlot;
-use pumpkin_data::entity::EntityType;
 use pumpkin_data::entity::MobCategory;
+use pumpkin_data::entity::{EntityPose, EntityType};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
@@ -999,6 +999,16 @@ pub trait Mob: EntityBase + Send + Sync {
         None
     }
 
+    fn mob_is_baby(&self) -> bool {
+        self.get_entity().age.load(Relaxed) < 0
+    }
+
+    fn mob_age_dimensions(&self, _pose: EntityPose) -> Option<crate::entity::EntityDimensions> {
+        None
+    }
+
+    fn mob_refresh_age_dimensions(&self, _pose: EntityPose) {}
+
     fn as_ageable(&self) -> Option<&dyn crate::entity::ageable::AgeableMob> {
         None
     }
@@ -1445,7 +1455,7 @@ pub trait Mob: EntityBase + Send + Sync {
 
     fn mob_init_data_tracker(&self) {
         let entity = self.get_entity();
-        let is_baby = entity.age.load(std::sync::atomic::Ordering::Relaxed) < 0;
+        let is_baby = self.mob_is_baby();
         if is_baby {
             entity.set_synced_data(tracked_data::ageable_mob::DATA_BABY_ID, true);
         }
@@ -1465,6 +1475,10 @@ pub trait Mob: EntityBase + Send + Sync {
     }
 }
 impl<T: Mob + Send + 'static> EntityBase for T {
+    fn is_semantic_baby(&self) -> bool {
+        self.mob_is_baby()
+    }
+
     fn get_mob(&self) -> Option<&dyn Mob> {
         Some(self)
     }

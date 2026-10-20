@@ -37,7 +37,7 @@ fn gossip(target: Vec<i32>, kind: &str, value: i32) -> NbtTag {
     NbtTag::Compound(tag)
 }
 
-fn villager_fixture(id: Uuid, legacy: bool) -> NbtCompound {
+pub(super) fn villager_fixture(id: Uuid, legacy: bool) -> NbtCompound {
     // Villager.addAdditionalSaveData/readAdditionalSaveData and VillagerData.CODEC:
     // VillagerData, VillagerDataFinalized, FoodLevel, Xp, Offers, Inventory and Gossips.
     let mut nbt = NbtCompound::new();
@@ -122,7 +122,7 @@ fn villager_fixture(id: Uuid, legacy: bool) -> NbtCompound {
     nbt
 }
 
-async fn seed(scenario: &Scenario, records: Vec<NbtCompound>) {
+pub(super) async fn seed(scenario: &Scenario, records: Vec<NbtCompound>) {
     let world = scenario.world(&Dimension::OVERWORLD);
     let pos = Vector2::new(0, 0);
     let terrain = scenario
@@ -169,7 +169,11 @@ async fn seed(scenario: &Scenario, records: Vec<NbtCompound>) {
     );
 }
 
-fn with_villager<T>(scenario: &Scenario, id: Uuid, read: impl FnOnce(&VillagerEntity) -> T) -> T {
+pub(super) fn with_villager<T>(
+    scenario: &Scenario,
+    id: Uuid,
+    read: impl FnOnce(&VillagerEntity) -> T,
+) -> T {
     let world = scenario.world(&Dimension::OVERWORLD);
     let entity = world.get_entity_by_uuid(id).unwrap();
     read(entity.cast_any().downcast_ref::<VillagerEntity>().unwrap())
@@ -190,7 +194,7 @@ fn assert_capacity(scenario: &Scenario, id: Uuid, count: usize) {
     });
 }
 
-async fn saved_record(scenario: &Scenario, id: Uuid) -> NbtCompound {
+pub(super) async fn saved_record(scenario: &Scenario, id: Uuid) -> NbtCompound {
     let world = scenario.world(&Dimension::OVERWORLD);
     let storage = scenario
         .drive(
@@ -210,7 +214,7 @@ async fn saved_record(scenario: &Scenario, id: Uuid) -> NbtCompound {
         .clone()
 }
 
-fn assert_vanilla_encoding(nbt: &NbtCompound) {
+pub(super) fn assert_vanilla_encoding(nbt: &NbtCompound) {
     let data = nbt.get_compound("VillagerData").unwrap();
     assert_eq!(data.get_string("type"), Some("minecraft:taiga"));
     assert_eq!(data.get_string("profession"), Some("minecraft:librarian"));

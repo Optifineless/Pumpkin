@@ -1,19 +1,20 @@
 use super::{EntityType, LivingEntity, Mob, equipment};
 use rand::RngExt;
+#[cfg(test)]
 use std::sync::atomic::Ordering::Relaxed;
 
 pub(super) fn should_drop_loot<T: Mob + ?Sized>(mob: &T) -> bool {
     let entity = mob.get_entity();
     mob_death_loot_allowed(
         entity.entity_type,
-        entity.age.load(Relaxed) < 0,
+        mob.mob_is_baby(),
         entity.world.load().level_info.load().game_rules.mob_drops,
     )
 }
 
 pub(super) fn should_drop_experience<T: Mob + ?Sized>(mob: &T) -> bool {
     let entity = mob.get_entity();
-    mob_death_experience_allowed(entity.entity_type, entity.age.load(Relaxed) < 0)
+    mob_death_experience_allowed(entity.entity_type, mob.mob_is_baby())
 }
 
 /// Returns the inherited Mob/Animal XP reward for species with conditional overrides.

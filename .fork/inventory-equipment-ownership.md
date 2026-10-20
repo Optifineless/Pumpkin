@@ -22,6 +22,18 @@ owned stacks. Component inspection and target selection run after snapshot guard
 have ended. It adds no owner, lock, inventory mutation or packet/event dispatch.
 Snapshots of separate slot families are not a new atomic inventory transaction.
 
+Villager biological age (slice 6) is a separate level-30 checked owner in
+`entity/passive/villager/age.rs`. It owns `Age`, `ForcedAge`, `AgeLocked`, the
+age-only schema provenance and retained undecoded tags. Writers are hydration,
+the biological setter (including egg/cure configuration) and one species tick;
+semantic baby readers, geometry and metadata derive from its scalar snapshot.
+The age writer captures an owned image and releases the guard before encoding;
+normal save and mark-before-capture chunk retirement use that same owner.
+Removed writes reject under the owner guard. Exact tracker/base, world and
+entity-chunk storage observations bound unlocked effects. This does not make
+inventory, food, HOME and age a combined birth transaction. External lifecycle,
+ticks and staged-enforcement briefs are not available in this checkout.
+
 Important callers and transitions reviewed:
 
 - Java and Bedrock selection handlers dispatch the held-item event before updating
