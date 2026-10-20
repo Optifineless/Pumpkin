@@ -56,6 +56,29 @@ with the same stock. Load an old fork save with a high timer, restart again,
 and expect preserved progress and item counts. Record all three menus before
 and after restart and capture the saved timer tags as Ints.
 
+## Experimental minecart creation and overlap refusal (#316)
+
+Minecart item placement follows vanilla 26.3 `MinecartItem.useOn`,
+`AbstractMinecart.createMinecart/getCurrentBlockPosOrRailBelow` and
+`NewMinecartBehavior.adjustToRails/isDecending`: the existing minecart improvements
+feature selects initial rail alignment, including slopes, curves and rotation.
+Experimental placement rejects intersecting minecarts using the full aligned box;
+legacy height and overlap behavior stay unchanged. In-flight item placements reserve
+their aligned space without retaining a mutex through callbacks. Spawn admission
+revalidates the actor, life, world, source hand and rail incarnation before payment;
+cancelled or stale creation keeps the item. Dispenser, load/summon constructors and
+movement physics are unchanged. API 8 (same version): public layouts/signatures,
+native source compatibility, Wasm WIT and saved-data meaning are unchanged.
+Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: with minecart improvements enabled, place a cart on flat, ascending and
+curved rails; expect the initial alignment and rotation to follow the track. Use
+another cart on occupied rail in Survival; expect one cart and no second charge.
+Repeat with both hands, cart variants and two players placing together. Disable the
+feature; expect legacy placement height and overlapping placement. Record cart
+position/rotation and item counts, including a plugin-cancelled spawn if available.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and

@@ -6,6 +6,8 @@ mod movement;
 mod rideable;
 mod tnt;
 
+mod creation;
+
 #[cfg(test)]
 mod activator_tests;
 
