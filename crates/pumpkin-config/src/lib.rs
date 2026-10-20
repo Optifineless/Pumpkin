@@ -17,6 +17,8 @@ use tracing::{debug, error, warn};
 
 /// Fun and experimental configuration options.
 pub mod fun;
+/// Ordinary horse ride-attempt taming configuration.
+pub mod horse_riding_taming;
 /// Server logging configuration options.
 pub mod logging;
 /// Networking and protocol configuration options.
@@ -150,6 +152,8 @@ impl LoadConfiguration for PumpkinConfig {
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)]
 pub struct AdvancedConfiguration {
+    /// Repeated horse riding attempts; disabling retains committed saved state.
+    pub horse_riding_taming: horse_riding_taming::HorseRidingTamingConfig,
     /// Logging-related configuration such as log levels and output behaviour.
     pub logging: LoggingConfig,
     /// Resource pack configuration, including enforcement and pack metadata.

@@ -207,6 +207,11 @@ impl Scenario {
     }
 
     pub async fn restart(self) -> Self {
+        let enabled = self.server.advanced_config.horse_riding_taming.enabled;
+        self.restart_with_horse_taming(enabled).await
+    }
+
+    pub(super) async fn restart_with_horse_taming(self, enabled: bool) -> Self {
         self.stop().await;
         let hardcore = self.server.basic_config.hardcore;
         let Self {
@@ -214,7 +219,7 @@ impl Scenario {
         } = self;
         drop(server); // Release the real session lock before opening the same directory.
         let scenario = Self {
-            server: Self::services(fixture.directory.path(), hardcore),
+            server: Self::services(fixture.directory.path(), hardcore, enabled),
             fixture,
             sessions: Rc::default(),
             stopped: Rc::default(),

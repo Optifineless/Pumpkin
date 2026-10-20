@@ -6,6 +6,7 @@
 
 mod entity_unload;
 mod hardcore_respawn_review;
+mod horse_riding_taming;
 mod lifecycle;
 mod old_saves;
 mod ownership;
@@ -185,9 +186,12 @@ impl Scenario {
         Self::new_with_hardcore(false).await
     }
     async fn new_with_hardcore(hardcore: bool) -> Self {
+        Self::new_with_horse_taming(hardcore, true).await
+    }
+    async fn new_with_horse_taming(hardcore: bool, enabled: bool) -> Self {
         let isolation = SCENARIO_GATE.lock().await;
         let directory = tempfile::tempdir().unwrap();
-        let server = Self::services(directory.path(), hardcore);
+        let server = Self::services(directory.path(), hardcore, enabled);
         let scenario = Self {
             server,
             sessions: Rc::default(),
@@ -203,10 +207,11 @@ impl Scenario {
         }
         scenario
     }
-    fn services(path: &Path, hardcore: bool) -> Arc<Server> {
+    fn services(path: &Path, hardcore: bool, horse_taming: bool) -> Arc<Server> {
         let mut server = combat_test_support::server(path);
         let services = Arc::get_mut(&mut server).unwrap();
         services.basic_config.hardcore = hardcore;
+        services.advanced_config.horse_riding_taming.enabled = horse_taming;
         services.dimensions = vec![Dimension::OVERWORLD, Dimension::THE_NETHER];
         services.advanced_config.networking.java.view_distance =
             std::num::NonZeroU8::new(2).unwrap();
@@ -314,10 +319,19 @@ impl Scenario {
     /// Tick the same graph as `Ticker`, with an explicit tick count and no clock scheduler.
     pub async fn ticks(&self, count: usize) {
         for _ in 0..count {
-            let gate = self.drive("tick gate", self.server.tick_gate.lock()).await;
-            self.server.tick();
-            self.server.update_tick_times(0);
-            drop(gate);
+            let server = self.server.clone();
+            // Blocking plugin callbacks can await framed writes (for example respawn).
+            // Keep pumping the captured transport while the real tick owns its gate.
+            self.drive(
+                "server tick and transport",
+                tokio::task::spawn_blocking(move || {
+                    let _gate = server.tick_gate.blocking_lock();
+                    server.tick();
+                    server.update_tick_times(0);
+                }),
+            )
+            .await
+            .unwrap();
             self.pump();
             tokio::task::yield_now().await;
         }

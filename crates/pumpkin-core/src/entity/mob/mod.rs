@@ -271,7 +271,7 @@ impl MobEntity {
     /// Vanilla `Mob.serverAiStep`: sensing, goals, navigation and controls.
     pub fn server_ai_step(&self, mob: &dyn Mob, caller: &dyn EntityBase) {
         self.living_entity.no_action_time.fetch_add(1, Relaxed);
-        let age = self.living_entity.entity.age.load(Relaxed);
+        let age = crate::entity::passive::horse_taming::goal_selector_age(self);
         let entity_id = self.living_entity.entity.entity_id;
 
         self.sensing

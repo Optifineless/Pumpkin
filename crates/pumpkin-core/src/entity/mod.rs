@@ -91,6 +91,7 @@ pub mod decoration;
 pub mod effect;
 pub mod experience_orb;
 pub mod falling;
+mod horse_riding_transition;
 pub mod hunger;
 pub mod interaction;
 mod invulnerability;
@@ -1237,6 +1238,7 @@ impl Entity {
         if self.is_removed() {
             return;
         }
+        self.invalidate_horse_ride_attempt();
         let block_pos = self.block_pos.load();
         let biome = world.level.get_rough_biome(&block_pos);
         self.current_biome.store(Arc::new(biome));
@@ -3369,6 +3371,7 @@ impl Entity {
 
         let current_passengers = passengers.clone();
         drop(passengers);
+        self.invalidate_horse_ride_attempt();
         let passenger_ids: Vec<VarInt> = current_passengers
             .iter()
             .map(|passenger| VarInt(passenger.get_entity().entity_id))

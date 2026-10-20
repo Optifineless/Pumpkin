@@ -1,9 +1,8 @@
 use std::sync::{
     Arc, Weak,
-    atomic::{AtomicI32, AtomicU8, Ordering},
+    atomic::{AtomicI32, Ordering},
 };
 
-use crossbeam::atomic::AtomicCell;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -12,7 +11,6 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
 use rand::RngExt;
-use uuid::Uuid;
 
 use crate::entity::{
     Entity, EntityBase,
@@ -40,13 +38,15 @@ pub const FLAG_EATING: u8 = 16;
 pub const FLAG_STANDING: u8 = 32;
 pub const FLAG_OPEN_MOUTH: u8 = 64;
 
+use super::{horse_state::State, horse_taming::RunAroundLikeCrazyGoal};
+
 pub struct HorseEntity {
     pub mob_entity: MobEntity,
     pub ageable_data: AgeableData,
     pub variant: AtomicI32,
-    pub flags: AtomicU8,
-    pub temper: AtomicI32,
-    pub owner: AtomicCell<Option<Uuid>>,
+    pub(super) state: State,
+    #[cfg(test)]
+    pub(crate) taming_random: super::horse_taming::TestRandom,
 }
 
 impl HorseEntity {
@@ -61,9 +61,9 @@ impl HorseEntity {
             mob_entity,
             ageable_data: AgeableData::default(),
             variant: AtomicI32::new(variant),
-            flags: AtomicU8::new(0),
-            temper: AtomicI32::new(0),
-            owner: AtomicCell::new(None),
+            state: State::default(),
+            #[cfg(test)]
+            taming_random: super::horse_taming::TestRandom::default(),
         };
         let mob_arc = Arc::new(horse);
         let mob_weak: Weak<dyn Mob> = {
@@ -78,6 +78,12 @@ impl HorseEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
+            if mob_arc.riding_taming_enabled() {
+                goal_selector.add_goal(
+                    1,
+                    Box::new(RunAroundLikeCrazyGoal::new(Arc::downgrade(&mob_arc))),
+                );
+            }
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.2));
             goal_selector.add_goal(2, BreedGoal::new(1.0));
@@ -105,22 +111,6 @@ impl HorseEntity {
         entity.set_synced_data(
             pumpkin_data::tracked_data::horse::DATA_ID_TYPE_VARIANT,
             VarInt(variant),
-        );
-    }
-
-    #[must_use]
-    pub fn has_flag(&self, flag: u8) -> bool {
-        (self.flags.load(Ordering::Relaxed) & flag) != 0
-    }
-
-    pub fn set_flag(&self, flag: u8, val: bool) {
-        let current = self.flags.load(Ordering::Relaxed);
-        let new_flags = if val { current | flag } else { current & !flag };
-        self.flags.store(new_flags, Ordering::Relaxed);
-        let entity = self.get_entity();
-        entity.set_synced_data(
-            pumpkin_data::tracked_data::horse::DATA_ID_FLAGS,
-            new_flags as i8,
         );
     }
 
@@ -163,6 +153,14 @@ impl Animal for HorseEntity {
 }
 
 impl Mob for HorseEntity {
+    fn is_tamed(&self) -> bool {
+        self.is_tame()
+    }
+
+    fn get_owner_uuid(&self) -> Option<uuid::Uuid> {
+        self.get_owner()
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }
@@ -174,11 +172,7 @@ impl Mob for HorseEntity {
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
         self.write_ageable_nbt(nbt);
         nbt.put_int("Variant", self.get_variant());
-        nbt.put_bool("Tame", self.is_tame());
-        nbt.put_int("Temper", self.temper.load(Ordering::Relaxed));
-        if let Some(owner) = self.owner.load() {
-            nbt.put_uuid("Owner", owner);
-        }
+        self.write_horse_nbt(nbt);
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
@@ -186,15 +180,7 @@ impl Mob for HorseEntity {
         if let Some(variant) = nbt.get_int("Variant") {
             self.set_variant(variant);
         }
-        if let Some(tame) = nbt.get_bool("Tame") {
-            self.set_tame(tame);
-        }
-        if let Some(temper) = nbt.get_int("Temper") {
-            self.temper.store(temper, Ordering::Relaxed);
-        }
-        if let Some(owner) = nbt.get_uuid("Owner") {
-            self.owner.store(Some(owner));
-        }
+        self.read_horse_nbt(nbt);
     }
 
     fn get_mob_entity(&self) -> &MobEntity {
@@ -203,6 +189,7 @@ impl Mob for HorseEntity {
 
     fn mob_tick(&self, _caller: &dyn EntityBase) {
         self.ageable_ai_step();
+        self.tick_standing();
     }
 
     fn mob_init_data_tracker(&self) {
@@ -215,10 +202,7 @@ impl Mob for HorseEntity {
             pumpkin_data::tracked_data::horse::DATA_ID_TYPE_VARIANT,
             VarInt(self.get_variant()),
         );
-        entity.set_synced_data(
-            pumpkin_data::tracked_data::horse::DATA_ID_FLAGS,
-            self.flags.load(Ordering::Relaxed) as i8,
-        );
+        self.publish_flags();
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
@@ -243,6 +227,9 @@ impl Mob for HorseEntity {
             if let Some(vehicle) = world.get_entity_by_id(ent.entity_id)
                 && let Some(passenger) = world.get_player_by_id(player.entity_id())
             {
+                if item_stack.is_empty() {
+                    self.clear_standing();
+                }
                 ent.add_passenger(vehicle, passenger as Arc<dyn EntityBase>);
                 return true;
             }

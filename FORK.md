@@ -2,6 +2,43 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Horse riding attempts, #115 slice 2
+
+Adult ordinary horses can gain temper, buck and become owned/tame through repeated
+empty-hand rides. The priority-1 MOVE goal uses the existing navigation and reduced
+goal cadence, mirroring Java 26.3 `RunAroundLikeCrazyGoal` and
+`AbstractHorse.tameWithName/makeMad`. Successful rolls fire `EntityTameEvent` before
+commit; cancellation ends the attempt without fallback bucking. Detached per-horse
+reservations and concrete horse/rider/session revalidation reject callback-stale
+work. Cancellable dismount/vehicle-exit paths remain authoritative. Committed
+`Tame`, `Temper` and `Owner` share one state snapshot for NBT and native access;
+loaded temper is retained verbatim, while failed gameplay increments clamp.
+Enabled ordinary horses use the existing lifetime counter for selector cadence;
+the shared entity age is also their breeding age and returns to zero before AI.
+
+The default-ON `[horse_riding_taming] enabled = true` emergency switch disables new
+progression and feedback when false. It retains saved ownership, tame, temper,
+variant, attributes and Health; re-enabling resumes committed temper. Pending
+attempts and the 20-tick standing timer are transient. Feeding, lead precedence,
+equipment, menus, steering and horse jumps remain later slices of #115.
+
+API 8 (same version): `HorseEntity` and `AdvancedConfiguration` layouts change;
+native plugins must rebuild. Source users of the former public horse
+`flags`/`temper`/`owner` atomics must use `has_flag`/`set_flag`,
+`get_temper`/`set_temper` and `get_owner`/`set_owner` instead. Existing method and
+trait signatures, saved keys and Wasm WIT remain unchanged. Configuration struct
+literals need the added field or `..Default::default()`. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: ride an adult wild horse with an empty hand repeatedly; expect bucking
+and eventually one success effect, with the rider becoming its saved owner. Rejoin
+and restart; expect ownership and temper continuity. Disable the switch and
+restart; expect mounting without new taming/bucking, with saved data retained.
+Re-enable and expect progression to resume. Both untamed/unsaddled and
+tamed/unsaddled horses should ignore steering/jump inputs. Record the rider and a
+nearby second client through bucking, success, rejoin/restart and the disabled
+control; include the server commit and saved owner/temper.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.

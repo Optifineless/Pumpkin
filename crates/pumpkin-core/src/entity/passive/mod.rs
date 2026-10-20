@@ -20,6 +20,8 @@ pub mod glow_squid;
 pub mod goat;
 pub mod happy_ghast;
 pub mod horse;
+mod horse_state;
+pub(crate) mod horse_taming;
 pub mod iron_golem;
 pub mod llama;
 mod merchant_session;

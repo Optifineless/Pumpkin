@@ -38,6 +38,7 @@ impl Entity {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .take();
+            self.invalidate_horse_ride_attempt();
         }
         let ids = remaining
             .iter()
