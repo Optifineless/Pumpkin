@@ -323,7 +323,7 @@ impl World {
             .is_some_and(|live| Arc::ptr_eq(&live, entity))
     }
 
-    fn has_pending_block_entity_image(&self, pos: &BlockPos) -> bool {
+    pub(super) fn has_pending_block_entity_image(&self, pos: &BlockPos) -> bool {
         let chunk = self
             .level
             .loaded_chunks

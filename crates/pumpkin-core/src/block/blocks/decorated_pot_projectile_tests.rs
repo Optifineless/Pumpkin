@@ -23,6 +23,13 @@ use std::sync::atomic::AtomicUsize;
 #[path = "decorated_pot_projectile_overlap_tests.rs"]
 mod overlap;
 
+#[path = "decorated_pot_projectile_context_tests.rs"]
+mod context;
+#[path = "decorated_pot_mixed_break_tests.rs"]
+mod mixed_break;
+#[path = "decorated_pot_pending_hit_tests.rs"]
+mod pending_hit;
+
 const FACES: [(&Item, &str); 4] = [
     (&Item::ANGLER_POTTERY_SHERD, "arrow-back"),
     (&Item::BRICK, "arrow-left"),

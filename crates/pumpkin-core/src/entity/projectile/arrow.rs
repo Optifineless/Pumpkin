@@ -722,23 +722,7 @@ impl EntityBase for ArrowEntity {
 
     #[allow(clippy::too_many_lines)]
     fn on_hit(&self, hit: ProjectileHit) {
-        let (hit_pos, hit_entity) = match hit {
-            ProjectileHit::Block { hit_pos, .. } => (hit_pos, None),
-            ProjectileHit::Entity {
-                ref entity,
-                hit_pos,
-                ..
-            } => (hit_pos, Some(entity.get_entity().entity_id)),
-        };
-        let mut hit_event =
-            crate::plugin::api::events::entity::projectile_hit::ProjectileHitEvent::new(
-                self.entity.entity_id,
-                hit_pos,
-                hit_entity,
-            );
-        if let Some(server) = self.entity.world.load().server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut hit_event);
-        }
+        let cancelled = super::hit_event::cancelled(self, &hit);
 
         let entity = self.get_entity();
         let world = entity.world.load();
@@ -760,7 +744,7 @@ impl EntityBase for ArrowEntity {
 
                 let block = world.get_block(&pos);
                 let state = world.get_block_state(&pos);
-                if (!hit_event.cancelled || block != &pumpkin_data::Block::DECORATED_POT)
+                if (!cancelled || block != &pumpkin_data::Block::DECORATED_POT)
                     && let Some(server) = world.server.upgrade()
                 {
                     world

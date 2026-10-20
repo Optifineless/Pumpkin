@@ -344,6 +344,39 @@ effects for the fork's parallel ticks. Native API 8, public layouts, Wasm WIT an
 saved-data meaning are unchanged. Written by GPT-6.1 Sol (Codex Cloud).
 In-game verification: Not yet.
 
+PR #330 review round 3: player, piston, native/plugin world-break, explosion and
+projectile destruction share one conditional claim on the original terrain and
+block entity before evaluating face or contents loot. Losing destroyers publish
+nothing; drop callbacks retain replacement pots. An invalidated lazy entity load
+with pending NBT rejects removal and leaves the pot and its saved stock intact.
+The publication gate and mutation permit end before callbacks, events and sends;
+the claim uses existing lock order. Live registry, pending image, custom-data and
+capture caches retire together. The lifecycle manifest moves ten existing keys
+and updates two family fingerprints, preserving all statuses and notes with no
+new rows. No saved fields, unload/save semantics or native
+API 8 layouts/signatures change.
+
+Projectile loot retains its actual THIS_ENTITY type/state with an empty tool;
+successful shattering emits BLOCK_DESTROY once. The existing game-event API has no
+source field. Trident and thrown-projectile impacts now admit the pot callback
+through ProjectileHitEvent cancellation. Placement sends post-application pot actor
+data to Bedrock watchers, including when the initial terrain update already flushed.
+The documented EMPTY-pot compatibility policy above remains pre-existing backlog;
+changing it would change the behavior of old saves.
+
+Checked against decompiled Mojang vanilla 26.3 DecoratedPotBlock.getDrops /
+playerWillDestroy / onProjectileHit, Level.destroyBlock, Block.getDrops and
+LevelChunk.getBlockEntity. No analogous upstream open PR was found; #3859 and
+#3507 cover other block-entity/component work. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: mine the mixed pot with a diamond pickaxe while an arrow hits it, then
+repeat with a piston, explosion and plugin break; expect one complete face set
+(loose or retained on the intact pot drop) and one stored diamond. Cancel egg and
+trident hits; expect the pot and contents to remain. Place the mixed pot in front
+of a second Bedrock client; expect that watcher to see the selected faces at once.
+Capture the drops and both clients' placement views.
+
 Play test: put a diamond into a pot made with two bricks and two different sherds,
 then hit it with two arrows together; expect two bricks, one of each sherd and one
 diamond. Repeat with one arrow; expect the same drops. Record both breaks and the

@@ -269,3 +269,6 @@ async fn b1020b_g09_bedrock_allowed_pot_insertion_conserves_contents() -> TestRe
     })
     .await
 }
+
+#[path = "inventory_action_pot_placement_tests.rs"]
+mod placement;

@@ -186,17 +186,35 @@ fn take_pot_drop(world: &World) -> Option<ItemStack> {
     None
 }
 
-struct CaptureDropState(Arc<AtomicBool>);
+struct CaptureCrackedLoot(Arc<AtomicBool>);
 
-impl EventHandler<crate::plugin::block::block_drop_item::BlockDropItemEvent> for CaptureDropState {
+impl EventHandler<crate::plugin::block::block_drop_item::BlockDropItemEvent>
+    for CaptureCrackedLoot
+{
     fn handle_blocking<'a>(
         &'a self,
         _server: &'a Arc<Server>,
         event: &'a mut crate::plugin::block::block_drop_item::BlockDropItemEvent,
     ) -> BoxFuture<'a, ()> {
-        let state = event.world.get_block_state(&event.block_pos);
-        let properties = DecoratedPotLikeProperties::from_state_id(state.id);
-        self.0.store(properties.cracked, Relaxed);
+        let faces: u32 = event
+            .items
+            .iter()
+            .filter(|stack| {
+                stack.item == &Item::BRICK
+                    || stack.item == &Item::ANGLER_POTTERY_SHERD
+                    || stack.item == &Item::ARCHER_POTTERY_SHERD
+            })
+            .map(|stack| u32::from(stack.item_count))
+            .sum();
+        self.0.store(
+            event.world.get_block(&event.block_pos).is_air()
+                && faces == 4
+                && event
+                    .items
+                    .iter()
+                    .all(|stack| stack.item != &Item::DECORATED_POT),
+            Relaxed,
+        );
         Box::pin(async {})
     }
 }
@@ -278,7 +296,7 @@ async fn b1019_g03_eligible_tool_uses_cracked_mixed_decoration_loot() {
         .server
         .plugin_manager
         .register::<crate::plugin::block::block_drop_item::BlockDropItemEvent, _>(
-            Arc::new(CaptureDropState(states.clone())),
+            Arc::new(CaptureCrackedLoot(states.clone())),
             EventPriority::Normal,
             true,
         );
@@ -288,7 +306,7 @@ async fn b1019_g03_eligible_tool_uses_cracked_mixed_decoration_loot() {
     assert_eq!(fixture.world.get_block(&position), &Block::AIR);
     assert!(
         states.load(Relaxed),
-        "the plugin drop event observes the cracked state during loot"
+        "the plugin receives cracked loot after the original terrain was claimed"
     );
     assert_eq!(item_count(&fixture.world, &Item::DECORATED_POT), 0);
     assert_eq!(item_count(&fixture.world, &Item::BRICK), 2);

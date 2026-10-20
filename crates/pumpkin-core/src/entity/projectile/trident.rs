@@ -306,6 +306,7 @@ impl EntityBase for TridentEntity {
     }
 
     fn on_hit(&self, hit: ProjectileHit) {
+        let cancelled = super::hit_event::cancelled(self, &hit);
         let entity = self.get_entity();
         let world = entity.world.load();
 
@@ -320,7 +321,9 @@ impl EntityBase for TridentEntity {
 
                 let block = world.get_block(&pos);
                 let state = world.get_block_state(&pos);
-                if let Some(server) = world.server.upgrade() {
+                if (!cancelled || block != &pumpkin_data::Block::DECORATED_POT)
+                    && let Some(server) = world.server.upgrade()
+                {
                     world
                         .block_registry
                         .on_projectile_hit(block, &world, self, &pos, state, &hit_pos, &server);

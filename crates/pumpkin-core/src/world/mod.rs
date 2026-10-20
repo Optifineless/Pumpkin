@@ -5014,6 +5014,7 @@ impl World {
             return None;
         }
 
+        let ordinary_pot = self.prepare_pot_break(position, broken_block_state.id, pot.is_none());
         let mut flags = flags;
         if flags.contains(BlockFlags::SKIP_DROPS)
             && cause.is_some_and(|p| p.gamemode.load() == pumpkin_util::GameMode::Creative)
@@ -5038,8 +5039,8 @@ impl World {
             return None;
         }
 
-        if let Some(pot) = pot {
-            return pot.break_admitted(self, position, event.drop, flags, update_limit);
+        if let Some(pot) = pot.or(ordinary_pot.as_ref()) {
+            return pot.break_admitted(self, position, cause, event.drop, flags, update_limit);
         }
         // Level.destroyBlock must admit removal before callbacks retire or drop the container.
         let _mutation = self.block_entity_mutation_permit(*position)?;

@@ -25,7 +25,7 @@ impl EventHandler<BlockDropItemEvent> for PauseFirstDrop {
     }
 }
 
-fn hit_on_worker(arrow: Arc<dyn EntityBase>, position: BlockPos) -> Receiver<()> {
+pub(super) fn hit_on_worker(arrow: Arc<dyn EntityBase>, position: BlockPos) -> Receiver<()> {
     let runtime = tokio::runtime::Handle::current();
     let (finished, wait_for_finish) = bounded(1);
     drop(std::thread::spawn(move || {
