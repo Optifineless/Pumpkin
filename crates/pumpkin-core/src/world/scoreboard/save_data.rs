@@ -119,6 +119,7 @@ impl Scoreboard {
             );
         }
         scoreboard.load_scores(data)?;
+        scoreboard.rebuild_bedrock_score_identities();
         scoreboard.load_display_slots(data)?;
         for tag in values::list(data, "Teams")? {
             let raw = values::compound(tag, "team")?;

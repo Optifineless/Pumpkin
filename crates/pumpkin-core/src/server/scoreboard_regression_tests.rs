@@ -6,6 +6,7 @@ use crate::world::World;
 use pumpkin_nbt::{compound::NbtCompound, nbt_compress::read_gzip_compound_tag};
 use std::{fs, path::Path, sync::Arc, time::Duration};
 
+mod bedrock_identity;
 mod death_visibility;
 mod display_bounds;
 mod entity_text;
