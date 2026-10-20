@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex as StdMutex, RwLock,
-        atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
     },
 };
 
@@ -26,10 +26,10 @@ pub struct SmokerBlockEntity {
     pub dirty: AtomicBool,
     pub comparator_dirty: AtomicBool,
 
-    pub cooking_time_spent: AtomicU16,
-    pub cooking_total_time: AtomicU16,
-    pub lit_time_remaining: AtomicU16,
-    pub lit_total_time: AtomicU16,
+    pub cooking_time_spent: AtomicI32,
+    pub cooking_total_time: AtomicI32,
+    pub lit_time_remaining: AtomicI32,
+    pub lit_total_time: AtomicI32,
     speed_multiplier: AtomicU32,
 
     pub(crate) transaction:
@@ -54,10 +54,10 @@ impl SmokerBlockEntity {
             comparator_dirty: AtomicBool::new(false),
             transaction: std::sync::Arc::default(),
             items: RwLock::new(from_fn(|_| ItemStack::EMPTY.clone())),
-            cooking_total_time: AtomicU16::new(0),
-            cooking_time_spent: AtomicU16::new(0),
-            lit_total_time: AtomicU16::new(0),
-            lit_time_remaining: AtomicU16::new(0),
+            cooking_total_time: AtomicI32::new(0),
+            cooking_time_spent: AtomicI32::new(0),
+            lit_total_time: AtomicI32::new(0),
+            lit_time_remaining: AtomicI32::new(0),
             speed_multiplier: AtomicU32::new(1.0f32.to_bits()),
             recipes_used: StdMutex::new(HashMap::new()),
         }

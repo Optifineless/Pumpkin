@@ -140,6 +140,10 @@ fn replace_sign_text_messages(target: &InternalText, source: &InternalText) {
 }
 
 #[cfg(test)]
+#[path = "../../pumpkin-wasm-host-v0_1/src/furnace_timer_tests.rs"]
+mod furnace_timer_tests;
+
+#[cfg(test)]
 #[path = "sign_text_tests.rs"]
 mod sign_text_tests;
 
@@ -781,6 +785,7 @@ macro_rules! impl_container_basic_block_entity {
     };
 }
 
+// The existing WIT exposes u16 timers; narrow only this read-only ABI projection.
 macro_rules! impl_cooking_host_block_entity {
     ($trait_name:ident, $resource_name:ident, $internal_type:ty, $name_str:expr) => {
         impl $trait_name for PluginHostState {
@@ -802,28 +807,28 @@ macro_rules! impl_cooking_host_block_entity {
                 &mut self,
                 res: Resource<$resource_name>,
             ) -> wasmtime::Result<u16> {
-                Ok(self.get(&res)?.get_cooking_time_spent())
+                Ok(self.get(&res)?.get_cooking_time_spent() as u16)
             }
 
             fn get_cooking_total_time(
                 &mut self,
                 res: Resource<$resource_name>,
             ) -> wasmtime::Result<u16> {
-                Ok(self.get(&res)?.get_cooking_total_time())
+                Ok(self.get(&res)?.get_cooking_total_time() as u16)
             }
 
             fn get_lit_time_remaining(
                 &mut self,
                 res: Resource<$resource_name>,
             ) -> wasmtime::Result<u16> {
-                Ok(self.get(&res)?.get_lit_time_remaining())
+                Ok(self.get(&res)?.get_lit_time_remaining() as u16)
             }
 
             fn get_lit_total_time(
                 &mut self,
                 res: Resource<$resource_name>,
             ) -> wasmtime::Result<u16> {
-                Ok(self.get(&res)?.get_lit_total_time())
+                Ok(self.get(&res)?.get_lit_total_time() as u16)
             }
 
             fn is_burning(&mut self, res: Resource<$resource_name>) -> wasmtime::Result<bool> {

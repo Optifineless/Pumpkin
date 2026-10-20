@@ -3,7 +3,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex, RwLock,
-        atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
     },
 };
 
@@ -28,10 +28,10 @@ struct PluginCookingEntity {
     lock: ContainerLock,
     dirty: AtomicBool,
     comparator_dirty: AtomicBool,
-    cooking_time_spent: AtomicU16,
-    cooking_total_time: AtomicU16,
-    lit_time_remaining: AtomicU16,
-    lit_total_time: AtomicU16,
+    cooking_time_spent: AtomicI32,
+    cooking_total_time: AtomicI32,
+    lit_time_remaining: AtomicI32,
+    lit_total_time: AtomicI32,
     speed_multiplier: AtomicU32,
     transaction: Arc<pumpkin_inventory::inventory::slot_transaction::Transaction>,
     items: RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
