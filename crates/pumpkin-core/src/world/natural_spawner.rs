@@ -1,6 +1,8 @@
 use crate::block::PathComputationType;
 use crate::entity::EntityBase;
 use crate::entity::mob::spawn::{SpawnReason, finalize_spawn_with_reason};
+#[cfg(test)]
+use crate::entity::passive::horse_spawn_stats_test_rng::natural_rng as rng;
 use crate::entity::r#type::{check_spawn_rules, from_type};
 use crate::world::World;
 use arc_swap::ArcSwap;
@@ -25,8 +27,10 @@ use pumpkin_util::random::xoroshiro128::Xoroshiro;
 use pumpkin_util::random::{RandomImpl, get_seed};
 use pumpkin_world::chunk::{ChunkData, ChunkHeightmapType};
 use pumpkin_world::generation::proto_chunk::GenerationCache;
+use rand::RngExt;
+#[cfg(not(test))]
+use rand::rng;
 use rand::seq::IndexedRandom;
-use rand::{RngExt, rng};
 use rustc_hash::FxHashMap;
 use std::fmt;
 use std::sync::Arc;

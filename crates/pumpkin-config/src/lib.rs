@@ -17,6 +17,8 @@ use tracing::{debug, error, warn};
 
 /// Fun and experimental configuration options.
 pub mod fun;
+/// Fresh ordinary-horse attribute configuration.
+pub mod horse_spawn_stats;
 /// Server logging configuration options.
 pub mod logging;
 /// Networking and protocol configuration options.
@@ -31,6 +33,7 @@ pub mod resource_pack;
 
 pub use chat::{AntiSpamConfig, ChatConfig};
 pub use commands::{CommandOverride, CommandsConfig};
+pub use horse_spawn_stats::HorseSpawnStatsConfig;
 pub use networking::auth::AuthenticationConfig;
 pub use networking::bedrock::BedrockConfig;
 pub use networking::compression::CompressionConfig;
@@ -170,6 +173,8 @@ pub struct AdvancedConfiguration {
     pub player_data: PlayerDataConfig,
     /// Optional fun and experimental features.
     pub fun: FunConfig,
+    /// Fresh ordinary-horse health, speed and jump strength initialization.
+    pub horse_spawn_stats: HorseSpawnStatsConfig,
     /// Recipe-related configuration.
     pub recipe: RecipeConfig,
     /// Plugin-related configuration.

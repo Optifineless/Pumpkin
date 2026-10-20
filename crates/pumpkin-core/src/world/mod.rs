@@ -218,6 +218,9 @@ mod game_events;
 pub(crate) mod generation_spawning;
 pub mod guard_effects;
 #[cfg(test)]
+#[path = "../entity/passive/horse_spawn_stats_persistence_tests.rs"]
+mod horse_spawn_stats_persistence_tests;
+#[cfg(test)]
 mod minecart_stall_tests;
 pub mod natural_spawner;
 pub mod owner_mutex;
