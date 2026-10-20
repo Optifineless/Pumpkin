@@ -2523,3 +2523,9 @@ Play test: In Hard with `mobGriefing` enabled, spawn a zombie beside a closed
 wooden door with a target beyond it; expect it to break the door and continue
 through. Repeat with door breaking disabled, an iron door, Normal difficulty,
 and `mobGriefing` disabled; expect the door to remain closed.
+
+## Boat passenger-facing dry-bank dismount (#75)
+
+Boat dismounts choose the passenger-facing escape point using the boat and rider widths, then check floor height, water, rider poses, collision and world-border bounds before landing. Invalid candidates and open water retain the above-boat fallback. Other vehicles keep the generic destination search. Mirrors vanilla 26.3 `AbstractBoat.getDismountLocationForPassenger` and `DismountHelper.canDismountTo`; Java sneak continues through the existing `Entity.removePassenger` event and teleport path. No public API, saved-data or WIT changes. Implemented by GPT-6 Luna (Codex Cloud). In-game verification: Not yet.
+
+Play test: face a boat toward a dry stone bank with water beneath the boat and dismount; expect to land on the bank in the direction the passenger faces. Repeat in open water; expect to appear above the boat. Repeat with a half slab, a top slab, a low ceiling, an obstructed landing and a world-border edge; expect safe landings or the above-boat fallback. Verify minecart dismounts keep their usual destination and a cancelled exit keeps the rider mounted.
