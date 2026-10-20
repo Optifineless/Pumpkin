@@ -536,34 +536,42 @@ impl World {
     }
 
     pub(super) fn remove_loaded_block_entity(&self, pos: &BlockPos) -> RetiredBlockEntity {
-        {
-            // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
-            let mut loads = self.invalidate_pending_block_entity_load(pos);
-            let chunk_pos = pos.chunk_position();
-            loads.published_capture_stamps.remove(pos);
-            let retired = self
-                .block_entities
-                .get_mut(&chunk_pos)
-                .and_then(|mut entities| entities.remove(pos));
-            let removed_pending = self
-                .level
-                .read_chunk_sync(&chunk_pos, |chunk| {
-                    let removed = remove_pending_block_entity(chunk, pos);
-                    if retired.is_some() {
-                        chunk.mark_dirty(true);
-                    }
-                    removed
-                })
-                .flatten();
-            self.custom_block_entity_data.remove(pos);
-            if retired.is_some() || removed_pending.is_some() {
-                self.block_entities
-                    .remove_if(&chunk_pos, |_, entities| entities.is_empty());
-            }
-            RetiredBlockEntity {
-                live: retired,
-                pending: removed_pending,
-            }
+        let mut loads = self.invalidate_pending_block_entity_load(pos);
+        self.remove_loaded_block_entity_with_gate(pos, &mut loads)
+    }
+
+    // The caller holds publication admission while committing terrain and retiring its entity.
+    pub(super) fn remove_loaded_block_entity_with_gate(
+        &self,
+        pos: &BlockPos,
+        loads: &mut MutexGuard<'_, PendingBlockEntityLoads>,
+    ) -> RetiredBlockEntity {
+        // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
+        loads.snapshots.remove(pos);
+        let chunk_pos = pos.chunk_position();
+        loads.published_capture_stamps.remove(pos);
+        let retired = self
+            .block_entities
+            .get_mut(&chunk_pos)
+            .and_then(|mut entities| entities.remove(pos));
+        let removed_pending = self
+            .level
+            .read_chunk_sync(&chunk_pos, |chunk| {
+                let removed = remove_pending_block_entity(chunk, pos);
+                if retired.is_some() {
+                    chunk.mark_dirty(true);
+                }
+                removed
+            })
+            .flatten();
+        self.custom_block_entity_data.remove(pos);
+        if retired.is_some() || removed_pending.is_some() {
+            self.block_entities
+                .remove_if(&chunk_pos, |_, entities| entities.is_empty());
+        }
+        RetiredBlockEntity {
+            live: retired,
+            pending: removed_pending,
         }
     }
 }

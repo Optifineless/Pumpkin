@@ -20,6 +20,9 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_protocol::java::server::play::SlotActionType;
 use std::sync::atomic::AtomicUsize;
 
+#[path = "decorated_pot_projectile_overlap_tests.rs"]
+mod overlap;
+
 const FACES: [(&Item, &str); 4] = [
     (&Item::ANGLER_POTTERY_SHERD, "arrow-back"),
     (&Item::BRICK, "arrow-left"),
@@ -57,6 +60,12 @@ fn crafted_content_pot(fixture: &Fixture) -> BlockPos {
 }
 
 fn shoot(fixture: &Fixture, position: BlockPos, ammunition: ItemStack) -> Arc<dyn EntityBase> {
+    let arrow = launch(fixture, position, ammunition);
+    collide(fixture, &arrow);
+    arrow
+}
+
+fn launch(fixture: &Fixture, position: BlockPos, ammunition: ItemStack) -> Arc<dyn EntityBase> {
     let shooter = fixture.player.player.get_entity();
     shooter.set_pos(Vector3::new(
         f64::from(position.0.x) - 2.5,
@@ -72,7 +81,7 @@ fn shoot(fixture: &Fixture, position: BlockPos, ammunition: ItemStack) -> Arc<dy
         0.0,
         false,
     );
-    let arrow = fixture
+    fixture
         .world
         .entities
         .load()
@@ -80,9 +89,7 @@ fn shoot(fixture: &Fixture, position: BlockPos, ammunition: ItemStack) -> Arc<dy
         .rev()
         .find(|entity| entity.get_entity().entity_type == &EntityType::ARROW)
         .expect("the real weapon launch was admitted into the world")
-        .clone();
-    collide(fixture, &arrow);
-    arrow
+        .clone()
 }
 
 fn collide(fixture: &Fixture, arrow: &Arc<dyn EntityBase>) {

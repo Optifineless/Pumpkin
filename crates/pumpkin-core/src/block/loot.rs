@@ -56,21 +56,33 @@ pub fn block_drops(
     let key = format!("minecraft:blocks/{}", loot_table_name(block));
     if let Some(loot_table) = world.get_loot_table(&key) {
         let params = crate::world::loot::build_block_loot_context(world, pos, params);
-        let items = crate::world::loot::generate_loot_from_handle(&loot_table, 0, &params);
-        if !items.is_empty() {
-            let mut event = crate::plugin::block::block_drop_item::BlockDropItemEvent {
-                block_pos: *pos,
-                world: world.clone(),
-                player: None,
-                items,
-                cancelled: false,
-            };
-            if let Some(server) = world.server.upgrade() {
-                server.plugin_manager.fire_blocking(&server, &mut event);
-            }
-            if !event.cancelled {
-                return event.items;
-            }
+        return block_drops_with_context(world, pos, &loot_table, &params);
+    }
+
+    Vec::new()
+}
+
+/// Evaluates captured block loot without reading a replacement block entity at the position.
+pub fn block_drops_with_context(
+    world: &Arc<World>,
+    pos: &BlockPos,
+    loot_table: &crate::world::loot::LootTableHandle,
+    params: &LootContextParameters,
+) -> Vec<pumpkin_data::item_stack::ItemStack> {
+    let items = crate::world::loot::generate_loot_from_handle(loot_table, 0, params);
+    if !items.is_empty() {
+        let mut event = crate::plugin::block::block_drop_item::BlockDropItemEvent {
+            block_pos: *pos,
+            world: world.clone(),
+            player: None,
+            items,
+            cancelled: false,
+        };
+        if let Some(server) = world.server.upgrade() {
+            server.plugin_manager.fire_blocking(&server, &mut event);
+        }
+        if !event.cancelled {
+            return event.items;
         }
     }
 

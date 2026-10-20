@@ -3,16 +3,27 @@
 use std::sync::Arc;
 
 use pumpkin_data::{
-    Block, BlockStateId,
+    Block, BlockState, BlockStateId,
     block_properties::DecoratedPotLikeProperties,
     data_component_impl::CanBreakImpl,
     tag::{self, Taggable},
+    world::WorldEvent,
 };
 use pumpkin_nbt::tag::NbtTag;
+use pumpkin_protocol::{
+    VarInt,
+    bedrock::client::level_event::{CLevelEvent, LevelEvent},
+    java::client::play::CWorldEvent,
+};
 use pumpkin_util::{GameMode, math::position::BlockPos};
 use pumpkin_world::world::BlockFlags;
 
-use super::{World, neighbor_updater::UPDATE_LIMIT};
+use super::{
+    World,
+    loot::{LootContextParameters, collect_block_entity_components_from_entity},
+    neighbor_updater::UPDATE_LIMIT,
+    portal::frame_effects::{RetiredBlockEffects, RetiredBlockEntity},
+};
 use crate::{
     block::entities::BlockEntity,
     entity::{
@@ -59,32 +70,107 @@ impl World {
 }
 
 impl DecoratedPotBreak<'_> {
-    /// Revalidate after the break event; cancellation never changes the pot or its contents.
-    pub(super) fn prepare(&self, world: &Arc<World>, position: &BlockPos) -> Option<()> {
-        if world.get_block_state_id(position) != self.expected
-            || !same_entity(
-                self.entity.as_ref(),
-                world.get_block_entity(position).as_ref(),
-            )
-            || !may_break(world, position, self.projectile)
-        {
+    /// Claim removal after break admission, before any drops or callbacks can re-enter.
+    pub(super) fn break_admitted(
+        &self,
+        world: &Arc<World>,
+        position: &BlockPos,
+        drop_items: bool,
+        flags: BlockFlags,
+        update_limit: u32,
+    ) -> Option<BlockStateId> {
+        if !may_break(world, position, self.projectile) {
             return None;
+        }
+        let replacement =
+            crate::block::blocks::growing_plant::fluid_state_after_break(self.expected);
+        let retired = self.claim_removal(world, position, replacement)?;
+        if let Some(entity) = &retired.live {
+            super::container_lifecycle::retire_block_entity(entity);
         }
         let mut properties = DecoratedPotLikeProperties::from_state_id(self.expected);
         properties.cracked = true;
         let cracked = properties.to_state_id(&Block::DECORATED_POT);
-        // Vanilla setBlock(..., 260): UPDATE_KNOWN_SHAPE | NOTIFY_LISTENERS.
-        world.set_block_state(
+        // DecoratedPotBlock.onProjectileHit/getDrops: cracked loot uses the claimed entity.
+        if drop_items {
+            Self::drop_loot(world, position, cracked, retired.live.as_deref());
+            crate::block::drop_experience(world, &Block::DECORATED_POT, position, None);
+        }
+        let effects = RetiredBlockEffects::capture(world, position, self.expected);
+        retired.on_block_replaced(world, position);
+        world.on_block_state_set_with_block_entity(
             position,
             cracked,
-            BlockFlags::UPDATE_KNOWN_SHAPE | BlockFlags::NOTIFY_LISTENERS,
+            replacement,
+            flags - BlockFlags::SKIP_DROPS,
+            update_limit,
+            Some(&effects),
         );
-        (world.get_block_state_id(position) == cracked
-            && same_entity(
-                self.entity.as_ref(),
-                world.get_block_entity(position).as_ref(),
-            ))
-        .then_some(())
+        let java = CWorldEvent::new(
+            WorldEvent::ParticlesDestroyBlock as i32,
+            *position,
+            cracked.as_u16().into(),
+            false,
+        );
+        let bedrock = CLevelEvent {
+            event_id: VarInt(LevelEvent::ParticlesDestroyBlock as i32),
+            position: position.to_centered_f64().to_f32_lossy(),
+            data: VarInt(BlockState::to_be_network_id(cracked) as i32),
+        };
+        world.broadcast_to_chunk_editioned(position.chunk_position(), &java, &bedrock);
+        Some(cracked)
+    }
+
+    fn claim_removal(
+        &self,
+        world: &World,
+        position: &BlockPos,
+        replacement: BlockStateId,
+    ) -> Option<RetiredBlockEntity> {
+        let _mutation = world.reserve_block_entity_mutation(*position)?;
+        let mut loads = world
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current = world
+            .block_entities
+            .get(&position.chunk_position())
+            .and_then(|entities| entities.get(position).cloned());
+        if !same_entity(self.entity.as_ref(), current.as_ref()) {
+            return None;
+        }
+        // The publication gate prevents a same-state replacement from changing the entity
+        // between this identity check, the terrain CAS, and retirement of its saved/live caches.
+        world.write_block_state_if(position, replacement, |state| state == self.expected)?;
+        Some(world.remove_loaded_block_entity_with_gate(position, &mut loads))
+    }
+
+    fn drop_loot(
+        world: &Arc<World>,
+        position: &BlockPos,
+        cracked: BlockStateId,
+        entity: Option<&dyn BlockEntity>,
+    ) {
+        if let Some(table) = world.get_loot_table("minecraft:blocks/decorated_pot") {
+            let params = LootContextParameters {
+                world: Some(world.clone()),
+                registry: world
+                    .server
+                    .upgrade()
+                    .map(|server| server.datapack_manager.clone()),
+                block_state: Some(cracked.to_state()),
+                position: Some(position.to_f64()),
+                killed_by_player: Some(false),
+                block_entity_components: entity.map_or_else(
+                    Default::default,
+                    collect_block_entity_components_from_entity,
+                ),
+                ..Default::default()
+            };
+            for stack in crate::block::block_drops_with_context(world, position, &table, &params) {
+                world.drop_stack(position, stack);
+            }
+        }
     }
 }
 

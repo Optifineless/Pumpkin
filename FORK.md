@@ -334,6 +334,21 @@ private runtime layout changes; rebuild native plugins. Existing public fields
 and signatures remain source compatible; native API version and Wasm WIT are unchanged.
 Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
 
+PR #330 review: overlapping projectile hits conditionally remove the original pot
+state and block-entity instance before evaluating or publishing any drops. Only
+the winning hit uses its retained face templates and stored item; drop callbacks
+may re-enter without generating another set or removing a replacement pot.
+Break cancellation still preserves the original pot and contents. Mirrors vanilla
+26.3 `DecoratedPotBlock.onProjectileHit/getDrops` with removal claimed before
+effects for the fork's parallel ticks. Native API 8, public layouts, Wasm WIT and
+saved-data meaning are unchanged. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: put a diamond into a pot made with two bricks and two different sherds,
+then hit it with two arrows together; expect two bricks, one of each sherd and one
+diamond. Repeat with one arrow; expect the same drops. Record both breaks and the
+collected items.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

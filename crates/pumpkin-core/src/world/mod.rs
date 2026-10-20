@@ -5038,11 +5038,11 @@ impl World {
             return None;
         }
 
+        if let Some(pot) = pot {
+            return pot.break_admitted(self, position, event.drop, flags, update_limit);
+        }
         // Level.destroyBlock must admit removal before callbacks retire or drop the container.
         let _mutation = self.block_entity_mutation_permit(*position)?;
-        if let Some(pot) = pot {
-            pot.prepare(self, position)?;
-        }
 
         flags.set(BlockFlags::SKIP_DROPS, !event.drop);
 
