@@ -32,8 +32,10 @@ impl World {
             return None;
         }
         // Capture the partner before a break listener can install a different straw pair.
-        let retired_effects =
+        let mut retired_effects =
             super::portal::frame_effects::RetiredBlockEffects::capture(self, position, expected);
+        // Wake cleanup admits each captured half explicitly; shape work must not retry a veto.
+        retired_effects.suppress_bed_partner_shape();
         let mut event = BlockBreakEvent::new(
             None,
             &Block::STRAW_BED,
@@ -62,10 +64,20 @@ impl World {
             position,
             expected,
             BlockStateId::AIR,
-            flags - BlockFlags::SKIP_DROPS,
+            flags,
             update_limit,
             Some(&retired_effects),
         );
+        if let Some((partner, state)) =
+            retired_effects.orphaned_bed_partner(self, position, expected)
+        {
+            self.break_straw_bed_half(
+                &partner,
+                state,
+                BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
+                update_limit,
+            );
+        }
         if event.drop {
             let params = super::loot::LootContextParameters {
                 block_state: Some(expected.to_state()),

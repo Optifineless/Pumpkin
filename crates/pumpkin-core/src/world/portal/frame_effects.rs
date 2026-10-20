@@ -17,6 +17,7 @@ use crate::world::{
 /// Captures positional cleanup targets before deferred callbacks can replace them.
 pub(in crate::world) struct RetiredBlockEffects {
     partner: Option<RetiredPartner>,
+    suppress_bed_partner_shape: bool,
 }
 
 struct RetiredPartner {
@@ -48,6 +49,7 @@ impl RetiredBlockEffects {
             None
         };
         Self {
+            suppress_bed_partner_shape: false,
             partner: partner.map(|position| RetiredPartner {
                 state: world.get_block_state_id(&position),
                 position,
@@ -59,6 +61,51 @@ impl RetiredBlockEffects {
         self.partner
             .as_ref()
             .is_none_or(|partner| world.get_block_state_id(&partner.position) == partner.state)
+    }
+
+    pub(in crate::world) const fn suppress_bed_partner_shape(&mut self) {
+        self.suppress_bed_partner_shape = true;
+    }
+
+    pub(in crate::world) fn bed_partner_to_skip(
+        &self,
+        world: &World,
+        old: BlockStateId,
+    ) -> Option<BlockPos> {
+        let block = Block::from_state_id(old);
+        if (block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) || block == &Block::STRAW_BED)
+            && (self.suppress_bed_partner_shape || !self.partner_is_unchanged(world))
+        {
+            return self.partner.as_ref().map(|partner| partner.position);
+        }
+        None
+    }
+
+    pub(in crate::world) fn orphaned_bed_partner(
+        &self,
+        world: &World,
+        position: &BlockPos,
+        old: BlockStateId,
+    ) -> Option<(BlockPos, BlockStateId)> {
+        let block = Block::from_state_id(old);
+        let partner = self.partner.as_ref()?;
+        if !(block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) || block == &Block::STRAW_BED)
+            || Block::from_state_id(partner.state) != block
+            || !self.partner_is_unchanged(world)
+        {
+            return None;
+        }
+        let part = WhiteBedLikeProperties::from_state_id(partner.state).part;
+        if WhiteBedLikeProperties::from_state_id(old).part == part {
+            return None;
+        }
+        let replacement = world.get_block_state_id(position);
+        if Block::from_state_id(replacement) == block
+            && WhiteBedLikeProperties::from_state_id(replacement).part != part
+        {
+            return None;
+        }
+        Some((partner.position, partner.state))
     }
 
     /// Delivers pair notifications when a newer block occupies the retired position.

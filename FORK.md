@@ -727,6 +727,69 @@ API 8 (same version): rebuild native plugins for the brewing stand layout and
 remain available and speed constants compare and hash their float bits. The
 crafting-remainder helper is now public and the brewing menu's `DATA_COUNT` is four. Wasm WIT is
 unchanged. Written by Codex (GPT-6.1 Sol). In-game verification: Not yet.
+## Bed removal, sleeping lifecycle and unsafe dimensions (#114, #35, #153)
+
+Breaking either ordinary or straw bed half yields one bed in Survival and none in Creative.
+Normal player ticking wakes a sleeper whose remembered bed disappeared, without
+restoring the bed or overwriting a callback's replacement. Ordinary beds consume
+the dimension's `destroy_on_use` rule before sleep admission and use the existing
+bad-respawn explosion; straw beds retain their own rule and destruction behavior.
+Mirrors vanilla 26.3 `AbstractBedBlock.useWithoutItem/playerWillDestroy`,
+`BedBlock.destroyOnUse`, and `LivingEntity.tick/checkBedExists/stopSleeping`.
+This supersedes only these issues' portion of old fork PR #102, whose shared
+destruction hook was already integrated; villager and other admission work stays
+separate. Reporter credits: visionglitcher and Uelq (#114), kalancelot / devilos
+(#153). Implemented by Codex (GPT-6.1 Sol).
+
+API 8 (same version): `Player` gains private runtime sleep-operation ownership;
+native plugins must rebuild against this checkout. Existing plugin source call
+sites remain compatible; public signatures, Wasm WIT, saved fields and existing
+save meanings are unchanged.
+Malformed use pairs with mismatched facing are rejected to avoid removing an
+unrelated half; this is stricter than the supplied vanilla opposite-part check.
+Removal uses the existing per-position chunk and block-entity publication owners;
+arbitrary raw native writes and global two-position atomicity remain legacy limits.
+PR #230 review: bed loot listeners again observe the bed before removal, preserving
+conditional `BlockDropItemEvent` cancellation. A nonblocking operation snapshot
+rejects recursive and concurrent duplicate breaks; changed cells retain callback
+replacements and discard uncommitted loot. Callbacks and item spawning hold no
+publication guard. API 8 (same version): `World` gains private runtime bed-break
+admission state under its existing publication gate; rebuild native plugins.
+Saved fields and Wasm WIT are unchanged.
+PR #230 round 3: player breaks admit both halves with the original actor and
+spawn protection, retaining partner cancellation without an environmental retry.
+Wake ownership uses operation/lifecycle identity rather than the ticking sleep
+timer, and cancelled Standing transitions retain the remembered sleep state.
+Unsafe use explodes after any committed half; unrelated neighbour shape updates
+still run when a captured partner changed. Checked against vanilla 26.3
+`BedBlock.destroyOnUse`, `LivingEntity.hurtServer/stopSleeping` and `Level.setBlock`.
+B4 remains BACKLOG by coordinator decision: no existing per-cell mutation identity
+distinguishes an equal-state replacement during loot callbacks; new revision
+infrastructure is out of scope. This limitation was introduced in round 2.
+The older raw-removal spawn-boundary gap (L1) remains outside this change;
+player-driven partner admission now checks protection explicitly.
+PR #230 round 4: bed-specific `SKIP_DROPS` no longer reaches unrelated neighbour
+shape updates, so attached blocks that lose support still drop their items.
+The bed pair's own teardown continues to suppress its duplicate drop. Mirrors
+vanilla 26.3 `Level.setBlock`; a Java regression pays for a spore blossom under
+an elevated straw-bed head, then breaks the head in Survival and checks one of
+each item. In-game verification: Not yet.
+Unsafe-dimension bed use also reserves both halves across its break events, so a
+recursive or concurrent use cannot dispatch the same pair's events repeatedly.
+The regression re-enters Java bed use from a break callback and checks for one
+pair admission. In-game verification: Not yet.
+In-game verification: Not yet.
+
+Play test: place ordinary and straw beds, break either half in Survival and expect
+one bed item; repeat in Creative and expect none. With a plugin that cancels bed
+loot by checking the event's world and position, break the head and expect no item.
+Record the breaks and resulting drops on the candidate build.
+Repeat with Java and Bedrock and a protection plugin; expect both break events to
+name the breaker and a cancelled/protected partner to remain. Leave an intact bed
+while another player hits the sleeper; expect waking to finish. Use a bed in the
+Nether or End and expect the explosion, including when only one half is consumed.
+Place a straw bed on temporary supports, remove them, crouch-place a spore blossom
+under the head, then break the head in Survival; expect one bed and one blossom.
 
 ## Empty map centers (#45)
 

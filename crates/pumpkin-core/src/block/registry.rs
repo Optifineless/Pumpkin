@@ -1496,6 +1496,7 @@ impl BlockRegistry {
             position,
             flags,
             crate::world::neighbor_updater::UPDATE_LIMIT,
+            None,
         );
     }
 
@@ -1504,9 +1505,13 @@ impl BlockRegistry {
         position: &BlockPos,
         flags: BlockFlags,
         update_limit: u32,
+        except: Option<BlockPos>,
     ) {
         for direction in BlockDirection::abstract_block_update_order() {
             let pos = position.offset(direction.to_offset());
+            if Some(pos) == except {
+                continue;
+            }
 
             world.replace_with_state_for_neighbor_update_with_limit(
                 &pos,
