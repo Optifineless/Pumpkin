@@ -966,6 +966,19 @@ expect it to disappear. Capture the successful join and sidebar transitions.
 
 
 
+## Trigger score formatting (#307)
+
+Simple, add and set `/trigger` now mutate the existing unlocked score's value and
+lock it, retaining its display component, number format and saved opaque fields.
+Additions use wrapping `i32` arithmetic, matching Java integer semantics. Mirrors
+vanilla 26.3 `TriggerCommand.simpleTrigger/addValue/setValue`; no native API, WIT,
+packet format or saved-data schema changes. In-game verification: Not yet.
+
+Play test: give a trigger score a custom display and fixed or styled number format,
+enable it, and run the simple, add and set forms; expect the value to change, the
+score to lock again, and the sidebar formatting to remain visible. Capture the
+score update from a nearby observer.
+
 ## Cat, wolf and cow hand interactions (#41, #42, #48)
 
 Healthy tame cats reach Animal feeding before the owner's sitting fallback.
