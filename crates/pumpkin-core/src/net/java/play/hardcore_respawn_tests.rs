@@ -39,6 +39,9 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+#[path = "bed_respawn_tests.rs"]
+mod bed_respawn_tests;
+
 struct GatedSpawnLocation {
     entered: tokio::sync::Notify,
     resume: tokio::sync::Notify,

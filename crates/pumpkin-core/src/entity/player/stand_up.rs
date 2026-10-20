@@ -1,14 +1,12 @@
 use pumpkin_data::{
     Block, BlockState,
-    block_properties::{HorizontalFacing, OakTrapdoorLikeProperties},
+    block_properties::OakTrapdoorLikeProperties,
     entity::EntityType,
     tag::{self, Taggable},
 };
 use pumpkin_util::math::{
     boundingbox::{BoundingBox, EntityDimensions},
-    cos,
     position::BlockPos,
-    sin,
     vector3::Vector3,
     wrap_degrees_f64,
 };
@@ -46,58 +44,6 @@ pub(super) fn anchor_stand_up(world: &World, pos: BlockPos) -> Option<Vector3<f6
     None
 }
 
-pub(super) fn bed_stand_up(
-    world: &World,
-    pos: BlockPos,
-    facing: HorizontalFacing,
-    yaw: f32,
-) -> Option<Vector3<f64>> {
-    // AbstractBedBlock.findStandUpPosition chooses the side away from the saved view.
-    let (fx, fz) = match facing {
-        HorizontalFacing::North => (0, -1),
-        HorizontalFacing::South => (0, 1),
-        HorizontalFacing::West => (-1, 0),
-        HorizontalFacing::East => (1, 0),
-    };
-    let (mut sx, mut sz) = (-fz, fx);
-    let radians = yaw.to_radians();
-    if sx as f32 * -sin(radians) + sz as f32 * cos(radians) > 0.0 {
-        sx = -sx;
-        sz = -sz;
-    }
-    let surround = [
-        (sx, sz),
-        (sx - fx, sz - fz),
-        (sx - fx * 2, sz - fz * 2),
-        (-fx * 2, -fz * 2),
-        (-sx - fx * 2, -sz - fz * 2),
-        (-sx - fx, -sz - fz),
-        (-sx, -sz),
-        (-sx + fx, -sz + fz),
-        (fx, fz),
-        (sx + fx, sz + fz),
-    ];
-    let above = [(0, 0), (-fx, -fz)];
-    let bunk = world
-        .get_block(&pos.down())
-        .has_tag(&tag::Block::MINECRAFT_BEDS);
-    for check_dangerous in [true, false] {
-        if let Some(position) = stand_up_at_offsets(world, pos, &surround, check_dangerous) {
-            return Some(position);
-        }
-        if bunk
-            && let Some(position) =
-                stand_up_at_offsets(world, pos.down(), &surround, check_dangerous)
-        {
-            return Some(position);
-        }
-        if let Some(position) = stand_up_at_offsets(world, pos, &above, check_dangerous) {
-            return Some(position);
-        }
-    }
-    None
-}
-
 fn stand_up_at_offsets(
     world: &World,
     pos: BlockPos,
@@ -110,7 +56,11 @@ fn stand_up_at_offsets(
 }
 
 // DismountHelper.findSafeDismountLocation: floor collision is required on both passes.
-fn safe_dismount(world: &World, pos: BlockPos, check_dangerous: bool) -> Option<Vector3<f64>> {
+pub(super) fn safe_dismount(
+    world: &World,
+    pos: BlockPos,
+    check_dangerous: bool,
+) -> Option<Vector3<f64>> {
     let kind = &EntityType::PLAYER;
     let state = spawn_state(world, pos)?;
     if check_dangerous && is_block_dangerous(kind, state) {
