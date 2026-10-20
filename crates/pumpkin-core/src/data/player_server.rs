@@ -51,6 +51,7 @@ impl ServerPlayerData {
         // tick (including collisions/combat) through capture and simulation removal.
         // The connection owner has already joined this player's packet tasks.
         let tick = server.tick_gate.lock().await;
+        player.mark_departing();
         // PlayerList.remove awards LEAVE_GAME before capturing the final save.
         player.increment_custom_stat(
             crate::entity::player::statistics::CustomStatistic::LeaveGame,

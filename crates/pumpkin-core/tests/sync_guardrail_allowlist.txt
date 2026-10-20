@@ -573,8 +573,12 @@ crates/pumpkin-core/src/server/scenario/persistence/block_entity_round5.rs::pack
 # The late-placement fixture owns a one-shot receiver and drops the guard before the unload barrier.
 crates/pumpkin-core/src/server/scenario/persistence/block_entity_round5_admission.rs::unload_admission_rejects_a_new_chest_before_terrain_commit::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/recipe.rs::new::std::sync::RwLock::new#1
+# Test-only mode hook receiver; take and release before removal and the bounded callback wait.
+crates/pumpkin-core/src/server/scenario/hardcore_respawn_review.rs::removed_hardcore_respawn_cannot_publish::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scenario/lifecycle.rs::s2_disconnect_during_respawn_does_not_republish_closed_instance::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scenario/mod.rs::<module>::tokio::sync::Mutex::const_new#1
+# Test-only respawn hook receiver; take under the guard, release before the bounded wait; no nested lock or production edge.
+crates/pumpkin-core/src/server/scenario/respawn_owner_review.rs::respawn_owner_review_disconnect_in_post_transfer_hook_saves_matching_dimension_and_pos::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scenario/riding_lock_probe.rs::<module>::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/scheduler.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-core/src/server/server_test_manager.rs::<module>::std::sync::Mutex::new#1
