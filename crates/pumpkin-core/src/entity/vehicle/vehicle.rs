@@ -26,19 +26,7 @@ impl VehicleEntity {
     }
 
     pub fn tick(&self) {
-        let current_hurt = self.hurt_time.load(Ordering::Relaxed);
-        let hurt_ticked = current_hurt > 0;
-        if hurt_ticked {
-            self.hurt_time.store(current_hurt - 1, Ordering::Relaxed);
-        }
-
-        let current_damage = self.damage.load();
-        let damage_ticked = current_damage > 0.0;
-        if damage_ticked {
-            self.damage.store(current_damage - 1.0);
-        }
-
-        if hurt_ticked || damage_ticked {
+        if self.tick_wobble() {
             self.send_wobble_metadata();
         }
 
@@ -56,6 +44,22 @@ impl VehicleEntity {
         if self.entity.velocity_dirty.swap(false, Ordering::SeqCst) {
             self.entity.send_velocity();
         }
+    }
+
+    pub(super) fn tick_wobble(&self) -> bool {
+        let current_hurt = self.hurt_time.load(Ordering::Relaxed);
+        let hurt_ticked = current_hurt > 0;
+        if hurt_ticked {
+            self.hurt_time.store(current_hurt - 1, Ordering::Relaxed);
+        }
+
+        let current_damage = self.damage.load();
+        let damage_ticked = current_damage > 0.0;
+        if damage_ticked {
+            self.damage.store(current_damage - 1.0);
+        }
+
+        hurt_ticked || damage_ticked
     }
 
     pub async fn create(&self) {
@@ -247,6 +251,12 @@ impl VehicleEntity {
     /// Applies the standard minecart damage wobble without destroying the vehicle.
     /// TNT minecarts use this before deciding whether damage primes or breaks them.
     pub fn apply_damage_wobble(&self, amount: f32) -> f32 {
+        let new_strength = self.apply_damage_wobble_state(amount);
+        self.send_wobble_metadata();
+        new_strength
+    }
+
+    pub(super) fn apply_damage_wobble_state(&self, amount: f32) -> f32 {
         let current_side = self.get_hurt_dir();
         self.set_hurt_dir(-current_side);
         self.set_hurt_time(10);
@@ -256,7 +266,6 @@ impl VehicleEntity {
         let new_strength = current_strength + amount * 10.0;
         self.set_damage(new_strength);
 
-        self.send_wobble_metadata();
         new_strength
     }
 }

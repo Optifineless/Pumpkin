@@ -419,11 +419,12 @@ async fn creative_projectile_owners_break_vehicles_and_fixed_item_frames() {
         } else {
             GameMode::Survival
         });
-        let boat = BoatEntity::new(Entity::new(
+        let boat = Arc::new(BoatEntity::new(Entity::new(
             world.clone(),
             Vector3::default(),
             &EntityType::OAK_BOAT,
-        ));
+        )));
+        world.add_entity_silent(boat.clone());
         let minecart = MinecartEntity::new(Entity::new(
             world.clone(),
             Vector3::default(),
@@ -435,7 +436,7 @@ async fn creative_projectile_owners_break_vehicles_and_fixed_item_frames() {
             &EntityType::ITEM_FRAME,
         ));
         frame.set_fixed(true);
-        for target in [&boat as &dyn EntityBase, &minecart, &frame] {
+        for target in [boat.as_ref() as &dyn EntityBase, &minecart, &frame] {
             target.damage_with_context(
                 target,
                 1.0,

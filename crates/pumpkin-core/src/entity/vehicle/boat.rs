@@ -12,11 +12,16 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_protocol::java::client::play::Metadata;
 
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::sync::Mutex;
 
 use crate::entity::vehicle::vehicle::VehicleEntity;
 
+#[path = "boat_damage.rs"]
+mod damage;
+
 pub struct BoatEntity {
     pub vehicle: VehicleEntity,
+    damage_operation: Mutex<bool, damage::BoatDamageOwner>,
     ticks_underwater: AtomicCell<f32>,
     left_paddle_moving: AtomicBool,
     right_paddle_moving: AtomicBool,
@@ -26,6 +31,7 @@ impl BoatEntity {
     pub const fn new(entity: Entity) -> Self {
         Self {
             vehicle: VehicleEntity::new(entity),
+            damage_operation: Mutex::new(false),
             ticks_underwater: AtomicCell::new(0.0),
             left_paddle_moving: AtomicBool::new(false),
             right_paddle_moving: AtomicBool::new(false),
@@ -59,8 +65,21 @@ impl EntityBase for BoatEntity {
         None
     }
 
-    fn tick(&self, _caller: &dyn EntityBase, _server: &Server) {
-        self.vehicle.tick();
+    fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
+        let world = self.vehicle.entity.world.load_full();
+        self.tick_boat_vehicle(&world);
+        if !self.is_current_boat(&world) {
+            return;
+        }
+
+        self.tick_boat_base(caller, &world);
+        if !self.is_current_boat(&world) {
+            return;
+        }
+        self.vehicle.entity.tick_block_collisions(caller);
+        if !self.is_current_boat(&world) {
+            return;
+        }
 
         let underwater = self.ticks_underwater.load();
         if self.vehicle.entity.touching_water.load(Ordering::Relaxed) {
@@ -86,12 +105,12 @@ impl EntityBase for BoatEntity {
         &self,
         _caller: &dyn EntityBase,
         amount: f32,
-        _damage_type: DamageType,
+        damage_type: DamageType,
         _position: Option<Vector3<f64>>,
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        self.vehicle.damage_with_context(amount, source, cause)
+        self.damage_boat(amount, damage_type, source, cause)
     }
 
     fn interact(&self, player: &Arc<Player>, _item_stack: &mut ItemStack) -> bool {

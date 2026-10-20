@@ -2,6 +2,34 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Boat damage, concrete drops and lava ticks (#354)
+
+Boats run the existing Entity base/fluid and inside-block chain once after the
+normal vehicle update, including lava ignition/damage and ordinary portal handling.
+The boat-local base orchestration stops after retirement callbacks before publishing
+fire metadata, while reusing the existing Entity portal and fluid operations.
+Destruction drops one concrete generated boat, raft or chest-variant item with its
+custom name. Boat-local logical admission rejects overlapping/reentrant damage;
+resumed callbacks revalidate world, instance and liveness, and only the current
+first-removal winner owns cleanup and the optional vehicle item. Creative discard,
+entity-drops rules and event cancellation retain their applicable behavior.
+Mirrors vanilla 26.3 `AbstractBoat.tick/getDropItem`, `Entity.baseTick` and
+`VehicleEntity.hurtServer/destroy`. Chest cargo remains separate (#355).
+
+API 8 (same version): private runtime admission changes the public `BoatEntity`
+layout; native plugins must rebuild. Public signatures, source compatibility,
+saved-data meaning and Wasm WIT are unchanged. Implemented by GPT-6.1 Sol
+(Codex Cloud). In-game verification: Not yet.
+
+Play test: break named oak boats, bamboo rafts and chest variants in Survival;
+expect one matching named item each. Repeat in Creative and with entity drops
+disabled; expect no vehicle item. Place boats in lava; expect ignition and eventual
+destruction, while air/water controls survive. Cancel damage or destruction with a
+plugin; expect a live boat and normal wobble decay. Repeat with simultaneous hits,
+then unload/reload and restart; expect one current boat or one drop, without
+duplicates. Check ordinary portal travel. Record both the attacker and an observer,
+including item names/counts, lava damage, cancellation and reload.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
