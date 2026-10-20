@@ -2,6 +2,26 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Entity-item hooks do not start use cooldowns (#154)
+
+Passing Java and Bedrock entity interactions no longer start a stack's
+`USE_COOLDOWN` from the registry after the item hook. This matches vanilla
+26.3 `Player.interactOn` and `ItemStack.interactLivingEntity`, which call the
+entity-item hook without `applyAfterUseComponentSideEffects`. Existing cooldown
+admission and ordinary successful-use cooldowns remain in place. Real Java
+handler regressions cover both hands, Survival and Creative, named and
+ineligible name-tag cases, cancellation, active cooldowns and close pearl impact.
+Native API 8, public signatures/layouts, Wasm WIT and saved data are unchanged.
+The reporter's original client sequence has not been captured.
+
+In-game verification: Not yet.
+
+Play test: Hold pearls and look at a nearby cow. Right-click its hitbox, then
+right-click air; expect the first action to leave the pearl and cooldown alone,
+and the second to throw one pearl and start its cooldown. Repeat in each hand and
+in Survival and Creative. Capture the hand counts, projectile insertion, visible
+cooldown and, for a close throw, the impact and teleport.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
