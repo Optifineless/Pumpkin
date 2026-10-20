@@ -42,16 +42,18 @@ impl CommandExecutor for SetBlockExecutor {
         let block = BlockStateArgumentType::get(context, "block")?;
         let world = context.source.world();
         let pos = BlockPosArgumentType::get_loaded_block_pos(context, "pos")?;
-        let _mutation = world
-            .block_entity_mutation_permit(pos)
-            .ok_or_else(|| ERROR_FAILED.create_without_context())?;
         // SetBlockCommand.setBlock checks keep, destroys with drops, then calls BlockInput.place.
         if matches!(self.0, Mode::Keep) && !world.get_block_state(&pos).is_air() {
             return Err(ERROR_FAILED.create_without_context());
         }
         let destroy = matches!(self.0, Mode::Destroy);
-        if destroy {
-            world.break_block(&pos, None, BlockFlags::NOTIFY_ALL);
+        if destroy
+            && !world.get_block_state(&pos).is_air()
+            && world
+                .break_block_for_replacement(&pos, None, BlockFlags::NOTIFY_ALL)
+                .is_none()
+        {
+            return Err(ERROR_FAILED.create_without_context());
         }
         let old = world.get_block_state_id(&pos);
         let strict = matches!(self.0, Mode::Strict);

@@ -29,6 +29,8 @@ mod context;
 mod mixed_break;
 #[path = "decorated_pot_pending_hit_tests.rs"]
 mod pending_hit;
+#[path = "decorated_pot_removal_tests.rs"]
+mod removal;
 
 const FACES: [(&Item, &str); 4] = [
     (&Item::ANGLER_POTTERY_SHERD, "arrow-back"),

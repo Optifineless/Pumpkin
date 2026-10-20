@@ -170,6 +170,8 @@ impl PistonBlock {
             }
 
             if !move_piston(world, dir, pos, true, sticky) {
+                // Removal callbacks may queue the same extension against intermediate air.
+                world.cancel_synced_block_event(pos, block, r#type, data);
                 return false;
             }
             props.extended = true;
@@ -403,12 +405,30 @@ fn move_piston(
 
     for &broken_block_pos in broken_blocks.iter().rev() {
         let block_state = world.get_block_state(&broken_block_pos);
-        world.break_block(
-            &broken_block_pos,
-            None,
-            BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE,
-        );
+        if world
+            .break_block_for_replacement(
+                &broken_block_pos,
+                None,
+                BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE,
+            )
+            .is_none()
+        {
+            return false;
+        }
         affected_block_states.push(block_state);
+    }
+
+    // A later destruction callback can replace an earlier cleared destination.
+    if broken_blocks
+        .iter()
+        .rev()
+        .zip(&affected_block_states)
+        .any(|(pos, state)| {
+            world.get_block_state_id(pos)
+                != crate::block::blocks::growing_plant::fluid_state_after_break(state.id)
+        })
+    {
+        return false;
     }
 
     for (index, &moved_block_pos) in moved_blocks.iter().rev().enumerate() {

@@ -274,7 +274,10 @@ fn finish_removal(
     update_limit: u32,
 ) {
     let effects = RetiredBlockEffects::capture(world, position, broken);
-    retired.on_block_replaced(world, position);
+    // LevelChunk.setBlockState skips removal side effects, but still retires the entity.
+    if !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK) {
+        retired.on_block_replaced(world, position);
+    }
     // Effects use the already-retired instance and never write terrain over a callback replacement.
     world.on_block_state_set_with_block_entity(
         position,

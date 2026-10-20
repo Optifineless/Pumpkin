@@ -382,6 +382,26 @@ then hit it with two arrows together; expect two bricks, one of each sherd and o
 diamond. Repeat with one arrow; expect the same drops. Record both breaks and the
 collected items.
 
+PR #330 review round 4: pot removal honors the existing skip-replacement-callback
+flag used to move captured block-entity data without scattering a second copy of
+its contents. Terrain and caches still retire. Pistons, destroy-mode commands and
+fluid spreading reject a failed destruction or a callback replacement before
+writing their following terrain. An aborted piston also discards its matching
+retry queued by removal callbacks, preserving other piston events. This preserves
+the round-3 removal claim and mirrors `LevelChunk.setBlockState`'s side-effect flag and `PistonBaseBlock.moveBlocks`'s
+destruction-before-movement order. API 8 (same version): public layouts and
+signatures, Wasm WIT and saved-data meaning are unchanged. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: **Not yet**.
+
+Play test: move a diamond-filled pot using a plugin that captures its data and
+uses both skip-drop and skip-replacement-callback flags; expect no source diamond
+and exactly one diamond in the destination pot. Break the moved pot normally;
+expect its contents once. With a plugin that lets an arrow break a pot during a
+piston's break callback and places a differently decorated emerald-filled pot
+there, power the piston; expect one original face set and diamond, the new pot
+and emerald intact, and the piston still retracted. Capture the move, piston and
+collected drops before opening or updating the PR.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

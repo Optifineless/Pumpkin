@@ -37,7 +37,7 @@ impl EventHandler<BlockDropItemEvent> for ArrowInsideDrop {
     }
 }
 
-fn assert_conserved(fixture: &Fixture) {
+pub(super) fn assert_conserved(fixture: &Fixture) {
     let mut faces: Vec<(u16, String)> = Vec::new();
     for entity in fixture.world.entities.load().iter() {
         let Some(item) = entity.get_item_entity() else {
@@ -93,26 +93,7 @@ fn destroy(fixture: &Fixture, position: BlockPos, destroyer: Destroyer) {
                 .break_block(&position, None, BlockFlags::NOTIFY_ALL);
         }
         Destroyer::Piston => {
-            let piston = position.offset(Vector3::new(-1, 0, 0));
-            let state = Block::PISTON
-                .from_properties(&[("facing", "east"), ("extended", "false")])
-                .to_state_id(&Block::PISTON);
-            fixture
-                .world
-                .set_block_state(&piston, state, BlockFlags::FORCE_STATE);
-            fixture
-                .world
-                .active_chunks
-                .write()
-                .unwrap()
-                .insert(position.chunk_position());
-            fixture.world.set_block_state(
-                &piston.offset(Vector3::new(-1, 0, 0)),
-                Block::REDSTONE_BLOCK.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            );
-            fixture.world.flush_synced_block_events();
-            assert_eq!(fixture.world.get_block(&position), &Block::MOVING_PISTON);
+            power_piston(fixture, position);
         }
         Destroyer::Explosion => {
             // Centering the blast in the pot ensures every ray begins in this block.
@@ -120,6 +101,28 @@ fn destroy(fixture: &Fixture, position: BlockPos, destroyer: Destroyer) {
                 .explode(&fixture.world);
         }
     }
+}
+
+pub(super) fn power_piston(fixture: &Fixture, position: BlockPos) {
+    let piston = position.offset(Vector3::new(-1, 0, 0));
+    let state = Block::PISTON
+        .from_properties(&[("facing", "east"), ("extended", "false")])
+        .to_state_id(&Block::PISTON);
+    fixture
+        .world
+        .set_block_state(&piston, state, BlockFlags::FORCE_STATE);
+    fixture
+        .world
+        .active_chunks
+        .write()
+        .unwrap()
+        .insert(position.chunk_position());
+    fixture.world.set_block_state(
+        &piston.offset(Vector3::new(-1, 0, 0)),
+        Block::REDSTONE_BLOCK.default_state.id,
+        BlockFlags::NOTIFY_ALL,
+    );
+    fixture.world.flush_synced_block_events();
 }
 
 fn destroy_on_worker(fixture: Arc<Fixture>, position: BlockPos, destroyer: Destroyer) {
@@ -153,6 +156,9 @@ async fn mixed_destroyer_claims_before_arrow(destroyer: Destroyer) {
             true,
         );
     destroy_on_worker(fixture.clone(), position, destroyer);
+    if matches!(destroyer, Destroyer::Piston) {
+        assert_eq!(fixture.world.get_block(&position), &Block::MOVING_PISTON);
+    }
     assert_conserved(&fixture);
     assert_eq!(
         calls.load(Relaxed),
@@ -187,6 +193,7 @@ async fn b1020b_g09_mixed_drop_callback_replacement_survives() {
     for destroyer in [
         Destroyer::FinishedDigging,
         Destroyer::Plugin,
+        Destroyer::Piston,
         Destroyer::Explosion,
     ] {
         let fixture = Arc::new(Fixture::new());
