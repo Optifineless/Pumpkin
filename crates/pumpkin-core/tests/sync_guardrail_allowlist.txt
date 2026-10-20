@@ -1,5 +1,9 @@
 # Reviewed baseline of raw synchronization and blocking bridge sites.
 # New entries require a justification comment; see rules B1 and B3.
+# Bounded cfg(test) game-event observation registry and per-fixture sink. Registry
+# guards drop before recording; sink guards drop before callbacks, reentry or awaits.
+crates/pumpkin-core/src/world/game_events/test_support.rs::<module>::std::sync::Mutex::new#1
+crates/pumpkin-core/src/world/game_events/test_support.rs::new::std::sync::Mutex::new#1
 # Test-only death-event order recorder; guards drop before returning from a
 # callback or invoking another event, and never span an await.
 crates/pumpkin-core/src/entity/death_loot/captain_banner_tests.rs::b1020b_g01_captain_banner_keeps_death_event_order_and_spawn_cancellation::std::sync::Mutex::new#1
