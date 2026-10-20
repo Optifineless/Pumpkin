@@ -5,6 +5,9 @@ mod container_menu_block_effects;
 mod death;
 mod equipment_updates;
 mod experience_orb;
+mod gliding;
+#[cfg(test)]
+mod gliding_tests;
 mod held_drop;
 #[cfg(test)]
 mod held_drop_tests;

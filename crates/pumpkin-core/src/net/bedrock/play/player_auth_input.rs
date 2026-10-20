@@ -153,6 +153,17 @@ impl BedrockClient {
 
         let input_data = packet.input_data;
 
+        let glide_request = if input_data.get(InputData::StartGliding as usize) {
+            Some(true)
+        } else if input_data.get(InputData::StopGliding as usize) {
+            Some(false)
+        } else {
+            None
+        };
+        if let Some(gliding) = glide_request {
+            player.request_gliding(gliding);
+        }
+
         if input_data.get(InputData::StartSprinting as usize) {
             player.set_sprinting(true);
         } else if input_data.get(InputData::StopSprinting as usize) {
@@ -222,6 +233,15 @@ impl BedrockClient {
 
         if let Some(block_actions) = packet.block_actions {
             for action in &block_actions {
+                // One packet may repeat its glide flag as an embedded action, including after
+                // a toggle callback replaced the life. Do not admit the same request again.
+                if matches!(
+                    (glide_request, action.action),
+                    (Some(true), PlayerAction::StartGliding)
+                        | (Some(false), PlayerAction::StopGliding)
+                ) {
+                    continue;
+                }
                 self.handle_player_block_action(player, server, action);
             }
         }

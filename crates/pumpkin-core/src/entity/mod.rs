@@ -2781,10 +2781,8 @@ impl Entity {
     }
 
     pub fn set_fall_flying(&self, fall_flying: bool) {
-        assert_ne!(self.fall_flying.load(Relaxed), fall_flying);
-        self.fall_flying.store(fall_flying, Relaxed);
-        self.fall_fly_ticks.store(0, Relaxed);
-        self.set_flag(Flag::FallFlying, fall_flying);
+        self.set_fall_flying_state(fall_flying);
+        self.send_bedrock_flags();
     }
     pub fn is_fall_flying(&self) -> bool {
         self.fall_flying.load(Ordering::Relaxed)
