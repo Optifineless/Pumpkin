@@ -1,3 +1,4 @@
+mod bedrock_score_identity;
 mod component_replacements;
 mod number_format;
 mod save_data;
@@ -21,7 +22,7 @@ use pumpkin_protocol::{
     bedrock::client::{
         remove_objective::CRemoveObjective as BRemoveObjective,
         set_display_objective::CSetDisplayObjective as BSetDisplayObjective,
-        set_score::{CSetScore as BSetScore, ScoreEntry as BScoreEntry},
+        set_score::CSetScore as BSetScore,
     },
     codec::var_int::VarInt,
     java::client::play::{
@@ -136,6 +137,7 @@ pub struct Scoreboard {
     objectives: FxHashMap<String, ScoreboardObjective>,
     display_slots: FxHashMap<ScoreboardDisplaySlot, String>,
     scores: FxHashMap<String, FxHashMap<String, ScoreboardScore>>,
+    bedrock_score_ids: bedrock_score_identity::BedrockScoreIdentities,
     teams: FxHashMap<String, Team>,
     persistence: Box<save_data::PersistentData>,
     revision: u64,
@@ -345,6 +347,7 @@ impl Scoreboard {
 
         self.objectives.remove(name);
         self.scores.remove(name);
+        self.bedrock_score_ids.remove_objective(name);
         self.display_slots.retain(|_, obj| obj != name);
         self.persistence.objectives.remove(name);
         self.persistence
@@ -369,6 +372,8 @@ impl Scoreboard {
         }
 
         self.replace_score_components(&score);
+        self.bedrock_score_ids
+            .ensure(&score.entity_name, &score.objective_name);
         if self.is_tracked(&score.objective_name) {
             self.send_score(target, &score);
         }
@@ -427,17 +432,7 @@ impl Scoreboard {
     ) {
         let je_packet = CResetScore::new(entity_name.to_string(), Some(objective_name.to_string()));
 
-        let be_packet = BSetScore {
-            action: VarInt(1), // Remove
-            entries: vec![BScoreEntry {
-                scoreboard_id: entity_name.as_ptr() as i64,
-                objective_name: objective_name.to_string(),
-                score: VarInt(0),
-                entry_type: VarInt(3),
-                entity_unique_id: 0,
-                custom_name: entity_name.to_string(),
-            }],
-        };
+        let be_packet = self.bedrock_score_removal(entity_name, Some(objective_name));
 
         if self.is_tracked(objective_name) {
             self.effects
@@ -447,6 +442,7 @@ impl Scoreboard {
         if let Some(objective_scores) = self.scores.get_mut(objective_name) {
             objective_scores.remove(entity_name);
         }
+        self.bedrock_score_ids.remove(entity_name, objective_name);
         self.persistence
             .scores
             .remove(&(entity_name.to_string(), objective_name.to_string()));
@@ -459,24 +455,7 @@ impl Scoreboard {
     pub fn reset_scores_for_entity(&mut self, target: &impl ScoreboardTarget, entity_name: &str) {
         let je_packet = CResetScore::new(entity_name.to_string(), None);
 
-        let mut be_entries = Vec::new();
-        for (obj_name, obj_scores) in &self.scores {
-            if self.is_tracked(obj_name) && obj_scores.contains_key(entity_name) {
-                be_entries.push(BScoreEntry {
-                    scoreboard_id: entity_name.as_ptr() as i64,
-                    objective_name: obj_name.clone(),
-                    score: VarInt(0),
-                    entry_type: VarInt(3),
-                    entity_unique_id: 0,
-                    custom_name: entity_name.to_string(),
-                });
-            }
-        }
-
-        let be_packet = BSetScore {
-            action: VarInt(1), // Remove
-            entries: be_entries,
-        };
+        let be_packet = self.bedrock_score_removal(entity_name, None);
 
         if !self.display_slots.is_empty() {
             self.effects
@@ -486,6 +465,7 @@ impl Scoreboard {
         for obj_scores in self.scores.values_mut() {
             obj_scores.remove(entity_name);
         }
+        self.bedrock_score_ids.remove_holder(entity_name);
         self.persistence
             .scores
             .retain(|(entity, _), _| entity != entity_name);
@@ -1149,6 +1129,7 @@ impl ScoreboardBuilder {
         let obj_s = objective_name.into();
         let score =
             ScoreboardScore::new(entity_s.clone(), obj_s.clone(), VarInt(value), None, None);
+        self.scoreboard.bedrock_score_ids.ensure(&entity_s, &obj_s);
         self.scoreboard
             .scores
             .entry(obj_s)
