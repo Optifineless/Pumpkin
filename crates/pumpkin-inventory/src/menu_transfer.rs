@@ -5,6 +5,7 @@ use pumpkin_data::item_stack::ItemStack;
 
 use crate::{
     inventory::slot_transaction::{self, INLINE_CAPACITY},
+    screen_handler::InventoryPlayer,
     slot::Slot,
 };
 
@@ -77,6 +78,29 @@ pub fn transfer(
     range: (i32, i32, bool),
     before: &mut ItemStack,
 ) -> (bool, ItemStack) {
+    transfer_checked(slots, source_slot, observed, range, before, None)
+}
+
+/// Rechecks the player's source take rule under the transfer's inventory owners.
+pub fn transfer_for_player(
+    slots: &[Arc<dyn Slot>],
+    source_slot: &dyn Slot,
+    observed: &mut ItemStack,
+    range: (i32, i32, bool),
+    before: &mut ItemStack,
+    player: &dyn InventoryPlayer,
+) -> (bool, ItemStack) {
+    transfer_checked(slots, source_slot, observed, range, before, Some(player))
+}
+
+fn transfer_checked(
+    slots: &[Arc<dyn Slot>],
+    source_slot: &dyn Slot,
+    observed: &mut ItemStack,
+    range: (i32, i32, bool),
+    before: &mut ItemStack,
+    player: Option<&dyn InventoryPlayer>,
+) -> (bool, ItemStack) {
     let source = source_slot.get_inventory();
     let index = source_slot.get_index();
     let (start, end, reverse) = range;
@@ -101,6 +125,8 @@ pub fn transfer(
     if current.is_empty()
         || current.uid != observed.uid
         || !current.are_items_and_components_equal(observed)
+        // AbstractContainerMenu.doClick -> ArmorSlot.mayPickup must use the pinned source.
+        || player.is_some_and(|player| !source_slot.can_take_stack(player, &current))
     {
         return (false, ItemStack::EMPTY.clone());
     }

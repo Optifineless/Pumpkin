@@ -148,7 +148,7 @@ impl BedrockClient {
         let request_id = packet.legacy_request_id;
         let before = inventory_changes::InventorySnapshot::capture(player);
         let correct_prediction = !packet.actions.is_empty();
-        Self::drop_legacy_inventory_slots(player, &packet);
+        let rejected_legacy_drop = Self::drop_legacy_inventory_slots(player, &packet);
         // ServerGamePacketListenerImpl.handleContainerClick treats client stacks as predictions.
         // handleUseItemOn/handleUseItem still execute against the server's hand first.
         let mut rejected_hand_prediction = false;
@@ -159,13 +159,17 @@ impl BedrockClient {
             &before,
             correct_prediction || (!accepted && rejected_hand_prediction),
         );
+        if rejected_legacy_drop {
+            self.correct_stack_request_prediction(player);
+        }
         // Bedrock ItemStackResponseInfo: 0 = SUCCESS, 1 = ERROR. Discarding a
         // prediction does not reject an otherwise processed authoritative use.
-        self.respond_legacy_inventory(request_id, u8::from(!accepted));
+        self.respond_legacy_inventory(request_id, u8::from(!accepted || rejected_legacy_drop));
     }
 
-    fn drop_legacy_inventory_slots(player: &Player, packet: &SInventoryTransaction) {
+    fn drop_legacy_inventory_slots(player: &Player, packet: &SInventoryTransaction) -> bool {
         let mut dropped_items = Vec::new();
+        let mut rejected = false;
         let effects = crate::world::guard_effects::GuardEffects::new();
         if packet.actions.is_empty()
             && packet.legacy_request_id.0 != 0
@@ -199,6 +203,7 @@ impl BedrockClient {
                                     player,
                                 );
                             if taken.is_empty() {
+                                rejected = true;
                                 continue;
                             }
                             dropped_items.push(taken);
@@ -216,6 +221,7 @@ impl BedrockClient {
         for item in dropped_items {
             player.drop_item(item);
         }
+        rejected
     }
 
     fn admit_inventory_transaction(

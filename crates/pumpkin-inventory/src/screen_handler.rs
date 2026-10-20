@@ -766,12 +766,13 @@ pub trait ScreenHandler: Send + Sync {
         range: (i32, i32, bool),
         before: &mut ItemStack,
     ) -> bool {
-        let (moved, leftover) = crate::menu_transfer::transfer(
+        let (moved, leftover) = crate::menu_transfer::transfer_for_player(
             &self.get_behaviour().slots,
             source,
             stack,
             range,
             before,
+            player,
         );
         if !leftover.is_empty() {
             player.drop_item(leftover, false);
