@@ -114,12 +114,19 @@ impl Fixture {
         self.observer.take_packets();
     }
 
-    pub fn assert_damage_published(&mut self, index: usize, slot: &EquipmentSlot, damage: i32) {
+    pub fn assert_damage_published_next_tick(
+        &mut self,
+        index: usize,
+        slot: &EquipmentSlot,
+        damage: i32,
+    ) {
         assert_eq!(
             self.owner.player.inventory.get_slot(index).get_damage(),
             damage,
             "authoritative equipped wear"
         );
+        // LivingEntity.tick detects equipment before aiStep/updateFallFlying applies wear.
+        self.tick(1);
         let equipment: Vec<_> = self
             .observer
             .take_packets()

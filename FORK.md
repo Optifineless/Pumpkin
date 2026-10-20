@@ -560,6 +560,11 @@ when the player is airborne, not already gliding or in liquid, and has a usable
 equipped glider without levitation.
 The recurring update retains `Entity.checkFallDistanceAccumulation`, using
 accepted client movement for players and existing velocity for other entities.
+PR #253 rebase retains #231's supported-landing admission and the single bounded
+player-tick equipment publisher. Wear still commits every 20 flight ticks;
+observers receive that queued change on the following normal detection, matching
+`LivingEntity.tick` before `aiStep/updateFallFlying`. The glide-start regression
+uses a real stone landing while retaining its health and fall-distance assertions.
 The reported horizontal freeze remains unverified. Written by Codex.
 In-game verification: Not yet.
 

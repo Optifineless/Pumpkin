@@ -91,9 +91,9 @@ async fn b1019_g15_real_ticks_wear_and_publish_equipped_glider_with_reset() {
     );
     f.clear_packets();
     f.tick(1);
-    f.assert_damage_published(38, &EquipmentSlot::CHEST, 1);
-    f.tick(20);
-    f.assert_damage_published(38, &EquipmentSlot::CHEST, 2);
+    f.assert_damage_published_next_tick(38, &EquipmentSlot::CHEST, 1);
+    f.tick(19);
+    f.assert_damage_published_next_tick(38, &EquipmentSlot::CHEST, 2);
     assert_eq!(
         *events.events.lock().unwrap(),
         [
@@ -104,7 +104,7 @@ async fn b1019_g15_real_ticks_wear_and_publish_equipped_glider_with_reset() {
         ],
         "10-tick glide event must follow boundary wear"
     );
-    f.tick(9);
+    f.tick(8);
     dispatch(
         &f.owner.player,
         &f.server,
@@ -120,7 +120,7 @@ async fn b1019_g15_real_ticks_wear_and_publish_equipped_glider_with_reset() {
         "restart inherited old glide ticks"
     );
     f.tick(1);
-    f.assert_damage_published(38, &EquipmentSlot::CHEST, 3);
+    f.assert_damage_published_next_tick(38, &EquipmentSlot::CHEST, 3);
     assert_eq!(
         f.owner.player.inventory.get_slot(0).get_damage(),
         0,
@@ -261,8 +261,7 @@ async fn b1019_g15_ineligible_and_last_durability_gliders_stop() {
     f.equip(38, stack, &EquipmentSlot::CHEST);
     f.start();
     f.tick(20);
-    f.assert_damage_published(38, &EquipmentSlot::CHEST, max - 1);
-    f.tick(1);
+    f.assert_damage_published_next_tick(38, &EquipmentSlot::CHEST, max - 1);
     assert!(!f.owner.player.get_entity().is_fall_flying());
     assert!(f.owner.player.get_entity().pose.load() == EntityPose::Standing);
     assert_eq!(
@@ -311,7 +310,7 @@ async fn b1019_g15_callback_removal_or_replacement_preserves_live_stack() {
         } else {
             assert_eq!(f.owner.player.inventory.get_slot(38).uid, replacement.uid);
             f.tick(20);
-            f.assert_damage_published(38, &EquipmentSlot::CHEST, 1);
+            f.assert_damage_published_next_tick(38, &EquipmentSlot::CHEST, 1);
         }
         f.close().await;
     }
