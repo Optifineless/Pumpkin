@@ -117,6 +117,39 @@ and restart; expect one book returned and an empty, unpowered lectern. Kill a
 Wither and replace a sign while another player watches; expect the bar to disappear
 and the final sign text to remain. Record the item counts, reload, HUD and sign.
 
+## Configured biome source for structure lookup (#121)
+
+Cherry-picked upstream [#4029](https://github.com/Pumpkin-MC/Pumpkin/pull/4029),
+`8677986a5876cdcc77bf674d4114aa75b5e32329` by WhiteProject1, preserving its author.
+Locate uses the generator's configured biome source and generation column heights,
+including End, Nether and fixed-biome worlds. Fork regressions exercise the registered
+locate executor, cold locate/start/reference ordering, real End City templates,
+invalid sites and bounded concurrent publication. Start and reference contexts use
+the raw generator bounds from vanilla 26.3 `WorldGenerationContext`, independently
+of column clipping. Concurrent cache misses return the first published mutable
+piece collection or absent result; upstream #3335's broader concurrency change is
+not included. Saved-data meaning, plugin events, public API 8 and Wasm WIT are
+unchanged. Fork follow-up and tests implemented by Codex (GPT-6.1 Sol).
+PR #315 review: locate resolves the set's first successful weighted entry before
+matching requested structures, including failed-entry fallback. Impossible requests
+are rejected against the configured biome source before scanning; vanilla's terrain
+column, rotated jigsaw center and monument surrounding-biome checks precede deferred
+noise-height sampling. Shared cache keys, generation/reference behavior, saved-data
+meaning and API 8 layouts remain unchanged. Full-radius command regressions enforce
+zero sampler constructions for impossible sources; winner/order and ordinary village
+controls cover the successful path. Follow-up implemented by GPT-6.1 Sol (Codex Cloud).
+Guardrail bookkeeping refreshes only the command-family hash and moves the existing
+jigsaw collector mutex key; prior statuses remain intact and no lock is added.
+Disabled-set filtering and precomputed per-dimension placement preparation remain
+separate backlog work; existing generated chunks are not repaired.
+
+Play test: in the Overworld run `/locate structure minecraft:end_city`; expect not
+found promptly while the world keeps ticking. Locate a village and visit the reported
+position in newly generated terrain; expect a village. In a Nether test world with
+seed 0 and fixed nether_wastes, stand at X=64, Z=896 and locate a fortress; expect a
+different chunk, with a bastion at the original chunk. Capture command feedback and
+the visited structures. In-game verification: Not yet.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

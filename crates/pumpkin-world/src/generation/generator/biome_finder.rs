@@ -1,4 +1,4 @@
-use pumpkin_data::chunk::{Biome, BiomeTree, NETHER_BIOME_SOURCE, OVERWORLD_BIOME_SOURCE};
+use pumpkin_data::chunk::Biome;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_util::math::position::BlockPos;
 use rustc_hash::FxHashSet;
@@ -131,37 +131,7 @@ fn find_in_noise_world(
 /// The ids of every biome the given dimension's biome source can produce.
 #[must_use]
 pub fn possible_biomes(dimension: &Dimension) -> FxHashSet<u8> {
-    let mut out = FxHashSet::default();
-    if *dimension == Dimension::THE_END {
-        // Matches the fixed set in `TheEndBiomeSupplier`.
-        for biome in [
-            &Biome::THE_END,
-            &Biome::END_HIGHLANDS,
-            &Biome::END_MIDLANDS,
-            &Biome::SMALL_END_ISLANDS,
-            &Biome::END_BARRENS,
-        ] {
-            out.insert(biome.id);
-        }
-    } else if *dimension == Dimension::THE_NETHER {
-        collect_tree_biomes(&NETHER_BIOME_SOURCE, &mut out);
-    } else {
-        collect_tree_biomes(&OVERWORLD_BIOME_SOURCE, &mut out);
-    }
-    out
-}
-
-fn collect_tree_biomes(tree: &'static BiomeTree, out: &mut FxHashSet<u8>) {
-    match tree {
-        BiomeTree::Leaf { biome, .. } => {
-            out.insert(biome.id);
-        }
-        BiomeTree::Branch { nodes, .. } => {
-            for node in *nodes {
-                collect_tree_biomes(node, out);
-            }
-        }
-    }
+    crate::biome::ActiveBiomeSupplier::from_dimension(dimension).possible_biomes()
 }
 
 /// Y levels to probe, ordered outwards from `origin` (upwards first) and

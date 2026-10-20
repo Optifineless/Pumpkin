@@ -66,6 +66,16 @@ pub(crate) fn has_valid_biomes(
         return false;
     }
 
+    has_valid_surrounding_biomes(biome_supplier, sampler, chunk_x, chunk_z, sea_level)
+}
+
+pub(crate) fn has_valid_surrounding_biomes(
+    biome_supplier: &dyn BiomeSupplier,
+    sampler: &mut MultiNoiseSampler<'_>,
+    chunk_x: i32,
+    chunk_z: i32,
+    sea_level: i32,
+) -> bool {
     let center_x = start_block_x(chunk_x) + 9;
     let center_z = start_block_z(chunk_z) + 9;
     let min_x = biome_coords::from_block(center_x - 29);
