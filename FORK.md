@@ -939,8 +939,8 @@ new rows. No saved fields, unload/save semantics or native
 API 8 layouts/signatures change.
 
 Projectile loot retains its actual THIS_ENTITY type/state with an empty tool;
-successful shattering emits BLOCK_DESTROY once. The existing game-event API has no
-source field. Trident and thrown-projectile impacts now admit the pot callback
+successful shattering emits BLOCK_DESTROY once. Trident and thrown-projectile
+impacts now admit the pot callback
 through ProjectileHitEvent cancellation. Placement sends post-application pot actor
 data to Bedrock watchers, including when the initial terrain update already flushed.
 The documented EMPTY-pot compatibility policy above remains pre-existing backlog;
@@ -1052,6 +1052,42 @@ validation. That shared validation and its saved-template compatibility decision
 remain separate work. Child-component codec hashes, explicit Bedrock pattern
 overrides and independently saved projectile `can_break` remain the documented
 backlog. This merge does not claim those parity gaps are fixed.
+
+PR #330 review round 7: a supplied pot preparation is checked against the reread
+target before any break callback or bed dispatch. A changed target rejects the
+operation; only an unprepared ordinary break can select a bed. The original
+terrain/entity/state claim still decides removal after callbacks. The shared
+retirement helper and bed reservation logic remain unchanged.
+
+Successful projectile shattering now uses #162's game-event context to retain
+the projectile source and destroyed, cracked pot state, matching vanilla 26.3
+`Level.destroyBlock` and `GameEvent.Context.of`. Cancelled, denied and stale hits
+emit no destruction event. No saved-data meaning, public layout/signature,
+native API 8 or Wasm WIT changes. Written by Codex (GPT-6), with independent
+finding verification by subagents.
+In-game verification: **Not yet**.
+
+Bounded pending-load regressions replace the original pot with ordinary/straw
+bed pairs, stone or air before resuming its arrow. Both bed halves and their
+custom data must survive with no drops, break callbacks or successful pot event;
+the ordinary-bed case also uses a pot-only Adventure CAN_BREAK predicate.
+A real arrow-hit regression checks the forwarded event's projectile identity,
+world, position and broken state, plus cancellation. The earlier documented
+compatibility, callback-admission, piston-transaction and child-codec limitations
+remain backlog; this round does not change their contracts.
+
+Negative control with the new regressions on `317e747f9`: all 47 existing PR
+core tests passed; the four new tests failed on replacement-bed destruction,
+fresh replacement-block break admission and missing projectile source. With the
+fixes, the same filter passes all 51 tests. The lifecycle refresh moves 11
+boundary keys and changes one world-family hash; all 92 existing statuses and
+notes remain unchanged, with no new rows.
+
+Play test: shoot a patterned pot containing a diamond; expect one set of faces
+and one diamond. Break either half of an ordinary or straw bed in Survival;
+expect one bed item. Repeat with a plugin cancelling projectile hits or pot
+breaks; expect the pot and contents to remain. Record these breaks and drops
+on the candidate build before updating PR #330.
 
 
 ## Cauldron filled-bucket transactions (#29, #30, #31)

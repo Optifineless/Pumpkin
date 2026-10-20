@@ -5073,12 +5073,16 @@ impl World {
         }
 
         let (broken_block, broken_block_state) = self.get_block_and_state(position);
-        if broken_block_state.is_air() {
+        // A supplied preparation stays bound to its original target, before any dispatch.
+        if broken_block_state.is_air()
+            || pot.is_some_and(|pot| pot.expected != broken_block_state.id)
+        {
             return None;
         }
 
-        if broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
-            || broken_block == &Block::STRAW_BED
+        if pot.is_none()
+            && (broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
+                || broken_block == &Block::STRAW_BED)
         {
             return self.break_bed_block(
                 position,

@@ -21,6 +21,7 @@ use pumpkin_world::world::BlockFlags;
 
 use super::{
     World,
+    game_events::GameEventContext,
     loot::{LootContextParameters, collect_block_entity_components_from_entity},
     neighbor_updater::UPDATE_LIMIT,
     portal::frame_effects::{RetiredBlockEffects, RetiredBlockEntity},
@@ -39,7 +40,7 @@ use crate::{
 };
 
 pub(super) struct DecoratedPotBreak<'a> {
-    expected: BlockStateId,
+    pub(super) expected: BlockStateId,
     entity: Option<Arc<dyn BlockEntity>>,
     terrain: Option<pumpkin_world::level::SyncChunk>,
     projectile: Option<&'a dyn EntityBase>,
@@ -69,20 +70,21 @@ impl World {
             return;
         }
         let preparation = DecoratedPotBreak::capture(self, position, expected, Some(projectile));
-        if self
-            .break_block_with_limit_prepared(
-                position,
-                None,
-                BlockFlags::NOTIFY_ALL,
-                UPDATE_LIMIT,
-                Some(&preparation),
-            )
-            .is_some()
-        {
+        if let Some(broken) = self.break_block_with_limit_prepared(
+            position,
+            None,
+            BlockFlags::NOTIFY_ALL,
+            UPDATE_LIMIT,
+            Some(&preparation),
+        ) {
             // Level.destroyBlock emits BLOCK_DESTROY only for a successful removal.
-            self.emit_game_event(
+            self.emit_game_event_with_context(
                 pumpkin_data::game_event::GameEvent::BlockDestroy.name(),
                 position.to_centered_f64(),
+                GameEventContext {
+                    source: Some(projectile.get_entity()),
+                    affected_state: Some(broken),
+                },
             );
         }
     }
