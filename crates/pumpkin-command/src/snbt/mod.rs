@@ -53,7 +53,11 @@ pub const EXPECTED_INTEGER_TYPE: CommandErrorType<0> = CommandErrorType::new(
 pub struct SnbtParser<'r, 's> {
     reader: &'r mut StringReader<'s>,
     errors: ParserErrors,
+    nesting_depth: usize,
 }
+
+/// Vanilla's `NbtAccounter.MAX_STACK_DEPTH` also bounds recursive SNBT containers.
+const MAX_NESTING_DEPTH: usize = 512;
 
 //
 // USAGE
@@ -66,6 +70,7 @@ impl SnbtParser<'_, '_> {
             let mut parser = SnbtParser {
                 reader,
                 errors: ParserErrors::default(),
+                nesting_depth: 0,
             };
 
             let literal = parser.parse();
@@ -112,6 +117,7 @@ impl SnbtParser<'_, '_> {
             let mut parser = SnbtParser {
                 reader: &mut reader,
                 errors: ParserErrors::default(),
+                nesting_depth: 0,
             };
 
             let _ = parser.parse();
@@ -202,6 +208,25 @@ impl SnbtParser<'_, '_> {
         if result.is_none() {
             self.reader.set_cursor(start);
         }
+        result
+    }
+
+    /// Runs a recursive container parser only while within the vanilla nesting budget.
+    fn parse_nested_container(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Option<NbtTag>,
+    ) -> Option<NbtTag> {
+        if self.nesting_depth >= MAX_NESTING_DEPTH {
+            self.store_dynamic_error(
+                &LITERAL_INCORRECT,
+                format!("container nesting depth at most {MAX_NESTING_DEPTH}"),
+            );
+            return None;
+        }
+
+        self.nesting_depth += 1;
+        let result = parse(self);
+        self.nesting_depth -= 1;
         result
     }
 

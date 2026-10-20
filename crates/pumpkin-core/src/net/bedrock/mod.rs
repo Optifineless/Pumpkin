@@ -37,8 +37,9 @@ use pumpkin_protocol::{
             item_stack_request::SItemStackRequest, loading_screen::SLoadingScreen, login::SLogin,
             mob_equipment::SMobEquipment, modal_form_response::SModalFormResponse,
             packet_violation_warning::SPacketViolationWarning, player_action::SPlayerAction,
-            player_auth_input::SPlayerAuthInput, request_ability::SRequestAbility,
-            request_chunk_radius::SRequestChunkRadius,
+            player_auth_input::SPlayerAuthInput,
+            player_toggle_crafter_slot_request::SPlayerToggleCrafterSlotRequest,
+            request_ability::SRequestAbility, request_chunk_radius::SRequestChunkRadius,
             request_network_settings::SRequestNetworkSettings,
             resource_pack_client_response::SResourcePackClientResponse, respawn::SRespawn,
             set_local_player_as_initialized::SSetLocalPlayerAsInitialized,
@@ -831,6 +832,10 @@ impl BedrockClient {
             SPlayerAction::PACKET_ID => {
                 let packet = SPlayerAction::read(reader)?;
                 self.handle_player_action(player, server, &packet);
+            }
+            SPlayerToggleCrafterSlotRequest::PACKET_ID => {
+                let packet = SPlayerToggleCrafterSlotRequest::read(reader)?;
+                self.handle_player_toggle_crafter_slot_request(player, &packet);
             }
             SRespawn::PACKET_ID => {
                 let packet = SRespawn::read(reader)?;

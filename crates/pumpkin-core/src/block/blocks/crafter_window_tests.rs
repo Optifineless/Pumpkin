@@ -13,7 +13,7 @@ use pumpkin_data::{
 };
 use pumpkin_inventory::Inventory;
 use pumpkin_protocol::{
-    MultiVersionJavaPacket, Packet,
+    MultiVersionJavaPacket, Packet, RawPacket,
     bedrock::{
         BEDROCK_GAME_PACKET,
         client::{
@@ -29,6 +29,7 @@ use pumpkin_protocol::{
             inventory_transaction::{
                 HandSlot, SInventoryTransaction, TransactionData, UseItemTransactionData,
             },
+            player_toggle_crafter_slot_request::SPlayerToggleCrafterSlotRequest,
         },
     },
     codec::{var_int::VarInt, var_uint::VarUInt},
@@ -138,6 +139,34 @@ fn use_bedrock_block(player: &TestBedrockPlayer, position: BlockPos) {
             }),
         },
     );
+}
+
+fn toggle_bedrock_crafter_slot(
+    player: &TestBedrockPlayer,
+    server: &Arc<Server>,
+    position: BlockPos,
+    slot_index: u8,
+    is_disabled: bool,
+) {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&position.0.x.to_le_bytes());
+    payload.extend_from_slice(&position.0.y.to_le_bytes());
+    payload.extend_from_slice(&position.0.z.to_le_bytes());
+    payload.push(slot_index);
+    payload.push(u8::from(is_disabled));
+    let crate::net::ClientPlatform::Bedrock(client) = player.player.client.as_ref() else {
+        panic!("Bedrock fixture required");
+    };
+    client
+        .handle_play_packet(
+            &player.player,
+            server,
+            &RawPacket {
+                id: SPlayerToggleCrafterSlotRequest::PACKET_ID,
+                payload: bytes::Bytes::from(payload),
+            },
+        )
+        .unwrap();
 }
 
 fn bedrock_payloads(player: &mut TestBedrockPlayer, id: i32) -> Vec<Vec<u8>> {
@@ -441,4 +470,59 @@ async fn b1020b_g03_bedrock_crafter_opening_controls() {
     tokio::time::timeout(Duration::from_secs(20), opening_controls())
         .await
         .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g03_bedrock_crafter_toggle_packet_updates_empty_slot() {
+    let fixture = Fixture::new();
+    let mut bedrock = TestBedrockPlayer::new(&fixture.world).await;
+    bedrock
+        .client()
+        .version
+        .store(BedrockMinecraftVersion::V_1_26_51);
+    prepare_player(&bedrock.player);
+    use_bedrock_block(&bedrock, CRAFTER);
+    let (_, window_type) = one_open(&mut bedrock, CRAFTER);
+    assert_eq!(window_type, 36);
+    assert_crafter_owner(&fixture, &bedrock.player);
+    bedrock.take_packets();
+
+    toggle_bedrock_crafter_slot(&bedrock, &fixture.server, CRAFTER, 0, true);
+    assert!(
+        !fixture.crafter.is_slot_disabled(0),
+        "occupied crafter slots cannot be disabled"
+    );
+    assert!(
+        bedrock_payloads(
+            &mut bedrock,
+            pumpkin_protocol::bedrock::client::block_actor_data::CBlockActorData::PACKET_ID
+        )
+        .is_empty()
+    );
+
+    toggle_bedrock_crafter_slot(&bedrock, &fixture.server, CHEST, 1, true);
+    toggle_bedrock_crafter_slot(&bedrock, &fixture.server, CRAFTER, 9, true);
+    assert!(
+        !fixture.crafter.is_slot_disabled(1),
+        "wrong positions and out-of-range slots are ignored"
+    );
+
+    toggle_bedrock_crafter_slot(&bedrock, &fixture.server, CRAFTER, 1, true);
+    assert!(fixture.crafter.is_slot_disabled(1));
+    let actor_packets = bedrock_payloads(
+        &mut bedrock,
+        pumpkin_protocol::bedrock::client::block_actor_data::CBlockActorData::PACKET_ID,
+    );
+    assert_eq!(actor_packets.len(), 1, "disabled state is sent to Bedrock");
+    let mut actor_payload = actor_packets[0].as_slice();
+    assert_eq!(BlockPos::read(&mut actor_payload).unwrap(), CRAFTER);
+    let mut actor_nbt =
+        pumpkin_nbt::deserializer::NbtReadHelperBedrock::new(Cursor::new(actor_payload.to_vec()));
+    let actor_nbt = pumpkin_nbt::Nbt::read(&mut actor_nbt).unwrap();
+    assert_eq!(actor_nbt.get_int_array("disabled_slots"), Some(&[1][..]));
+
+    toggle_bedrock_crafter_slot(&bedrock, &fixture.server, CRAFTER, 1, false);
+    assert!(!fixture.crafter.is_slot_disabled(1));
+    bedrock.close().await;
+    fixture.close().await;
 }

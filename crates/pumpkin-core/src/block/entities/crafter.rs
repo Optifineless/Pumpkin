@@ -1,7 +1,7 @@
 use crate::block::entities::BlockEntity;
 use crate::world::World;
-use pumpkin_data::block_properties::CrafterLikeProperties;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::{BlockStateId, block_properties::CrafterLikeProperties};
 use pumpkin_inventory::crafting::recipes::RecipeInputInventory;
 use pumpkin_inventory::{Clearable, Inventory, sync_read_items_from_nbt};
 use pumpkin_nbt::compound::NbtCompound;
@@ -119,6 +119,30 @@ impl BlockEntity for CrafterBlockEntity {
 
     fn get_position(&self) -> BlockPos {
         self.position
+    }
+
+    fn bedrock_block_actor_data(&self, _state_id: BlockStateId) -> Option<NbtCompound> {
+        let disabled = self
+            .disabled_slots
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", "Crafter".to_owned());
+        nbt.put_int("x", self.position.0.x);
+        nbt.put_int("y", self.position.0.y);
+        nbt.put_int("z", self.position.0.z);
+        nbt.put(
+            "disabled_slots",
+            NbtTag::IntArray(
+                disabled
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(slot, disabled)| disabled.then_some(slot as i32))
+                    .collect(),
+            ),
+        );
+        nbt.put_bool("isMovable", true);
+        Some(nbt)
     }
 
     fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {

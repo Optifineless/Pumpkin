@@ -1,7 +1,8 @@
 use pumpkin_data::data_component_impl::{CustomNameImpl, IDSetContent, LockImpl};
 use pumpkin_data::tag::Taggable;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_nbt::compound::NbtCompound;
@@ -29,6 +30,79 @@ impl LockClass for BeaconMenuMetadata {
     const LEVEL: u8 = 40;
 }
 
+/// Mutex-compatible legacy beacon lock field that records every mutable access.
+pub struct BeaconLockKey {
+    value: Mutex<Option<String>>,
+    generation: AtomicU64,
+}
+
+pub struct BeaconLockKeyGuard<'a> {
+    guard: MutexGuard<'a, Option<String>>,
+    generation: &'a AtomicU64,
+}
+
+impl BeaconLockKey {
+    #[must_use]
+    const fn new(value: Option<String>) -> Self {
+        Self {
+            value: Mutex::new(value),
+            generation: AtomicU64::new(0),
+        }
+    }
+
+    pub fn lock(&self) -> Result<BeaconLockKeyGuard<'_>, PoisonError<BeaconLockKeyGuard<'_>>> {
+        match self.value.lock() {
+            Ok(guard) => Ok(self.wrap_guard(guard)),
+            Err(error) => Err(PoisonError::new(self.wrap_guard(error.into_inner()))),
+        }
+    }
+
+    pub fn try_lock(&self) -> Result<BeaconLockKeyGuard<'_>, TryLockError<BeaconLockKeyGuard<'_>>> {
+        match self.value.try_lock() {
+            Ok(guard) => Ok(self.wrap_guard(guard)),
+            Err(TryLockError::Poisoned(error)) => Err(TryLockError::Poisoned(PoisonError::new(
+                self.wrap_guard(error.into_inner()),
+            ))),
+            Err(TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+        }
+    }
+
+    const fn wrap_guard<'a>(
+        &'a self,
+        guard: MutexGuard<'a, Option<String>>,
+    ) -> BeaconLockKeyGuard<'a> {
+        BeaconLockKeyGuard {
+            guard,
+            generation: &self.generation,
+        }
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+}
+
+impl BeaconLockKeyGuard<'_> {
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+}
+
+impl Deref for BeaconLockKeyGuard<'_> {
+    type Target = Option<String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl DerefMut for BeaconLockKeyGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        &mut self.guard
+    }
+}
+
 pub struct BeaconBlockEntity {
     pub position: BlockPos,
     pub primary_effect: AtomicI32,
@@ -41,10 +115,10 @@ pub struct BeaconBlockEntity {
 
     // Vanilla Parity Fields
     pub custom_name: Mutex<Option<String>>,
-    pub lock_key: Mutex<Option<String>>,
+    /// Legacy lock field. Mutable accesses invalidate a cached lowercase lock, including `None`.
+    pub lock_key: BeaconLockKey,
     canonical_name: pumpkin_util::sync::Mutex<Option<(String, CustomNameImpl)>, BeaconMenuMetadata>,
-    canonical_lock:
-        pumpkin_util::sync::Mutex<Option<(Option<String>, LockImpl)>, BeaconMenuMetadata>,
+    canonical_lock: pumpkin_util::sync::Mutex<Option<(u64, LockImpl)>, BeaconMenuMetadata>,
     pub last_check_y: AtomicI32,
 }
 
@@ -106,7 +180,7 @@ impl BeaconBlockEntity {
             beam_active: AtomicBool::new(false),
             checking_beam: AtomicBool::new(false),
             custom_name: Mutex::new(None),
-            lock_key: Mutex::new(None),
+            lock_key: BeaconLockKey::new(None),
             canonical_name: pumpkin_util::sync::Mutex::new(None),
             canonical_lock: pumpkin_util::sync::Mutex::new(None),
             last_check_y: AtomicI32::new(position.0.y - 1),
@@ -412,10 +486,11 @@ impl BlockEntity for BeaconBlockEntity {
             .unwrap_or(-1);
         let levels = nbt.get_int("Levels").unwrap_or(0);
         let (custom_name, canonical_name) = menu::read_custom_name(nbt);
-        let lock_key = nbt.get_string("Lock").map(std::string::ToString::to_string);
+        let legacy_lock_key = nbt.get_string("Lock").map(std::string::ToString::to_string);
+        let lock_key = BeaconLockKey::new(legacy_lock_key);
         let canonical_lock = super::container_lock::ContainerLock::from_nbt(nbt)
             .get()
-            .map(|lock| (lock_key.clone(), lock));
+            .map(|lock| (lock_key.generation(), lock));
 
         Self {
             position,
@@ -427,7 +502,7 @@ impl BlockEntity for BeaconBlockEntity {
             beam_active: AtomicBool::new(false),
             checking_beam: AtomicBool::new(false),
             custom_name: Mutex::new(custom_name),
-            lock_key: Mutex::new(lock_key),
+            lock_key,
             canonical_name: pumpkin_util::sync::Mutex::new(canonical_name),
             canonical_lock: pumpkin_util::sync::Mutex::new(canonical_lock),
             last_check_y: AtomicI32::new(position.0.y - 1),

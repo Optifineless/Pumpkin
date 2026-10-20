@@ -11,6 +11,42 @@ fn parse(snbt: &str) -> Result<NbtTag, CommandSyntaxError> {
     SnbtParser::parse_for_commands(&mut StringReader::new(snbt))
 }
 
+#[test]
+fn nested_containers_respect_vanilla_depth_budget_on_small_stack() {
+    let allowed = format!("{}0{}", "[".repeat(511), "]".repeat(511));
+    let over_budget = format!("{}0{}", "[".repeat(600), "]".repeat(600));
+    let malformed = format!("{{x:{}", "[".repeat(60_000));
+
+    std::thread::Builder::new()
+        .name("snbt-small-stack-regression".to_owned())
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            let mut parsed =
+                parse(&allowed).expect("511 nested lists must fit the vanilla depth budget");
+            // Peel the value iteratively so this test measures parser recursion, not recursive
+            // destruction of the successfully parsed nested list.
+            for _ in 0..511 {
+                let NbtTag::List(mut children) = parsed else {
+                    panic!("expected a nested list at each depth");
+                };
+                assert_eq!(children.len(), 1);
+                parsed = children.pop().unwrap();
+            }
+            assert_eq!(parsed, NbtTag::Int(0));
+            assert!(
+                parse(&over_budget).is_err(),
+                "600 nested lists must return a syntax error"
+            );
+            assert!(
+                parse(&malformed).is_err(),
+                "60,000 unmatched list openings must return a syntax error"
+            );
+        })
+        .expect("spawn small-stack SNBT regression thread")
+        .join()
+        .expect("SNBT depth checks must complete without overflowing the stack");
+}
+
 fn suggestions(snbt: &str) -> Vec<String> {
     let builder = SuggestionsBuilder::new(snbt, 0);
     let suggestions = SnbtParser::parse_for_suggestions(builder);

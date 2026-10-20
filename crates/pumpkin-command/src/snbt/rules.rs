@@ -820,8 +820,8 @@ impl SnbtParser<'_, '_> {
         } else {
             match self.reader.peek() {
                 Some('"' | '\'') => Literal::String(self.quoted_string_literal()?),
-                Some('{') => Literal::Tag(self.map_literal()?),
-                Some('[') => Literal::Tag(self.list_literal()?),
+                Some('{') => Literal::Tag(self.parse_nested_container(Self::map_literal)?),
+                Some('[') => Literal::Tag(self.parse_nested_container(Self::list_literal)?),
                 _ => Literal::Tag(self.unquoted_string_or_built_in()?),
             }
         };

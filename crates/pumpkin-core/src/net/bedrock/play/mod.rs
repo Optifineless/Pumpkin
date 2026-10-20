@@ -135,6 +135,7 @@ pub mod modal_form_response;
 pub mod player_action;
 pub mod player_auth_input;
 pub mod player_block_action;
+pub mod player_toggle_crafter_slot_request;
 pub mod request_ability;
 pub mod request_chunk_radius;
 pub mod respawn;

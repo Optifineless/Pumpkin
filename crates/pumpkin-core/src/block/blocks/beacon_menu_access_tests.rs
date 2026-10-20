@@ -584,3 +584,6 @@ async fn b1020b_g03_custom_data_locks_open_beacons_and_chests() {
 
 #[path = "beacon_custom_data_access_tests.rs"]
 mod custom_data_access_tests;
+
+#[path = "beacon_native_lock_clear_tests.rs"]
+mod native_lock_clear_tests;

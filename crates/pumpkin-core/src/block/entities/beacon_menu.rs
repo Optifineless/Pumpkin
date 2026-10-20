@@ -1,4 +1,4 @@
-use super::{BeaconBlockEntity, BeaconMenuMetadata};
+use super::{BeaconBlockEntity, BeaconLockKey, BeaconLockKeyGuard, BeaconMenuMetadata};
 use pumpkin_data::{
     data_component_impl::{CustomNameImpl, DataComponentImpl, LockImpl},
     item_stack::ItemStack,
@@ -24,6 +24,18 @@ pub(super) fn read_custom_name(nbt: &NbtCompound) -> LoadedName {
 }
 
 fn metadata_guard<T>(value: &Mutex<T>, packet_only: bool) -> Option<MutexGuard<'_, T>> {
+    if packet_only {
+        value.try_lock().ok()
+    } else {
+        Some(
+            value
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+}
+
+fn lock_key_guard(value: &BeaconLockKey, packet_only: bool) -> Option<BeaconLockKeyGuard<'_>> {
     if packet_only {
         value.try_lock().ok()
     } else {
@@ -102,11 +114,11 @@ impl BeaconBlockEntity {
     }
 
     fn menu_lock_snapshot(&self, packet_only: bool) -> Option<(Option<String>, Option<LockImpl>)> {
-        let legacy_guard = metadata_guard(&self.lock_key, packet_only)?;
+        let legacy_guard = lock_key_guard(&self.lock_key, packet_only)?;
         let mut canonical = canonical_guard(&self.canonical_lock, packet_only)?;
         // A native write to the legacy field supersedes the loaded canonical predicate.
-        let lock = if let Some((source, lock)) = canonical.as_ref()
-            && source == &*legacy_guard
+        let lock = if let Some((source_generation, lock)) = canonical.as_ref()
+            && *source_generation == legacy_guard.generation()
         {
             Some(lock.clone())
         } else {
@@ -152,10 +164,7 @@ impl BeaconBlockEntity {
             _ => serde_json::to_string(&name.name).unwrap_or_else(|_| name.name.clone().get_text()),
         });
         let canonical_name = legacy.clone().zip(name);
-        let canonical_lock = stack
-            .get_data_component::<LockImpl>()
-            .cloned()
-            .map(|lock| (None, lock));
+        let canonical_lock = stack.get_data_component::<LockImpl>().cloned();
         let mut current_name = self
             .custom_name
             .lock()
@@ -178,6 +187,6 @@ impl BeaconBlockEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *current_key = None;
-        *current_canonical_lock = canonical_lock;
+        *current_canonical_lock = canonical_lock.map(|lock| (current_key.generation(), lock));
     }
 }

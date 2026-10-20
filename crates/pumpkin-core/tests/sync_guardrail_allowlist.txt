@@ -19,7 +19,6 @@ crates/pumpkin-core/src/block/entities/banner.rs::new::std::sync::Mutex::new#2
 crates/pumpkin-core/src/block/entities/barrel.rs::from_nbt::std::sync::RwLock::new#1
 crates/pumpkin-core/src/block/entities/barrel.rs::new::std::sync::RwLock::new#1
 crates/pumpkin-core/src/block/entities/beacon.rs::from_nbt::std::sync::Mutex::new#1
-crates/pumpkin-core/src/block/entities/beacon.rs::from_nbt::std::sync::Mutex::new#2
 crates/pumpkin-core/src/block/entities/beacon.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-core/src/block/entities/beacon.rs::new::std::sync::Mutex::new#2
 crates/pumpkin-core/src/block/entities/beehive.rs::from_nbt::std::sync::Mutex::new#1

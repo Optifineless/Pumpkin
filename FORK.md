@@ -22,19 +22,23 @@ transactions. Closing detaches unused payment once and schedules its normal drop
 after menu guards release, even when inventory has room. Bedrock crafter open,
 direct-open and close mappings use dedicated container type 36 for supported
 Bedrock 1.26.51/protocol 2193. Crafter contents and changed slots use the
-`CrafterLevelEntity` container identity. Java opening and other window mappings
-are unchanged. The generic crafter menu still lacks Vanilla's non-interactive
-recipe-result preview and refresh; that remains backlog.
+`CrafterLevelEntity` container identity. Packet 306 toggles only empty slots on
+the live crafter menu and returns disabled-slot state to open Bedrock views. Java
+opening and other window mappings are unchanged. The generic crafter menu still
+lacks Vanilla's non-interactive recipe-result preview and refresh; that remains
+backlog.
 Mirrors vanilla 26.3 `BeaconBlockEntity.createMenu/loadAdditional/saveAdditional`,
 `LockCode.canUnlock`, and `BeaconMenu.quickMoveStack/removed`; Bedrock wire type
 comes from Cloudburst `ContainerType.CRAFTER`, independently of Java.
 
 API 8 (same version): `BeaconBlockEntity` gains private component metadata state;
-rebuild native plugins. Existing public legacy field types and constructor remain
-source compatible. Observed legacy field replacements supersede loaded canonical
-metadata. WIT and the native API version are unchanged. The broader upstream
+rebuild native plugins. The public `lock_key` field now uses `BeaconLockKey`,
+whose `lock().unwrap()` guard preserves
+ordinary dereference and assignment syntax while tracking mutable access, including
+writing `None` over `None`. This lets direct native writes invalidate cached
+canonical metadata. WIT and the native API version are unchanged. The broader upstream
 beacon port #3860 and component port #3507 were reviewed; beam scanning, saved
-level behavior and pending Bedrock request transactions are outside this change.
+level behavior and other Bedrock inventory requests are outside this change.
 Written by GPT-6 Luna (Codex Cloud). In-game verification: Not yet.
 
 Play test: try a named locked beacon with no key, a wrong/offhand key and the
@@ -49,7 +53,9 @@ expect its dedicated window, the existing input contents, and correctly addresse
 slot updates after changing an input. Set a lock to `minecraft:custom_data={}`;
 expect plain paper and an empty hand to open it. Record the key/title cases, chest
 lock, slot movements, close/drop sequence and Bedrock crafter screen before
-opening a PR. Recipe-result preview behavior remains unverified and tracked above.
+opening a PR. On Bedrock, toggle an empty crafter input off and on, then try the
+same on an occupied input; expect only the empty input to change. Recipe-result
+preview behavior remains unverified and tracked above.
 
 ## Departed dragon and Wither bossbar recipients (#118)
 

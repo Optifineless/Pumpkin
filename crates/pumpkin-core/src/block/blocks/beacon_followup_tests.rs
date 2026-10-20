@@ -138,14 +138,17 @@ async fn beacon_paid_selection_preserves_contended_persistent_fields_on_reload()
         let (release, wait_for_release) = crossbeam::channel::bounded(1);
         let (unlocked, wait_for_unlock) = crossbeam::channel::bounded(1);
         drop(std::thread::spawn(move || {
-            let guard = if name_field {
-                beacon.custom_name.lock().unwrap()
+            if name_field {
+                let guard = beacon.custom_name.lock().unwrap();
+                held.send(()).unwrap();
+                wait_for_release.recv_timeout(BOUND).unwrap();
+                drop(guard);
             } else {
-                beacon.lock_key.lock().unwrap()
-            };
-            held.send(()).unwrap();
-            wait_for_release.recv_timeout(BOUND).unwrap();
-            drop(guard);
+                let guard = beacon.lock_key.lock().unwrap();
+                held.send(()).unwrap();
+                wait_for_release.recv_timeout(BOUND).unwrap();
+                drop(guard);
+            }
             unlocked.send(()).unwrap();
         }));
         wait_for_lock.recv_timeout(BOUND).unwrap();

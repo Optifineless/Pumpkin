@@ -74,6 +74,62 @@ async fn b1020b_g03_custom_data_malformed_snbt_denies_without_panicking() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g03_custom_data_deep_malformed_snbt_denies_and_round_trips() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let mut fixture = Fixture::new(0);
+        let title_tag = styled_name("Deep malformed SNBT beacon", "gold");
+        let title = CustomNameImpl::read_data(&title_tag).unwrap().name;
+        let raw_snbt = format!("{{x:{}", "[".repeat(60_000));
+        assert_eq!(raw_snbt.len(), 60_003);
+        let expected = NbtTag::String(raw_snbt.clone().into());
+        let beacon = load_beacon(&fixture, custom_data_beacon(&title_tag, &expected));
+
+        assert_custom_data_beacon_denied(
+            &mut fixture,
+            &title,
+            custom_data_key(NbtTag::Int(1)),
+            ItemStack::EMPTY.clone(),
+            "deep malformed SNBT-string custom_data",
+        );
+
+        let mut saved = NbtCompound::new();
+        beacon.write_internal(&mut saved);
+        assert_eq!(
+            saved
+                .get_compound("lock")
+                .unwrap()
+                .get_compound("predicates")
+                .unwrap()
+                .get("minecraft:custom_data"),
+            Some(&expected),
+            "use must not rewrite the malformed saved SNBT string",
+        );
+
+        let reloaded = load_beacon(&fixture, saved);
+        let mut saved_again = NbtCompound::new();
+        reloaded.write_internal(&mut saved_again);
+        let persisted = saved_again
+            .get_compound("lock")
+            .unwrap()
+            .get_compound("predicates")
+            .unwrap()
+            .get("minecraft:custom_data")
+            .unwrap();
+        let NbtTag::String(persisted) = persisted else {
+            panic!("saved custom_data must remain an SNBT string");
+        };
+        assert_eq!(
+            persisted.as_bytes(),
+            raw_snbt.as_bytes(),
+            "reload must preserve the raw malformed SNBT bytes exactly",
+        );
+        fixture.finish().await;
+    })
+    .await
+    .expect("bounded deep malformed custom_data SNBT regression timed out");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1020b_g03_empty_custom_data_predicate_matches_absent_components() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let mut fixture = Fixture::new(0);
