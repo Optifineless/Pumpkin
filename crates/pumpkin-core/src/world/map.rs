@@ -5,6 +5,10 @@ use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use std::sync::{Arc, Mutex};
 
 mod cache;
+#[cfg(test)]
+mod cache_tests;
+mod frame_cleanup;
+pub(crate) use frame_cleanup::FrameAttachment;
 mod markers;
 mod storage;
 #[cfg(test)]
@@ -18,11 +22,16 @@ pub(crate) const HALF_MAP_SIZE: i32 = MAP_SIZE / 2;
 pub struct MapManager {
     pub maps: Arc<DashMap<i32, Arc<Mutex<MapData>>>>,
     save_gate: Arc<tokio::sync::Mutex<()>>,
+    frame_cleanup: Arc<Mutex<frame_cleanup::FrameCleanup>>,
+    frame_unloads: crossbeam::queue::SegQueue<FrameAttachment>,
     storage_path: Option<std::path::PathBuf>,
     next_id: std::sync::atomic::AtomicU64,
     known_ids: dashmap::DashSet<i32>,
     loading: Arc<dashmap::DashSet<i32>>,
+    load_backoff: Arc<DashMap<i32, std::time::Instant>>,
     tasks: tokio_util::task::TaskTracker,
+    #[cfg(test)]
+    load_gate: Mutex<cache::LoadTestGates>,
     #[cfg(test)]
     save_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
 }
@@ -39,11 +48,16 @@ impl MapManager {
         Self {
             maps: Arc::new(DashMap::new()),
             save_gate: Arc::default(),
+            frame_cleanup: Arc::default(),
+            frame_unloads: crossbeam::queue::SegQueue::new(),
             storage_path: None,
             next_id: std::sync::atomic::AtomicU64::new(0),
             known_ids: dashmap::DashSet::new(),
             loading: Arc::default(),
+            load_backoff: Arc::default(),
             tasks: tokio_util::task::TaskTracker::new(),
+            #[cfg(test)]
+            load_gate: Mutex::default(),
             #[cfg(test)]
             save_barrier: Mutex::default(),
         }
@@ -70,7 +84,9 @@ impl MapManager {
     ) -> Arc<Mutex<MapData>> {
         let map = Arc::new(Mutex::new(MapData::new(dimension, x, z, scale)));
         self.reserve_map_id(id);
+        self.load_backoff.remove(&id);
         // Never replace a cached record, even when a plugin supplies an already-used ID.
+        // Native callers may already hold the existing map's mutex.
         self.maps.entry(id).or_insert(map).clone()
     }
 

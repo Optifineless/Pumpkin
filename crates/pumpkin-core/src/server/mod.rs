@@ -1348,6 +1348,7 @@ impl Server {
     /// Main server tick method. This now handles both player/network ticking (which always runs)
     /// and world/game logic ticking (which is affected by freeze state).
     pub fn tick(self: &Arc<Self>) {
+        self.map_manager.retry_frame_cleanup();
         self.watchdog.phase(watchdog::markers::Phase::BlockUpdates);
         // Do not flush mid-tick; `Flush` is `flushChannel`.
         let suspended = self.suspend_player_flushes();

@@ -241,6 +241,50 @@ and banner to remain outside a raid. In a raid, let a pillager collect a dropped
 captain banner after its pickup delay; expect one replacement captain, while the
 bottle remains. Capture the deaths, ground items and replacement leader.
 
+## Detached framed-map markers (#294)
+
+Retired item-frame contents remove their saved frame record and FRAME icon through
+the map manager, retaining banners, other frames, pixels, names and unknown NBT.
+Cold maps keep one cleanup obligation per map/attachment until normal loading;
+shutdown drains reads and retries unresolved cleanup once before the existing map
+save gate. Attachment incarnations reject stale cleanup after replacement, and
+live NBT edits retain the old position. Creative, disabled-drop, Fixed and cancelled
+branches retain their supplied vanilla 26.3 `ItemFrame.dropItem/removeFramedMap`,
+`onKilled/readAdditionalSaveData` and `MapItemSavedData.removedFromFrame` behavior.
+No live frame-marker creation or rendering feature is added. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): `ItemFrameEntity` and `MapManager` gain private runtime
+attachment/cleanup state; rebuild native plugins. Public signatures, native API
+version, Wasm WIT and saved-data meanings stay compatible. Unknown saved root/map
+fields now survive map writes; no new saved fields are introduced.
+
+PR #331 review: existing-ID `MapManager::create_map` again returns the cached
+handle without locking the map, including when its native caller already holds
+that mutex. Deferred frame cleanup remains with retirement, load completion and
+shutdown retry, preserving its obligation while the map is busy. API 8 (same
+version); public signatures, layouts and saved-data meanings are unchanged by
+this follow-up. In-game verification: Not yet.
+
+PR #331 round 3: loader cleanup only tries a busy map mutex and retains pending
+work for the next server tick, load or save. Frame destruction queues runtime
+ownership retirement without taking the cleanup mutex; unattached frames do
+nothing. Position-only live NBT edits retire the old attachment, while metadata
+edits retaining the same map and position preserve its saved icon. Failed map
+reads wait five seconds before automatic retry; creation and explicit import/load
+can recover immediately. API 8 (same version): `MapManager` gains private runtime
+queue/backoff state; rebuild native plugins. Public signatures, Wasm WIT and saved
+fields/meanings are unchanged. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet. Duplicate-UUID summon ownership, current-attack
+cancellation and the pre-existing missing live marker rotation/ID refresh remain
+backlog.
+
+Play test: display an imported map in an ordinary/glow frame and break its support;
+expect one frame/map drop and its icon gone after save/restart, with another frame
+and a named banner unchanged. Repeat Creative attacks and support loss with
+entity drops disabled; expect cleanup without item drops. Fixed and cancelled
+frames retain their contents and markers. Capture the map, drops and restart result.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

@@ -1,5 +1,19 @@
-use super::{MapData, MapManager, storage::read_map};
+use super::{
+    MapData, MapManager,
+    frame_cleanup::{apply_pending, discard_missing},
+    storage::read_map,
+};
 use std::sync::{Arc, Mutex, atomic::Ordering};
+
+const LOAD_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[cfg(test)]
+#[derive(Default)]
+pub(super) struct LoadTestGates {
+    pub(super) before_read: Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>,
+    publication: Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>,
+    finished: Option<std::sync::mpsc::Sender<()>>,
+}
 
 impl MapManager {
     /// Reconciles Pumpkin's next-ID counter and IDs already present in storage.
@@ -36,17 +50,74 @@ impl MapManager {
         if !self.loading.insert(id) {
             return;
         }
+        // Check after reserving L so a just-finished worker cannot be retried
+        // between publishing its failure deadline and releasing the reservation.
+        let cooling_down = self
+            .load_backoff
+            .get(&id)
+            .is_some_and(|retry| std::time::Instant::now() < *retry);
+        if cooling_down {
+            self.loading.remove(&id);
+            return;
+        }
         let maps = self.maps.clone();
+        let cleanup = self.frame_cleanup.clone();
+        let loading = self.loading.clone();
+        let backoff = self.load_backoff.clone();
         // SavedDataStorage.get is synchronous in vanilla; Pumpkin's tick must never do disk I/O.
         // A miss is retried by the next map tick after this worker populates the cache.
-        self.tasks
-            .spawn_blocking(move || match load_record(&world, id) {
+        #[cfg(test)]
+        let gates = std::mem::take(
+            &mut *self
+                .load_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        self.tasks.spawn_blocking(move || {
+            #[cfg(test)]
+            if let Some((entered, release)) = gates.before_read {
+                let _ = entered.send(());
+                assert!(
+                    release
+                        .recv_timeout(std::time::Duration::from_secs(10))
+                        .is_ok(),
+                    "bounded loader gate expired"
+                );
+            }
+            match load_record(&world, id) {
                 Ok(Some(map)) => {
-                    maps.entry(id).or_insert_with(|| Arc::new(Mutex::new(map)));
+                    backoff.remove(&id);
+                    let map = maps
+                        .entry(id)
+                        .or_insert_with(|| Arc::new(Mutex::new(map)))
+                        .clone();
+                    #[cfg(test)]
+                    if let Some((entered, release)) = gates.publication {
+                        let _ = entered.send(());
+                        assert!(
+                            release
+                                .recv_timeout(std::time::Duration::from_secs(10))
+                                .is_ok(),
+                            "bounded publication gate expired"
+                        );
+                    }
+                    apply_pending(&cleanup, id, &map);
                 }
-                Ok(None) => {}
-                Err(error) => tracing::error!("Failed to load map {id}: {error}"),
-            });
+                Ok(None) => {
+                    backoff.insert(id, std::time::Instant::now() + LOAD_RETRY_DELAY);
+                    discard_missing(&cleanup, id);
+                }
+                Err(error) => {
+                    backoff.insert(id, std::time::Instant::now() + LOAD_RETRY_DELAY);
+                    tracing::error!("Failed to load map {id}: {error}");
+                }
+            }
+            loading.remove(&id);
+            #[cfg(test)]
+            if let Some(finished) = gates.finished {
+                let _ = finished.send(());
+            }
+        });
     }
 
     /// Loads a cache miss off the tick thread and returns the cached record.
@@ -56,39 +127,76 @@ impl MapManager {
         }
         let world = self.storage_path.clone()?;
         let maps = self.maps.clone();
+        let cleanup = self.frame_cleanup.clone();
+        let backoff = self.load_backoff.clone();
         self.tasks
             .spawn_blocking(move || {
                 let map = load_record(&world, id).ok()??;
-                Some(
-                    maps.entry(id)
-                        .or_insert_with(|| Arc::new(Mutex::new(map)))
-                        .clone(),
-                )
+                backoff.remove(&id);
+                let map = maps
+                    .entry(id)
+                    .or_insert_with(|| Arc::new(Mutex::new(map)))
+                    .clone();
+                apply_pending(&cleanup, id, &map);
+                Some(map)
             })
             .await
             .ok()?
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pause_next_load_for_test(
+        &self,
+    ) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (entered, receiver) = std::sync::mpsc::channel();
+        let (release, gate) = std::sync::mpsc::channel();
+        self.load_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .before_read = Some((entered, gate));
+        (receiver, release)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pause_next_map_publication_for_test(
+        &self,
+    ) -> (
+        std::sync::mpsc::Receiver<()>,
+        std::sync::mpsc::Sender<()>,
+        std::sync::mpsc::Receiver<()>,
+    ) {
+        let (entered, receiver) = std::sync::mpsc::channel();
+        let (release, gate) = std::sync::mpsc::channel();
+        let (finished, completion) = std::sync::mpsc::channel();
+        let mut gates = self
+            .load_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        gates.publication = Some((entered, gate));
+        gates.finished = Some(finished);
+        (receiver, release, completion)
     }
 
     /// Drains pending reads before the final saved-data write.
     pub async fn drain(&self) {
         self.tasks.close();
         self.tasks.wait().await;
+        // One bounded retry also observes a cold cleanup whose first read failed.
+        self.load_backoff.clear();
+        self.retry_frame_cleanup();
+        self.tasks.wait().await;
+        self.report_pending_frame_cleanup();
     }
 }
 
 fn load_record(world: &std::path::Path, id: i32) -> std::io::Result<Option<MapData>> {
-    for (path, legacy) in [
-        (world.join(format!("data/minecraft/maps/{id}.dat")), false),
-        (world.join(format!("data/minecraft/map_{id}.dat")), true),
-        (world.join(format!("data/map_{id}.dat")), true),
+    for path in [
+        world.join(format!("data/minecraft/maps/{id}.dat")),
+        world.join(format!("data/minecraft/map_{id}.dat")),
+        world.join(format!("data/map_{id}.dat")),
     ] {
         match read_map(&path) {
-            Ok(mut map) => {
-                if legacy {
-                    map.saved_tag = None;
-                }
-                return Ok(Some(map));
-            }
+            Ok(map) => return Ok(Some(map)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
