@@ -251,14 +251,15 @@ impl CrossbowItem {
         let inventory = player.inventory();
         let owner = inventory.slot_transaction(0);
         let guard = owner.lock();
-        let restored = if owner.is_live()
+        let payment_returned = if owner.is_live()
             && let Some(slot) = ProjectileWeaponItem::weapon_slot(player, expected)
         {
             let mut current = inventory.get_stack(slot);
-            if current
-                .get_data_component::<ChargedProjectilesImpl>()
-                .is_none_or(|charge| charge.projectiles.is_empty())
-            {
+            let current_charge = current.get_data_component::<ChargedProjectilesImpl>();
+            if current_charge == expected.get_data_component::<ChargedProjectilesImpl>() {
+                // A callback may already have returned this draw's payment to the retained weapon.
+                true
+            } else if current_charge.is_none_or(|charge| charge.projectiles.is_empty()) {
                 current
                     .patch
                     .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
@@ -279,7 +280,7 @@ impl CrossbowItem {
             false
         };
         drop(guard);
-        if !restored {
+        if !payment_returned {
             // This branch is reachable only when every round was denied. Free copies own no stock.
             for projectile in projectiles {
                 if projectile.get_data_component::<pumpkin_data::data_component_impl::IntangibleProjectileImpl>().is_none() {

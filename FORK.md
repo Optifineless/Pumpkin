@@ -22,6 +22,27 @@ Native API 8, public layouts/signatures, Wasm WIT and saved component meanings a
 unchanged. No impact/collision or Riptide movement/water/passenger overhaul is
 included. Implemented by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
 
+PR #394 review round 2: when a launch or spawn veto restores the original charged
+snapshot to the same crossbow UID, that matching charge already owns the paid
+ammunition. Full denial preserves it without also returning loose ammunition,
+including Multishot and rockets. Unrelated callback component edits survive;
+different charges and fresh-UID replacements still return the original payment.
+Native API 8, public layouts/signatures, Wasm WIT and saved-data meaning are
+unchanged. In-game verification: Not yet.
+
+Audit backlog: loose-ammunition rollback needs explicit provenance. Restoring the
+pre-claim same-UID count is indistinguishable from the callback grant protected
+by `old_pr204_1020_tests/items.rs`; suppressing that refund would lose supported
+grants. Bow denial refunds introduce this ambiguity relative to the merge base.
+The charged-crossbow fix does not redefine that separate grant contract.
+
+Play test: with a protection plugin that restores the charged crossbow when
+cancelling launch or spawn, try firing three times with two arrows, then repeat
+with two rockets and with Multishot. Expect one loose item and one paid loaded
+charge throughout, no ground refund, shot sound or wear. Disable cancellation
+and fire; expect the charge to clear and only the loose item to remain. Record
+the ammunition counts and crossbow before and after the repeated vetoes.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
