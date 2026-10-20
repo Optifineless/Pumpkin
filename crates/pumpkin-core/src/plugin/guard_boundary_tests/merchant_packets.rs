@@ -48,11 +48,15 @@ fn merchant(fixture: &Fixture) -> (Arc<VillagerEntity>, SharedScreenHandler) {
 }
 
 fn click(fixture: &Fixture, mode: SlotActionType) {
+    click_at(fixture, 1, 2, mode);
+}
+
+fn click_at(fixture: &Fixture, sync_id: i32, slot: i16, mode: SlotActionType) {
     fixture.player.player.on_slot_click(
         SClickSlot {
-            sync_id: VarInt(1),
+            sync_id: VarInt(sync_id),
             revision: VarInt(0),
-            slot: 2,
+            slot,
             button: 0,
             mode,
             length_of_array: VarInt(0),
@@ -61,6 +65,156 @@ fn click(fixture: &Fixture, mode: SlotActionType) {
         },
         &fixture.server,
     );
+}
+
+fn write_trade_xp_fixture(pack: &std::path::Path, relative: &str, contents: &str) {
+    let path = pack.join(relative);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, contents).unwrap();
+}
+
+fn load_trade_xp_fixture(fixture: &Fixture) {
+    let world_path = &fixture.world.level.level_folder.root_folder;
+    let pack = world_path.join("datapacks/b1020d_g15");
+    write_trade_xp_fixture(
+        &pack,
+        "pack.mcmeta",
+        r#"{"pack":{"min_format":94,"max_format":94,"description":"trade xp regression"}}"#,
+    );
+    write_trade_xp_fixture(
+        &pack,
+        "data/minecraft/trade_set/fletcher/level_1.json",
+        r##"{"amount":3,"trades":"#minecraft:fletcher/level_1"}"##,
+    );
+    write_trade_xp_fixture(
+        &pack,
+        "data/minecraft/tags/villager_trade/fletcher/level_1.json",
+        r#"{"values":["minecraft:fletcher/1/omitted","minecraft:fletcher/1/explicit_seven","minecraft:fletcher/1/explicit_zero"]}"#,
+    );
+    for (name, gives, xp) in [
+        ("omitted", "bread", ""),
+        ("explicit_seven", "arrow", ",\"xp\":7"),
+        ("explicit_zero", "stick", ",\"xp\":0"),
+    ] {
+        write_trade_xp_fixture(
+            &pack,
+            &format!("data/minecraft/villager_trade/fletcher/1/{name}.json"),
+            &format!(
+                r#"{{"wants":{{"id":"minecraft:emerald"}},"gives":{{"id":"minecraft:{gives}"}}{xp}}}"#
+            ),
+        );
+    }
+    fixture.server.datapack_manager.load_all(
+        world_path,
+        &["file/b1020d_g15".to_owned()],
+        &fixture.server.recipe_manager,
+    );
+}
+
+fn inventory_count(inventory: &dyn Inventory, item: &Item) -> u32 {
+    (0..inventory.size())
+        .filter_map(|slot| {
+            let stack = inventory.get_stack(slot);
+            (stack.item.id == item.id).then_some(u32::from(stack.item_count))
+        })
+        .sum()
+}
+
+fn assert_merchant_trade_state(
+    screen: &SharedScreenHandler,
+    player_inventory: &dyn Inventory,
+    offer_index: usize,
+    remaining_emeralds: u32,
+) {
+    let handler = screen.lock().unwrap();
+    let merchant = handler
+        .as_any()
+        .downcast_ref::<MerchantScreenHandler>()
+        .unwrap();
+    assert_eq!(
+        inventory_count(player_inventory, &Item::EMERALD)
+            + inventory_count(merchant.inventory.as_ref(), &Item::EMERALD),
+        remaining_emeralds
+    );
+    assert!(merchant.inventory.get_stack(1).is_empty());
+    assert_eq!(merchant.offers[offer_index].uses, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020d_g15_runtime_omitted_trade_xp_rewards_one() {
+    let fixture = Fixture::new();
+    load_trade_xp_fixture(&fixture);
+    let player = &fixture.player.player;
+    let pos = Vector3::new(0.5, 80.0, 0.5);
+    player.get_entity().set_pos(pos);
+    player
+        .inventory
+        .set_stack(0, ItemStack::new(3, &Item::EMERALD));
+    let villager = VillagerEntity::new(Entity::new(
+        fixture.world.clone(),
+        pos,
+        &EntityType::VILLAGER,
+    ));
+    villager.generate_trades(pumpkin_data::villager::VillagerProfession::Fletcher, 1);
+    let offers = villager.offers.lock().unwrap().clone();
+    assert_eq!(offers.len(), 3);
+    villager.open_trading_screen(player);
+    let screen = player.current_screen_handler.lock().unwrap().clone();
+    let sync_id = i32::from(screen.lock().unwrap().sync_id());
+    let mut xp_mismatches = Vec::new();
+    let mut remaining_emeralds = 3;
+
+    for (trade_number, (item, expected_xp, label)) in [
+        (&Item::BREAD, 1, "omitted"),
+        (&Item::ARROW, 7, "explicit 7"),
+        (&Item::STICK, 0, "explicit 0"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let index = offers
+            .iter()
+            .position(|offer| offer.output.0.item.id == item.id)
+            .unwrap();
+        if offers[index].xp != expected_xp {
+            xp_mismatches.push(format!(
+                "{label} emitted offer XP: expected {expected_xp}, got {}",
+                offers[index].xp
+            ));
+        }
+        let before_xp = villager.xp.load(Ordering::Relaxed);
+        fixture.player.client().handle_select_trade(
+            player,
+            &pumpkin_protocol::java::server::play::SSelectTrade {
+                selected_slot: VarInt(index as i32),
+            },
+        );
+        click_at(&fixture, sync_id, 2, SlotActionType::Pickup);
+        let gained_xp = villager.xp.load(Ordering::Relaxed) - before_xp;
+        if gained_xp != expected_xp {
+            xp_mismatches.push(format!(
+                "{label} villager XP reward: expected {expected_xp}, got {gained_xp}"
+            ));
+        }
+        click_at(
+            &fixture,
+            sync_id,
+            3 + trade_number as i16,
+            SlotActionType::Pickup,
+        );
+        remaining_emeralds -= 1;
+        assert_merchant_trade_state(
+            &screen,
+            player.inventory.as_ref(),
+            index,
+            remaining_emeralds,
+        );
+        assert_eq!(inventory_count(player.inventory.as_ref(), item), 1);
+    }
+
+    player.close_handled_screen();
+    fixture.close().await;
+    assert!(xp_mismatches.is_empty(), "{xp_mismatches:?}");
 }
 
 struct SpawnReentry(Arc<AtomicUsize>);

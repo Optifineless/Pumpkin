@@ -344,7 +344,7 @@ impl TradeRegistry {
                 count: gives_count,
             },
             max_uses: def.max_uses.unwrap_or(16.0) as i32,
-            xp: def.xp.unwrap_or(2.0) as i32,
+            xp: def.xp.unwrap_or(1.0) as i32,
             price_multiplier: def.reputation_discount.unwrap_or(0.05),
             modifier,
             allowed_types,
