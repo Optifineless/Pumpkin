@@ -95,13 +95,14 @@ impl RetiredBlockEffects {
         {
             return None;
         }
-        let part = WhiteBedLikeProperties::from_state_id(partner.state).part;
-        if WhiteBedLikeProperties::from_state_id(old).part == part {
+        let properties = WhiteBedLikeProperties::from_state_id(old);
+        let other = WhiteBedLikeProperties::from_state_id(partner.state);
+        if properties.part == other.part || properties.facing != other.facing {
             return None;
         }
         let replacement = world.get_block_state_id(position);
         if Block::from_state_id(replacement) == block
-            && WhiteBedLikeProperties::from_state_id(replacement).part != part
+            && WhiteBedLikeProperties::from_state_id(replacement).part != other.part
         {
             return None;
         }

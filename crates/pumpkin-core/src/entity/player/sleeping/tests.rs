@@ -41,6 +41,21 @@ const HEAD: BlockPos = BlockPos::new(6, 64, 5);
 #[path = "round3_tests.rs"]
 mod round3;
 
+#[path = "position_rules_tests.rs"]
+mod position_rules;
+
+#[path = "wake_coherence_tests.rs"]
+mod wake_coherence;
+
+#[path = "logout_tests.rs"]
+mod logout;
+
+#[path = "entry_sync_tests.rs"]
+mod entry_sync;
+
+#[path = "geometry_callback_tests.rs"]
+mod geometry_callback;
+
 fn use_block(fixture: &PlayerFixture, client: &TestPlayer, position: BlockPos) {
     client
         .client()

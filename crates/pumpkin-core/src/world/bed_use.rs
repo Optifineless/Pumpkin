@@ -125,3 +125,6 @@ impl World {
 #[cfg(test)]
 #[path = "bed_use_tests.rs"]
 mod tests;
+
+#[path = "bed_sleep.rs"]
+mod sleep;

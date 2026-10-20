@@ -61,6 +61,9 @@ mod round3;
 #[path = "bed_pair_round4_tests.rs"]
 mod round4;
 
+#[path = "bed_pair_b1020d_tests.rs"]
+mod b1020d;
+
 enum TestRecords {}
 impl LockClass for TestRecords {
     const NAME: &'static str = "bed test records";

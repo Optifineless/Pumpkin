@@ -32,7 +32,7 @@ use std::f64::consts::TAU;
 use std::num::NonZero;
 use std::str::FromStr;
 use std::sync::atomic::{
-    AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering,
+    AtomicBool, AtomicI8, AtomicI16, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering,
 };
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -450,6 +450,8 @@ pub struct Player {
     pub sleeping_since: AtomicCell<Option<u8>>,
     /// Head position of the bed the player is currently sleeping in.
     pub sleeping_bed_pos: AtomicCell<Option<BlockPos>>,
+    // Player.sleepCounter is saved independently of LivingEntity's active sleeping position.
+    persisted_sleep_counter: AtomicI16,
     sleep_operation: AtomicU64,
     /// Manages the player's breath level
     pub breath_manager: BreathManager,
@@ -699,6 +701,7 @@ impl Player {
             respawn_point: std::sync::Mutex::new(None),
             sleeping_since: AtomicCell::new(None),
             sleeping_bed_pos: AtomicCell::new(None),
+            persisted_sleep_counter: AtomicI16::new(0),
             sleep_operation: AtomicU64::new(0),
             // We want this to be an impossible watched section so that `chunker::update_position`
             // will mark chunks as watched for a new join rather than a respawn.
@@ -1044,6 +1047,7 @@ impl Player {
 
     /// Removes the [`Player`] out of the current [`World`].
     pub async fn remove(self: &Arc<Self>) {
+        self.stop_sleeping_on_departure();
         self.mark_departing();
         self.invalidate_sleep_operation();
         if !self
@@ -1072,7 +1076,9 @@ impl Player {
         }
 
         let world = self.world();
-        world.remove_player(self, true).await;
+        if world.remove_player(self, true).await.is_none() {
+            return;
+        }
 
         let cylindrical = self.watched_section.load();
         self.clean_up_chunk_tickets(&world.level);
@@ -1456,26 +1462,7 @@ impl Player {
     }
 
     pub fn sleep(&self, bed_head_pos: BlockPos) {
-        self.invalidate_sleep_operation();
-        // TODO: Stop riding
-
-        self.get_entity().set_pose(EntityPose::Sleeping);
-        self.living_entity
-            .entity
-            .set_pos(bed_head_pos.to_f64().add_raw(0.5, 0.6875, 0.5));
-        self.get_entity().set_synced_data(
-            pumpkin_data::tracked_data::player::SLEEPING_POS_ID,
-            Some(bed_head_pos),
-        );
-        self.get_entity().set_velocity(Vector3::default());
-
-        self.sleeping_since.store(Some(0));
-        self.sleeping_bed_pos.store(Some(bed_head_pos));
-        self.set_stat(
-            statistics::StatisticCategory::Custom,
-            statistics::CustomStatistic::TimeSinceRest as i32,
-            0,
-        );
+        self.sleep_at_bed(bed_head_pos);
     }
 
     pub fn get_off_ground_speed(&self) -> f64 {
@@ -5942,7 +5929,7 @@ impl EntityBase for Player {
         nbt.put_int("XpTotal", total_exp);
         nbt.put_int("XpSeed", self.enchantment_seed.load(Ordering::Relaxed));
         nbt.put_int("Score", self.score.load(Ordering::Relaxed));
-        nbt.put_short("SleepTimer", self.sleeping_since.load().unwrap_or(0) as i16);
+        nbt.put_short("SleepTimer", self.saved_sleep_counter());
 
         nbt.put_int("playerGameType", self.gamemode.load() as i32);
         if let Some(previous_gamemode) = self.previous_gamemode.load() {
@@ -6068,11 +6055,11 @@ impl EntityBase for Player {
 
         self.score
             .store(nbt.get_int("Score").unwrap_or(0), Ordering::Relaxed);
-        if let Some(sleep_timer) = nbt.get_short("SleepTimer")
-            && sleep_timer > 0
-        {
-            self.sleeping_since.store(Some(sleep_timer as u8));
-        }
+        // ServerPlayer loading keeps the saved counter without restoring active sleep.
+        self.persisted_sleep_counter
+            .store(nbt.get_short("SleepTimer").unwrap_or(0), Ordering::Relaxed);
+        self.sleeping_since.store(None);
+        self.sleeping_bed_pos.store(None);
 
         self.seen_credits.store(
             nbt.get_bool("seenCredits").unwrap_or(false),

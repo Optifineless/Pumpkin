@@ -2,6 +2,40 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Player bed admission and coherent sleep transitions (#25, #26, #28, #300, #327, #364, #365)
+
+Normal and straw beds follow vanilla 26.3 placement, reach, suffocation, spawn,
+rule-message and Monster-rest admission ordering. Ocelots and phantoms allow
+rest; Creative bypasses monsters, and zombified piglins use player-specific
+anger. Straw sleep height comes from its foot and its rule controls spawn,
+advancement and destruction on leaving. Wakes reuse the existing bed stand-up
+geometry and correct owner and observer positions. Cancelled pose changes,
+reentrant callbacks and departure keep occupied halves and player sleep state
+coherent. Logout releases the bed before unregistering; imported signed-short
+SleepTimer counters retain their saved value without restoring active sleep.
+Orphan break cleanup requires a reciprocal same-facing, same-color partner;
+generic bed shape updates are unchanged.
+
+Mirrors `ServerPlayer.startSleepInBed/startSleeping/stopSleepInBed/disconnect`,
+`LivingEntity.startSleeping/stopSleeping`, `AbstractBedBlock`, `StrawBedBlock`
+and the 26.3 `BlockBehaviour.Properties` suffocation predicate. Pumpkin's
+shulkers use viewer counts; their opening/closing animation timing remains
+unimplemented. Implemented by GPT-6.1 Sol (Codex Cloud).
+
+API 8 (same version): a private saved-counter field changes the public `Player`
+layout, so native plugins must rebuild. Public signatures, source compatibility,
+Wasm WIT and saved tag types/meaning stay unchanged.
+In-game verification: Not yet.
+
+Play test: use normal and straw beds beside an ocelot, a zombie and an angry
+zombified piglin in Survival and Creative; expect the matching rest refusal.
+Try border placement, glass/stone ceilings and daytime spawn setting. Wake in
+open, enclosed and bunk layouts; expect a safe position visible to both clients.
+Cancel a wake with a plugin, retry, then disconnect asleep while another player
+watches; expect coherent occupancy and a usable bed after logout/rejoin. Mine
+a malformed orphan beside a different-facing valid pair; expect that pair to
+survive. Record both clients, bed layouts, messages and logout/rejoin behavior.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
