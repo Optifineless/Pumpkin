@@ -130,10 +130,17 @@ mod inventory_binding_review_tests;
 mod inventory_commit;
 #[cfg(test)]
 mod inventory_exploit_tests;
+mod inventory_request_beacon;
+#[cfg(test)]
+mod inventory_request_beacon_tests;
 mod inventory_request_correction;
+mod inventory_request_loom;
 mod inventory_request_take;
 mod inventory_request_validation;
+mod inventory_request_workstations;
 pub mod item_stack_request;
+#[cfg(test)]
+mod loom_workstation_tests;
 pub mod mob_equipment;
 pub mod modal_form_response;
 pub mod player_action;

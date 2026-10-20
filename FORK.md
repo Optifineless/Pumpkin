@@ -2,6 +2,32 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Paid Bedrock beacon and loom requests (#272, #275)
+
+Ordinary Bedrock beacon selections now translate generated edition effect IDs,
+validate the live menu and tier, consume one accepted payment, and use Java's
+existing effect/save/sound operation. Loom requests resolve current selectable
+registry patterns, stage stock and destination capacity, and pay each banner
+through the existing result-slot take, retaining pattern items and banner components.
+Malformed, stale, unpaid and unsupported sequences fail before debiting stock.
+Mirrors the supplied vanilla 26.3 `BeaconMenu.updateEffects`, `LoomMenu`
+selection/result-slot chain and `Slot.safeTake/onTake`. The synthetic protocol
+2193 fixtures use zero for absent beacon effects, registry-key loom strings and
+request-owned negative CreatedOutput IDs; real 1.26.51 client captures remain
+unverified. API 8 (same version): public layouts/signatures and native source
+compatibility are unchanged; no new rebuild requirement. WIT and saved-data
+meaning are unchanged.
+Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: use Bedrock 1.26.51 to pay for beacon powers at each tier and reselect
+an active power; expect one payment, saved powers and one selection sound. Craft
+ordinary and item-required banner patterns, including repeated crafts; expect
+one banner and dye per result, preserved layers/name and a retained pattern item.
+Try full destinations and invalid/stale requests; expect unchanged stock. Record
+the menus, counts, sound and powers after reopening/restarting, and capture the
+actual absent-effect marker, pattern string and output/Consume request sequence.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
