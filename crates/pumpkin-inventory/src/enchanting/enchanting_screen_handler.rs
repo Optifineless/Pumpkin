@@ -149,7 +149,8 @@ impl EnchantingTableScreenHandler {
 
                 for i in 0..3 {
                     let level = self.calculate_level_requirement(&mut random, i);
-                    self.level_requirements[i] = level;
+                    // EnchantmentMenu.slotsChanged disables offers below their slot minimum.
+                    self.level_requirements[i] = if level < i as i32 + 1 { 0 } else { level };
                 }
 
                 for i in 0..3 {
@@ -259,7 +260,8 @@ impl EnchantingTableScreenHandler {
 
             // Add more?
             let mut current_level = enchant_level;
-            while random.next_bounded_i32(50) <= (current_level + 1) / 2 {
+            // EnchantmentHelper.selectEnchantment halves cost only after selection succeeds.
+            while random.next_bounded_i32(50) <= current_level {
                 available.retain(|(e, _)| {
                     for (se, _) in &result {
                         if !e.are_compatible(se) {
