@@ -1,6 +1,5 @@
 #![expect(
     clippy::unwrap_used,
-    clippy::panic,
     clippy::unreachable,
     reason = "Real workstation regression fixtures"
 )]
@@ -49,9 +48,9 @@ use crate::{
     world::spawn_test_support::{proto, publish},
 };
 
-pub(super) const POSITION: BlockPos = BlockPos::new(8, 64, 8);
+pub(in crate::net::bedrock::play) const POSITION: BlockPos = BlockPos::new(8, 64, 8);
 
-pub(super) struct LoomFixture {
+pub(in crate::net::bedrock::play) struct LoomFixture {
     pub world: DeathTestWorld,
     pub bedrock: TestBedrockPlayer,
     pub screen: SharedScreenHandler,
@@ -59,7 +58,7 @@ pub(super) struct LoomFixture {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct ResponseSlot {
+pub(in crate::net::bedrock::play) struct ResponseSlot {
     pub name: ContainerName,
     pub slot: u8,
     pub count: u8,
@@ -68,6 +67,21 @@ pub(super) struct ResponseSlot {
 
 impl LoomFixture {
     pub async fn new(banner: ItemStack, dye_count: u8, pattern: Option<&'static Item>) -> Self {
+        let mut fixture = Self::empty().await;
+        fixture.bedrock.take_packets();
+        fixture.move_input(9, ContainerName::LoomInput, banner);
+        fixture.move_input(
+            10,
+            ContainerName::LoomDye,
+            ItemStack::new(dye_count, &Item::RED_DYE),
+        );
+        if let Some(pattern) = pattern {
+            fixture.move_input(11, ContainerName::LoomMaterial, ItemStack::new(1, pattern));
+        }
+        fixture
+    }
+
+    pub async fn empty() -> Self {
         let world = DeathTestWorld::new().await;
         let live_world = world.world();
         publish(&live_world, proto(&Biome::PLAINS, &Block::AIR));
@@ -96,23 +110,12 @@ impl LoomFixture {
             screen.lock().unwrap().window_type(),
             Some(pumpkin_data::screen::WindowType::Loom)
         );
-        let mut fixture = Self {
+        Self {
             world,
             bedrock,
             screen,
             last_packets: Vec::new(),
-        };
-        fixture.bedrock.take_packets();
-        fixture.move_input(9, ContainerName::LoomInput, banner);
-        fixture.move_input(
-            10,
-            ContainerName::LoomDye,
-            ItemStack::new(dye_count, &Item::RED_DYE),
-        );
-        if let Some(pattern) = pattern {
-            fixture.move_input(11, ContainerName::LoomMaterial, ItemStack::new(1, pattern));
         }
-        fixture
     }
 
     fn move_input(&mut self, inventory_slot: u8, name: ContainerName, stack: ItemStack) {
@@ -304,49 +307,25 @@ impl LoomFixture {
     }
 
     fn response(&self, id: i32) -> (u8, Vec<ResponseSlot>) {
-        let mut decoded = Vec::new();
+        let (_, status, updates) = responses(&self.last_packets)
+            .into_iter()
+            .find(|(request, _, _)| *request == id)
+            .unwrap();
+        (status, updates)
+    }
+
+    pub fn assert_no_correction(&self) {
         for packet in &self.last_packets {
             let mut reader = Cursor::new(&packet[1..]);
             VarUInt::read(&mut reader).unwrap();
-            if VarUInt::read(&mut reader).unwrap().0 != CItemStackResponse::PACKET_ID as u32 {
-                continue;
-            }
-            assert_eq!(VarUInt::read(&mut reader).unwrap().0, 1);
-            let result = u8::read(&mut reader).unwrap();
-            assert_eq!(VarInt::read(&mut reader).unwrap().0, id);
-            let has_containers = bool::read(&mut reader).unwrap();
-            assert_eq!(has_containers, result == 0);
-            if has_containers {
-                for _ in 0..VarUInt::read(&mut reader).unwrap().0 {
-                    let full_name = FullContainerName::read(&mut reader).unwrap();
-                    assert_eq!(full_name.dynamic_id, None);
-                    let name = full_name.container_name;
-                    for _ in 0..VarUInt::read(&mut reader).unwrap().0 {
-                        let requested = u8::read(&mut reader).unwrap();
-                        let slot = u8::read(&mut reader).unwrap();
-                        assert_eq!(requested, slot);
-                        let count = u8::read(&mut reader).unwrap();
-                        let uid = if bool::read(&mut reader).unwrap() {
-                            VarInt::read(&mut reader).unwrap().0
-                        } else {
-                            0
-                        };
-                        assert_eq!(String::read(&mut reader).unwrap(), "");
-                        assert_eq!(String::read(&mut reader).unwrap(), "");
-                        assert_eq!(VarInt::read(&mut reader).unwrap().0, 0);
-                        decoded.push(ResponseSlot {
-                            name,
-                            slot,
-                            count,
-                            uid,
-                        });
-                    }
-                }
-            }
-            assert_eq!(reader.position() as usize, packet.len() - 1);
-            return (result, decoded);
+            let id = VarUInt::read(&mut reader).unwrap().0;
+            assert_ne!(
+                id,
+                CInventoryContent::PACKET_ID as u32,
+                "retired session content"
+            );
+            assert_ne!(id, CInventorySlot::PACKET_ID as u32, "retired session slot");
         }
-        panic!("workstation request omitted response");
     }
 
     pub fn assert_correction(&self) {
@@ -435,7 +414,11 @@ impl LoomFixture {
     }
 }
 
-pub(super) fn slot(name: ContainerName, slot_id: u8, stack: &ItemStack) -> RequestSlot {
+pub(in crate::net::bedrock::play) fn slot(
+    name: ContainerName,
+    slot_id: u8,
+    stack: &ItemStack,
+) -> RequestSlot {
     RequestSlot {
         container_name: FullContainerName {
             container_name: name,
@@ -446,7 +429,7 @@ pub(super) fn slot(name: ContainerName, slot_id: u8, stack: &ItemStack) -> Reque
     }
 }
 
-pub(super) fn assert_same_stock(
+pub(in crate::net::bedrock::play) fn assert_same_stock(
     actual: &[ItemStack],
     expected: &[ItemStack],
     context: impl std::fmt::Debug,
@@ -468,7 +451,7 @@ pub(super) fn assert_same_stock(
     }
 }
 
-pub(super) fn open_loom(bedrock: &TestBedrockPlayer) {
+pub(in crate::net::bedrock::play) fn open_loom(bedrock: &TestBedrockPlayer) {
     let empty = ItemStack::EMPTY.clone();
     bedrock
         .player
@@ -498,4 +481,57 @@ pub(super) fn open_loom(bedrock: &TestBedrockPlayer) {
             }),
         },
     );
+}
+
+pub(in crate::net::bedrock::play) fn responses(
+    packets: &[Bytes],
+) -> Vec<(i32, u8, Vec<ResponseSlot>)> {
+    let mut responses = Vec::new();
+    for packet in packets {
+        let mut reader = Cursor::new(&packet[1..]);
+        VarUInt::read(&mut reader).unwrap();
+        if VarUInt::read(&mut reader).unwrap().0 != CItemStackResponse::PACKET_ID as u32 {
+            continue;
+        }
+        for _ in 0..VarUInt::read(&mut reader).unwrap().0 {
+            let result = u8::read(&mut reader).unwrap();
+            let id = VarInt::read(&mut reader).unwrap().0;
+            let mut decoded = Vec::new();
+            let has_containers = bool::read(&mut reader).unwrap();
+            if has_containers {
+                assert_eq!(result, 0);
+                for _ in 0..VarUInt::read(&mut reader).unwrap().0 {
+                    let full_name = FullContainerName::read(&mut reader).unwrap();
+                    assert_eq!(full_name.dynamic_id, None);
+                    for _ in 0..VarUInt::read(&mut reader).unwrap().0 {
+                        let requested = u8::read(&mut reader).unwrap();
+                        let slot = u8::read(&mut reader).unwrap();
+                        assert_eq!(requested, slot);
+                        let count = u8::read(&mut reader).unwrap();
+                        let uid = if bool::read(&mut reader).unwrap() {
+                            VarInt::read(&mut reader).unwrap().0
+                        } else {
+                            0
+                        };
+                        assert_eq!(String::read(&mut reader).unwrap(), "");
+                        assert_eq!(String::read(&mut reader).unwrap(), "");
+                        assert_eq!(VarInt::read(&mut reader).unwrap().0, 0);
+                        decoded.push(ResponseSlot {
+                            name: full_name.container_name,
+                            slot,
+                            count,
+                            uid,
+                        });
+                    }
+                }
+            }
+            responses.push((id, result, decoded));
+        }
+        assert_eq!(reader.position() as usize, packet.len() - 1);
+    }
+    assert!(
+        !responses.is_empty(),
+        "workstation request omitted response"
+    );
+    responses
 }

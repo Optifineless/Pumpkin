@@ -524,8 +524,7 @@ fn create_loom_result(banner_stack: &ItemStack, dye_stack: &ItemStack, pattern: 
     let Some(pattern_color) = get_dye_color(dye_stack) else {
         return ItemStack::EMPTY.clone();
     };
-    let mut result = banner_stack.clone();
-    result.item_count = 1;
+    let mut result = banner_stack.copy_with_count(1);
     let mut existing_layers = result
         .get_data_component::<BannerPatternsImpl>()
         .cloned()

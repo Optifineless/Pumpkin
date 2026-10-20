@@ -26,7 +26,29 @@ fn assert_stack(actual: &NetworkItemStackDescriptor, stack: &ItemStack) {
     assert_eq!(actual.net_id, expected.net_id, "corrected stack identity");
     assert_eq!(actual.aux_value, expected.aux_value);
     assert_eq!(actual.block_runtime_id, expected.block_runtime_id);
-    assert_eq!(actual.extra_data, expected.extra_data);
+    assert_eq!(
+        decode_extra_data(&actual.extra_data),
+        decode_extra_data(&expected.extra_data),
+        "corrected NBT and remaining user data"
+    );
+}
+
+fn decode_extra_data(bytes: &[u8]) -> (Option<pumpkin_nbt::Nbt>, Vec<u8>) {
+    if bytes.is_empty() {
+        return (None, Vec::new());
+    }
+    let mut reader = std::io::Cursor::new(bytes);
+    let version = i16::read(&mut reader).unwrap();
+    let nbt = if version == 0 {
+        None
+    } else {
+        assert_eq!(version, -1);
+        assert_eq!(u8::read(&mut reader).unwrap(), 1);
+        let mut helper = pumpkin_nbt::deserializer::NbtReadHelperBedrock::new(&mut reader);
+        Some(pumpkin_nbt::Nbt::read(&mut helper).unwrap())
+    };
+    // Compound key order is immaterial; every NBT value and remaining byte is exact.
+    (nbt, bytes[reader.position() as usize..].to_vec())
 }
 
 pub(super) fn assert_correction(packets: &[Bytes], player: &Player) {

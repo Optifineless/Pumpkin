@@ -21,9 +21,19 @@ Predicted result contents remain advisory; specialized replies address payment
 success updates and existing inventory/menu/cursor corrections, and cover
 cancelled statistics and disconnected requests. Generic menu correction
 addressing remains owned by PR #382. Real 1.26.51 client captures remain
-unverified. API 8 (same version): public layouts/signatures and native source
-compatibility are unchanged; no new rebuild requirement. WIT and saved-data
-meaning are unchanged.
+unverified. Round 3 retains up to 64 authoritative request results per live
+player/menu for predicted beacon Destroy and loom Consume references, with exact
+addresses and live positive-UID checks. Payment is read for each selection, so
+placement and confirmation can share a packet. Loom source addresses are checked,
+and its live preview has an independent, stable network identity. Outbound item
+codecs translate banner patterns and custom names into Bedrock NBT. Successful
+Bedrock loom requests schedule the existing world take-result sound once per tick,
+after ownership release; general sound transport still reaches Java observers
+only and remains separate backlog.
+
+API 8 (same version): private retained request state changes the public
+`BedrockClient` layout; rebuild native plugins. Public method signatures, native
+source compatibility, Wasm WIT and saved-data meaning are unchanged.
 Implemented by GPT-6.1 Sol (Codex Cloud).
 In-game verification: Not yet.
 
@@ -36,6 +46,10 @@ the menus, counts, sound and powers after reopening/restarting, and capture the
 actual absent-effect marker, pattern string, result metadata and output/Consume
 request sequence. After each acknowledgment, repeat the selection or craft and
 check that every menu count stays synchronized, including a cursor destination.
+Also pay/select and deposit/craft rapidly before acknowledgment; expect one debit
+per completed action. Carry, drop, reopen and restart with a named patterned
+banner; expect its name and every layer to remain visible. A nearby Java observer
+should hear one take sound per crafting tick. Bedrock audio remains unverified.
 
 ## Stable Bedrock score identities (#289)
 

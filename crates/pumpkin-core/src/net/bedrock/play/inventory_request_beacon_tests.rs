@@ -48,7 +48,7 @@ use crate::{
 use super::inventory_exploit_tests::packet_payload;
 
 #[path = "inventory_request_beacon_test_support.rs"]
-mod support;
+pub(super) mod support;
 use support::{Fixture, assert_payment_response, dispatch, request, selection};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

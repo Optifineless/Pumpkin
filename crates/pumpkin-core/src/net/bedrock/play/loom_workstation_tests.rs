@@ -1,7 +1,7 @@
 #![expect(clippy::unwrap_used, reason = "Real workstation packet regressions")]
 
 #[path = "loom_workstation_test_support.rs"]
-mod support;
+pub(super) mod support;
 
 use std::sync::{
     Arc,
@@ -31,7 +31,7 @@ use crate::{
 };
 use support::{LoomFixture, assert_same_stock, slot};
 
-fn banner(count: u8, layers: usize) -> ItemStack {
+pub(super) fn banner(count: u8, layers: usize) -> ItemStack {
     let mut banner = ItemStack::new(count, &Item::WHITE_BANNER);
     banner.set_data_component(
         CustomNameImpl::read_data(&NbtTag::String("Keep my name".into())).unwrap(),
@@ -85,6 +85,25 @@ async fn b1020c_g06_bedrock_loom_creates_and_pays_selected_banner() {
     assert!(fixture.input(2).is_empty());
     assert_result(&fixture.preview(), &original, "minecraft:stripe_bottom", 1);
     fixture.assert_updates(&updates, false);
+    assert_ne!(
+        fixture.input(0).uid,
+        fixture.preview().uid,
+        "input and preview identities"
+    );
+    let preview_uid = fixture.preview().uid;
+    fixture
+        .screen
+        .lock()
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut::<pumpkin_inventory::loom_screen_handler::LoomScreenHandler>()
+        .unwrap()
+        .slots_changed();
+    assert_eq!(
+        fixture.preview().uid,
+        preview_uid,
+        "unchanged preview stays stable"
+    );
 
     let mut actions = fixture.craft_actions("bs", 1, true);
     if let Action::Take { source, .. } = &mut actions[4] {
@@ -146,6 +165,12 @@ enum Invalid {
     EmptyMetadata,
     CountMetadata,
     MisplacedMetadata,
+    WrongSourceSlot(usize),
+    DynamicConsume,
+    UnknownPrediction,
+    OtherSlotPrediction,
+    WrongOutputSlot(ContainerName),
+    InputUidAsPreview,
 }
 
 fn occupy_destination(fixture: &LoomFixture, mut occupied: ItemStack, pattern: &str, full: bool) {
@@ -206,7 +231,7 @@ fn invalidate_actions(
             }
         }
         Invalid::MisplacedMetadata => actions.swap(1, 2),
-        _ => {}
+        _ => invalidate_sources(fixture, case, actions),
     }
     if matches!(case, Invalid::EmptyMetadata) {
         *fixture
@@ -217,6 +242,61 @@ fn invalidate_actions(
             .cursor_stack
             .lock()
             .unwrap() = ItemStack::new(2, &Item::STICK);
+    }
+}
+
+fn invalidate_sources(fixture: &LoomFixture, case: &Invalid, actions: &mut [Action]) {
+    match case {
+        Invalid::DynamicConsume | Invalid::UnknownPrediction | Invalid::OtherSlotPrediction => {
+            if let Action::Consume { source, .. } = &mut actions[2] {
+                match case {
+                    Invalid::DynamicConsume => source.container_name.dynamic_id = Some(1),
+                    Invalid::UnknownPrediction => source.stack_id = -99,
+                    _ => source.stack_id = -1, // Setup reused this ID for the dye slot.
+                }
+            }
+        }
+        Invalid::WrongSourceSlot(index) => {
+            if let Action::Consume { source, .. } = &mut actions[*index] {
+                source.slot_id = 255;
+            }
+        }
+        Invalid::WrongOutputSlot(_) | Invalid::InputUidAsPreview => {
+            let index = {
+                let mut handler = fixture.screen.lock().unwrap();
+                let loom = handler
+                    .as_any_mut()
+                    .downcast_mut::<pumpkin_inventory::loom_screen_handler::LoomScreenHandler>()
+                    .unwrap();
+                loom.slots_changed();
+                loom.selectable_patterns
+                    .iter()
+                    .position(|pattern| pattern == "minecraft:stripe_bottom")
+                    .unwrap()
+            };
+            fixture
+                .screen
+                .lock()
+                .unwrap()
+                .on_button_click(fixture.bedrock.player.as_ref(), index as i32);
+            if let Action::Take { source, .. } = &mut actions[4] {
+                let name = if let Invalid::WrongOutputSlot(name) = case {
+                    *name
+                } else {
+                    ContainerName::LoomResultPreview
+                };
+                *source = slot(name, 50, &fixture.preview());
+                if name == ContainerName::CreatedOutput {
+                    source.stack_id = -10;
+                }
+                if matches!(case, Invalid::InputUidAsPreview) {
+                    source.stack_id = fixture.input(0).uid.get();
+                } else {
+                    source.slot_id = 255;
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -293,7 +373,11 @@ async fn rejected_sequence(case: Invalid) {
         0
     );
     assert_eq!(status, 1);
-    fixture.assert_correction();
+    if replacement.is_some() {
+        fixture.assert_no_correction();
+    } else {
+        fixture.assert_correction();
+    }
     if let Some(replacement) = replacement {
         replacement.client().close();
     }
@@ -318,6 +402,15 @@ async fn b1020c_g06_loom_failed_sequences_conserve_all_stock() {
         Invalid::DuplicateConsume,
         Invalid::Suffix,
         Invalid::WrongUid,
+        Invalid::DynamicConsume,
+        Invalid::UnknownPrediction,
+        Invalid::OtherSlotPrediction,
+        Invalid::WrongSourceSlot(2),
+        Invalid::WrongSourceSlot(3),
+        Invalid::WrongOutputSlot(ContainerName::CreatedOutput),
+        Invalid::WrongOutputSlot(ContainerName::LoomResultPreview),
+        Invalid::WrongOutputSlot(ContainerName::CraftingOutputPreview),
+        Invalid::InputUidAsPreview,
         Invalid::DuplicateMetadata,
         Invalid::EmptyMetadata,
         Invalid::CountMetadata,

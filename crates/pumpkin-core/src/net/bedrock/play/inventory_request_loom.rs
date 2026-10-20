@@ -5,6 +5,7 @@ use pumpkin_inventory::{
     Inventory, loom_screen_handler::LoomScreenHandler, screen_handler::ScreenHandler,
 };
 use pumpkin_protocol::bedrock::{
+    banner_pattern::java_pattern,
     network_item::{ContainerName, FullContainerName},
     server::item_stack_request::{
         ItemStackRequest, ItemStackRequestAction as Action, ItemStackRequestSlotInfo as Slot,
@@ -14,6 +15,8 @@ use pumpkin_protocol::bedrock::{
 use super::item_stack_request::{SlotUpdate, map_bedrock_container_slot, record_update};
 use crate::entity::player::Player;
 
+pub(super) const BEDROCK_INPUT_SLOT: u8 = 9;
+pub(super) const BEDROCK_DYE_SLOT: u8 = 10;
 const BEDROCK_RESULT_SLOT: u8 = 50;
 
 struct Selection<'a> {
@@ -69,6 +72,7 @@ impl<'a> Selection<'a> {
                     destination,
                 } if *count == *repetitions
                     && output.is_none()
+                    && source.slot_id == BEDROCK_RESULT_SLOT
                     && matches!(
                         source.container_name.container_name,
                         ContainerName::CreatedOutput
@@ -80,8 +84,8 @@ impl<'a> Selection<'a> {
                 }
                 Action::Consume { count, source } if *count == *repetitions => {
                     let index = match source.container_name.container_name {
-                        ContainerName::LoomInput => 0,
-                        ContainerName::LoomDye => 1,
+                        ContainerName::LoomInput if source.slot_id == BEDROCK_INPUT_SLOT => 0,
+                        ContainerName::LoomDye if source.slot_id == BEDROCK_DYE_SLOT => 1,
                         _ => return None,
                     };
                     if consumes[index].replace(source).is_some() {
@@ -152,6 +156,7 @@ fn preview(
     loom: &LoomScreenHandler,
     player: &Arc<Player>,
     selection: &Selection<'_>,
+    predictions: &super::inventory_request_predictions::Results,
 ) -> Option<(usize, ItemStack)> {
     let inputs = (0..3)
         .map(|index| loom.input_inventory.get_stack(index))
@@ -161,7 +166,8 @@ fn preview(
             || input.item_count < selection.repetitions
             || !loom.get_behaviour().slots[index].can_insert(input)
             || !loom.get_behaviour().slots[index].can_take_stack(player.as_ref(), input)
-            || selection.consumes[index].is_some_and(|source| !matches_stack(source, input))
+            || selection.consumes[index]
+                .is_some_and(|source| predictions.resolve(source) != Some(input.uid.get()))
         {
             return None;
         }
@@ -197,6 +203,7 @@ pub(super) fn apply(
     player: &Arc<Player>,
     request: &ItemStackRequest,
     updates: &mut Vec<SlotUpdate>,
+    predictions: &super::inventory_request_predictions::Results,
 ) -> bool {
     let Some(selection) = Selection::parse(request) else {
         return false;
@@ -204,7 +211,7 @@ pub(super) fn apply(
     let Some(loom) = handler.as_any_mut().downcast_mut::<LoomScreenHandler>() else {
         return false;
     };
-    let Some((index, output)) = preview(loom, player, &selection) else {
+    let Some((index, output)) = preview(loom, player, &selection, predictions) else {
         return false;
     };
     // CreatedOutput references this request's generated batch. Preview aliases
@@ -216,7 +223,11 @@ pub(super) fn apply(
             }
             request.request_id.0
         } else {
-            output.uid.get()
+            let live = loom.output_inventory.get_stack(0);
+            if live.is_empty() || !live.are_items_and_components_equal(&output) {
+                return false;
+            }
+            live.uid.get()
         };
     if selection.source.container_name.dynamic_id.is_some()
         || selection.source.stack_id != source_id
@@ -281,8 +292,8 @@ fn record_outputs(
 ) {
     // Geyser LoomInventoryTranslator.javaSlotToBedrockContainer UI addresses.
     for (index, (name, slot_id)) in [
-        (ContainerName::LoomInput, 9),
-        (ContainerName::LoomDye, 10),
+        (ContainerName::LoomInput, BEDROCK_INPUT_SLOT),
+        (ContainerName::LoomDye, BEDROCK_DYE_SLOT),
         (ContainerName::LoomMaterial, 11),
         (ContainerName::LoomResultPreview, BEDROCK_RESULT_SLOT),
     ]
@@ -321,55 +332,4 @@ fn record_outputs(
         BEDROCK_RESULT_SLOT,
         ItemStack::EMPTY,
     );
-}
-
-// Geyser BannerPattern edition identifiers; the live selectable registry still
-// authorizes the translated pattern, including its required material item.
-fn java_pattern(bedrock: &str) -> Option<&'static str> {
-    Some(match bedrock {
-        "b" => "base",
-        "bl" => "square_bottom_left",
-        "br" => "square_bottom_right",
-        "tl" => "square_top_left",
-        "tr" => "square_top_right",
-        "bs" => "stripe_bottom",
-        "ts" => "stripe_top",
-        "ls" => "stripe_left",
-        "rs" => "stripe_right",
-        "cs" => "stripe_center",
-        "ms" => "stripe_middle",
-        "drs" => "stripe_downright",
-        "dls" => "stripe_downleft",
-        "ss" => "small_stripes",
-        "cr" => "cross",
-        "sc" => "straight_cross",
-        "bt" => "triangle_bottom",
-        "tt" => "triangle_top",
-        "bts" => "triangles_bottom",
-        "tts" => "triangles_top",
-        "ld" => "diagonal_left",
-        "rd" => "diagonal_up_right",
-        "lud" => "diagonal_up_left",
-        "rud" => "diagonal_right",
-        "mc" => "circle",
-        "mr" => "rhombus",
-        "vh" => "half_vertical",
-        "hh" => "half_horizontal",
-        "vhr" => "half_vertical_right",
-        "hhb" => "half_horizontal_bottom",
-        "bo" => "border",
-        "cbo" => "curly_border",
-        "gra" => "gradient",
-        "gru" => "gradient_up",
-        "bri" => "bricks",
-        "glb" => "globe",
-        "cre" => "creeper",
-        "sku" => "skull",
-        "flo" => "flower",
-        "moj" => "mojang",
-        "pig" => "piglin",
-        "flw" => "flow",
-        "gus" => "guster",
-        _ => return None,
-    })
 }

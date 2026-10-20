@@ -49,6 +49,7 @@ impl BedrockClient {
         if let Some(admission) = &workstation {
             super::inventory_request_workstations::queue_sync(admission, player);
         }
+        let mut predictions = (*self.stack_request_results.load_full()).clone();
         let mut correction_needed = false;
         let (responses, mut inventory_updated, unclaimed_outputs, crafting_effects) = {
             // Specialized admission keeps selection stable in the normal
@@ -69,6 +70,7 @@ impl BedrockClient {
                 },
                 |current| (*current).clone(),
             );
+            predictions.bind(player, &current_screen_handler);
             let mut screen_handler = current_screen_handler
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -79,6 +81,7 @@ impl BedrockClient {
             let mut processed_request = false;
 
             for request in packet.requests {
+                predictions.forget(request.request_id.0);
                 let mut created_item: Option<ItemStack> = None;
                 let mut crafting_inputs_consumed = false;
                 let mut pending_craft: Option<(ItemStack, u8)> = None;
@@ -92,9 +95,18 @@ impl BedrockClient {
                     &request,
                     &mut updates,
                     workstation.as_ref(),
+                    &predictions,
                 );
                 if let Some(committed) = specialized {
                     result = u8::from(!committed);
+                    if committed
+                        && matches!(
+                            request.actions.first(),
+                            Some(ItemStackRequestAction::Loom { .. })
+                        )
+                    {
+                        predictions.queue_loom_sound(player);
+                    }
                 }
 
                 // Validate the entire request before its first write, including pseudo-slots.
@@ -809,6 +821,7 @@ impl BedrockClient {
                 correction_needed |= result != 0;
                 let mut container_infos = Vec::new();
                 if result == 0 {
+                    predictions.record(request.request_id.0, &updates);
                     for update in updates {
                         let container_info = container_infos.iter_mut().find(
                             |info: &&mut ItemStackResponseContainerInfo| {
@@ -873,6 +886,7 @@ impl BedrockClient {
             )
         };
 
+        self.stack_request_results.store(Arc::new(predictions));
         drop(effects);
 
         // Send Bedrock specific responses and updates

@@ -4,6 +4,7 @@
 //! (prefixed with packet ID `0xfe`), compressed (typically using Deflate or Snappy),
 //! and transmitted over `RakNet` or `NetherNet` transport layers.
 
+pub mod banner_pattern;
 pub mod client;
 pub mod enum_as_str;
 pub mod network_item;

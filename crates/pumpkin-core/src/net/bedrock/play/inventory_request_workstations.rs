@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pumpkin_data::{item_stack::ItemStack, screen::WindowType};
+use pumpkin_data::screen::WindowType;
 use pumpkin_inventory::{
     beacon_screen_handler::BeaconScreenHandler,
     inventory::slot_transaction,
@@ -23,7 +23,6 @@ type ValidityCheck = Box<dyn Fn(&dyn InventoryPlayer) -> bool + Send + Sync>;
 pub(super) struct Admission {
     screen: SharedScreenHandler,
     usable: bool,
-    payment: Option<ItemStack>,
     world: Arc<World>,
     position: Option<pumpkin_util::math::position::BlockPos>,
 }
@@ -83,15 +82,14 @@ pub(super) fn prepare(player: &Arc<Player>, packet: &SItemStackRequest) -> Optio
     let sentinel: ValidityCheck =
         Box::new(move |_| marker.load(std::sync::atomic::Ordering::Relaxed));
     let sentinel_ptr = std::ptr::from_ref(sentinel.as_ref()).cast::<()>();
-    let (validity, payment) = {
+    let validity = {
         let mut handler = screen
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(beacon) = handler.as_any_mut().downcast_mut::<BeaconScreenHandler>() {
-            let payment = beacon.inventory.get_stack(0);
-            (beacon.validity_check.replace(sentinel), Some(payment))
+            beacon.validity_check.replace(sentinel)
         } else {
-            (None, None)
+            None
         }
     };
     let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -121,7 +119,6 @@ pub(super) fn prepare(player: &Arc<Player>, packet: &SItemStackRequest) -> Optio
     Some(Admission {
         screen,
         usable: usable && restored,
-        payment,
         world,
         position,
     })
@@ -134,6 +131,7 @@ pub(super) fn apply(
     request: &ItemStackRequest,
     updates: &mut Vec<SlotUpdate>,
     admission: Option<&Admission>,
+    predictions: &super::inventory_request_predictions::Results,
 ) -> Option<bool> {
     let specialized = request.actions.iter().any(|action| {
         matches!(action, Action::BeaconPayment { .. } | Action::Loom { .. })
@@ -191,21 +189,16 @@ pub(super) fn apply(
     if owners.iter().any(|owner| !owner.is_live()) {
         return Some(false);
     }
-    if let Some(expected) = admission.and_then(|admission| admission.payment.as_ref()) {
-        let Some(beacon) = handler.as_any().downcast_ref::<BeaconScreenHandler>() else {
-            return Some(false);
-        };
-        let payment = beacon.inventory.get_stack(0);
-        if payment.uid != expected.uid || !payment.are_equal(expected) {
-            return Some(false);
-        }
-    }
     Some(match request.actions.first() {
-        Some(Action::BeaconPayment { .. }) => {
-            super::inventory_request_beacon::apply(handler, player, &request.actions, updates)
-        }
+        Some(Action::BeaconPayment { .. }) => super::inventory_request_beacon::apply(
+            handler,
+            player,
+            &request.actions,
+            updates,
+            predictions,
+        ),
         Some(Action::Loom { .. }) => {
-            super::inventory_request_loom::apply(handler, player, request, updates)
+            super::inventory_request_loom::apply(handler, player, request, updates, predictions)
         }
         _ => false,
     })

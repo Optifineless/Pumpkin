@@ -16,7 +16,7 @@ use crate::{
 
 use super::item_stack_request::{SlotUpdate, record_update};
 
-const BEDROCK_PAYMENT_SLOT: u8 = 27;
+pub(super) const BEDROCK_PAYMENT_SLOT: u8 = 27;
 
 // Bedrock zero is absent; Java registry zero is Speed.
 fn effect(id: i32) -> Result<Option<i32>, ()> {
@@ -42,6 +42,7 @@ pub(super) fn apply(
     player: &Arc<Player>,
     actions: &[Action],
     updates: &mut Vec<SlotUpdate>,
+    predictions: &super::inventory_request_predictions::Results,
 ) -> bool {
     // The ordinary payment has already entered the menu in its own move request.
     // Admit the entire shape before the operation can debit that payment.
@@ -69,7 +70,7 @@ pub(super) fn apply(
             if source.container_name.container_name == ContainerName::BeaconPayment
                 && source.container_name.dynamic_id.is_none()
                 && source.slot_id == BEDROCK_PAYMENT_SLOT
-                && source.stack_id == payment.uid.get() => {}
+                && predictions.resolve(source) == Some(payment.uid.get()) => {}
         _ => return false,
     }
     let (Ok(primary), Ok(secondary)) = (effect(primary_effect_id.0), effect(secondary_effect_id.0))

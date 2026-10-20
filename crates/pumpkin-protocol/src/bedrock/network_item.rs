@@ -1,3 +1,6 @@
+#[path = "item_components.rs"]
+mod item_components;
+
 use std::io::{Error, ErrorKind, Read, Write};
 use std::num::NonZero;
 
@@ -114,15 +117,7 @@ impl NetworkItemDescriptor {
         if self.id.0 == 0 {
             return VarUInt(0).write(writer);
         }
-
-        let mut buf = Vec::new();
-        if self.nbt_data.is_empty() {
-            (0i16).write(&mut buf)?;
-        } else {
-            (-1i16).write(&mut buf)?;
-            (1i8).write(&mut buf)?;
-            self.nbt_data.clone().write_to_writer_bedrock(&mut buf)?;
-        }
+        let mut buf = item_components::nbt_bytes(&self.nbt_data);
         write_user_data_strings(&mut buf, &self.place_on_blocks)?;
         write_user_data_strings(&mut buf, &self.destroy_blocks)?;
         if self.id.0 == i32::from(BedrockItem::SHIELD.id) {
@@ -145,7 +140,7 @@ impl From<&ItemStack> for NetworkItemDescriptor {
                     stack_size: stack.item_count as u16,
                     aux_value: VarUInt(mapping.bedrock_data),
                     block_runtime_id: VarInt::from(mapping.bedrock_block_state),
-                    nbt_data: Nbt::default(),
+                    nbt_data: item_components::item_nbt(stack),
                     place_on_blocks: Vec::default(),
                     destroy_blocks: Vec::default(),
                     shield_blocking_tick: 0,
@@ -258,7 +253,7 @@ impl From<&ItemStack> for ItemStackWrapper {
                     stack_size: stack.item_count as u16,
                     aux_value: VarUInt(mapping.bedrock_data),
                     block_runtime_id: VarInt::from(mapping.bedrock_block_state),
-                    nbt_data: Nbt::default(),
+                    nbt_data: item_components::item_nbt(stack),
                     place_on_blocks: Vec::default(),
                     destroy_blocks: Vec::default(),
                     shield_blocking_tick: 0,
@@ -353,8 +348,13 @@ impl From<&ItemStack> for NetworkItemStackDescriptor {
             JavaToBedrockItemMapping::from_java_item_id(stack.get_item().id).map_or(
                 Self::default(),
                 |mapping| {
-                    // Empty NBT followed by empty can-place and can-destroy lists.
-                    let extra_data = vec![0; 10];
+                    let mut extra_data =
+                        item_components::nbt_bytes(&item_components::item_nbt(stack));
+                    // Empty can-place/can-destroy lists; shields also carry a tick counter.
+                    extra_data.extend_from_slice(&[0; 8]);
+                    if mapping.bedrock_item.id == BedrockItem::SHIELD.id {
+                        extra_data.extend_from_slice(&[0; 8]);
+                    }
 
                     Self {
                         id: mapping.bedrock_item.id,

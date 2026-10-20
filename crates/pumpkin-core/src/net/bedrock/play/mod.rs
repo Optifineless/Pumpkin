@@ -135,6 +135,7 @@ mod inventory_request_beacon;
 mod inventory_request_beacon_tests;
 mod inventory_request_correction;
 mod inventory_request_loom;
+pub(super) mod inventory_request_predictions;
 mod inventory_request_take;
 mod inventory_request_validation;
 mod inventory_request_workstations;
@@ -169,3 +170,6 @@ mod rejected_prediction_partial_tests;
 mod rejected_prediction_test_support;
 #[cfg(test)]
 mod rejected_prediction_tests;
+
+#[cfg(test)]
+mod workstation_prediction_tests;

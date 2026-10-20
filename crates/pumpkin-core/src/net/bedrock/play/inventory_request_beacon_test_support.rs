@@ -1,16 +1,16 @@
 use super::*;
 
-pub(super) struct Fixture {
+pub(in crate::net::bedrock::play) struct Fixture {
     _directory: tempfile::TempDir,
     _server: Arc<Server>,
-    pub(super) world: Arc<World>,
-    pub(super) beacon: Arc<BeaconBlockEntity>,
-    pub(super) owner: TestBedrockPlayer,
-    pub(super) observer: TestPlayer,
+    pub(in crate::net::bedrock::play) world: Arc<World>,
+    pub(in crate::net::bedrock::play) beacon: Arc<BeaconBlockEntity>,
+    pub(in crate::net::bedrock::play) owner: TestBedrockPlayer,
+    pub(in crate::net::bedrock::play) observer: TestPlayer,
 }
 
 impl Fixture {
-    pub(super) async fn new(levels: i32) -> Self {
+    pub(in crate::net::bedrock::play) async fn new(levels: i32) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let server = combat_test_support::server(directory.path());
         let world = combat_test_support::world(&server, directory.path());
@@ -71,7 +71,7 @@ impl Fixture {
         result
     }
 
-    pub(super) fn screen(&self) -> SharedScreenHandler {
+    pub(in crate::net::bedrock::play) fn screen(&self) -> SharedScreenHandler {
         self.owner
             .player
             .current_screen_handler
@@ -80,7 +80,7 @@ impl Fixture {
             .clone()
     }
 
-    pub(super) fn payment(&self) -> Arc<dyn Inventory> {
+    pub(in crate::net::bedrock::play) fn payment(&self) -> Arc<dyn Inventory> {
         self.screen()
             .lock()
             .unwrap()
@@ -91,7 +91,7 @@ impl Fixture {
             .clone()
     }
 
-    pub(super) fn open(&self) {
+    pub(in crate::net::bedrock::play) fn open(&self) {
         self.owner.client().handle_inventory_action(
             &self.owner.player,
             SInventoryTransaction {
@@ -119,7 +119,7 @@ impl Fixture {
         self.payment();
     }
 
-    pub(super) fn pay(&mut self) {
+    pub(in crate::net::bedrock::play) fn pay(&mut self) {
         let mut payment = ItemStack::new(2, &Item::EMERALD);
         payment.set_data_component(ContainerImpl {
             items: vec![(0, ItemStack::new(3, &Item::DIAMOND))],
@@ -146,7 +146,11 @@ impl Fixture {
         assert!(inserted.are_items_and_components_equal(&payment));
     }
 
-    pub(super) fn selection_actions(&self, primary: i32, secondary: i32) -> Vec<Action> {
+    pub(in crate::net::bedrock::play) fn selection_actions(
+        &self,
+        primary: i32,
+        secondary: i32,
+    ) -> Vec<Action> {
         // Dragonfly handleBeaconPayment: the client predicts one Destroy after
         // selection; BeaconInventoryTranslator maps payment to UI slot 27.
         let mut source = slot(ContainerName::BeaconPayment, 27);
@@ -157,7 +161,7 @@ impl Fixture {
         ]
     }
 
-    pub(super) fn sounds(&mut self) -> usize {
+    pub(in crate::net::bedrock::play) fn sounds(&mut self) -> usize {
         decode_sounds(&self.observer.take_packets())
             .into_iter()
             .filter(|sound| {
@@ -166,21 +170,24 @@ impl Fixture {
             .count()
     }
 
-    pub(super) fn effects(&self) -> (i32, i32) {
+    pub(in crate::net::bedrock::play) fn effects(&self) -> (i32, i32) {
         (
             self.beacon.primary_effect.load(Ordering::Relaxed),
             self.beacon.secondary_effect.load(Ordering::Relaxed),
         )
     }
 
-    pub(super) async fn finish(self) {
+    pub(in crate::net::bedrock::play) async fn finish(self) {
         self.owner.close().await;
         self.observer.client().close();
         self.world.level.shutdown().await.unwrap();
     }
 }
 
-pub(super) fn slot(name: ContainerName, slot_id: u8) -> ItemStackRequestSlotInfo {
+pub(in crate::net::bedrock::play) fn slot(
+    name: ContainerName,
+    slot_id: u8,
+) -> ItemStackRequestSlotInfo {
     ItemStackRequestSlotInfo {
         container_name: FullContainerName {
             container_name: name,
@@ -191,14 +198,14 @@ pub(super) fn slot(name: ContainerName, slot_id: u8) -> ItemStackRequestSlotInfo
     }
 }
 
-pub(super) fn selection(primary: i32, secondary: i32) -> Action {
+pub(in crate::net::bedrock::play) fn selection(primary: i32, secondary: i32) -> Action {
     Action::BeaconPayment {
         primary_effect_id: VarInt(primary),
         secondary_effect_id: VarInt(secondary),
     }
 }
 
-pub(super) fn request(
+pub(in crate::net::bedrock::play) fn request(
     owner: &mut TestBedrockPlayer,
     actions: Vec<Action>,
     expected: u8,
@@ -208,7 +215,7 @@ pub(super) fn request(
     packets
 }
 
-pub(super) fn dispatch(
+pub(in crate::net::bedrock::play) fn dispatch(
     owner: &mut TestBedrockPlayer,
     actions: Vec<Action>,
 ) -> (Vec<bytes::Bytes>, u8) {
@@ -246,7 +253,7 @@ pub(super) fn dispatch(
     (packets, result)
 }
 
-pub(super) fn assert_payment_response(packets: &[bytes::Bytes]) {
+pub(in crate::net::bedrock::play) fn assert_payment_response(packets: &[bytes::Bytes]) {
     let mut response = packets
         .iter()
         .find_map(|packet| packet_payload(packet, 148))

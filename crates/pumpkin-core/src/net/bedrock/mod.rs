@@ -101,6 +101,7 @@ pub struct BedrockClient {
     pub(super) admission_reservation:
         std::sync::Mutex<Option<crate::net::admission::AdmissionReservation>>,
     inbound_budget: inbound::InboundBudget,
+    stack_request_results: ArcSwap<play::inventory_request_predictions::Results>,
     session: Arc<NetherNetSession>,
     /// The client's IP address.
     pub address: SocketAddr,
@@ -155,6 +156,9 @@ impl BedrockClient {
         Self {
             admission_reservation: std::sync::Mutex::new(None),
             inbound_budget: inbound::InboundBudget::default(),
+            stack_request_results: ArcSwap::from_pointee(
+                play::inventory_request_predictions::Results::default(),
+            ),
             session,
             player: ArcSwap::new(Arc::new(None)),
             address,
