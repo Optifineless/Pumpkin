@@ -780,18 +780,48 @@ pub struct JukeboxPlayableImpl {
 }
 impl JukeboxPlayableImpl {
     pub fn read_data(data: &NbtTag) -> Option<Self> {
-        let compound = data.extract_compound()?;
-        let song = compound.get_string("song")?;
-        let static_song = crate::jukebox_song::JukeboxSong::from_name(
+        // JukeboxPlayable.CODEC maps the registered JukeboxSong reference directly.
+        let (song, legacy) = match data {
+            NbtTag::String(song) => (song.as_ref(), false),
+            NbtTag::Compound(compound) => (compound.get_string("song")?, true),
+            _ => return None,
+        };
+        let registered = crate::jukebox_song::JukeboxSong::from_name(
             song.strip_prefix("minecraft:").unwrap_or(song),
-        )
-        .map_or("", |s| s.to_name());
-        Some(Self { song: static_song })
+        );
+        // Older fork saves accepted unknown compound references as a stopped record.
+        // Keep that record rather than failing its entire ItemStack decode.
+        let song = match registered {
+            Some(song) => song.to_name(),
+            None if legacy => "",
+            None => return None,
+        };
+        Some(Self { song })
     }
 }
 impl DataComponentImpl for JukeboxPlayableImpl {
+    fn write_data(&self) -> NbtTag {
+        if self.song.is_empty() {
+            let mut legacy = NbtCompound::new();
+            legacy.put_string("song", String::new());
+            return NbtTag::Compound(legacy);
+        }
+        NbtTag::String(
+            if self.song.contains(':') {
+                self.song.to_owned()
+            } else {
+                format!("minecraft:{}", self.song)
+            }
+            .into(),
+        )
+    }
+
     default_impl!(JukeboxPlayable);
 }
+
+#[cfg(test)]
+#[path = "jukebox_playable_tests.rs"]
+mod jukebox_playable_tests;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RecipesImpl;

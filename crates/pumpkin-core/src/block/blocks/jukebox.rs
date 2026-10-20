@@ -111,9 +111,9 @@ impl BlockBehaviour for JukeboxBlock {
             return BlockActionResult::PassToDefaultBlockAction;
         };
 
-        let Some(song_name) = jukebox_playable.split(':').nth(1) else {
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
+        let song_name = jukebox_playable
+            .strip_prefix("minecraft:")
+            .unwrap_or(jukebox_playable);
 
         let Some(jukebox_song) = JukeboxSong::from_name(song_name) else {
             error!("Jukebox playable song not registered: {song_name}");

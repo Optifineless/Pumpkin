@@ -41,6 +41,8 @@ mod hopper_container;
 mod hopper_transfer;
 pub mod jigsaw_block;
 pub mod jukebox;
+#[cfg(test)]
+mod jukebox_component_tests;
 pub mod lectern;
 pub mod map;
 pub mod mob_spawner;
@@ -571,3 +573,6 @@ mod container_event_tests;
 #[cfg(test)]
 #[path = "furnace_like_block_entity_tests.rs"]
 mod furnace_like_block_entity_tests;
+
+#[cfg(test)]
+mod jukebox_packet_tests;

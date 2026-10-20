@@ -285,6 +285,55 @@ and a named banner unchanged. Repeat Creative attacks and support loss with
 entity drops disabled; expect cleanup without item drops. Fixed and cancelled
 frames retain their contents and markers. Capture the map, drops and restart result.
 
+## Item-provided block sounds (#18, #265, #266)
+
+Player heads retain their valid `note_block_sound` component through placement,
+ordinary drops and reload. Note events play that identifier from the block center
+in RECORDS at volume 3 and pitch 1; unconfigured heads fail the event silently.
+Tagged heads used on a note block's top face reach ordinary placement and its
+existing hand payment and cancellation rules. Other clicks retain tuning.
+Mirrors vanilla 26.3 `NoteBlock.useItemOn/triggerEvent/getCustomSoundId` and
+`SkullBlockEntity` implicit components and load/save methods.
+
+Explicit registered `jukebox_playable` patches save as vanilla's direct song
+identifier and accept earlier fork compounds. Existing invalid fork references
+retain their stopped-record meaning. Real insertion and disk reload preserve the
+chosen song and active elapsed ticks; ordinary default discs are unchanged.
+Mirrors `JukeboxPlayable.CODEC/tryInsertIntoJukebox` and
+`JukeboxBlockEntity.loadAdditional`. Arbitrary inline songs are not represented.
+Native API 8, public layouts/signatures and Wasm WIT are unchanged.
+
+PR #336 review: Java item packets now use the synced jukebox-song registry's
+holder ID plus one, with matching registered-reference decoding. Stopped legacy
+song patches stay in saves and use the item's default component on clients;
+all stack, template and trade-cost writers omit those unregistered additions.
+Bedrock's existing item conversion sends no song patch. Regressions restore saved
+jukebox NBT, eject through a real right-click and independently decode the actual
+item metadata and full inventory packets, including the stopped legacy case.
+Mirrors vanilla 26.3 `JukeboxPlayable/JukeboxSong.STREAM_CODEC` and
+`ByteBufCodecs.holder`. No public API or saved-data meaning changes.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Review play test: with a second Java player nearby, restart with a disc configured
+to play Cat in a jukebox, then eject it, pick it up and open the inventory. Expect
+both players to stay connected; reinsert the disc and expect Cat. Repeat with an
+old stopped record; expect it to remain stopped without disconnecting either
+player. Capture the ejection and inventory on both clients.
+
+Upstream #3728 partially overlaps with legacy jukebox writing, and #3507 includes
+skull components in a broader redesign. This change keeps the scoped existing
+paths. The separate restored-power/D17 follow-up remains owned by fork #257;
+the coordinator must settle that subset before closing all of #18.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: place a configured player head on a note block in Survival; expect one
+head payment, no tuning, and its custom sound when attacked or powered. Repeat
+after breaking/replacing the head and after a restart; expect the same sound.
+Use an unconfigured head; expect silence. Insert a disc with a registered-song
+patch, save and restart mid-song; expect the same disc/song and retained progress.
+Capture sound, placement/payment and the reload sequence with Java and Bedrock
+clients before opening the PR yourself.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so
