@@ -54,7 +54,7 @@ mod pending_block_entity;
 pub(crate) use pending_block_entity::BlockEntityMutationPermit;
 pub mod portal;
 pub mod raid;
-mod raid_loot;
+pub(crate) mod raid_loot;
 pub mod random_sequences;
 #[cfg(test)]
 mod shared_state_tests;

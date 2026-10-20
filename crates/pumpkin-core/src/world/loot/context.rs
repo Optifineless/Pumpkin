@@ -230,12 +230,18 @@ fn snapshot_raider(entity: &dyn EntityBase, state: &mut EntityLootState) {
     let raw = entity.get_entity();
     let world = raw.world.load_full();
     // Raider.hasRaid includes a raid at the position even without current membership.
-    let has_raid = raider.has_active_raid()
-        || world
+    let has_raid = {
+        let raids = world
             .raids
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .has_raid_at_for_loot(&raw.block_pos.load());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        raider
+            .get_raider_data()
+            .raid_id
+            .load()
+            .is_some_and(|id| raids.contains_for_loot(id))
+            || raids.has_raid_at_for_loot(&raw.block_pos.load())
+    };
     let patrol_leader = raider.is_patrol_leader();
     state.raider_has_raid = Some(has_raid);
     // Raider.isCaptain / ItemStack.matches: compare the owned head after releasing guards.

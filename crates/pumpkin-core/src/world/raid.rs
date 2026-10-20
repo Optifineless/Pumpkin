@@ -572,6 +572,7 @@ impl Raid {
                 return;
             }
 
+            super::raid_loot::apply_pending_members(self, world);
             let raiders_alive = self.get_total_raiders_alive();
             if raiders_alive == 0 && self.has_more_waves() {
                 if self.raid_cooldown_ticks <= 0 {
@@ -609,6 +610,7 @@ impl Raid {
                 self.update_bossbar(world);
             }
 
+            super::raid_loot::apply_pending_members(self, world);
             while self.should_spawn_group() {
                 let spawn_pos = self
                     .wave_spawn_pos
@@ -618,6 +620,7 @@ impl Raid {
                 self.started = true;
                 self.spawn_group(world, spawn_pos);
                 self.play_sound(world, spawn_pos);
+                super::raid_loot::apply_pending_members(self, world);
             }
 
             let raiders_alive = self.get_total_raiders_alive();
@@ -677,6 +680,7 @@ pub struct Raids {
     pub next_id: i32,
     pub tick_counter: u64,
     pub(super) loot_tick_view: Vec<super::raid_loot::RaidLootState>,
+    pub(super) pending_members: Vec<super::raid_loot::RaidMemberChange>,
 }
 
 impl Raids {

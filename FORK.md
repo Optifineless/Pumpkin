@@ -34,8 +34,20 @@ plain white banner; expect no bottle. Disable mob drops and repeat; expect no
 equipment or bottle drops. Capture each death, ground items and bottle level.
 Existing patrol finalization has no automatic spawn caller on this base; these
 changes fix its equipment assignment without adding a separate spawn feature.
-The existing banner-pickup goal also accepts arbitrary dropped items; nearby
-raiders can consume bottles. Its item filter is outside these equipment/loot fixes.
+PR #332 review: Raid Omen releases the raid mutex before statistic callbacks.
+Replacement leaders require an active raid, vacant leadership and a living,
+pickup-eligible exact captain banner; nearby pillagers preserve bottles and junk.
+Saved RaidId resolves through the registry, and death removes current membership
+before loot, including during raid-tick callbacks. Both omitted raider predicate
+fields default to false, as in the vanilla codec. API 8 (same version): Raids adds
+private pending membership state; rebuild native plugins. Saved tags and native
+API version remain unchanged. Source bodies, state audit and regression results:
+[PR #332 round 2](.fork/pr332-review.md). In-game verification: Not yet.
+
+Play test: kill a patrol captain with another pillager beside it; expect the bottle
+and banner to remain outside a raid. In a raid, let a pillager collect a dropped
+captain banner after its pickup delay; expect one replacement captain, while the
+bottle remains. Capture the deaths, ground items and replacement leader.
 
 ## Departed dragon and Wither bossbar recipients (#118)
 

@@ -6,11 +6,9 @@
 use super::*;
 use crate::{
     entity::{
-        ai::goal::Goal,
         mob::{
-            equipment::DEFAULT_EQUIPMENT_DROP_CHANCE,
-            patrol::PatrollingMonster,
-            raider::{ObtainRaidLeaderBannerGoal, create_ominous_banner},
+            equipment::DEFAULT_EQUIPMENT_DROP_CHANCE, patrol::PatrollingMonster,
+            raider::create_ominous_banner,
         },
         r#type::from_type,
     },
@@ -207,7 +205,25 @@ async fn b1020b_g01_captain_banner_drop_is_guaranteed() {
             fixture
                 .world
                 .drop_stack(&BlockPos::new(64, 64, 0), create_ominous_banner());
-            ObtainRaidLeaderBannerGoal.tick(replacement.get_mob().unwrap());
+            let raider = replacement.get_mob().unwrap().as_raider().unwrap();
+            raider.get_raider_data().raid_id.store(Some(9));
+            let mut replacement_raid = Raid::new(9, BlockPos::new(64, 64, 0), Difficulty::Easy);
+            replacement_raid.join_raid(0, replacement.get_entity().entity_uuid, &replacement);
+            fixture
+                .world
+                .raids
+                .lock()
+                .unwrap()
+                .raid_map
+                .insert(9, replacement_raid);
+            for entity in fixture.world.entities.load().iter() {
+                if let Some(item) = entity.get_item_entity() {
+                    item.set_pickup_delay(0);
+                }
+            }
+            let mob = replacement.get_mob().unwrap();
+            mob.get_mob_entity()
+                .server_ai_step(mob, replacement.as_ref());
             assert!(
                 replacement
                     .get_mob()

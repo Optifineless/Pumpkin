@@ -121,10 +121,13 @@ fn raider_predicate(value: &Value, entity: &EntityLootState) -> Option<bool> {
     else {
         return Some(false);
     };
-    // RaiderPredicate's effective defaults are has_raid=false and is_captain=true.
+    // RaiderPredicate.CODEC defaults both fields to false.
     Some(
         has_raid == value.get("has_raid").map_or(Some(false), Value::as_bool)?
-            && is_captain == value.get("is_captain").map_or(Some(true), Value::as_bool)?,
+            && is_captain
+                == value
+                    .get("is_captain")
+                    .map_or(Some(false), Value::as_bool)?,
     )
 }
 

@@ -7,6 +7,38 @@ use super::ItemEntity;
 pub(super) type TransferPause = Box<dyn FnOnce() + Send>;
 
 impl ItemEntity {
+    pub(crate) fn take_for_banner(&self) -> Option<ItemStack> {
+        let _owner = self.transaction.lock();
+        if !self.entity.is_alive() || self.get_pickup_delay() != 0 {
+            return None;
+        }
+        let mut stack = self
+            .item_stack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Some(std::mem::replace(&mut *stack, ItemStack::EMPTY.clone()))
+    }
+
+    pub(crate) fn return_from_banner(&self, mut returned: ItemStack) {
+        {
+            let _owner = self.transaction.lock();
+            let mut stack = self
+                .item_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.entity.is_alive() && stack.is_empty() {
+                std::mem::swap(&mut *stack, &mut returned);
+            }
+        }
+        if !returned.is_empty() {
+            let pos = self.entity.pos.load();
+            self.entity
+                .world
+                .load()
+                .scatter_stack(pos.x, pos.y, pos.z, returned);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn set_transfer_pause(&self, pause: TransferPause) {
         *self.transfer_pause.lock().unwrap() = Some(pause);
@@ -133,7 +165,7 @@ impl ItemEntity {
             .clone()
     }
 
-    pub(super) fn stack_is_empty_between_transfers(&self) -> bool {
+    pub(crate) fn stack_is_empty_between_transfers(&self) -> bool {
         let owner = self.transaction.clone();
         let _transfer = owner.lock();
         self.item_stack

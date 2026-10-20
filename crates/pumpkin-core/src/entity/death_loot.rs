@@ -127,6 +127,11 @@ impl LivingEntity {
             .compare_exchange(false, true, Relaxed, Relaxed)
             .is_ok()
         {
+            // Raider.die removes current membership before LivingEntity.die and loot.
+            crate::world::raid_loot::raider_die(dyn_self.as_ref(), cause.or(source));
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
             self.movement_input.store(Vector3::default());
             self.jumping.store(false, Relaxed);
 

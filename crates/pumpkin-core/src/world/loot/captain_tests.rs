@@ -1,3 +1,5 @@
+mod review;
+
 use crate::{
     entity::{
         EntityBase,
@@ -134,6 +136,7 @@ impl Fixture {
             .await
             .unwrap()
             .unwrap();
+        self.world.players.store(Arc::new(Vec::new()));
         self.world.entities.store(Arc::new(Vec::new()));
         self.world.entity_tracker.entity_map.clear();
         self.world.level.world_portal.store(Arc::new(None));
@@ -163,7 +166,6 @@ async fn b1020b_g01_patrol_captain_death_emits_bottle() {
         .verify(|fixture| {
             check_captain_death(fixture);
             check_equality_guards(fixture);
-            check_predicate_defaults(fixture);
         })
         .await;
     super::captain_raid_tick_tests::check_raid_tick_death().await;
@@ -217,29 +219,6 @@ fn check_captain_death(fixture: &Fixture) {
         info.game_rules.mob_drops = true;
         info
     });
-
-    let member = fixture.pillager(true);
-    member
-        .get_mob()
-        .unwrap()
-        .as_raider()
-        .unwrap()
-        .get_raider_data()
-        .raid_id
-        .store(Some(7));
-    fixture.world.raids.lock().unwrap().raid_map.insert(
-        7,
-        Raid::new(
-            7,
-            BlockPos::new(1000, 64, 1000),
-            pumpkin_util::difficulty::Difficulty::Normal,
-        ),
-    );
-    assert!(
-        fixture.kill(&member).is_empty(),
-        "current raid membership suppresses the bottle"
-    );
-    fixture.world.raids.lock().unwrap().raid_map.clear();
 
     fixture.world.raids.lock().unwrap().raid_map.insert(
         8,
@@ -326,34 +305,6 @@ fn check_amplifier(fixture: &Fixture) {
         [-2_292_644_840_545_207_373, -5_111_486_850_812_869_335]
     );
     assert_eq!(endpoints, [0, 4], "custom providers are clamped");
-}
-
-fn check_predicate_defaults(fixture: &Fixture) {
-    let mut table: serde_json::Value =
-        serde_json::from_str(pumpkin_data::loot_table::ENTITIES_PILLAGER.json()).unwrap();
-    table["pools"][0]["condition"]["predicate"]["minecraft:type_specific/raider"] = json!({});
-    fixture.install("pillager", &table);
-    assert!(fixture.kill(&fixture.pillager(false)).is_empty());
-    assert_eq!(
-        fixture.kill(&fixture.pillager(true)).len(),
-        1,
-        "omitted is_captain defaults true"
-    );
-
-    table["pools"][0]["condition"]["predicate"]["minecraft:type_specific/raider"] =
-        json!({"has_raid":false,"is_captain":false});
-    fixture.install("pillager", &table);
-    assert!(fixture.kill(&fixture.pillager(true)).is_empty());
-    assert_eq!(
-        fixture.kill(&fixture.pillager(false)).len(),
-        1,
-        "explicit false matches a noncaptain raider"
-    );
-    fixture.install("cow", &table);
-    assert!(
-        fixture.kill(&fixture.mob(&EntityType::COW)).is_empty(),
-        "nonraiders never satisfy the raider predicate"
-    );
 }
 
 #[derive(Clone)]

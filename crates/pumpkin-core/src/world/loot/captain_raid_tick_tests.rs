@@ -292,3 +292,104 @@ pub(super) async fn check_raid_tick_death() {
         })
         .await;
 }
+
+struct LoadMemberDuringRaidTick {
+    captain: Arc<dyn EntityBase>,
+    saved: pumpkin_nbt::compound::NbtCompound,
+    bossbar: uuid::Uuid,
+    calls: AtomicUsize,
+}
+
+impl EventHandler<PacketSentEvent> for LoadMemberDuringRaidTick {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut PacketSentEvent,
+    ) -> BoxFuture<'a, ()> {
+        if event.packet_id == BOSS_EVENT.0 {
+            let mut payload = event.payload.as_ref();
+            let uuid = payload.get_uuid().unwrap();
+            let action = payload.get_var_int().unwrap().0;
+            if uuid == self.bossbar
+                && action == 2
+                && self.calls.compare_exchange(0, 1, Relaxed, Relaxed).is_ok()
+            {
+                let world = self.captain.get_entity().world.load_full();
+                assert!(world.raids.try_lock().is_ok());
+                assert!(world.raids.lock().unwrap().get(7).is_none());
+                self.captain.read_nbt_non_mut(&self.saved);
+            }
+        }
+        Box::pin(async {})
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g01_r2_tick_callback_load_precedes_victory_and_death() {
+    Fixture::new()
+        .verify(|fixture| {
+            let captain = fixture.captain();
+            captain.get_mob().unwrap().get_mob_entity().set_no_ai(true);
+            let mut saved = pumpkin_nbt::compound::NbtCompound::new();
+            captain.write_nbt(&mut saved);
+            saved.put_int("RaidId", 7);
+            saved.put_int("Wave", 2);
+            saved.child_tags.remove("drop_chances");
+            let mut raid = Raid::new(7, BlockPos::new(8, 64, 8), Difficulty::Normal);
+            raid.started = true;
+            raid.groups_spawned = raid.num_groups;
+            raid.ticks_active = 19;
+            raid.post_raid_ticks = 40;
+            raid.players_in_raid
+                .insert(fixture.client.player.gameprofile.id);
+            let callback = Arc::new(LoadMemberDuringRaidTick {
+                captain: captain.clone(),
+                saved,
+                bossbar: raid.bossbar.uuid,
+                calls: AtomicUsize::new(0),
+            });
+            fixture.world.raids.lock().unwrap().raid_map.insert(7, raid);
+            fixture
+                .server
+                .plugin_manager
+                .register::<PacketSentEvent, _>(callback.clone(), EventPriority::Normal, true);
+            fixture.world.tick(&fixture.server);
+            assert_eq!(callback.calls.load(Relaxed), 1);
+            let raids = fixture.world.raids.lock().unwrap();
+            let raid = raids.get(7).unwrap();
+            assert_eq!(
+                raid.status,
+                crate::world::raid::RaidStatus::Ongoing,
+                "loaded living member prevents victory"
+            );
+            assert!(raid.group_raider_map[&2].contains(&captain.get_entity().entity_uuid));
+            drop(raids);
+            assert_eq!(
+                captain
+                    .get_living_entity()
+                    .unwrap()
+                    .equipment_drop_chances
+                    .lock()
+                    .unwrap()[&pumpkin_data::data_component_impl::EquipmentSlot::HEAD],
+                2.0,
+                "Raid.setLeader restores old-save guarantee"
+            );
+            captain
+                .get_entity()
+                .set_pos(Vector3::new(1000.0, 64.0, 1000.0));
+            assert!(captain.damage_with_context(
+                captain.as_ref(),
+                f32::MAX,
+                DamageType::GENERIC_KILL,
+                None,
+                None,
+                None
+            ));
+            assert_eq!(
+                bottles(&fixture.world).len(),
+                1,
+                "death removes callback-loaded membership before loot"
+            );
+        })
+        .await;
+}
