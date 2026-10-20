@@ -4,6 +4,9 @@ use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
 use std::borrow::Cow;
 
+pub use super::banner_patterns::{BannerPatternLayer, BannerPatternsImpl};
+pub use super::tooltip_display::TooltipDisplayImpl;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomDataImpl {
     pub data: NbtCompound,
@@ -162,7 +165,7 @@ impl DataComponentImpl for ItemNameImpl {
         NbtTag::Compound(component)
     }
     fn get_hash(&self) -> i32 {
-        get_str_hash(&self.name) as i32
+        super::instrument::hash::hash_tag(&self.write_data()) as i32
     }
     default_impl!(ItemName);
 }
@@ -287,7 +290,7 @@ impl DataComponentImpl for RarityImpl {
     }
 
     fn get_hash(&self) -> i32 {
-        crate::data_component_impl::get_i32_hash(self.rarity.to_id()) as i32
+        get_str_hash(self.rarity.to_name()) as i32
     }
 
     default_impl!(Rarity);
@@ -360,17 +363,6 @@ impl DataComponentImpl for CustomModelDataImpl {
         NbtTag::Compound(compound)
     }
     default_impl!(CustomModelData);
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct TooltipDisplayImpl;
-impl TooltipDisplayImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
-    }
-}
-impl DataComponentImpl for TooltipDisplayImpl {
-    default_impl!(TooltipDisplay);
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -476,52 +468,6 @@ impl ProvidesBannerPatternsImpl {
 }
 impl DataComponentImpl for ProvidesBannerPatternsImpl {
     default_impl!(ProvidesBannerPatterns);
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BannerPatternLayer {
-    pub pattern: String,
-    pub color: crate::dye_color::DyeColor,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Default)]
-pub struct BannerPatternsImpl {
-    pub layers: Vec<BannerPatternLayer>,
-}
-
-impl BannerPatternsImpl {
-    pub const EMPTY: Self = Self { layers: Vec::new() };
-
-    #[must_use]
-    pub fn read_data(data: &NbtTag) -> Option<Self> {
-        let mut layers = Vec::new();
-        if let NbtTag::List(list) = data {
-            for tag in list {
-                if let Some(compound) = tag.extract_compound() {
-                    let pattern = compound.get_string("pattern")?.to_string();
-                    let color_str = compound.get_string("color")?;
-                    let color = crate::dye_color::DyeColor::by_name(color_str).unwrap_or_default();
-                    layers.push(BannerPatternLayer { pattern, color });
-                }
-            }
-        }
-        Some(Self { layers })
-    }
-}
-
-impl DataComponentImpl for BannerPatternsImpl {
-    fn write_data(&self) -> NbtTag {
-        let mut list = Vec::new();
-        for layer in &self.layers {
-            let mut compound = NbtCompound::new();
-            compound.put_string("pattern", layer.pattern.clone());
-            compound.put_string("color", layer.color.name().to_string());
-            list.push(NbtTag::Compound(compound));
-        }
-        NbtTag::List(list)
-    }
-
-    default_impl!(BannerPatterns);
 }
 
 /// A pot face's item template, including its count and component patch.

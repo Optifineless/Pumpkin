@@ -3,6 +3,13 @@
 #[path = "combat_component.rs"]
 mod combat_component;
 
+#[path = "banner_patterns.rs"]
+mod banner_patterns;
+
+#[cfg(test)]
+#[path = "banner_pattern_tests.rs"]
+mod banner_pattern_tests;
+
 #[path = "item_components.rs"]
 mod item_components;
 
@@ -1668,23 +1675,6 @@ impl DataComponentCodec<Self> for CustomModelDataImpl {
     }
 }
 
-impl DataComponentCodec<Self> for TooltipDisplayImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_bool(false)?;
-        seq.write_var_int(&VarInt(0))
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _hide_tooltip = seq.get_bool()?;
-        let len = seq.get_var_int()?.0 as usize;
-        let _ = crate::ser::collection_capacity(len)?;
-        for _ in 0..len {
-            let _comp_id = seq.get_var_int()?;
-        }
-        Ok(Self)
-    }
-}
-
 impl DataComponentCodec<Self> for CreativeSlotLockImpl {
     fn serialize(&self, _seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
         Ok(())
@@ -2435,32 +2425,6 @@ impl DataComponentCodec<Self> for NoteBlockSoundImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let sound = seq.get_str()?.to_string();
         Ok(Self { sound })
-    }
-}
-
-impl DataComponentCodec<Self> for BannerPatternsImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt::from(self.layers.len() as i32))?;
-        for layer in &self.layers {
-            seq.write_var_int(&VarInt(0))?;
-            seq.write_var_int(&VarInt::from(layer.color.id() as i32))?;
-        }
-        Ok(())
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let len = seq.get_var_int()?.0 as usize;
-        let mut layers = Vec::with_capacity(crate::ser::collection_capacity(len)?);
-        for _ in 0..len {
-            let _pattern = seq.get_var_int()?.0;
-            let color_id = seq.get_var_int()?.0 as u8;
-            let color = pumpkin_data::dye_color::DyeColor::by_id(color_id).unwrap_or_default();
-            layers.push(pumpkin_data::data_component_impl::BannerPatternLayer {
-                pattern: String::new(),
-                color,
-            });
-        }
-        Ok(Self { layers })
     }
 }
 

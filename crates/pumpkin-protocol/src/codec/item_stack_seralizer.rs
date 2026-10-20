@@ -272,7 +272,17 @@ fn decode_component(
         DataComponent::CustomData => decode_custom_data(component_data),
         _ => {
             let mut cursor = Cursor::new(component_data);
-            deserialize(id, &mut cursor)
+            let value = deserialize(id, &mut cursor)?;
+            if matches!(
+                id,
+                DataComponent::BannerPatterns | DataComponent::TooltipDisplay
+            ) && cursor.position() as usize != component_data.len()
+            {
+                return Err(ReadingError::Message(
+                    "Trailing banner/tooltip component data".into(),
+                ));
+            }
+            Ok(value)
         }
     }
 }

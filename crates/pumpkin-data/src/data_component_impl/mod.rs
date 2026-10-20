@@ -538,6 +538,9 @@ pub enum IdOr<T> {
     Value(T),
 }
 
+#[cfg(test)]
+mod banner_pattern_tests;
+pub mod banner_patterns;
 pub mod basic;
 mod bees;
 pub mod block_entity;
@@ -550,6 +553,7 @@ pub mod entity_variant;
 pub mod instrument;
 mod mob_visibility;
 mod text_component_codec;
+mod tooltip_display;
 pub use instrument::InstrumentImpl;
 pub use mob_visibility::MobVisibilityImpl;
 pub mod food;
