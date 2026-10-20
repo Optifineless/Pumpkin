@@ -7,7 +7,6 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
 
 use crate::entity::ai::goal::{Controls, Goal};
 use crate::entity::ai::pathfinder::NavigatorGoal;
@@ -16,18 +15,44 @@ use crate::entity::mob::patrol::{PatrolData, PatrollingMonster};
 
 #[must_use]
 pub fn create_ominous_banner() -> ItemStack {
+    use pumpkin_data::banner_pattern::BannerPattern;
     use pumpkin_data::data_component::DataComponent;
-    use pumpkin_data::data_component_impl::{CustomNameImpl, DataComponentImpl};
+    use pumpkin_data::data_component_impl::{
+        BannerPatternLayer, BannerPatternsImpl, ItemNameImpl, Rarity, RarityImpl,
+        TooltipDisplayImpl,
+    };
+    use pumpkin_data::dye_color::DyeColor;
+    // Raid.getBannerComponentPatch / getOminousBannerInstance (Java 26.3).
     let mut stack = ItemStack::new(1, &Item::WHITE_BANNER);
-    stack.patch.push((
-        DataComponent::CustomName,
-        Some(
-            CustomNameImpl {
-                name: TextComponent::translate("block.minecraft.ominous_banner", []),
-            }
-            .to_dyn(),
-        ),
-    ));
+    stack.set_data_component(BannerPatternsImpl {
+        layers: [
+            (BannerPattern::Rhombus, DyeColor::Cyan),
+            (BannerPattern::StripeBottom, DyeColor::LightGray),
+            (BannerPattern::StripeCenter, DyeColor::Gray),
+            (BannerPattern::Border, DyeColor::LightGray),
+            (BannerPattern::StripeMiddle, DyeColor::Black),
+            (BannerPattern::HalfHorizontal, DyeColor::LightGray),
+            (BannerPattern::Circle, DyeColor::LightGray),
+            (BannerPattern::Border, DyeColor::Black),
+        ]
+        .into_iter()
+        .map(|(pattern, color)| BannerPatternLayer {
+            pattern: format!("minecraft:{}", pattern.to_name()),
+            color,
+            translation_key: None,
+        })
+        .collect(),
+    });
+    stack.set_data_component(TooltipDisplayImpl {
+        hide_tooltip: false,
+        hidden_components: vec![DataComponent::BannerPatterns],
+    });
+    stack.set_data_component(ItemNameImpl {
+        name: "block.minecraft.ominous_banner".into(),
+    });
+    stack.set_data_component(RarityImpl {
+        rarity: Rarity::Uncommon,
+    });
     stack
 }
 
@@ -329,3 +354,6 @@ impl Goal for RaiderMoveThroughVillageGoal {
 }
 
 pub use crate::entity::ai::goal::pathfind_to_raid::PathfindToRaidGoal;
+
+#[cfg(test)]
+mod old_pr221_tests;

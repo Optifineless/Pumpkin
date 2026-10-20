@@ -294,6 +294,7 @@ fn banner_cloning_copies_patterns_and_returns_original() {
     let mut banner = ItemStack::new(1, &Item::WHITE_BANNER);
     banner.set_data_component(BannerPatternsImpl {
         layers: vec![BannerPatternLayer {
+            translation_key: None,
             pattern: "minecraft:stripe_bottom".into(),
             color: DyeColor::Blue,
         }],

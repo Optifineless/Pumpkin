@@ -2,6 +2,27 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Java captain banner components (#165)
+
+Patrol and raid captains receive the eight-layer white ominous banner, translated
+ItemName, hidden pattern tooltip and uncommon rarity from Java 26.3
+`Raid.getBannerComponentPatch` / `getOminousBannerInstance`. Java publication and
+click hashes share the same supported-layer projection. Reference holders follow
+the synchronized registry prefix and `ByteBufCodecs.holder`'s ID + 1;
+`BannerPattern.STREAM_CODEC` direct holders retain their asset and translation
+key, including native nested saved NBT. `TooltipDisplay` CODEC/STREAM_CODEC retain
+one boolean and an ordered component set. Unknown reference names stay saved;
+old tooltip defaults and existing plain/custom stacks keep their meaning.
+Acceptance is Java-only. Bedrock conversion/initial equipment and general
+ItemName text preservation remain separate follow-ups. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): native plugins must rebuild for the added
+`BannerPatternLayer.translation_key` and stateful `TooltipDisplayImpl` layouts.
+Banner layer struct literals require `translation_key: None` for references;
+the former `TooltipDisplayImpl` default value remains source compatible.
+ItemName's public representation, Wasm WIT and drop-chance meaning are unchanged.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
