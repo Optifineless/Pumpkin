@@ -131,3 +131,6 @@ mod menu_transfer;
 
 #[cfg(test)]
 mod result_conservation_tests;
+
+#[cfg(test)]
+mod menu_transfer_tests;
