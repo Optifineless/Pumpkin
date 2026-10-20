@@ -150,6 +150,7 @@ async fn b1019_g17_login_during_respawn_detach_sees_online_session() {
         let b = scenario.join(Uuid::new_v4(), "GapB").await;
         transfer(&scenario, &a, "the_nether").await;
         transfer(&scenario, &b, "the_nether").await;
+        let source = a.player.world();
         let c = scenario.join(Uuid::new_v4(), "GapC").await;
         let gate = Arc::new(DetachGate {
             entity_id: a.player.entity_id(),
@@ -173,13 +174,14 @@ async fn b1019_g17_login_during_respawn_detach_sees_online_session() {
                 gate.entered.load(Ordering::Acquire)
             })
             .await;
+        // PR #202 admits the destination before detaching the source world.
         assert!(
-            !scenario
-                .server
-                .get_all_players()
+            !source
+                .players
+                .load()
                 .iter()
                 .any(|p| Arc::ptr_eq(p, &a.player)),
-            "gate must cover actual world-membership gap"
+            "gate must cover actual source-world detachment"
         );
         let d = scenario.join(Uuid::new_v4(), "GapD").await;
         let present_at_login = added(&d.packets()).contains(&a.player.gameprofile.id);

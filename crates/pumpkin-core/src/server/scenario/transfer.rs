@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 // InteractionHand.STREAM_CODEC encodes MAIN_HAND with id 0.
 const MAIN_HAND: VarInt = VarInt(0);
 
-async fn transfer(scenario: &Scenario, player: &Session, dimension: &str) {
+pub(super) async fn transfer(scenario: &Scenario, player: &Session, dimension: &str) {
     let teleport = player.player.teleport_id_count.load(Ordering::Relaxed);
     scenario.command(&format!(
         "execute in minecraft:{dimension} run tp {} 3.5 64 3.5",

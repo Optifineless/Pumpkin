@@ -57,6 +57,9 @@ pub(crate) mod neighbor_updater;
 mod particle_senders;
 mod pending_block_entity;
 pub(crate) use pending_block_entity::BlockEntityMutationPermit;
+mod player_respawn;
+#[cfg(test)]
+pub(crate) use player_respawn::test_support as respawn_test_support;
 pub mod portal;
 pub mod raid;
 pub mod random_sequences;
@@ -3811,8 +3814,26 @@ impl World {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    /// Respawns `player` into this world (or its resolved respawn dimension).
+    ///
+    /// Kept with its native plugin API 8 signature; internal callers use
+    /// [`Self::respawn_player_with_outcome`].
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        let _ = self.respawn_player_with_outcome(player, alive, false).await;
+    }
+
+    /// Returns `false` when the respawn was abandoned because the player's session
+    /// ended or the destination rejected it.
+    #[allow(clippy::too_many_lines)]
+    pub(crate) async fn respawn_player_with_outcome(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+        alive: bool,
+        hardcore_spectator: bool,
+    ) -> bool {
+        if !self.can_respawn_player(player) {
+            return false;
+        }
         let last_pos = player.get_entity().last_pos.load();
         let death_dimension = ResourceLocation::from(player.world().dimension.minecraft_name);
         let death_location = BlockPos(Vector3::new(
@@ -3845,6 +3866,9 @@ impl World {
         let (position, yaw, pitch, respawn_dimension) = if let Some(respawn) =
             player.calculate_respawn_point().await
         {
+            if !self.can_respawn_player(player) {
+                return false;
+            }
             (
                 respawn.position,
                 respawn.yaw,
@@ -3862,6 +3886,9 @@ impl World {
                 player
                     .send_client_packet(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
                     .await;
+                if !self.can_respawn_player(player) {
+                    return false;
+                }
                 let mut guard = player
                     .respawn_point
                     .lock()
@@ -3882,7 +3909,10 @@ impl World {
                 .await
                 .is_none()
             {
-                return;
+                return false;
+            }
+            if !self.can_respawn_player(player) {
+                return false;
             }
             let top = default_world.get_top_block(Vector2::new(spawn_x, spawn_z));
             let pos_y = if top > default_world.dimension.min_y {
@@ -3909,6 +3939,9 @@ impl World {
         );
         if let Some(ref s) = server {
             s.plugin_manager.fire(s, &mut spawn_loc_event).await;
+        }
+        if !self.can_respawn_player(player) {
+            return false;
         }
         let position = spawn_loc_event.spawn_pos;
 
@@ -3948,6 +3981,9 @@ impl World {
                     cancelled: false,
                 };
                 s.plugin_manager.fire(s, &mut event).await;
+                if !self.can_respawn_player(player) {
+                    return false;
+                }
 
                 if event.cancelled {
                     (None, position, yaw, pitch)
@@ -3964,17 +4000,12 @@ impl World {
                             self.dimension.minecraft_name, destination.dimension.minecraft_name
                         );
 
-                        // Detach from the old world before publishing into the new one, so no
-                        // observer sees the player in a world whose chunk manager doesn't match.
-                        self.remove_player(player, false).await;
-                        player.unload_watched_chunks(self).await;
-                        player.change_world_chunks(&self.level, &destination);
-                        player.living_entity.entity.set_world(destination.clone());
-                        destination.players.rcu(|current_list| {
-                            let mut new_list = (**current_list).clone();
-                            new_list.push(player.clone());
-                            new_list
-                        });
+                        if !self
+                            .transfer_respawning_player(player, &destination, position)
+                            .await
+                        {
+                            return false;
+                        }
                     }
 
                     (Some(destination), position, yaw, pitch)
@@ -4000,6 +4031,13 @@ impl World {
             |new_world| (new_world.clone(), position, yaw, pitch),
         );
 
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
+
+        // PlayerList.respawn removes the old entity before publishing its replacement.
+        player.get_entity().unride_for_respawn();
+
         // Notify plugins that the player has respawned (non-cancellable).
         if let Some(server) = self.server.upgrade() {
             server
@@ -4017,6 +4055,9 @@ impl World {
                     ),
                 )
                 .await;
+        }
+        if !target_world.can_respawn_player(player) {
+            return false;
         }
 
         // Send respawn packet with target dimension (using send_packet_now to ensure proper order)
@@ -4036,6 +4077,9 @@ impl World {
                 data_kept,
             ))
             .await;
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
 
         // Inform the client of the default spawn position so the client doesn't
         // fall back to (0, 2, 0) while the world reloads (fixes rubberbanding).
@@ -4067,6 +4111,9 @@ impl World {
                 },
             )
             .await;
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
 
         player.restore_inventory_after_respawn(alive);
         player.living_entity.reset_state();
@@ -4080,6 +4127,15 @@ impl World {
         player.get_entity().set_pos(position);
         player.get_entity().set_rotation(yaw, pitch);
         player.get_entity().last_pos.store(position);
+
+        if hardcore_spectator {
+            // ServerGamePacketListenerImpl.handleClientCommand persists hardcore mode before chunk waits.
+            player.set_gamemode(pumpkin_util::GameMode::Spectator);
+        }
+        // Game-mode callbacks may complete departure before tracker publication.
+        if !target_world.can_respawn_player(player) {
+            return false;
+        }
 
         // TODO: difficulty, exp bar, status effect
 
@@ -4100,11 +4156,16 @@ impl World {
         target_world.send_world_info(player);
         target_world.send_center_chunk(player).await;
 
+        if !target_world.can_respawn_player(player) {
+            return true;
+        }
+
         // Send teleport packet after at least the center chunk was delivered
         // cancellation leaves the current position untouched.
         let _ = player.request_teleport(position, yaw, pitch);
 
         target_world.refresh_java_player_for_bedrock(player).await;
+        true
     }
 
     /// Returns true if enough players are sleeping and we should skip the night.
@@ -4622,8 +4683,10 @@ impl World {
         self.players.rcu(|current_list| {
             removed_player = None;
             let mut new_list = (**current_list).clone();
-            // Find the player before we filter them out
-            let pos = new_list.iter().position(|p| Arc::ptr_eq(p, player));
+            // PlayerList.remove affects this connection's instance, not a later login with its UUID.
+            let pos = new_list
+                .iter()
+                .position(|current| Arc::ptr_eq(current, player));
             if let Some(pos) = pos {
                 removed_player = Some(new_list.remove(pos));
             }

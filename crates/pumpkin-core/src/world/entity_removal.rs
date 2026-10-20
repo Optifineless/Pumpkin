@@ -23,6 +23,8 @@ impl World {
         self.clear_fishing_hook_owner(base_entity);
         self.retire_removed_container(entity);
         base_entity.removed.store(true, Ordering::Release);
+        // Entity.setRemoved ejects passengers after marking the mount unavailable.
+        base_entity.detach_riding_links_after_removal(crate::entity::RemovalReason::Discarded);
 
         self.spawn_state.load().remove_entity(self, entity);
         self.entity_tracker.remove_entity(entity, self);

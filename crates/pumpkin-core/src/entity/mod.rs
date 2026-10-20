@@ -6,6 +6,7 @@ pub(crate) mod death_test_world;
 mod harvest_tests;
 pub mod kill_credit;
 mod portal_destination;
+mod removal;
 use crate::{
     entity::item::ItemEntity,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
