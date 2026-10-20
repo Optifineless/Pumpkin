@@ -107,6 +107,9 @@ impl Fixture {
     }
 }
 
+#[path = "b1020b_g02_tests.rs"]
+mod b1020b_g02_tests;
+
 fn table_values(menu: &SharedScreenHandler) -> ([i32; 3], [i32; 3], [i32; 3], i32) {
     let guard = menu.lock().unwrap();
     let table = guard
