@@ -217,14 +217,20 @@ impl CampfireBlockEntity {
             return false;
         }
         let mut changed = false;
-        for progress in &self.cooking_times {
-            let mut progress = progress
+        // Mirrors vanilla 26.3 CampfireBlockEntity.cooldownTick.
+        for slot in 0..Self::SLOT_COUNT {
+            let mut progress = self.cooking_times[slot]
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let cooled = (*progress - 2).max(0);
-            if cooled != *progress {
-                *progress = cooled;
-                changed = true;
+            if *progress > 0 {
+                let total = *self.cooking_total_times[slot]
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let cooled = (*progress - 2).max(0).min(total);
+                if cooled != *progress {
+                    *progress = cooled;
+                    changed = true;
+                }
             }
         }
         changed
