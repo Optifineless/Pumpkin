@@ -5,6 +5,9 @@
 crates/pumpkin-core/src/world/entity_unload_recapture_tests.rs::entity_unload_coalesces_storage_recapture_across_ticks_and_generations::std::sync::Mutex::new#1
 # Test-only event-order recorder; each guard is released before callbacks, packet sends or ticking.
 crates/pumpkin-core/src/net/java/play/consumable_use/tests.rs::register_consume_callback::std::sync::Mutex::new#1
+# Scoreboard disk saves serialize publication with an async I/O-only gate; gameplay
+# never takes this gate, and the scoreboard owner is released before serialization/I/O.
+crates/pumpkin-core/src/server/scoreboard_storage.rs::load_scoreboard::tokio::sync::Mutex::new#1
 # Test-only hook pauses knot cleanup after its empty scan to make the attachment race deterministic.
 crates/pumpkin-core/src/entity/decoration/leash_knot.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::<module>::std::sync::Mutex::new#1

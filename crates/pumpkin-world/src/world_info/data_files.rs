@@ -713,22 +713,6 @@ pub fn write_scheduled_events_stub(
         .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
 }
 
-pub fn write_scoreboard_stub(level_folder: &Path, data_version: i32) -> Result<(), WorldInfoError> {
-    let dir = ensure_minecraft_data_dir(level_folder)?;
-    let path = dir.join("scoreboard.dat");
-    if path.exists() {
-        return Ok(());
-    }
-
-    let mut root = NbtCompound::new();
-    root.put_int("DataVersion", data_version);
-    root.put_compound("data", NbtCompound::new());
-
-    let file = File::create(&path)?;
-    pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, file)
-        .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
-}
-
 pub fn write_stopwatches_stub(
     level_folder: &Path,
     data_version: i32,

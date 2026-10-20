@@ -544,6 +544,173 @@ Sponge absorption follows vanilla 26.3 `SpongeBlock.removeWaterBreadthFirstSearc
 In-game verification: Not yet.
 
 Play test: Place a dry sponge beside a waterlogged slab, kelp, seagrass and a seven-block water line. Expect the slab to stay dry, kelp to drop normally, seagrass to be removed, the first six water blocks to disappear, and the seventh to remain.
+## Server scoreboard persistence
+
+Every dimension shares the server's scoreboard. Objective, score, display-slot and
+team updates reach players across dimensions; joining players receive the shared
+state once, and dimension changes retain it. Autosave, `/save-all` and shutdown
+snapshot dirty state and atomically save the Overworld's
+`data/minecraft/scoreboard.dat`. A failed load disables scoreboard saves for that
+run, preserving the original file. Older versions load matching fields with one
+warning and no data fixer; newer unsupported versions are preserved unchanged.
+
+The saved codec follows vanilla 26.3 `ScoreboardSaveData.Packed`, `Objective.Packed`,
+`Scoreboard.PackedScore`, `Score.Packed`, `PlayerTeam.Packed` and `DisplaySlot.CODEC`.
+It retains unknown criteria, full text/style data, number formats, score locks,
+all team options and memberships, and all 19 display slots. Display and format
+commands expose the persisted settings. The world-data version is corrected from
+26.2's 4903 to 26.3's 5023, checked against the official server jar's `version.json`.
+
+Review round 3 separates storage from display. Every saved component keeps its
+exact raw NBT in the existing persistence sidecar, including unusual or malformed
+text and full events. Runtime displays and Java scoreboard packet serializers
+project only literal/translated text, fallback, recursive arguments/extras, named
+or ASCII RGB colors, five boolean decorations and valid resource-location fonts.
+Events, insertion, selectors, score/NBT/keybind/object contents, shadow colors and
+unknown fields stay on disk and never enter imported displays or command feedback.
+Unsupported empty objective/team names display their storage name. Styled and fixed
+number formats use the same subset. Session-created subset text retains its display.
+UTF-8 hex colors return parse errors instead of panicking in either color parser.
+Malformed NBT or wrong record/component outer types still fail the whole load and
+disable saves. This is a deliberate display restriction, without changing saved
+component meaning; it replaces round 2's incomplete client-codec validation gate.
+
+Review round 4 discards a field's saved raw data when runtime update methods
+change it or a command explicitly replaces it, including A to B to A before or
+between saves. Other components retain their original NBT. Display projections stop
+at 128 emitted container levels and use a conservative 32 KiB budget that includes modified
+UTF-8 strings and component overhead. Raw storage remains complete. Login sends
+teams followed by deduplicated displayed objectives and their scores; hidden
+updates stay server-side until a display slot starts tracking them. Tracking
+mirrors `PlayerList.updateEntireScoreboard` and `ServerScoreboard`'s tracking
+methods. Native API 8 (same version), its public surface and on-disk codecs are
+unchanged by this round. In-game verification: Not yet.
+
+Accepted API 8 exception: a same-value component assignment through a whole-settings
+plugin update may retain that field's original raw NBT because the API carries no
+field-replacement intent. The affected setters are:
+
+- Wasm `scoreboard::Scoreboard::update_team` for `TeamSettings.display_name`,
+  `prefix` and `suffix`, including SDK `Team::update_settings`,
+  `Team::set_display_name`, `Team::set_prefix` and `Team::set_suffix`;
+  Wasm `scoreboard::Scoreboard::update_objective` for `display_name`.
+- Native `Scoreboard::update_team` for `display_name`, `player_prefix` and
+  `player_suffix`; `Scoreboard::update_objective` for `display_name` and
+  `number_format`; `Scoreboard::update_objective_with_number_format` for `display_name`;
+  `Scoreboard::update_score` for `display_name` and `number_format`, and
+  `Scoreboard::update_score_with_number_format` for `display_name`.
+
+Native `Scoreboard::get_objective_mut` and `Scoreboard::get_team_mut` compare
+component fields with their imported baseline before each borrow. Only fields
+already changed lose their raw sidecars; unrelated and no-op borrows preserve
+them. Save packing also detects the final outstanding changes. Separate-borrow
+A to B to A replacements stay replaced. A same-value replacement, or A to B to A
+entirely within one borrow, carries no observable replacement intent and may keep
+the original raw field. Commands and explicit number-format replacement setters
+invalidate only the replaced field, including same-value replacements.
+
+Review round 5 also constructs Bedrock titles only during Bedrock packet
+serialization. Rendered text shares one 32 KiB output budget across the complete
+component tree without materializing argument strings; bounded traversal also stops repeated
+empty arguments. The scoreboard file reader counts each compound and list once,
+including the root, with vanilla NbtAccounter's 512-container limit. Other NBT
+readers and their limits are unchanged. Full raw text remains on disk.
+NBT serialization keeps scalar encoding off recursive container stack frames so
+newly accepted 512-container documents can also be saved on normal worker stacks.
+Native API 8 (same version), public methods and layouts are unchanged in this round.
+In-game verification: Not yet.
+
+Review round 6 uses one private output/traversal budget for plain text, styled
+console feedback and logs, both translation-string helpers, Java legacy text,
+Bedrock raw/legacy text and titles, and custom translation materialization
+(including hover text). Substitutions are visited by reference; formatting and
+hyperlink bytes count toward the 32 KiB limit, and empty expansions stop at the
+shared traversal limit. Translation table copies are bounded before allocation.
+Raw persistence codecs remain lossless. API 8 (same version): no public methods,
+types or layouts change in this round.
+Native components needing no server-only custom translation pass unchanged
+through serialization, including entity names and text-display saves. The input
+scan is iterative and does not expand or copy component payloads.
+
+Review round 7 preserves native parents, siblings, extras and styles in storage
+even when they contain Custom descendants. Only generated Custom expansions
+consume the materialization budget; entity CustomName, text-display JSON and the
+public NBT storage encoders retain unrelated native payloads. Display and
+console rendering retain their shared limits. Materialized click/hover events
+and font identifiers are complete or omitted, never shortened; this keeps valid
+UUIDs, registry IDs, URLs and commands valid at budget boundaries. Mirrors
+`ComponentSerialization.createCodec`, `HoverEvent.EntityTooltipInfo.CODEC` and
+`ClickEvent` codecs in vanilla 26.3. Native mutable scoreboard borrows now retain
+untouched raw text as described above. API 8 (same version): no public methods,
+types or layouts change. In-game verification: Not yet.
+
+The native renderer retains the fork's existing missing-argument clamping;
+vanilla 26.3 `TranslatableContents.decompose/getArgument` instead displays an
+invalid template literally. This round bounds that existing behavior rather
+than changing ordinary translations. A saved native S20 objective is covered
+through startup, Java join, the actual Console `scoreboard players get` command,
+mutation and save; safe S5 controls reproduce the old unbounded output.
+In-game verification: Not yet. Play test: query an imported translated objective
+from the console, then join and save; expect prompt, shortened feedback, a normal
+join and unchanged saved display data. Capture the console query and sidebar.
+
+Not addressed (backlog): live `displayautoupdate` holder-name resolution; numeric
+translation arguments in display projection; Bedrock team-coloured slots,
+objective lifecycle slot assignments and allocation-derived score-entry IDs.
+The Wasm whole-settings API also cannot distinguish a round-tripped default
+white from an intentional white update on an uncoloured team. Its existing
+preservation rule remains: to explicitly set white, update to a nonwhite colour
+first, then white (or create the team with white). A one-call intent distinction
+needs a separate design. These parity gaps do not change the retained raw save.
+
+If the namespaced file is absent, supported pre-26.1 worlds import
+`data/scoreboard.dat`; successful later saves publish the namespaced file without
+removing the legacy original. A corrupt namespaced file never falls back to legacy.
+Death announcements now obey the victim's saved server-team visibility across all
+dimensions, preserving the victim's death-screen packet. Routing mirrors 26.3
+`ServerPlayer.die` and `PlayerList.broadcastSystemToTeam/AllExceptTeam` (including
+excluding the victim from the restricted own-team announcement). Projection is a
+fork display policy; storage/migration follow `ScoreboardSaveData.Packed` and
+`DimensionStorageFileFix`. Checked against the official 26.3 inner server JAR
+SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`,
+decompiled with Vineflower 1.11.2.
+
+Backlog: the new `displayautoupdate` flag remains persisted but does not refresh
+live holder names. Complete parity with `Scoreboard`'s `ScoreAccess.set` needs
+pre-lock live-holder snapshots across numeric commands, triggers, criteria,
+execute-store callbacks and plugin-facing writes. The existing entity/player
+name renderers also omit team decoration. A partial command-only update would
+leave those paths inconsistent; this nonblocking work is outside this review fix.
+
+API 8 (same version): `Server`, `World`, `Scoreboard`, `ScoreboardObjective` and
+`Team` layouts change, including the shared `World.scoreboard` handle; native
+plugins must be rebuilt. Wasm API versions and existing player display overlays
+are retained. Automatic criterion updates and `/trigger` semantics are unchanged.
+Written by Codex. In-game verification: Not yet.
+
+Play test: show an objective in the sidebar, put players in the Overworld and
+Nether on the same team, and change a score and team prefix; expect both players
+to see the changes. Move between dimensions; expect one team and the same sidebar.
+Stop and restart; expect scores, formatting, team settings and membership to
+survive. Capture the cross-dimension updates and the restored sidebar after restart.
+With unusual saved text, start the server and join; expect safe text (or the
+objective/team name), no disconnect, and the original component data retained
+through `/save-all` and shutdown. For a structurally corrupt scoreboard, expect
+an error, a successful join with an empty imported scoreboard and saves disabled.
+Import a pre-26.1 world and expect its old scoreboard before making any changes.
+Set `deathMessageVisibility` to `never`, `hideForOwnTeam` and `hideForOtherTeams`;
+kill a member and check recipients in another dimension. Capture the safe sidebar,
+restored legacy scoreboard and each announcement audience. In-game verification:
+Not yet. Review fixes by Codex; native API remains 8 with no additional layout
+changes in this round.
+
+Round 4 play test: import a prefix A with an old click action, run `/team modify
+red prefix B`, optionally `/save-all`, then `/team modify red prefix A`; save and
+restart, and expect plain A with no old click action. Join a world containing a
+large hidden objective and expect a normal login with no hidden sidebar. Display
+that objective and expect safely shortened text; clear its last display slot and
+expect it to disappear. Capture the successful join and sidebar transitions.
+
 
 ## Empty map centers (#45)
 

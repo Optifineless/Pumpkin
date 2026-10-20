@@ -13,7 +13,10 @@ impl Change {
     fn prepare(self, fixture: &mut Fixture) {
         match self {
             Self::Border => (),
-            Self::Score => fixture.run("scoreboard objectives add ordered dummy"),
+            Self::Score => {
+                fixture.run("scoreboard objectives add ordered dummy");
+                fixture.run("scoreboard objectives setdisplay sidebar ordered");
+            }
             Self::Advancement => {
                 fixture.run("advancement grant @s only minecraft:story/root");
                 fixture.player.player.flush_advancements(false);

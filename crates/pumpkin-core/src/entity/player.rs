@@ -16,6 +16,7 @@ mod player_list;
 mod respawn_position;
 #[cfg(test)]
 pub(crate) mod respawn_position_test_gate;
+mod scoreboard_sync;
 mod stand_up;
 use known_movement::KnownMovement;
 pub mod statistics;
@@ -3118,11 +3119,7 @@ impl Player {
             }
             _ => {
                 drop(guard);
-                self.world()
-                    .scoreboard
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .send_to_player(self);
+                self.send_server_scoreboard();
             }
         }
     }
@@ -3137,6 +3134,7 @@ impl Player {
         {
             return Some(team.clone());
         }
+        drop(guard);
         let world = self.world();
         let sb = world
             .scoreboard
@@ -3155,6 +3153,7 @@ impl Player {
         {
             return Some(team.name.clone());
         }
+        drop(guard);
         let world = self.world();
         let sb = world
             .scoreboard
