@@ -20,6 +20,13 @@ attachment/cleanup state; rebuild native plugins. Public signatures, native API
 version, Wasm WIT and saved-data meanings stay compatible. Unknown saved root/map
 fields now survive map writes; no new saved fields are introduced.
 
+PR #331 review: existing-ID `MapManager::create_map` again returns the cached
+handle without locking the map, including when its native caller already holds
+that mutex. Deferred frame cleanup remains with retirement, load completion and
+shutdown retry, preserving its obligation while the map is busy. API 8 (same
+version); public signatures, layouts and saved-data meanings are unchanged by
+this follow-up. In-game verification: Not yet.
+
 Play test: display an imported map in an ordinary/glow frame and break its support;
 expect one frame/map drop and its icon gone after save/restart, with another frame
 and a named banner unchanged. Repeat Creative attacks and support loss with

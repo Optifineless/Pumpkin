@@ -528,3 +528,6 @@ async fn b1020b_g04_unrelated_runtime_decoration_survives_cleanup() {
 
 #[path = "frame_map_lifecycle_tests.rs"]
 mod lifecycle;
+
+#[path = "frame_map_api_tests.rs"]
+mod api;

@@ -79,9 +79,8 @@ impl MapManager {
         let map = Arc::new(Mutex::new(MapData::new(dimension, x, z, scale)));
         self.reserve_map_id(id);
         // Never replace a cached record, even when a plugin supplies an already-used ID.
-        let map = self.maps.entry(id).or_insert(map).clone();
-        frame_cleanup::apply_pending(&self.frame_cleanup, id, &map);
-        map
+        // Native callers may already hold the existing map's mutex.
+        self.maps.entry(id).or_insert(map).clone()
     }
 
     pub(crate) fn create_fresh_map(
