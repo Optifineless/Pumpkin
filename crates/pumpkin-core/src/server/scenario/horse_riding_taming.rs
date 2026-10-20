@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering::Relaxed;
 mod callback_lifecycle;
 mod callbacks;
 mod persistence;
+mod saddle;
 
 fn horse(entity: &Arc<dyn EntityBase>) -> &HorseEntity {
     entity.cast_any().downcast_ref().unwrap()

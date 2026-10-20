@@ -6,7 +6,7 @@ use std::sync::{
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::sound::{Sound, SoundCategory};
+use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
@@ -209,16 +209,8 @@ impl Mob for HorseEntity {
         let item = item_stack.get_item();
 
         if self.is_tame() && item == &Item::SADDLE && !self.is_saddled() && !self.is_baby() {
-            self.set_saddled(true);
-            item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-            let entity = self.get_entity();
-            let world = entity.world.load();
-            world.play_sound(
-                Sound::EntityHorseSaddle,
-                SoundCategory::Neutral,
-                &entity.pos.load(),
-            );
-            return true;
+            // Defer Equippable.equipOnTarget until paid equipment can be saved and dropped.
+            return false;
         }
 
         if !self.is_baby() && !self.is_food(item_stack) {

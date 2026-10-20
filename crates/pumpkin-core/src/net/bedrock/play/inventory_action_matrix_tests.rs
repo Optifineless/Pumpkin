@@ -52,6 +52,9 @@ mod publication;
 #[path = "inventory_action_spawn_protection_tests.rs"]
 mod spawn_protection;
 
+#[path = "inventory_action_horse_saddle_tests.rs"]
+mod horse_saddle;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy)]

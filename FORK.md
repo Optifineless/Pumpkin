@@ -22,6 +22,22 @@ variant, attributes and Health; re-enabling resumes committed temper. Pending
 attempts and the 20-tick standing timer are transient. Feeding, lead precedence,
 equipment, menus, steering and horse jumps remain later slices of #115.
 
+PR #411 review: ordinary horses refuse saddle payment until their equipment slice
+can store the actual item. A freshly ride-tamed horse therefore keeps the saddle
+in the player's hand, including across horse unload, restart and death, instead
+of consuming it for a transient flag. Java and Bedrock use the same refusal.
+Vanilla 26.3 `Equippable.equipOnTarget` stores the paid stack and guarantees its
+drop; this is a temporary restriction until that full behavior is supported.
+Native API 8, public signatures/layouts, Wasm WIT and saved-data meaning are
+unchanged by this review fix. In-game verification: Not yet.
+
+Review play test: ride-tame an adult horse, dismount, then use a saddle from each
+Java hand and Bedrock's selected hand. Expect the saddle to remain held, no saddle
+sound and no saddle on the horse. Move away until it unloads, return, and restart;
+expect the same saddle count and saved horse owner. Kill the horse; expect the
+saddle to remain in inventory with no extra saddle drop. Record hand counts and
+the horse before and after each transition.
+
 API 8 (same version): `HorseEntity` and `AdvancedConfiguration` layouts change;
 native plugins must rebuild. Source users of the former public horse
 `flags`/`temper`/`owner` atomics must use `has_flag`/`set_flag`,
