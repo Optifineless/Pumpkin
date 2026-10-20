@@ -194,6 +194,53 @@ expect higher offers to work, compatible additional enchantments to match Java,
 and only one book to be enchanted from the stack. Capture the table properties,
 resulting items and XP/lapis changes.
 
+## Captain banner drops and ominous bottles (#279, #280)
+
+Patrol finalization, raid-wave leadership, replacement leadership and
+`/raid spawnleader` preserve captain head banners with vanilla's 2.0 drop chance.
+The registered pillager loot table now admits the raider predicate and ominous
+bottle amplifier modifier. Death snapshots require the patrol-leader flag and
+the actual canonical head stack, and include both raid membership and a raid at
+the position. Amplifiers use the existing named loot stream and integer provider,
+clamped to 0..4. An unsaved raid tick view keeps positional loot queries valid
+during callbacks while the tick owns the raid map, and stops become visible
+before their callbacks. Mirrors vanilla 26.3 `PatrollingMonster.finalizeSpawn`,
+`Raid.setLeader`, `Raider.isCaptain/hasRaid`, `RaiderPredicate.matches` and
+`SetOminousBottleAmplifierFunction.run`. Existing drop gates, plugin events and
+saved tags retain their meaning. The canonical banner provider is shared with
+PR #221; its appearance and codecs remain that PR's responsibility.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+API 8 (same version): public `EntityLootState` adds two optional raider snapshot
+fields; `Raid` and `Raids` gain private runtime tick-view state. Rebuild native
+plugins. Exhaustive loot-state literals must supply the fields or use
+`..Default::default()`. External raid struct literals cease to compile; use
+`Raid::new` or `Raids::default()` instead. Constructor/default callers remain
+source compatible. Native API version, trait vtables, Wasm WIT and save formats
+are unchanged.
+
+Play test: kill a patrol captain outside a raid; expect one captain banner and
+one ominous bottle. Kill raid-wave and replacement captains; expect the banner
+and no bottle during the raid. Kill an ordinary pillager or a leader wearing a
+plain white banner; expect no bottle. Disable mob drops and repeat; expect no
+equipment or bottle drops. Capture each death, ground items and bottle level.
+Existing patrol finalization has no automatic spawn caller on this base; these
+changes fix its equipment assignment without adding a separate spawn feature.
+PR #332 review: Raid Omen releases the raid mutex before statistic callbacks.
+Replacement leaders require an active raid, vacant leadership and a living,
+pickup-eligible exact captain banner; nearby pillagers preserve bottles and junk.
+Saved RaidId resolves through the registry, and death removes current membership
+before loot, including during raid-tick callbacks. Both omitted raider predicate
+fields default to false, as in the vanilla codec. API 8 (same version): Raids adds
+private pending membership state; rebuild native plugins. Saved tags and native
+API version remain unchanged. Source bodies, state audit and regression results:
+[PR #332 round 2](.fork/pr332-review.md). In-game verification: Not yet.
+
+Play test: kill a patrol captain with another pillager beside it; expect the bottle
+and banner to remain outside a raid. In a raid, let a pillager collect a dropped
+captain banner after its pickup delay; expect one replacement captain, while the
+bottle remains. Capture the deaths, ground items and replacement leader.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

@@ -59,6 +59,7 @@ mod pending_block_entity;
 pub(crate) use pending_block_entity::BlockEntityMutationPermit;
 pub mod portal;
 pub mod raid;
+pub(crate) mod raid_loot;
 pub mod random_sequences;
 #[cfg(test)]
 mod shared_state_tests;
@@ -1698,25 +1699,7 @@ impl World {
         self.update_active_chunks();
         Phase::Environment.enter();
         self.tick_environment();
-        let mut raids = {
-            let mut guard = self
-                .raids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::take(&mut *guard)
-        };
-        raids.tick(self);
-        {
-            let mut guard = self
-                .raids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (id, raid) in guard.raid_map.drain() {
-                raids.raid_map.insert(id, raid);
-            }
-            raids.next_id = raids.next_id.max(guard.next_id);
-            *guard = raids;
-        };
+        raid_loot::tick_raids(self);
 
         let t_chunks = std::time::Instant::now();
         Phase::ChunkTicks.enter();

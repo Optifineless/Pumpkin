@@ -127,6 +127,11 @@ impl LivingEntity {
             .compare_exchange(false, true, Relaxed, Relaxed)
             .is_ok()
         {
+            // Raider.die removes current membership before LivingEntity.die and loot.
+            crate::world::raid_loot::raider_die(dyn_self.as_ref(), cause.or(source));
+            if !self.death_lifecycle_current(lifecycle) {
+                return;
+            }
             self.movement_input.store(Vector3::default());
             self.jumping.store(false, Relaxed);
 
@@ -359,9 +364,12 @@ impl LivingEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .get(&slot);
-            if !mob_equipment_drop_eligible(&item, player_killed, preserved)
-                || rng.random::<f32>() >= modified_chance
-            {
+            if !mob_equipment_drop_eligible(&item, player_killed, preserved) || {
+                let draw = rng.random::<f32>();
+                #[cfg(test)]
+                let draw = captain_banner_tests::equipment_draw(draw);
+                draw >= modified_chance
+            } {
                 continue;
             }
             let mut item = self
@@ -525,3 +533,6 @@ impl LivingEntity {
     reason = "Regression tests require existing entities and successful locks"
 )]
 mod tests;
+
+#[cfg(test)]
+mod captain_banner_tests;

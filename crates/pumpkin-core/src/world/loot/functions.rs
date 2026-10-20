@@ -195,6 +195,15 @@ fn apply_functions_inner(
             }
             "copy_state" => run_copy_block_state(p, stack, params),
             "set_count" => run_set_item_count(p, stack, rng),
+            "set_ominous_bottle_amplifier" => {
+                // SetOminousBottleAmplifierFunction.run uses the context integer provider.
+                let amplifier = number_int(p.get("amplifier").unwrap_or(&Value::Null), rng, 0)
+                    .unwrap_or(0)
+                    .clamp(0, 4);
+                stack.stack.set_data_component(
+                    pumpkin_data::data_component_impl::OminousBottleAmplifierImpl { amplifier },
+                );
+            }
             "apply_bonus" => apply_bonus_count(p, stack, params, rng),
             "looting_enchant" | "enchanted_count_increase" => {
                 run_enchanted_count_increase(p, stack, params, rng);
