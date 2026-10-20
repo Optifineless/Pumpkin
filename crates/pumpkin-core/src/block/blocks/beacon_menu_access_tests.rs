@@ -99,7 +99,7 @@ fn assert_custom_data_beacon_denied(
     assert_denied(fixture, title, control);
 }
 
-fn open_custom_data_chest(fixture: &mut Fixture, expected_data: &NbtCompound) {
+fn open_custom_data_chest(fixture: &mut Fixture, expected_data: &NbtTag) {
     let chest_pos = pumpkin_util::math::position::BlockPos::new(1, 64, 0);
     fixture.world.set_block_state(
         &chest_pos,
@@ -107,10 +107,7 @@ fn open_custom_data_chest(fixture: &mut Fixture, expected_data: &NbtCompound) {
         pumpkin_world::world::BlockFlags::FORCE_STATE
             | pumpkin_world::world::BlockFlags::UPDATE_KNOWN_SHAPE,
     );
-    let mut chest_nbt = custom_data_beacon(
-        &NbtTag::String("unused".into()),
-        &NbtTag::Compound(expected_data.clone()),
-    );
+    let mut chest_nbt = custom_data_beacon(&NbtTag::String("unused".into()), expected_data);
     chest_nbt.put_string(
         "id",
         crate::block::entities::chest::ChestBlockEntity::ID.to_owned(),
@@ -578,9 +575,12 @@ async fn b1020b_g03_custom_data_locks_open_beacons_and_chests() {
         fixture.use_beacon();
         assert_open_title(&mut fixture, &title);
 
-        open_custom_data_chest(&mut fixture, &expected_data);
+        open_custom_data_chest(&mut fixture, &NbtTag::Compound(expected_data));
         fixture.finish().await;
     })
     .await
     .expect("bounded custom_data container lock regression timed out");
 }
+
+#[path = "beacon_custom_data_access_tests.rs"]
+mod custom_data_access_tests;

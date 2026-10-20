@@ -12,14 +12,19 @@ replace their loaded metadata. Name and lock item components survive placement
 and drops. Existing saved effects and `Levels` keep their meaning. Beacon and
 chest locks evaluate `minecraft:custom_data` with vanilla 26.3
 `NbtUtils.compareNbt(expected, actual, true)` subset semantics, including nested
-compounds, partial lists and NBT tag types; the persisted lock remains unchanged.
+compounds, partial lists and NBT tag types. They accept both direct compounds
+and vanilla's SNBT-string encoding, and absent item data is treated as empty;
+the persisted lock remains unchanged.
 
 Beacon shift-click deposits only an eligible singleton into an empty payment
 slot; other stacks move between inventory and hotbar through the existing owner
 transactions. Closing detaches unused payment once and schedules its normal drop
 after menu guards release, even when inventory has room. Bedrock crafter open,
 direct-open and close mappings use dedicated container type 36 for supported
-Bedrock 1.26.51/protocol 2193. Java opening and other window mappings are unchanged.
+Bedrock 1.26.51/protocol 2193. Crafter contents and changed slots use the
+`CrafterLevelEntity` container identity. Java opening and other window mappings
+are unchanged. The generic crafter menu still lacks Vanilla's non-interactive
+recipe-result preview and refresh; that remains backlog.
 Mirrors vanilla 26.3 `BeaconBlockEntity.createMenu/loadAdditional/saveAdditional`,
 `LockCode.canUnlock`, and `BeaconMenu.quickMoveStack/removed`; Bedrock wire type
 comes from Cloudburst `ContainerType.CRAFTER`, independently of Java.
@@ -40,9 +45,11 @@ matching key only in offhand; expect the beacon to stay locked. Shift-click ordi
 items, stacked payments and single payments; expect inventory/hotbar fallback or
 one payment deposit. Close an unpaid menu with room and full inventory; expect one
 ground item and no duplicate on closing again. Open/reopen a crafter on Bedrock;
-expect its dedicated window. Initial crafter contents delivery is tracked as a
-separate backlog item. Record the key/title cases, chest lock, slot movements,
-close/drop sequence and Bedrock crafter screen before opening a PR.
+expect its dedicated window, the existing input contents, and correctly addressed
+slot updates after changing an input. Set a lock to `minecraft:custom_data={}`;
+expect plain paper and an empty hand to open it. Record the key/title cases, chest
+lock, slot movements, close/drop sequence and Bedrock crafter screen before
+opening a PR. Recipe-result preview behavior remains unverified and tracked above.
 
 ## Departed dragon and Wither bossbar recipients (#118)
 

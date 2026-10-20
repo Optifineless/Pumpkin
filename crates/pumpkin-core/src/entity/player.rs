@@ -6802,11 +6802,11 @@ impl InventoryPlayer for Player {
                             | WindowType::Generic9x5
                             | WindowType::Generic9x6
                             | WindowType::Generic3x3
+                            | WindowType::Crafter3x3
                     )
                 ) {
-                    // Java container screens append the player's 36 inventory slots to
-                    // the container slots. Bedrock synchronizes those two inventories
-                    // separately and addresses generic block containers as LevelEntity.
+                    // Java container screens append the player's inventory; Bedrock sends
+                    // it separately, with crafter inputs addressed as CrafterLevelEntity.
                     let container_slot_count = packet
                         .slot_data
                         .len()
@@ -6819,7 +6819,11 @@ impl InventoryPlayer for Player {
                         container_id: VarUInt(window_id),
                         slots,
                         full_container_name: FullContainerName {
-                            container_name: ContainerName::LevelEntity,
+                            container_name: if window_type == Some(WindowType::Crafter3x3) {
+                                ContainerName::CrafterLevelEntity
+                            } else {
+                                ContainerName::LevelEntity
+                            },
                             dynamic_id: None,
                         },
                         storage_item: NetworkItemStackDescriptor::default(),
@@ -6883,7 +6887,13 @@ impl InventoryPlayer for Player {
                                     Some((ContainerName::CraftingInput, (32 + slot_idx - 1) as u8))
                                 }
                             } else {
-                                Some((ContainerName::LevelEntity, slot_idx as u8))
+                                let container_name = if window_type == Some(WindowType::Crafter3x3)
+                                {
+                                    ContainerName::CrafterLevelEntity
+                                } else {
+                                    ContainerName::LevelEntity
+                                };
+                                Some((container_name, slot_idx as u8))
                             }
                         } else {
                             let inv_slot = slot_idx - container_slots;

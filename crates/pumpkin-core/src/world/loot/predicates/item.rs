@@ -1,4 +1,5 @@
 use super::{item_component, range_matches, registry_matches};
+use crate::command::{snbt::SnbtParser, string_reader::StringReader};
 use crate::data::datapack::context_provider_loader::json_value_to_nbt;
 use pumpkin_data::{
     data_component::DataComponent,
@@ -134,15 +135,28 @@ fn custom_data_matches(
     raw_custom_data: Option<&NbtTag>,
 ) -> Option<bool> {
     let converted_expected = raw_custom_data.is_none().then(|| json_value_to_nbt(rules));
-    let expected = converted_expected.as_ref().or(raw_custom_data)?;
+    let expected = converted_expected.as_ref().or(raw_custom_data)?.clone();
+    // Vanilla TagParser.LENIENT_CODEC accepts both compounds and serialized SNBT strings.
+    let expected = match expected {
+        NbtTag::String(snbt) => {
+            let mut reader = StringReader::new(snbt.as_ref());
+            let parsed = SnbtParser::parse_for_commands(&mut reader).ok()?;
+            reader.skip_whitespace();
+            if reader.remaining_length() != 0 {
+                return None;
+            }
+            parsed
+        }
+        tag => tag,
+    };
     let NbtTag::Compound(expected) = expected else {
         return None;
     };
-    Some(
-        stack
-            .get_data_component::<CustomDataImpl>()
-            .is_some_and(|actual| partial_compound_matches(expected, &actual.data)),
-    )
+    // Vanilla NbtPredicate.test uses CustomData.EMPTY when the component is absent.
+    let actual = stack
+        .get_data_component::<CustomDataImpl>()
+        .map_or_else(NbtCompound::new, |actual| actual.data.clone());
+    Some(partial_compound_matches(&expected, &actual))
 }
 
 /*

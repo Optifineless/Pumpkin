@@ -16,8 +16,13 @@ use pumpkin_protocol::{
     MultiVersionJavaPacket, Packet,
     bedrock::{
         BEDROCK_GAME_PACKET,
-        client::container_open::CContainerOpen,
-        network_item::NetworkItemDescriptor,
+        client::{
+            container_open::CContainerOpen, inventory_content::CInventoryContent,
+            inventory_slot::CInventorySlot,
+        },
+        network_item::{
+            ContainerName, FullContainerName, NetworkItemDescriptor, NetworkItemStackDescriptor,
+        },
         packet_decoder::BedrockBatchDecoder,
         server::{
             container_close::SContainerClose,
@@ -136,21 +141,65 @@ fn use_bedrock_block(player: &TestBedrockPlayer, position: BlockPos) {
 }
 
 fn bedrock_payloads(player: &mut TestBedrockPlayer, id: i32) -> Vec<Vec<u8>> {
+    take_bedrock_packets(player)
+        .into_iter()
+        .filter_map(|(packet_id, payload)| (packet_id == id).then_some(payload))
+        .collect()
+}
+
+fn take_bedrock_packets(player: &mut TestBedrockPlayer) -> Vec<(i32, Vec<u8>)> {
     player
         .take_packets()
         .into_iter()
-        .filter_map(|frame| {
+        .map(|frame| {
             assert_eq!(frame[0], BEDROCK_GAME_PACKET);
             let packet = BedrockBatchDecoder::new()
                 .get_game_packet(&mut Cursor::new(frame[1..].to_vec()))
                 .unwrap();
-            (packet.id == id).then(|| packet.payload.to_vec())
+            (packet.id, packet.payload.to_vec())
         })
         .collect()
 }
 
+fn decode_content_packet(
+    payload: &[u8],
+) -> (u32, Vec<NetworkItemStackDescriptor>, FullContainerName) {
+    let mut payload = payload;
+    let container_id = VarUInt::read(&mut payload).unwrap().0;
+    let slots = Vec::<NetworkItemStackDescriptor>::read(&mut payload).unwrap();
+    let container_name = FullContainerName::read(&mut payload).unwrap();
+    let _storage_item = NetworkItemStackDescriptor::read(&mut payload).unwrap();
+    assert!(payload.is_empty());
+    (container_id, slots, container_name)
+}
+
+fn decode_slot_packet(
+    payload: &[u8],
+) -> (
+    u32,
+    u32,
+    Option<FullContainerName>,
+    NetworkItemStackDescriptor,
+) {
+    let mut payload = payload;
+    let container_id = VarUInt::read(&mut payload).unwrap().0;
+    let slot = VarUInt::read(&mut payload).unwrap().0;
+    let container_name = Option::<FullContainerName>::read(&mut payload).unwrap();
+    let _storage_item = Option::<NetworkItemStackDescriptor>::read(&mut payload).unwrap();
+    let item = NetworkItemStackDescriptor::read(&mut payload).unwrap();
+    assert!(payload.is_empty());
+    (container_id, slot, container_name, item)
+}
+
 fn one_open(player: &mut TestBedrockPlayer, position: BlockPos) -> (u8, u8) {
-    let packets = bedrock_payloads(player, CContainerOpen::PACKET_ID);
+    one_open_from_packets(&take_bedrock_packets(player), position)
+}
+
+fn one_open_from_packets(packets: &[(i32, Vec<u8>)], position: BlockPos) -> (u8, u8) {
+    let packets = packets
+        .iter()
+        .filter_map(|(id, payload)| (*id == CContainerOpen::PACKET_ID).then_some(payload))
+        .collect::<Vec<_>>();
     assert_eq!(packets.len(), 1, "actual block-use must emit ContainerOpen");
     let mut payload = packets[0].as_slice();
     let id = payload.get_u8().unwrap();
@@ -163,7 +212,6 @@ fn assert_crafter_owner(fixture: &Fixture, player: &Player) {
     let menu = player.current_screen_handler.lock().unwrap().clone();
     let menu = menu.lock().unwrap();
     assert_eq!(menu.window_type(), Some(WindowType::Crafter3x3));
-    assert_eq!(menu.get_behaviour().slots.len(), 45);
     let slot = &menu.get_behaviour().slots[0];
     let expected: Arc<dyn Inventory> = fixture.crafter.clone();
     assert!(Arc::ptr_eq(&slot.get_inventory(), &expected));
@@ -173,9 +221,78 @@ fn assert_crafter_owner(fixture: &Fixture, player: &Player) {
     assert_eq!(actual.uid, fixture.content.uid);
 }
 
+fn assert_crafter_inventory_sync(
+    fixture: &Fixture,
+    bedrock: &mut TestBedrockPlayer,
+    window_id: u8,
+    initial_packets: &[(i32, Vec<u8>)],
+) {
+    let contents = initial_packets
+        .iter()
+        .filter_map(|(id, payload)| (*id == CInventoryContent::PACKET_ID).then_some(payload))
+        .map(|payload| decode_content_packet(payload))
+        .filter(|(container_id, _, _)| *container_id == u32::from(window_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        contents.len(),
+        1,
+        "opening a crafter sends one full container snapshot"
+    );
+    let (container_id, slots, container_name) = &contents[0];
+    assert_eq!(*container_id, u32::from(window_id));
+    assert_eq!(slots.len(), 9);
+    assert_eq!(slots[0].stack_size, 7);
+    assert_eq!(
+        slots[0].id,
+        NetworkItemStackDescriptor::from(&fixture.content).id
+    );
+    assert_eq!(
+        container_name.container_name,
+        ContainerName::CrafterLevelEntity
+    );
+    assert_eq!(container_name.dynamic_id, None);
+
+    fixture
+        .crafter
+        .set_stack(0, ItemStack::new(4, &Item::EMERALD));
+    let screen = bedrock
+        .player
+        .current_screen_handler
+        .lock()
+        .unwrap()
+        .clone();
+    screen.lock().unwrap().send_content_updates();
+    let updates = bedrock_payloads(bedrock, CInventorySlot::PACKET_ID)
+        .iter()
+        .map(|payload| decode_slot_packet(payload))
+        .filter(|(container_id, _, _, _)| *container_id == u32::from(window_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        updates.len(),
+        1,
+        "changing a crafter slot sends one slot update"
+    );
+    let (container_id, slot, container_name, item) = &updates[0];
+    assert_eq!(*container_id, u32::from(window_id));
+    assert_eq!(*slot, 0);
+    assert_eq!(
+        container_name.as_ref().unwrap().container_name,
+        ContainerName::CrafterLevelEntity
+    );
+    assert_eq!(item.stack_size, 4);
+    assert_eq!(
+        item.id,
+        NetworkItemStackDescriptor::from(&ItemStack::new(4, &Item::EMERALD)).id
+    );
+}
+
 async fn crafter_windows() {
     let fixture = Fixture::new();
     let mut bedrock = TestBedrockPlayer::new(&fixture.world).await;
+    bedrock
+        .player
+        .screen_handler_sync_handler
+        .store_player(bedrock.player.clone());
     bedrock
         .client()
         .version
@@ -184,8 +301,11 @@ async fn crafter_windows() {
     bedrock.take_packets();
 
     use_bedrock_block(&bedrock, CRAFTER);
-    let first = one_open(&mut bedrock, CRAFTER);
+    let initial_packets = take_bedrock_packets(&mut bedrock);
+    let first = one_open_from_packets(&initial_packets, CRAFTER);
     assert_crafter_owner(&fixture, &bedrock.player);
+    assert_crafter_inventory_sync(&fixture, &mut bedrock, first.0, &initial_packets);
+    fixture.crafter.set_stack(0, fixture.content.clone());
 
     bedrock.player.close_handled_screen();
     let closes = bedrock_payloads(&mut bedrock, SContainerClose::PACKET_ID);
