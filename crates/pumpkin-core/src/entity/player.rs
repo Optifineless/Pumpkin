@@ -6865,29 +6865,8 @@ impl InventoryPlayer for Player {
                     let slot_idx = packet.slot as usize;
                     let item_desc = NetworkItemStackDescriptor::from(&*packet.slot_data.0);
 
-                    let bedrock_info = if total_slots >= 36 {
-                        let container_slots = total_slots - 36;
-                        if slot_idx < container_slots {
-                            if window_type == Some(WindowType::Crafting) {
-                                if slot_idx == 0 {
-                                    Some((ContainerName::CreatedOutput, 0))
-                                } else {
-                                    Some((ContainerName::CraftingInput, (32 + slot_idx - 1) as u8))
-                                }
-                            } else {
-                                Some((ContainerName::LevelEntity, slot_idx as u8))
-                            }
-                        } else {
-                            let inv_slot = slot_idx - container_slots;
-                            if inv_slot < 27 {
-                                Some((ContainerName::Inventory, (inv_slot + 9) as u8))
-                            } else {
-                                Some((ContainerName::Inventory, (inv_slot - 27) as u8))
-                            }
-                        }
-                    } else {
-                        None
-                    };
+                    let bedrock_info =
+                        inventory_sync::bedrock_menu_slot(window_type, total_slots, slot_idx);
 
                     if let Some((container_name, slot_id)) = bedrock_info {
                         let bedrock_packet = CInventorySlot {

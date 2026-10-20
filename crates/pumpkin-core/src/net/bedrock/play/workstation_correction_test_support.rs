@@ -44,7 +44,7 @@ fn decode_extra_data(bytes: &[u8]) -> (Option<pumpkin_nbt::Nbt>, Vec<u8>) {
     } else {
         assert_eq!(version, -1);
         assert_eq!(u8::read(&mut reader).unwrap(), 1);
-        let mut helper = pumpkin_nbt::deserializer::NbtReadHelperBedrock::new(&mut reader);
+        let mut helper = pumpkin_nbt::fixed_le::NbtReadHelperFixedLe::new(&mut reader);
         Some(pumpkin_nbt::Nbt::read(&mut helper).unwrap())
     };
     // Compound key order is immaterial; every NBT value and remaining byte is exact.

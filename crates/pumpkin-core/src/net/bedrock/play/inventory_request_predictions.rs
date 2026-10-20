@@ -64,6 +64,18 @@ impl Results {
                         (ContainerName::BeaconPayment, BEDROCK_PAYMENT_SLOT)
                             | (ContainerName::LoomInput, BEDROCK_INPUT_SLOT)
                             | (ContainerName::LoomDye, BEDROCK_DYE_SLOT)
+                            | (
+                                ContainerName::LoomResultPreview
+                                    | ContainerName::CraftingOutputPreview,
+                                50
+                            )
+                            | (
+                                ContainerName::Inventory
+                                    | ContainerName::CombinedHotBarAndInventory,
+                                0..=35
+                            )
+                            | (ContainerName::HotBar, 0..=8)
+                            | (ContainerName::Cursor, 0)
                     )
             })
             .map(|update| {

@@ -6,7 +6,7 @@ use std::num::NonZero;
 
 use pumpkin_data::item::{BedrockItem, JavaToBedrockItemMapping};
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_nbt::{Nbt, deserializer::NbtReadHelperBedrock};
+use pumpkin_nbt::{Nbt, fixed_le::NbtReadHelperFixedLe};
 
 use crate::{
     codec::{var_int::VarInt, var_uint::VarUInt},
@@ -117,7 +117,7 @@ impl NetworkItemDescriptor {
         if self.id.0 == 0 {
             return VarUInt(0).write(writer);
         }
-        let mut buf = item_components::nbt_bytes(&self.nbt_data);
+        let mut buf = item_components::nbt_bytes(&self.nbt_data)?;
         write_user_data_strings(&mut buf, &self.place_on_blocks)?;
         write_user_data_strings(&mut buf, &self.destroy_blocks)?;
         if self.id.0 == i32::from(BedrockItem::SHIELD.id) {
@@ -349,7 +349,8 @@ impl From<&ItemStack> for NetworkItemStackDescriptor {
                 Self::default(),
                 |mapping| {
                     let mut extra_data =
-                        item_components::nbt_bytes(&item_components::item_nbt(stack));
+                        item_components::nbt_bytes(&item_components::item_nbt(stack))
+                            .unwrap_or_else(|_| vec![0; 2]);
                     // Empty can-place/can-destroy lists; shields also carry a tick counter.
                     extra_data.extend_from_slice(&[0; 8]);
                     if mapping.bedrock_item.id == BedrockItem::SHIELD.id {
@@ -641,7 +642,7 @@ fn read_user_data(
     let nbt_version = i16::read(&mut cursor)?;
     let nbt_data = if nbt_version == -1 {
         let _version = i8::read(&mut cursor)?;
-        let mut nbt_reader = NbtReadHelperBedrock::new(&mut cursor);
+        let mut nbt_reader = NbtReadHelperFixedLe::new(&mut cursor);
         crate::ser::nbt_reader::read_named_nbt(&mut nbt_reader)
             .map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))?
     } else {
@@ -663,14 +664,17 @@ fn read_user_data(
 }
 
 #[cfg(test)]
+#[path = "item_fixed_le_tests.rs"]
+mod fixed_le_tests;
+
+#[cfg(test)]
 mod budget_tests {
     use super::*;
 
     #[test]
     fn bedrock_item_nbt_enforces_aggregate_quota_before_list_elements() {
         // -1/version 1, root compound/empty name, list "a", byte elements, 524289 entries.
-        // Bedrock lengths are zigzag VarInts: 524289 -> 1048578 -> 82 80 40.
-        let bytes = [0xff, 0xff, 1, 10, 0, 9, 1, b'a', 1, 0x82, 0x80, 0x40];
+        let bytes = [0xff, 0xff, 1, 10, 0, 0, 9, 1, 0, b'a', 1, 1, 0, 8, 0];
         let error = read_user_data(&bytes, false).err().unwrap();
         assert!(error.to_string().contains("NBT quota"));
     }

@@ -109,17 +109,12 @@ impl<'a> Selection<'a> {
     }
 }
 
-const fn matches_stack(info: &Slot, stack: &ItemStack) -> bool {
-    info.container_name.dynamic_id.is_none()
-        && info.stack_id == if stack.is_empty() { 0 } else { stack.uid.get() }
-}
-
 fn destination_stack(handler: &dyn ScreenHandler, destination: &Slot) -> Option<ItemStack> {
     if destination.container_name.dynamic_id.is_some() {
         return None;
     }
     match destination.container_name.container_name {
-        ContainerName::Cursor => Some(
+        ContainerName::Cursor if destination.slot_id == 0 => Some(
             handler
                 .get_behaviour()
                 .cursor_stack
@@ -229,15 +224,30 @@ pub(super) fn apply(
             }
             live.uid.get()
         };
-    if selection.source.container_name.dynamic_id.is_some()
-        || selection.source.stack_id != source_id
-    {
+    let resolved_source =
+        if selection.source.container_name.container_name == ContainerName::CreatedOutput {
+            selection
+                .source
+                .container_name
+                .dynamic_id
+                .is_none()
+                .then_some(selection.source.stack_id)
+        } else {
+            predictions.resolve(selection.source)
+        };
+    if resolved_source != Some(source_id) {
         return false;
     }
     let Some(expected) = destination_stack(loom, selection.destination) else {
         return false;
     };
-    if !matches_stack(selection.destination, &expected) {
+    if predictions.resolve(selection.destination)
+        != Some(if expected.is_empty() {
+            0
+        } else {
+            expected.uid.get()
+        })
+    {
         return false;
     }
     let stock = output.copy_with_count(selection.repetitions);

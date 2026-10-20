@@ -1,8 +1,8 @@
 //! Reading, writing, and manipulating Minecraft's Named Binary Tag (NBT) data.
 //!
 //! The crate supports the standard Java Edition representation, unnamed network
-//! NBT, Bedrock network NBT, and gzip-compressed NBT. Data is handled directly
-//! via [`Nbt`], [`NbtCompound`], and [`NbtTag`].
+//! NBT, Bedrock network and fixed little-endian NBT, and gzip-compressed NBT.
+//! Data is handled directly via [`Nbt`], [`NbtCompound`], and [`NbtTag`].
 
 #![deny(clippy::unwrap_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
@@ -22,6 +22,8 @@ use thiserror::Error;
 pub mod compound;
 /// Low-level NBT deserialization support.
 pub mod deserializer;
+/// Fixed little-endian NBT used by Bedrock item user data.
+pub mod fixed_le;
 /// Reading and writing gzip-compressed NBT.
 pub mod nbt_compress;
 /// Integration with Pumpkin's dynamic codec operations.

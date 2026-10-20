@@ -314,7 +314,7 @@ fn assert_banner_nbt(extra_data: &[u8]) {
         "banner has versioned NBT"
     );
     assert_eq!(u8::read(&mut reader).unwrap(), 1);
-    let mut nbt_reader = pumpkin_nbt::deserializer::NbtReadHelperBedrock::new(&mut reader);
+    let mut nbt_reader = pumpkin_nbt::fixed_le::NbtReadHelperFixedLe::new(&mut reader);
     let nbt = pumpkin_nbt::Nbt::read(&mut nbt_reader).unwrap();
     assert_tags(&nbt);
     assert_eq!(i32::read(&mut reader).unwrap(), 0);

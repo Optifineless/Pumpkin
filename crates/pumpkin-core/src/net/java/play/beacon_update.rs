@@ -25,11 +25,7 @@ pub struct Publication {
 
 impl Publication {
     pub(crate) fn publish(self) {
-        if !self
-            .world
-            .get_block_entity(&self.entity.get_position())
-            .is_some_and(|live| Arc::ptr_eq(&live, &self.entity))
-        {
+        if !self.world.is_live_block_entity(&self.entity) {
             return;
         }
         self.world.update_block_entity(&self.entity);

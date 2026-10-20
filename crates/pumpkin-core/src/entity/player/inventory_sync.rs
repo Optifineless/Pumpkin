@@ -39,3 +39,41 @@ impl Player {
         }
     }
 }
+
+// Menu-local UI addresses follow Geyser's edition-specific container translators.
+pub(super) fn bedrock_menu_slot(
+    window_type: Option<pumpkin_data::screen::WindowType>,
+    total_slots: usize,
+    slot: usize,
+) -> Option<(ContainerName, u8)> {
+    use pumpkin_data::screen::WindowType;
+
+    let container_slots = total_slots.checked_sub(36)?;
+    if slot >= total_slots {
+        return None;
+    }
+    if slot >= container_slots {
+        let inventory_slot = slot - container_slots;
+        return Some((
+            ContainerName::Inventory,
+            if inventory_slot < 27 {
+                (inventory_slot + 9) as u8
+            } else {
+                (inventory_slot - 27) as u8
+            },
+        ));
+    }
+    Some(match window_type {
+        Some(WindowType::Crafting) if slot == 0 => (ContainerName::CreatedOutput, 0),
+        Some(WindowType::Crafting) => (ContainerName::CraftingInput, (32 + slot - 1) as u8),
+        Some(WindowType::Loom) => match slot {
+            0 => (ContainerName::LoomInput, 9),
+            1 => (ContainerName::LoomDye, 10),
+            2 => (ContainerName::LoomMaterial, 11),
+            3 => (ContainerName::LoomResultPreview, 50),
+            _ => return None,
+        },
+        Some(WindowType::Beacon) if slot == 0 => (ContainerName::BeaconPayment, 27),
+        _ => (ContainerName::LevelEntity, slot as u8),
+    })
+}

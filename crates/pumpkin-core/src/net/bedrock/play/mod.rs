@@ -173,3 +173,9 @@ mod rejected_prediction_tests;
 
 #[cfg(test)]
 mod workstation_prediction_tests;
+
+#[cfg(test)]
+mod workstation_request_r4_tests;
+
+#[cfg(test)]
+mod workstation_item_wire_tests;

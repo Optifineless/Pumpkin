@@ -31,9 +31,29 @@ Bedrock loom requests schedule the existing world take-result sound once per tic
 after ownership release; general sound transport still reaches Java observers
 only and remains separate backlog.
 
+Round 4 uses fixed little-endian NBT for all item user-data writers and readers,
+including ordinary banners and named items; block/entity network NBT stays as-is.
+Overlong display names are shortened on a UTF-8 boundary for publication only;
+the complete server component and saved name remain intact. Beacon menu validity
+and deferred publication compare live registry identity without promoting pending
+images under menu guards. Deferred slot notifications use loom/beacon UI addresses.
+Pipelined loom preview and inventory/cursor destination references resolve retained
+results against current live identities, and nonzero cursor indices reject before
+payment. Regressions inspect full inventory, slot and dropped-item packets, pending
+beacon images, and consecutive requests without acknowledgments.
+
+Checked against official Java 26.3 `BeaconMenu.updateEffects`, `LoomMenu` result
+creation/take and `Container.stillValidBlockEntity`, decompiled with Vineflower
+1.12.0 (inner server SHA-256
+`a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`), and
+Gophertunnel protocol 2193 item writer/reader at
+`7a556a07335b663744b50d38062636ad8283f314`.
+
 API 8 (same version): private retained request state changes the public
 `BedrockClient` layout; rebuild native plugins. Public method signatures, native
 source compatibility, Wasm WIT and saved-data meaning are unchanged.
+Round 4 adds fixed-LE codec helpers without changing existing native layouts or
+signatures; API 8 remains the same version.
 Implemented by GPT-6.1 Sol (Codex Cloud).
 In-game verification: Not yet.
 
@@ -46,6 +66,10 @@ the menus, counts, sound and powers after reopening/restarting, and capture the
 actual absent-effect marker, pattern string, result metadata and output/Consume
 request sequence. After each acknowledgment, repeat the selection or craft and
 check that every menu count stays synchronized, including a cursor destination.
+Craft twice rapidly into the same inventory slot and cursor before acknowledgment;
+expect both crafts to succeed with one banner and dye paid for each. Rejoin with an
+unnamed banner and a named diamond; expect inventory to load normally. Record the
+workstation counts, refreshed preview, carried/dropped banner layers and names.
 Also pay/select and deposit/craft rapidly before acknowledgment; expect one debit
 per completed action. Carry, drop, reopen and restart with a named patterned
 banner; expect its name and every layer to remain visible. A nearby Java observer

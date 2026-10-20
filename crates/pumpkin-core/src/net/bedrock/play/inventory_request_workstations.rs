@@ -216,10 +216,7 @@ fn live_beacon(handler: &dyn ScreenHandler, player: &Player) -> bool {
         let entity: Arc<dyn BlockEntity> = beacon;
         player.open_container_pos.load() == Some(position)
             && player.world().get_block(&position) == &pumpkin_data::Block::BEACON
-            && player
-                .world()
-                .get_block_entity(&position)
-                .is_some_and(|live| Arc::ptr_eq(&live, &entity))
+            && player.world().is_live_block_entity(&entity)
             && player.can_interact_with_block_at(&position, DEFAULT_DISTANCE_BUFFER)
     })
 }

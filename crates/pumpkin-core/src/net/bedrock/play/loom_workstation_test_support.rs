@@ -265,9 +265,7 @@ impl LoomFixture {
         let mut extra_data = Vec::new();
         (-1i16).write(&mut extra_data).unwrap();
         1u8.write(&mut extra_data).unwrap();
-        Nbt::new(String::new(), tag)
-            .write_to_writer_bedrock(&mut extra_data)
-            .unwrap();
+        extra_data.extend_from_slice(&Nbt::new(String::new(), tag).write_fixed_le().unwrap());
         0i32.write(&mut extra_data).unwrap();
         0i32.write(&mut extra_data).unwrap();
         StackRequestItem {
