@@ -15,6 +15,13 @@ use pumpkin_protocol::{
 };
 use std::sync::{Arc, atomic::Ordering};
 
+// PlayerModelPart.HAT uses bit 6 of the client skin-parts mask.
+const HAT_MODEL_PART: u8 = 1 << 6;
+
+const fn hat_shown(skin_parts: u8) -> bool {
+    skin_parts & HAT_MODEL_PART != 0
+}
+
 impl World {
     pub(crate) fn add_pending_player(&self, player: &Arc<Player>) {
         self.players.rcu(|players| {
@@ -37,6 +44,34 @@ impl Server {
                 for player in players {
                     if let Some(java) = player.client.java()
                         && let Ok(bytes) = java.serialize_packet(packet)
+                    {
+                        guard_effects::send(player.client.clone(), bytes);
+                    }
+                }
+            });
+    }
+
+    pub(crate) fn broadcast_player_hat_if_changed(&self, subject: &Player, old_skin_parts: u8) {
+        let _effects = GuardEffects::new();
+        self.admission_reservations
+            .publish_info(subject, |players| {
+                if subject.client.closed() || subject.living_entity.entity.is_removed() {
+                    return;
+                }
+                // ServerGamePacketListenerImpl.handleClientInformation publishes accepted options.
+                // A settings callback may have replaced them again before we reacquire the owner.
+                let show_hat = hat_shown(subject.config.load().skin_parts);
+                if show_hat == hat_shown(old_skin_parts) {
+                    return;
+                }
+                let entries = [pumpkin_protocol::java::client::play::Player {
+                    uuid: subject.gameprofile.id,
+                    actions: &[PlayerAction::UpdateHat(show_hat)],
+                }];
+                let packet = CPlayerInfoUpdate::new(PlayerInfoFlags::UPDATE_HAT.bits(), &entries);
+                for player in players {
+                    if let Some(java) = player.client.java()
+                        && let Ok(bytes) = java.serialize_packet(&packet)
                     {
                         guard_effects::send(player.client.clone(), bytes);
                     }
@@ -81,6 +116,7 @@ impl Server {
         let profile = &player.gameprofile;
         let properties = profile.properties.load_full();
         let name = player.player_list_display_name();
+        let show_hat = hat_shown(player.config.load().skin_parts);
         let chat = {
             let chat = player
                 .chat_session
@@ -112,7 +148,7 @@ impl Server {
             PlayerAction::UpdateLatency(VarInt(player.tab_list_latency.load(Ordering::Relaxed))),
             PlayerAction::UpdateDisplayName(name.as_ref()),
             PlayerAction::UpdateListOrder(VarInt(player.tab_list_order.load(Ordering::Relaxed))),
-            PlayerAction::UpdateHat(true),
+            PlayerAction::UpdateHat(show_hat),
         ]);
         let entries = [pumpkin_protocol::java::client::play::Player {
             uuid: profile.id,
