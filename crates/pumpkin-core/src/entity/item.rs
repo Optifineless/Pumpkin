@@ -783,7 +783,7 @@ impl EntityBase for ItemEntity {
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
         // Restore the item stack from the "Item" compound
         if let Some(item_compound) = nbt.get_compound("Item")
-            && let Some(stack) = ItemStack::read_item_stack(item_compound)
+            && let Some(stack) = crate::entity::unknown_nbt::read_item_stack(item_compound)
         {
             // `new_empty` had no item yet to derive this from.
             Self::update_fire_immune(&self.entity, &stack);

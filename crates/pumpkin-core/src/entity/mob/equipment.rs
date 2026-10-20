@@ -1020,9 +1020,11 @@ pub(super) fn read_equipment_drop_chances(
     // Mob.readAdditionalSaveData restores DropChances.CODEC's default when the tag is absent.
     chances.clear();
     if let Some(compound) = nbt.get_compound("drop_chances") {
-        for (name, tag) in &compound.child_tags {
+        for name in compound.child_tags.keys() {
             if let Some(slot) = EquipmentSlot::get_from_name(name)
-                && let Some(chance) = tag.as_numeric_float()
+                && let Some(chance) = compound
+                    .get(name)
+                    .and_then(pumpkin_nbt::tag::NbtTag::as_numeric_float)
                 && chance.is_finite()
                 && chance >= 0.0
             {

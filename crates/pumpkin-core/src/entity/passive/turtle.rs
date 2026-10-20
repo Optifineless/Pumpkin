@@ -193,7 +193,7 @@ impl Mob for TurtleEntity {
         // Turtle.readAdditionalSaveData; accept Pumpkin's old key for existing saves.
         self.set_has_egg(
             nbt.get_bool("has_egg")
-                .or_else(|| nbt.get_bool("HasEgg"))
+                .or(nbt.get_bool("HasEgg"))
                 .unwrap_or(false),
         );
     }

@@ -9,7 +9,7 @@ impl VillagerEntity {
         let food = nbt
             .get_byte("FoodLevel")
             .map(i32::from)
-            .or_else(|| nbt.get_int("FoodLevel"))
+            .or(nbt.get_int("FoodLevel"))
             .unwrap_or_default();
         self.food_level.store(food, Ordering::Relaxed);
         self.warn_if_legacy_food_level(food);

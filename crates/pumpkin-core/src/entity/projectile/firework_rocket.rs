@@ -370,7 +370,7 @@ impl EntityBase for FireworkRocketEntity {
         );
         if let Some(item) = nbt
             .get_compound("FireworksItem")
-            .and_then(ItemStack::read_item_stack)
+            .and_then(crate::entity::unknown_nbt::read_item_stack)
         {
             *self
                 .item

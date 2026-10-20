@@ -15,6 +15,7 @@ mod player_list;
 mod respawn_owner_review;
 pub mod riding_lock_probe;
 mod transfer;
+mod unknown_entity_nbt;
 mod villager_persistence;
 
 use super::{Server, combat_test_support};

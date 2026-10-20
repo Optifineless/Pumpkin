@@ -227,6 +227,7 @@ impl NbtCompound {
     #[inline]
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&NbtTag> {
+        crate::read_tracking::record(self, name, true);
         self.child_tags.get(name)
     }
 
@@ -234,6 +235,7 @@ impl NbtCompound {
     #[inline]
     #[must_use]
     pub fn has(&self, name: &str) -> bool {
+        crate::read_tracking::record(self, name, false);
         self.child_tags.contains_key(name)
     }
 
@@ -302,7 +304,13 @@ impl NbtCompound {
     /// Returns the named compound, or `None` if the tag is absent or has another type.
     #[must_use]
     pub fn get_compound(&self, name: &str) -> Option<&Self> {
-        self.get(name).and_then(|tag| tag.extract_compound())
+        crate::read_tracking::record(self, name, false);
+        let compound = self
+            .child_tags
+            .get(name)
+            .and_then(|tag| tag.extract_compound())?;
+        crate::read_tracking::descend(compound);
+        Some(compound)
     }
 
     /// Returns the named byte array, or `None` if the tag is absent or has another type.

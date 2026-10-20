@@ -312,9 +312,7 @@ impl EntityBase for PaintingEntity {
         self.entity
             .data
             .store(i32::from(facing.to_index()), Ordering::Relaxed);
-        if let Some(variant_str) = nbt
-            .get_string("variant")
-            .or_else(|| nbt.get_string("Motive"))
+        if let Some(variant_str) = nbt.get_string("variant").or(nbt.get_string("Motive"))
             && let Some(variant) = PaintingVariant::from_name(variant_str)
         {
             // Saved Pos already includes the variant's parity offsets.

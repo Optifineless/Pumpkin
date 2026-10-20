@@ -159,7 +159,8 @@ impl AreaEffectCloudEntity {
         self.owner.read_nbt(nbt);
         let mut stack = ItemStack::new(1, &Item::POTION);
         if let Some(contents) = nbt
-            .get_compound("potion_contents")
+            .get("potion_contents")
+            .and_then(NbtTag::extract_compound)
             .and_then(|c| PotionContentsImpl::read_data(&NbtTag::Compound(c.clone())))
         {
             stack

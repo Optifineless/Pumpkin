@@ -132,6 +132,7 @@ pub mod equipment_damage;
 pub(crate) mod ignite;
 pub mod predicate;
 pub(crate) mod recipe_properties;
+mod unknown_nbt;
 
 /// The maximum number of scoreboard tags an entity can carry, matching Vanilla.
 pub const MAX_SCOREBOARD_TAGS: usize = 1024;
@@ -173,23 +174,26 @@ pub trait EntityBase: Send + Sync + std::any::Any {
             projectile.write_motion_nbt(self.get_entity(), nbt);
         }
         self.write_custom_nbt(nbt);
+        self.get_entity().write_retained_nbt(nbt);
     }
 
     fn write_custom_nbt(&self, _nbt: &mut NbtCompound) {}
 
     fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
-        self.get_entity().read_nbt_non_mut(nbt);
-        if let Some(mob) = self.get_mob() {
-            mob.mob_pre_load_nbt(nbt);
-        }
-        if let Some(living) = self.get_living_entity() {
-            living.read_living_nbt_non_mut(nbt);
-        }
-        if let Some(projectile) = self.projectile_state() {
-            projectile.read_nbt(nbt);
-            projectile.read_motion_nbt(self.get_entity(), nbt);
-        }
-        self.read_custom_nbt(nbt);
+        unknown_nbt::read(self.get_entity(), nbt, || {
+            self.get_entity().read_nbt_non_mut(nbt);
+            if let Some(mob) = self.get_mob() {
+                mob.mob_pre_load_nbt(nbt);
+            }
+            if let Some(living) = self.get_living_entity() {
+                living.read_living_nbt_non_mut(nbt);
+            }
+            if let Some(projectile) = self.projectile_state() {
+                projectile.read_nbt(nbt);
+                projectile.read_motion_nbt(self.get_entity(), nbt);
+            }
+            self.read_custom_nbt(nbt);
+        });
     }
 
     fn read_custom_nbt(&self, _nbt: &NbtCompound) {}
@@ -1097,6 +1101,7 @@ pub struct Entity {
     pub last_sent_velocity: AtomicCell<Vector3<f64>>,
     /// Persistent custom data container for plugins
     pub custom_data: std::sync::Mutex<NbtCompound>,
+    retained_nbt: ArcSwap<pumpkin_nbt::read_tracking::NbtRemainder>,
 }
 
 impl Entity {
@@ -1227,6 +1232,7 @@ impl Entity {
             last_sent_pos: AtomicCell::new(position),
             last_sent_velocity: AtomicCell::new(Vector3::default()),
             custom_data: std::sync::Mutex::new(NbtCompound::new()),
+            retained_nbt: ArcSwap::from_pointee(pumpkin_nbt::read_tracking::NbtRemainder::default()),
         }
     }
 
@@ -3983,8 +3989,9 @@ impl Entity {
         }
 
         if let Some(custom_data) = nbt
-            .get_compound("PumpkinCustomData")
-            .or_else(|| nbt.get_compound("BukkitValues"))
+            .get("PumpkinCustomData")
+            .and_then(NbtTag::extract_compound)
+            .or(nbt.get("BukkitValues").and_then(NbtTag::extract_compound))
         {
             let mut data = self
                 .custom_data

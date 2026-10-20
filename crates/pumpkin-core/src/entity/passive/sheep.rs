@@ -205,7 +205,7 @@ impl Mob for SheepEntity {
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
         let sheared = nbt
             .get_bool("Sheared")
-            .or_else(|| nbt.get_byte("Sheared").map(|b| b == 1))
+            .or(nbt.get_byte("Sheared").map(|b| b == 1))
             .unwrap_or(false);
         let color = nbt.get_byte("Color").unwrap_or(0) as u8;
         let byte = (color & COLOR_MASK) | if sheared { SHEARED_BIT } else { 0 };

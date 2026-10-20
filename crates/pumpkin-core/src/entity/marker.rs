@@ -36,7 +36,7 @@ impl EntityBase for MarkerEntity {
     }
 
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
-        if let Some(data) = nbt.get_compound("data") {
+        if let Some(data) = nbt.get("data").and_then(NbtTag::extract_compound) {
             *self
                 .data
                 .lock()

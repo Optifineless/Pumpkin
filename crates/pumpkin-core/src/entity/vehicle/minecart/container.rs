@@ -41,12 +41,11 @@ impl MinecartInventory {
     }
 
     pub(super) fn read_nbt(&self, nbt: &NbtCompound) {
-        let loot_table = nbt.get_string("LootTable").map(|loot_table| {
-            (
-                loot_table.to_owned(),
-                nbt.get_long("LootTableSeed").unwrap_or(0),
-            )
-        });
+        let loot_seed = nbt.get_long("LootTableSeed").unwrap_or(0);
+        let _ = nbt.get_list("Items");
+        let loot_table = nbt
+            .get_string("LootTable")
+            .map(|loot_table| (loot_table.to_owned(), loot_seed));
         let has_loot_table = loot_table.is_some();
         if let Ok(mut guard) = self.loot_table.try_lock() {
             *guard = loot_table;
