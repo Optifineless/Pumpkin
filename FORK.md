@@ -102,8 +102,12 @@ including its absolute portal limit. Block checks test the coordinate itself;
 portal clamps floor the float-clamped position and keep the center-block result
 for collapsed sub-block ranges, consistent with upstream PR #3475. End fallback
 checks contained fluid height against the player body while retaining the
-existing full-column fluid rejection. Mirrors vanilla 26.3 `WorldBorder` and
-`PlayerSpawnFinder`. Plugin API 8, Wasm WIT and saved-data meanings are unchanged.
+existing full-column fluid rejection. End-return candidates follow vanilla's
+`PlayerSpawnFinder.findSpawnPosition` border exemption for a null entity, so a
+border outside the shared spawn cannot force the vertical fallback to the build
+ceiling. Non-finite border bounds use a finite center-block fallback in
+`clamp_block`. Mirrors vanilla 26.3 `WorldBorder` and `PlayerSpawnFinder`.
+Plugin API 8, Wasm WIT and saved-data meanings are unchanged.
 In-game verification: Not yet.
 
 Play test: Set a timed border resize with a four-wide painting near its edge;
@@ -113,7 +117,10 @@ spawn body space; expect a dry arrival, while a dry sign and fluid below the
 player remain valid controls. At a diameter-10 border, use a water bottle on
 source water at x=4; expect it to fill, with x=3 also filling and x=5 denied.
 Set a diameter-10.4 border and enter a Nether portal from a scaled coordinate
-beyond it; expect the destination search to retain upper block 5.
+beyond it; expect the destination search to retain upper block 5. Return from
+the End at shared spawn (6,64,0) with a diameter-10 border centered at (0,0),
+then use `/worldborder set 1` with spawn (0,64,0); expect a Y64 arrival without
+fall damage in both cases.
 
 ## Held-item drop equipment publication (#163)
 

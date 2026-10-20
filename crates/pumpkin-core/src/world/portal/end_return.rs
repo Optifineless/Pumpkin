@@ -251,27 +251,16 @@ fn no_collision_no_liquid(world: &World, pos: BlockPos) -> bool {
             return false;
         }
     }
-    let within_border = {
-        let border = world
-            .worldborder
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let (min_x, min_z, max_x, max_z) = border.bounds(0.0);
-        let epsilon = f64::from(1.0e-5f32);
-        bounds.min.x >= min_x
-            && bounds.min.z >= min_z
-            && bounds.max.x - epsilon < max_x
-            && bounds.max.z - epsilon < max_z
-    };
-    within_border
-        && !world
-            .get_entities_at_box(&bounds.expand(
-                COLLISION_EPSILON,
-                COLLISION_EPSILON,
-                COLLISION_EPSILON,
-            ))
-            .iter()
-            .any(|entity| blocks_teleport(entity.as_ref()))
+    // PlayerSpawnFinder.findSpawnPosition calls noCollision(null, playerBox, true),
+    // which exempts a null entity from world-border collision.
+    !world
+        .get_entities_at_box(&bounds.expand(
+            COLLISION_EPSILON,
+            COLLISION_EPSILON,
+            COLLISION_EPSILON,
+        ))
+        .iter()
+        .any(|entity| blocks_teleport(entity.as_ref()))
 }
 
 fn bottom_center(pos: BlockPos) -> Vector3<f64> {
