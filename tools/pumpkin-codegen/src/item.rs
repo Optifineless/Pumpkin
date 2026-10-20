@@ -55,6 +55,9 @@ pub struct ItemComponents {
     /// Food component, present if this item is edible.
     #[serde(rename = "minecraft:food")]
     pub food: Option<FoodComponent>,
+    /// Nutrition used by villagers, independent of the player food component.
+    #[serde(rename = "minecraft:villager_food")]
+    pub villager_food: Option<VillagerFoodComponent>,
     /// Equippable component, present if this item can be worn in an armor slot.
     #[serde(rename = "minecraft:equippable")]
     pub equippable: Option<EquippableComponent>,
@@ -194,6 +197,11 @@ pub struct SwingAnimationComponent {
 #[derive(Deserialize)]
 pub struct EnchantableComponent {
     pub value: i32,
+}
+
+#[derive(Deserialize)]
+pub struct VillagerFoodComponent {
+    pub nutrition: i32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -424,6 +432,11 @@ impl ToTokens for ItemComponents {
                 saturation: #saturation,
                 can_always_eat: #can_always_eat,
             }), });
+        }
+
+        if let Some(food) = &self.villager_food {
+            let nutrition = food.nutrition;
+            tokens.extend(quote! { (VillagerFood, &VillagerFoodImpl { nutrition: #nutrition }), });
         }
 
         if let Some(consumable) = &self.consumable {
@@ -2383,6 +2396,23 @@ pub fn build() -> TokenStream {
 #[cfg(test)]
 mod combat_component_tests {
     use super::*;
+
+    #[test]
+    fn villager_s2_extracted_component_retains_independent_nutrition()
+    -> Result<(), serde_json::Error> {
+        let components: ItemComponents = serde_json::from_value(serde_json::json!({
+            "minecraft:item_name": {"translate": "item.example.test"},
+            "minecraft:max_stack_size": 64,
+            "minecraft:villager_food": {"nutrition": 7}
+        }))?;
+        let generated = components.to_token_stream().to_string();
+        assert!(
+            generated.contains("VillagerFoodImpl { nutrition : 7i32 }"),
+            "{generated}"
+        );
+        assert!(!generated.contains("(Food ,"));
+        Ok(())
+    }
 
     #[test]
     fn extracted_combat_components_keep_custom_values_in_generated_items() {

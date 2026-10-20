@@ -17,6 +17,8 @@ pub mod riding_lock_probe;
 mod transfer;
 mod villager_persistence;
 
+mod villager_food_component;
+
 use super::{Server, combat_test_support};
 use crate::{
     data::player_server::ServerPlayerData,

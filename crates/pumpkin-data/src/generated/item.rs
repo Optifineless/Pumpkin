@@ -4304,6 +4304,7 @@ impl Item {
                     can_always_eat: false,
                 },
             ),
+            (VillagerFood, &VillagerFoodImpl { nutrition: 1i32 }),
             (
                 Consumable,
                 &ConsumableImpl {
@@ -9154,6 +9155,7 @@ impl Item {
                     can_always_eat: false,
                 },
             ),
+            (VillagerFood, &VillagerFoodImpl { nutrition: 4i32 }),
             (
                 Consumable,
                 &ConsumableImpl {
@@ -12014,6 +12016,7 @@ impl Item {
                     can_always_eat: false,
                 },
             ),
+            (VillagerFood, &VillagerFoodImpl { nutrition: 1i32 }),
             (
                 Consumable,
                 &ConsumableImpl {
@@ -64583,6 +64586,7 @@ impl Item {
                     can_always_eat: false,
                 },
             ),
+            (VillagerFood, &VillagerFoodImpl { nutrition: 1i32 }),
             (
                 Consumable,
                 &ConsumableImpl {

@@ -606,6 +606,38 @@ then move between dimensions; expect every tab to retain all online players and
 remove a player only on disconnect. Capture tabs and player-info packets during
 login, a portal trip, metadata changes and logout.
 
+## Villager food components and owned policy, adjusted slice 2a
+
+The 26.3 `minecraft:villager_food` component now uses its persistent positive-int
+codec, signed VarInt stream codec and canonical component hash. Generated defaults
+come from extracted item data. Owned-value food policy follows component patches,
+removals, inventory-only thresholds, slot-order eating and Java wrapping arithmetic.
+It is preparatory API: live counting/eating remain legacy and unconnected.
+
+Slice 2b is mandatory before slices 3/8/9: one checked level-30 owner must cover
+usable slots, FoodLevel, raw entries and provenance, with mutation-disabled
+preservation, explicit schema/migration rules and lifecycle-safe capture. Route
+counting/eating, pickup, sharing and save capture through it, resolving virtual
+component data outside owner guards. It must distinguish retained legacy ints
+from runtime wrapping before byte saves. Slice 6
+biological age and slice 4a POI saved-format compatibility remain independent;
+awake/biological-age checks and durable HOME authority remain later prerequisites.
+
+The persistence precursor #226 is an informational reference. Its eight-slot,
+exact-patch import check promotes newly supported canonical entries once; invalid,
+noncanonical and excess entries retain their tag contents and order. No save
+marker, food/inventory owner or persistence meaning changes here.
+
+API 8 (same version): component/pure-policy public types are additive. Existing
+VillagerEntity layouts and trait signatures remain unchanged; native plugins using
+the new types need a matching rebuild. WIT stays unchanged. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: Not yet.
+
+Play test: give a player component-patched stone and ordinary bread/wheat, reconnect
+and restart twice; expect the same counts, patches and defaults. Capture inventory
+and `/data` output before and after. Live villager pickup, eating and breeding
+remain outside this slice.
+
 ## Villager persistence, breeding slice 1
 
 Villagers load vanilla 26.3 registry-name `VillagerData`, the finalized flag and

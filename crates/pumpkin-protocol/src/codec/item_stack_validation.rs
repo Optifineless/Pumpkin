@@ -1,5 +1,5 @@
 use pumpkin_data::data_component_impl::{
-    BundleContentsImpl, ChargedProjectilesImpl, ContainerImpl, DamageImpl,
+    BundleContentsImpl, ChargedProjectilesImpl, ContainerImpl, DamageImpl, VillagerFoodImpl,
 };
 use pumpkin_data::{item::Item, item_stack::ItemStack};
 
@@ -20,6 +20,9 @@ pub(super) fn validate_persistent(stack: &ItemStack) -> Result<(), ReadingError>
             || stack
                 .get_data_component::<DamageImpl>()
                 .is_some_and(|damage| damage.damage < 0)
+            || stack
+                .get_data_component::<VillagerFoodImpl>()
+                .is_some_and(|food| food.nutrition <= 0)
         {
             return Err(invalid());
         }

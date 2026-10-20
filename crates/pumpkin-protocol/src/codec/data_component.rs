@@ -19,6 +19,9 @@ mod mob_visibility;
 #[path = "brewing_fuel.rs"]
 mod brewing_fuel;
 
+#[path = "villager_food.rs"]
+mod villager_food;
+
 #[cfg(test)]
 #[path = "component_crash_tests.rs"]
 mod component_crash_tests;
@@ -1007,6 +1010,7 @@ pub fn deserialize(
             Ok(IntangibleProjectileImpl::deserialize(seq)?.to_dyn())
         }
         DataComponent::Food => Ok(FoodImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::VillagerFood => Ok(VillagerFoodImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Consumable => Ok(ConsumableImpl::deserialize(seq)?.to_dyn()),
         DataComponent::UseRemainder => Ok(UseRemainderImpl::deserialize(seq)?.to_dyn()),
         DataComponent::UseCooldown => Ok(UseCooldownImpl::deserialize(seq)?.to_dyn()),
@@ -1161,6 +1165,7 @@ pub fn serialize(
             get::<IntangibleProjectileImpl>(value).serialize(seq)
         }
         DataComponent::Food => get::<FoodImpl>(value).serialize(seq),
+        DataComponent::VillagerFood => get::<VillagerFoodImpl>(value).serialize(seq),
         DataComponent::Consumable => get::<ConsumableImpl>(value).serialize(seq),
         DataComponent::UseRemainder => get::<UseRemainderImpl>(value).serialize(seq),
         DataComponent::UseCooldown => get::<UseCooldownImpl>(value).serialize(seq),

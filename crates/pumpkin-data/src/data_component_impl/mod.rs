@@ -550,8 +550,10 @@ pub mod entity_variant;
 pub mod instrument;
 mod mob_visibility;
 mod text_component_codec;
+mod villager_food;
 pub use instrument::InstrumentImpl;
 pub use mob_visibility::MobVisibilityImpl;
+pub use villager_food::VillagerFoodImpl;
 pub mod food;
 pub mod utility;
 
@@ -576,6 +578,7 @@ pub fn read_data(id: DataComponent, data: &NbtTag) -> Option<Box<dyn DataCompone
         DataComponent::MaxDamage => Some(MaxDamageImpl::read_data(data)?.to_dyn()),
         DataComponent::Unbreakable => Some(UnbreakableImpl::read_data(data)?.to_dyn()),
         DataComponent::Food => Some(FoodImpl::read_data(data)?.to_dyn()),
+        DataComponent::VillagerFood => Some(VillagerFoodImpl::read_data(data)?.to_dyn()),
         DataComponent::Tool => Some(ToolImpl::read_data(data)?.to_dyn()),
         DataComponent::Enchantable => Some(EnchantableImpl::read_data(data)?.to_dyn()),
         DataComponent::DamageResistant => Some(DamageResistantImpl::read_data(data)?.to_dyn()),
