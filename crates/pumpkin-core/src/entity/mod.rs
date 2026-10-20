@@ -3562,15 +3562,23 @@ impl Entity {
                 self.pos.load().z.floor() as i32,
             ));
 
-            let below_state_id = world.get_block_state_id(&below_pos);
-            // Vanilla: isWater checks specifically for water fluid, not any fluid
-            let is_water = Fluid::from_state_id(below_state_id)
-                .is_some_and(|f| f.id == Fluid::WATER.id || f.id == Fluid::FLOWING_WATER.id);
-
             let fallback_pos =
                 Vector3::new(self.pos.load().x, vehicle_box.max.y, self.pos.load().z);
 
-            let dismount_pos = if is_water {
+            let boat_dismount_pos = vehicle::boat_dismount::dismount_position_if_boat(
+                self,
+                passenger_entity,
+                &world,
+                vehicle_box,
+                fallback_pos,
+            );
+            let is_water = boat_dismount_pos.is_none()
+                && Fluid::from_state_id(world.get_block_state_id(&below_pos))
+                    .is_some_and(|f| f.id == Fluid::WATER.id || f.id == Fluid::FLOWING_WATER.id);
+
+            let dismount_pos = if boat_dismount_pos.is_some() {
+                boat_dismount_pos.unwrap_or(fallback_pos)
+            } else if is_water {
                 fallback_pos
             } else {
                 // Vanilla checks Standing, Crouching, Swimming poses and their respective height checks

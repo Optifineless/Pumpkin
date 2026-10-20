@@ -4,6 +4,7 @@
     reason = "Scenario setup and assertions must fail loudly"
 )]
 
+mod boat_dismount_tests;
 mod entity_unload;
 mod hardcore_respawn_review;
 mod lifecycle;
