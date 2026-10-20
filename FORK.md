@@ -386,6 +386,16 @@ Ender Dragon contact ignores Creative and Spectator players and sends Survival d
 
 Door hinge scoring checks full-block obstructions beside the door at both lower and upper levels, while preserving adjacent-door precedence and the click-position tie-break. Mirrors vanilla 26.3 `DoorBlock.getHinge`. Fixes [#22](https://github.com/Optifineless/Pumpkin/issues/22). In-game verification: **Not yet**.
 
+Door hinge ties reconstruct the absolute hit from the clicked block and relative
+packet hit, then use vanilla's inclusive midpoint comparisons. Lanterns follow
+the vanilla nearest-looking placement context, select the first supported floor
+or ceiling side, waterlog in source or flowing water, and return air immediately
+when their selected support is removed. Mirrors vanilla 26.3
+`DoorBlock.getHinge` and `LanternBlock.getStateForPlacement/canSurvive/updateShape`.
+Fixes [#267](https://github.com/Optifineless/Pumpkin/issues/267),
+[#268](https://github.com/Optifineless/Pumpkin/issues/268), and
+[#269](https://github.com/Optifineless/Pumpkin/issues/269). In-game verification: Not yet.
+
 An adjacent side placement makes a trapdoor face the horizontal block face that was clicked. Replacing the clicked block and clicking a vertical face retain vanilla's opposite-player-facing branch. Mirrors vanilla 26.3 `TrapDoorBlock.getStateForPlacement`. Fixes [#23](https://github.com/Optifineless/Pumpkin/issues/23). In-game verification: **Not yet**.
 Ender Dragon wing contact pushes any living entity and can deal 5 mob-attack
 damage; head/neck contact deals 10. Part dimensions and contact ordering mirror
@@ -413,8 +423,8 @@ still consumes tipped and spectral arrows. Mirrors vanilla 26.3
 `BowItem.releaseUsing`, `ProjectileWeaponItem.draw/useAmmo` and
 `AbstractArrow` construction. Fixes #92. In-game verification: **Not yet**.
 
-Lantern survival and delayed cleanup use the support side selected by the stored
-`HANGING` state, and ladder placement retains replaced water as `WATERLOGGED`.
+Lantern survival uses the support side selected by the stored `HANGING` state,
+and ladder placement retains replaced water as `WATERLOGGED`.
 Mirrors vanilla 26.3 `LanternBlock.canSurvive/getConnectedDirection/updateShape`
 and `LadderBlock.getStateForPlacement/updateShape`. Fixes #51 and #54.
 In-game verification: **Not yet**.
