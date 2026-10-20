@@ -5,7 +5,6 @@ use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
-use crate::world::scoreboard::ScoreboardScore;
 use pumpkin_data::translation;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
@@ -53,32 +52,18 @@ impl CommandExecutor for SimpleTriggerExecutor {
 
         let objective_display_name = objective.display_name.clone();
 
-        let is_locked = scoreboard
-            .get_scores()
-            .get(&objective_name)
-            .and_then(|m| m.get(&player_name))
-            .is_none_or(|s| s.locked);
-
-        if is_locked {
+        let Some(mut updated_score) = scoreboard.get_score(&player_name, &objective_name).cloned()
+        else {
+            return Err(UNPRIMED_TRIGGER_ERROR.create_without_context());
+        };
+        if updated_score.locked {
             return Err(UNPRIMED_TRIGGER_ERROR.create_without_context());
         }
 
-        let current_value = scoreboard
-            .get_scores()
-            .get(&objective_name)
-            .and_then(|m| m.get(&player_name))
-            .map_or(0, |s| s.value.0);
-
-        let new_value = current_value + 1;
-
-        let updated_score = ScoreboardScore {
-            entity_name: player_name,
-            objective_name: objective_name.clone(),
-            value: VarInt(new_value),
-            display_name: None,
-            number_format: None,
-            locked: true,
-        };
+        // Vanilla TriggerCommand mutates the existing ScoreAccess and then locks it.
+        let new_value = updated_score.value.0.wrapping_add(1);
+        updated_score.value = VarInt(new_value);
+        updated_score.locked = true;
 
         scoreboard.update_score(&world, updated_score);
 
@@ -122,32 +107,18 @@ impl CommandExecutor for AddTriggerExecutor {
 
         let objective_display_name = objective.display_name.clone();
 
-        let is_locked = scoreboard
-            .get_scores()
-            .get(&objective_name)
-            .and_then(|m| m.get(&player_name))
-            .is_none_or(|s| s.locked);
-
-        if is_locked {
+        let Some(mut updated_score) = scoreboard.get_score(&player_name, &objective_name).cloned()
+        else {
+            return Err(UNPRIMED_TRIGGER_ERROR.create_without_context());
+        };
+        if updated_score.locked {
             return Err(UNPRIMED_TRIGGER_ERROR.create_without_context());
         }
 
-        let current_value = scoreboard
-            .get_scores()
-            .get(&objective_name)
-            .and_then(|m| m.get(&player_name))
-            .map_or(0, |s| s.value.0);
-
-        let new_value = current_value + value;
-
-        let updated_score = ScoreboardScore {
-            entity_name: player_name,
-            objective_name: objective_name.clone(),
-            value: VarInt(new_value),
-            display_name: None,
-            number_format: None,
-            locked: true,
-        };
+        // Vanilla TriggerCommand adds to the existing ScoreAccess, preserving its metadata.
+        let new_value = updated_score.value.0.wrapping_add(value);
+        updated_score.value = VarInt(new_value);
+        updated_score.locked = true;
 
         scoreboard.update_score(&world, updated_score);
 
@@ -194,24 +165,17 @@ impl CommandExecutor for SetTriggerExecutor {
 
         let objective_display_name = objective.display_name.clone();
 
-        let is_locked = scoreboard
-            .get_scores()
-            .get(&objective_name)
-            .and_then(|m| m.get(&player_name))
-            .is_none_or(|s| s.locked);
-
-        if is_locked {
+        let Some(mut updated_score) = scoreboard.get_score(&player_name, &objective_name).cloned()
+        else {
+            return Err(UNPRIMED_TRIGGER_ERROR.create_without_context());
+        };
+        if updated_score.locked {
             return Err(UNPRIMED_TRIGGER_ERROR.create_without_context());
         }
 
-        let updated_score = ScoreboardScore {
-            entity_name: player_name,
-            objective_name: objective_name.clone(),
-            value: VarInt(value),
-            display_name: None,
-            number_format: None,
-            locked: true,
-        };
+        // Vanilla TriggerCommand sets the existing ScoreAccess value, then locks it.
+        updated_score.value = VarInt(value);
+        updated_score.locked = true;
 
         scoreboard.update_score(&world, updated_score);
 
