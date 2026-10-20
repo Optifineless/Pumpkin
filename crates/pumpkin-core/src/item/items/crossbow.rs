@@ -8,7 +8,9 @@ use crate::entity::player::Player;
 use crate::item::items::projectile_weapon::ProjectileWeaponItem;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use pumpkin_data::data_component::DataComponent;
-use pumpkin_data::data_component_impl::{ChargedProjectilesImpl, EquipmentSlot};
+use pumpkin_data::data_component_impl::{
+    ChargedProjectilesImpl, EquipmentSlot, IntangibleProjectileImpl,
+};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
@@ -201,6 +203,15 @@ impl CrossbowItem {
         if projectiles.is_empty() {
             return;
         }
+        let paid_projectiles = projectiles
+            .iter()
+            .filter(|projectile| {
+                projectile
+                    .get_data_component::<IntangibleProjectileImpl>()
+                    .is_none()
+            })
+            .cloned()
+            .collect();
         // CrossbowItem.performShooting takes and empties the charge before shoot can call plugins.
         held.patch
             .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
@@ -237,7 +248,7 @@ impl CrossbowItem {
                 &player.position(),
             );
         } else {
-            Self::restore_denied_charge(player, &expected, &projectiles);
+            Self::refund_denied_charge(player, &expected, paid_projectiles);
         }
         player.sync_hand_slot(slot, player.inventory().get_stack(slot));
         if let Some(destination) = ProjectileWeaponItem::weapon_slot(player, &expected)
@@ -247,45 +258,48 @@ impl CrossbowItem {
         }
     }
 
-    fn restore_denied_charge(player: &Player, expected: &ItemStack, projectiles: &[ItemStack]) {
+    fn refund_denied_charge(
+        player: &Player,
+        expected: &ItemStack,
+        mut paid_projectiles: Vec<ItemStack>,
+    ) {
         let inventory = player.inventory();
         let owner = inventory.slot_transaction(0);
         let guard = owner.lock();
-        let payment_returned = if owner.is_live()
+        if owner.is_live()
             && let Some(slot) = ProjectileWeaponItem::weapon_slot(player, expected)
         {
-            let mut current = inventory.get_stack(slot);
-            let current_charge = current.get_data_component::<ChargedProjectilesImpl>();
-            if current_charge == expected.get_data_component::<ChargedProjectilesImpl>() {
-                // A callback may already have returned this draw's payment to the retained weapon.
-                true
-            } else if current_charge.is_none_or(|charge| charge.projectiles.is_empty()) {
-                current
-                    .patch
-                    .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
-                current.set_data_component(
-                    expected
-                        .get_data_component::<ChargedProjectilesImpl>()
-                        .cloned()
-                        .unwrap_or_else(|| ChargedProjectilesImpl {
-                            projectiles: Vec::new(),
-                        }),
-                );
-                inventory.set_stack(slot, current);
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-        drop(guard);
-        if !payment_returned {
-            // This branch is reachable only when every round was denied. Free copies own no stock.
-            for projectile in projectiles {
-                if projectile.get_data_component::<pumpkin_data::data_component_impl::IntangibleProjectileImpl>().is_none() {
-                    crate::item::item_utils::give_or_drop(player, projectile.clone());
+            let current = inventory.get_stack(slot);
+            if let Some(charge) = current.get_data_component::<ChargedProjectilesImpl>() {
+                for retained in charge
+                    .projectiles
+                    .iter()
+                    .filter_map(ItemStack::read_item_stack)
+                {
+                    // Retained paid stock owns original payments, independently of free side rounds.
+                    if retained
+                        .get_data_component::<IntangibleProjectileImpl>()
+                        .is_none()
+                    {
+                        let mut retained_count = retained.item_count;
+                        for paid in &mut paid_projectiles {
+                            if paid.item == retained.item {
+                                let matched = paid.item_count.min(retained_count);
+                                paid.decrement(matched);
+                                retained_count -= matched;
+                            }
+                            if retained_count == 0 {
+                                break;
+                            }
+                        }
+                    }
                 }
+            }
+        }
+        drop(guard);
+        for projectile in paid_projectiles {
+            if !projectile.is_empty() {
+                crate::item::item_utils::give_or_drop(player, projectile);
             }
         }
     }

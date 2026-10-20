@@ -8,8 +8,8 @@ One internal launch boundary honors `ProjectileLaunchEvent` before the existing
 world insertion and `EntitySpawnEvent` admission. Rejected item/dispenser shots
 restore paid stock, preserve callback replacements and publish live source slots;
 fully denied launches/casts publish no success sound, statistic, cooldown or wear.
-A bow or crossbow draw has one shared payment: full denial restores it, including
-a moved same-UID crossbow; any admitted round spends the whole draw, with no
+A bow or crossbow draw has one shared payment: full denial refunds paid rounds
+absent from the retained weapon; any admitted round spends the whole draw, with no
 remaining charge or loose refund. Wear follows the retained weapon for each
 admitted round and stops on actual break. Paid thrown tridents receive eligible,
 cancellable `hurtWithoutBreaking` damage; Creative copies remain noncollectible.
@@ -30,6 +30,28 @@ different charges and fresh-UID replacements still return the original payment.
 Native API 8, public layouts/signatures, Wasm WIT and saved-data meaning are
 unchanged. In-game verification: Not yet.
 
+PR #394 review round 3: crossbow firing tracks the original paid rounds separately
+from intangible Multishot copies. After full denial, each paid round still loaded
+in the same-UID weapon owns one matching original payment by projectile item.
+Only missing payments return loose; full, partial, intangible-only and empty
+callback charges keep their edits. Different-UID or different-projectile charges
+remain callback stock and do not consume the original payment. Ordinary full
+denial leaves the weapon empty and refunds its payment loose, so firing again
+requires reloading. Matching also accounts for quantities in saved charge entries.
+No lock is held during refunds or callbacks. Native API 8,
+public layouts/signatures, Wasm WIT and saved component meanings are unchanged.
+Implemented by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Round 3 checked against official Java 26.3 `CrossbowItem.performShooting` and
+`ProjectileWeaponItem.draw/useAmmo`, decompiled with Vineflower 1.12.0 (inner
+server JAR SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
+
+Twenty-four real use/release regressions cover both veto events and ammunition
+types, including repeated partial charges and split/merged saved counts. Each
+scenario has a recorded failing negative control against round 2, unconditional
+refunds, blanket charge suppression or quantity-blind entry matching. Admitted
+shots remain controls for spent payment. Temporary mutations are not retained.
+
 Audit backlog: loose-ammunition rollback needs explicit provenance. Restoring the
 pre-claim same-UID count is indistinguishable from the callback grant protected
 by `old_pr204_1020_tests/items.rs`; suppressing that refund would lose supported
@@ -42,6 +64,11 @@ with two rockets and with Multishot. Expect one loose item and one paid loaded
 charge throughout, no ground refund, shot sound or wear. Disable cancellation
 and fire; expect the charge to clear and only the loose item to remain. Record
 the ammunition counts and crossbow before and after the repeated vetoes.
+Also have the protection callback keep only the paid round, then only intangible
+side rounds, then an empty charge. Expect two physical items throughout: a paid
+loaded round prevents a loose refund; missing paid rounds return loose. Reload
+before retrying an empty crossbow. Repeat with arrows and rockets and capture the
+loaded, inventory and ground counts for both launch and spawn cancellation.
 
 ## Minecart placement centers once (#129)
 

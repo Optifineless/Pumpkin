@@ -130,7 +130,7 @@ fn case(
     let actual = player.inventory().get_stack(source);
     if !admitted && edit == 0 {
         assert_eq!(actual.uid, original.uid);
-        assert!(actual.are_equal(&original) || (route == 4 && charge(&actual) == 1));
+        assert!(actual.are_equal(&original));
     }
     if !admitted && edit == 1 {
         assert_eq!(actual.item, &Item::DIAMOND);
@@ -142,10 +142,8 @@ fn case(
         assert_eq!(loose(&player, &Item::ARROW), 2 - usize::from(admitted));
     }
     if route == 4 {
-        assert_eq!(
-            loose(&player, &Item::ARROW) + usize::from(charge(&actual) > 0),
-            2 - usize::from(admitted)
-        );
+        assert_eq!(charge(&actual), 0);
+        assert_eq!(loose(&player, &Item::ARROW), 2 - usize::from(admitted));
     }
     player.tick(&fixture.world.server);
     let packets = fixture.owner.take_packets();

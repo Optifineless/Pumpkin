@@ -10,4 +10,5 @@ pub mod support;
 mod weapons;
 
 mod controls;
+mod crossbow_paid_rounds;
 mod crossbow_rollback;

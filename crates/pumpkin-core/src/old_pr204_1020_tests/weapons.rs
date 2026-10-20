@@ -157,7 +157,6 @@ async fn old_pr204_1020_crossbow_moved_uid_shared_payment() {
                 shoot(&p, f, Hand::Right);
                 assert_eq!(charge(&p.player.inventory().get_stack(0)), 3);
                 assert_eq!(loose(&p.player, &Item::ARROW), 2);
-                let loaded = p.player.inventory().get_stack(0);
                 hooks.configure(
                     veto,
                     partial,
@@ -176,29 +175,23 @@ async fn old_pr204_1020_crossbow_moved_uid_shared_payment() {
                 assert_eq!(current.uid, uid);
                 assert_eq!(
                     loose(&p.player, &Item::ARROW),
-                    2,
-                    "moved partial shot returned shared payment as loose ammunition"
+                    if partial { 2 } else { 3 },
+                    "full denial must refund only its absent shared payment"
                 );
-                assert_eq!(charge(&current), if partial { 0 } else { 3 });
+                assert_eq!(charge(&current), 0);
                 assert_eq!(current.get_damage(), if partial { 2 } else { 0 });
-                if !partial {
-                    assert!(current.are_equal(&loaded));
-                }
                 let packets = p.take_packets();
                 assert_slot(&packets, 0, &p.player.inventory().get_stack(0));
                 assert_slot(&packets, 4, &current);
                 if !partial {
                     assert_quiet(&packets);
                 }
-                // Multiple attempts keep the entitlement finite. Full denial retains one paid draw;
-                // partial success retires it, and every later reload pays fresh stock.
+                // Every reload pays fresh stock; only full denial returns that payment.
                 hooks.configure(veto, partial, None);
                 let mut spent = usize::from(partial);
                 for _ in 0..2 {
-                    if partial {
-                        shoot(&p, f, Hand::Right);
-                        spent += 1;
-                    }
+                    shoot(&p, f, Hand::Right);
+                    spent += usize::from(partial);
                     hooks.configure(veto, partial, None);
                     use_item(&p, f, Hand::Right);
                     assert_eq!(
@@ -262,7 +255,6 @@ async fn old_pr204_1020_crossbow_natural_break_never_refunds_spent_payment() {
                 };
                 p.player.inventory().set_stack(ammo_slot, stack(2, item));
                 shoot(&p, f, Hand::Right);
-                let loaded = p.player.inventory().get_stack(0);
                 assert_eq!(loose(&p.player, item), 1);
                 hooks.configure(Veto::Launch, control != 3, None);
                 if control == 1 {
@@ -315,7 +307,9 @@ async fn old_pr204_1020_crossbow_natural_break_never_refunds_spent_payment() {
                     );
                     assert_eq!(hooks.counts(), (2, 1, 1));
                 } else if control == 3 {
-                    assert!(actual.are_equal(&loaded));
+                    assert_eq!(actual.uid, weapon.uid);
+                    assert_eq!(actual.get_damage(), weapon.get_damage());
+                    assert_eq!(charge(&actual), 0);
                     assert_eq!(hooks.counts(), (3, 0, 0));
                 } else {
                     assert_eq!(actual.get_damage(), weapon.get_damage());
@@ -323,7 +317,7 @@ async fn old_pr204_1020_crossbow_natural_break_never_refunds_spent_payment() {
                 }
                 assert_eq!(
                     loose(&p.player, item),
-                    1,
+                    if control == 3 { 2 } else { 1 },
                     "natural break refunded a payment already spent by an intangible round"
                 );
                 let packets = p.take_packets();
@@ -345,7 +339,6 @@ fn crossbow_arrow_variants(f: &crate::entity::death_test_world::DeathTestWorld) 
             p.player.inventory().set_stack(0, stack(1, &Item::CROSSBOW));
             p.player.inventory().set_stack(9, stack(2, item));
             shoot(&p, f, Hand::Right);
-            let loaded = p.player.inventory().get_stack(0);
             hooks.configure(veto, false, None);
             p.take_packets();
             let before = f.world().entities.load().len();
@@ -360,12 +353,12 @@ fn crossbow_arrow_variants(f: &crate::entity::death_test_world::DeathTestWorld) 
                 f.world().entities.load().len() - before,
                 usize::from(admitted)
             );
-            assert_eq!(loose(&p.player, item), 1);
+            assert_eq!(loose(&p.player, item), if admitted { 1 } else { 2 });
+            assert_eq!(charge(&actual), 0);
             if admitted {
-                assert_eq!(charge(&actual), 0);
                 assert_eq!(actual.get_damage(), 1);
             } else {
-                assert!(actual.are_equal(&loaded));
+                assert_eq!(actual.get_damage(), 0);
             }
             let packets = p.take_packets();
             assert_slot(&packets, 0, &actual);

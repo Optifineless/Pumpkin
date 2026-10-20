@@ -193,7 +193,7 @@ async fn old_pr204_1020_crossbow_other_charge_still_refunds_original_payment() {
     .await;
 }
 
-fn stock(player: &Player, item: &Item) -> usize {
+pub(super) fn stock(player: &Player, item: &Item) -> usize {
     let loaded: usize = (0..player.inventory().size())
         .map(|slot| player.inventory().get_stack(slot))
         .filter_map(|stack| {
