@@ -84,7 +84,7 @@ impl AxeItem {
             {
                 let partner_pos = location.offset(direction.to_offset());
                 let (partner_block, partner_state_id) = world.get_block_and_state_id(&partner_pos);
-                if partner_block == block {
+                if partner_block.has_tag(&tag::Block::MINECRAFT_COPPER_CHESTS) {
                     let partner_props = ChestLikeProperties::from_state_id(partner_state_id);
                     if partner_props.facing == chest_props.facing
                         && partner_props.r#type == expected_partner_type
