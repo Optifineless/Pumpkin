@@ -17,6 +17,13 @@ pub struct GoalSelector {
 }
 
 impl GoalSelector {
+    #[cfg(test)]
+    pub(crate) fn is_goal_running<G: Goal + 'static>(&self) -> bool {
+        self.goals
+            .iter()
+            .any(|goal| goal.type_id == TypeId::of::<G>() && goal.running)
+    }
+
     pub fn add_goal<G: Goal + 'static>(&mut self, priority: u8, goal: Box<G>) {
         self.goals
             .push(PrioritizedGoal::new(TypeId::of::<G>(), priority, goal));
