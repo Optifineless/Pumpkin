@@ -13,18 +13,23 @@ impl World {
         occupied: bool,
         is_current: impl Fn() -> bool,
     ) -> bool {
-        let Some(mutation) = self.block_entity_mutation_permit(half.0) else {
+        let Some(mutation) = self.reserve_block_entity_mutation(half.0) else {
             return false;
         };
         if !is_current() {
             return false;
         }
+        let publication = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut properties = WhiteBedLikeProperties::from_state_id(half.1);
         properties.occupied = occupied;
         let next = properties.to_state_id(Block::from_state_id(half.1));
         let committed = self
             .write_block_state_if(&half.0, next, |state| state == half.1)
             .is_some();
+        drop(publication);
         drop(mutation);
         if committed {
             self.on_block_state_set(
@@ -44,18 +49,31 @@ impl World {
         occupied: bool,
         is_current: impl Fn() -> bool,
     ) -> bool {
-        let Some(reservation) = self.reserve_bed_use(halves) else {
+        // Entry refuses destruction; release invalidates its captured occupied states instead.
+        // Never borrow another operation's reservation: its owner must retain admission until drop.
+        let reservation = if occupied {
+            let Some(reservation) = self.reserve_bed_use(halves) else {
+                return false;
+            };
+            Some(reservation)
+        } else {
+            None
+        };
+        // Sleep capture already resolved the entities; admission must not invoke native code.
+        let Some(head_mutation) = self.reserve_block_entity_mutation(halves[0].0) else {
             return false;
         };
-        let Some(head_mutation) = self.block_entity_mutation_permit(halves[0].0) else {
-            return false;
-        };
-        let Some(foot_mutation) = self.block_entity_mutation_permit(halves[1].0) else {
+        let Some(foot_mutation) = self.reserve_block_entity_mutation(halves[1].0) else {
             return false;
         };
         if !is_current() {
             return false;
         }
+        // Serialize both raw writes with reserved removal, without retaining a guard for effects.
+        let publication = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let next = halves.map(|(_, state)| {
             let mut properties = WhiteBedLikeProperties::from_state_id(state);
             properties.occupied = occupied;
@@ -73,6 +91,7 @@ impl World {
         if !committed {
             let _ = self.write_block_state_if(&halves[0].0, halves[0].1, |state| state == next[0]);
         }
+        drop(publication);
         drop(foot_mutation);
         drop(head_mutation);
         drop(reservation);

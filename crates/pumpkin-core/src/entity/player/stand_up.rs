@@ -1,5 +1,4 @@
 use pumpkin_data::{
-    Block, BlockState,
     block_properties::OakTrapdoorLikeProperties,
     entity::EntityType,
     tag::{self, Taggable},
@@ -12,6 +11,8 @@ use pumpkin_util::math::{
 };
 
 use crate::world::{World, natural_spawner::is_block_dangerous};
+
+mod inputs;
 
 const BORDER_EPSILON: f64 = 1.0e-5f32 as f64;
 
@@ -62,13 +63,14 @@ pub(super) fn safe_dismount(
     check_dangerous: bool,
 ) -> Option<Vector3<f64>> {
     let kind = &EntityType::PLAYER;
-    let state = spawn_state(world, pos)?;
+    let mut inputs = inputs::Inputs::default();
+    let state = inputs.read(world, pos)?;
     if check_dangerous && is_block_dangerous(kind, state) {
         return None;
     }
-    let mut floor = non_climbable_shape_height(world, pos)?;
+    let mut floor = non_climbable_shape_height(world, pos, &mut inputs)?;
     if floor == f64::NEG_INFINITY {
-        let below = non_climbable_shape_height(world, pos.down())?;
+        let below = non_climbable_shape_height(world, pos.down(), &mut inputs)?;
         floor = if below >= 1.0 {
             below - 1.0
         } else {
@@ -78,7 +80,7 @@ pub(super) fn safe_dismount(
     if !floor.is_finite() || floor >= 1.0 {
         return None;
     }
-    if check_dangerous && floor <= 0.0 && is_block_dangerous(kind, spawn_state(world, pos.down())?)
+    if check_dangerous && floor <= 0.0 && is_block_dangerous(kind, inputs.read(world, pos.down())?)
     {
         return None;
     }
@@ -86,7 +88,8 @@ pub(super) fn safe_dismount(
         .id
         .to_block()
         .has_tag(&tag::Block::MINECRAFT_INVALID_SPAWN_INSIDE)
-        || spawn_state(world, pos.up())?
+        || inputs
+            .read(world, pos.up())?
             .id
             .to_block()
             .has_tag(&tag::Block::MINECRAFT_INVALID_SPAWN_INSIDE)
@@ -103,7 +106,7 @@ pub(super) fn safe_dismount(
         if !world.is_in_height_limit(cell.0.y) {
             continue;
         }
-        let state = world.get_block_state_if_loaded(&cell)?;
+        let state = inputs.read(world, cell)?;
         let mut collision = false;
         world.for_each_collision_shape(state, &cell, None, &mut |shape| {
             collision |= shape.at_pos(cell).intersects(&bounds);
@@ -121,11 +124,15 @@ pub(super) fn safe_dismount(
         border.contains(bounds.min.x, bounds.min.z)
             && border.contains(bounds.max.x - BORDER_EPSILON, bounds.max.z - BORDER_EPSILON)
     };
-    inside_border.then_some(position)
+    (inside_border && inputs.is_current(world)).then_some(position)
 }
 
-fn non_climbable_shape_height(world: &World, pos: BlockPos) -> Option<f64> {
-    let state = spawn_state(world, pos)?;
+fn non_climbable_shape_height(
+    world: &World,
+    pos: BlockPos,
+    inputs: &mut inputs::Inputs,
+) -> Option<f64> {
+    let state = inputs.read(world, pos)?;
     let block = state.id.to_block();
     // DismountHelper.nonClimbableShape excludes ladders and open trapdoors as support.
     if block.has_tag(&tag::Block::MINECRAFT_CLIMBABLE)
@@ -139,14 +146,6 @@ fn non_climbable_shape_height(world: &World, pos: BlockPos) -> Option<f64> {
         height = height.max(shape.max.y);
     });
     Some(height)
-}
-
-fn spawn_state(world: &World, pos: BlockPos) -> Option<&'static BlockState> {
-    if world.is_in_height_limit(pos.0.y) {
-        world.get_block_state_if_loaded(&pos)
-    } else {
-        Some(Block::AIR.default_state)
-    }
 }
 
 pub(super) fn look_at_yaw(position: Vector3<f64>, spawn: BlockPos) -> f32 {

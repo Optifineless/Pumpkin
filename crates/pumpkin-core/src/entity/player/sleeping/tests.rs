@@ -56,6 +56,12 @@ mod entry_sync;
 #[path = "geometry_callback_tests.rs"]
 mod geometry_callback;
 
+#[path = "review_reservation_tests.rs"]
+mod review_reservation;
+
+#[path = "review_movement_tests.rs"]
+mod review_movement;
+
 fn use_block(fixture: &PlayerFixture, client: &TestPlayer, position: BlockPos) {
     client
         .client()

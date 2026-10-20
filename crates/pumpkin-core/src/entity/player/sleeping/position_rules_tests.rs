@@ -41,6 +41,14 @@ pub(super) struct Scenario {
 
 impl Scenario {
     pub(super) fn new(dimension: Dimension, item: &'static Item) -> Self {
+        Self::with_sleep(dimension, item, false)
+    }
+
+    pub(super) fn with_native_sleep(dimension: Dimension, item: &'static Item) -> Self {
+        Self::with_sleep(dimension, item, true)
+    }
+
+    fn with_sleep(dimension: Dimension, item: &'static Item, native: bool) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let server = combat_test_support::server(directory.path());
         let world = Arc::new(World::load(
@@ -90,7 +98,11 @@ impl Scenario {
         assert_eq!(scenario.world.get_block(&FOOT).item_id, item.id);
         assert_eq!(scenario.world.get_block(&HEAD).item_id, item.id);
         scenario.world.level_time.lock().unwrap().time_of_day = 13_000;
-        scenario.use_on(FOOT);
+        if native {
+            scenario.client.player.sleep(HEAD);
+        } else {
+            scenario.use_on(FOOT);
+        }
         assert_eq!(scenario.client.player.sleeping_bed_pos.load(), Some(HEAD));
         assert!(scenario.client.player.get_entity().pose.load() == EntityPose::Sleeping);
         scenario

@@ -25,6 +25,27 @@ unimplemented. Implemented by GPT-6.1 Sol (Codex Cloud).
 API 8 (same version): a private saved-counter field changes the public `Player`
 layout, so native plugins must rebuild. Public signatures, source compatibility,
 Wasm WIT and saved tag types/meaning stay unchanged.
+
+PR #401 review round 2: wake release now completes during reserved break and
+unsafe-use callbacks, invalidating their occupied-state snapshots. Entry still
+refuses those reservations. Stand-up movement preserves a newer accepted plugin
+teleport or position/rotation, while occupancy and sleep cleanup still finish.
+Dismount candidates revalidate every terrain input plus moving-piston entity and
+progress after native callbacks, rejecting changed clearance or support.
+Mirrors the release, final owner position and clearance contracts in vanilla 26.3
+`LivingEntity.stopSleeping/hurtServer`, `ServerPlayer.stopSleepInBed` and
+`DismountHelper.findSafeDismountLocation`, adapting them to native callbacks.
+
+Eleven real-entry regressions fail against the original `de1c35ddf` production
+code: reserved native/Java/lethal wakes retain sleep, accepted teleports return
+to the bed, and changed clearance, support or piston progress admits the stale
+exit. Negative controls restored the original production files and retained all
+new tests.
+
+API 8 (same version): the private context in public `BedSleepAdmission` changes
+its layout; native plugins must rebuild. Public signatures, source compatibility,
+Player/World layouts, Wasm WIT and saved-data meaning are unchanged by this round.
+
 In-game verification: Not yet.
 
 Play test: use normal and straw beds beside an ocelot, a zombie and an angry
@@ -35,6 +56,12 @@ Cancel a wake with a plugin, retry, then disconnect asleep while another player
 watches; expect coherent occupancy and a usable bed after logout/rejoin. Mine
 a malformed orphan beside a different-facing valid pair; expect that pair to
 survive. Record both clients, bed layouts, messages and logout/rejoin behavior.
+
+Review round 2 play test: cancel a friend's attempt to break an occupied bed while
+a plugin wakes its sleeper; expect an awake player and a reusable bed. Repeat with
+lethal damage and respawn. Have the leave hook teleport the sleeper home; expect
+the home position and facing to remain. Repeat beside moving pistons and record
+both clients, including health before and after waking.
 
 ## Stable Bedrock score identities (#289)
 

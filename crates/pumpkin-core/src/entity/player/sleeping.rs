@@ -27,6 +27,34 @@ struct WakeContext {
     bed_pos: Option<BlockPos>,
     life: u64,
     registered: bool,
+    movement: WakeMovement,
+}
+
+struct WakeMovement {
+    position: Vector3<f64>,
+    yaw: u32,
+    pitch: u32,
+    teleport: i32,
+}
+
+impl WakeMovement {
+    fn capture(player: &Player) -> Self {
+        let entity = player.get_entity();
+        Self {
+            position: player.position(),
+            yaw: entity.yaw.load().to_bits(),
+            pitch: entity.pitch.load().to_bits(),
+            teleport: player.teleport_id_count.load(Relaxed),
+        }
+    }
+
+    fn is_current(&self, player: &Player) -> bool {
+        let entity = player.get_entity();
+        player.position() == self.position
+            && entity.yaw.load().to_bits() == self.yaw
+            && entity.pitch.load().to_bits() == self.pitch
+            && player.teleport_id_count.load(Relaxed) == self.teleport
+    }
 }
 
 impl WakeContext {
@@ -37,6 +65,7 @@ impl WakeContext {
             bed_pos: player.sleeping_bed_pos.load(),
             life: player.living_entity.damage_lifecycle(),
             registered: world.get_player_by_uuid(player.gameprofile.id).is_some(),
+            movement: WakeMovement::capture(player),
         }
     }
 
@@ -549,6 +578,7 @@ impl Player {
         }
         if departure
             || !context.is_current_at(self, None)
+            || !context.movement.is_current(self)
             || (!bed.is_current(&context.world)
                 && context.world.get_block_state_id_if_loaded(&bed.position)
                     != Some(BlockStateId::AIR))
@@ -567,6 +597,7 @@ impl Player {
         )
         .unwrap_or_else(|| bed.position.up().to_f64().add_raw(0.0, 0.1, 0.0));
         if !context.is_current_at(self, None)
+            || !context.movement.is_current(self)
             || self.get_entity().is_removed()
             || !wake_cell.is_current(&context.world)
         {
