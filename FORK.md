@@ -1191,6 +1191,30 @@ rule follows the existing `ArmorSlot.mayPickup` / `EnchantmentHelper.has` port,
 and Bedrock corrections follow the fork's existing container addressing.
 In-game verification: **Not yet**.
 
+Issue #207: denied legacy Bedrock armor drops now return an error and force the
+unchanged authoritative armor, inventory, crafting and cursor contents. Rejected
+multi-action requests correct the active 2x2/3x3 crafting input/output or generic
+container, preserving any earlier valid commits. Correction snapshots use ordered
+inventory owners and revalidate the live player/menu after release; each packet
+reads current stock, including an unchanged cursor. Java QuickMove rechecks
+`can_take_stack` on the lock-pinned source before withdrawal. Mirrors the supplied
+vanilla 26.3 `ArmorSlot.mayPickup`, `Slot.tryRemove/safeTake` and
+`AbstractContainerMenu.doClick/sendAllDataToRemote`; Bedrock addresses reuse the
+existing packet encoders and mappings. Implemented by GPT-6.1 Sol (Codex Cloud).
+
+API 8 (same version): the player-checked transfer entry is additive within the
+inventory crate; the existing merchant transfer signature, public trait vtables,
+layouts, Wasm WIT and saved-data meanings are unchanged. Existing native source
+remains compatible; no new rebuild requirement. In-game verification: Not yet.
+
+Play test: in Survival, try legacy drop and shift-click on Binding Curse armor;
+expect it to remain equipped with the cursor and crafting grid showing server
+contents. Repeat with ordinary armor and with cursed armor in Creative; expect
+removal to work. Craft, then attempt a denied armor take in one Bedrock request;
+expect any paid craft to remain, all ingredient/output counts to correct and no
+extra items. Repeat at a crafting table and chest. Record the inventory, cursor,
+armor and ground items before and after rejection, with a nearby observer.
+
 Ender Dragon contact ignores Creative and Spectator players and sends Survival damage through the victim with the dragon recorded as attacker ([#161](https://github.com/Optifineless/Pumpkin/issues/161)). In-game verification: **Not yet**.
 
 ## Door and trapdoor placement (#22, #23)

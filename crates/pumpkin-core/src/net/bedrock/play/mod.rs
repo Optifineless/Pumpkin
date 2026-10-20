@@ -151,3 +151,12 @@ mod created_output_tests;
 
 #[cfg(test)]
 mod recipe_repetitions_tests;
+
+#[cfg(test)]
+mod inventory_quickmove_tests;
+#[cfg(test)]
+mod rejected_prediction_partial_tests;
+#[cfg(test)]
+mod rejected_prediction_test_support;
+#[cfg(test)]
+mod rejected_prediction_tests;
