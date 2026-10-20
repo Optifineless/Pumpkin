@@ -37,11 +37,7 @@ fn set_component(stack: &mut ItemStack, name: &str, value: &Value) {
         if !remove && component.is_none() {
             return;
         }
-        if let Some((_, existing)) = stack.patch.iter_mut().find(|(key, _)| *key == id) {
-            *existing = component;
-        } else {
-            stack.patch.push((id, component));
-        }
+        stack.set_component(id, component);
     }
 }
 
@@ -113,8 +109,7 @@ fn copy_components(p: &Value, stack: &mut LootStack, params: &LootContextParamet
             if selected(id.to_name())
                 && pumpkin_util::loot_table::component_copy_supported(id.to_name())
             {
-                stack.stack.patch.retain(|(key, _)| key != id);
-                stack.stack.patch.push((*id, Some(value.clone_dyn())));
+                stack.stack.set_component(*id, Some(value.clone_dyn()));
             }
         }
     } else if source == "tool" {
@@ -126,8 +121,7 @@ fn copy_components(p: &Value, stack: &mut LootStack, params: &LootContextParamet
                     && pumpkin_util::loot_table::component_copy_supported(id.to_name())
                     && let Some(component) = item_component(tool, *id)
                 {
-                    stack.stack.patch.retain(|(key, _)| key != id);
-                    stack.stack.patch.push((*id, Some(component.clone_dyn())));
+                    stack.stack.set_component(*id, Some(component.clone_dyn()));
                 }
             }
             for (id, component) in &tool.patch {
@@ -135,8 +129,7 @@ fn copy_components(p: &Value, stack: &mut LootStack, params: &LootContextParamet
                     && pumpkin_util::loot_table::component_copy_supported(id.to_name())
                     && let Some(component) = component
                 {
-                    stack.stack.patch.retain(|(key, _)| key != id);
-                    stack.stack.patch.push((*id, Some(component.clone_dyn())));
+                    stack.stack.set_component(*id, Some(component.clone_dyn()));
                 }
             }
         }
@@ -266,16 +259,9 @@ fn run_copy_block_state(p: &Value, stack: &mut LootStack, params: &LootContextPa
             }
             stack
                 .stack
-                .patch
-                .retain(|(key, _)| *key != DataComponent::BlockState);
-            stack.stack.patch.push((
-                DataComponent::BlockState,
-                Some(Box::new(
-                    pumpkin_data::data_component_impl::BlockStateImpl {
-                        properties: std::borrow::Cow::Owned(values),
-                    },
-                )),
-            ));
+                .set_data_component(pumpkin_data::data_component_impl::BlockStateImpl {
+                    properties: std::borrow::Cow::Owned(values),
+                });
         }
     }
 }

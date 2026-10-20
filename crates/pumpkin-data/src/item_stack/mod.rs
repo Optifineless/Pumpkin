@@ -19,6 +19,8 @@ use std::num::NonZero;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 mod categories;
+#[cfg(test)]
+mod patch_writer_tests;
 pub(crate) mod raw_components;
 
 /// The outcome of a [`ItemStack::damage_item`] call.
@@ -183,35 +185,23 @@ impl ItemStack {
     #[must_use]
     pub fn get_data_component_mut<T: DataComponentImpl + 'static>(&mut self) -> Option<&mut T> {
         let to_get_id = T::get_enum();
-        if let Some(index) = self.patch.iter().position(|(id, _)| *id == to_get_id) {
-            if self.patch[index].1.is_some() {
-                self.discard_raw_component(to_get_id);
-            }
-            return self.patch[index]
+        let component = if let Some(index) = self.patch.iter().position(|(id, _)| *id == to_get_id)
+        {
+            self.patch[index].1.take()?
+        } else {
+            self.item
+                .components
+                .iter()
+                .find(|(id, _)| *id == to_get_id)?
                 .1
-                .as_mut()
-                .map(|component| get_mut::<T>(component.as_mut()));
-        }
-
-        // If not in patch, clone from item to patch and return mut
-        let mut cloned = None;
-        for (id, component) in self.item.components {
-            if *id == to_get_id {
-                cloned = Some((*id, Some(component.clone_dyn())));
-                break;
-            }
-        }
-        if let Some((id, component)) = cloned {
-            self.discard_raw_component(to_get_id);
-            self.patch.push((id, component));
-            return self
-                .patch
-                .last_mut()?
-                .1
-                .as_mut()
-                .map(|c| get_mut::<T>(c.as_mut()));
-        }
-        None
+                .clone_dyn()
+        };
+        self.set_component(to_get_id, Some(component));
+        self.patch
+            .last_mut()?
+            .1
+            .as_mut()
+            .map(|component| get_mut::<T>(component.as_mut()))
     }
 
     #[must_use]
@@ -247,37 +237,25 @@ impl ItemStack {
     }
 
     pub fn set_lore(&mut self, lines: Vec<pumpkin_util::text::TextComponent>) {
-        self.discard_raw_component(DataComponent::Lore);
-        let lore = Some(Box::new(crate::data_component_impl::LoreImpl { lines }) as _);
-        if let Some((_, component)) = self
-            .patch
-            .iter_mut()
-            .find(|(id, _)| *id == DataComponent::Lore)
-        {
-            *component = lore;
-        } else {
-            self.patch.push((DataComponent::Lore, lore));
-        }
+        self.set_data_component(crate::data_component_impl::LoreImpl { lines });
     }
 
     pub fn set_data_component<T: DataComponentImpl + 'static>(&mut self, component: T) {
-        let to_set_id = T::get_enum();
-        self.discard_raw_component(to_set_id);
-        let boxed = Some(Box::new(component) as _);
-        if let Some((_, c)) = self.patch.iter_mut().find(|(id, _)| *id == to_set_id) {
-            *c = boxed;
-        } else {
-            self.patch.push((to_set_id, boxed));
-        }
+        self.set_component(T::get_enum(), Some(Box::new(component)));
     }
 
     pub fn remove_data_component(&mut self, to_remove_id: DataComponent) {
-        self.discard_raw_component(to_remove_id);
-        if let Some((_, c)) = self.patch.iter_mut().find(|(id, _)| *id == to_remove_id) {
-            *c = None;
-        } else {
-            self.patch.push((to_remove_id, None));
-        }
+        self.set_component(to_remove_id, None);
+    }
+
+    /// Replaces a component patch with a decoded value or a removal marker.
+    pub fn set_component(
+        &mut self,
+        id: DataComponent,
+        component: Option<Box<dyn DataComponentImpl>>,
+    ) {
+        self.reset_data_component(id);
+        self.patch.push((id, component));
     }
 
     pub fn add_lore(&mut self, line: pumpkin_util::text::TextComponent) {
@@ -288,10 +266,12 @@ impl ItemStack {
         self.set_lore(lines);
     }
 
-    fn discard_raw_component(&mut self, id: DataComponent) {
+    /// Restores the item's default, discarding decoded and opaque overrides.
+    pub fn reset_data_component(&mut self, id: DataComponent) {
         self.raw_components.retain(|(name, _)| {
             DataComponent::try_from_name(name.strip_prefix('!').unwrap_or(name)) != Some(id)
         });
+        self.patch.retain(|(patch_id, _)| *patch_id != id);
     }
 
     pub const EMPTY: &'static Self = &Self {
@@ -355,22 +335,12 @@ impl ItemStack {
     }
 
     pub fn set_damage(&mut self, damage: i32) {
-        self.discard_raw_component(DataComponent::Damage);
         let damage = damage.max(0);
         if damage == 0 {
-            self.patch.retain(|(id, _)| *id != DataComponent::Damage);
+            self.reset_data_component(DataComponent::Damage);
             return;
         }
-
-        for (id, component) in &mut self.patch {
-            if *id == DataComponent::Damage {
-                *component = Some(DamageImpl { damage }.to_dyn());
-                return;
-            }
-        }
-
-        self.patch
-            .push((DataComponent::Damage, Some(DamageImpl { damage }.to_dyn())));
+        self.set_data_component(DamageImpl { damage });
     }
 
     #[must_use]
@@ -494,23 +464,10 @@ impl ItemStack {
     }
 
     pub fn set_custom_name(&mut self, name: String) {
-        self.discard_raw_component(DataComponent::CustomName);
         use crate::data_component_impl::CustomNameImpl;
-        let component = Some(
-            CustomNameImpl {
-                name: pumpkin_util::text::TextComponent::text(name),
-            }
-            .to_dyn(),
-        );
-        if let Some(pos) = self
-            .patch
-            .iter()
-            .position(|(id, _)| *id == DataComponent::CustomName)
-        {
-            self.patch[pos].1 = component;
-        } else {
-            self.patch.push((DataComponent::CustomName, component));
-        }
+        self.set_data_component(CustomNameImpl {
+            name: pumpkin_util::text::TextComponent::text(name),
+        });
     }
 
     #[must_use]
@@ -526,9 +483,7 @@ impl ItemStack {
     }
 
     pub fn remove_custom_name(&mut self) {
-        self.discard_raw_component(DataComponent::CustomName);
-        self.patch
-            .retain(|(id, _)| *id != DataComponent::CustomName);
+        self.reset_data_component(DataComponent::CustomName);
     }
 
     #[must_use]
@@ -553,10 +508,8 @@ impl ItemStack {
     }
 
     pub fn set_repair_cost(&mut self, cost: i32) {
-        self.discard_raw_component(DataComponent::RepairCost);
         if cost <= 0 {
-            self.patch
-                .retain(|(id, _)| *id != DataComponent::RepairCost);
+            self.reset_data_component(DataComponent::RepairCost);
             return;
         }
         self.set_data_component(crate::data_component_impl::RepairCostImpl { cost });
@@ -619,17 +572,7 @@ impl ItemStack {
     }
 
     fn set_custom_data_component(&mut self, custom_data: NbtCompound) {
-        self.discard_raw_component(DataComponent::CustomData);
-        let component = Some(CustomDataImpl { data: custom_data }.to_dyn());
-        if let Some((_, data)) = self
-            .patch
-            .iter_mut()
-            .find(|(id, _)| *id == DataComponent::CustomData)
-        {
-            *data = component;
-        } else {
-            self.patch.push((DataComponent::CustomData, component));
-        }
+        self.set_data_component(CustomDataImpl { data: custom_data });
     }
 
     pub fn get_custom_data(&self, namespace: &str, key: &str) -> Option<NbtTag> {
@@ -656,7 +599,6 @@ impl ItemStack {
         if namespace_data.child_tags.remove(key).is_none() && !namespace_data.is_empty() {
             return;
         }
-        self.discard_raw_component(DataComponent::CustomData);
         if !namespace_data.is_empty() {
             custom_data
                 .child_tags
@@ -664,8 +606,7 @@ impl ItemStack {
         }
 
         if custom_data.is_empty() {
-            self.patch
-                .retain(|(id, _)| *id != DataComponent::CustomData);
+            self.reset_data_component(DataComponent::CustomData);
         } else {
             self.set_custom_data_component(custom_data);
         }
@@ -874,9 +815,7 @@ impl ItemStack {
             }
         }
 
-        for (name, data) in &self.raw_components {
-            tag.put(name, data.clone());
-        }
+        raw_components::write_raw_components(&self.patch, &self.raw_components, &mut tag);
 
         // Store custom data like enchantments, display name, etc. would go here
         compound.put_compound("components", tag);

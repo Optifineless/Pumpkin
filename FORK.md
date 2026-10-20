@@ -23,6 +23,21 @@ replace that component's opaque value; unrelated edits preserve it. Diagnostics
 use a bounded lock-free cache of 1,024 name fingerprints, warning once for each
 admitted name per process and suppressing further names when full.
 
+PR #415 review round 2: component edits share one invalidation operation across
+native helpers, both Wasm hosts, loot, grindstones, crossbows and villager trades.
+Registry aliases and removal spellings identify the same component. Decoded
+patches and removal markers take precedence over stale opaque copies in saved
+stacks and pot templates. Known noncanonical removal payloads save as empty
+removal compounds, retaining their removal meaning; unknown markers retain their
+original payloads.
+Recipe templates replace aliases before applying their edits. Wasm removal keeps
+its existing reset-to-default behavior. API 8 (same version): the new common
+set/reset methods are additive; public layouts, existing signatures and WIT are
+unchanged by this review fix. Implemented by GPT-6.1 Sol (Codex Cloud).
+Checked against official vanilla 26.3 `ItemStack.set/remove` and
+`PatchedDataComponentMap.set/remove/applyPatch` (embedded server SHA-256
+`a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
+
 Java and Bedrock item encoders omit opaque entries. Generic entity/block-entity
 NBT components containing nested opaque item components are withheld from item
 packets as a whole; their server and saved copies remain intact. Arbitrary
@@ -49,6 +64,9 @@ expect the same counts and saved hidden tags. Try merging visually identical
 stacks with different hidden tags; expect them to stay separate. Record the
 counts before and after restart, and retain the saved component tags. Avoid
 Creative inventory edits when checking preservation.
+With a Wasm plugin, change and clear a tagged sword's wear, save and restart;
+expect the edited wear or the default after clearing, with unrelated hidden tags
+retained. Record the durability and saved component tags.
 
 ## Stable Bedrock score identities (#289)
 

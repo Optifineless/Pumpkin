@@ -28,10 +28,20 @@ impl RecipeResultStruct {
             let mut patch = nbt.get_compound("components").cloned().unwrap_or_default();
             for (key, value) in components.child_tags {
                 // DataComponentPatch.apply removes the opposite entry before overlaying it.
-                let opposite = key
-                    .strip_prefix('!')
-                    .map_or_else(|| format!("!{key}"), str::to_owned);
-                patch.child_tags.remove(opposite.as_str());
+                if let Some(id) = crate::data_component::DataComponent::try_from_name(
+                    key.strip_prefix('!').unwrap_or(&key),
+                ) {
+                    patch.child_tags.retain(|name, _| {
+                        crate::data_component::DataComponent::try_from_name(
+                            name.strip_prefix('!').unwrap_or(name),
+                        ) != Some(id)
+                    });
+                } else {
+                    let opposite = key
+                        .strip_prefix('!')
+                        .map_or_else(|| format!("!{key}"), str::to_owned);
+                    patch.child_tags.remove(opposite.as_str());
+                }
                 patch.put(&key, value);
             }
             nbt.put_compound("components", patch);

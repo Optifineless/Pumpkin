@@ -183,22 +183,9 @@ impl HostItemStack for PluginHostState {
         current_encs.retain(|(e, _)| e.id != enc.id);
         current_encs.push((enc, level as i32));
 
-        if let Some((_, data)) = stack
-            .patch
-            .iter_mut()
-            .find(|(id, _)| *id == DataComponent::Enchantments)
-        {
-            *data = Some(Box::new(EnchantmentsImpl {
-                enchantment: Cow::from(current_encs),
-            }));
-        } else {
-            stack.patch.push((
-                DataComponent::Enchantments,
-                Some(Box::new(EnchantmentsImpl {
-                    enchantment: Cow::from(current_encs),
-                })),
-            ));
-        }
+        stack.set_data_component(EnchantmentsImpl {
+            enchantment: Cow::from(current_encs),
+        });
         Ok(())
     }
 
@@ -211,11 +198,11 @@ impl HostItemStack for PluginHostState {
         let mut stack = stack.lock().await;
         let enc = from_wit_enchantment(enchantment);
 
-        if let Some((_, Some(data))) = stack
+        if stack
             .patch
-            .iter_mut()
-            .find(|(id, _)| *id == DataComponent::Enchantments)
-            && let Some(enc_impl) = data.as_mut_any().downcast_mut::<EnchantmentsImpl>()
+            .iter()
+            .any(|(id, data)| *id == DataComponent::Enchantments && data.is_some())
+            && let Some(enc_impl) = stack.get_data_component_mut::<EnchantmentsImpl>()
         {
             let mut encs = enc_impl.enchantment.clone().into_owned();
             encs.retain(|(e, _)| e.id != enc.id);
@@ -298,22 +285,9 @@ impl HostItemStack for PluginHostState {
             current_encs.retain(|(e, _)| e.id != vanilla.id);
             current_encs.push((vanilla, level as i32));
 
-            if let Some((_, data)) = stack
-                .patch
-                .iter_mut()
-                .find(|(id, _)| *id == DataComponent::Enchantments)
-            {
-                *data = Some(Box::new(EnchantmentsImpl {
-                    enchantment: Cow::from(current_encs),
-                }));
-            } else {
-                stack.patch.push((
-                    DataComponent::Enchantments,
-                    Some(Box::new(EnchantmentsImpl {
-                        enchantment: Cow::from(current_encs),
-                    })),
-                ));
-            }
+            stack.set_data_component(EnchantmentsImpl {
+                enchantment: Cow::from(current_encs),
+            });
         }
 
         Ok(())
@@ -330,11 +304,11 @@ impl HostItemStack for PluginHostState {
         stack.remove_custom_data("pumpkin:enchantments", &enchantment_id);
 
         if let Some(vanilla) = super::enchantment::find_vanilla_enchantment(&enchantment_id)
-            && let Some((_, Some(data))) = stack
+            && stack
                 .patch
-                .iter_mut()
-                .find(|(id, _)| *id == DataComponent::Enchantments)
-            && let Some(enc_impl) = data.as_mut_any().downcast_mut::<EnchantmentsImpl>()
+                .iter()
+                .any(|(id, data)| *id == DataComponent::Enchantments && data.is_some())
+            && let Some(enc_impl) = stack.get_data_component_mut::<EnchantmentsImpl>()
         {
             let mut encs = enc_impl.enchantment.clone().into_owned();
             encs.retain(|(e, _)| e.id != vanilla.id);
@@ -470,9 +444,7 @@ impl HostItemStack for PluginHostState {
             let mut current_mods = comp.attribute_modifiers.clone().into_owned();
             current_mods.retain(|m| m.r#type != attr);
             if current_mods.is_empty() {
-                stack
-                    .patch
-                    .retain(|(id, _)| *id != DataComponent::AttributeModifiers);
+                stack.reset_data_component(DataComponent::AttributeModifiers);
             } else {
                 stack.set_data_component(AttributeModifiersImpl {
                     attribute_modifiers: Cow::Owned(current_mods),
@@ -489,9 +461,7 @@ impl HostItemStack for PluginHostState {
     ) -> wasmtime::Result<()> {
         let stack = self.get(&res)?;
         let mut stack = stack.lock().await;
-        stack
-            .patch
-            .retain(|(id, _)| *id != DataComponent::AttributeModifiers);
+        stack.reset_data_component(DataComponent::AttributeModifiers);
         Ok(())
     }
 
@@ -561,22 +531,9 @@ impl HostItemStack for PluginHostState {
         let stack = self.get(&res)?;
         let mut stack = stack.lock().await;
         if let Some(name) = name {
-            if let Some((_, data)) = stack
-                .patch
-                .iter_mut()
-                .find(|(id, _)| *id == DataComponent::CustomName)
-            {
-                *data = Some(Box::new(CustomNameImpl { name }));
-            } else {
-                stack.patch.push((
-                    DataComponent::CustomName,
-                    Some(Box::new(CustomNameImpl { name })),
-                ));
-            }
+            stack.set_data_component(CustomNameImpl { name });
         } else {
-            stack
-                .patch
-                .retain(|(id, _)| *id != DataComponent::CustomName);
+            stack.reset_data_component(DataComponent::CustomName);
         }
         Ok(())
     }
@@ -662,11 +619,7 @@ impl HostItemStack for PluginHostState {
         let mut cursor = std::io::Cursor::new(value);
 
         if let Ok(component_impl) = deserialize(id, &mut cursor) {
-            if let Some((_, data)) = stack.patch.iter_mut().find(|(pid, _)| *pid == id) {
-                *data = Some(component_impl);
-            } else {
-                stack.patch.push((id, Some(component_impl)));
-            }
+            stack.set_component(id, Some(component_impl));
         }
         Ok(())
     }
@@ -679,7 +632,7 @@ impl HostItemStack for PluginHostState {
         let stack = self.get(&res)?;
         let mut stack = stack.lock().await;
         let id = from_wit_data_component(component);
-        stack.patch.retain(|(pid, _)| *pid != id);
+        stack.reset_data_component(id);
         Ok(())
     }
 
@@ -687,3 +640,7 @@ impl HostItemStack for PluginHostState {
         self.drop(rep)
     }
 }
+
+#[cfg(test)]
+#[path = "../../pumpkin-wasm-host-common/src/item_component_tests.rs"]
+mod item_component_tests;

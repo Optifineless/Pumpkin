@@ -150,9 +150,8 @@ pub fn set_enchantments(result: &mut ItemStack, enchantments: Vec<(&'static Ench
         return;
     }
     if enchantments.is_empty() {
-        result.patch.retain(|(id, _)| {
-            *id != DataComponent::Enchantments && *id != DataComponent::StoredEnchantments
-        });
+        result.reset_data_component(DataComponent::Enchantments);
+        result.reset_data_component(DataComponent::StoredEnchantments);
         return;
     }
     if result.item == &Item::ENCHANTED_BOOK

@@ -627,9 +627,11 @@ impl PotDecoration {
                     .put_compound(format!("!{}", id.to_name()).as_str(), NbtCompound::new()),
             }
         }
-        for (name, value) in &self.raw_components {
-            components.put(name, value.clone());
-        }
+        crate::item_stack::raw_components::write_raw_components(
+            &self.patch,
+            &self.raw_components,
+            &mut components,
+        );
         if !components.child_tags.is_empty() {
             compound.put_compound("components", components);
         }

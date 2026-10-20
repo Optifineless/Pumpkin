@@ -2,6 +2,52 @@ use super::tests::{count, parse};
 use super::*;
 use pumpkin_data::{data_component::DataComponent, data_component_impl::EnchantmentsImpl};
 use serde_json::json;
+
+#[test]
+fn raw_components_loot_function_edits_replace_aliases_and_removals() {
+    use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+
+    for components in [
+        json!({"minecraft:damage":5}),
+        json!({"!minecraft:damage":{}}),
+    ] {
+        let removed = components.get("!minecraft:damage").is_some();
+        let table =
+            parse(&json!({"modifier":{"type":"minecraft:set_components","components":components}}));
+        let mut saved = NbtCompound::new();
+        saved.put_string("id", "minecraft:diamond_sword".into());
+        saved.put_int("count", 1);
+        let mut raw = NbtCompound::new();
+        raw.put_string("damage", "future format".into());
+        raw.put_int("example:unrelated", 37);
+        saved.put_compound("components", raw);
+        let mut stack = LootStack {
+            stack: ItemStack::read_item_stack(&saved).unwrap(),
+            count: 1,
+        };
+        apply_functions(
+            &table.functions,
+            &mut stack,
+            &LootContextParameters::default(),
+            &mut LootRandom::seeded(1),
+        );
+        assert_eq!(stack.stack.raw_components.len(), 1);
+        assert_eq!(&*stack.stack.raw_components[0].0, "example:unrelated");
+        assert!(matches!(stack.stack.raw_components[0].1, NbtTag::Int(37)));
+        assert_eq!(
+            stack.stack.has_data_component(DataComponent::Damage),
+            !removed
+        );
+        assert_eq!(stack.stack.get_damage(), if removed { 0 } else { 5 });
+        stack.stack.write_item_stack(&mut saved);
+        assert!(
+            stack
+                .stack
+                .are_equal(&ItemStack::read_item_stack(&saved).unwrap())
+        );
+    }
+}
+
 #[test]
 fn placeholder_components_never_match_even_when_inverted() {
     let mut tool = ItemStack::new(1, &Item::IRON_SWORD);

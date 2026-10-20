@@ -15,6 +15,21 @@ use crate::{
     item_stack::ItemStack,
 };
 
+pub(crate) fn write_raw_components(
+    patch: &[(DataComponent, Option<Box<dyn DataComponentImpl>>)],
+    raw_components: &[(Box<str>, NbtTag)],
+    compound: &mut NbtCompound,
+) {
+    for (name, value) in raw_components {
+        // Explicit edits win over opaque values, including aliases and removal forms.
+        let id = DataComponent::try_from_name(name.strip_prefix('!').unwrap_or(name));
+        if id.is_some_and(|id| patch.iter().any(|(patched, _)| *patched == id)) {
+            continue;
+        }
+        compound.put(name, value.clone());
+    }
+}
+
 // Bounded, lock-free diagnostics: saturated tables suppress further names, never items.
 static WARNED_NAMES: [AtomicU64; 1024] = [const { AtomicU64::new(0) }; 1024];
 static WARNINGS_FULL: AtomicBool = AtomicBool::new(false);

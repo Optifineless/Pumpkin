@@ -152,10 +152,6 @@ impl CrossbowItem {
                 nbt
             })
             .collect();
-        // Older loading paths appended patches; replace every charged entry without losing other edits.
-        weapon
-            .patch
-            .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
         weapon.set_data_component(ChargedProjectilesImpl { projectiles });
         if payment > 0
             && let Some(ammo_slot) = ammo_slot
@@ -189,8 +185,7 @@ impl CrossbowItem {
             return;
         }
         // CrossbowItem.performShooting takes and empties the charge before shoot can call plugins.
-        held.patch
-            .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
+        held.reset_data_component(DataComponent::ChargedProjectiles);
         if !slot_transaction::exchange(player.inventory().as_ref(), slot, &expected, held.clone()) {
             return;
         }

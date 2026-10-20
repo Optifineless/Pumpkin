@@ -325,15 +325,16 @@ fn raw_components_unknown_removal_and_noncanonical_known_removal() {
     let mut saved = saved_stack(false);
     let mut components = saved.get_compound("components").unwrap().clone();
     components.put_compound("!minecraft:future_removed", NbtCompound::new());
+    let mut expected = saved.clone();
+    components.put_compound("!minecraft:food", NbtCompound::new());
+    expected.put_compound("components", components.clone());
     components.put_string("!minecraft:food", "original marker payload".into());
     saved.put_compound("components", components);
     for _ in 0..2 {
         let stack = ItemStack::read_item_stack(&saved).unwrap();
         assert!(!stack.has_data_component(DataComponent::Food));
-        let mut written = NbtCompound::new();
-        stack.write_item_stack(&mut written);
-        assert_saved(&saved, &written);
-        saved = written;
+        stack.write_item_stack(&mut saved);
+        assert_saved(&expected, &saved);
     }
 }
 

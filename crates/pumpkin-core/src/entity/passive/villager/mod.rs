@@ -170,8 +170,7 @@ fn enchant_trade_item(
 }
 
 pub(crate) fn apply_random_dye(rng: &mut impl rand::Rng, stack: &mut ItemStack) {
-    use pumpkin_data::data_component::DataComponent;
-    use pumpkin_data::data_component_impl::{DataComponentImpl, DyedColorImpl};
+    use pumpkin_data::data_component_impl::DyedColorImpl;
     use rand::RngExt;
 
     const COLORS: [i32; 16] = [
@@ -196,17 +195,11 @@ pub(crate) fn apply_random_dye(rng: &mut impl rand::Rng, stack: &mut ItemStack) 
         *channel = average_brightness * *channel / max_channel;
     }
     let color = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
-    stack.patch.push((
-        DataComponent::DyedColor,
-        Some(DyedColorImpl { rgb: color }.to_dyn()),
-    ));
+    stack.set_data_component(DyedColorImpl { rgb: color });
 }
 
 pub(crate) fn apply_random_stew_effect(rng: &mut impl rand::Rng, stack: &mut ItemStack) {
-    use pumpkin_data::data_component::DataComponent;
-    use pumpkin_data::data_component_impl::{
-        DataComponentImpl, SuspiciousStewEffect, SuspiciousStewEffectsImpl,
-    };
+    use pumpkin_data::data_component_impl::{SuspiciousStewEffect, SuspiciousStewEffectsImpl};
     use rand::RngExt;
     use std::borrow::Cow;
 
@@ -219,23 +212,16 @@ pub(crate) fn apply_random_stew_effect(rng: &mut impl rand::Rng, stack: &mut Ite
         ("minecraft:saturation", 7),
     ];
     let (effect, duration) = EFFECTS[rng.random_range(0..EFFECTS.len())];
-    stack.patch.push((
-        DataComponent::SuspiciousStewEffects,
-        Some(
-            SuspiciousStewEffectsImpl {
-                effects: Cow::Owned(vec![SuspiciousStewEffect {
-                    effect: Cow::Owned(effect.to_owned()),
-                    duration,
-                }]),
-            }
-            .to_dyn(),
-        ),
-    ));
+    stack.set_data_component(SuspiciousStewEffectsImpl {
+        effects: Cow::Owned(vec![SuspiciousStewEffect {
+            effect: Cow::Owned(effect.to_owned()),
+            duration,
+        }]),
+    });
 }
 
 pub(crate) fn apply_potion(stack: &mut ItemStack, potion_name: &str) {
-    use pumpkin_data::data_component::DataComponent;
-    use pumpkin_data::data_component_impl::{DataComponentImpl, PotionContentsImpl};
+    use pumpkin_data::data_component_impl::PotionContentsImpl;
 
     let Some(potion) = pumpkin_data::potion::Potion::from_name(
         potion_name
@@ -244,18 +230,12 @@ pub(crate) fn apply_potion(stack: &mut ItemStack, potion_name: &str) {
     ) else {
         return;
     };
-    stack.patch.push((
-        DataComponent::PotionContents,
-        Some(
-            PotionContentsImpl {
-                potion_id: Some(i32::from(potion.id)),
-                custom_color: None,
-                custom_effects: Vec::new(),
-                custom_name: None,
-            }
-            .to_dyn(),
-        ),
-    ));
+    stack.set_data_component(PotionContentsImpl {
+        potion_id: Some(i32::from(potion.id)),
+        custom_color: None,
+        custom_effects: Vec::new(),
+        custom_name: None,
+    });
 }
 
 /// Resolves a trade destination to its structure set, structure, fallback map
@@ -624,8 +604,7 @@ impl VillagerEntity {
     }
 
     fn create_explorer_map(&self, destination: &str, given: &ItemStack) -> Option<ItemStack> {
-        use pumpkin_data::data_component::DataComponent;
-        use pumpkin_data::data_component_impl::{DataComponentImpl, ItemNameImpl, MapIdImpl};
+        use pumpkin_data::data_component_impl::{ItemNameImpl, MapIdImpl};
         use pumpkin_data::structures::StructureSet;
         use pumpkin_world::generation::generator::structure_finder::find_nearest_structure_start;
 
@@ -664,18 +643,12 @@ impl VillagerEntity {
         // name; older data trades a plain filled map that has to be named here.
         let mut stack = if given.is_empty() || given.item.id == Item::FILLED_MAP.id {
             let mut stack = ItemStack::new(1, &Item::FILLED_MAP);
-            stack.patch.push((
-                DataComponent::ItemName,
-                Some(ItemNameImpl { name: name.into() }.to_dyn()),
-            ));
+            stack.set_data_component(ItemNameImpl { name: name.into() });
             stack
         } else {
             given.clone()
         };
-        stack.patch.push((
-            DataComponent::MapId,
-            Some(MapIdImpl { id: map_id }.to_dyn()),
-        ));
+        stack.set_data_component(MapIdImpl { id: map_id });
         Some(stack)
     }
 

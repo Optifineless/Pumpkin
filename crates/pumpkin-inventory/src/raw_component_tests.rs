@@ -89,3 +89,37 @@ fn raw_components_projectile_items_do_not_merge_different_float_bits() {
 fn raw_components_pot_face_items_do_not_merge_different_float_bits() {
     check_deposit(Payload::PotFace);
 }
+
+#[test]
+fn raw_components_grindstone_result_clears_both_enchantment_payloads() {
+    use crate::{ext_review_tests::Player, grindstone_screen_handler::GrindstoneScreenHandler};
+    use std::sync::Arc;
+
+    let mut components = NbtCompound::new();
+    components.put_string("enchantments", "future enchantments".into());
+    components.put_string("stored_enchantments", "future stored enchantments".into());
+    components.put_int("example:unrelated", 37);
+    let mut saved = NbtCompound::new();
+    saved.put_string("id", "minecraft:diamond_sword".into());
+    saved.put_int("count", 1);
+    saved.put_compound("components", components);
+    let input = ItemStack::read_item_stack(&saved).unwrap();
+    assert_eq!(input.raw_components.len(), 3);
+    let inventory = Arc::new(SimpleInventory::new(3));
+    inventory.set_stack(GrindstoneScreenHandler::INPUT_SLOT, input);
+    inventory.set_stack(
+        GrindstoneScreenHandler::ADDITIONAL_SLOT,
+        ItemStack::new(1, &Item::DIAMOND_SWORD),
+    );
+    let player = Player::new(1);
+    let mut handler = GrindstoneScreenHandler::new(1, &player.inventory, inventory.clone());
+    handler.create_result();
+    let result = inventory.get_stack(GrindstoneScreenHandler::RESULT_SLOT);
+    assert!(!result.is_empty());
+    assert_eq!(result.raw_components.len(), 1);
+    assert_eq!(&*result.raw_components[0].0, "example:unrelated");
+    result.write_item_stack(&mut saved);
+    let restored = ItemStack::read_item_stack(&saved).unwrap();
+    assert!(restored.are_equal(&result));
+    assert!(!restored.has_enchantments());
+}
