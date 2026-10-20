@@ -20,7 +20,7 @@ use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::world::BlockFlags;
 use std::{sync::Arc, time::Duration};
 
-pub(super) struct Fixture {
+pub struct Fixture {
     pub server: Arc<Server>,
     pub world: Arc<World>,
     pub player: TestPlayer,

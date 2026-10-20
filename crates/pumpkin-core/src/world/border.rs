@@ -272,7 +272,6 @@ impl Worldborder {
     #[must_use]
     pub fn contains_block(&self, x: i32, z: i32) -> bool {
         self.contains(f64::from(x), f64::from(z))
-            && self.contains(f64::from(x + 1), f64::from(z + 1))
     }
 
     #[must_use]
@@ -295,14 +294,21 @@ impl Worldborder {
     #[must_use]
     pub fn clamp_block(&self, x: i32, z: i32) -> (i32, i32) {
         let (min_x, min_z, max_x, max_z) = self.bounds(0.0);
-        // A border narrower than one block spans no block boundary, leaving `max`
-        // below `min`. `Ord::clamp` panics on an inverted range, so collapse the
-        // range onto the single block that holds the centre instead.
-        let min_x = min_x.floor() as i32;
-        let max_x = (max_x.floor() as i32 - 1).max(min_x);
-        let min_z = min_z.floor() as i32;
-        let max_z = (max_z.floor() as i32 - 1).max(min_z);
-        (x.clamp(min_x, max_x), z.clamp(min_z, max_z))
+        let clamp = |value: i32, min: f64, max: f64, center: f64| {
+            // WorldBorder.clampVec3ToBound clamps before BlockPos.containing floors.
+            let upper = max - f64::from(1.0e-5f32);
+            if upper < min {
+                // A collapsed interval has no valid float clamp range; keep the
+                // established center-block result for sub-block borders.
+                center.floor() as i32
+            } else {
+                f64::from(value).clamp(min, upper).floor() as i32
+            }
+        };
+        (
+            clamp(x, min_x, max_x, self.center_x),
+            clamp(z, min_z, max_z, self.center_z),
+        )
     }
 }
 

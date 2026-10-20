@@ -14,4 +14,4 @@ mod hanging_review_tests;
 #[cfg(test)]
 mod hanging_support_tests;
 #[cfg(test)]
-mod hanging_test_support;
+pub(crate) mod hanging_test_support;

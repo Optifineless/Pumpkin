@@ -41,7 +41,7 @@ pub(super) const PORTAL: BlockPos = BlockPos::new(8, 80, 8);
 pub(super) const PERSONAL: BlockPos = BlockPos::new(8, 64, 8);
 pub(super) const DEADLINE: Duration = Duration::from_secs(45);
 
-pub(super) struct Fixture {
+pub struct Fixture {
     pub server: Arc<Server>,
     pub overworld: Arc<World>,
     pub end: Arc<World>,
@@ -195,7 +195,7 @@ impl EventHandler<PlayerChangedWorldEvent> for Arrived {
     }
 }
 
-pub(super) async fn transfer(fixture: &Fixture, client: &mut TestPlayer) {
+pub async fn transfer(fixture: &Fixture, client: &mut TestPlayer) {
     let (done, completed) = oneshot::channel();
     fixture
         .server
