@@ -544,6 +544,15 @@ pub trait EntityBase: Send + Sync + std::any::Any {
                 client.try_enqueue_packet(meta_data);
             }
         }
+        if let Some(properties) = self.get_mob().and_then(mob::Mob::mob_java_spawn_attributes) {
+            let packet = pumpkin_protocol::java::client::play::CUpdateAttributes::new(
+                entity.entity_id.into(),
+                properties,
+            );
+            if let Ok(data) = client.serialize_packet(&packet) {
+                client.try_enqueue_packet(data);
+            }
+        }
     }
 
     fn damage_with_context(

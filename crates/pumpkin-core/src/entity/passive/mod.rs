@@ -20,6 +20,15 @@ pub mod glow_squid;
 pub mod goat;
 pub mod happy_ghast;
 pub mod horse;
+mod horse_spawn_stats;
+#[cfg(test)]
+mod horse_spawn_stats_admission_tests;
+#[cfg(test)]
+pub(crate) mod horse_spawn_stats_test_rng;
+#[cfg(test)]
+pub(crate) mod horse_spawn_stats_test_support;
+#[cfg(test)]
+mod horse_spawn_stats_tests;
 pub mod iron_golem;
 pub mod llama;
 mod merchant_session;

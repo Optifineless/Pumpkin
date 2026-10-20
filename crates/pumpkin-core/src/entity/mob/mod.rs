@@ -854,6 +854,13 @@ pub trait Mob: EntityBase + Send + Sync {
         None
     }
 
+    /// Species attributes included in every Java spawn pairing, after the spawn packet.
+    fn mob_java_spawn_attributes(
+        &self,
+    ) -> Option<Vec<pumpkin_protocol::java::client::play::Property>> {
+        None
+    }
+
     /// Metadata which must accompany this mob whenever it is spawned for a Bedrock client.
     fn mob_bedrock_spawn_metadata(
         &self,

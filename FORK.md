@@ -2,6 +2,46 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Fresh ordinary-horse statistics (#115, slice 1)
+
+Fresh ordinary horses initialize individual max health, movement speed and jump
+strength before existing ageable/mob finalization, matching vanilla 26.3
+`Horse.randomizeAttributes` and `AbstractHorse.finalizeSpawn`. Health uses the two
+bounded integer draws (15–30 HP); speed and jump retain three independent draws
+and Java's widened float constants. Current health clamps to the new maximum
+without healing damaged structure templates. Coat and age behavior remain.
+
+The default-ON emergency switch affects only fresh finalization:
+
+```toml
+[horse_spawn_stats]
+enabled = true
+```
+
+Setting it false restores generated defaults for new births.
+Saved horses, including old 53-HP, custom damaged and legacy no-attribute records,
+retain their existing meaning under either setting. Explicit-NBT summons still
+bypass finalization; egg entity data still applies afterward. No migration,
+rolled marker, riding simulation, taming or other #115 behavior is included.
+
+API 8 (same version): the additive public `HorseSpawnStatsConfig` and
+`AdvancedConfiguration::horse_spawn_stats` field change native configuration and
+containing layouts. Rebuild native plugins against this checkout; source users
+constructing exhaustive configuration literals must supply the new field or use
+`Default`. The provided `Mob::mob_java_spawn_attributes` hook adds a native
+vtable entry; source implementations inherit its empty default. Only ordinary
+horses supply the initial health/speed/jump bases and modifiers on every Java
+spawn pairing, including loaded and explicitly overridden values. Tracker
+ownership and other species are unchanged. Existing method signatures and Wasm
+WIT are unchanged. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: spawn fresh natural, egg and no-NBT summon horses; expect varied
+15–30 max HP and full current HP. Save a custom damaged horse and restart; expect
+its UUID, health, bases and modifiers unchanged. Disable the switch and create
+new horses; expect prior generated defaults, while saved horses remain unchanged.
+Record the births and restart, and capture UUID, Health and attribute values.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
