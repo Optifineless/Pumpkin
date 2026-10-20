@@ -2,6 +2,34 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Animal growth and interaction feedback (#49, #372, #373, #374, #375)
+
+Supported ageable animals feed through `can_age_up` and forced whole-second
+`age_up`, retaining baby metadata, saved ForcedAge and locked-age refusal.
+Legacy species keep their existing growth branch. Entering love sends only its
+status; later periodic hearts remain. Wolf eating is silent for healing, growth
+and breeding. Cow milk sound precedes the exact-source bucket exchange, at the
+player's position in the Players category and excluding that player. Java entity
+interaction no longer awards Used merely because a hand changed; explicit item
+awards and commit receipts remain.
+
+Mirrors the supplied vanilla 26.3 `Animal.mobInteract/setInLove/playEatingSound`,
+`AgeableMob.ageUp/getSpeedUpSecondsWhenFeeding`, `TamableAnimal.feed`,
+`AbstractCow.mobInteract` and `Player.playSound/interactOn` chain. Existing
+callbacks, hand ownership, save formats and field meanings are unchanged.
+API 8 (same version): public signatures, layouts and trait vtables are unchanged;
+native source compatibility and Wasm WIT are unchanged. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: feed a calf wheat in either hand; expect one food used and normal
+growth. Feed breeding-ready cows; expect one heart burst. Milk an adult cow
+while two friends watch; expect milk in the used hand and the nearby sound at
+the player's location. Feed injured, baby and breeding-ready tame wolves;
+expect healing, growth or hearts without an extra ambient eating sound. Check
+item-use statistics before and after feeding, milking and collar dyeing; expect
+no generic credit. Use a filled bundle; expect its own use credit. Record both
+hands, Survival and Creative, plus actor and observer views and sounds.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
