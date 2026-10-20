@@ -1,4 +1,5 @@
 use super::Player;
+use crate::entity::EntityBase;
 use pumpkin_data::{
     attributes::Attributes, data_component_impl::EquipmentSlot, item_stack::ItemStack,
 };
@@ -71,6 +72,10 @@ impl Player {
 
     pub(crate) fn detect_equipment_updates(&self) {
         assert_no_guards_held("Player::detect_equipment_updates");
+        if self.client.closed() || self.get_entity().is_removed() || !self.menu_player_is_current()
+        {
+            return;
+        }
         // ServerPlayer.doTick -> LivingEntity.detectEquipmentUpdates/collectEquipmentChanges.
         // Packet-driven equips and slot switches run before detection; commands queue no stacks.
         let (mut slots, mut attributes) = {
@@ -103,6 +108,12 @@ impl Player {
             #[cfg(test)]
             if let Some(hook) = EQUIPMENT_HOOK.with(|hook| hook.borrow_mut().take()) {
                 hook(self);
+            }
+            if self.client.closed()
+                || self.get_entity().is_removed()
+                || !self.menu_player_is_current()
+            {
+                return;
             }
             // Callbacks may queue another batch; only this publisher applies modifiers and sends.
             self.living_entity.publish_equipment_changes(&equipment);
@@ -206,7 +217,7 @@ impl Player {
         }
     }
 
-    fn collect_equipment_changes(
+    pub(super) fn collect_equipment_changes(
         &self,
         slots: Vec<EquipmentSlot>,
     ) -> Vec<(EquipmentSlot, ItemStack)> {

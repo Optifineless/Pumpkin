@@ -150,6 +150,31 @@ seed 0 and fixed nether_wastes, stand at X=64, Z=896 and locate a fortress; expe
 different chunk, with a bastion at the original chunk. Capture command feedback and
 the visited structures. In-game verification: Not yet.
 
+## Live player state after drop callbacks and skin settings (#163, #291, #296)
+
+Held drops reconcile live equipment after cancelled or aborted callbacks, without
+consuming replacement stock. The existing tick publisher rejects retired player
+instances. Java Q and Control-Q reset attack recharge after every drop attempt,
+including empty hands and cancellation. Initial tab portraits use the actual hat
+setting; accepted changes reach online observers in every dimension through the
+existing player-list owner. Settings guards release before callbacks and sends.
+Mirrors vanilla 26.3 `ServerPlayer.drop`, `LivingEntity.detectEquipmentUpdates`,
+`ClientboundPlayerInfoUpdatePacket.Entry`, and
+`ServerGamePacketListenerImpl.handleClientInformation`.
+API 8 (same version): public signatures/layouts and native source compatibility
+are unchanged; no new rebuild requirement. Wasm WIT and saved-data meaning are
+unchanged. Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: with a nearby observer, use a drop hook that replaces a spear with a
+sword, then one that cancels and selects another slot; expect preserved stock,
+matching sword damage/recharge and the observer's current hand. Press Q and
+Control-Q after charging an attack, including an empty hand or denied drop;
+expect recharge to restart. Disable the hat layer before an observer joins, then
+toggle it with observers in the Overworld and Nether; expect every tab portrait
+to follow the setting without duplicate entries. Record both player views,
+inventory/ground counts, the recharge indicator and both tabs.
+
 ## Departed dragon and Wither bossbar recipients (#118)
 
 Dragon fights and Withers retain weak handles to exact player subscriptions, so

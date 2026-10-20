@@ -2,12 +2,30 @@
 use super::*;
 
 impl JavaClient {
+    fn accepts_client_information_for(&self, player: &Arc<Player>) -> bool {
+        !self.is_closed()
+            && !player.living_entity.entity.is_removed()
+            && player
+                .client
+                .java()
+                .is_some_and(|client| std::ptr::eq(self, client))
+            && self
+                .player
+                .load_full()
+                .as_ref()
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, player))
+    }
+
     pub fn handle_client_information(
         &self,
         server: &Arc<Server>,
         player: &Arc<Player>,
         client_information: &SClientInformationPlay<'_>,
     ) {
+        if !self.accepts_client_information_for(player) {
+            return;
+        }
         if let (Ok(main_hand), Ok(chat_mode)) = (
             Hand::try_from(client_information.main_hand.0),
             ChatMode::try_from(client_information.chat_mode.0),
@@ -19,11 +37,15 @@ impl JavaClient {
                 return;
             }
 
-            let (update_settings, update_watched, main_hand_changed, locale_changed) = {
-                // 1. Load current snapshot
-                let current_config = player.config.load();
+            let (
+                update_settings,
+                update_watched,
+                main_hand_changed,
+                locale_changed,
+                old_skin_parts,
+            ) = {
+                let current_config = player.config.load_full();
 
-                // 2. Calculate if settings changed before we overwrite
                 let main_hand_changed = current_config.main_hand != main_hand;
                 let locale_changed = current_config.locale != client_information.locale;
                 let update_settings =
@@ -42,8 +64,6 @@ impl JavaClient {
                     true
                 };
 
-                // 3. Construct the new config
-                // If view_distance is 0, we exit early (safe guard)
                 let Some(new_view_distance) = NonZero::new(new_view_distance_raw) else {
                     return;
                 };
@@ -59,7 +79,6 @@ impl JavaClient {
                     server_listing: client_information.server_listing,
                 };
 
-                // 4. Atomically swap the new config into the player
                 player.config.store(std::sync::Arc::new(new_config));
 
                 (
@@ -67,6 +86,7 @@ impl JavaClient {
                     update_watched,
                     main_hand_changed,
                     locale_changed,
+                    current_config.skin_parts,
                 )
             };
 
@@ -88,6 +108,9 @@ impl JavaClient {
                 server.plugin_manager.fire_blocking(server, &mut event);
             }
 
+            if !self.accepts_client_information_for(player) {
+                return;
+            }
             if update_settings {
                 debug!(
                     "Player {} ({}) updated their skin.",
@@ -95,6 +118,7 @@ impl JavaClient {
                 );
                 player.send_client_information();
             }
+            server.broadcast_player_hat_if_changed(player, old_skin_parts);
         } else {
             self.try_kick(&TextComponent::text("Invalid hand or chat type"));
         }

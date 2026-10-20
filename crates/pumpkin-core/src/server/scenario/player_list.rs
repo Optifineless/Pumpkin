@@ -1,5 +1,6 @@
 use super::*;
 mod concurrency;
+mod hat;
 use crate::plugin::{
     BoxFuture, EventHandler, EventPriority,
     api::events::player::player_change_world::PlayerChangeWorldEvent,
@@ -29,6 +30,7 @@ struct Info {
     latency: Option<i32>,
     display: DisplayName,
     order: Option<i32>,
+    hat: Option<bool>,
 }
 
 // Decode the client-visible wire fields independently of the roster implementation.
@@ -86,7 +88,7 @@ fn infos(packet: &Bytes) -> Vec<Info> {
             info.order = Some(data.get_var_int().unwrap().0);
         }
         if flags & 128 != 0 {
-            assert!(data.get_bool().unwrap());
+            info.hat = Some(data.get_bool().unwrap());
         }
         result.push(info);
     }
