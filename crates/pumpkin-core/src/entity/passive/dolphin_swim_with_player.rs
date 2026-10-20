@@ -11,6 +11,12 @@ use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
+#[cfg(test)]
+thread_local! {
+    static DEFAULT_REFRESH_ROLL: std::cell::Cell<Option<std::sync::Arc<AtomicU32>>> =
+        const { std::cell::Cell::new(None) };
+}
+
 const SWIM_WITH_PLAYER_RANGE: f64 = 10.0;
 const SWIM_WITH_PLAYER_CONTINUE_DISTANCE_SQUARED: f64 = 256.0;
 const SWIM_WITH_PLAYER_STOP_DISTANCE_SQUARED: f64 = 6.25;
@@ -18,11 +24,27 @@ const SWIM_WITH_PLAYER_SPEED: f64 = 4.0;
 const DOLPHINS_GRACE_DURATION: i32 = 100;
 const DOLPHINS_GRACE_REFRESH_CHANCE: u32 = 6;
 
-#[derive(Default)]
 pub struct DolphinSwimWithPlayerGoal {
     player: Option<Arc<Player>>,
     #[cfg(test)]
     controlled_refresh_roll: Option<Arc<AtomicU32>>,
+}
+
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::derivable_impls,
+        reason = "Test builds consume a scoped deterministic refresh roll."
+    )
+)]
+impl Default for DolphinSwimWithPlayerGoal {
+    fn default() -> Self {
+        Self {
+            player: None,
+            #[cfg(test)]
+            controlled_refresh_roll: DEFAULT_REFRESH_ROLL.with(std::cell::Cell::take),
+        }
+    }
 }
 
 impl DolphinSwimWithPlayerGoal {
@@ -38,6 +60,7 @@ impl DolphinSwimWithPlayerGoal {
         mob: &dyn Mob,
         player: &Arc<Player>,
         max_distance_squared: f64,
+        include_distance_boundary: bool,
     ) -> bool {
         let dolphin = mob.get_entity();
         let player_entity = player.get_entity();
@@ -52,14 +75,25 @@ impl DolphinSwimWithPlayerGoal {
                 .any(|active| Arc::ptr_eq(active, player))
             && player.living_entity.is_part_of_game()
             && player.is_swimming()
-            && dolphin
-                .pos
-                .load()
-                .squared_distance_to_vec(&player_entity.pos.load())
-                < max_distance_squared
+            && {
+                let distance_squared = dolphin
+                    .pos
+                    .load()
+                    .squared_distance_to_vec(&player_entity.pos.load());
+                if include_distance_boundary {
+                    distance_squared <= max_distance_squared
+                } else {
+                    distance_squared < max_distance_squared
+                }
+            }
     }
 
-    fn add_dolphins_grace(mob: &dyn Mob, player: &Arc<Player>, max_distance_squared: f64) {
+    fn add_dolphins_grace(
+        mob: &dyn Mob,
+        player: &Arc<Player>,
+        max_distance_squared: f64,
+        include_distance_boundary: bool,
+    ) {
         let effect = Effect {
             effect_type: &StatusEffect::DOLPHINS_GRACE,
             duration: DOLPHINS_GRACE_DURATION,
@@ -70,8 +104,24 @@ impl DolphinSwimWithPlayerGoal {
             blend: false,
         };
         player.living_entity.add_effect_if(effect, || {
-            Self::is_live_swimming_player(mob, player, max_distance_squared)
+            Self::is_live_swimming_player(
+                mob,
+                player,
+                max_distance_squared,
+                include_distance_boundary,
+            )
         });
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_default_refresh_roll<T>(
+        roll: Arc<AtomicU32>,
+        construct: impl FnOnce() -> T,
+    ) -> T {
+        DEFAULT_REFRESH_ROLL.with(|slot| slot.set(Some(roll)));
+        let result = construct();
+        DEFAULT_REFRESH_ROLL.with(|slot| slot.set(None));
+        result
     }
 
     #[cfg(test)]
@@ -93,8 +143,7 @@ impl Goal for DolphinSwimWithPlayerGoal {
         let world = dolphin.world.load_full();
         let targeting = TargetPredicate::create_non_attackable()
             .set_base_max_distance(SWIM_WITH_PLAYER_RANGE)
-            .ignore_visibility()
-            .ignore_distance_scaling_factor();
+            .ignore_visibility();
 
         self.player = world.get_nearest_player(dolphin.pos.load(), SWIM_WITH_PLAYER_RANGE, |p| {
             targeting.test(&world, Some(mob), p.as_ref())
@@ -107,13 +156,19 @@ impl Goal for DolphinSwimWithPlayerGoal {
 
     fn should_continue(&mut self, mob: &dyn Mob) -> bool {
         self.player.as_ref().is_some_and(|player| {
-            Self::is_live_swimming_player(mob, player, SWIM_WITH_PLAYER_CONTINUE_DISTANCE_SQUARED)
+            Self::is_live_swimming_player(
+                mob,
+                player,
+                SWIM_WITH_PLAYER_CONTINUE_DISTANCE_SQUARED,
+                false,
+            )
         })
     }
 
     fn start(&mut self, mob: &dyn Mob) {
         if let Some(player) = &self.player {
-            Self::add_dolphins_grace(mob, player, SWIM_WITH_PLAYER_RANGE.powi(2));
+            // DolphinSwimWithPlayerGoal.start grants after the inclusive 10-block acquisition.
+            Self::add_dolphins_grace(mob, player, SWIM_WITH_PLAYER_RANGE.powi(2), true);
         }
     }
 
@@ -130,8 +185,12 @@ impl Goal for DolphinSwimWithPlayerGoal {
         let Some(player) = self.player.clone() else {
             return;
         };
-        if !Self::is_live_swimming_player(mob, &player, SWIM_WITH_PLAYER_CONTINUE_DISTANCE_SQUARED)
-        {
+        if !Self::is_live_swimming_player(
+            mob,
+            &player,
+            SWIM_WITH_PLAYER_CONTINUE_DISTANCE_SQUARED,
+            false,
+        ) {
             return;
         }
 
@@ -190,7 +249,12 @@ impl Goal for DolphinSwimWithPlayerGoal {
             }
         };
         if player.is_swimming() && refresh_roll == 0 {
-            Self::add_dolphins_grace(mob, &player, SWIM_WITH_PLAYER_CONTINUE_DISTANCE_SQUARED);
+            Self::add_dolphins_grace(
+                mob,
+                &player,
+                SWIM_WITH_PLAYER_CONTINUE_DISTANCE_SQUARED,
+                false,
+            );
         }
     }
 
