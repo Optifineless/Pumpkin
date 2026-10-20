@@ -1,4 +1,5 @@
 use pumpkin_data::{
+    Block,
     block_properties::HorizontalFacing,
     tag::{self, Taggable},
 };
@@ -40,9 +41,11 @@ pub(super) fn find_bed_spawn_position(
         (side_x + forward_x, side_z + forward_z),
     ];
     let above_offsets = [(0, 0), (-forward_x, -forward_z)];
-    let bunk_bed = world
-        .get_block(&bed_pos.down())
-        .has_tag(&tag::Block::MINECRAFT_BEDS);
+    let block_below = world.get_block(&bed_pos.down());
+    // Vanilla AbstractBedBlock.isBunkBed checks the AbstractBedBlock class; straw beds share
+    // that family but are intentionally absent from minecraft:beds.
+    let bunk_bed =
+        block_below.has_tag(&tag::Block::MINECRAFT_BEDS) || block_below == &Block::STRAW_BED;
 
     // AbstractBedBlock tries every safe candidate before its permissive pass.
     for check_dangerous in [true, false] {

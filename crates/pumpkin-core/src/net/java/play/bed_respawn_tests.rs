@@ -209,12 +209,16 @@ fn gate_surrounding(
     }
 }
 
-fn bed_half_state(part: BedPart, facing: HorizontalFacing) -> pumpkin_data::BlockStateId {
-    let mut properties = WhiteBedLikeProperties::default(&Block::WHITE_BED);
+fn bed_half_state(
+    block: &Block,
+    part: BedPart,
+    facing: HorizontalFacing,
+) -> pumpkin_data::BlockStateId {
+    let mut properties = WhiteBedLikeProperties::default(block);
     properties.part = part;
     properties.facing = facing;
     properties.occupied = false;
-    properties.to_state_id(&Block::WHITE_BED)
+    properties.to_state_id(block)
 }
 
 async fn kill_and_enter_respawn_command(fixture: &DeathTestWorld, client: &mut TestPlayer) {
@@ -420,12 +424,12 @@ async fn b1020c_g01_bed_head_foot_and_yaw_candidate_order() {
     set_state(
         &world,
         lower_head,
-        bed_half_state(BedPart::Head, HorizontalFacing::North),
+        bed_half_state(&Block::WHITE_BED, BedPart::Head, HorizontalFacing::North),
     );
     set_state(
         &world,
         lower_foot,
-        bed_half_state(BedPart::Foot, HorizontalFacing::North),
+        bed_half_state(&Block::WHITE_BED, BedPart::Foot, HorizontalFacing::North),
     );
     for dx in -SURROUND_RADIUS..=SURROUND_RADIUS {
         for dz in -SURROUND_RADIUS..=SURROUND_RADIUS {
@@ -436,6 +440,44 @@ async fn b1020c_g01_bed_head_foot_and_yaw_candidate_order() {
     set_block(&world, lower_first, &Block::AIR);
     // Leave headroom above the lower first candidate clear. The upper candidate at
     // that horizontal cell has no support and must be skipped before the bunk pass.
+    gate_surrounding(&world, head, foot, &[(1, 0)]);
+    kill_and_enter_respawn_command(&fixture, &mut client).await;
+    assert_respawned_at(&client, &world, centered(lower_first, 0.0), true);
+
+    finish_fixture(fixture).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020c_g01_straw_bed_below_counts_as_bunk_support() {
+    let fixture = DeathTestWorld::new().await;
+    let world = fixture.world();
+    publish(&world, proto(&Biome::PLAINS, &Block::STONE));
+    set_world_spawn(&fixture);
+    world.level_time.lock().unwrap().time_of_day = 13_000;
+    let mut client = TestPlayer::new(&world);
+
+    let (head, foot) = place_and_use_bed(&fixture, &client, HorizontalFacing::North, 90.0);
+    let lower_head = head.down();
+    let lower_foot = foot.down();
+    set_state(
+        &world,
+        lower_head,
+        bed_half_state(&Block::STRAW_BED, BedPart::Head, HorizontalFacing::North),
+    );
+    set_state(
+        &world,
+        lower_foot,
+        bed_half_state(&Block::STRAW_BED, BedPart::Foot, HorizontalFacing::North),
+    );
+    for dx in -SURROUND_RADIUS..=SURROUND_RADIUS {
+        for dz in -SURROUND_RADIUS..=SURROUND_RADIUS {
+            set_block(&world, head.add(dx, -2, dz), &Block::STONE);
+        }
+    }
+    let lower_first = head.add(1, -1, 0);
+    set_block(&world, lower_first, &Block::AIR);
+    // The upper exit is clear horizontally but lacks a floor, so only the lower
+    // AbstractBedBlock candidate should win before the bed-surface fallback.
     gate_surrounding(&world, head, foot, &[(1, 0)]);
     kill_and_enter_respawn_command(&fixture, &mut client).await;
     assert_respawned_at(&client, &world, centered(lower_first, 0.0), true);
