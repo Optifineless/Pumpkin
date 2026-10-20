@@ -88,7 +88,8 @@ impl SpongeBlock {
             .set_block_state_if(
                 sponge_pos,
                 Block::WET_SPONGE.default_state.id,
-                BlockFlags::NOTIFY_ALL,
+                // Mirrors SpongeBlock.tryAbsorbWater's listener-only flag 2.
+                BlockFlags::NOTIFY_LISTENERS,
                 |current| current == sponge_state_id,
             )
             .is_some();
@@ -274,3 +275,7 @@ impl BlockBehaviour for WetSpongeBlock {
 #[cfg(test)]
 #[path = "sponge_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sponge_transition_tests.rs"]
+mod transition_tests;

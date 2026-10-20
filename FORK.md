@@ -797,6 +797,17 @@ Sponge absorption follows vanilla 26.3 `SpongeBlock.removeWaterBreadthFirstSearc
 In-game verification: Not yet.
 
 Play test: Place a dry sponge beside a waterlogged slab, kelp, seagrass and a seven-block water line. Expect the slab to stay dry, kelp to drop normally, seagrass to be removed, the first six water blocks to disappear, and the seventh to remain.
+
+## Sponge wet conversion (#325)
+
+When a dry sponge absorbs water, its wet-state change notifies clients and runs normal shape updates without sending an extra ordinary neighbor callback from the sponge. Deferred callbacks from drained water remain. Mirrors vanilla 26.3 `SpongeBlock.tryAbsorbWater`; no API or saved-data change.
+
+In-game verification: Not yet.
+
+Play test: Place a dry sponge beside a short connected water line with redstone
+or another neighbor-sensitive block beside it; expect the water to drain, the
+sponge to turn wet, and the sound to play once. Place water beside a dry sponge;
+expect it to absorb. Put water beside a wet sponge; expect the water to remain.
 ## Server scoreboard persistence
 
 Every dimension shares the server's scoreboard. Objective, score, display-slot and
