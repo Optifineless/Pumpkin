@@ -671,6 +671,16 @@ async fn b1020b_g05_follow_preempts_melee_and_preserves_vanilla_continuation() {
         .unwrap()
         .get_mob_entity()
         .set_target(Some(target));
+    {
+        let mob = dolphin.get_mob().unwrap();
+        let mut selector = mob
+            .get_mob_entity()
+            .goals_selector
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // RandomSwimmingGoal can randomly claim MOVE before this priority test runs.
+        selector.remove_goal::<WanderAroundGoal>(mob);
+    };
     assert_eq!(world.get_world_age(), 20);
     assert!(!attacker.player.is_swimming());
     assert!(attacker.player.living_entity.is_alive());
