@@ -84,6 +84,7 @@ impl RangedCrossbowAttackGoal {
             .as_ref()
             .ok()
             .map(|eq| eq.get(&EquipmentSlot::MAIN_HAND));
+        drop(equipment_guard);
 
         let arrow_entity = Entity::new(world.clone(), mob_pos, &EntityType::ARROW);
         let projectile = ItemStack::new(1, &Item::ARROW);
@@ -104,7 +105,6 @@ impl RangedCrossbowAttackGoal {
                 crate::enchantment::EnchantmentHelper::process_projectile_piercing(item, 0),
             );
         }
-        arrow.apply_on_projectile_spawned(&projectile);
         if entity.is_on_fire() {
             arrow.set_flame(true);
         }
@@ -126,9 +126,7 @@ impl RangedCrossbowAttackGoal {
             divergence,
         );
 
-        world.play_sound(Sound::ItemCrossbowShoot, SoundCategory::Hostile, &mob_pos);
-
-        let arrow: Arc<dyn EntityBase> = Arc::new(arrow);
+        let arrow = Arc::new(arrow);
         let entity_id = entity.entity_id;
         if let Some(server) = world_full.server.upgrade() {
             let mut event =
@@ -142,7 +140,11 @@ impl RangedCrossbowAttackGoal {
                 return;
             }
         }
-        world_full.spawn_entity(arrow);
+        if !crate::entity::projectile::spawn_projectile(&world_full, arrow.clone(), Some(entity)) {
+            return;
+        }
+        arrow.apply_on_projectile_spawned(&projectile);
+        world.play_sound(Sound::ItemCrossbowShoot, SoundCategory::Hostile, &mob_pos);
 
         if let Some(crossbow_mob) = mob.as_crossbow_attack_mob() {
             crossbow_mob.on_crossbow_attack_performed();

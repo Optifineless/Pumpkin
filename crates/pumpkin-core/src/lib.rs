@@ -939,3 +939,6 @@ mod inventory_transaction_bow_tests;
 
 #[cfg(test)]
 mod inventory_transaction_use_tests;
+
+#[cfg(test)]
+mod old_pr204_1020_tests;

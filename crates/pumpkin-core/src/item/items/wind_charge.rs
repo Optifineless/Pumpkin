@@ -49,17 +49,13 @@ impl ItemBehaviour for WindChargeItem {
         hand: pumpkin_util::Hand,
     ) -> bool {
         // WindChargeItem.use consumes the observed hand, before effects in the concurrent tick.
-        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+        let Some(receipt) =
+            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        else {
             return false;
         };
         let world = player.world();
         let position = player.position();
-
-        world.play_sound(
-            Sound::EntityWindChargeThrow,
-            pumpkin_data::sound::SoundCategory::Neutral,
-            &position,
-        );
 
         let entity = Entity::new(world.clone(), position, &EntityType::WIND_CHARGE);
 
@@ -67,10 +63,20 @@ impl ItemBehaviour for WindChargeItem {
         let (yaw, pitch) = player.rotation();
         wind_charge.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
 
-        if !world.spawn_entity(Arc::new(WindChargeEntity::new_normal(wind_charge))) {
-            crate::item::item_utils::give_or_drop(player, receipt);
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(WindChargeEntity::new_normal(wind_charge)),
+            Some(player.get_entity()),
+        ) {
+            receipt.refund(player);
             return false;
         }
+        receipt.publish(player);
+        world.play_sound(
+            Sound::EntityWindChargeThrow,
+            pumpkin_data::sound::SoundCategory::Neutral,
+            &position,
+        );
 
         true
     }

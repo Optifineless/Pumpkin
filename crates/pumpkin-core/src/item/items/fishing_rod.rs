@@ -60,6 +60,27 @@ impl ItemBehaviour for FishingRodItem {
         pitch: f32,
         hand: Hand,
     ) {
+        Self::use_rod(player, yaw, pitch, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        _stack: &ItemStack,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) -> bool {
+        Self::use_rod(player, yaw, pitch, hand)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl FishingRodItem {
+    fn use_rod(player: &Player, yaw: f32, pitch: f32, hand: Hand) -> bool {
         let world = player.world();
         let rod = player.inventory().get_stack_in_hand(hand);
         let id = player.fishing_bobber.load(Relaxed);
@@ -70,7 +91,7 @@ impl ItemBehaviour for FishingRodItem {
             if let Some(hook) = bobber.cast_any().downcast_ref::<FishingBobberEntity>() {
                 let damage = hook.reel_in(player, &rod, hand);
                 if !hook.get_entity().is_removed() {
-                    return;
+                    return false;
                 }
                 let slot = match hand {
                     Hand::Right => EquipmentSlot::MAIN_HAND,
@@ -91,9 +112,15 @@ impl ItemBehaviour for FishingRodItem {
             );
             // FishingRodItem.use calls ItemStack.causeUseVibration after durability damage.
             cause_use_vibration(&rod, player, GameEvent::ItemInteractFinish);
-            return;
+            return true;
         }
-        player.fishing_bobber.store(-1, Relaxed);
+        if player
+            .fishing_bobber
+            .compare_exchange(id, -1, Relaxed, Relaxed)
+            .is_err()
+        {
+            return false;
+        }
         let luck = EnchantmentHelper::modify_fishing_luck_bonus(&rod, 0.0) as i32;
         let lure = (EnchantmentHelper::modify_fishing_time_reduction(&rod, 0.0) * 20.0) as i32;
         let hook = Arc::new(FishingBobberEntity::new_with_rotation(
@@ -110,8 +137,24 @@ impl ItemBehaviour for FishingRodItem {
             hand,
         ));
         if hook.fire_cast_event(hand).is_none() {
-            return;
+            return false;
         }
+        if player
+            .fishing_bobber
+            .compare_exchange(-1, hook.get_entity().entity_id, Relaxed, Relaxed)
+            .is_err()
+        {
+            return false;
+        }
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            hook.clone(),
+            Some(player.get_entity()),
+        ) {
+            hook.clear_owner();
+            return false;
+        }
+        apply_on_projectile_spawned(hook.get_entity(), &rod, None, None);
         world.play_sound_fine(
             Sound::EntityFishingBobberThrow,
             SoundCategory::Neutral,
@@ -119,19 +162,9 @@ impl ItemBehaviour for FishingRodItem {
             0.5,
             bobber_sound_pitch(),
         );
-        player
-            .fishing_bobber
-            .store(hook.get_entity().entity_id, Relaxed);
-        apply_on_projectile_spawned(hook.get_entity(), &rod, None, None);
-        if !world.spawn_entity(hook.clone()) {
-            hook.clear_owner();
-        }
         player.increment_stat(StatisticCategory::Used, i32::from(Item::FISHING_ROD.id), 1);
         cause_use_vibration(&rod, player, GameEvent::ItemInteractStart);
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+        true
     }
 }
 

@@ -2,8 +2,10 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::enchantment::EnchantmentHelper;
+use crate::entity::Entity;
+use crate::entity::equipment_damage::EquippedItem;
+use crate::entity::player::Player;
 use crate::entity::projectile::arrow::{ArrowEntity, ArrowPickup};
-use crate::entity::{Entity, EntityBase};
 use crate::world::World;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -72,9 +74,6 @@ impl ProjectileWeaponItem {
             ArrowEntity::new_shot_with_weapon(arrow_entity, shooter, projectile, weapon, pickup);
 
         arrow.set_pierce_level(EnchantmentHelper::process_projectile_piercing(weapon, 0));
-
-        // Data-driven PROJECTILE_SPAWNED effects (e.g. Flame enchantment -> Ignite effect)
-        arrow.apply_on_projectile_spawned(projectile);
 
         if is_crit {
             arrow.set_critical(true);
@@ -168,8 +167,35 @@ impl ProjectileWeaponItem {
         is_crit: bool,
         is_creative: bool,
     ) {
+        Self::shoot_projectiles_with_callback(
+            world,
+            shooter,
+            weapon,
+            projectiles,
+            power,
+            uncertainty,
+            is_crit,
+            is_creative,
+            |_| true,
+        );
+    }
+
+    // ProjectileWeaponItem.shoot applies wear after each spawn and stops if the weapon breaks.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn shoot_projectiles_with_callback(
+        world: &Arc<World>,
+        shooter: &Entity,
+        weapon: &ItemStack,
+        projectiles: &[ItemStack],
+        power: f32,
+        uncertainty: f32,
+        is_crit: bool,
+        is_creative: bool,
+        mut on_spawn: impl FnMut(&ItemStack) -> bool,
+    ) -> Vec<bool> {
+        let mut admitted = vec![false; projectiles.len()];
         if projectiles.is_empty() {
-            return;
+            return admitted;
         }
 
         let max_angle = EnchantmentHelper::process_projectile_spread(weapon, 0.0);
@@ -191,33 +217,100 @@ impl ProjectileWeaponItem {
             let angle = angle_offset + direction * (i.div_ceil(2) as f32) * angle_step;
             direction = -direction;
 
-            if projectile.item == &Item::FIREWORK_ROCKET {
-                crate::entity::projectile::firework_rocket::FireworkRocketEntity::shoot(
+            let spawned = if projectile.item == &Item::FIREWORK_ROCKET {
+                crate::entity::projectile::firework_rocket::FireworkRocketEntity::shoot_with_result(
                     world,
                     shooter,
                     projectile,
                     pitch,
                     yaw + angle,
                     uncertainty,
+                )
+            } else {
+                let arrow = Self::create_projectile(
+                    world.clone(),
+                    shooter,
+                    weapon,
+                    projectile,
+                    is_crit,
+                    is_creative,
                 );
-                continue;
+                arrow.set_velocity_from_rotation(pitch, yaw + angle, 0.0, power, uncertainty);
+                // BowItem.shoot uses shootFromRotation, which adds the shooter's movement;
+                // CrossbowItem.shootProjectile calls shoot directly and does not.
+                if weapon.item.id != Item::CROSSBOW.id {
+                    Self::add_shooter_movement(&arrow.entity, shooter);
+                }
+                let arrow = Arc::new(arrow);
+                let admitted = crate::entity::projectile::spawn_projectile(
+                    world,
+                    arrow.clone(),
+                    Some(shooter),
+                );
+                if admitted {
+                    arrow.apply_on_projectile_spawned(projectile);
+                }
+                admitted
+            };
+            admitted[i] = spawned;
+            if spawned && !on_spawn(projectile) {
+                break;
             }
-            let arrow = Self::create_projectile(
-                world.clone(),
-                shooter,
-                weapon,
-                projectile,
-                is_crit,
-                is_creative,
-            );
-            arrow.set_velocity_from_rotation(pitch, yaw + angle, 0.0, power, uncertainty);
-            // BowItem.shoot uses shootFromRotation, which adds the shooter's movement;
-            // CrossbowItem.shootProjectile calls shoot directly and does not.
-            if weapon.item.id != Item::CROSSBOW.id {
-                Self::add_shooter_movement(&arrow.entity, shooter);
-            }
-            let arrow_arc: Arc<dyn EntityBase> = Arc::new(arrow);
-            world.spawn_entity(arrow_arc);
         }
+        admitted
+    }
+
+    pub(crate) fn hurt_shooting_weapon(
+        player: &Player,
+        weapon: &EquippedItem,
+        projectile: &ItemStack,
+    ) -> bool {
+        // CrossbowItem.getDurabilityUse costs three for rockets; arrows cost one.
+        let amount =
+            if weapon.stack.item == &Item::CROSSBOW && projectile.item == &Item::FIREWORK_ROCKET {
+                3
+            } else {
+                1
+            };
+        let Some(index) = Self::weapon_slot(player, &weapon.stack) else {
+            return false;
+        };
+        let retained = EquippedItem {
+            inventory_index: Some(index),
+            ..weapon.clone()
+        };
+        player.damage_projectile_weapon(&retained, amount)
+            && Self::weapon_slot(player, &weapon.stack).is_some()
+    }
+
+    pub(crate) fn finish_shooting(player: &Player, weapon: &ItemStack) {
+        player.increment_stat(
+            pumpkin_data::statistic::StatisticCategory::Used,
+            i32::from(weapon.item.id),
+            1,
+        );
+        if let Some(cooldown) = weapon.get_use_cooldown() {
+            player.start_cooldown(
+                cooldown
+                    .cooldown_group
+                    .clone()
+                    .unwrap_or_else(|| weapon.item.registry_key.to_owned()),
+                (cooldown.seconds * 20.0) as i32,
+            );
+        }
+    }
+
+    pub(crate) fn weapon_slot(player: &Player, weapon: &ItemStack) -> Option<usize> {
+        use pumpkin_inventory::Inventory;
+        let inventory = player.inventory();
+        let owner = inventory.slot_transaction(0);
+        let _guard = owner.lock();
+        if !owner.is_live() {
+            return None;
+        }
+        (0..inventory.size()).find(|slot| {
+            let stack = inventory.get_stack(*slot);
+            !stack.is_empty() && stack.uid == weapon.uid && stack.item == weapon.item
+        })
     }
 }

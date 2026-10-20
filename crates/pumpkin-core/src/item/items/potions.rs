@@ -73,26 +73,34 @@ impl ItemBehaviour for SplashPotionItem {
         hand: pumpkin_util::Hand,
     ) -> bool {
         // ThrowablePotionItem.use consumes getItemInHand(hand); claim before spawning here.
-        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+        let Some(receipt) =
+            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        else {
             return false;
         };
         let position = player.position();
         let world = player.world();
-        world.play_sound(
-            Sound::EntityWitchThrow,
-            pumpkin_data::sound::SoundCategory::Neutral,
-            &position,
-        );
         let entity = Entity::new(world.clone(), position, &EntityType::SPLASH_POTION);
         let splash = SplashPotionEntity::new_shot(entity, player.get_entity());
 
         splash.set_item_stack(stack.clone());
         let (yaw, pitch) = player.rotation();
         splash.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !world.spawn_entity(Arc::new(splash)) {
-            crate::item::item_utils::give_or_drop(player, receipt);
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(splash),
+            Some(player.get_entity()),
+        ) {
+            receipt.refund(player);
             return false;
         }
+        receipt.publish(player);
+        world.play_sound(
+            Sound::EntityWitchThrow,
+            pumpkin_data::sound::SoundCategory::Neutral,
+            &position,
+        );
+
         true
     }
 
@@ -128,26 +136,34 @@ impl ItemBehaviour for LingeringPotionItem {
         hand: pumpkin_util::Hand,
     ) -> bool {
         // ThrowablePotionItem.use consumes getItemInHand(hand); claim before spawning here.
-        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+        let Some(receipt) =
+            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        else {
             return false;
         };
         let position = player.position();
         let world = player.world();
-        world.play_sound(
-            Sound::EntityWitchThrow,
-            pumpkin_data::sound::SoundCategory::Neutral,
-            &position,
-        );
         let entity = Entity::new(world.clone(), position, &EntityType::LINGERING_POTION);
         let ling = LingeringPotionEntity::new_shot(entity, player.get_entity());
 
         ling.set_item_stack(stack.clone());
         let (yaw, pitch) = player.rotation();
         ling.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !world.spawn_entity(Arc::new(ling)) {
-            crate::item::item_utils::give_or_drop(player, receipt);
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(ling),
+            Some(player.get_entity()),
+        ) {
+            receipt.refund(player);
             return false;
         }
+        receipt.publish(player);
+        world.play_sound(
+            Sound::EntityWitchThrow,
+            pumpkin_data::sound::SoundCategory::Neutral,
+            &position,
+        );
+
         true
     }
 

@@ -442,11 +442,18 @@ impl DispenserBlock {
 
     fn finish_projectile_launch(
         ctx: &DispenseContext<'_>,
-        projectile: Arc<dyn EntityBase>,
+        item: &mut ItemStack,
+        projectile: &Arc<impl EntityBase + 'static>,
         launch_event: WorldEvent,
     ) {
-        ctx.world.spawn_entity(projectile);
-        Self::play_dispense_effects(ctx, launch_event);
+        // ProjectileDispenseBehavior.execute pays only after projectile admission.
+        if crate::entity::projectile::spawn_projectile(ctx.world, projectile.clone(), None) {
+            if let Some(arrow) = projectile.cast_any().downcast_ref::<ArrowEntity>() {
+                arrow.apply_on_projectile_spawned(item);
+            }
+            item.decrement(1);
+            Self::play_dispense_effects(ctx, launch_event);
+        }
     }
 
     fn play_dispense_effects(ctx: &DispenseContext<'_>, sound_event: WorldEvent) {
@@ -459,7 +466,7 @@ impl DispenserBlock {
     }
 
     fn fire_arrow(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let projectile = item.split(1);
+        let projectile = item.copy_with_count(1);
 
         let facing = to_normal(ctx.facing);
         let arrow_entity = Entity::new(
@@ -469,7 +476,6 @@ impl DispenserBlock {
         );
         let arrow =
             ArrowEntity::new_with_item(arrow_entity, None, &projectile, ArrowPickup::Allowed);
-        arrow.apply_on_projectile_spawned(&projectile);
 
         arrow.set_velocity(
             facing.x,
@@ -481,7 +487,8 @@ impl DispenserBlock {
 
         Self::finish_projectile_launch(
             ctx,
-            Arc::new(arrow),
+            item,
+            &Arc::new(arrow),
             WorldEvent::SoundDispenserProjectileLaunch,
         );
     }
@@ -617,7 +624,6 @@ impl DispenserBlock {
     }
 
     fn dispense_snowball(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let _ = item.split(1);
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -632,13 +638,14 @@ impl DispenserBlock {
         );
         Self::finish_projectile_launch(
             ctx,
-            Arc::new(snowball),
+            item,
+            &Arc::new(snowball),
             WorldEvent::SoundDispenserProjectileLaunch,
         );
     }
 
     fn dispense_egg(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let projectile = item.split(1);
+        let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -654,13 +661,14 @@ impl DispenserBlock {
         );
         Self::finish_projectile_launch(
             ctx,
-            Arc::new(egg),
+            item,
+            &Arc::new(egg),
             WorldEvent::SoundDispenserProjectileLaunch,
         );
     }
 
     fn dispense_splash_potion(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let projectile = item.split(1);
+        let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -676,13 +684,14 @@ impl DispenserBlock {
         );
         Self::finish_projectile_launch(
             ctx,
-            Arc::new(potion),
+            item,
+            &Arc::new(potion),
             WorldEvent::SoundDispenserProjectileLaunch,
         );
     }
 
     fn dispense_lingering_potion(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let projectile = item.split(1);
+        let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -698,13 +707,13 @@ impl DispenserBlock {
         );
         Self::finish_projectile_launch(
             ctx,
-            Arc::new(potion),
+            item,
+            &Arc::new(potion),
             WorldEvent::SoundDispenserProjectileLaunch,
         );
     }
 
     fn dispense_fire_charge(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let _ = item.split(1);
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -724,11 +733,15 @@ impl DispenserBlock {
             dir.x.atan2(dir.z) as f32 * 57.295_776,
             dir.y.atan2(len) as f32 * 57.295_776,
         );
-        Self::finish_projectile_launch(ctx, Arc::new(fireball), WorldEvent::SoundBlazeFireball);
+        Self::finish_projectile_launch(
+            ctx,
+            item,
+            &Arc::new(fireball),
+            WorldEvent::SoundBlazeFireball,
+        );
     }
 
     fn dispense_wind_charge(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let _ = item.split(1);
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -748,13 +761,14 @@ impl DispenserBlock {
         );
         Self::finish_projectile_launch(
             ctx,
-            Arc::new(WindChargeEntity::new_normal(thrown)),
+            item,
+            &Arc::new(WindChargeEntity::new_normal(thrown)),
             WorldEvent::SoundWindChargeShoot,
         );
     }
 
     fn dispense_firework_rocket(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let rocket_item = item.split(1);
+        let rocket_item = item.copy_with_count(1);
         let facing = to_normal(ctx.facing);
         // Vanilla spawns fireworks closer to the dispenser face and slightly above center.
         let position = ctx
@@ -788,7 +802,12 @@ impl DispenserBlock {
             velocity.y.atan2(velocity.horizontal_length()) as f32 * 57.295_776,
         );
 
-        Self::finish_projectile_launch(ctx, Arc::new(rocket), WorldEvent::SoundFireworkShoot);
+        Self::finish_projectile_launch(
+            ctx,
+            item,
+            &Arc::new(rocket),
+            WorldEvent::SoundFireworkShoot,
+        );
     }
 
     fn dispense_empty_bucket(
@@ -1123,7 +1142,7 @@ impl DispenserBlock {
     }
 
     fn dispense_experience_bottle(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        let projectile = item.split(1);
+        let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -1139,7 +1158,8 @@ impl DispenserBlock {
         );
         Self::finish_projectile_launch(
             ctx,
-            Arc::new(bottle),
+            item,
+            &Arc::new(bottle),
             WorldEvent::SoundDispenserProjectileLaunch,
         );
     }
