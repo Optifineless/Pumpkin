@@ -239,7 +239,7 @@ fn item_nbt(item: &pumpkin_data::item_stack::ItemStack) -> NbtCompound {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1020b_g04_same_map_nbt_metadata_change_retires_marker() {
+async fn b1020b_g04_same_map_nbt_metadata_change_preserves_live_marker() {
     let fixture = Fixture::new();
     import(&fixture, 0);
     let map = loaded(&fixture.server.map_manager, 0).await;
@@ -261,13 +261,17 @@ async fn b1020b_g04_same_map_nbt_metadata_change_retires_marker() {
         &Item::FILLED_MAP
     );
     assert_eq!(fixture.drops(&Item::FILLED_MAP), 0);
+    fixture.tick(11);
+    markers(&map, false);
+    persisted(&fixture, false).await;
+    attack(&fixture.player.player, &fixture.server, frame.as_ref());
     markers(&map, true);
     persisted(&fixture, true).await;
     fixture.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1020b_g04_cold_unchanged_reload_keeps_retired_cleanup() {
+async fn b1020b_g04_cold_metadata_edits_preserve_live_marker() {
     let fixture = Fixture::new();
     import(&fixture, 0);
     let frame = place(&fixture, 0);
@@ -278,6 +282,7 @@ async fn b1020b_g04_cold_unchanged_reload_keeps_retired_cleanup() {
     });
     let nbt = item_nbt(&renamed);
     frame.read_custom_nbt(&nbt);
+    assert!(fixture.server.map_manager.get_map(0).is_none());
     entered
         .recv_timeout(std::time::Duration::from_secs(5))
         .unwrap();
@@ -287,8 +292,8 @@ async fn b1020b_g04_cold_unchanged_reload_keeps_retired_cleanup() {
     tokio::time::timeout(DEADLINE, fixture.server.map_manager.drain())
         .await
         .unwrap();
-    markers(&loaded(&fixture.server.map_manager, 0).await, true);
-    persisted(&fixture, true).await;
+    markers(&loaded(&fixture.server.map_manager, 0).await, false);
+    persisted(&fixture, false).await;
     fixture.finish().await;
 }
 

@@ -69,6 +69,7 @@ impl MapManager {
 
     /// Saves the cache without holding map locks during disk I/O.
     pub async fn save(&self, world: &Path, data_version: i32) -> io::Result<()> {
+        self.retry_frame_cleanup();
         let gate = self.save_gate.clone().lock_owned().await;
         let maps: Vec<_> = self
             .maps

@@ -27,6 +27,19 @@ shutdown retry, preserving its obligation while the map is busy. API 8 (same
 version); public signatures, layouts and saved-data meanings are unchanged by
 this follow-up. In-game verification: Not yet.
 
+PR #331 round 3: loader cleanup only tries a busy map mutex and retains pending
+work for the next server tick, load or save. Frame destruction queues runtime
+ownership retirement without taking the cleanup mutex; unattached frames do
+nothing. Position-only live NBT edits retire the old attachment, while metadata
+edits retaining the same map and position preserve its saved icon. Failed map
+reads wait five seconds before automatic retry; creation and explicit import/load
+can recover immediately. API 8 (same version): `MapManager` gains private runtime
+queue/backoff state; rebuild native plugins. Public signatures, Wasm WIT and saved
+fields/meanings are unchanged. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet. Duplicate-UUID summon ownership, current-attack
+cancellation and the pre-existing missing live marker rotation/ID refresh remain
+backlog.
+
 Play test: display an imported map in an ordinary/glow frame and break its support;
 expect one frame/map drop and its icon gone after save/restart, with another frame
 and a named banner unchanged. Repeat Creative attacks and support loss with

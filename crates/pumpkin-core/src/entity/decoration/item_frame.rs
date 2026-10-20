@@ -553,10 +553,10 @@ impl ItemFrameEntity {
 impl Drop for ItemFrameEntity {
     fn drop(&mut self) {
         // Chunk unload retires only runtime ownership; its saved marker remains.
-        if let Some(server) = self.entity.world.load().server.upgrade() {
-            server
-                .map_manager
-                .change_frame_attachment(self.map_attachment.load(), None, false);
+        if let Some(attachment) = self.map_attachment.load()
+            && let Some(server) = self.entity.world.load().server.upgrade()
+        {
+            server.map_manager.enqueue_frame_unload(attachment);
         }
     }
 }
@@ -634,6 +634,11 @@ impl EntityBase for ItemFrameEntity {
         self.item_drop_chance.store(drop_chance);
         self.invisible.store(invisible, Ordering::Relaxed);
         self.fixed.store(fixed, Ordering::Relaxed);
+        let cleanup_old = cleanup_old
+            || self
+                .map_attachment
+                .load()
+                .is_some_and(|old| old.pos != self.entity.block_pos.load());
         let cleanup = self.change_map_attachment(map_id, cleanup_old);
         drop(item);
         self.finish_map_cleanup(cleanup);

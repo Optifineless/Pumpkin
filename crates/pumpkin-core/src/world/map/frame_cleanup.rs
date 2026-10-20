@@ -1,9 +1,14 @@
 //! ItemFrame.removeFramedMap / MapItemSavedData.removedFromFrame ownership.
+// Lock order: S < I < C < M < R < K < L < D: save gate, frame item, cleanup,
+// map, cache registry, known IDs, loading IDs, synchronized metadata. C -> M is
+// try_lock only; a busy map retains its obligations for tick/load/save retry.
+// Registry/ID guards end before cleanup; I ends before map work, callbacks,
+// metadata or sends. Drop may run under arbitrary locks and only enqueues a token.
 use super::{MapData, MapManager};
 use pumpkin_util::math::position::BlockPos;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, TryLockError},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -38,11 +43,10 @@ impl MapManager {
             .frame_cleanup
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut was_current = false;
+        self.retire_unloaded_frames(&mut state);
         if let Some(old) = old {
             let key = (old.map_id, old.pos);
             if state.bindings.get(&key) == Some(&old) {
-                was_current = true;
                 state.bindings.remove(&key);
                 if cleanup {
                     state.pending.insert(key, old);
@@ -51,22 +55,42 @@ impl MapManager {
         }
         if let Some(new) = new {
             let key = (new.map_id, new.pos);
-            let continuous = was_current
-                && old.is_some_and(|old| {
-                    old.map_id == new.map_id
-                        && old.pos == new.pos
-                        && old.frame == new.frame
-                        && old.runtime_id == new.runtime_id
-                });
-            if continuous {
-                if let Some(pending) = state.pending.get_mut(&key) {
-                    *pending = new;
-                }
-            } else {
-                state.pending.remove(&key);
-            }
+            // Vanilla removes then refreshes a live same-map marker in tickCarriedBy.
+            // Until live registration exists here, preserve its saved record instead.
+            state.pending.remove(&key);
             state.bindings.insert(key, new);
         }
+    }
+
+    pub(crate) fn enqueue_frame_unload(&self, attachment: FrameAttachment) {
+        self.frame_unloads.push(attachment);
+    }
+
+    fn retire_unloaded_frames(&self, state: &mut FrameCleanup) {
+        while let Some(old) = self.frame_unloads.pop() {
+            let key = (old.map_id, old.pos);
+            if state.bindings.get(&key) == Some(&old) {
+                state.bindings.remove(&key);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hold_frame_cleanup_for_test(
+        &self,
+        entered: &std::sync::mpsc::Sender<()>,
+        release: &std::sync::mpsc::Receiver<()>,
+    ) {
+        let _state = self
+            .frame_cleanup
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = entered.send(());
+        assert!(
+            release
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .is_ok()
+        );
     }
 
     pub(super) fn report_pending_frame_cleanup(&self) {
@@ -84,15 +108,15 @@ impl MapManager {
         }
     }
 
-    pub(super) fn retry_frame_cleanup(&self) {
-        let ids: std::collections::HashSet<_> = self
-            .frame_cleanup
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .pending
-            .keys()
-            .map(|(id, _)| *id)
-            .collect();
+    pub(crate) fn retry_frame_cleanup(&self) {
+        let ids: std::collections::HashSet<_> = {
+            let mut state = self
+                .frame_cleanup
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.retire_unloaded_frames(&mut state);
+            state.pending.keys().map(|(id, _)| *id).collect()
+        };
         for id in ids {
             self.finish_frame_cleanup(id);
         }
@@ -122,9 +146,11 @@ pub(super) fn apply_pending(cleanup: &Mutex<FrameCleanup>, id: i32, map: &Arc<Mu
     let mut state = cleanup
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut map = map
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut map = match map.try_lock() {
+        Ok(map) => map,
+        Err(TryLockError::Poisoned(error)) => error.into_inner(),
+        Err(TryLockError::WouldBlock) => return,
+    };
     state.pending.retain(|&(map_id, pos), _| {
         if map_id != id {
             return true;
