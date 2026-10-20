@@ -106,6 +106,13 @@ impl CowEntity {
             // AbstractCow.mobInteract uses ItemUtils.createFilledResult for the used hand.
             let interaction =
                 super::animal_interaction::StackInteraction::new(player, hand, item_stack);
+            // Player.playSound precedes the exchange and excludes the acting player.
+            player.world().play_sound_expect(
+                player,
+                Sound::EntityCowMilk,
+                pumpkin_data::sound::SoundCategory::Players,
+                &player.position(),
+            );
             if !interaction.create_filled_result(
                 player,
                 item_stack,
@@ -114,13 +121,6 @@ impl CowEntity {
             ) {
                 return true;
             }
-            let entity = &self.mob_entity.living_entity.entity;
-            let world = entity.world.load_full();
-            world.play_sound(
-                Sound::EntityCowMilk,
-                pumpkin_data::sound::SoundCategory::Neutral,
-                &entity.pos.load(),
-            );
             interaction.refresh(player, item_stack);
             return true;
         }

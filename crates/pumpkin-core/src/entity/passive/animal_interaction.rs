@@ -1,17 +1,14 @@
 use std::{sync::Arc, sync::atomic::Ordering};
 
 use pumpkin_data::{
-    data_component_impl::UseRemainderImpl,
-    item_stack::ItemStack,
-    particle::Particle,
-    sound::{Sound, SoundCategory},
+    data_component_impl::UseRemainderImpl, item_stack::ItemStack, particle::Particle, sound::Sound,
 };
 use pumpkin_inventory::{Inventory, screen_handler::InventoryPlayer};
 use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use pumpkin_util::{Hand, math::vector3::Vector3};
 
 use super::animal::Animal;
-use crate::entity::{mob::interaction::MobInteraction, player::Player};
+use crate::entity::{ageable::AgeableMob, mob::interaction::MobInteraction, player::Player};
 use crate::item::item_utils;
 
 // Handless Mob callers own their supplied stack; packet callers commit a retained hand.
@@ -105,8 +102,7 @@ pub(super) fn interact<A: Animal + ?Sized>(
 
             mob_entity.set_love_ticks(600, Some(player.gameprofile.id));
             let entity = &mob_entity.living_entity.entity;
-            let world = entity.world.load();
-            let pos = entity.pos.load();
+            let world = entity.world.load_full();
 
             world.send_entity_status(
                 entity,
@@ -114,21 +110,15 @@ pub(super) fn interact<A: Animal + ?Sized>(
                 Some(ActorEventID::InLoveHearts),
             );
 
-            world.spawn_particle(
-                pos + Vector3::new(0.0, f64::from(entity.height()), 0.0),
-                Vector3::new(0.5, 0.5, 0.5),
-                1.0,
-                7,
-                Particle::Heart,
-            );
-            world.play_sound(ambient_sound, SoundCategory::Neutral, &entity.pos.load());
+            animal.play_eating_sound(ambient_sound);
             if let Some(source) = &source {
                 source.refresh(player, item_stack);
             }
             return true;
         }
 
-        if age < 0 {
+        let ageable = animal.as_ageable();
+        if age < 0 && ageable.is_none_or(AgeableMob::can_age_up) {
             if let Some(source) = &source {
                 if !source.use_player_item(player, item_stack) {
                     return true;
@@ -136,15 +126,20 @@ pub(super) fn interact<A: Animal + ?Sized>(
             } else {
                 item_stack.decrement_unless_creative(player.gamemode.load(), 1);
             }
-            let speedup = (-age / 10).max(1);
-            mob_entity
-                .living_entity
-                .entity
-                .age
-                .fetch_add(speedup, Ordering::Relaxed);
+            if let Some(ageable) = ageable {
+                ageable.age_up(get_speed_up_seconds_when_feeding(-age), true);
+            } else {
+                // Legacy species retain their existing age ownership until #370.
+                let speedup = (-age / 10).max(1);
+                mob_entity
+                    .living_entity
+                    .entity
+                    .age
+                    .fetch_add(speedup, Ordering::Relaxed);
+            }
 
             let entity = &mob_entity.living_entity.entity;
-            let world = entity.world.load();
+            let world = entity.world.load_full();
             let pos = entity.pos.load();
 
             world.spawn_particle(
@@ -163,4 +158,9 @@ pub(super) fn interact<A: Animal + ?Sized>(
     }
 
     mob_entity.mob_interact(animal, player, item_stack)
+}
+
+// AgeableMob.getSpeedUpSecondsWhenFeeding; the trait's static helper is Sized-only.
+fn get_speed_up_seconds_when_feeding(ticks_until_adult: i32) -> i32 {
+    ((ticks_until_adult / 20) as f32 * 0.1) as i32
 }

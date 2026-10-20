@@ -154,6 +154,7 @@ impl EventHandler<PacketSentEvent> for CreativePublication {
         event: &'a mut PacketSentEvent,
     ) -> BoxFuture<'a, ()> {
         if event.packet_id == play::SET_PLAYER_INVENTORY.0 {
+            assert_eq!(self.sounds.load(Ordering::Relaxed), 0);
             assert_eq!(
                 event.player.inventory().get_stack(self.slot).get_item(),
                 &Item::BUCKET
@@ -165,7 +166,6 @@ impl EventHandler<PacketSentEvent> for CreativePublication {
             );
             self.syncs.fetch_add(1, Ordering::Relaxed);
         } else if event.packet_id == play::SOUND.0 {
-            assert!(self.syncs.load(Ordering::Relaxed) > 0);
             self.sounds.fetch_add(1, Ordering::Relaxed);
         }
         Box::pin(async {})
@@ -173,7 +173,7 @@ impl EventHandler<PacketSentEvent> for CreativePublication {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1019_g08_cow_creative_new_milk_publishes_before_sound() {
+async fn b1019_g08_cow_creative_new_milk_publishes_without_actor_sound() {
     for hand in [Hand::Right, Hand::Left] {
         let fixture = Fixture::new();
         let target = fixture.mob(&EntityType::COW);
@@ -190,7 +190,7 @@ async fn b1019_g08_cow_creative_new_milk_publishes_before_sound() {
             .register::<PacketSentEvent, _>(hook.clone(), EventPriority::Normal, true);
         fixture.interact(target.as_ref(), hand);
         assert!(hook.syncs.load(Ordering::Relaxed) > 0);
-        assert_eq!(hook.sounds.load(Ordering::Relaxed), 1);
+        assert_eq!(hook.sounds.load(Ordering::Relaxed), 0);
         let syncs = hook.syncs.load(Ordering::Relaxed);
         fixture.interact(target.as_ref(), hand);
         assert_eq!(hook.syncs.load(Ordering::Relaxed), syncs);
@@ -372,17 +372,15 @@ impl EventHandler<PacketSentEvent> for AfterUse {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1019_g08_cow_commits_before_sync_and_sound_callbacks_preserving_live_edits() {
+async fn b1019_g08_cow_commits_before_sync_callbacks_preserving_live_edits() {
     for hand in [Hand::Right, Hand::Left] {
-        for packet_id in [play::SET_PLAYER_INVENTORY.0, play::SOUND.0] {
-            for edit in [
-                AfterEdit::Replace,
-                AfterEdit::RestoreSource,
-                AfterEdit::Remove,
-                AfterEdit::Select,
-            ] {
-                committed_callback(hand, packet_id, edit).await;
-            }
+        for edit in [
+            AfterEdit::Replace,
+            AfterEdit::RestoreSource,
+            AfterEdit::Remove,
+            AfterEdit::Select,
+        ] {
+            committed_callback(hand, play::SET_PLAYER_INVENTORY.0, edit).await;
         }
     }
 }

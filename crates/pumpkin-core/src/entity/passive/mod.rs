@@ -96,3 +96,16 @@ mod b1019_g08_handless_tests;
 mod b1019_g08_test_support;
 #[cfg(test)]
 mod b1019_g08_wolf_tests;
+
+#[cfg(test)]
+mod b1020d_g04_growth_tests;
+#[cfg(test)]
+mod b1020d_g04_love_tests;
+#[cfg(test)]
+mod b1020d_g04_milk_tests;
+#[cfg(test)]
+mod b1020d_g04_stats_tests;
+#[cfg(test)]
+mod b1020d_g04_test_support;
+#[cfg(test)]
+mod b1020d_g04_wolf_tests;

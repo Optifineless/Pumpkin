@@ -288,8 +288,8 @@ async fn b1019_g08_cat_heal_callback_sees_payment_and_preserves_live_replacement
                 .lock()
                 .unwrap()
                 .get(StatisticCategory::Used, i32::from(Item::COD.id)),
-            used_before + 1,
-            "restoring the original stack must not erase the committed use statistic"
+            used_before,
+            "committed food payment does not award a generic item-use statistic"
         );
         *control.restore.lock().unwrap() = None;
     }

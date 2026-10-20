@@ -228,6 +228,9 @@ impl AgeableMob for WolfEntity {
 }
 
 impl Animal for WolfEntity {
+    // Wolf inherits vanilla Animal.playEatingSound's silent hook.
+    fn play_eating_sound(&self, _sound: pumpkin_data::sound::Sound) {}
+
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         let item = item_stack.get_item();
         item.has_tag(&tag::Item::MINECRAFT_WOLF_FOOD)

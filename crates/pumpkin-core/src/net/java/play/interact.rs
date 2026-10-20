@@ -125,7 +125,6 @@ impl JavaClient {
                                 (super::hand_use_result::hand_slot(player, hand), player.inventory().get_stack_in_hand(hand))
                             };
 
-                            let item_id = stack.item.id;
                             let before = stack.clone();
                             let (interacted, committed) = crate::entity::mob::interaction::with_hand_commit(player, source_slot, &before, || if event.action == ActionType::InteractAt {
                                 match event.target_position {
@@ -147,9 +146,6 @@ impl JavaClient {
                                 super::hand_use_result::write_back_and_sync_hand_item(player, hand, source_slot, &before, &stack,
                                 if stand_swap { super::hand_use_result::HandMutation::EquipmentTransfer }
                                 else { super::hand_use_result::HandMutation::ItemUse });
-                            }
-                            if !stand_swap && committed.unwrap_or_else(|| !stack.are_equal(&before)) {
-                                player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
                             }
                         }
                     }
