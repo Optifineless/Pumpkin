@@ -378,6 +378,26 @@ durations and live-size getters; WIT and packet layouts are unchanged.
 Written by GPT-6.1 Sol (Codex Cloud).
 In-game verification: Not yet.
 
+## Border and End fallback geometry (#181, #295, #305, #306)
+
+Hanging survival and shared End-return search use the live border bounds,
+including its absolute portal limit. Block checks test the coordinate itself;
+portal clamps floor the float-clamped position and keep the center-block result
+for collapsed sub-block ranges, consistent with upstream PR #3475. End fallback
+checks contained fluid height against the player body while retaining the
+existing full-column fluid rejection. Mirrors vanilla 26.3 `WorldBorder` and
+`PlayerSpawnFinder`. Plugin API 8, Wasm WIT and saved-data meanings are unchanged.
+In-game verification: Not yet.
+
+Play test: Set a timed border resize with a four-wide painting near its edge;
+expect it to survive while the live border still contains it, then retire when
+the border reaches it. Return from the End with a waterlogged sign in the shared
+spawn body space; expect a dry arrival, while a dry sign and fluid below the
+player remain valid controls. At a diameter-10 border, use a water bottle on
+source water at x=4; expect it to fill, with x=3 also filling and x=5 denied.
+Set a diameter-10.4 border and enter a Nether portal from a scaled coordinate
+beyond it; expect the destination search to retain upper block 5.
+
 ## Held-item drop equipment publication (#163)
 
 Accepted Java and Bedrock held drops queue the current main hand for the normal

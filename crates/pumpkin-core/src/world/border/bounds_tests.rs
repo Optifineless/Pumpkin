@@ -15,7 +15,7 @@ fn assert_bounds(border: &Worldborder, expected: (f64, f64, f64, f64)) {
     assert!(!border.contains(min_x - 0.001, min_z));
     assert_eq!(
         border.contains_block(min_x.ceil() as i32, min_z.ceil() as i32),
-        min_x.ceil() + 1.0 < max_x && min_z.ceil() + 1.0 < max_z
+        min_x.ceil() < max_x && min_z.ceil() < max_z
     );
     let epsilon = f64::from(1.0e-5f32);
     assert_eq!(
@@ -25,13 +25,6 @@ fn assert_bounds(border: &Worldborder, expected: (f64, f64, f64, f64)) {
     assert_eq!(
         border.clamp_teleport_position(Vector3::new(1.0e9, 73.0, -1.0e9)),
         Vector3::new(max_x - epsilon, 73.0, min_z)
-    );
-    assert_eq!(
-        border.clamp_block(i32::MIN + 1, i32::MAX - 1),
-        (
-            min_x.floor() as i32,
-            (max_z.floor() as i32 - 1).max(min_z.floor() as i32)
-        )
     );
 }
 
@@ -236,7 +229,8 @@ async fn b1020_g04_static_and_narrow_border_controls() {
     assert!(border.contains(-5.0, -5.0));
     assert!(!border.contains(5.0, 0.0));
     assert!(border.contains_block(-5, -5));
-    assert!(!border.contains_block(4, 0));
+    assert!(border.contains_block(4, 0));
+    assert!(!border.contains_block(5, 0));
     assert_eq!(border.clamp_block(100, -100), (4, -5));
     assert_eq!(
         border.clamp_teleport_position(Vector3::new(-10.0, 74.0, 0.0)),
@@ -269,5 +263,19 @@ async fn b1020_g04_static_and_narrow_border_controls() {
         let narrow = Worldborder::new(0.5, 0.5, diameter, 0, 5, 15);
         assert_eq!(narrow.clamp_block(100, -100), (0, 0));
     }
+    let off_grid_narrow = Worldborder::new(1.0, -1.0, 0.5, 0, 5, 15);
+    assert_eq!(off_grid_narrow.clamp_block(100, -100), (1, -1));
     fixture.finish().await;
+}
+
+#[test]
+fn b1020b_g10_fractional_block_clamp_floors_the_clamped_float() {
+    let fractional = Worldborder::new(0.0, 0.0, 10.4, 0, 5, 15);
+    assert_eq!(fractional.clamp_block(100, -100), (5, -6));
+
+    let negative_center = Worldborder::new(-0.2, -0.2, 10.4, 0, 5, 15);
+    assert_eq!(negative_center.clamp_block(100, -100), (4, -6));
+
+    let absolute_limit = Worldborder::new(29_999_980.0, 0.0, 100.0, 0, 5, 15);
+    assert_eq!(absolute_limit.clamp_block(i32::MAX, 0).0, 29_999_983);
 }

@@ -191,6 +191,71 @@ async fn b1019_g16_end_return_missing_obstructed_and_absent_spawn_use_terrain() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g10_end_fallback_rejects_waterlogged_body_space() {
+    for kind in ["waterlogged", "dry_open", "fluid_below_body", "water"] {
+        let fixture = Fixture::new().await;
+        let candidate = BlockPos::new(2, 64, 2);
+        match kind {
+            "waterlogged" => {
+                let wet_sign = Block::OAK_SIGN.default_state.set_waterlogged(true).unwrap();
+                assert!(wet_sign.is_waterlogged());
+                fixture
+                    .overworld
+                    .set_block_state(&candidate, wet_sign.id, BlockFlags::FORCE_STATE);
+                assert!(
+                    !fixture
+                        .overworld
+                        .get_fluid_and_fluid_state(&candidate)
+                        .1
+                        .is_empty,
+                    "waterlogged sign must expose contained fluid to the fallback"
+                );
+            }
+            "dry_open" => {
+                fixture.overworld.set_block_state(
+                    &candidate,
+                    Block::OAK_SIGN.default_state.id,
+                    BlockFlags::FORCE_STATE,
+                );
+            }
+            "fluid_below_body" => {
+                fixture.overworld.set_block_state(
+                    &candidate.down().down(),
+                    Block::WATER.default_state.id,
+                    BlockFlags::FORCE_STATE,
+                );
+            }
+            "water" => {
+                fixture.overworld.set_block_state(
+                    &candidate,
+                    Block::WATER.default_state.id,
+                    BlockFlags::FORCE_STATE,
+                );
+            }
+            _ => {}
+        }
+        fixture.server.level_info.rcu(|info| {
+            let mut info = (**info).clone();
+            info.game_rules.respawn_radius = 0;
+            info
+        });
+        let mut client = fixture.returning_player();
+        transfer(&fixture, &mut client).await;
+        let expected_y = if matches!(kind, "waterlogged" | "water") {
+            65.0
+        } else {
+            64.0
+        };
+        assert_eq!(
+            client.player.position(),
+            Vector3::new(2.5, expected_y, 2.5),
+            "shared fallback for {kind} must follow the actual player-body fluid shape"
+        );
+        fixture.finish().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b1019_g16_end_return_preserves_admin_spawn_on_elevated_platform() {
     let fixture = Fixture::new().await;
     fixture.overworld.set_block_state(
