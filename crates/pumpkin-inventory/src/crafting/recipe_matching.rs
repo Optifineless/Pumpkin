@@ -241,7 +241,8 @@ pub(super) fn default_remainders(inventory: &dyn RecipeInputInventory) -> Vec<It
         .collect()
 }
 
-/// Creates an item's crafting remainder independently of stack use-remainder components.
+/// Creates an item's crafting remainder, including its default components, independently of
+/// stack use-remainder components.
 #[must_use]
 pub fn crafting_remainder(item: &Item) -> ItemStack {
     // CraftingRecipe.defaultCraftingReminder reads Item.getCraftingRemainder, not USE_REMAINDER.

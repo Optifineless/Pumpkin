@@ -542,6 +542,7 @@ pub mod basic;
 mod bees;
 pub mod block_entity;
 pub mod book;
+mod brewing_fuel;
 pub mod combat;
 #[cfg(test)]
 mod custom_name_tests;
@@ -558,6 +559,7 @@ pub mod utility;
 pub use basic::*;
 pub use block_entity::*;
 pub use book::*;
+pub use brewing_fuel::{BrewingFuelImpl, BrewingFuelProvider};
 pub use combat::*;
 pub use entity_variant::*;
 pub use food::*;
@@ -901,7 +903,7 @@ mod tests {
             IntangibleProjectileImpl,
             IntangibleProjectileImpl::read_data,
         );
-        assert_round_trip(BrewingFuelImpl, BrewingFuelImpl::read_data);
+        assert_round_trip(BrewingFuelImpl::default(), BrewingFuelImpl::read_data);
         assert_round_trip(WaxedImpl, WaxedImpl::read_data);
         assert_round_trip(
             CookingFuelImpl {

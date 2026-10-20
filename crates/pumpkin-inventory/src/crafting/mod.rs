@@ -11,6 +11,7 @@ pub mod recipe_provider;
 pub mod recipes;
 
 mod recipe_matching;
+pub use recipe_matching::crafting_remainder;
 mod special_recipes;
 
 mod result_slot_transaction;
