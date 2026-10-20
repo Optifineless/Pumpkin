@@ -2,6 +2,32 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Stable Bedrock score identities (#289)
+
+The shared scoreboard assigns transient IDs to logical holder/objective pairs.
+Updates, display tracking, cloned snapshots and joins retain the same live ID;
+single resets, holder resets and objective deletion retire it without reuse.
+Loaded vanilla scores receive IDs before publication. Exhaustion omits new
+Bedrock entries while retaining existing IDs and Java/logical score behavior.
+This adapts vanilla 26.3 `Scoreboard.getOrCreatePlayerScore`, score resets and
+`ServerScoreboard.getStartTrackingPackets` to the existing Bedrock codec.
+The owner notification queue, Java packets, saved-data schema and Wasm WIT are
+unchanged. The separate legacy `BedrockScoreboard` still publishes empty entry
+lists and does not use this path. Implemented by GPT-6.1 Sol (Codex Cloud).
+
+API 8 (same version): private runtime state changes the public `Scoreboard`
+layout; native plugins must rebuild. Public method signatures and source
+compatibility are unchanged. In-game verification: Not yet.
+
+Play test: display two objectives containing the same holder to Java and Bedrock
+observers in different dimensions, repeatedly change the values, then rejoin;
+expect one current line per objective. Reset one score, reset the holder, hide
+and show an objective, then delete/recreate it and its scores; expect only the
+intended lines to disappear and no duplicates after reconstruction. Import an
+existing scoreboard, save and restart; expect the logical scores, formatting
+and display slots to survive. Record both clients and capture score update and
+removal IDs, including the join and restart snapshots.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
@@ -909,7 +935,8 @@ join and unchanged saved display data. Capture the console query and sidebar.
 
 Not addressed (backlog): live `displayautoupdate` holder-name resolution; numeric
 translation arguments in display projection; Bedrock team-coloured slots,
-objective lifecycle slot assignments and allocation-derived score-entry IDs.
+objective lifecycle slot assignments. Allocation-derived shared-scoreboard
+score-entry IDs are addressed by #289 above.
 The Wasm whole-settings API also cannot distinguish a round-tripped default
 white from an intentional white update on an uncoloured team. Its existing
 preservation rule remains: to explicitly set white, update to a nonwhite colour

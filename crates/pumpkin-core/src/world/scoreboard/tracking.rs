@@ -107,10 +107,17 @@ impl Scoreboard {
             score.display_name.clone(),
             score.number_format.clone(),
         );
+        let Some(scoreboard_id) = self
+            .bedrock_score_ids
+            .get(&score.entity_name, &score.objective_name)
+        else {
+            self.effects.capture(|| target.send_je(&java));
+            return;
+        };
         let bedrock = BSetScore {
             action: VarInt(0),
             entries: vec![BScoreEntry {
-                scoreboard_id: score.entity_name.as_ptr() as i64,
+                scoreboard_id,
                 objective_name: score.objective_name.clone(),
                 score: score.value,
                 entry_type: VarInt(3),
