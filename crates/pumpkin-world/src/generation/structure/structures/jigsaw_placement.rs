@@ -541,7 +541,6 @@ impl Placer {
 
 impl JigsawPlacement {
     #[expect(clippy::too_many_arguments)]
-    #[expect(clippy::too_many_lines)]
     pub fn add_pieces(
         context: &mut StructureGeneratorContext,
         start_pool_id: &str,
@@ -554,6 +553,40 @@ impl JigsawPlacement {
         dimension_padding: DimensionPadding,
         liquid_settings: LiquidSettings,
         pool_alias_lookup: &PoolAliasLookup,
+    ) -> Option<StructurePosition> {
+        Self::add_pieces_with_biome_check(
+            context,
+            start_pool_id,
+            start_jigsaw,
+            max_depth,
+            position,
+            do_expansion_hack,
+            project_start_to_heightmap,
+            max_distance_from_center,
+            dimension_padding,
+            liquid_settings,
+            pool_alias_lookup,
+            None,
+        )
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_lines)]
+    pub(in crate::generation::structure) fn add_pieces_with_biome_check(
+        context: &mut StructureGeneratorContext,
+        start_pool_id: &str,
+        start_jigsaw: Option<&str>,
+        max_depth: i32,
+        position: BlockPos,
+        do_expansion_hack: bool,
+        project_start_to_heightmap: bool,
+        max_distance_from_center: &MaxDistance,
+        dimension_padding: DimensionPadding,
+        liquid_settings: LiquidSettings,
+        pool_alias_lookup: &PoolAliasLookup,
+        mut biome_check: Option<
+            &mut crate::generation::structure::biome_check::StructureBiomeCheck<'_, '_>,
+        >,
     ) -> Option<StructurePosition> {
         if max_distance_from_center.horizontal > MAX_TOTAL_STRUCTURE_RANGE {
             return None;
@@ -604,6 +637,17 @@ impl JigsawPlacement {
         let center_z = i32::midpoint(box_.max.z, box_.min.z);
 
         let bottom_y = if project_start_to_heightmap {
+            // JigsawPlacement.addPieces checks the rotated, anchored center before heights.
+            if let Some(check) = biome_check.as_deref_mut()
+                && !check.column(
+                    center_x,
+                    center_z,
+                    check.height_bounds.0,
+                    check.height_bounds.1,
+                )
+            {
+                return None;
+            }
             position.0.y
                 + context
                     .height_sampler
@@ -631,6 +675,12 @@ impl JigsawPlacement {
         }
 
         let center_y = bottom_y + local_anchor_position.y;
+        // Structure.findValidGenerationPoint validates the stub before expanding pieces.
+        if let Some(check) = biome_check
+            && !check.column(center_x, center_z, center_y, center_y)
+        {
+            return None;
+        }
 
         let global_bounding_box = BlockBox::new(
             center_x - max_distance_from_center.horizontal,

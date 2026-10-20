@@ -29,6 +29,8 @@ pub struct NoiseHeightSampler<'a> {
 
 impl<'a> NoiseHeightSampler<'a> {
     pub fn new(generator: &'a VanillaGenerator) -> Self {
+        #[cfg(any(test, feature = "test"))]
+        super::test_support::record_height_sampler();
         let shape = &generator.settings.shape;
         let preliminary = SurfaceHeightEstimateSampler::generate(
             &generator.base_router.surface_estimator,
