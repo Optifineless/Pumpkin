@@ -258,6 +258,7 @@ pub mod container_slot_state_changed;
 #[path = "container_slot_state_changed_tests.rs"]
 mod container_slot_state_changed_tests;
 
+pub(crate) mod beacon_update;
 pub mod cookie_response;
 pub mod debug_sample_subscription;
 pub mod debug_subscription_request;
