@@ -575,6 +575,35 @@ implementations retain their defaults; rebuild native plugins against this tree.
 Generic exchange signatures and Wasm WIT are unchanged. Written by Codex.
 In-game verification: Not yet.
 
+
+## Brewing remainders and Java 26.3 menu (#16, #119)
+
+Successful brewing returns the reagent's crafting remainder to its emptied slot,
+or drops it after inventory ownership is released when reagents remain. Fuel uses
+the same remainder rule. The real brewing menu publishes remaining brew time,
+remaining fuel, total brew time and total fuel in vanilla order. Fuel component
+providers supply uses and speed; brewing remains a countdown, including after
+loading old fork short/byte saves. New saves use vanilla int counters and optional
+totals/speed default to 400, 20 and 1.0 on old saves. Existing fuel, start and brew
+events retain cancellation, with stock revalidated after callbacks.
+
+Mirrors vanilla 26.3 `BrewingStandBlockEntity.serverTick/doBrew/getUses/getSpeedMultiplier/loadAdditional/saveAdditional`,
+`BrewingStandMenu`, and `BrewingFuel`/`ResolvableInt`/`ResolvableFloat` codecs.
+The context-provider evaluator handles the binomial rule used by blaze powder's
+default 20-use provider. A fuel `uses` provider that errors or resolves to zero
+or less leaves the fuel item and fuel totals unchanged, preventing repeated
+payment on later ticks. Numeric-looking holder references and other unsupported
+provider forms can still leave the stand idle. This addresses the payment-loss
+part of PR #246 review; broader context-provider parity and the reviewed event
+payload widths remain outside this fix.
+
+API 8 (same version): rebuild native plugins for the brewing stand layout and
+`BrewingFuelImpl` marker-to-payload change (replace unit construction with
+`Default` or explicit providers; `read_data` is no longer const). `Eq`/`Hash`
+remain available and speed constants compare and hash their float bits. The
+crafting-remainder helper is now public and the brewing menu's `DATA_COUNT` is four. Wasm WIT is
+unchanged. Written by Codex (GPT-6.1 Sol). In-game verification: Not yet.
+
 ## Empty map centers (#45)
 
 New empty maps center on the scale-aligned tile that contains the player's block

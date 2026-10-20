@@ -5,6 +5,8 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use std::borrow::Cow;
 
+pub use super::brewing_fuel::BrewingFuelImpl;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IntProvider {
     Id(Cow<'static, str>),
@@ -269,18 +271,6 @@ impl DataComponentImpl for DyeImpl {
         NbtTag::String(self.color.name().into())
     }
     default_impl!(Dye);
-}
-
-/// 26.3 `minecraft:brewing_fuel` marker. Presence identifies brewing-stand fuel.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BrewingFuelImpl;
-impl BrewingFuelImpl {
-    pub const fn read_data(_data: &NbtTag) -> Option<Self> {
-        Some(Self)
-    }
-}
-impl DataComponentImpl for BrewingFuelImpl {
-    default_impl!(BrewingFuel);
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

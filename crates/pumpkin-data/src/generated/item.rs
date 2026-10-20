@@ -7051,7 +7051,17 @@ impl Item {
                 },
             ),
             (BreakSound, &BreakSoundImpl),
-            (BrewingFuel, &BrewingFuelImpl),
+            (
+                BrewingFuel,
+                &BrewingFuelImpl {
+                    uses: BrewingFuelProvider::Id(std::borrow::Cow::Borrowed(
+                        "minecraft:brewing/uses_default",
+                    )),
+                    speed_multiplier: BrewingFuelProvider::Id(std::borrow::Cow::Borrowed(
+                        "minecraft:brewing/speed_default",
+                    )),
+                },
+            ),
             (
                 Enchantments,
                 &EnchantmentsImpl {
