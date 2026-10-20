@@ -1,3 +1,11 @@
+#[doc(hidden)]
+#[path = "furnace_timers.rs"]
+pub mod timers;
+
+#[cfg(test)]
+#[path = "furnace_timer_tests.rs"]
+mod timer_tests;
+
 use pumpkin_data::{item_stack::ItemStack, recipes::CookingRecipe};
 
 use crate::block::entities::{BlockEntity, PropertyDelegate};
@@ -8,10 +16,10 @@ use pumpkin_inventory::{Clearable, Inventory};
 pub trait CookingBlockEntityBase:
     Sync + Send + Inventory + PropertyDelegate + BlockEntity + Clearable
 {
-    fn get_cooking_time_spent(&self) -> u16;
-    fn get_cooking_total_time(&self) -> u16;
-    fn get_lit_time_remaining(&self) -> u16;
-    fn get_lit_total_time(&self) -> u16;
+    fn get_cooking_time_spent(&self) -> i32;
+    fn get_cooking_total_time(&self) -> i32;
+    fn get_lit_time_remaining(&self) -> i32;
+    fn get_lit_total_time(&self) -> i32;
     fn get_speed_multiplier(&self) -> f32;
 
     /// Track that a recipe was used (for XP calculation on extraction)
@@ -20,16 +28,16 @@ pub trait CookingBlockEntityBase:
     /// Extract and reset accumulated experience, returning the total as an integer
     /// Calculates XP from tracked recipes and clears the `recipes_used` map
     fn extract_experience_from_recipes(&self) -> Vec<i32>;
-    fn get_total_cook_time(&self, recipe: &CookingRecipe, speed_multiplier: f32) -> u16;
+    fn get_total_cook_time(&self, recipe: &CookingRecipe, speed_multiplier: f32) -> i32;
 
     fn get_input_item(&self) -> ItemStack;
     fn get_fuel_item(&self) -> ItemStack;
     fn get_output_item(&self) -> ItemStack;
 
-    fn set_cooking_time_spent(&self, spent_time: u16);
-    fn set_cooking_total_time(&self, total_time: u16);
-    fn set_lit_time_remaining(&self, remaining_time: u16);
-    fn set_lit_total_time(&self, total_time: u16);
+    fn set_cooking_time_spent(&self, spent_time: i32);
+    fn set_cooking_total_time(&self, total_time: i32);
+    fn set_lit_time_remaining(&self, remaining_time: i32);
+    fn set_lit_total_time(&self, total_time: i32);
     fn set_speed_multiplier(&self, speed_multiplier: f32);
 
     fn is_burning(&self) -> bool;
@@ -50,19 +58,19 @@ pub fn get_fuel_remainder(fuel: &ItemStack) -> Option<ItemStack> {
 macro_rules! impl_cooking_block_entity_base {
     ($struct_name:ty) => {
         impl CookingBlockEntityBase for $struct_name {
-            fn get_cooking_time_spent(&self) -> u16 {
+            fn get_cooking_time_spent(&self) -> i32 {
                 self.cooking_time_spent.load(Ordering::Relaxed)
             }
 
-            fn get_cooking_total_time(&self) -> u16 {
+            fn get_cooking_total_time(&self) -> i32 {
                 self.cooking_total_time.load(Ordering::Relaxed)
             }
 
-            fn get_lit_time_remaining(&self) -> u16 {
+            fn get_lit_time_remaining(&self) -> i32 {
                 self.lit_time_remaining.load(Ordering::Relaxed)
             }
 
-            fn get_lit_total_time(&self) -> u16 {
+            fn get_lit_total_time(&self) -> i32 {
                 self.lit_total_time.load(Ordering::Relaxed)
             }
 
@@ -94,20 +102,20 @@ macro_rules! impl_cooking_block_entity_base {
                 items[2].clone()
             }
 
-            fn set_cooking_time_spent(&self, spent_time: u16) {
+            fn set_cooking_time_spent(&self, spent_time: i32) {
                 self.cooking_time_spent.store(spent_time, Ordering::Relaxed);
             }
 
-            fn set_cooking_total_time(&self, total_time: u16) {
+            fn set_cooking_total_time(&self, total_time: i32) {
                 self.cooking_total_time.store(total_time, Ordering::Relaxed);
             }
 
-            fn set_lit_time_remaining(&self, remaining_time: u16) {
+            fn set_lit_time_remaining(&self, remaining_time: i32) {
                 self.lit_time_remaining
                     .store(remaining_time, Ordering::Relaxed);
             }
 
-            fn set_lit_total_time(&self, total_time: u16) {
+            fn set_lit_total_time(&self, total_time: i32) {
                 self.lit_total_time.store(total_time, Ordering::Relaxed);
             }
 
@@ -159,11 +167,11 @@ macro_rules! impl_cooking_block_entity_base {
                 &self,
                 recipe: &pumpkin_data::recipes::CookingRecipe,
                 speed_multiplier: f32,
-            ) -> u16 {
+            ) -> i32 {
                 if speed_multiplier > 0.0 {
-                    (f32::from(recipe.cookingtime as u16) / speed_multiplier).ceil() as u16
+                    (recipe.cookingtime as f32 / speed_multiplier).ceil() as i32
                 } else {
-                    recipe.cookingtime as u16
+                    recipe.cookingtime
                 }
             }
 
@@ -260,16 +268,15 @@ macro_rules! impl_property_delegate_for_cooking {
         impl $crate::block::entities::PropertyDelegate for $struct_name {
             fn get_property(&self, index: i32) -> i32 {
                 match index {
-                    0 => self.get_lit_time_remaining() as i32,
-                    1 => self.get_lit_total_time() as i32,
-                    2 => self.get_cooking_time_spent() as i32,
-                    3 => self.get_cooking_total_time() as i32,
+                    0 => self.get_lit_time_remaining(),
+                    1 => self.get_lit_total_time(),
+                    2 => self.get_cooking_time_spent(),
+                    3 => self.get_cooking_total_time(),
                     _ => 0,
                 }
             }
 
             fn set_property(&self, index: i32, value: i32) {
-                let value = value as u16;
                 match index {
                     0 => self.set_lit_time_remaining(value),
                     1 => self.set_lit_total_time(value),
@@ -479,7 +486,7 @@ macro_rules! impl_block_entity_for_cooking {
                         let new_speed_multiplier = fuel_component
                             .map_or(1.0, |fuel| fuel.get_speed_multiplier(is_fast));
 
-                        let mut burn_ticks = adjusted_fuel_ticks;
+                        let mut burn_ticks = i32::from(adjusted_fuel_ticks);
                         let mut burn_cancelled = false;
                         if let Some(server) = world.server.upgrade() {
                             let mut burn_event = $crate::plugin::api::events::inventory::furnace_burn::FurnaceBurnEvent::new(
@@ -491,14 +498,14 @@ macro_rules! impl_block_entity_for_cooking {
                             if burn_event.cancelled {
                                 burn_cancelled = true;
                             } else {
-                                burn_ticks = burn_event.burn_time as u16;
+                                burn_ticks = burn_event.burn_time as i32;
                             }
                         }
                         if !burn_cancelled {
                             let mut consumed = false;
                             let mut remainder_drop = None;
                             self.update_slot(1, &mut |current| {
-                                if burn_ticks == 0 || current.uid != bottom_item.uid || !current.are_equal(&bottom_item) { return; }
+                                if burn_ticks <= 0 || current.uid != bottom_item.uid || !current.are_equal(&bottom_item) { return; }
                                 let remainder = $crate::block::entities::furnace_like_block_entity::get_fuel_remainder(current);
                                 current.decrement(1);
                                 consumed = true;
@@ -516,13 +523,13 @@ macro_rules! impl_block_entity_for_cooking {
                                     let cooking_time_spent = self.get_cooking_time_spent();
                                     if old_total_time > 0 && cooking_time_spent < old_total_time {
                                         let completion_ratio =
-                                            f32::from(cooking_time_spent) / f32::from(old_total_time);
+                                            cooking_time_spent as f32 / old_total_time as f32;
                                         let new_total_time =
                                             self.get_total_cook_time(recipe, new_speed_multiplier);
                                         self.set_cooking_total_time(new_total_time);
                                         self.set_cooking_time_spent(
-                                            (completion_ratio * f32::from(new_total_time)).ceil()
-                                                as u16,
+                                            (completion_ratio * new_total_time as f32).ceil()
+                                                as i32,
                                         );
                                     }
                                 }
@@ -551,7 +558,7 @@ macro_rules! impl_block_entity_for_cooking {
                                 if start_event.cancelled {
                                     start_cancelled = true;
                                 } else {
-                                    self.set_cooking_total_time(start_event.cooking_time as u16);
+                                    self.set_cooking_total_time(start_event.cooking_time as i32);
                                 }
                             }
                         }
@@ -594,7 +601,7 @@ macro_rules! impl_block_entity_for_cooking {
                         Ordering::Acquire,
                         |v| {
                             Some(
-                                v.saturating_sub(2)
+                                v.wrapping_sub(2).max(0)
                                     .min(self.cooking_total_time.load(Ordering::Acquire)),
                             )
                         },
@@ -633,21 +640,17 @@ macro_rules! impl_block_entity_for_cooking {
             where
                 Self: Sized,
             {
-                let cooking_total_time = AtomicU16::new(
-                    nbt.get_short("cooking_total_time")
-                        .map_or(0, |cooking_total_time| cooking_total_time as u16),
+                let cooking_total_time = std::sync::atomic::AtomicI32::new(
+                    $crate::block::entities::furnace_like_block_entity::timers::read_timer(nbt, "cooking_total_time"),
                 );
-                let cooking_time_spent = AtomicU16::new(
-                    nbt.get_short("cooking_time_spent")
-                        .map_or(0, |cooking_time_spent| cooking_time_spent as u16),
+                let cooking_time_spent = std::sync::atomic::AtomicI32::new(
+                    $crate::block::entities::furnace_like_block_entity::timers::read_timer(nbt, "cooking_time_spent"),
                 );
-                let lit_total_time = AtomicU16::new(
-                    nbt.get_short("lit_total_time")
-                        .map_or(0, |lit_total_time| lit_total_time as u16),
+                let lit_total_time = std::sync::atomic::AtomicI32::new(
+                    $crate::block::entities::furnace_like_block_entity::timers::read_timer(nbt, "lit_total_time"),
                 );
-                let lit_time_remaining = AtomicU16::new(
-                    nbt.get_short("lit_time_remaining")
-                        .map_or(0, |lit_time_remaining| lit_time_remaining as u16),
+                let lit_time_remaining = std::sync::atomic::AtomicI32::new(
+                    $crate::block::entities::furnace_like_block_entity::timers::read_timer(nbt, "lit_time_remaining"),
                 );
                 let speed_multiplier = std::sync::atomic::AtomicU32::new(
                     nbt.get_float("speed_multiplier")
@@ -685,10 +688,10 @@ macro_rules! impl_block_entity_for_cooking {
 
             fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
                 self.lock.write_nbt(nbt);
-                nbt.put_short("cooking_total_time", self.get_cooking_total_time() as i16);
-                nbt.put_short("cooking_time_spent", self.get_cooking_time_spent() as i16);
-                nbt.put_short("lit_total_time", self.get_lit_total_time() as i16);
-                nbt.put_short("lit_time_remaining", self.get_lit_time_remaining() as i16);
+                nbt.put_int("cooking_total_time", self.get_cooking_total_time());
+                nbt.put_int("cooking_time_spent", self.get_cooking_time_spent());
+                nbt.put_int("lit_total_time", self.get_lit_total_time());
+                nbt.put_int("lit_time_remaining", self.get_lit_time_remaining());
                 nbt.put_float("speed_multiplier", self.get_speed_multiplier());
 
                 // Save RecipesUsed in vanilla format (map of recipe ID -> craft count)
@@ -736,10 +739,10 @@ macro_rules! impl_block_entity_for_cooking {
 
             fn chunk_data_nbt(&self) -> Option<pumpkin_nbt::compound::NbtCompound> {
                 let mut nbt = pumpkin_nbt::compound::NbtCompound::new();
-                nbt.put_short("cooking_total_time", self.get_cooking_total_time() as i16);
-                nbt.put_short("cooking_time_spent", self.get_cooking_time_spent() as i16);
-                nbt.put_short("lit_total_time", self.get_lit_total_time() as i16);
-                nbt.put_short("lit_time_remaining", self.get_lit_time_remaining() as i16);
+                nbt.put_int("cooking_total_time", self.get_cooking_total_time());
+                nbt.put_int("cooking_time_spent", self.get_cooking_time_spent());
+                nbt.put_int("lit_total_time", self.get_lit_total_time());
+                nbt.put_int("lit_time_remaining", self.get_lit_time_remaining());
                 nbt.put_float("speed_multiplier", self.get_speed_multiplier());
 
                 if let Ok(recipes) = self.recipes_used.lock() {

@@ -28,6 +28,34 @@ existing scoreboard, save and restart; expect the logical scores, formatting
 and display slots to survive. Record both clients and capture score update and
 removal IDs, including the join and restart snapshots.
 
+## Canonical furnace timers and legacy saves (#299)
+
+Furnaces, blast furnaces and smokers load and save all four timer fields as
+vanilla 26.3 Ints and retain signed i32 values throughout ticking, speed scaling
+and menu properties. Old fork Short tags retain their historical unsigned-u16
+bit meaning, including values above 32767, and export as Ints. Missing timers
+default to zero; missing speed remains 1.0. Signed cooling mirrors
+`AbstractFurnaceBlockEntity.serverTick` and `Mth.clamp`, including progress one
+cooling to zero. Items, recipes used, speed, remainder ordering and existing
+inventory ownership stay intact. Both persistent capture and chunk packet NBT
+use Int tags. Java container packets keep their existing short wire encoding.
+
+API 8 (same version): the public furnace/blast/smoker layouts replace four
+`AtomicU16` fields with `AtomicI32`. `CookingBlockEntityBase` timer getters,
+setters and `get_total_cook_time` now use i32, changing native signatures and
+trait-object ABI. Rebuild all native plugins against this checkout; source
+users must update u16 arguments/results and exported cooking-macro backing
+fields to i32/AtomicI32. Wasm WIT stays unchanged: its existing u16 getters
+project the low 16 bits without changing durable state. Event payloads stay
+u32; nonpositive signed burn durations cannot consume fuel. Implemented by
+GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Play test: import lit vanilla furnaces, blast furnaces and smokers containing
+partly cooked items, then restart; expect cooking and remaining heat to resume
+with the same stock. Load an old fork save with a high timer, restart again,
+and expect preserved progress and item counts. Record all three menus before
+and after restart and capture the saved timer tags as Ints.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and
