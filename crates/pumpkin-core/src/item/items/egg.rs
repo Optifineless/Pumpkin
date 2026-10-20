@@ -48,16 +48,13 @@ impl ItemBehaviour for EggItem {
         hand: pumpkin_util::Hand,
     ) -> bool {
         // EggItem.use: claim the hand snapshot before projectile effects in Pumpkin's concurrent tick.
-        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+        let Some(receipt) =
+            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        else {
             return false;
         };
         let position = player.position();
         let world = player.world();
-        world.play_sound(
-            Sound::EntityEggThrow,
-            pumpkin_data::sound::SoundCategory::Players,
-            &position,
-        );
 
         // Capture the held item stack and pass it to the thrown egg entity
         let item_stack = stack.clone();
@@ -70,10 +67,20 @@ impl ItemBehaviour for EggItem {
 
         let (yaw, pitch) = player.rotation();
         egg.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !world.spawn_entity(Arc::new(egg)) {
-            crate::item::item_utils::give_or_drop(player, receipt);
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(egg),
+            Some(player.get_entity()),
+        ) {
+            receipt.refund(player);
             return false;
         }
+        receipt.publish(player);
+        world.play_sound(
+            Sound::EntityEggThrow,
+            pumpkin_data::sound::SoundCategory::Players,
+            &position,
+        );
 
         true
     }

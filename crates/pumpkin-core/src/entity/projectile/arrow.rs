@@ -197,17 +197,6 @@ impl ArrowEntity {
         let mut owner_pos = shooter.pos.load();
         owner_pos.y = owner_pos.y + f64::from(shooter.entity_dimension.load().eye_height) - 0.1;
         entity.pos.store(owner_pos);
-        let mut launch_event =
-            crate::plugin::api::events::entity::projectile_launch::ProjectileLaunchEvent::new(
-                entity.entity_id,
-                Some(shooter.entity_id),
-            );
-        if let Some(server) = entity.world.load().server.upgrade() {
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut launch_event);
-        }
-
         Self {
             entity,
             projectile: super::ownership::ProjectileState::new(Some(shooter.entity_uuid)),

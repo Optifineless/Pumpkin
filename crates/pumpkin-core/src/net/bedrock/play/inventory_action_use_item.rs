@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{server::Server, world::World};
 use pumpkin_data::Block;
+use pumpkin_data::item::Item;
 use pumpkin_inventory::Inventory;
 use pumpkin_protocol::bedrock::server::inventory_transaction::UseItemTransactionData;
 
@@ -246,11 +247,14 @@ impl BedrockClient {
             context.finish(&stack);
             return Some(false);
         }
-        context.player.increment_stat(
-            pumpkin_data::statistic::StatisticCategory::Used,
-            i32::from(stack.item.id),
-            1,
-        );
+        // Rocket admission owns its success statistic; a denied launch is quiet on both protocols.
+        if stack.item != &Item::FIREWORK_ROCKET {
+            context.player.increment_stat(
+                pumpkin_data::statistic::StatisticCategory::Used,
+                i32::from(stack.item.id),
+                1,
+            );
+        }
         if context.live_stack(&context.before).is_none() {
             self.correct_rejected_block_use(context.player, context.data);
             return None;
@@ -265,6 +269,13 @@ impl BedrockClient {
             &context.server,
             context.hand,
         );
+        if context.before.item == &Item::FIREWORK_ROCKET && result.consumes_action() {
+            context.player.increment_stat(
+                pumpkin_data::statistic::StatisticCategory::Used,
+                i32::from(Item::FIREWORK_ROCKET.id),
+                1,
+            );
+        }
         let denied = if should_try_block_placement(&result)
             && let Some(block) = Block::from_item_id(stack.item.id)
         {

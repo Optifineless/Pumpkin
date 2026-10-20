@@ -72,6 +72,9 @@ impl ItemRegistry {
                 || behaviour.is::<super::items::glass_bottle::GlassBottleItem>()
                 // FishingRodItem.use awards the cast itself (both hands).
                 || behaviour.is::<super::items::fishing_rod::FishingRodItem>()
+                || behaviour.is::<super::items::bow::BowItem>()
+                || behaviour.is::<super::items::trident::TridentItem>()
+                || behaviour.is::<super::items::crossbow::CrossbowItem>()
                 // BundleItem.dropContent counts successful drops, not starting use.
                 || behaviour.is::<super::items::bundle::BundleItem>()
         })

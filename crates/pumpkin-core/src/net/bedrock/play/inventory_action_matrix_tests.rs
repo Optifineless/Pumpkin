@@ -504,3 +504,6 @@ async fn offhand_placement_keeps_the_originating_box_contents() -> TestResult {
         })
         .await
 }
+
+#[path = "old_pr204_1020_launch_tests.rs"]
+mod old_pr204_1020_launch;

@@ -1,6 +1,7 @@
 pub mod item_utils;
 pub mod items;
 pub mod potion;
+pub(crate) mod projectile_stock;
 pub mod registry;
 
 use std::any::Any;

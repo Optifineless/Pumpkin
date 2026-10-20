@@ -35,12 +35,24 @@ pub(super) fn with_slot<T>(
 
 /// Damages the authoritative slot after an unlocked, cancellable callback.
 /// Rechecks stack identity and eligibility, then mutates the current durability under its guard.
+#[cfg(test)]
 pub(super) fn damage_inventory_slot(
     inventory: &PlayerInventory,
     index: usize,
     select_amount: impl Fn(&ItemStack) -> Option<i32>,
     before_damage: impl FnOnce(&ItemStack, i32) -> Option<i32>,
 ) -> Option<(DamageResult, ItemStack, &'static Item)> {
+    damage_inventory_slot_following(inventory, index, select_amount, before_damage, false)
+        .map(|(result, stack, item, _)| (result, stack, item))
+}
+
+fn damage_inventory_slot_following(
+    inventory: &PlayerInventory,
+    index: usize,
+    select_amount: impl Fn(&ItemStack) -> Option<i32>,
+    before_damage: impl FnOnce(&ItemStack, i32) -> Option<i32>,
+    follow_uid: bool,
+) -> Option<(DamageResult, ItemStack, &'static Item, usize)> {
     // LivingEntity.doHurtEquipment / ItemStack.hurtAndBreak are serial in vanilla.
     let (before, amount) = with_slot(inventory, index, |stack| {
         let amount = select_amount(stack)?;
@@ -51,6 +63,20 @@ pub(super) fn damage_inventory_slot(
     if amount <= 0 {
         return None;
     }
+    let owner = pumpkin_inventory::Inventory::slot_transaction(inventory, index);
+    let _guard = owner.lock();
+    if !owner.is_live() {
+        return None;
+    }
+    let index = if follow_uid {
+        use pumpkin_inventory::Inventory;
+        (0..inventory.size()).find(|slot| {
+            let stack = inventory.get_stack(*slot);
+            !stack.is_empty() && stack.uid == before.uid && stack.item == before.item
+        })?
+    } else {
+        index
+    };
     with_slot(inventory, index, |stack| {
         // Clones preserve uid; a replacement of the same item type must also be rejected.
         if stack.is_empty()
@@ -61,7 +87,7 @@ pub(super) fn damage_inventory_slot(
             return None;
         }
         let result = stack.damage_item(amount);
-        (result != DamageResult::Untouched).then(|| (result, stack.clone(), before.item))
+        (result != DamageResult::Untouched).then(|| (result, stack.clone(), before.item, index))
     })?
 }
 
@@ -199,15 +225,45 @@ impl Player {
         life: Option<&DamageToken>,
         select_amount: impl Fn(&ItemStack) -> Option<i32>,
     ) -> bool {
+        self.damage_inventory_item_following(slot, slot_index, life, select_amount, false)
+            .is_some()
+    }
+
+    // Returns false after an actual break, even if its callback restores the same UID.
+    pub(crate) fn damage_projectile_weapon(&self, item: &EquippedItem, amount: i32) -> bool {
+        item.inventory_index.is_none_or(|index| {
+            self.damage_inventory_item_following(
+                &item.slot,
+                index,
+                None,
+                |stack| {
+                    (!stack.is_empty()
+                        && stack.uid == item.stack.uid
+                        && stack.item == item.stack.item)
+                        .then_some(amount)
+                },
+                true,
+            ) != Some(DamageResult::Broken)
+        })
+    }
+
+    fn damage_inventory_item_following(
+        &self,
+        slot: &EquipmentSlot,
+        slot_index: usize,
+        life: Option<&DamageToken>,
+        select_amount: impl Fn(&ItemStack) -> Option<i32>,
+        follow_uid: bool,
+    ) -> Option<DamageResult> {
         // Player.hurtArmor/hurtHelmet and BlocksAttacks.hurtBlockingItem supply combat ownership.
         // ItemStack.hurtAndBreak also serves ordinary tools, which need no combat segment.
         if matches!(
             self.gamemode.load(),
             GameMode::Creative | GameMode::Spectator
         ) {
-            return false;
+            return None;
         }
-        let updated = damage_inventory_slot(
+        let updated = damage_inventory_slot_following(
             &self.inventory,
             slot_index,
             select_amount,
@@ -228,9 +284,10 @@ impl Player {
                 }
                 Some(amount)
             },
+            follow_uid,
         );
 
-        if let Some((result, _, original_item)) = updated {
+        if let Some((result, _, original_item, committed_index)) = updated {
             if result == pumpkin_data::item_stack::DamageResult::Broken {
                 if let Some(server) = self.world().server.upgrade()
                     && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
@@ -253,17 +310,20 @@ impl Player {
                 );
             }
 
-            // A break callback may replace the stack or change the selected hotbar slot.
+            // A damage or break callback may move the retained weapon or replace either slot.
             self.sync_hand_slot(slot_index, self.inventory.get_slot(slot_index));
+            if committed_index != slot_index {
+                self.sync_hand_slot(committed_index, self.inventory.get_slot(committed_index));
+            }
             if slot.is_armor_slot() {
                 self.living_entity
                     .send_equipment_changes(&[(slot.clone(), self.inventory.get_slot(slot_index))]);
             }
 
-            return true;
+            return Some(result);
         }
 
-        false
+        None
     }
 }
 

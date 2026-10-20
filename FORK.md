@@ -2,6 +2,26 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Projectile launch admission and conservation (#200)
+
+One internal launch boundary honors `ProjectileLaunchEvent` before the existing
+world insertion and `EntitySpawnEvent` admission. Rejected item/dispenser shots
+restore paid stock, preserve callback replacements and publish live source slots;
+fully denied launches/casts publish no success sound, statistic, cooldown or wear.
+A bow or crossbow draw has one shared payment: full denial restores it, including
+a moved same-UID crossbow; any admitted round spends the whole draw, with no
+remaining charge or loose refund. Wear follows the retained weapon for each
+admitted round and stops on actual break. Paid thrown tridents receive eligible,
+cancellable `hurtWithoutBreaking` damage; Creative copies remain noncollectible.
+
+The supplied Java 26.3 `Projectile.spawnProjectile`, `ProjectileWeaponItem.shoot`,
+`CrossbowItem.performShooting` and `TridentItem.releaseUsing` establish the successful
+launch/payment/wear chain. Java does not test `addFreshEntity`'s boolean: refund,
+quiet veto and deferred throwable sounds are the fork's explicit plugin contract.
+Native API 8, public layouts/signatures, Wasm WIT and saved component meanings are
+unchanged. No impact/collision or Riptide movement/water/passenger overhaul is
+included. Implemented by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
 ## Minecart placement centers once (#129)
 
 Minecart items use the X/Z center already returned by `BlockPos::to_f64()` and

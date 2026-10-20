@@ -33,6 +33,14 @@ impl ItemBehaviour for FireworkRocketItem {
         _block: &Block,
         _server: &Server,
     ) -> BlockActionResult {
+        if player.get_entity().is_fall_flying() {
+            return BlockActionResult::Pass;
+        }
+        let Some(receipt) =
+            crate::item::projectile_stock::ProjectileStock::claim_observed(player, item)
+        else {
+            return BlockActionResult::Fail;
+        };
         let world = player.world();
         let entity = Entity::new(
             world.clone(),
@@ -45,9 +53,24 @@ impl ItemBehaviour for FireworkRocketItem {
         );
         let entity =
             FireworkRocketEntity::with_item(entity, item.clone(), Some(player.get_entity()), false);
-        world.spawn_entity(Arc::new(entity));
-        item.decrement_unless_creative(player.gamemode.load(), 1);
-        BlockActionResult::Success
+        let admitted = crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(entity),
+            Some(player.get_entity()),
+        );
+        let source = receipt.source;
+        if admitted {
+            receipt.publish(player);
+        } else {
+            receipt.refund(player);
+        }
+        // Both protocol handlers condition clone writeback on their pre-use snapshot.
+        *item = player.inventory().get_slot(source);
+        if admitted {
+            BlockActionResult::Success
+        } else {
+            BlockActionResult::Fail
+        }
     }
 
     fn normal_use(&self, item: &Item, player: &Player) {
@@ -80,7 +103,8 @@ impl ItemBehaviour for FireworkRocketItem {
             if observed.is_empty() || observed.item.id != Item::FIREWORK_ROCKET.id {
                 return false;
             }
-            let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, observed)
+            let Some(receipt) =
+                crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, observed)
             else {
                 return false;
             };
@@ -98,10 +122,15 @@ impl ItemBehaviour for FireworkRocketItem {
                 Some(player.get_entity()),
                 true,
             );
-            if !world.spawn_entity(Arc::new(rocket)) {
-                crate::item::item_utils::give_or_drop(player, receipt);
+            if !crate::entity::projectile::spawn_projectile(
+                &world,
+                Arc::new(rocket),
+                Some(player.get_entity()),
+            ) {
+                receipt.refund(player);
                 return false;
             }
+            receipt.publish(player);
             return true;
         }
         false

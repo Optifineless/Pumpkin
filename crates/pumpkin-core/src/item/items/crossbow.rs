@@ -1,8 +1,9 @@
+use pumpkin_inventory::screen_handler::InventoryPlayer;
 use std::any::Any;
 use std::sync::atomic::Ordering;
 
 use crate::entity::EntityBase;
-use crate::entity::equipment_damage::{EquippedItem, damage_equipped_item};
+use crate::entity::equipment_damage::EquippedItem;
 use crate::entity::player::Player;
 use crate::item::items::projectile_weapon::ProjectileWeaponItem;
 use crate::item::{ItemBehaviour, ItemMetadata};
@@ -38,6 +39,18 @@ impl ItemBehaviour for CrossbowItem {
         hand: Hand,
     ) {
         Self::use_in_hand(player, hand);
+    }
+
+    fn use_observed_stack(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) -> bool {
+        self.normal_use_with_hand(stack.item, player, yaw, pitch, hand);
+        false
     }
 
     fn on_stopped_using(&self, stack: &ItemStack, player: &Player) {
@@ -195,33 +208,84 @@ impl CrossbowItem {
             return;
         }
         let world = player.world();
-        world.play_sound(
-            Sound::ItemCrossbowShoot,
-            SoundCategory::Players,
-            &player.position(),
-        );
-        ProjectileWeaponItem::shoot_projectiles(
+        let equipped = EquippedItem {
+            stack: held,
+            slot: match hand {
+                Hand::Right => EquipmentSlot::MAIN_HAND,
+                Hand::Left => EquipmentSlot::OFF_HAND,
+            },
+            inventory_index: Some(slot),
+        };
+        let admitted = ProjectileWeaponItem::shoot_projectiles_with_callback(
             &world,
             player.get_entity(),
-            &held,
+            &equipped.stack,
             &projectiles,
             Self::ARROW_POWER,
             1.0,
             false,
-            player.gamemode.load() == GameMode::Creative,
+            player.has_infinite_materials(),
+            |projectile| ProjectileWeaponItem::hurt_shooting_weapon(player, &equipped, projectile),
         );
-        let equipment = match hand {
-            Hand::Right => EquipmentSlot::MAIN_HAND,
-            Hand::Left => EquipmentSlot::OFF_HAND,
+        if admitted.contains(&true) {
+            // A charge is one draw: even a later intangible round spends its shared payment.
+            // Partial success leaves no charge to replay and never returns loose paid ammunition.
+            ProjectileWeaponItem::finish_shooting(player, &expected);
+            world.play_sound(
+                Sound::ItemCrossbowShoot,
+                SoundCategory::Players,
+                &player.position(),
+            );
+        } else {
+            Self::restore_denied_charge(player, &expected, &projectiles);
+        }
+        player.sync_hand_slot(slot, player.inventory().get_stack(slot));
+        if let Some(destination) = ProjectileWeaponItem::weapon_slot(player, &expected)
+            && destination != slot
+        {
+            player.sync_hand_slot(destination, player.inventory().get_stack(destination));
+        }
+    }
+
+    fn restore_denied_charge(player: &Player, expected: &ItemStack, projectiles: &[ItemStack]) {
+        let inventory = player.inventory();
+        let owner = inventory.slot_transaction(0);
+        let guard = owner.lock();
+        let restored = if owner.is_live()
+            && let Some(slot) = ProjectileWeaponItem::weapon_slot(player, expected)
+        {
+            let mut current = inventory.get_stack(slot);
+            if current
+                .get_data_component::<ChargedProjectilesImpl>()
+                .is_none_or(|charge| charge.projectiles.is_empty())
+            {
+                current
+                    .patch
+                    .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
+                current.set_data_component(
+                    expected
+                        .get_data_component::<ChargedProjectilesImpl>()
+                        .cloned()
+                        .unwrap_or_else(|| ChargedProjectilesImpl {
+                            projectiles: Vec::new(),
+                        }),
+                );
+                inventory.set_stack(slot, current);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
         };
-        damage_equipped_item(
-            player,
-            &EquippedItem {
-                stack: held,
-                slot: equipment,
-                inventory_index: Some(slot),
-            },
-            1,
-        );
+        drop(guard);
+        if !restored {
+            // This branch is reachable only when every round was denied. Free copies own no stock.
+            for projectile in projectiles {
+                if projectile.get_data_component::<pumpkin_data::data_component_impl::IntangibleProjectileImpl>().is_none() {
+                    crate::item::item_utils::give_or_drop(player, projectile.clone());
+                }
+            }
+        }
     }
 }

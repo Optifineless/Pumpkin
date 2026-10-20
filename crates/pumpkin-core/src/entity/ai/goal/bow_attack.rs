@@ -103,7 +103,6 @@ impl BowAttackGoal {
         let difficulty = world.level_info.load().difficulty as i32;
         arrow.set_base_damage_from_mob(Self::ARROW_SPEED, difficulty);
 
-        arrow.apply_on_projectile_spawned(&projectile);
         if entity.is_on_fire() {
             arrow.set_flame(true);
         }
@@ -129,9 +128,7 @@ impl BowAttackGoal {
             divergence,
         );
 
-        world.play_sound(Sound::EntityArrowShoot, SoundCategory::Hostile, &mob_pos);
-
-        let arrow: Arc<dyn EntityBase> = Arc::new(arrow);
+        let arrow = Arc::new(arrow);
         let entity_id = entity.entity_id;
         if let Some(server) = world_full.server.upgrade() {
             let mut event =
@@ -145,7 +142,11 @@ impl BowAttackGoal {
                 return;
             }
         }
-        world_full.spawn_entity(arrow);
+        if !crate::entity::projectile::spawn_projectile(&world_full, arrow.clone(), Some(entity)) {
+            return;
+        }
+        arrow.apply_on_projectile_spawned(&projectile);
+        world.play_sound(Sound::EntityArrowShoot, SoundCategory::Hostile, &mob_pos);
     }
 }
 

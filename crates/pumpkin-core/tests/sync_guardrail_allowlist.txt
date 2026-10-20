@@ -1,5 +1,8 @@
 # Reviewed baseline of raw synchronization and blocking bridge sites.
 # New entries require a justification comment; see rules B1 and B3.
+# Test-only projectile event recorder; guards end before invoking callback edits,
+# packet handlers, owner probes, ticks or awaits.
+crates/pumpkin-core/src/old_pr204_1020_tests/support.rs::install::std::sync::Mutex::default#1
 # Test-only death-event order recorder; guards drop before returning from a
 # callback or invoking another event, and never span an await.
 crates/pumpkin-core/src/entity/death_loot/captain_banner_tests.rs::b1020b_g01_captain_banner_keeps_death_event_order_and_spawn_cancellation::std::sync::Mutex::new#1

@@ -47,18 +47,13 @@ impl ItemBehaviour for ExperienceBottleItem {
         hand: pumpkin_util::Hand,
     ) -> bool {
         // ExperienceBottleItem.use: claim the hand snapshot before projectile effects in Pumpkin's concurrent tick.
-        let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
+        let Some(receipt) =
+            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        else {
             return false;
         };
         let world = player.world();
         let pos = player.position();
-        world.play_sound_fine(
-            Sound::EntityExperienceBottleThrow,
-            SoundCategory::Neutral,
-            &pos,
-            0.5,
-            0.4 / (rand::rng().random::<f32>() * 0.4 + 0.8),
-        );
 
         let entity = Entity::new(world.clone(), pos, &EntityType::EXPERIENCE_BOTTLE);
         let bottle = ExperienceBottleEntity::new_shot(entity, player.get_entity());
@@ -68,10 +63,22 @@ impl ItemBehaviour for ExperienceBottleItem {
             bottle.get_entity(),
             player.get_entity(),
         );
-        if !world.spawn_entity(Arc::new(bottle)) {
-            crate::item::item_utils::give_or_drop(player, receipt);
+        if !crate::entity::projectile::spawn_projectile(
+            &world,
+            Arc::new(bottle),
+            Some(player.get_entity()),
+        ) {
+            receipt.refund(player);
             return false;
         }
+        receipt.publish(player);
+        world.play_sound_fine(
+            Sound::EntityExperienceBottleThrow,
+            SoundCategory::Neutral,
+            &pos,
+            0.5,
+            0.4 / (rand::rng().random::<f32>() * 0.4 + 0.8),
+        );
 
         true
     }
