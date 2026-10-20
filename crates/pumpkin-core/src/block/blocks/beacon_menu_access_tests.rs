@@ -1,7 +1,7 @@
 use super::*;
 use crate::block::entities::{BlockEntity, block_entity_from_nbt};
 use pumpkin_data::{
-    data_component_impl::{CustomNameImpl, LockImpl},
+    data_component_impl::{CustomDataImpl, CustomNameImpl, LockImpl},
     screen::WindowType,
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
@@ -36,6 +36,107 @@ fn canonical_beacon(title: &NbtTag, key: &NbtTag) -> NbtCompound {
     predicate.put_compound("components", components);
     nbt.put_compound("lock", predicate);
     nbt
+}
+
+fn custom_data_beacon(title: &NbtTag, key: &NbtTag) -> NbtCompound {
+    let mut nbt = NbtCompound::new();
+    nbt.put("CustomName", title.clone());
+    let mut predicates = NbtCompound::new();
+    predicates.put("minecraft:custom_data", key.clone());
+    let mut predicate = NbtCompound::new();
+    predicate.put_compound("predicates", predicates);
+    nbt.put_compound("lock", predicate);
+    nbt
+}
+
+fn custom_data_key(beacon_key: NbtTag) -> ItemStack {
+    let mut data = NbtCompound::new();
+    data.put("beacon_key", beacon_key);
+    data.put_string("extra", "allowed subset data".to_owned());
+    let mut nested_entry = NbtCompound::new();
+    nested_entry.put_string("id", "matching entry".to_owned());
+    nested_entry.put_bool("extra", true);
+    let mut other_entry = NbtCompound::new();
+    other_entry.put_string("id", "unrelated entry".to_owned());
+    let mut nested = NbtCompound::new();
+    nested.put_list(
+        "entries",
+        vec![
+            NbtTag::Compound(other_entry),
+            NbtTag::Compound(nested_entry),
+        ],
+    );
+    nested.put_string("extra", "nested subset data".to_owned());
+    data.put_compound("nested", nested);
+    let mut key = ItemStack::new(1, &Item::PAPER);
+    key.set_data_component(CustomDataImpl::new(data));
+    key
+}
+
+fn expected_custom_data() -> NbtCompound {
+    let mut list_entry = NbtCompound::new();
+    list_entry.put_string("id", "matching entry".to_owned());
+    let mut nested = NbtCompound::new();
+    nested.put_list("entries", vec![NbtTag::Compound(list_entry)]);
+    let mut data = NbtCompound::new();
+    data.put_int("beacon_key", 1);
+    data.put_compound("nested", nested);
+    data
+}
+
+fn assert_custom_data_beacon_denied(
+    fixture: &mut Fixture,
+    title: &TextComponent,
+    main_hand: ItemStack,
+    offhand: ItemStack,
+    control: &str,
+) {
+    fixture.player.player.inventory.set_stack(0, main_hand);
+    fixture.player.player.inventory.set_stack(
+        pumpkin_inventory::player::player_inventory::PlayerInventory::OFF_HAND_SLOT,
+        offhand,
+    );
+    assert_denied(fixture, title, control);
+}
+
+fn open_custom_data_chest(fixture: &mut Fixture, expected_data: &NbtCompound) {
+    let chest_pos = pumpkin_util::math::position::BlockPos::new(1, 64, 0);
+    fixture.world.set_block_state(
+        &chest_pos,
+        Block::CHEST.default_state.id,
+        pumpkin_world::world::BlockFlags::FORCE_STATE
+            | pumpkin_world::world::BlockFlags::UPDATE_KNOWN_SHAPE,
+    );
+    let mut chest_nbt = custom_data_beacon(
+        &NbtTag::String("unused".into()),
+        &NbtTag::Compound(expected_data.clone()),
+    );
+    chest_nbt.put_string(
+        "id",
+        crate::block::entities::chest::ChestBlockEntity::ID.to_owned(),
+    );
+    chest_nbt.put_int("x", chest_pos.0.x);
+    chest_nbt.put_int("y", chest_pos.0.y);
+    chest_nbt.put_int("z", chest_pos.0.z);
+    let chest =
+        block_entity_from_nbt(&chest_nbt).expect("load a chest through the production factory");
+    fixture.world.add_block_entity(chest);
+    fixture
+        .player
+        .player
+        .inventory
+        .set_stack(0, custom_data_key(NbtTag::Int(1)));
+    fixture.use_block(&fixture.player, chest_pos);
+    let player_menu: SharedScreenHandler = fixture.player.player.player_screen_handler.clone();
+    assert!(
+        !Arc::ptr_eq(&current_screen(&fixture.player.player), &player_menu),
+        "matching custom_data must open a chest through its real use path"
+    );
+    assert!(has_packet(
+        &fixture.player.take_packets(),
+        pumpkin_data::packet::clientbound::play::OPEN_SCREEN.0
+    ));
+    fixture.player.player.close_handled_screen();
 }
 
 fn load_beacon(fixture: &Fixture, mut nbt: NbtCompound) -> Arc<dyn BlockEntity> {
@@ -417,4 +518,69 @@ async fn b1020b_g03_beacon_native_lock_updates_after_reload() {
     })
     .await
     .expect("bounded beacon native lock update regression timed out");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g03_custom_data_locks_open_beacons_and_chests() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let mut fixture = Fixture::new(0);
+        let title_tag = styled_name("Custom data beacon", "gold");
+        let title = CustomNameImpl::read_data(&title_tag).unwrap().name;
+        let expected_data = expected_custom_data();
+        let beacon = load_beacon(
+            &fixture,
+            custom_data_beacon(&title_tag, &NbtTag::Compound(expected_data.clone())),
+        );
+        let beacon = save_reload(&fixture, beacon.as_ref());
+        let mut saved = NbtCompound::new();
+        beacon.write_internal(&mut saved);
+        assert_eq!(
+            saved
+                .get_compound("lock")
+                .unwrap()
+                .get_compound("predicates")
+                .unwrap()
+                .get_compound("minecraft:custom_data"),
+            Some(&expected_data)
+        );
+
+        assert_custom_data_beacon_denied(
+            &mut fixture,
+            &title,
+            custom_data_key(NbtTag::Int(2)),
+            ItemStack::EMPTY.clone(),
+            "wrong custom_data key",
+        );
+        assert_custom_data_beacon_denied(
+            &mut fixture,
+            &title,
+            custom_data_key(NbtTag::Byte(1)),
+            ItemStack::EMPTY.clone(),
+            "same number with a different NBT tag type",
+        );
+        assert_custom_data_beacon_denied(
+            &mut fixture,
+            &title,
+            custom_data_key(NbtTag::Int(2)),
+            custom_data_key(NbtTag::Int(1)),
+            "matching custom_data key only in offhand",
+        );
+
+        fixture
+            .player
+            .player
+            .inventory
+            .set_stack(0, custom_data_key(NbtTag::Int(1)));
+        fixture.player.player.inventory.set_stack(
+            pumpkin_inventory::player::player_inventory::PlayerInventory::OFF_HAND_SLOT,
+            ItemStack::EMPTY.clone(),
+        );
+        fixture.use_beacon();
+        assert_open_title(&mut fixture, &title);
+
+        open_custom_data_chest(&mut fixture, &expected_data);
+        fixture.finish().await;
+    })
+    .await
+    .expect("bounded custom_data container lock regression timed out");
 }

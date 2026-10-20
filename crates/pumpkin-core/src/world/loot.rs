@@ -25,9 +25,13 @@ mod number_provider;
 mod predicates;
 
 /// Uses the existing item predicate engine for a container key, rejecting unsupported predicates.
-pub(crate) fn matches_container_lock(predicate: &serde_json::Value, stack: &ItemStack) -> bool {
+pub(crate) fn matches_container_lock(
+    predicate: &serde_json::Value,
+    stack: &ItemStack,
+    raw_custom_data: Option<&pumpkin_nbt::tag::NbtTag>,
+) -> bool {
     // LockCode uses the same ItemPredicate as loot conditions.
-    predicates::item_predicate(predicate, stack).unwrap_or(false)
+    predicates::item_predicate_with_custom_data(predicate, stack, raw_custom_data).unwrap_or(false)
 }
 #[cfg(test)]
 mod production_tests;

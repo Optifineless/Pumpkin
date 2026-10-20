@@ -97,7 +97,11 @@ fn unlocks_with(lock: &LockImpl, stack: &ItemStack) -> bool {
             }
         }
     }
-    crate::world::loot::matches_container_lock(&nbt_json(&NbtTag::Compound(predicate)), stack)
+    let predicate_json = nbt_json(&NbtTag::Compound(predicate.clone()));
+    let raw_custom_data = predicate
+        .get_compound("predicates")
+        .and_then(|predicates| predicates.get("minecraft:custom_data"));
+    crate::world::loot::matches_container_lock(&predicate_json, stack, raw_custom_data)
 }
 
 fn nbt_json(tag: &NbtTag) -> serde_json::Value {

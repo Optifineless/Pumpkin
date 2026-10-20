@@ -9,7 +9,7 @@ mod entity;
 mod item;
 pub use block::match_block;
 pub(super) use entity::{attacker_enchantment_level, enchantment_level, entity_predicate};
-pub(super) use item::{item_predicate, read_loot_component};
+pub(super) use item::{item_predicate, item_predicate_with_custom_data, read_loot_component};
 
 pub(in crate::world::loot) fn entity_target<'a>(
     target: &str,

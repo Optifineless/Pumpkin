@@ -9,7 +9,10 @@ and display their complete custom name. Nonempty legacy uppercase `Lock` strings
 remain compatible through save/reload and migrate to canonical predicates; empty
 or absent old locks default to unlocked. Native legacy name/key writes still
 replace their loaded metadata. Name and lock item components survive placement
-and drops. Existing saved effects and `Levels` keep their meaning.
+and drops. Existing saved effects and `Levels` keep their meaning. Beacon and
+chest locks evaluate `minecraft:custom_data` with vanilla 26.3
+`NbtUtils.compareNbt(expected, actual, true)` subset semantics, including nested
+compounds, partial lists and NBT tag types; the persisted lock remains unchanged.
 
 Beacon shift-click deposits only an eligible singleton into an empty payment
 slot; other stacks move between inventory and hotbar through the existing owner
@@ -27,15 +30,19 @@ source compatible. Observed legacy field replacements supersede loaded canonical
 metadata. WIT and the native API version are unchanged. The broader upstream
 beacon port #3860 and component port #3507 were reviewed; beam scanning, saved
 level behavior and pending Bedrock request transactions are outside this change.
-Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+Written by GPT-6 Luna (Codex Cloud). In-game verification: Not yet.
 
 Play test: try a named locked beacon with no key, a wrong/offhand key and the
-matching main-hand key; expect denial then its styled title. Shift-click ordinary
+matching main-hand key; expect denial then its styled title. Set a beacon and a
+chest lock to `minecraft:custom_data={beacon_key:1}`, then hold a paper key with
+that data plus an extra field; expect both to open. Hold a wrong key or keep the
+matching key only in offhand; expect the beacon to stay locked. Shift-click ordinary
 items, stacked payments and single payments; expect inventory/hotbar fallback or
 one payment deposit. Close an unpaid menu with room and full inventory; expect one
 ground item and no duplicate on closing again. Open/reopen a crafter on Bedrock;
-expect its dedicated window and original contents. Record the key/title cases,
-slot movements, close/drop sequence and Bedrock crafter screen before opening a PR.
+expect its dedicated window. Initial crafter contents delivery is tracked as a
+separate backlog item. Record the key/title cases, chest lock, slot movements,
+close/drop sequence and Bedrock crafter screen before opening a PR.
 
 ## Departed dragon and Wither bossbar recipients (#118)
 
