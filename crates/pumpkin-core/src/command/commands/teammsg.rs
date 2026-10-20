@@ -45,13 +45,16 @@ impl CommandExecutor for TeamMsgCommandExecutor {
         };
         drop(scoreboard);
 
-        let team_display_name = team.display_name.clone().color_named(team.color);
+        let mut team_display_name = team.display_name.clone();
+        if let Some(color) = team.color {
+            team_display_name = team_display_name.color_named(color);
+        }
         let message_component = TextComponent::text(message_text);
 
-        let online_players = world.players.load();
+        let online_players = context.source.server().get_all_players();
         let mut recipients = 0;
 
-        for player in online_players.iter() {
+        for player in &online_players {
             if team.players.contains(&player.gameprofile.name) {
                 // TeamMsgCommand.sendMessage preserves the verified argument and binds the team name.
                 if let Some(message) = context.source.signing_context.get(ARG_MESSAGE) {

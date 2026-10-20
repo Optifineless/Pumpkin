@@ -13,6 +13,9 @@ crates/pumpkin-core/src/entity/passive/b1019_g08_cat_tests.rs::b1019_g08_cat_hea
 crates/pumpkin-core/src/entity/passive/b1019_g08_cat_tests.rs::b1019_g08_cat_heal_callback_sees_payment_and_preserves_live_replacements::std::sync::Mutex::default#2
 crates/pumpkin-core/src/entity/passive/b1019_g08_wolf_tests.rs::b1019_g08_wolf_stew_overflow_is_committed_before_unlocked_heal_callback::std::sync::Mutex::new#1
 crates/pumpkin-core/src/entity/passive/b1019_g08_wolf_tests.rs::callback_edit::std::sync::Mutex::new#1
+# Scoreboard disk saves serialize publication with an async I/O-only gate; gameplay
+# never takes this gate, and the scoreboard owner is released before serialization/I/O.
+crates/pumpkin-core/src/server/scoreboard_storage.rs::load_scoreboard::tokio::sync::Mutex::new#1
 # Test-only hook pauses knot cleanup after its empty scan to make the attachment race deterministic.
 crates/pumpkin-core/src/entity/decoration/leash_knot.rs::new::std::sync::Mutex::new#1
 crates/pumpkin-api-macros/src/lib.rs::<module>::std::sync::Mutex::new#1

@@ -265,6 +265,7 @@ fn score_hook(fixture: &Fixture) -> Arc<AtomicUsize> {
 async fn guard_boundary_execute_store_callback_reenters_scoreboard() {
     let fixture = Fixture::new();
     fixture.run("scoreboard objectives add stored dummy");
+    fixture.run("scoreboard objectives setdisplay sidebar stored");
     let calls = score_hook(&fixture);
     fixture.run("execute store result score value stored run time query daytime");
     assert!(calls.load(Ordering::Relaxed) > 0);

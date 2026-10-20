@@ -16,6 +16,10 @@ mod player_list;
 mod save_family_regression_tests;
 #[cfg(test)]
 pub(crate) mod scenario;
+mod scoreboard_audience;
+#[cfg(test)]
+mod scoreboard_regression_tests;
+mod scoreboard_storage;
 mod shutdown;
 #[cfg(test)]
 mod startup_tests;
@@ -127,6 +131,10 @@ pub struct Server {
     pub item_registry: Arc<ItemRegistry>,
     /// Manages multiple worlds within the server.
     pub worlds: ArcSwap<Vec<Arc<World>>>,
+    /// The server scoreboard, shared by every dimension.
+    pub scoreboard: crate::world::scoreboard::SharedScoreboard,
+    pub(crate) scoreboard_audience: ArcSwap<Vec<std::sync::Weak<Player>>>,
+    scoreboard_storage: scoreboard_storage::ScoreboardStorage,
     /// MinecraftServer.getWeatherData: authoritative weather shared by every dimension.
     pub weather_data: Arc<std::sync::Mutex<pumpkin_world::world_info::data_files::WeatherData>>,
     /// All the dimensions that exist on the server.
@@ -233,6 +241,13 @@ impl Server {
         let map_manager = tokio::task::spawn_blocking(move || MapManager::load(&map_path))
             .await
             .map_err(std::io::Error::other)??;
+
+        let scoreboard_path = world_path.clone();
+        let (scoreboard, scoreboard_storage) = tokio::task::spawn_blocking(move || {
+            scoreboard_storage::load_scoreboard(&scoreboard_path)
+        })
+        .await
+        .map_err(std::io::Error::other)?;
 
         let block_registry = super::block::registry::default_registry();
 
@@ -361,6 +376,9 @@ impl Server {
             datapack_manager: Arc::new(crate::data::datapack::DatapackManager::new()),
             enchantment_manager: Arc::new(enchantment::EnchantmentManager::new()),
             worlds: ArcSwap::from_pointee(vec![]),
+            scoreboard,
+            scoreboard_audience: ArcSwap::from_pointee(vec![]),
+            scoreboard_storage,
             weather_data: Arc::new(std::sync::Mutex::new(
                 pumpkin_world::world_info::data_files::WeatherData::from_level_data(
                     &level_info.load(),
@@ -703,6 +721,9 @@ impl Server {
             if let Err(error) = server.save_maps().await {
                 error!("Failed to save maps: {error}");
             }
+            if let Err(error) = server.save_scoreboard().await {
+                error!("Failed to save scoreboard: {error}");
+            }
         });
     }
 
@@ -727,6 +748,7 @@ impl Server {
         let writes = [
             ("random sequences", self.save_random_sequences().await),
             ("maps", self.save_maps().await),
+            ("scoreboard", self.save_scoreboard().await),
             (
                 "world info",
                 self.save_world_info().map_err(|error| error.to_string()),
@@ -917,6 +939,7 @@ impl Server {
     }
 
     pub fn remove_player(&self, player: &Player) {
+        self.unregister_scoreboard_player(player);
         self.remove_player_list_entry(player);
         let player_dto = crate::net::management::dto::PlayerDto::new(
             Some(player.gameprofile.id),
@@ -954,6 +977,9 @@ impl Server {
         self.map_manager.drain().await;
         if let Err(error) = self.save_maps().await {
             error!("Failed to save maps: {error}");
+        }
+        if let Err(error) = self.save_scoreboard().await {
+            error!("Failed to save scoreboard: {error}");
         }
         // MinecraftServer.stopServer saves live data through saveAllChunks, as autosaving does.
         if let Err(err) = self.save_world_info() {

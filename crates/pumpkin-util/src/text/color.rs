@@ -58,7 +58,7 @@ impl<'de> Deserialize<'de> for Color {
         if s == "reset" {
             Ok(Self::Reset)
         } else if let Some(hex) = s.strip_prefix('#') {
-            if s.len() != 7 {
+            if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 return Err(serde::de::Error::custom(
                     "Hex color must be in the format '#RRGGBB'",
                 ));
@@ -154,7 +154,7 @@ impl Color {
     /// An RGB color, or `None` if the hex string is invalid.
     #[must_use]
     pub fn from_hex_str(hex: &str) -> Option<Self> {
-        if hex.len() != 6 {
+        if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return None;
         }
         let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
@@ -463,6 +463,19 @@ impl TryFrom<&str> for NamedColor {
             "yellow" => Ok(Self::Yellow),
             "white" => Ok(Self::White),
             _ => Err(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod parsing_tests {
+    use super::Color;
+
+    #[test]
+    fn color_rejects_non_ascii_hex_without_panicking() {
+        for color in ["#€123", "#１123"] {
+            assert!(serde_json::from_value::<Color>(serde_json::json!(color)).is_err());
+            assert!(Color::from_hex_str(color.trim_start_matches('#')).is_none());
         }
     }
 }
