@@ -20,6 +20,15 @@ pub mod glow_squid;
 pub mod goat;
 pub mod happy_ghast;
 pub mod horse;
+mod horse_spawn_stats;
+#[cfg(test)]
+mod horse_spawn_stats_admission_tests;
+#[cfg(test)]
+pub(crate) mod horse_spawn_stats_test_rng;
+#[cfg(test)]
+pub(crate) mod horse_spawn_stats_test_support;
+#[cfg(test)]
+mod horse_spawn_stats_tests;
 pub mod iron_golem;
 pub mod llama;
 mod merchant_session;
@@ -76,3 +85,14 @@ mod movement_review_tests;
 
 #[cfg(test)]
 mod dolphin_swim_with_player_tests;
+
+mod animal_interaction;
+
+#[cfg(test)]
+mod b1019_g08_cow_tests;
+#[cfg(test)]
+mod b1019_g08_handless_tests;
+#[cfg(test)]
+mod b1019_g08_test_support;
+#[cfg(test)]
+mod b1019_g08_wolf_tests;

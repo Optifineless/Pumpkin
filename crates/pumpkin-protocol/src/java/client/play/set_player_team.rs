@@ -2,7 +2,11 @@ use std::io::Write;
 
 use pumpkin_data::packet::clientbound::play::SET_PLAYER_TEAM;
 use pumpkin_macros::java_packet;
-use pumpkin_util::{text::TextComponent, translation::Locale, version::JavaMinecraftVersion};
+use pumpkin_util::{
+    text::{TextComponent, display_projection},
+    translation::Locale,
+    version::JavaMinecraftVersion,
+};
 
 use crate::{
     ClientPacket,
@@ -78,10 +82,13 @@ impl ClientPacket for CSetPlayerTeam<'_> {
                 ));
             };
 
+            let display_name = display_projection::component(params.display_name, &self.team_name);
+            let player_prefix = display_projection::component(params.player_prefix, "");
+            let player_suffix = display_projection::component(params.player_suffix, "");
             if *version >= JavaMinecraftVersion::V_26_2 {
-                write.write_component(params.display_name, version)?;
-                write.write_component(params.player_prefix, version)?;
-                write.write_component(params.player_suffix, version)?;
+                write.write_component(&display_name, version)?;
+                write.write_component(&player_prefix, version)?;
+                write.write_component(&player_suffix, version)?;
                 write
                     .write_var_int(&VarInt(nametag_visibility_to_id(params.nametag_visibility)))?;
                 write.write_var_int(&VarInt(collision_rule_to_id(params.collision_rule)))?;
@@ -93,7 +100,7 @@ impl ClientPacket for CSetPlayerTeam<'_> {
                 }
                 write.write_i8(params.options)?;
             } else if *version >= JavaMinecraftVersion::V_1_13 {
-                write.write_component(params.display_name, version)?;
+                write.write_component(&display_name, version)?;
                 write.write_i8(params.options)?;
                 if *version >= JavaMinecraftVersion::V_1_21_5 {
                     write.write_var_int(&VarInt(nametag_visibility_to_id(
@@ -110,18 +117,15 @@ impl ClientPacket for CSetPlayerTeam<'_> {
                 } else {
                     write.write_i8(params.color as i8)?;
                 }
-                write.write_component(params.player_prefix, version)?;
-                write.write_component(params.player_suffix, version)?;
+                write.write_component(&player_prefix, version)?;
+                write.write_component(&player_suffix, version)?;
             } else {
-                let display_name_legacy = params
-                    .display_name
-                    .to_legacy_string_for_version(version, Locale::EnUs);
-                let player_prefix_legacy = params
-                    .player_prefix
-                    .to_legacy_string_for_version(version, Locale::EnUs);
-                let player_suffix_legacy = params
-                    .player_suffix
-                    .to_legacy_string_for_version(version, Locale::EnUs);
+                let display_name_legacy =
+                    display_name.to_legacy_string_for_version(version, Locale::EnUs);
+                let player_prefix_legacy =
+                    player_prefix.to_legacy_string_for_version(version, Locale::EnUs);
+                let player_suffix_legacy =
+                    player_suffix.to_legacy_string_for_version(version, Locale::EnUs);
 
                 write.write_string_bounded(&display_name_legacy, 32)?;
                 write.write_string_bounded(&player_prefix_legacy, 32)?;

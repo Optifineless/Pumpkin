@@ -14,14 +14,14 @@ impl JavaClient {
             ));
             return;
         }
-        if !player.get_entity().has_vehicle()
+        let admitted = !player.get_entity().has_vehicle()
             && !player.is_movement_locked.load(Ordering::Relaxed)
             && player
                 .awaiting_teleport
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .is_none()
-        {
+                .is_none();
+        if admitted {
             player.known_movement.record(Vector3::new(0.0, 0.0, 0.0));
         }
         let entity = &player.get_entity();
@@ -51,5 +51,8 @@ impl JavaClient {
 
         let je_packet = CHeadRot::new(entity_id.into(), yaw as u8);
         world.send_to_tracking_players(entity, &je_packet);
+        if admitted {
+            Self::check_player_fall(player, Vector3::new(0.0, 0.0, 0.0), rotation.ground);
+        }
     }
 }

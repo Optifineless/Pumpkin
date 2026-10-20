@@ -1,14 +1,17 @@
 use std::sync::{Arc, Weak};
 
+use pumpkin_data::BlockStateId;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_util::sync::{LockClass, MutexGuard, SnapshotBoundary as SB, assert_not_in_snapshot};
 use pumpkin_world::chunk::{ChunkData, io::Dirtiable};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::portal::frame_effects::RetiredBlockEntity;
 use super::{World, remove_pending_block_entity};
-use crate::block::entities::{BlockEntity, block_entity_from_nbt, capture::capture_legacy};
+use crate::block::entities::{
+    BlockEntity, block_entity_from_nbt, capture::capture_legacy, jukebox::JukeboxBlockEntity,
+};
 
 #[path = "block_entity_admission.rs"]
 mod admission;
@@ -30,15 +33,22 @@ impl LockClass for PendingBlockEntityLoadsLock {
 #[cfg(test)]
 pub(super) type PublicationHook = Arc<dyn Fn() + Send + Sync>;
 
+#[cfg(test)]
+pub(super) type TransformWriteHook = Arc<dyn Fn(BlockPos) + Send + Sync>;
+
 // Test hooks copy/take their callbacks before invocation; none retains its slot mutex.
 #[cfg(test)]
 #[derive(Default)]
 pub struct PersistenceTestHooks {
+    pub(crate) bed_half_write_test: std::sync::atomic::AtomicU8,
     pub(crate) entity_recapture:
         std::sync::Mutex<Option<Arc<super::entity_unload::RecaptureTestHook>>>,
     pub(crate) lazy: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) activation: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) registration: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) registration_published: std::sync::Mutex<Option<PublicationHook>>,
+    pub(crate) transform_write: std::sync::Mutex<Option<TransformWriteHook>>,
+    pub(crate) state_write: std::sync::Mutex<Option<TransformWriteHook>>,
     pub(crate) publication: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) update_capture: std::sync::Mutex<Option<PublicationHook>>,
     pub(crate) update_packet_capture: std::sync::Mutex<Option<PublicationHook>>,
@@ -54,6 +64,8 @@ struct BlockEntityUnload {
 #[derive(Default)]
 pub(super) struct PendingBlockEntityLoads {
     pub(super) snapshots: FxHashMap<BlockPos, Weak<()>>,
+    bed_breaks: FxHashSet<BlockPos>,
+    bed_uses: FxHashSet<BlockPos>,
     // The watermark is reset when the registered Arc changes, so stamps order one live incarnation.
     next_capture_stamp: u64,
     published_capture_stamps: FxHashMap<BlockPos, u64>,
@@ -61,6 +73,9 @@ pub(super) struct PendingBlockEntityLoads {
     unloading: FxHashMap<Vector2<i32>, BlockEntityUnload>,
     active_mutations: FxHashMap<Vector2<i32>, usize>,
     stop_admission: bool,
+    pub(super) notifications:
+        std::collections::VecDeque<super::block_entity_notifications::BlockEntityNotification>,
+    pub(super) notifying: bool,
 }
 
 /// Reserves a synchronous world mutation so chunk retirement can defer to its next tick.
@@ -81,6 +96,54 @@ impl Drop for BlockEntityMutationPermit<'_> {
             if *active == 0 {
                 loads.active_mutations.remove(&self.chunk_pos);
             }
+        }
+    }
+}
+
+// A logical operation identity, with no lock or blocking permit retained across callbacks.
+pub(super) struct BedBreakSnapshot<'a> {
+    world: &'a World,
+    position: BlockPos,
+    expected: BlockStateId,
+    chunk: Arc<ChunkData>,
+}
+
+impl BedBreakSnapshot<'_> {
+    pub(super) fn chunk_is_current(&self) -> bool {
+        self.world
+            .level
+            .loaded_chunks
+            .get(&self.position.chunk_position())
+            .is_some_and(|current| Arc::ptr_eq(&self.chunk, &current))
+    }
+}
+
+impl Drop for BedBreakSnapshot<'_> {
+    fn drop(&mut self) {
+        self.world
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .bed_breaks
+            .remove(&self.position);
+    }
+}
+
+// Reserves both halves across unsafe-use break events without retaining the gate.
+pub(super) struct BedUseReservation<'a> {
+    world: &'a World,
+    positions: [BlockPos; 2],
+}
+
+impl Drop for BedUseReservation<'_> {
+    fn drop(&mut self) {
+        let mut loads = self
+            .world
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for position in self.positions {
+            loads.bed_uses.remove(&position);
         }
     }
 }
@@ -118,6 +181,19 @@ impl Drop for PendingBlockEntitySnapshot<'_> {
 }
 
 impl World {
+    #[cfg(test)]
+    pub(super) fn before_state_write_test(&self, position: BlockPos) {
+        let hook = self
+            .persistence_test_hooks
+            .state_write
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(hook) = hook {
+            hook(position);
+        }
+    }
+
     /// Mirrors LevelChunk.getBlockEntityNbtForSaving: serialize the live instance and publish it only if current.
     pub(super) fn publish_block_entity_snapshot_if_current(
         &self,
@@ -129,6 +205,17 @@ impl World {
         loop {
             let stamp = self.next_block_entity_capture_stamp();
             let nbt = self.capture_block_entity_snapshot(pos, &expected);
+            if retiring {
+                // Retirement excludes writers; release registry guards before terrain leaves.
+                let chunk = self
+                    .level
+                    .loaded_chunks
+                    .get(&pos.chunk_position())
+                    .map(|entry| Arc::clone(entry.value()));
+                if let Some(chunk) = chunk {
+                    super::lectern_update::reconcile_retiring_lectern(&chunk, pos, &nbt);
+                }
+            }
             match self.try_publish_block_entity_snapshot(pos, &expected, &nbt, stamp, retiring) {
                 SnapshotPublication::Published
                 | SnapshotPublication::Missing
@@ -243,6 +330,7 @@ impl World {
         nbt: &NbtCompound,
         stamp: u64,
         expected: Option<&Arc<dyn BlockEntity>>,
+        notification: Option<super::block_entity_notifications::BlockEntityNotification>,
     ) -> bool {
         let chunk_pos = pos.chunk_position();
         let mut loads = self
@@ -280,6 +368,9 @@ impl World {
         });
         if published.is_some() {
             loads.published_capture_stamps.insert(pos, stamp);
+            if let Some(notification) = notification {
+                loads.notifications.push_back(notification);
+            }
         }
         drop(loads);
         if published.is_some() {
@@ -310,6 +401,9 @@ impl World {
         let candidate = block_entity_from_nbt(&snapshot.nbt)?;
         let entity = self.promote_pending_block_entity(&snapshot, candidate)?;
         self.bind_block_entity_context(entity.as_ref());
+        if let Some(jukebox) = entity.as_any().downcast_ref::<JukeboxBlockEntity>() {
+            jukebox.notify_playback_power_if_changed();
+        }
         Some(entity)
     }
 
@@ -536,20 +630,173 @@ impl World {
     }
 
     pub(super) fn remove_loaded_block_entity(&self, pos: &BlockPos) -> RetiredBlockEntity {
+        // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
         let mut loads = self.invalidate_pending_block_entity_load(pos);
-        self.remove_loaded_block_entity_with_gate(pos, &mut loads)
+        self.remove_block_entity_under_publication_gate(pos, &mut loads)
     }
 
-    // The caller holds publication admission while committing terrain and retiring its entity.
-    pub(super) fn remove_loaded_block_entity_with_gate(
+    pub(super) fn reserve_bed_break(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+    ) -> Option<BedBreakSnapshot<'_>> {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if loads
+            .unloading
+            .get(&position.chunk_position())
+            .is_some_and(|unloading| !unloading.completed || unloading.captures != 0)
+            || self.get_block_state_id_if_loaded(&position) != Some(expected)
+            || loads.bed_breaks.contains(&position)
+            || loads.bed_uses.contains(&position)
+        {
+            return None;
+        }
+        let chunk = self
+            .level
+            .loaded_chunks
+            .get(&position.chunk_position())?
+            .clone();
+        loads.bed_breaks.insert(position);
+        Some(BedBreakSnapshot {
+            world: self,
+            position,
+            expected,
+            chunk,
+        })
+    }
+
+    pub(super) fn reserve_bed_use(
+        &self,
+        halves: &[(BlockPos, BlockStateId)],
+    ) -> Option<BedUseReservation<'_>> {
+        let [first, second] = halves else {
+            return None;
+        };
+        let positions = [first.0, second.0];
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if halves.iter().any(|(position, expected)| {
+            loads
+                .unloading
+                .get(&position.chunk_position())
+                .is_some_and(|unloading| !unloading.completed || unloading.captures != 0)
+                || self.get_block_state_id_if_loaded(position) != Some(*expected)
+                || loads.bed_breaks.contains(position)
+                || loads.bed_uses.contains(position)
+        }) {
+            return None;
+        }
+        loads.bed_uses.extend(positions);
+        Some(BedUseReservation {
+            world: self,
+            positions,
+        })
+    }
+
+    pub(super) fn remove_reserved_bed(
+        &self,
+        snapshot: &BedBreakSnapshot<'_>,
+    ) -> Option<RetiredBlockEntity> {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !snapshot.chunk_is_current() {
+            return None;
+        }
+        // TODO(#230 B4): Check a per-cell mutation identity when one exists;
+        // state equality cannot distinguish a removed and reinstalled identical bed.
+        self.remove_bed_states_under_publication_gate(
+            &[(snapshot.position, snapshot.expected)],
+            &mut loads,
+        )
+        .pop()
+        .map(|(_, _, entity)| entity)
+    }
+
+    pub(super) fn remove_bed_states_if(
+        &self,
+        halves: &[(BlockPos, BlockStateId)],
+    ) -> Vec<(BlockPos, BlockStateId, RetiredBlockEntity)> {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if halves
+            .iter()
+            .any(|(position, _)| loads.bed_breaks.contains(position))
+        {
+            return Vec::new();
+        }
+        self.remove_bed_states_under_publication_gate(halves, &mut loads)
+    }
+
+    fn remove_bed_states_under_publication_gate(
+        &self,
+        halves: &[(BlockPos, BlockStateId)],
+        loads: &mut PendingBlockEntityLoads,
+    ) -> Vec<(BlockPos, BlockStateId, RetiredBlockEntity)> {
+        if halves.iter().any(|(position, expected)| {
+            loads.unloading.contains_key(&position.chunk_position())
+                || self.get_block_state_id_if_loaded(position) != Some(*expected)
+        }) {
+            return Vec::new();
+        }
+        let mut committed = Vec::with_capacity(halves.len());
+        for &(position, expected) in halves {
+            if self
+                .write_block_state_if(&position, BlockStateId::AIR, |current| current == expected)
+                .is_none()
+            {
+                break;
+            }
+            // Keep add_block_entity/pending promotion outside the raw-write/retirement gap.
+            // All native retirement callbacks run only after this gate is released.
+            let retired = self.remove_block_entity_under_publication_gate(&position, loads);
+            committed.push((position, expected, retired));
+            #[cfg(test)]
+            if halves.len() == 2 && committed.len() == 1 {
+                use std::sync::atomic::Ordering::Relaxed;
+                // A bounded test rendezvous, with no callback or additional lock under the gate.
+                if self
+                    .persistence_test_hooks
+                    .bed_half_write_test
+                    .compare_exchange(1, 2, Relaxed, Relaxed)
+                    .is_ok()
+                {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+                    while self
+                        .persistence_test_hooks
+                        .bed_half_write_test
+                        .load(Relaxed)
+                        == 2
+                    {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "bed writer test timed out"
+                        );
+                        std::thread::yield_now();
+                    }
+                }
+            }
+        }
+        committed
+    }
+
+    // The caller holds publication admission across its checked terrain write and retirement.
+    pub(super) fn remove_block_entity_under_publication_gate(
         &self,
         pos: &BlockPos,
-        loads: &mut MutexGuard<'_, PendingBlockEntityLoads>,
+        loads: &mut PendingBlockEntityLoads,
     ) -> RetiredBlockEntity {
-        // LevelChunk.removeBlockEntity retires live and pending state before another promotion.
         loads.snapshots.remove(pos);
-        let chunk_pos = pos.chunk_position();
         loads.published_capture_stamps.remove(pos);
+        let chunk_pos = pos.chunk_position();
         let retired = self
             .block_entities
             .get_mut(&chunk_pos)

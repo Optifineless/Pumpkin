@@ -54,6 +54,7 @@ impl Fixture {
         let player = TestPlayer::new(&world);
         player.player.permission_lvl.store(PermissionLvl::Four);
         player.client().set_player(player.player.clone());
+        player.player.send_scoreboard();
         combat_test_support::publish_empty_chunk(
             &world,
             pumpkin_util::math::vector2::Vector2::new(0, 0),
@@ -496,6 +497,7 @@ async fn guard_boundary_statistic_award_allows_packet_hook_to_read_scoreboard() 
             "minecraft.custom:minecraft.drop",
         ),
     );
+    fixture.run("scoreboard objectives setdisplay sidebar dropped");
     let calls = packet_hook(&fixture, Owner::Scoreboard);
     fixture
         .player

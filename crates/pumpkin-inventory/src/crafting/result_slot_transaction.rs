@@ -177,9 +177,10 @@ impl ResultSlot {
         changed
     }
 
-    fn simulate_crafts(
+    /// Applies paid recipe inputs and remainders to a detached crafting grid.
+    pub fn simulate_crafts(
         simulation: &CraftingInventory,
-        recipes: &RecipeSnapshot,
+        recipes: &dyn RecipeProvider,
         output: &ItemStack,
         repetitions: u8,
     ) -> Option<Vec<ItemStack>> {

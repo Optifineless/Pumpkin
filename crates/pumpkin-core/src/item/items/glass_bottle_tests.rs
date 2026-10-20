@@ -6,7 +6,11 @@ mod support;
 use std::sync::Arc;
 
 use crate::{
-    entity::{area_effect_cloud::AreaEffectCloudEntity, item::ItemEntity, living::LivingEntity},
+    command::CommandSender,
+    entity::{
+        EntityBase, area_effect_cloud::AreaEffectCloudEntity, item::ItemEntity,
+        living::LivingEntity,
+    },
     net::java::sound_test_support::decode_sounds,
     plugin::{
         EventPriority,
@@ -342,6 +346,65 @@ async fn may_interact_denial_prevents_outside_border_bottle_effects() {
     assert_eq!(fixture.used_bottle_stat(), 0);
     assert!(game.events.lock().unwrap().is_empty());
     assert!(decode_sounds(&fixture.observer.lock().unwrap().take_packets()).is_empty());
+    fixture.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020b_g10_last_border_block_admits_real_use() {
+    let fixture = Fixture::new();
+    fixture
+        .server
+        .worlds
+        .store(Arc::new(vec![fixture.world.clone()]));
+    let source = CommandSender::Console
+        .into_source(&fixture.server)
+        .with_world(fixture.world.clone());
+    fixture
+        .server
+        .command_dispatcher
+        .load()
+        .execute_input("worldborder set 10", &source)
+        .unwrap();
+
+    for (x, player_x, yaw, admitted) in [
+        (3, 3.5, 0.0, true),
+        (4, 4.5, 0.0, true),
+        (5, 4.5, -16.0, false),
+    ] {
+        let position = BlockPos::new(x, 65, 0);
+        fixture.put_source_water(position);
+        fixture
+            .actor
+            .player
+            .get_entity()
+            .set_pos(Vector3::new(player_x, 64.0, -3.5));
+        fixture.actor.player.get_entity().set_rotation(yaw, 0.0);
+        fixture.hold_bottle(Hand::Right, 1);
+        fixture.use_item(Hand::Right);
+
+        assert_eq!(
+            fixture.used_bottle_stat(),
+            if admitted { x - 2 } else { 2 },
+            "bottle use statistic at x={x}"
+        );
+        assert_eq!(
+            fixture.potion_count(),
+            u32::from(admitted),
+            "one use replaces the held bottle with one potion at x={x}"
+        );
+        if !admitted {
+            assert_eq!(
+                fixture.actor.player.inventory().held_item().item,
+                &Item::GLASS_BOTTLE,
+                "the x=5 denial must retain the bottle"
+            );
+        }
+        fixture.world.set_block_state(
+            &position,
+            Block::AIR.default_state.id,
+            crate::world::BlockFlags::FORCE_STATE,
+        );
+    }
     fixture.finish().await;
 }
 

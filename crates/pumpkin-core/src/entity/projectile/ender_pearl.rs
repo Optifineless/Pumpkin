@@ -90,38 +90,50 @@ impl EntityBase for EnderPearlEntity {
                 living.health.load() > 0.0 && owner.get_entity().pose.load() != EntityPose::Sleeping
             })
         {
-            let should_spawn_endermite = rand::random::<f32>() < ENDERMITE_SPAWN_CHANCE;
-            if world.should_spawn_monsters() && should_spawn_endermite {
-                let entity = Entity::new(
-                    world.clone(),
-                    owner.get_entity().pos.load(),
-                    &EntityType::ENDERMITE,
+            let defer_teleport_sound = owner.get_player().map_or_else(
+                || {
+                    if !owner.get_entity().is_removed() {
+                        // ThrownEnderpearl.onHit resets non-player owners only after a successful teleport.
+                        owner.teleport(
+                            teleport_pos,
+                            Some(owner.get_entity().yaw.load()),
+                            Some(owner.get_entity().pitch.load()),
+                            world.clone(),
+                        );
+                        if !owner.get_entity().is_removed()
+                            && let Some(living) = owner.get_living_entity()
+                        {
+                            living.reset_fall_distance_and_impulse_context();
+                        }
+                    }
+                    false
+                },
+                |player| {
+                    // ThrownEnderpearl.onHit spawns the endermite before attempting ServerPlayer.teleport.
+                    let should_spawn_endermite = rand::random::<f32>() < ENDERMITE_SPAWN_CHANCE;
+                    if world.should_spawn_monsters() && should_spawn_endermite {
+                        let entity = Entity::new(
+                            world.clone(),
+                            owner.get_entity().pos.load(),
+                            &EntityType::ENDERMITE,
+                        );
+                        let endermite = EndermiteEntity::new(entity);
+                        world.spawn_entity(endermite);
+                    }
+
+                    // ThrownEnderpearl.onHit damages a ServerPlayer only when teleport returns it.
+                    player.teleport_for_ender_pearl(teleport_pos, world.clone());
+                    true
+                },
+            );
+
+            if !defer_teleport_sound {
+                world.play_sound(
+                    Sound::EntityPlayerTeleport,
+                    SoundCategory::Players,
+                    &teleport_pos,
                 );
-                let endermite = EndermiteEntity::new(entity);
-                world.spawn_entity(endermite);
             }
-
-            // In vanilla, teleport handles everything including sound
-            owner.teleport(
-                teleport_pos,
-                Some(owner.get_entity().yaw.load()),
-                Some(owner.get_entity().pitch.load()),
-                world.clone(),
-            );
-
-            // Play teleport sound at new position
-            world.play_sound(
-                Sound::EntityPlayerTeleport,
-                SoundCategory::Players,
-                &teleport_pos,
-            );
-
-            // Deal 5 damage to owner
-            owner.damage(
-                owner.as_ref(),
-                5.0,
-                pumpkin_data::damage::DamageType::ENDER_PEARL,
-            );
         }
 
         world.send_entity_status(entity, EntityStatus::Death, Some(ActorEventID::Death));

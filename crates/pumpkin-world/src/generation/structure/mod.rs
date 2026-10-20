@@ -1,7 +1,4 @@
-use pumpkin_data::{
-    structures::{Structure, StructureKeys},
-    tag::{RegistryKey, get_tag_ids},
-};
+use pumpkin_data::structures::{Structure, StructureKeys};
 
 use crate::{
     ProtoChunk,
@@ -22,7 +19,9 @@ use crate::{
             mineshaft::MineshaftGenerator,
             nether_fortress::NetherFortressGenerator,
             nether_fossil::NetherFossilGenerator,
-            ocean_monument::{OceanMonumentGenerator, has_valid_biomes},
+            ocean_monument::{
+                OceanMonumentGenerator, has_valid_biomes, has_valid_surrounding_biomes,
+            },
             ocean_ruin::OceanRuinGenerator,
             ruined_portal::RuinedPortalGenerator,
             shipwreck::ShipwreckGenerator,
@@ -32,22 +31,37 @@ use crate::{
     },
 };
 
+mod biome_check;
 pub(crate) mod height_sampler;
+pub(crate) mod locate_start;
 pub mod piece;
 pub mod placement;
 pub mod shiftable_piece;
 pub mod structures;
 pub mod template;
+#[cfg(any(test, feature = "test"))]
+pub mod test_support;
+
+use biome_check::StructureBiomeCheck;
 
 /// Creates a structure position by dispatching to the appropriate generator.
 /// Does NOT perform biome validation — callers that require it should add
 /// their own check after calling this function.
 #[must_use]
-#[allow(clippy::too_many_lines)]
 pub fn generate_structure_position(
     key: &StructureKeys,
     structure: &Structure,
     context: StructureGeneratorContext<'_>,
+) -> Option<StructurePosition> {
+    generate_structure_position_with_biome_check(*key, structure, context, None)
+}
+
+#[allow(clippy::too_many_lines)]
+fn generate_structure_position_with_biome_check(
+    key: StructureKeys,
+    structure: &Structure,
+    context: StructureGeneratorContext<'_>,
+    biome_check: Option<&mut StructureBiomeCheck<'_, '_>>,
 ) -> Option<StructurePosition> {
     match key {
         StructureKeys::BuriedTreasure => {
@@ -107,13 +121,13 @@ pub fn generate_structure_position(
             if let Some(start_jigsaw_name) = structure.start_jigsaw_name {
                 generator = generator.with_start_jigsaw(start_jigsaw_name);
             }
-            generator.get_structure_position(context)
+            generator.get_structure_position_with_biome_check(context, biome_check)
         }
         StructureKeys::Shipwreck | StructureKeys::ShipwreckBeached => {
             let generator = ShipwreckGenerator {
                 is_beached: structure
                     .is_beached
-                    .unwrap_or(*key == StructureKeys::ShipwreckBeached),
+                    .unwrap_or(key == StructureKeys::ShipwreckBeached),
             };
             generator.get_structure_position(context)
         }
@@ -124,14 +138,14 @@ pub fn generate_structure_position(
         | StructureKeys::RuinedPortalMountain
         | StructureKeys::RuinedPortalOcean
         | StructureKeys::RuinedPortalNether => {
-            let generator = RuinedPortalGenerator { variant: *key };
+            let generator = RuinedPortalGenerator { variant: key };
             generator.get_structure_position(context)
         }
         StructureKeys::OceanRuinCold | StructureKeys::OceanRuinWarm => {
             let generator = OceanRuinGenerator {
                 is_warm: structure
                     .biome_temp
-                    .map_or(*key == StructureKeys::OceanRuinWarm, |t| t == "warm"),
+                    .map_or(key == StructureKeys::OceanRuinWarm, |t| t == "warm"),
             };
             generator.get_structure_position(context)
         }
@@ -142,7 +156,7 @@ pub fn generate_structure_position(
             let generator = MineshaftGenerator {
                 is_mesa: structure
                     .mineshaft_type
-                    .map_or(*key == StructureKeys::MineshaftMesa, |t| t == "mesa"),
+                    .map_or(key == StructureKeys::MineshaftMesa, |t| t == "mesa"),
             };
             generator.get_structure_position(context)
         }
@@ -166,8 +180,9 @@ pub fn try_generate_structure(
         chunk_z: chunk.z,
         random,
         sea_level: generator.settings.sea_level,
-        min_y: (chunk.generation_bottom_y() as i32).max(chunk.bottom_y() as i32),
-        height: chunk.generation_height().min(chunk.height()),
+        // WorldGenerationContext uses generator bounds, before noise-column clipping.
+        min_y: i32::from(generator.settings.shape.min_y).max(i32::from(chunk.bottom_y())),
+        height: generator.settings.shape.height.min(chunk.height()),
         height_sampler,
         structure_key: Some(*key),
     };
@@ -187,12 +202,53 @@ pub fn try_generate_structure(
 pub fn lazily_generate_structure(
     key: &StructureKeys,
     structure: &Structure,
-    mut context: StructureGeneratorContext, // Replaces 5 separate arguments!
+    context: StructureGeneratorContext,
     biome_supplier: &dyn BiomeSupplier,
     multi_noise_sampler: &mut MultiNoiseSampler,
 ) -> Option<StructurePosition> {
+    lazily_generate_structure_with_biome_check(
+        *key,
+        structure,
+        context,
+        biome_supplier,
+        multi_noise_sampler,
+        None,
+    )
+}
+
+pub(super) fn lazily_generate_structure_with_biome_check(
+    key: StructureKeys,
+    structure: &Structure,
+    mut context: StructureGeneratorContext<'_>,
+    biome_supplier: &dyn BiomeSupplier,
+    multi_noise_sampler: &mut MultiNoiseSampler<'_>,
+    height_bounds: Option<(i32, i32)>,
+) -> Option<StructurePosition> {
+    let mut biome_check = StructureBiomeCheck {
+        supplier: biome_supplier,
+        sampler: multi_noise_sampler,
+        allowed: biome_check::allowed_biomes(structure),
+        height_bounds: height_bounds
+            .unwrap_or((context.min_y, context.min_y + i32::from(context.height) - 1)),
+    };
+    if height_bounds.is_some() && !biome_check.terrain_column(key, context.chunk_x, context.chunk_z)
+    {
+        return None;
+    }
     // OceanMonumentStructure.findGenerationPoint checks surrounding biomes once.
-    if *key == StructureKeys::Monument {
+    if key == StructureKeys::Monument {
+        // OceanMonumentStructure.findGenerationPoint rejects the surrounding volume first.
+        if height_bounds.is_some()
+            && !has_valid_surrounding_biomes(
+                biome_supplier,
+                biome_check.sampler,
+                context.chunk_x,
+                context.chunk_z,
+                context.sea_level,
+            )
+        {
+            return None;
+        }
         let center_x = crate::generation::positions::chunk_pos::get_center_x(context.chunk_x);
         let center_z = crate::generation::positions::chunk_pos::get_center_z(context.chunk_z);
         let start_y = context
@@ -201,19 +257,29 @@ pub fn lazily_generate_structure(
             .map_or(context.sea_level, |sampler| {
                 sampler.estimate_ocean_floor_height(center_x, center_z)
             });
-        if !has_valid_biomes(
-            biome_supplier,
-            multi_noise_sampler,
-            context.chunk_x,
-            context.chunk_z,
-            context.sea_level,
-            start_y,
-        ) {
+        let valid_biomes = if height_bounds.is_some() {
+            biome_check.column(center_x, center_z, start_y, start_y)
+        } else {
+            has_valid_biomes(
+                biome_supplier,
+                biome_check.sampler,
+                context.chunk_x,
+                context.chunk_z,
+                context.sea_level,
+                start_y,
+            )
+        };
+        if !valid_biomes {
             return None;
         }
     }
 
-    let structure_pos = generate_structure_position(key, structure, context);
+    let structure_pos = generate_structure_position_with_biome_check(
+        key,
+        structure,
+        context,
+        height_bounds.map(|_| &mut biome_check),
+    );
 
     if let Some(pos) = structure_pos {
         // Get the biome mathematically, bypassing the chunk boundaries entirely!
@@ -221,16 +287,9 @@ pub fn lazily_generate_structure(
         let biome_y = biome_coords::from_block(pos.start_pos.0.y);
         let biome_z = biome_coords::from_block(pos.start_pos.0.z);
 
-        let biome = biome_supplier.biome(biome_x, biome_y, biome_z, multi_noise_sampler);
+        let biome = biome_supplier.biome(biome_x, biome_y, biome_z, biome_check.sampler);
 
-        if let Some(biomes) = get_tag_ids(
-            RegistryKey::WorldgenBiome,
-            structure
-                .biomes
-                .strip_prefix('#')
-                .unwrap_or(structure.biomes),
-        ) && biomes.contains(&(biome.id as u16))
-        {
+        if biome_check.allowed.contains(&(biome.id as u16)) {
             return Some(pos);
         }
     }

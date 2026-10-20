@@ -26,7 +26,7 @@ use std::sync::{
 use crate::screen_handler::InventoryPlayer;
 
 use crate::inventory::Inventory;
-use pumpkin_data::data_component_impl::EquipmentSlot;
+use pumpkin_data::data_component_impl::{EnchantmentsImpl, EquipmentSlot};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 
@@ -188,6 +188,11 @@ pub trait Slot: Send + Sync {
     /// Mojang name: `mayPickup`
     fn can_take_items(&self, _player: &dyn InventoryPlayer) -> bool {
         true
+    }
+
+    /// Checks pickup eligibility against staged stock without installing it.
+    fn can_take_stack(&self, player: &dyn InventoryPlayer, _stack: &ItemStack) -> bool {
+        self.can_take_items(player)
     }
 
     /// Checks if this slot can be modified by the player.
@@ -447,8 +452,47 @@ impl Slot for ArmorSlot {
         1
     }
 
-    /// TODO: Check for curse of binding enchantment.
-    fn can_take_items(&self, _player: &dyn InventoryPlayer) -> bool {
-        true
+    fn can_take_items(&self, player: &dyn InventoryPlayer) -> bool {
+        self.can_take_stack(player, &self.get_stack())
+    }
+
+    fn can_take_stack(&self, player: &dyn InventoryPlayer, stack: &ItemStack) -> bool {
+        // ArmorSlot.mayPickup -> EnchantmentHelper.has(PREVENT_ARMOR_CHANGE).
+        stack.is_empty()
+            || player.is_creative()
+            || !stack
+                .get_data_component::<EnchantmentsImpl>()
+                .is_some_and(|enchantments| {
+                    enchantments
+                        .enchantment
+                        .iter()
+                        .any(|(enchantment, _)| enchantment.effects.prevent_armor_change)
+                })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ext_review_tests::Player;
+    use pumpkin_data::Enchantment;
+
+    #[test]
+    fn armor_slot_checks_the_prevent_armor_change_effect() {
+        let player = Player::new(0);
+        let slot = ArmorSlot::new(player.inventory.clone(), 39, EquipmentSlot::HEAD);
+        let mut helmet = ItemStack::new(1, &Item::DIAMOND_HELMET);
+        helmet.add_enchantment(&Enchantment::UNBREAKING, 1);
+        player.inventory.set_stack(39, helmet.clone());
+        assert!(slot.can_take_items(&player));
+        // EnchantmentHelper.has tests effect presence, independent of enchantment level.
+        helmet.add_enchantment(&Enchantment::BINDING_CURSE, 0);
+        player.inventory.set_stack(39, helmet.clone());
+        assert!(!slot.can_take_items(&player));
+        let normal = NormalSlot::new(player.inventory.clone(), 39);
+        assert!(normal.can_take_items(&player));
+        helmet.item_count = 0;
+        player.inventory.set_stack(39, helmet);
+        assert!(slot.can_take_items(&player));
     }
 }

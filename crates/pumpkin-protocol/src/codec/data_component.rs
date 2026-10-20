@@ -6,11 +6,18 @@ mod combat_component;
 #[path = "item_components.rs"]
 mod item_components;
 
+#[path = "jukebox_playable.rs"]
+mod jukebox_playable;
+pub(super) use jukebox_playable::can_serialize_component;
+
 #[path = "book_components.rs"]
 mod book_components;
 
 #[path = "mob_visibility.rs"]
 mod mob_visibility;
+
+#[path = "brewing_fuel.rs"]
+mod brewing_fuel;
 
 #[cfg(test)]
 #[path = "component_crash_tests.rs"]
@@ -968,6 +975,7 @@ pub fn deserialize(
 ) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
     let _scope = crate::ser::decode_budget::DecodeScope::component()?;
     match id {
+        DataComponent::BrewingFuel => Ok(BrewingFuelImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MobVisibility => Ok(MobVisibilityImpl::deserialize(seq)?.to_dyn()),
         DataComponent::CustomData => Ok(CustomDataImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MaxStackSize => Ok(MaxStackSizeImpl::deserialize(seq)?.to_dyn()),
@@ -1123,6 +1131,7 @@ pub fn serialize(
     seq: &mut impl NetworkWriteExt,
 ) -> Result<(), WritingError> {
     match id {
+        DataComponent::BrewingFuel => get::<BrewingFuelImpl>(value).serialize(seq),
         DataComponent::MobVisibility => get::<MobVisibilityImpl>(value).serialize(seq),
         DataComponent::CustomData => get::<CustomDataImpl>(value).serialize(seq),
         DataComponent::MaxStackSize => get::<MaxStackSizeImpl>(value).serialize(seq),
@@ -2217,18 +2226,6 @@ impl DataComponentCodec<Self> for OminousBottleAmplifierImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let amplifier = seq.get_var_int()?.0;
         Ok(Self { amplifier })
-    }
-}
-
-impl DataComponentCodec<Self> for JukeboxPlayableImpl {
-    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        let song_id = Sound::from_name(self.song).map_or(0, |s| s as i32);
-        seq.write_var_int(&VarInt::from(song_id))
-    }
-
-    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let _ = seq.get_var_int()?;
-        Ok(Self { song: "" })
     }
 }
 

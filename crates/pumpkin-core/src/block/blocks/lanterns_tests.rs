@@ -1,6 +1,7 @@
 use crate::{
     block::OnScheduledTickArgs,
-    entity::death_test_world::DeathTestWorld,
+    entity::{EntityBase, death_test_world::DeathTestWorld},
+    net::java::combat_test_support::TestPlayer,
     world::{
         World,
         spawn_test_support::{proto, publish},
@@ -8,6 +9,10 @@ use crate::{
 };
 use pumpkin_data::{
     Block, BlockStateId, biome::Biome, block_properties::LanternLikeProperties, item::Item,
+};
+use pumpkin_protocol::{
+    VarInt,
+    java::server::play::{SPlayerAction, Status},
 };
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::world::BlockFlags;
@@ -65,45 +70,52 @@ fn run_registered_block_ticks(fixture: &DeathTestWorld) {
     }
 }
 
+fn destroy_with_java(
+    player: &TestPlayer,
+    fixture: &DeathTestWorld,
+    position: BlockPos,
+    sequence: i32,
+) {
+    player
+        .player
+        .get_entity()
+        .set_pos(position.to_centered_f64());
+    player.client().handle_player_action(
+        &player.player,
+        &SPlayerAction {
+            status: VarInt(Status::FinishedDigging as i32),
+            position,
+            face: 1,
+            sequence: VarInt(sequence),
+        },
+        &fixture.server,
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn lantern_survival_uses_stored_hanging_support() {
+async fn b1020b_g06_lantern_support_loss_is_immediate() {
     let fixture = DeathTestWorld::new().await;
     let world = fixture.world();
     publish(&world, proto(&Biome::PLAINS, &Block::AIR));
-    let behavior = world
-        .block_registry
-        .get_pumpkin_block(Block::LANTERN.id)
-        .unwrap();
+    let player = TestPlayer::new(&world);
 
     let hanging_pos = BlockPos::new(8, 64, 8);
     let hanging_ceiling = hanging_pos.up();
     let hanging_floor = hanging_pos.down();
     put(&world, hanging_ceiling, Block::STONE.default_state.id);
-    put(&world, hanging_floor, Block::STONE.default_state.id);
+    put(&world, hanging_floor, Block::DIRT.default_state.id);
     let mut hanging = LanternLikeProperties::default(&Block::LANTERN);
     hanging.r#hanging = true;
     let hanging_state = hanging.to_state_id(&Block::LANTERN);
     put(&world, hanging_pos, hanging_state);
 
-    behavior.on_scheduled_tick(OnScheduledTickArgs {
-        world: &world,
-        block: &Block::LANTERN,
-        position: &hanging_pos,
-    });
+    destroy_with_java(&player, &fixture, hanging_floor, 1);
     assert_eq!(world.get_block_state_id(&hanging_pos), hanging_state);
     assert_eq!(item_count(&world, &Item::LANTERN), 0);
 
-    assert!(
-        world
-            .break_block(
-                &hanging_ceiling,
-                None,
-                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
-            )
-            .is_some()
-    );
-    assert_eq!(world.get_block_state_id(&hanging_pos), hanging_state);
-    assert!(world.is_block_tick_scheduled(&hanging_pos, &Block::LANTERN));
+    destroy_with_java(&player, &fixture, hanging_ceiling, 2);
+    assert!(world.get_block_state(&hanging_pos).is_air());
+    assert_eq!(item_count(&world, &Item::LANTERN), 1);
     run_registered_block_ticks(&fixture);
     assert!(world.get_block_state(&hanging_pos).is_air());
     assert_eq!(item_count(&world, &Item::LANTERN), 1);
@@ -111,31 +123,20 @@ async fn lantern_survival_uses_stored_hanging_support() {
     let standing_pos = BlockPos::new(12, 64, 8);
     let standing_floor = standing_pos.down();
     let standing_ceiling = standing_pos.up();
-    put(&world, standing_floor, Block::STONE.default_state.id);
+    put(&world, standing_floor, Block::DIRT.default_state.id);
     put(&world, standing_ceiling, Block::STONE.default_state.id);
     let mut standing = LanternLikeProperties::default(&Block::LANTERN);
     standing.r#hanging = false;
     let standing_state = standing.to_state_id(&Block::LANTERN);
     put(&world, standing_pos, standing_state);
 
-    behavior.on_scheduled_tick(OnScheduledTickArgs {
-        world: &world,
-        block: &Block::LANTERN,
-        position: &standing_pos,
-    });
+    destroy_with_java(&player, &fixture, standing_ceiling, 3);
     assert_eq!(world.get_block_state_id(&standing_pos), standing_state);
+    assert_eq!(item_count(&world, &Item::LANTERN), 1);
 
-    assert!(
-        world
-            .break_block(
-                &standing_floor,
-                None,
-                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
-            )
-            .is_some()
-    );
-    assert_eq!(world.get_block_state_id(&standing_pos), standing_state);
-    assert!(world.is_block_tick_scheduled(&standing_pos, &Block::LANTERN));
+    destroy_with_java(&player, &fixture, standing_floor, 4);
+    assert!(world.get_block_state(&standing_pos).is_air());
+    assert_eq!(item_count(&world, &Item::LANTERN), 2);
     run_registered_block_ticks(&fixture);
     assert!(world.get_block_state(&standing_pos).is_air());
     assert_eq!(item_count(&world, &Item::LANTERN), 2);

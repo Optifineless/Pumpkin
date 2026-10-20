@@ -1,20 +1,15 @@
-use std::sync::Arc;
-
 use crate::block::registry::BlockActionResult;
-use crate::entity::Entity;
 use crate::entity::player::Player;
 use crate::entity::vehicle::minecart::MinecartEntity;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
+use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
-use pumpkin_data::block_properties::{
-    BlockProperties, PoweredRailLikeProperties, RailLikeProperties,
-};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::tag::Taggable;
-use pumpkin_data::{Block, tag};
+use pumpkin_inventory::Inventory;
+use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
@@ -57,41 +52,50 @@ impl ItemBehaviour for MinecartItem {
         item: &mut ItemStack,
         player: &Player,
         location: BlockPos,
+        face: BlockDirection,
+        cursor_pos: Vector3<f32>,
+        block: &Block,
+        server: &Server,
+    ) -> BlockActionResult {
+        self.use_on_block_with_hand(
+            item,
+            player,
+            location,
+            face,
+            cursor_pos,
+            block,
+            server,
+            Hand::Right,
+        )
+    }
+
+    fn use_on_block_with_hand(
+        &self,
+        item: &mut ItemStack,
+        player: &Player,
+        location: BlockPos,
         _face: BlockDirection,
         _cursor_pos: Vector3<f32>,
         block: &Block,
-        _server: &Server,
+        server: &Server,
+        hand: Hand,
     ) -> BlockActionResult {
-        let world = player.world();
-
-        if !block.has_tag(&tag::Block::MINECRAFT_RAILS) {
-            return BlockActionResult::Fail;
-        }
-        let state_id = world.get_block_state_id(&location);
-        let is_ascending = if PoweredRailLikeProperties::handles_block_id(block.id) {
-            PoweredRailLikeProperties::from_state_id(state_id)
-                .shape
-                .is_ascending()
+        let source = crate::net::java::play::hand_use_result::hand_slot(player, hand);
+        let spawned =
+            MinecartEntity::place_from_item(item, player, location, block, server, hand, source);
+        player.sync_hand_slot(source, player.inventory().get_stack(source));
+        if spawned {
+            BlockActionResult::Success
         } else {
-            RailLikeProperties::from_state_id(state_id)
-                .shape
-                .is_ascending()
-        };
-        let height = if is_ascending { 0.5 } else { 0.0 };
-        let entity_type = Self::item_to_entity(item.item);
-        let pos = location.to_f64();
-        let entity = Entity::new(
-            world.clone(),
-            Vector3::new(pos.x + 0.5, pos.y + 0.0625 + height, pos.z + 0.5),
-            entity_type,
-        );
-        let minecart_entity = Arc::new(MinecartEntity::new(entity));
-        world.spawn_entity(minecart_entity);
-        item.decrement_unless_creative(player.gamemode.load(), 1);
-        BlockActionResult::Success
+            BlockActionResult::Fail
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }
+
+#[cfg(test)]
+#[path = "minecart_creation_tests.rs"]
+mod creation_tests;

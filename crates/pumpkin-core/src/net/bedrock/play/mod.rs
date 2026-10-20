@@ -125,9 +125,13 @@ pub mod emote;
 pub mod emote_list;
 pub mod interaction;
 pub mod inventory_action;
+#[cfg(test)]
+mod inventory_binding_review_tests;
 mod inventory_commit;
 #[cfg(test)]
 mod inventory_exploit_tests;
+mod inventory_request_correction;
+mod inventory_request_take;
 mod inventory_request_validation;
 pub mod item_stack_request;
 pub mod mob_equipment;
@@ -147,3 +151,12 @@ mod created_output_tests;
 
 #[cfg(test)]
 mod recipe_repetitions_tests;
+
+#[cfg(test)]
+mod inventory_quickmove_tests;
+#[cfg(test)]
+mod rejected_prediction_partial_tests;
+#[cfg(test)]
+mod rejected_prediction_test_support;
+#[cfg(test)]
+mod rejected_prediction_tests;

@@ -59,7 +59,13 @@ impl ItemBehaviour for ShovelItem {
         let world = player.world();
         let current_state_id = world.get_block_state_id(&location);
         let result = match super::block_transformer::prepare_transform(
-            &SHOVEL, player, location, face, block, hand,
+            &SHOVEL,
+            player,
+            location,
+            face,
+            block,
+            hand,
+            current_state_id,
         ) {
             Ok(result) => result,
             Err(action) => return action,
@@ -68,10 +74,22 @@ impl ItemBehaviour for ShovelItem {
         let mut changed = false;
 
         if let Some(result) = result {
+            #[cfg(test)]
+            super::block_transformer::before_transform_write(&world, location);
+            if world
+                .set_block_state_if(
+                    &location,
+                    result.new_state_id,
+                    BlockFlags::NOTIFY_ALL,
+                    |current| current == current_state_id,
+                )
+                .is_none()
+            {
+                return BlockActionResult::Pass;
+            }
             if player.gamemode.load() != GameMode::Creative {
                 let _ = item.damage_item(i32::from(result.entry.item_damage_per_use));
             }
-            world.set_block_state(&location, result.new_state_id, BlockFlags::NOTIFY_ALL);
             super::block_transformer::send_transform_effects(
                 player,
                 location,
@@ -79,21 +97,30 @@ impl ItemBehaviour for ShovelItem {
                 result,
             );
             changed = true;
-        } else if block == &Block::CAMPFIRE || block == &Block::SOUL_CAMPFIRE {
-            let mut campfire_props =
-                CampfireLikeProperties::from_state_id(world.get_block_state(&location).id);
+        } else if (block == &Block::CAMPFIRE || block == &Block::SOUL_CAMPFIRE)
+            && Block::from_state_id(current_state_id) == block
+        {
+            let mut campfire_props = CampfireLikeProperties::from_state_id(current_state_id);
             if campfire_props.lit {
+                campfire_props.lit = false;
+                #[cfg(test)]
+                super::block_transformer::before_transform_write(&world, location);
+                if world
+                    .set_block_state_if(
+                        &location,
+                        campfire_props.to_state_id(block),
+                        BlockFlags::NOTIFY_ALL,
+                        |current| current == current_state_id,
+                    )
+                    .is_none()
+                {
+                    return BlockActionResult::Pass;
+                }
                 if player.gamemode.load() != GameMode::Creative {
                     let _ = item.damage_item(1);
                 }
                 world.sync_world_event(WorldEvent::SoundExtinguishFire, location, 0);
 
-                campfire_props.lit = false;
-                world.set_block_state(
-                    &location,
-                    campfire_props.to_state_id(block),
-                    BlockFlags::NOTIFY_ALL,
-                );
                 world.play_sound_fine(
                     Sound::BlockFireExtinguish,
                     SoundCategory::Ambient,

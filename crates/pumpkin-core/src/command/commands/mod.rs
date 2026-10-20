@@ -16,6 +16,7 @@ mod bossbar;
 mod clear;
 mod clone;
 mod compute;
+pub(crate) use compute::evaluate_block_providers;
 mod damage;
 mod data;
 mod datapack;
@@ -98,6 +99,8 @@ mod title;
 mod tps;
 mod transfer;
 mod trigger;
+#[cfg(test)]
+mod trigger_regression_tests;
 pub(crate) mod waypoint;
 mod weather;
 mod whitelist;

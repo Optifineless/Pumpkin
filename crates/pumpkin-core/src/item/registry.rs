@@ -223,9 +223,8 @@ impl ItemRegistry {
         player: &Player,
         entity: Arc<dyn EntityBase>,
     ) {
-        let cooldown = stack.get_use_cooldown().cloned();
-        let cooldown_group = cooldown
-            .as_ref()
+        let cooldown_group = stack
+            .get_use_cooldown()
             .and_then(|c| c.cooldown_group.clone())
             .unwrap_or_else(|| stack.item.registry_key.to_string());
 
@@ -235,11 +234,9 @@ impl ItemRegistry {
 
         let pumpkin_item = self.get_pumpkin_item(stack.item.id);
         if let Some(pumpkin_item) = pumpkin_item {
+            // Player.interactOn delegates to ItemStack.interactLivingEntity without running
+            // ItemStack's ordinary use cooldown side effects.
             pumpkin_item.use_on_entity(stack, player, entity);
-        }
-
-        if let Some(cooldown) = cooldown {
-            player.start_cooldown(cooldown_group, (cooldown.seconds * 20.0) as i32);
         }
     }
 

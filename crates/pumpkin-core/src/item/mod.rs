@@ -3,6 +3,9 @@ pub mod items;
 pub mod potion;
 pub mod registry;
 
+#[cfg(test)]
+mod entity_use_cooldown_tests;
+
 use std::any::Any;
 use std::sync::Arc;
 

@@ -24,7 +24,11 @@ pub(super) fn prepare_transform(
     face: BlockDirection,
     block: &Block,
     hand: Hand,
+    observed: BlockStateId,
 ) -> Result<Option<TransformResult>, BlockActionResult> {
+    if Block::from_state_id(observed) != block {
+        return Ok(None);
+    }
     if matches!(player.client.as_ref(), ClientPlatform::Java(_))
         && hand == Hand::Right
         && player
@@ -43,14 +47,26 @@ pub(super) fn prepare_transform(
             location.0 + Vector3::new(i32::from(dx), i32::from(dy), i32::from(dz)),
         ))
     };
-    let mut result =
-        transformer.transform(block, world.get_block_state_id(&location), face, &get_block);
+    let mut result = transformer.transform(block, observed, face, &get_block);
     if let Some(result) = &mut result
         && result.entry.update_from_neighbors
     {
         result.new_state_id = world.update_from_neighbor_shapes(result.new_state_id, &location);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+pub(super) fn before_transform_write(world: &crate::world::World, position: BlockPos) {
+    let hook = world
+        .persistence_test_hooks
+        .transform_write
+        .lock()
+        .unwrap()
+        .clone();
+    if let Some(hook) = hook {
+        hook(position);
+    }
 }
 
 pub(super) fn send_transform_effects(

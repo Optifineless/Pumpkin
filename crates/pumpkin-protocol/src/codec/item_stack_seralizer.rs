@@ -1,5 +1,7 @@
 use crate::VarInt;
-use crate::codec::data_component::{DataComponentCodec, deserialize, serialize};
+use crate::codec::data_component::{
+    DataComponentCodec, can_serialize_component, deserialize, serialize,
+};
 use crate::ser::{NetworkReadExt, NetworkWriteExt, ReadingError, WritingError};
 use pumpkin_data::data_component::DataComponent;
 use pumpkin_data::data_component_impl::{
@@ -21,11 +23,11 @@ fn item_component_counts(stack: &ItemStack) -> Result<(VarInt, VarInt), WritingE
     let mut to_add: usize = 0;
     let mut to_remove: usize = 0;
 
-    for (_, data) in &stack.patch {
-        if data.is_none() {
-            to_remove += 1;
-        } else {
-            to_add += 1;
+    for (id, data) in &stack.patch {
+        match data {
+            None => to_remove += 1,
+            Some(data) if can_serialize_component(*id, data.as_ref()) => to_add += 1,
+            Some(_) => {}
         }
     }
 
@@ -61,7 +63,9 @@ fn serialize_item_stack_with_id(
             write.put_var_int(&to_remove)?;
 
             for (id, data) in &stack.patch {
-                if let Some(data) = data {
+                if let Some(data) = data
+                    && can_serialize_component(*id, data.as_ref())
+                {
                     write.put_var_int(&VarInt(i32::from(id.to_id())))?;
                     serialize(*id, data.as_ref(), write)?;
                 }
@@ -126,7 +130,9 @@ fn serialize_length_prefixed_item_stack_with_id(
             write.put_var_int(&to_remove)?;
 
             for (id, data) in &stack.patch {
-                if let Some(data) = data {
+                if let Some(data) = data
+                    && can_serialize_component(*id, data.as_ref())
+                {
                     write.put_var_int(&VarInt(i32::from(id.to_id())))?;
                     let mut comp_buf = Vec::new();
                     serialize(*id, data.as_ref(), &mut comp_buf)?;
@@ -157,7 +163,10 @@ fn serialize_item_cost_with_id(
     let component_count = stack
         .patch
         .iter()
-        .filter(|(_, data)| data.is_some())
+        .filter(|(id, data)| {
+            data.as_ref()
+                .is_some_and(|data| can_serialize_component(*id, data.as_ref()))
+        })
         .count();
     let component_count = i32::try_from(component_count)
         .map_err(|_| WritingError::Message("Too many item cost components".into()))?;
@@ -166,7 +175,9 @@ fn serialize_item_cost_with_id(
     write.put_var_int(&VarInt::from(stack.item_count))?;
     write.put_var_int(&VarInt(component_count))?;
     for (id, data) in &stack.patch {
-        if let Some(data) = data {
+        if let Some(data) = data
+            && can_serialize_component(*id, data.as_ref())
+        {
             write.put_var_int(&VarInt(i32::from(id.to_id())))?;
             serialize(*id, data.as_ref(), write)?;
         }
@@ -671,7 +682,9 @@ impl ItemStackSerializer<'_> {
         write.put_var_int(&to_remove)?;
 
         for (id, data) in &self.0.patch {
-            if let Some(data) = data {
+            if let Some(data) = data
+                && can_serialize_component(*id, data.as_ref())
+            {
                 write.put_var_int(&VarInt(i32::from(id.to_id())))?;
                 serialize(*id, data.as_ref(), write)?;
             }

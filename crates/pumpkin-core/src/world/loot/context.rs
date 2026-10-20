@@ -52,6 +52,9 @@ pub struct EntityLootState {
     pub sheared: Option<bool>,
     /// `FishingHookPredicate` reads the hook's latched open-water state.
     pub fishing_open_water: Option<bool>,
+    /// `RaiderPredicate` distinguishes raiders from other entity types.
+    pub raider_has_raid: Option<bool>,
+    pub raider_is_captain: Option<bool>,
     pub equipment: BTreeMap<String, ItemStack>,
     pub vehicle: Option<Box<Self>>,
     pub passengers: Vec<Self>,
@@ -190,6 +193,7 @@ pub(in crate::world) fn snapshot_entity(
                 .insert(slot.to_name().to_string(), stack.clone());
         }
     }
+    snapshot_raider(entity, &mut state);
     // VehiclePredicate/PassengerPredicate follow a live graph, including rider back references.
     if !first_visit {
         return Some(state);
@@ -214,6 +218,40 @@ pub(in crate::world) fn snapshot_entity(
         .collect();
     seen.remove(&raw.entity_id);
     Some(state)
+}
+
+fn snapshot_raider(entity: &dyn EntityBase, state: &mut EntityLootState) {
+    let Some(raider) = entity
+        .get_mob()
+        .and_then(crate::entity::mob::Mob::as_raider)
+    else {
+        return;
+    };
+    let raw = entity.get_entity();
+    let world = raw.world.load_full();
+    // Raider.hasRaid includes a raid at the position even without current membership.
+    let has_raid = {
+        let raids = world
+            .raids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        raider
+            .get_raider_data()
+            .raid_id
+            .load()
+            .is_some_and(|id| raids.contains_for_loot(id))
+            || raids.has_raid_at_for_loot(&raw.block_pos.load())
+    };
+    let patrol_leader = raider.is_patrol_leader();
+    state.raider_has_raid = Some(has_raid);
+    // Raider.isCaptain / ItemStack.matches: compare the owned head after releasing guards.
+    state.raider_is_captain = Some(
+        patrol_leader
+            && state.equipment.get("head").is_some_and(|head| {
+                !head.is_empty()
+                    && head.are_equal(&crate::entity::mob::raider::create_ominous_banner())
+            }),
+    );
 }
 
 fn snapshot_entity_components(entity: &dyn EntityBase, state: &mut EntityLootState) {

@@ -4,6 +4,7 @@ use crate::{
     server::combat_test_support::{server, world},
 };
 use pumpkin_data::{Block, damage::DamageType, effect::StatusEffect};
+use pumpkin_util::Difficulty;
 use pumpkin_util::math::vector2::Vector2;
 use std::sync::atomic::AtomicUsize;
 
@@ -65,6 +66,55 @@ async fn verification_pearl_wall_impact_uses_previous_tick_position() {
 #[tokio::test]
 async fn verification_pearl_ceiling_impact_uses_previous_tick_position() {
     pearl_impact_uses_previous_tick_position(true);
+}
+
+#[tokio::test]
+async fn verification_ender_pearl_clears_fall_distance_before_landing_damage() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path());
+    let world = world(&server, dir.path());
+    world.set_difficulty(Difficulty::Peaceful);
+
+    let block = BlockPos::new(8, 64, 8);
+    let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+    chunk.set_block_absolute_y(
+        block.0.x as usize,
+        block.0.y,
+        block.0.z as usize,
+        Block::STONE.default_state.id,
+    );
+    world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
+
+    let test_player = TestPlayer::new(&world);
+    let player = &test_player.player;
+    player.get_entity().set_pos(Vector3::new(1.0, 64.0, 1.0));
+    player.living_entity.fall_distance.store(20.0);
+
+    let pearl = ender_pearl::EnderPearlEntity::new_shot(
+        Entity::new(world, Vector3::default(), &EntityType::ENDER_PEARL),
+        player.get_entity(),
+    );
+    pearl.get_entity().set_pos(Vector3::new(5.5, 64.2, 8.5));
+    pearl.get_entity().set_has_no_gravity(true);
+    pearl
+        .get_entity()
+        .velocity
+        .store(Vector3::new(2.0, 0.0, 0.0));
+
+    pearl.tick(&pearl, &server);
+    assert!(!pearl.thrown.has_hit.load(Ordering::Relaxed));
+    let expected_position = pearl.get_entity().pos.load();
+    pearl.tick(&pearl, &server);
+
+    assert!(pearl.thrown.has_hit.load(Ordering::Relaxed));
+    assert_eq!(player.get_entity().pos.load(), expected_position);
+    assert_eq!(player.living_entity.health.load(), 15.0);
+    let fall_distance_after_teleport = player.living_entity.fall_distance.load();
+
+    // Entity.move calls LivingEntity.fall when the player lands.
+    player.living_entity.fall(player.as_ref(), 0.0, true, false);
+    assert_eq!(player.living_entity.health.load(), 15.0);
+    assert_eq!(fall_distance_after_teleport, 0.0);
 }
 
 fn remaining_projectile_base_tick(kind: &'static EntityType) {

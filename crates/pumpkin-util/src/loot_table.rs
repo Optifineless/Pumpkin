@@ -140,6 +140,8 @@ impl From<&LootTable> for DynamicLootTable {
     }
 }
 
+#[cfg(test)]
+mod captain_tests;
 mod parse;
 pub use parse::{
     number_provider_supported, parse_loot_condition, parse_loot_functions, parse_loot_table,

@@ -186,7 +186,9 @@ fn send_success(
     );
 }
 
-struct LocateStructureExecutor;
+struct LocateStructureExecutor {
+    search_radius: i32,
+}
 
 impl CommandExecutor for LocateStructureExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
@@ -235,7 +237,7 @@ impl CommandExecutor for LocateStructureExecutor {
                         find_nearest_structure(
                             origin,
                             &[&set.placement],
-                            STRUCTURE_SEARCH_RADIUS,
+                            self.search_radius,
                             seed as i64,
                             global_cache,
                         )
@@ -245,13 +247,9 @@ impl CommandExecutor for LocateStructureExecutor {
                 // are only *possible* sites: the biome at a candidate can still
                 // reject every structure in the set. Resolving the start makes
                 // sure the reported position actually holds one, and says which.
-                StructurePlacementType::RandomSpread(_) => find_nearest_structure_start(
-                    origin,
-                    set,
-                    &keys,
-                    STRUCTURE_SEARCH_RADIUS,
-                    &world_gen,
-                ),
+                StructurePlacementType::RandomSpread(_) => {
+                    find_nearest_structure_start(origin, set, &keys, self.search_radius, &world_gen)
+                }
             };
 
             if let Some((pos, key)) = nearest
@@ -419,7 +417,9 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
                         ARG_STRUCTURE,
                         ResourceOrTagKeyArgument(STRUCTURE_REGISTRY.clone()),
                     )
-                    .executes(LocateStructureExecutor),
+                    .executes(LocateStructureExecutor {
+                        search_radius: STRUCTURE_SEARCH_RADIUS,
+                    }),
                 ),
             )
             .then(
@@ -436,6 +436,10 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
             ),
     );
 }
+
+#[cfg(test)]
+#[path = "locate_regression_tests.rs"]
+mod regression_tests;
 
 #[cfg(test)]
 mod tests {

@@ -127,8 +127,23 @@ impl Goal for TrackTargetGoal {
             return false;
         };
 
-        if !mob.can_attack(target_base.as_ref()) {
+        if target_base.get_entity().is_removed()
+            || !target.is_alive()
+            || !mob.can_attack(target_base.as_ref())
+        {
             return false;
+        }
+
+        if let Some(player) = target_base.get_player() {
+            let player_world = player.world();
+            let mob_world = mob_entity.living_entity.entity.world.load();
+            // TargetGoal.canContinueToUse must stop tracking the exact instance PlayerList.remove retired.
+            if player.client.closed()
+                || !std::ptr::eq(player_world.as_ref(), mob_world.as_ref())
+                || !mob_world.contains_player_instance(player)
+            {
+                return false;
+            }
         }
 
         let mob_base: &dyn EntityBase = mob;

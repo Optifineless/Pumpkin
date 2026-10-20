@@ -252,6 +252,7 @@ pub mod close_container;
 pub mod command_suggestion;
 pub mod configuration_acknowledged;
 pub mod confirm_teleport;
+mod consumable_use;
 pub mod container_slot_state_changed;
 #[cfg(test)]
 #[path = "container_slot_state_changed_tests.rs"]
@@ -270,6 +271,15 @@ pub mod lock_difficulty;
 #[path = "loom_shift_click_tests.rs"]
 mod loom_shift_click_tests;
 pub mod move_vehicle;
+mod movement_bookkeeping;
+#[cfg(test)]
+mod movement_jump_tests;
+#[cfg(test)]
+mod movement_landing_callback_tests;
+#[cfg(test)]
+mod movement_landing_support_tests;
+#[cfg(test)]
+mod movement_landing_tests;
 pub mod paddle_boat;
 pub mod pick_item;
 pub mod ping_request;

@@ -61,7 +61,7 @@ async fn direct_mutation(border: bool) {
     } else {
         let mut owner = fixture.world.scoreboard.lock().unwrap();
         owner.add_objective(
-            &fixture.world,
+            &crate::world::scoreboard::NoTarget,
             ScoreboardObjective::new(
                 "direct",
                 TextComponent::text("direct"),
@@ -69,6 +69,11 @@ async fn direct_mutation(border: bool) {
                 None,
                 "dummy",
             ),
+        );
+        owner.set_display_objective(
+            &fixture.world,
+            pumpkin_data::scoreboard::ScoreboardDisplaySlot::Sidebar,
+            Some("direct"),
         );
         assert_eq!(hook.calls.load(Ordering::Relaxed), 0);
         drop(owner);

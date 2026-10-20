@@ -98,15 +98,19 @@ impl scoreboard::HostScoreboard for PluginHostState {
             RenderType::Hearts => pumpkin_protocol::java::client::play::RenderType::Hearts,
         };
 
-        let objective = ScoreboardObjective::new(name, display_name, rt, nf, "dummy");
+        let mut objective = ScoreboardObjective::new(name, display_name, rt, nf, "dummy");
 
         match provider {
             ScoreboardProvider::World(world) => {
-                world
+                let mut scoreboard = world
                     .scoreboard
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .update_objective(world.as_ref(), objective);
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(current) = scoreboard.get_objective(&objective.name) {
+                    objective.criterion.clone_from(&current.criterion);
+                    objective.display_auto_update = current.display_auto_update;
+                }
+                scoreboard.update_objective_with_number_format(world.as_ref(), objective);
             }
             ScoreboardProvider::Player(player) => {
                 let mut custom_guard = player
@@ -124,7 +128,11 @@ impl scoreboard::HostScoreboard for PluginHostState {
                 if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
-                    sb.update_objective(player.as_ref(), objective);
+                    if let Some(current) = sb.get_objective(&objective.name) {
+                        objective.criterion.clone_from(&current.criterion);
+                        objective.display_auto_update = current.display_auto_update;
+                    }
+                    sb.update_objective_with_number_format(player.as_ref(), objective);
                 }
             }
         }
@@ -245,14 +253,20 @@ impl scoreboard::HostScoreboard for PluginHostState {
         let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
         let nf = map_number_format(number_format, self)?;
-        let score = ScoreboardScore::new(entity_name, objective_name, VarInt(value), None, nf);
+        let mut score = ScoreboardScore::new(entity_name, objective_name, VarInt(value), None, nf);
         match provider {
             ScoreboardProvider::World(world) => {
-                world
+                let mut scoreboard = world
                     .scoreboard
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .update_score(world.as_ref(), score);
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(current) =
+                    scoreboard.get_score(&score.entity_name, &score.objective_name)
+                {
+                    score.display_name.clone_from(&current.display_name);
+                    score.locked = current.locked;
+                }
+                scoreboard.update_score_with_number_format(world.as_ref(), score);
             }
             ScoreboardProvider::Player(player) => {
                 let mut custom_guard = player
@@ -270,7 +284,11 @@ impl scoreboard::HostScoreboard for PluginHostState {
                 if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
-                    sb.update_score(player.as_ref(), score);
+                    if let Some(current) = sb.get_score(&score.entity_name, &score.objective_name) {
+                        score.display_name.clone_from(&current.display_name);
+                        score.locked = current.locked;
+                    }
+                    sb.update_score_with_number_format(player.as_ref(), score);
                 }
             }
         }
@@ -455,14 +473,23 @@ impl scoreboard::HostScoreboard for PluginHostState {
     ) -> wasmtime::Result<()> {
         let _guard_effects = pumpkin_core::world::guard_effects::GuardEffects::new();
         let provider = self.get(&res)?.clone();
-        let team = map_team_settings(name, settings, self)?;
+        let mut team = map_team_settings(name, settings, self)?;
         match provider {
             ScoreboardProvider::World(world) => {
-                world
+                let mut scoreboard = world
                     .scoreboard
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .update_team(world.as_ref(), team);
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(current) = scoreboard.get_team(&team.name) {
+                    team.deathmessage_visibility = current.deathmessage_visibility;
+                    // WIT represents an absent colour as white; preserve that projection.
+                    if current.color.is_none()
+                        && team.color == Some(pumpkin_util::text::color::NamedColor::White)
+                    {
+                        team.color = None;
+                    }
+                }
+                scoreboard.update_team(world.as_ref(), team);
             }
             ScoreboardProvider::Player(player) => {
                 let mut custom_guard = player
@@ -472,6 +499,15 @@ impl scoreboard::HostScoreboard for PluginHostState {
                 if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
+                    if let Some(current) = sb.get_team(&team.name) {
+                        team.deathmessage_visibility = current.deathmessage_visibility;
+                        // WIT represents an absent colour as white; preserve that projection.
+                        if current.color.is_none()
+                            && team.color == Some(pumpkin_util::text::color::NamedColor::White)
+                        {
+                            team.color = None;
+                        }
+                    }
                     sb.update_team(player.as_ref(), team);
                 }
             }
@@ -780,6 +816,7 @@ fn map_team_settings(
                 pumpkin_core::world::scoreboard::NameTagVisibility::HideForOwnTeam
             }
         },
+        deathmessage_visibility: pumpkin_core::world::scoreboard::NameTagVisibility::Always,
         collision_rule: match settings.collision_rule {
             CollisionRule::Always => pumpkin_core::world::scoreboard::CollisionRule::Always,
             CollisionRule::Never => pumpkin_core::world::scoreboard::CollisionRule::Never,
@@ -790,7 +827,7 @@ fn map_team_settings(
                 pumpkin_core::world::scoreboard::CollisionRule::PushOwnTeam
             }
         },
-        color: map_named_color(settings.color),
+        color: Some(map_named_color(settings.color)),
         player_prefix,
         player_suffix,
         players: Vec::new(),
@@ -867,7 +904,10 @@ fn map_team_to_settings(
         pumpkin_core::world::scoreboard::CollisionRule::PushOwnTeam => CollisionRule::PushOwnTeam,
     };
 
-    let color = map_named_color_rev(team.color);
+    let color = map_named_color_rev(
+        team.color
+            .unwrap_or(pumpkin_util::text::color::NamedColor::White),
+    );
 
     Ok(TeamSettings {
         display_name,

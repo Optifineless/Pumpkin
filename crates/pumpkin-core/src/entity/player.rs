@@ -1,13 +1,16 @@
 pub mod advancement;
+mod bed_respawn;
 mod container_menu;
 mod container_menu_block_effects;
 mod death;
 mod equipment_updates;
 mod experience_orb;
+mod held_drop;
 #[cfg(test)]
 mod held_drop_tests;
 mod inventory_sync;
 mod known_movement;
+mod lifecycle;
 mod mace;
 mod map_tracking;
 mod melee;
@@ -16,7 +19,10 @@ mod player_list;
 mod respawn_position;
 #[cfg(test)]
 pub(crate) mod respawn_position_test_gate;
+mod scoreboard_sync;
+mod sleeping;
 mod stand_up;
+use super::player_teleport::TeleportWorldOutcome;
 use known_movement::KnownMovement;
 pub mod statistics;
 
@@ -25,7 +31,9 @@ use std::collections::{HashMap, VecDeque};
 use std::f64::consts::TAU;
 use std::num::NonZero;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering,
+};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -38,7 +46,6 @@ use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::Receiver;
 use crossbeam::queue::SegQueue;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_inventory::Inventory;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
 use pumpkin_protocol::RawPacket;
 use pumpkin_protocol::bedrock::client::play_status::CPlayStatus;
@@ -252,7 +259,6 @@ impl BedrockPlayer<'_> {
     }
 }
 use pumpkin_data::attributes::Attributes;
-use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::{EquipmentSlot, ToolImpl};
 use pumpkin_data::effect::StatusEffect;
@@ -284,8 +290,8 @@ use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_protocol::java::client::play::{
     Animation, CAcknowledgeBlockChange, CActionBar, CAwardStats, CBlockUpdate, CChangeDifficulty,
     CCloseContainer, CCombatDeath, CCustomPayload, CDisguisedChatMessage, CEntityAnimation,
-    CEntityPositionSync, CEntityVelocity, CGameEvent, CHurtAnimation, CItemCooldown, COpenBook,
-    COpenScreen, COpenSignEditor, CParticle, CPlayServerLinks, CPlayerAbilities, CPlayerInfoUpdate,
+    CEntityVelocity, CGameEvent, CHurtAnimation, CItemCooldown, COpenBook, COpenScreen,
+    COpenSignEditor, CParticle, CPlayServerLinks, CPlayerAbilities, CPlayerInfoUpdate,
     CPlayerPosition, CPlayerSpawnPosition, CRespawn, CSetCamera, CSetContainerContent,
     CSetContainerProperty, CSetContainerSlot, CSetCursorItem, CSetExperience, CSetHealth,
     CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound, CSubtitle, CSystemChatMessage,
@@ -308,7 +314,6 @@ use pumpkin_world::biome;
 use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 
 use crate::block;
-use crate::block::blocks::straw_bed::StrawBedBlock;
 use crate::command::context::command_source::CommandSource;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::{CommandSender, client_suggestions};
@@ -445,6 +450,7 @@ pub struct Player {
     pub sleeping_since: AtomicCell<Option<u8>>,
     /// Head position of the bed the player is currently sleeping in.
     pub sleeping_bed_pos: AtomicCell<Option<BlockPos>>,
+    sleep_operation: AtomicU64,
     /// Manages the player's breath level
     pub breath_manager: BreathManager,
     /// Manages the player's hunger level.
@@ -693,6 +699,7 @@ impl Player {
             respawn_point: std::sync::Mutex::new(None),
             sleeping_since: AtomicCell::new(None),
             sleeping_bed_pos: AtomicCell::new(None),
+            sleep_operation: AtomicU64::new(0),
             // We want this to be an impossible watched section so that `chunker::update_position`
             // will mark chunks as watched for a new join rather than a respawn.
             // (We left shift by one so we can search around that chunk)
@@ -1037,6 +1044,8 @@ impl Player {
 
     /// Removes the [`Player`] out of the current [`World`].
     pub async fn remove(self: &Arc<Self>) {
+        self.mark_departing();
+        self.invalidate_sleep_operation();
         if !self
             .current_screen_handler
             .lock()
@@ -1057,8 +1066,6 @@ impl Player {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         if let Some(vehicle) = vehicle {
-            self.root_vehicle_uuid
-                .store(Some(vehicle.get_entity().entity_uuid));
             vehicle
                 .get_entity()
                 .remove_passenger_on_disconnect(self.entity_id());
@@ -1361,74 +1368,6 @@ impl Player {
             .map(|(respawn, _world)| respawn)
     }
 
-    /// Find a valid spawn position around a bed.
-    /// Vanilla uses a complex algorithm based on bed facing direction.
-    /// We use a simplified version that tries cardinal directions first.
-    fn find_bed_spawn_position(
-        world: &Arc<crate::world::World>,
-        bed_pos: &BlockPos,
-        facing: HorizontalFacing,
-    ) -> Option<Vector3<f64>> {
-        // Get offsets based on bed facing direction (vanilla-like order)
-        let offsets = Self::get_bed_spawn_offsets(facing);
-
-        for (dx, dz) in offsets {
-            let check_pos = BlockPos(Vector3::new(
-                bed_pos.0.x + dx,
-                bed_pos.0.y,
-                bed_pos.0.z + dz,
-            ));
-
-            if let Some(pos) = Self::find_respawn_pos(world, &check_pos) {
-                return Some(pos);
-            }
-
-            // Also try one block down (for beds on elevated platforms)
-            let check_pos_down = BlockPos(Vector3::new(
-                bed_pos.0.x + dx,
-                bed_pos.0.y - 1,
-                bed_pos.0.z + dz,
-            ));
-            if let Some(pos) = Self::find_respawn_pos(world, &check_pos_down) {
-                return Some(pos);
-            }
-        }
-
-        // Try on the bed itself as last resort
-        if let Some(pos) = Self::find_respawn_pos(world, bed_pos) {
-            return Some(pos);
-        }
-
-        None
-    }
-
-    /// Get spawn position offsets around a bed based on facing direction.
-    /// This is a simplified version of vanilla's getAroundBedOffsets.
-    fn get_bed_spawn_offsets(facing: HorizontalFacing) -> Vec<(i32, i32)> {
-        let (fx, fz) = match facing {
-            HorizontalFacing::North => (0, -1),
-            HorizontalFacing::South => (0, 1),
-            HorizontalFacing::West => (-1, 0),
-            HorizontalFacing::East => (1, 0),
-        };
-
-        // Clockwise rotation
-        let (rx, rz) = (-fz, fx);
-
-        vec![
-            (rx, rz),                   // Right of bed
-            (-rx, -rz),                 // Left of bed
-            (rx - fx, rz - fz),         // Right-back
-            (-rx - fx, -rz - fz),       // Left-back
-            (-fx, -fz),                 // Behind foot
-            (-fx * 2, -fz * 2),         // Further behind
-            (rx + fx, rz + fz),         // Right-front
-            (-rx + fx, -rz + fz),       // Left-front
-            (fx, fz),                   // In front
-            (rx - fx * 2, rz - fz * 2), // Far right-back
-        ]
-    }
-
     /// Find a valid spawn position around a respawn anchor.
     fn find_anchor_spawn_position(
         world: &Arc<crate::world::World>,
@@ -1517,6 +1456,7 @@ impl Player {
     }
 
     pub fn sleep(&self, bed_head_pos: BlockPos) {
+        self.invalidate_sleep_operation();
         // TODO: Stop riding
 
         self.get_entity().set_pose(EntityPose::Sleeping);
@@ -1662,53 +1602,7 @@ impl Player {
     }
 
     pub fn wake_up(&self) {
-        let world = self.world();
-        let Some(bed_pos) = self.sleeping_bed_pos.load() else {
-            self.living_entity.entity.set_pose(EntityPose::Standing);
-            self.sleeping_since.store(None);
-            return;
-        };
-
-        if let Some(server) = world.server.upgrade()
-            && let Some(player_arc) = world.get_player_by_uuid(self.gameprofile.id)
-        {
-            let mut event =
-                crate::plugin::api::events::player::player_bed::PlayerBedLeaveEvent::new(
-                    player_arc, bed_pos,
-                );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-
-        let (bed, bed_state) = world.get_block_and_state_id(&bed_pos);
-        if bed == &Block::STRAW_BED {
-            StrawBedBlock::destroy_after_use(&world, bed_pos);
-        } else if bed.has_tag(&tag::Block::MINECRAFT_BEDS) {
-            crate::block::blocks::bed::BedBlock::set_occupied(
-                false, &world, bed, &bed_pos, bed_state,
-            );
-        }
-
-        self.living_entity.entity.set_pose(EntityPose::Standing);
-        self.living_entity.entity.set_pos(self.position());
-        self.living_entity.entity.set_synced_data(
-            pumpkin_data::tracked_data::player::SLEEPING_POS_ID,
-            None::<BlockPos>,
-        );
-
-        self.set_stat(
-            statistics::StatisticCategory::Custom,
-            statistics::CustomStatistic::TimeSinceRest as i32,
-            0,
-        );
-
-        let chunk_pos = self.living_entity.entity.chunk_pos.load();
-        world.broadcast_to_chunk(
-            chunk_pos,
-            &CEntityAnimation::new(self.entity_id().into(), Animation::LeaveBed),
-        );
-
-        self.sleeping_since.store(None);
-        self.sleeping_bed_pos.store(None);
+        self.stop_sleeping(false);
     }
 
     pub fn show_title(&self, text: &TextComponent, mode: &TitleMode) {
@@ -2252,11 +2146,7 @@ impl Player {
             .entity
             .age
             .fetch_add(1, Ordering::Relaxed);
-        if let Some(sleeping_since) = self.sleeping_since.load()
-            && sleeping_since < 101
-        {
-            self.sleeping_since.store(Some(sleeping_since + 1));
-        }
+        self.tick_sleeping();
 
         if self.mining.load(Ordering::Relaxed)
             && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id)
@@ -3118,11 +3008,7 @@ impl Player {
             }
             _ => {
                 drop(guard);
-                self.world()
-                    .scoreboard
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .send_to_player(self);
+                self.send_server_scoreboard();
             }
         }
     }
@@ -3137,6 +3023,7 @@ impl Player {
         {
             return Some(team.clone());
         }
+        drop(guard);
         let world = self.world();
         let sb = world
             .scoreboard
@@ -3155,6 +3042,7 @@ impl Player {
         {
             return Some(team.name.clone());
         }
+        drop(guard);
         let world = self.world();
         let sb = world
             .scoreboard
@@ -3328,7 +3216,6 @@ impl Player {
     }
 
     /// Teleports the player to a different world or dimension with an optional position, yaw, and pitch.
-    #[expect(clippy::too_many_lines)]
     pub async fn teleport_world(
         self: &Arc<Self>,
         new_world: Arc<World>,
@@ -3336,14 +3223,67 @@ impl Player {
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) {
+        let _ = self
+            .teleport_world_inner(
+                new_world,
+                position,
+                yaw,
+                pitch,
+                None::<fn(&Arc<Self>, bool)>,
+                None::<fn(&Arc<World>, Vector3<f64>)>,
+            )
+            .await;
+    }
+
+    /// Runs effects before tick publication, then a hook after sending the accepted position.
+    pub(super) async fn teleport_world_with_commit<F, G>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        position: Vector3<f64>,
+        yaw: Option<f32>,
+        pitch: Option<f32>,
+        commit_hook: F,
+        after_commit_hook: G,
+    ) -> TeleportWorldOutcome
+    where
+        F: FnOnce(&Arc<Self>, bool) + Send,
+        G: FnOnce(&Arc<World>, Vector3<f64>) + Send,
+    {
+        self.teleport_world_inner(
+            new_world,
+            position,
+            yaw,
+            pitch,
+            Some(commit_hook),
+            Some(after_commit_hook),
+        )
+        .await
+    }
+
+    #[expect(clippy::too_many_lines)]
+    async fn teleport_world_inner<F, G>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        position: Vector3<f64>,
+        yaw: Option<f32>,
+        pitch: Option<f32>,
+        mut commit_hook: Option<F>,
+        mut after_commit_hook: Option<G>,
+    ) -> TeleportWorldOutcome
+    where
+        F: FnOnce(&Arc<Self>, bool) + Send,
+        G: FnOnce(&Arc<World>, Vector3<f64>) + Send,
+    {
+        let defer_arrival_publication = commit_hook.is_some();
         let current_world = self.living_entity.entity.world.load_full();
         let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
         let pitch = pitch.unwrap_or(new_world.level_info.load().spawn_pitch);
 
         let Some(server) = new_world.server.upgrade() else {
-            return;
+            return TeleportWorldOutcome::NotCommitted;
         };
 
+        let mut outcome = TeleportWorldOutcome::NotCommitted;
         send_cancellable! {{
             server;
             PlayerChangeWorldEvent {
@@ -3358,7 +3298,9 @@ impl Player {
 
             'after: {
                 // TODO: this is duplicate code from world
-                let position = event.position;
+                let Some(position) = self.accept_teleport_destination(event.position) else {
+                    return TeleportWorldOutcome::NotCommitted;
+                };
                 let yaw = event.yaw;
                 let pitch = event.pitch;
                 let new_world = event.new_world;
@@ -3366,17 +3308,21 @@ impl Player {
                 if self.client.closed()
                     || !current_world.players.load().iter().any(|p| Arc::ptr_eq(p, self))
                 {
-                    return;
+                    return TeleportWorldOutcome::NotCommitted;
                 }
+                self.invalidate_sleep_operation();
+                let was_loaded = self.has_client_loaded();
                 self.set_client_loaded(false);
                 let Some(player) = current_world.remove_player(self, false).await else {
-                    return;
+                    return TeleportWorldOutcome::NotCommitted;
                 };
-               new_world.players.rcu(|current_list| {
-                    let mut new_list = (**current_list).clone();
-                    new_list.push(player.clone());
-                    new_list
-                });
+                if !defer_arrival_publication {
+                    new_world.players.rcu(|current_list| {
+                        let mut new_list = (**current_list).clone();
+                        new_list.push(player.clone());
+                        new_list
+                    });
+                }
                 self.unload_watched_chunks(&current_world).await;
 
                 self.change_world_chunks(&current_world.level, &new_world);
@@ -3449,8 +3395,11 @@ impl Player {
                 player.get_entity().set_rotation(yaw, pitch);
                 player.get_entity().last_pos.store(position);
 
-                // Registered after positioning, so spawns carry the new position.
-                new_world.add_arriving_player(&player);
+                if !defer_arrival_publication {
+                    outcome = TeleportWorldOutcome::Committed;
+                    // Registered after positioning, so spawns carry the new position.
+                    new_world.add_arriving_player(&player);
+                }
 
                 self.send_abilities_update();
 
@@ -3463,10 +3412,28 @@ impl Player {
                 self.send_health();
 
                 new_world.send_world_info(&player);
+                if defer_arrival_publication {
+                    // Tracking delivers hurt feedback without admitting destination player ticks.
+                    new_world.add_arriving_player(&player);
+                    // ThrownEnderpearl.onHit applies damage after ServerPlayer.teleport.
+                    if let Some(commit_hook) = commit_hook.take() {
+                        commit_hook(&player, was_loaded);
+                    }
+                    player.send_health_update();
+                    outcome = TeleportWorldOutcome::Committed;
+                    // Keep the player out of destination ticks until pearl effects are committed.
+                    new_world.players.rcu(|current_list| {
+                        let mut new_list = (**current_list).clone();
+                        new_list.push(player.clone());
+                        new_list
+                    });
+                }
                 new_world.send_center_chunk(&player).await;
 
-                // cancellation leaves the current position untouched.
-                let _ = player.request_teleport(position, yaw, pitch);
+                player.request_accepted_teleport(position, yaw, pitch);
+                if let Some(after_commit_hook) = after_commit_hook.take() {
+                    after_commit_hook(&new_world, position);
+                }
 
                 let mut changed_world_event = crate::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent {
                     player: player.clone(),
@@ -3477,6 +3444,7 @@ impl Player {
                 server.plugin_manager.fire(&server, &mut changed_world_event).await;
             }
         }}
+        outcome
     }
 
     /// `yaw` and `pitch` are in degrees.
@@ -3489,7 +3457,12 @@ impl Player {
         pitch: f32,
     ) -> Option<Vector3<f64>> {
         let position = self.accept_teleport_destination(position)?;
+        self.request_accepted_teleport(position, yaw, pitch);
+        Some(position)
+    }
 
+    // Approval is resolved once, before any cross-world placement or pearl effects.
+    fn request_accepted_teleport(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
         let i = self.teleport_id_count.fetch_add(1, Ordering::Relaxed);
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
         let teleport_id = i + 1;
@@ -3543,7 +3516,6 @@ impl Player {
         if let Some(player) = self.world().get_player_by_uuid(self.gameprofile.id) {
             crate::world::chunker::update_position(&player);
         }
-        Some(position)
     }
 
     pub fn block_interaction_range(&self) -> f64 {
@@ -3717,7 +3689,10 @@ impl Player {
         if !self.has_client_loaded() {
             return;
         }
+        self.send_health_update();
+    }
 
+    pub(crate) fn send_health_update(&self) {
         let max_health = self.living_entity.get_max_health();
         let attribute = |name: &str, current_value, max_value, default_value| BedrockAttribute {
             min_value: 0.0,
@@ -4149,6 +4124,17 @@ impl Player {
 
         let gamemode = event.new_gamemode;
         self.gamemode.store(gamemode);
+        if gamemode == GameMode::Spectator
+            && (self.sleeping_since.load().is_some() || self.sleeping_bed_pos.load().is_some())
+        {
+            // This fork ends sleep when a sleeping player enters Spectator.
+            self.wake_up();
+            // Waking fires PlayerBedLeaveEvent synchronously, and its handler may finish a
+            // newer gamemode transition before this outer transition derives its state.
+            if self.gamemode.load() != gamemode {
+                return true;
+            }
+        }
         // TODO: Fix this when mojang fixes it
         // This is intentional to keep the pure vanilla mojang experience
         // self.previous_gamemode.store(self.previous_gamemode.load());
@@ -4170,6 +4156,11 @@ impl Player {
         // Stop elytra flight and reset sneaking when switching to spectator mode
         if gamemode == GameMode::Spectator {
             let entity = self.get_entity();
+            self.stop_riding_for_spectator();
+            // Vehicle exit hooks can synchronously change the mode again.
+            if self.gamemode.load() != gamemode {
+                return true;
+            }
             if entity.is_fall_flying() {
                 entity.set_fall_flying(false);
             }
@@ -4209,23 +4200,25 @@ impl Player {
 
     /// Send the player's skin layers and used hand to all players.
     pub fn send_client_information(&self) {
-        let config = self.config.load();
+        let (skin_parts, main_hand) = {
+            let config = self.config.load();
+            (config.skin_parts, config.main_hand as u8)
+        };
         self.living_entity.entity.set_synced_data(
             pumpkin_data::tracked_data::player::PLAYER_MODE_CUSTOMISATION,
-            config.skin_parts,
+            skin_parts,
         );
         self.living_entity.entity.set_synced_data(
             pumpkin_data::tracked_data::player::PLAYER_MAIN_HAND,
-            config.main_hand as u8,
+            main_hand,
         );
         self.living_entity.entity.set_synced_data(
             pumpkin_data::tracked_data::player::PLAYER_MODE_CUSTOMIZATION_ID,
-            config.skin_parts,
+            skin_parts,
         );
-        self.living_entity.entity.set_synced_data(
-            pumpkin_data::tracked_data::player::MAIN_ARM_ID,
-            config.main_hand as u8,
-        );
+        self.living_entity
+            .entity
+            .set_synced_data(pumpkin_data::tracked_data::player::MAIN_ARM_ID, main_hand);
     }
 
     pub fn can_harvest(&self, state: &BlockState, block: &'static Block) -> bool {
@@ -4365,58 +4358,7 @@ impl Player {
     }
 
     pub fn drop_held_item(&self, drop_stack: bool) {
-        let _guard_effects = crate::world::guard_effects::GuardEffects::new();
-        let source_slot = self.inventory.get_selected_slot() as usize;
-        let item_stack = self.inventory.get_stack(source_slot);
-
-        if item_stack.is_empty() {
-            return;
-        }
-
-        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
-        let dropped_stack = item_stack.copy_with_count(drop_amount);
-
-        if let Some(server) = self.world().server.upgrade()
-            && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
-        {
-            let mut event =
-                crate::plugin::api::events::player::player_drop_item::PlayerDropItemEvent::new(
-                    player_arc,
-                    dropped_stack.item.registry_key.to_string(),
-                    dropped_stack.item_count,
-                );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
-        }
-
-        let dropped_stack = pumpkin_inventory::inventory::slot_transaction::withdraw(
-            self.inventory.as_ref(),
-            source_slot,
-            &item_stack,
-            drop_amount,
-        );
-        if dropped_stack.is_empty() {
-            return;
-        }
-        // LivingEntity.detectEquipmentUpdates reads the current hand after the committed drop.
-        self.queue_equipment_updates(&[EquipmentSlot::MAIN_HAND]);
-        let updated_stack = self.inventory.get_stack(source_slot);
-        self.drop_item(dropped_stack);
-
-        let inv: Arc<dyn Inventory> = self.inventory.clone();
-        let screen_binding = self
-            .current_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut screen_handler = screen_binding
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(slot_index) = screen_handler.get_slot_index(&inv, source_slot) {
-            screen_handler.set_received_stack(slot_index, updated_stack);
-            screen_handler.send_content_updates();
-        }
+        self.drop_held_item_inner(drop_stack);
     }
 
     pub fn swap_item(&self) {
@@ -5889,23 +5831,7 @@ impl EntityBase for Player {
             let yaw = yaw.unwrap_or_else(|| self.living_entity.entity.yaw.load());
             let pitch = pitch.unwrap_or_else(|| self.living_entity.entity.pitch.load());
             // cancellation must also suppress the watcher broadcast.
-            let Some(position) = self.request_teleport(position, yaw, pitch) else {
-                return;
-            };
-            let entity = self.get_entity();
-            let chunk_pos = entity.chunk_pos.load();
-            entity.world.load().broadcast_to_chunk_except(
-                chunk_pos,
-                &[self.living_entity.entity.entity_uuid],
-                &CEntityPositionSync::new(
-                    self.living_entity.entity.entity_id.into(),
-                    position,
-                    Vector3::new(0.0, 0.0, 0.0),
-                    yaw,
-                    pitch,
-                    entity.on_ground.load(Ordering::SeqCst),
-                ),
-            );
+            let _ = self.teleport_same_world(position, yaw, pitch);
         } else if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id) {
             self.spawn_task(async move {
                 player_arc.teleport_world(world, position, yaw, pitch).await;
@@ -6113,6 +6039,7 @@ impl EntityBase for Player {
 
     #[expect(clippy::too_many_lines)]
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
+        self.invalidate_sleep_operation();
         self.inventory.read_nbt_non_mut(nbt);
         self.ender_chest_inventory.read_nbt_non_mut(nbt);
         self.restore_melee_equipment_attributes();

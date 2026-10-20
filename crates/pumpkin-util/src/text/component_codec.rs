@@ -2,6 +2,8 @@ use super::TextComponent;
 use pumpkin_nbt::tag::NbtTag;
 use serde_json::Value;
 
+pub use super::component_validation::{is_valid_component, is_valid_component_style};
+
 // AtlasSprite.DEFAULT_ATLAS is AtlasIds.BLOCKS.
 const DEFAULT_ATLAS: &str = "minecraft:blocks";
 

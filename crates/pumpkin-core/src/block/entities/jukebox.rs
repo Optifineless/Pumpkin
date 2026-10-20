@@ -27,6 +27,8 @@ pub struct JukeboxBlockEntity {
     ticks_since_song_started: AtomicU64,
     /// Length of the current song in ticks (0 if not playing)
     song_length_ticks: AtomicU64,
+    /// Whether neighbors have been told that this jukebox is emitting playback power.
+    neighbors_powered: AtomicBool,
     dirty: AtomicBool,
     comparator_dirty: AtomicBool,
 }
@@ -72,6 +74,7 @@ impl BlockEntity for JukeboxBlockEntity {
             record_stack: Arc::new(Mutex::new(record_stack)),
             ticks_since_song_started: AtomicU64::new(song_length_ticks.0),
             song_length_ticks: AtomicU64::new(song_length_ticks.1),
+            neighbors_powered: AtomicBool::new(false),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
         }
@@ -93,22 +96,33 @@ impl BlockEntity for JukeboxBlockEntity {
 
     fn tick(&self, world: &Arc<World>) {
         self.bind_world(world);
-        let _guard = self.transaction.lock();
-        if !self.transaction.is_live() {
-            return;
-        }
-        // Increment ticks if we're playing
-        let song_length = self.song_length_ticks.load(Ordering::Relaxed);
-        if song_length > 0 {
-            let ticks = self.ticks_since_song_started.load(Ordering::Relaxed);
-            if Self::song_has_finished(ticks, song_length) {
-                self.stop_playing();
-                // JukeboxSongPlayer.tick leaves the record when playback ends.
-            } else {
-                self.ticks_since_song_started
-                    .fetch_add(1, Ordering::Relaxed);
+        let stopped = {
+            let _guard = self.transaction.lock();
+            if !self.transaction.is_live() {
+                return;
             }
+            // Increment ticks if we're playing
+            let song_length = self.song_length_ticks.load(Ordering::Relaxed);
+            if song_length > 0 {
+                let ticks = self.ticks_since_song_started.load(Ordering::Relaxed);
+                if Self::song_has_finished(ticks, song_length) {
+                    self.ticks_since_song_started.store(0, Ordering::Relaxed);
+                    self.song_length_ticks.store(0, Ordering::Relaxed);
+                    true
+                } else {
+                    self.ticks_since_song_started
+                        .fetch_add(1, Ordering::Relaxed);
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if stopped {
+            // JukeboxSongPlayer.tick leaves the record when playback ends.
+            self.mark_dirty();
         }
+        self.notify_playback_power_if_changed();
     }
 
     fn is_comparator_dirty(&self) -> bool {
@@ -155,6 +169,42 @@ impl JukeboxBlockEntity {
             .world
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(world);
+    }
+
+    /// Propagates playback output changes after the jukebox is installed and no owner is held.
+    pub(crate) fn notify_playback_power_if_changed(&self) {
+        if !self.transaction.is_live() {
+            return;
+        }
+        let world = self
+            .world
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .upgrade();
+        let Some(world) = world else {
+            return;
+        };
+        if world.get_block(&self.position) != &Block::JUKEBOX {
+            return;
+        }
+        let current = world
+            .block_entities
+            .get(&self.position.chunk_position())
+            .and_then(|entities| entities.get(&self.position).cloned())
+            .is_some_and(|entity| {
+                entity
+                    .as_any()
+                    .downcast_ref::<Self>()
+                    .is_some_and(|current| std::ptr::eq(current, self))
+            });
+        if !current {
+            return;
+        }
+        let playing = self.is_playing();
+        if self.neighbors_powered.swap(playing, Ordering::Relaxed) != playing {
+            // Mirrors JukeboxBlockEntity's Level.updateNeighborsAt playback transition.
+            world.update_neighbors_at(&self.position, &Block::JUKEBOX, None);
+        }
     }
 
     fn song_length(record: &ItemStack) -> Option<u64> {
@@ -238,6 +288,7 @@ impl JukeboxBlockEntity {
             GameEvent::BlockChange.name(),
             self.position.to_centered_f64(),
         );
+        self.notify_playback_power_if_changed();
     }
 
     pub const ID: &'static str = "minecraft:jukebox";
@@ -251,6 +302,7 @@ impl JukeboxBlockEntity {
             record_stack: Arc::new(Mutex::new(ItemStack::EMPTY.clone())),
             ticks_since_song_started: AtomicU64::new(0),
             song_length_ticks: AtomicU64::new(0),
+            neighbors_powered: AtomicBool::new(false),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
         }
@@ -285,6 +337,7 @@ impl JukeboxBlockEntity {
             .store(length_in_ticks, Ordering::Relaxed);
         drop(guard);
         self.mark_dirty();
+        self.notify_playback_power_if_changed();
     }
 
     /// Stop playing the current song
@@ -297,6 +350,7 @@ impl JukeboxBlockEntity {
         self.song_length_ticks.store(0, Ordering::Relaxed);
         drop(guard);
         self.mark_dirty();
+        self.notify_playback_power_if_changed();
     }
 
     /// Check if a song is currently playing

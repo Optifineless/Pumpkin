@@ -1,8 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crossbeam::atomic::AtomicCell;
-use pumpkin_data::data_component_impl::EquipmentSlot;
-use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
@@ -127,7 +125,7 @@ pub trait Raider: PatrollingMonster {
             data.can_join_raid.store(can_join, Ordering::Relaxed);
         }
         if let Some(raid_id) = nbt.get_int("RaidId") {
-            data.raid_id.store(Some(raid_id));
+            crate::world::raid_loot::load_raider(self, raid_id);
         }
     }
 }
@@ -213,23 +211,11 @@ impl Goal for HoldGroundAttackGoal {
 /// Goal for raiders to pick up dropped ominous banners and become raid / patrol leaders.
 pub struct ObtainRaidLeaderBannerGoal;
 
+mod banner;
+
 impl Goal for ObtainRaidLeaderBannerGoal {
     fn can_start(&mut self, mob: &dyn Mob) -> bool {
-        let Some(raider) = mob.as_raider() else {
-            return false;
-        };
-        if !raider.can_be_leader() || raider.is_patrol_leader() {
-            return false;
-        }
-        // Check if dropped banner nearby
-        let entity = mob.get_entity();
-        let world = entity.world.load();
-        let bb = entity.bounding_box.load().expand(16.0, 4.0, 16.0);
-        let nearby = world.get_entities_at_box(&bb);
-
-        nearby
-            .iter()
-            .any(|e| *e.get_entity().entity_type == EntityType::ITEM)
+        banner::can_start(mob)
     }
 
     fn controls(&self) -> Controls {
@@ -237,48 +223,7 @@ impl Goal for ObtainRaidLeaderBannerGoal {
     }
 
     fn tick(&mut self, mob: &dyn Mob) {
-        let Some(raider) = mob.as_raider() else {
-            return;
-        };
-        if !raider.can_be_leader() || raider.is_patrol_leader() {
-            return;
-        }
-
-        let entity = mob.get_entity();
-        let pos = entity.pos.load();
-        let world = entity.world.load();
-        let bb = entity.bounding_box.load().expand(16.0, 4.0, 16.0);
-        let nearby = world.get_entities_at_box(&bb);
-
-        for cand in nearby {
-            if *cand.get_entity().entity_type == EntityType::ITEM {
-                let cand_pos = cand.get_entity().pos.load();
-                let dist = pos.squared_distance_to_vec(&cand_pos);
-                if dist < 2.0 {
-                    raider.set_patrol_leader(true);
-                    let banner = create_ominous_banner();
-                    let living = &mob.get_mob_entity().living_entity;
-                    if let Ok(mut equipment) = living.entity_equipment.try_lock() {
-                        equipment.put(&EquipmentSlot::HEAD, banner.clone());
-                        drop(equipment);
-                        living.send_equipment_changes(&[(EquipmentSlot::HEAD, banner)]);
-                    }
-                    cand.get_entity().remove();
-                    break;
-                }
-                let mut nav = mob
-                    .get_mob_entity()
-                    .navigator
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                nav.set_progress(NavigatorGoal {
-                    current_progress: pos,
-                    destination: cand_pos,
-                    speed: 1.15,
-                });
-                break;
-            }
-        }
+        banner::tick(mob);
     }
 }
 

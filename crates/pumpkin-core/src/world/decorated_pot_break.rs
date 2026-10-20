@@ -69,20 +69,21 @@ impl World {
             return;
         }
         let preparation = DecoratedPotBreak::capture(self, position, expected, Some(projectile));
-        if self
-            .break_block_with_limit_prepared(
-                position,
-                None,
-                BlockFlags::NOTIFY_ALL,
-                UPDATE_LIMIT,
-                Some(&preparation),
-            )
-            .is_some()
-        {
+        if let Some(broken) = self.break_block_with_limit_prepared(
+            position,
+            None,
+            BlockFlags::NOTIFY_ALL,
+            UPDATE_LIMIT,
+            Some(&preparation),
+        ) {
             // Level.destroyBlock emits BLOCK_DESTROY only for a successful removal.
-            self.emit_game_event(
+            self.emit_game_event_with_context(
                 pumpkin_data::game_event::GameEvent::BlockDestroy.name(),
                 position.to_centered_f64(),
+                super::game_events::GameEventContext {
+                    source: Some(projectile.get_entity()),
+                    affected_state: Some(broken),
+                },
             );
         }
     }
@@ -239,7 +240,7 @@ impl<'a> DecoratedPotBreak<'a> {
         }
         // The existing publication gate ties identity, terrain CAS and saved/live retirement.
         world.write_block_state_if(position, replacement, |state| state == self.expected)?;
-        Some(world.remove_loaded_block_entity_with_gate(position, &mut loads))
+        Some(world.remove_block_entity_under_publication_gate(position, &mut loads))
     }
 }
 
