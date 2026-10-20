@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub mod amphibious_node_evaluator;
 pub mod binary_heap;
 pub mod fly_node_evaluator;
+mod ghastling_navigation;
 mod mob_malus;
 mod navigation_following;
 pub(crate) mod navigation_geometry;
@@ -493,6 +494,7 @@ pub struct PathNavigation {
     next_ground_y: Option<f64>,
     stands_on_lava: bool,
     pending_reach_range: i32,
+    ghastling: bool,
 }
 
 impl Default for PathNavigation {
@@ -539,6 +541,7 @@ impl PathNavigation {
             next_ground_y: None,
             stands_on_lava: false,
             pending_reach_range: 1,
+            ghastling: false,
         }
     }
 

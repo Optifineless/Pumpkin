@@ -11,6 +11,7 @@ const MAX_TIME_RECOMPUTE: u64 = 20;
 pub(super) enum NavigationKind {
     Ground,
     Flying { can_float: bool },
+    Ghastling { can_float: bool },
     Water { allow_breaching: bool },
     Amphibious,
 }
@@ -20,7 +21,9 @@ impl NavigationKind {
     pub(super) const fn can_update(self, ground: bool, liquid: bool, passenger: bool) -> bool {
         match self {
             Self::Ground => ground || liquid || passenger,
-            Self::Flying { can_float } => can_float && liquid || !passenger,
+            Self::Flying { can_float } | Self::Ghastling { can_float } => {
+                can_float && liquid || !passenger
+            }
             Self::Water { allow_breaching } => allow_breaching || liquid,
             Self::Amphibious => true,
         }
@@ -37,6 +40,9 @@ impl PathNavigation {
     const fn kind(&self) -> NavigationKind {
         match &self.evaluator {
             EvaluatorKind::Walk(_) => NavigationKind::Ground,
+            EvaluatorKind::Fly(_) if self.ghastling => NavigationKind::Ghastling {
+                can_float: self.can_float,
+            },
             EvaluatorKind::Fly(_) => NavigationKind::Flying {
                 can_float: self.can_float,
             },
@@ -61,7 +67,7 @@ impl PathNavigation {
         let mut pos = entity.entity.pos.load();
         match self.kind() {
             NavigationKind::Ground => pos.y = self.get_surface_y(entity),
-            NavigationKind::Flying { .. } => {}
+            NavigationKind::Flying { .. } | NavigationKind::Ghastling { .. } => {}
             NavigationKind::Water { .. } | NavigationKind::Amphibious => {
                 pos.y += f64::from(entity.entity.height()) * 0.5;
             }
@@ -222,6 +228,9 @@ impl PathNavigation {
         let blocked_by_fluids = match kind {
             NavigationKind::Ground => return false,
             NavigationKind::Flying { .. } => true,
+            NavigationKind::Ghastling { .. } => {
+                return super::ghastling_navigation::can_move_directly(caller, start, stop);
+            }
             NavigationKind::Water { .. } => false,
             NavigationKind::Amphibious => {
                 if !entity.touching_water.load(Ordering::Relaxed)

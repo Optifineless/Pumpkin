@@ -2,6 +2,31 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Ghastling navigation prerequisite for HG2 (#111)
+
+Adds an opt-in `Navigator::ghastling` matching vanilla 26.3
+`HappyGhast.BabyFlyingPathNavigation`: doors disabled, floating enabled, a
+required search length of 48, and collider-only clearance that ignores fluid
+surfaces. Unloaded terrain rejects direct shortcuts. Existing mob registrations and the
+default-ON `[happy_ghast] enabled` adult switch are unchanged. This is a bounded
+prerequisite, not completed Ghastling flight or its core/idle brain; the
+`ghastling_flight` switch and local age-mode reconciliation remain unimplemented.
+
+Completing HG2 needs a proved detached Brain/save/native-mutation protocol,
+mode-generation rejection for detached selectors, entity-tracker lifecycle
+validation and explicit versus derived gravity ownership. No new durable state
+is written here. Inherited HG1 `home_pos` and `home_radius` are discarded by the
+pinned b48caaf06 reader on re-save, so downgrade data preservation is not met.
+Following/temptation/panic acquisition remains HG3; harness/riders/still/healing
+remain later work. See `.fork/happy-ghast-hg2-prerequisites.md` for the audit.
+
+API 8 (same version): the private navigation option changes `PathNavigation` and
+its containing public layouts; rebuild native plugins. Existing constructors
+remain source-compatible, and `Navigator::ghastling` is additive. Both Wasm host
+adapters retain their existing navigation calls; WIT is unchanged.
+Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
 ## Adult Happy Ghast flight, slice 1 (#111)
 
 Adults use vanilla 26.3 careful Ghast movement, floating, direct temptation and
