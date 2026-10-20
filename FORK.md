@@ -807,6 +807,63 @@ decorations staying gone. Change a painting between odd/even sizes; expect its
 attachment to stay aligned. Survival painting attacks drop one item; Creative
 attacks drop none. Capture item counts, reload results and alignment in a recording.
 
+## Canonical POI saved records (partial prerequisite for #361)
+
+Slice 4a only: canonical POI save compatibility; durable HOME registration/ownership remains pending.
+
+The real POI region/storage loader accepts vanilla 26.3 `pos` int-arrays before
+legacy fork x/y/z triples. Writes use integer x/y/z, exact type strings and
+literal signed ticket counts so rollback target `murgicraft-baseline-202610-1`
+(`b48caaf06`) reads every saved POI without coordinate collisions. Canonical
+`pos` is removed on write after taking precedence on read. Old valid POI saves
+load with unchanged meaning.
+Missing tickets default to 0; missing Valid defaults to false for canonical/empty
+sections and true only for recognizable legacy-only sections. Mixed sections
+without Valid are retained for repair. Missing schema stays distinguishable on
+import; fully validated chunks migrate to `murgicraft:poi_schema` Int 1. Source
+DataVersion (including absence), empty sections and unknown fields are retained;
+only fresh chunks use the existing supported world-version constant.
+
+Malformed records, duplicate/out-of-container positions and unsupported envelopes
+retain their chunk image without entering the gameplay index or admitting edits.
+Normal save reports refusal before modifying the original region file; valid
+neighbor chunks remain queryable/editable, but publication of that region waits
+for repair. I/O/framing failures retain an unavailable state rather than becoming
+writable empty regions. This is not a data fixer or a terrain consistency scan.
+
+PR #395 round 2: a failed region is logged and retained while every independent
+healthy region is still saved. The facade returns collected failures after the
+pass; failed dirty regions remain dirty for retry. Regressions exercise real
+storage saves through the rollback build's copied decoder and a corrupt region
+between two healthy regions through repeated save/restart cycles. API 8 (same
+version): no public signature or layout changes in this round. In-game
+verification: Not yet.
+
+Import/retention/capture audit: `poi/codec.rs` validates complete chunks before
+index publication; `PoiRegion::add/remove` reject retained storage; region save
+captures entries into retained envelopes and refuses failures before file I/O.
+Portal search/build/teardown, locate, workstation discovery and ordinary block
+updates keep using the same storage facade. Lifecycle scanner roots have no POI
+sites, so its manifest is unchanged. The available inventory map and lifecycle/
+sync manifests were audited; separate lifecycle/ticks maps and external briefs
+were unavailable. The raw world POI mutex, synchronous lazy I/O, skipped contended
+periodic snapshots and ignored periodic errors remain follow-on work. No new
+locks, callback paths, readiness, owner index or publication receipt are added.
+
+API 8 (same version): private retention fields change public `PoiRegion` and
+containing storage layouts; native plugins must rebuild. Existing method
+signatures remain source compatible. Both Wasm hosts, WIT, Java/Bedrock packets,
+entity metadata and villager persistence are unchanged. Implemented by
+GPT-6.1 Sol (Codex Cloud), compared with the supplied complete vanilla 26.3
+BlockPos/PoiRecord/PoiSection codecs and SectionStorage read/write chain.
+In-game verification: Not yet.
+
+Owner check: load an existing world with known portal/workstation records, save
+cleanly and restart twice; expect the same saved locations and imported HOME
+ticket counts. Villager bed choice is not fixed here. Storage readiness, checked
+ownership and publication must precede bed registration/ticket ownership, which
+must precede slices 5/7/8 (HOME acquisition, child admission and breeding).
+
 ## Portal return destination and axis rotation (#73, #76)
 
 Returning players resolve their saved bed or anchor in its own dimension without
