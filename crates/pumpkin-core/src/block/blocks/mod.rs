@@ -55,6 +55,7 @@ pub mod weathering_copper;
 // Decorative & furnishings
 pub mod banners;
 pub mod bed;
+mod bed_pair;
 pub mod carpet;
 pub mod chiseled_bookshelf;
 pub mod conduit;

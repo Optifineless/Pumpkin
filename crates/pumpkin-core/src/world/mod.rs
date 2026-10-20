@@ -29,6 +29,8 @@ use std::{
 use tracing::{debug, error, info, trace, warn};
 
 mod active_chunks;
+mod bed_break;
+mod bed_use;
 #[cfg(test)]
 mod block_entity_capture_window_tests;
 mod block_entity_context;
@@ -4790,6 +4792,8 @@ impl World {
             tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
             return self.get_block_state_id(position);
         };
+        #[cfg(test)]
+        self.before_state_write_test(*position);
         let replaced_block_state_id = self
             .write_block_state_if(position, block_state_id, |_| true)
             .unwrap_or(Block::AIR.default_state.id);
@@ -4970,8 +4974,8 @@ impl World {
                 let mut neighbour_update_flags = flags;
                 neighbour_update_flags.remove(BlockFlags::NOTIFY_NEIGHBORS);
                 neighbour_update_flags.remove(BlockFlags::SKIP_REDSTONE_WIRE_STATE_REPLACEMENT);
-                // Suppressing drops for the changed block must not suppress drops
-                // from dependent blocks that lose their support (e.g. in Creative).
+                // Level.setBlock clears SKIP_DROPS before neighbour shape propagation;
+                // paired-bed teardown keeps suppression on its explicit break path.
                 neighbour_update_flags.remove(BlockFlags::SKIP_DROPS);
                 self.block_registry.prepare_with_limit(
                     self,
@@ -4986,6 +4990,9 @@ impl World {
                     position,
                     neighbour_update_flags,
                     update_limit - 1,
+                    retired.and_then(|retired| {
+                        retired.bed_partner_to_skip(self, replaced_block_state_id)
+                    }),
                 );
                 self.block_registry.prepare_with_limit(
                     self,
@@ -5052,6 +5059,19 @@ impl World {
         let (broken_block, broken_block_state) = self.get_block_and_state(position);
         if broken_block_state.is_air() {
             return None;
+        }
+
+        if broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
+            || broken_block == &Block::STRAW_BED
+        {
+            return self.break_bed_block(
+                position,
+                cause,
+                cause,
+                flags,
+                update_limit,
+                broken_block_state.id,
+            );
         }
 
         let mut flags = flags;
@@ -5122,32 +5142,7 @@ impl World {
             && broken_block != &Block::FIRE
             && broken_block != &Block::SOUL_FIRE
         {
-            let je_packet = CWorldEvent::new(
-                WorldEvent::ParticlesDestroyBlock as i32,
-                *position,
-                broken_state_id.as_u16().into(),
-                false,
-            );
-            let be_packet = CLevelEvent {
-                event_id: VarInt(LevelEvent::ParticlesDestroyBlock as i32),
-                position: position.to_centered_f64().to_f32_lossy(),
-                data: VarInt(BlockState::to_be_network_id(broken_state_id) as i32),
-            };
-            let chunk_pos = position.chunk_position();
-            if let Some(player) = cause {
-                // Java predicts its own break effect; Bedrock needs the server event.
-                if let ClientPlatform::Bedrock(client) = player.client.as_ref() {
-                    client.try_enqueue_client_packet(&be_packet);
-                }
-                self.broadcast_to_chunk_except_editioned(
-                    chunk_pos,
-                    &[player.get_entity().entity_uuid],
-                    &je_packet,
-                    &be_packet,
-                );
-            } else {
-                self.broadcast_to_chunk_editioned(chunk_pos, &je_packet, &be_packet);
-            }
+            self.send_block_destroy_effect(position, broken_state_id, cause);
         }
 
         Some(broken_state_id)

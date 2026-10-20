@@ -18,6 +18,7 @@ mod player_list;
 mod respawn_position;
 #[cfg(test)]
 pub(crate) mod respawn_position_test_gate;
+mod sleeping;
 mod stand_up;
 use super::player_teleport::TeleportWorldOutcome;
 use known_movement::KnownMovement;
@@ -28,7 +29,9 @@ use std::collections::{HashMap, VecDeque};
 use std::f64::consts::TAU;
 use std::num::NonZero;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering,
+};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -310,7 +313,6 @@ use pumpkin_world::biome;
 use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 
 use crate::block;
-use crate::block::blocks::straw_bed::StrawBedBlock;
 use crate::command::context::command_source::CommandSource;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::{CommandSender, client_suggestions};
@@ -447,6 +449,7 @@ pub struct Player {
     pub sleeping_since: AtomicCell<Option<u8>>,
     /// Head position of the bed the player is currently sleeping in.
     pub sleeping_bed_pos: AtomicCell<Option<BlockPos>>,
+    sleep_operation: AtomicU64,
     /// Manages the player's breath level
     pub breath_manager: BreathManager,
     /// Manages the player's hunger level.
@@ -695,6 +698,7 @@ impl Player {
             respawn_point: std::sync::Mutex::new(None),
             sleeping_since: AtomicCell::new(None),
             sleeping_bed_pos: AtomicCell::new(None),
+            sleep_operation: AtomicU64::new(0),
             // We want this to be an impossible watched section so that `chunker::update_position`
             // will mark chunks as watched for a new join rather than a respawn.
             // (We left shift by one so we can search around that chunk)
@@ -1040,6 +1044,7 @@ impl Player {
     /// Removes the [`Player`] out of the current [`World`].
     pub async fn remove(self: &Arc<Self>) {
         self.mark_departing();
+        self.invalidate_sleep_operation();
         if !self
             .current_screen_handler
             .lock()
@@ -1518,6 +1523,7 @@ impl Player {
     }
 
     pub fn sleep(&self, bed_head_pos: BlockPos) {
+        self.invalidate_sleep_operation();
         // TODO: Stop riding
 
         self.get_entity().set_pose(EntityPose::Sleeping);
@@ -1663,53 +1669,7 @@ impl Player {
     }
 
     pub fn wake_up(&self) {
-        let world = self.world();
-        let Some(bed_pos) = self.sleeping_bed_pos.load() else {
-            self.living_entity.entity.set_pose(EntityPose::Standing);
-            self.sleeping_since.store(None);
-            return;
-        };
-
-        if let Some(server) = world.server.upgrade()
-            && let Some(player_arc) = world.get_player_by_uuid(self.gameprofile.id)
-        {
-            let mut event =
-                crate::plugin::api::events::player::player_bed::PlayerBedLeaveEvent::new(
-                    player_arc, bed_pos,
-                );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-
-        let (bed, bed_state) = world.get_block_and_state_id(&bed_pos);
-        if bed == &Block::STRAW_BED {
-            StrawBedBlock::destroy_after_use(&world, bed_pos);
-        } else if bed.has_tag(&tag::Block::MINECRAFT_BEDS) {
-            crate::block::blocks::bed::BedBlock::set_occupied(
-                false, &world, bed, &bed_pos, bed_state,
-            );
-        }
-
-        self.living_entity.entity.set_pose(EntityPose::Standing);
-        self.living_entity.entity.set_pos(self.position());
-        self.living_entity.entity.set_synced_data(
-            pumpkin_data::tracked_data::player::SLEEPING_POS_ID,
-            None::<BlockPos>,
-        );
-
-        self.set_stat(
-            statistics::StatisticCategory::Custom,
-            statistics::CustomStatistic::TimeSinceRest as i32,
-            0,
-        );
-
-        let chunk_pos = self.living_entity.entity.chunk_pos.load();
-        world.broadcast_to_chunk(
-            chunk_pos,
-            &CEntityAnimation::new(self.entity_id().into(), Animation::LeaveBed),
-        );
-
-        self.sleeping_since.store(None);
-        self.sleeping_bed_pos.store(None);
+        self.stop_sleeping(false);
     }
 
     pub fn show_title(&self, text: &TextComponent, mode: &TitleMode) {
@@ -2253,11 +2213,7 @@ impl Player {
             .entity
             .age
             .fetch_add(1, Ordering::Relaxed);
-        if let Some(sleeping_since) = self.sleeping_since.load()
-            && sleeping_since < 101
-        {
-            self.sleeping_since.store(Some(sleeping_since + 1));
-        }
+        self.tick_sleeping();
 
         if self.mining.load(Ordering::Relaxed)
             && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id)
@@ -3423,6 +3379,7 @@ impl Player {
                 {
                     return TeleportWorldOutcome::NotCommitted;
                 }
+                self.invalidate_sleep_operation();
                 let was_loaded = self.has_client_loaded();
                 self.set_client_loaded(false);
                 let Some(player) = current_world.remove_player(self, false).await else {
@@ -6151,6 +6108,7 @@ impl EntityBase for Player {
 
     #[expect(clippy::too_many_lines)]
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
+        self.invalidate_sleep_operation();
         self.inventory.read_nbt_non_mut(nbt);
         self.ender_chest_inventory.read_nbt_non_mut(nbt);
         self.restore_melee_equipment_attributes();
