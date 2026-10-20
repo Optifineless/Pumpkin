@@ -14,6 +14,11 @@ impl BedrockClient {
         };
         use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
 
+        let workstation = super::inventory_request_workstations::prepare(player, &packet);
+        // Keep workstation callbacks behind the existing response enqueue below.
+        let _workstation_effects = workstation
+            .as_ref()
+            .map(|_| crate::world::guard_effects::GuardEffects::new());
         // Snapshot dynamic recipes before entering the menu; matching staged grids
         // must not invoke a live recipe provider beneath its guard.
         let recipes = super::inventory_request_take::RecipeSnapshot(
@@ -41,13 +46,29 @@ impl BedrockClient {
             },
         );
         let effects = crate::world::guard_effects::GuardEffects::new();
+        if let Some(admission) = &workstation {
+            super::inventory_request_workstations::queue_sync(admission, player);
+        }
         let mut correction_needed = false;
         let (responses, mut inventory_updated, unclaimed_outputs, crafting_effects) = {
-            let current_screen_handler = player
-                .current_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
+            // Specialized admission keeps selection stable in the normal
+            // selection -> screen -> inventory-owner order.
+            let workstation_selection = workstation.as_ref().map(|_| {
+                player
+                    .current_screen_handler
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            });
+            let current_screen_handler = workstation_selection.as_ref().map_or_else(
+                || {
+                    player
+                        .current_screen_handler
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone()
+                },
+                |current| (*current).clone(),
+            );
             let mut screen_handler = current_screen_handler
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -64,12 +85,26 @@ impl BedrockClient {
                 let mut updates = Vec::new();
                 let mut result = 0u8; // 0 = Success, 1 = Error
 
+                let specialized = super::inventory_request_workstations::apply(
+                    &mut *screen_handler,
+                    &current_screen_handler,
+                    player,
+                    &request,
+                    &mut updates,
+                    workstation.as_ref(),
+                );
+                if let Some(committed) = specialized {
+                    result = u8::from(!committed);
+                }
+
                 // Validate the entire request before its first write, including pseudo-slots.
-                if !super::inventory_request_validation::validate_request(
-                    &*screen_handler,
-                    &request.actions,
-                    player.gamemode.load(),
-                ) {
+                if specialized.is_none()
+                    && !super::inventory_request_validation::validate_request(
+                        &*screen_handler,
+                        &request.actions,
+                        player.gamemode.load(),
+                    )
+                {
                     responses.push(ItemStackResponseInfo {
                         result: 1,
                         client_request_id: request.request_id,
@@ -78,12 +113,14 @@ impl BedrockClient {
                     continue;
                 }
 
-                if !super::inventory_request_take::validate_take_rules(
-                    &*screen_handler,
-                    &request.actions,
-                    player.as_ref(),
-                    &recipes,
-                ) {
+                if specialized.is_none()
+                    && !super::inventory_request_take::validate_take_rules(
+                        &*screen_handler,
+                        &request.actions,
+                        player.as_ref(),
+                        &recipes,
+                    )
+                {
                     correction_needed = true;
                     responses.push(ItemStackResponseInfo {
                         result: 1,
@@ -93,8 +130,12 @@ impl BedrockClient {
                     continue;
                 }
 
-                processed_request = true;
-                for action in request.actions {
+                processed_request |= workstation.is_none();
+                for action in if specialized.is_some() {
+                    Vec::new()
+                } else {
+                    request.actions
+                } {
                     match action {
                         ItemStackRequestAction::CraftCreative {
                             creative_item_id,
@@ -723,14 +764,16 @@ impl BedrockClient {
                         }
                         ItemStackRequestAction::CraftResultsDeprecated { .. }
                         | ItemStackRequestAction::MineBlock { .. }
-                        | ItemStackRequestAction::BeaconPayment { .. }
                         | ItemStackRequestAction::Create { .. }
                         | ItemStackRequestAction::LabTableCombine
                         | ItemStackRequestAction::Optional { .. }
                         | ItemStackRequestAction::Grindstone { .. }
-                        | ItemStackRequestAction::Loom { .. }
                         | ItemStackRequestAction::CraftNonImplemented => {
                             // Successful no-ops to prevent client-side transaction rollbacks
+                        }
+                        ItemStackRequestAction::BeaconPayment { .. }
+                        | ItemStackRequestAction::Loom { .. } => {
+                            result = 1;
                         }
                     }
                 }
