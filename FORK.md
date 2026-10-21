@@ -2585,9 +2585,9 @@ two-block crop and one bone meal used. Put a diamond block above an age-two crop
 and bone meal it; expect the diamond, crop age and bone-meal count to stay the
 same. Bone meal the upper half of an age-three crop; expect it to reach age four.
 
-## PR #177 glass-bottle source-water pickup
+## Glass-bottle source-water pickup (PR #177, issue #277)
 
-Glass bottles use the nearest block-outline or source-fluid hit with the main-hand collision context and the player's block interaction range. Only a source-water block can be collected; flowing water and waterlogged-only fluid remain unchanged. The cancellable pre-use event sees the same hit used by the bottle action. World-border and spawn protection are checked before effects; the neutral fill sound, `FLUID_PICKUP`, statistic and exact-slot bottle transaction follow vanilla 26.3 order. Dragon-breath pickup keeps precedence, and overflow potion drops use the player's drop position through `create_filled_result`. Mirrors `BottleItem.use/turnBottleIntoItem`, `Item.getPlayerPOVHitResult`, `BlockGetter.clip` and `ServerLevel.mayInteract`. No public plugin API changes. In-game verification: **Not yet**.
+Glass bottles use the nearest block-outline or source-fluid hit with the main-hand collision context and the player's block interaction range. Source water can be collected from water blocks and waterlogged blocks; flowing water remains unchanged. The cancellable pre-use event sees the same hit used by the bottle action. World-border and spawn protection are checked before effects; the neutral fill sound, `FLUID_PICKUP`, statistic and exact-slot bottle transaction follow vanilla 26.3 order. Dragon-breath pickup keeps precedence, and overflow potion drops use the player's drop position through `create_filled_result`. Mirrors `BottleItem.use/turnBottleIntoItem`, `Item.getPlayerPOVHitResult`, `BlockGetter.clip` and `ServerLevel.mayInteract`. No public plugin API changes. In-game verification: Not yet.
 
 ## Dolphin swim-with-player goal (#157)
 
