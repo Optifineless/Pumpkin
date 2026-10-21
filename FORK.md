@@ -88,6 +88,33 @@ definition omits XP; expect the villager's XP progress to increase by one. Repea
 with datapack offers specifying XP 0 and 7; expect no progress and seven progress
 points respectively. Capture the offer and villager XP bar before and after.
 
+## Bedrock glide admission (#320)
+
+AuthInput glide flags, legacy PlayerAction and embedded block actions now share
+Java's equipped-glider admission and cancellable toggle event. Requests retain
+their original life, active session and exact world across callbacks, recheck
+current gear and environment before committing, and publish after releasing
+ownership. Duplicate starts do not restart wear, and a flag repeated as an
+embedded action is handled once. Stops preserve cancellation and Creative
+ability flight. Regular living-tick wear and glide game events are unchanged.
+Mirrors vanilla 26.3 `Player.tryToStartFallFlying`, `Player.canGlide` and
+`LivingEntity.canGlide/canGlideUsing/stopFallFlying`, using the existing Bedrock
+wire variants. API 8 (same version): public signatures/layouts, native source
+compatibility, WIT and saved-data meaning are unchanged. Implemented by
+GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: equip a usable elytra in Survival on Bedrock, jump from a height and
+start gliding; expect the holder and Java/Bedrock observers to see the glide pose
+and one durability wear per second. Repeat start and stop inputs; expect no
+cadence reset, a stopped pose and no further wear. Repeat with a missing or nearly
+broken elytra, in water/lava, while riding or levitating, and during Creative
+ability flight; expect no glide admission or wear and unchanged ability flight.
+With a toggle plugin, cancel starts/stops and respawn, transfer, rejoin or remove
+the elytra inside a start callback; expect the original request to remain denied
+and a fresh valid request to work. Record holder and observer views, durability
+and packet routes, including a flag plus embedded start in one packet.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.

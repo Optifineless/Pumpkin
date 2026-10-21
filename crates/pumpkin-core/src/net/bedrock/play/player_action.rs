@@ -248,6 +248,8 @@ impl BedrockClient {
                         .await;
                 });
             }
+            PlayerAction::StartGliding => player.request_gliding(true),
+            PlayerAction::StopGliding => player.request_gliding(false),
             // TODO
             _ => {}
         }
