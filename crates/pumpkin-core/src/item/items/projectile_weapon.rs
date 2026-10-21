@@ -176,6 +176,7 @@ impl ProjectileWeaponItem {
             uncertainty,
             is_crit,
             is_creative,
+            |projectile| world.insert_admitted_projectile(projectile, |append| append()),
             |_| true,
         );
     }
@@ -191,6 +192,7 @@ impl ProjectileWeaponItem {
         uncertainty: f32,
         is_crit: bool,
         is_creative: bool,
+        mut insert: impl FnMut(Arc<dyn crate::entity::EntityBase>) -> bool,
         mut on_spawn: impl FnMut(&ItemStack) -> bool,
     ) -> Vec<bool> {
         let mut admitted = vec![false; projectiles.len()];
@@ -209,51 +211,41 @@ impl ProjectileWeaponItem {
 
         let (yaw, pitch) = (shooter.yaw.load(), shooter.pitch.load());
 
-        for (i, projectile) in projectiles.iter().enumerate() {
-            if projectile.item_count == 0 {
-                continue;
+        // All callbacks see the unconsumed source, no earlier publication and no wear.
+        let prepared: Vec<_> = projectiles.iter().enumerate().map(|(i, projectile)| {
+            if projectile.is_empty() {
+                return None;
             }
-
             let angle = angle_offset + direction * (i.div_ceil(2) as f32) * angle_step;
             direction = -direction;
-
-            let spawned = if projectile.item == &Item::FIREWORK_ROCKET {
-                crate::entity::projectile::firework_rocket::FireworkRocketEntity::shoot_with_result(
-                    world,
-                    shooter,
-                    projectile,
-                    pitch,
-                    yaw + angle,
-                    uncertainty,
-                )
+            let entity: Arc<dyn crate::entity::EntityBase> = if projectile.item == &Item::FIREWORK_ROCKET {
+                Arc::new(crate::entity::projectile::firework_rocket::FireworkRocketEntity::prepare_shot(
+                    world, shooter, projectile, pitch, yaw + angle, uncertainty,
+                ))
             } else {
                 let arrow = Self::create_projectile(
-                    world.clone(),
-                    shooter,
-                    weapon,
-                    projectile,
-                    is_crit,
-                    is_creative,
+                    world.clone(), shooter, weapon, projectile, is_crit, is_creative,
                 );
                 arrow.set_velocity_from_rotation(pitch, yaw + angle, 0.0, power, uncertainty);
-                // BowItem.shoot uses shootFromRotation, which adds the shooter's movement;
-                // CrossbowItem.shootProjectile calls shoot directly and does not.
                 if weapon.item.id != Item::CROSSBOW.id {
                     Self::add_shooter_movement(&arrow.entity, shooter);
                 }
-                let arrow = Arc::new(arrow);
-                let admitted = crate::entity::projectile::spawn_projectile(
-                    world,
-                    arrow.clone(),
-                    Some(shooter),
-                );
-                if admitted {
-                    arrow.apply_on_projectile_spawned(projectile);
-                }
-                admitted
+                Arc::new(arrow)
             };
-            admitted[i] = spawned;
-            if spawned && !on_spawn(projectile) {
+            crate::entity::projectile::launch::prepare_projectile(world, entity, Some(shooter))
+        }).collect();
+        for (i, entity) in prepared.into_iter().enumerate() {
+            let Some(entity) = entity else {
+                continue;
+            };
+            if !insert(entity.clone()) {
+                continue;
+            }
+            admitted[i] = true;
+            if let Some(arrow) = entity.cast_any().downcast_ref::<ArrowEntity>() {
+                arrow.apply_on_projectile_spawned(&projectiles[i]);
+            }
+            if !on_spawn(&projectiles[i]) {
                 break;
             }
         }
@@ -264,6 +256,7 @@ impl ProjectileWeaponItem {
         player: &Player,
         weapon: &EquippedItem,
         projectile: &ItemStack,
+        session: Option<&crate::item::projectile_stock::ProjectileSession>,
     ) -> bool {
         // CrossbowItem.getDurabilityUse costs three for rockets; arrows cost one.
         let amount =
@@ -279,8 +272,9 @@ impl ProjectileWeaponItem {
             inventory_index: Some(index),
             ..weapon.clone()
         };
-        player.damage_projectile_weapon(&retained, amount)
-            && Self::weapon_slot(player, &weapon.stack).is_some()
+        player.damage_projectile_weapon(&retained, amount, || {
+            session.is_none_or(|session| session.is_current(player))
+        }) && Self::weapon_slot(player, &weapon.stack).is_some()
     }
 
     pub(crate) fn finish_shooting(player: &Player, weapon: &ItemStack) {

@@ -14,11 +14,11 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
 };
 
-struct CheckClaimBeforeSpawn {
+struct CheckUnconsumedBeforeSpawn {
     player: Arc<Player>,
     calls: Arc<AtomicUsize>,
 }
-impl EventHandler<EntitySpawnEvent> for CheckClaimBeforeSpawn {
+impl EventHandler<EntitySpawnEvent> for CheckUnconsumedBeforeSpawn {
     fn handle_blocking<'a>(
         &'a self,
         _: &'a Arc<Server>,
@@ -28,8 +28,8 @@ impl EventHandler<EntitySpawnEvent> for CheckClaimBeforeSpawn {
         let hand = if creative { Hand::Left } else { Hand::Right };
         assert_eq!(
             self.player.inventory.get_stack_in_hand(hand).item_count,
-            if creative { 2 } else { 1 },
-            "projectile published before its consumption committed"
+            2,
+            "projectile admission consumed its source before insertion"
         );
         let owner = self.player.inventory.slot_transaction(0);
         std::thread::scope(|scope| {
@@ -128,7 +128,7 @@ async fn inventory_transactions_throw_rejects_hand_swapped_after_dispatch_snapsh
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn inventory_transactions_pearl_use_consumes_before_one_projectile() {
+async fn inventory_transactions_pearl_use_admits_before_committing_one_payment() {
     let fixture = DeathTestWorld::new().await;
     let world = fixture.world();
     let player = TestPlayer::new(&world);
@@ -137,7 +137,7 @@ async fn inventory_transactions_pearl_use_consumes_before_one_projectile() {
         .server
         .plugin_manager
         .register::<EntitySpawnEvent, _>(
-            Arc::new(CheckClaimBeforeSpawn {
+            Arc::new(CheckUnconsumedBeforeSpawn {
                 player: player.player.clone(),
                 calls: calls.clone(),
             }),
@@ -188,7 +188,7 @@ async fn inventory_transactions_pearl_use_consumes_before_one_projectile() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn inventory_transactions_refund_throwables_when_spawn_is_cancelled() {
+async fn inventory_transactions_denied_throwables_preserve_stock() {
     let fixture = DeathTestWorld::new().await;
     let world = fixture.world();
     let player = TestPlayer::new(&world);
@@ -231,12 +231,12 @@ async fn inventory_transactions_refund_throwables_when_spawn_is_cancelled() {
             world.entities.load().is_empty(),
             "cancelled {item:?} spawned"
         );
-        let refunded: u16 = (0..player.player.inventory.size())
+        let remaining: u16 = (0..player.player.inventory.size())
             .map(|slot| player.player.inventory.get_stack(slot))
             .filter(|stack| stack.are_items_and_components_equal(&observed))
             .map(|stack| u16::from(stack.item_count))
             .sum();
-        assert_eq!(refunded, 2, "cancelled {item:?} was not refunded");
+        assert_eq!(remaining, 2, "cancelled {item:?} changed its payment stock");
         assert_eq!(
             player
                 .player

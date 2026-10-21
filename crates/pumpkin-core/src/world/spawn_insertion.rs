@@ -9,6 +9,16 @@ use crate::entity::{EntityBase, decoration::leash_knot::LeashKnotEntity, player:
 
 type ExistingMount = (Arc<dyn EntityBase>, Arc<dyn EntityBase>);
 
+#[derive(Clone, Copy)]
+enum AppendRejection {
+    DuplicateUuid(usize),
+    Occupied,
+}
+
+#[cfg(test)]
+#[path = "projectile_commit_test_support.rs"]
+pub mod projectile_test_support;
+
 // Reserve UUIDs before plugin callbacks, without retaining a mutex across their re-entry.
 struct SpawnReservation<'a> {
     world: &'a World,
@@ -103,20 +113,47 @@ impl World {
 
     fn insert_reserved_entity_batch(
         &self,
-        _reservation: &SpawnReservation<'_>,
+        reservation: &SpawnReservation<'_>,
         members: &[Arc<dyn EntityBase>],
         skip_accounting: Option<uuid::Uuid>,
         existing_mounts: &[ExistingMount],
     ) -> bool {
-        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
-        let accepted = AtomicBool::new(false);
-        let rejected_index = AtomicUsize::new(0);
-        let rejected_for_knot = AtomicBool::new(false);
         for member in members {
             member.init_data_tracker();
         }
+        if let Err(reason) = self.append_reserved_entities(reservation, members) {
+            Self::report_append_rejection(members, reason);
+            return false;
+        }
+        self.publish_inserted_entities(members, skip_accounting, existing_mounts);
+        true
+    }
+
+    // The retryable list transaction must never debit stock or publish packets.
+    fn append_reserved_entities(
+        &self,
+        _reservation: &SpawnReservation<'_>,
+        members: &[Arc<dyn EntityBase>],
+    ) -> Result<(), AppendRejection> {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+        #[cfg(test)]
+        let probe = members
+            .first()
+            .filter(|member| member.projectile_state().is_some())
+            .and_then(|_| projectile_test_support::probe(self));
+        #[cfg(test)]
+        if probe.as_ref().is_some_and(|probe| probe.reject()) {
+            return Err(AppendRejection::Occupied);
+        }
+        let accepted = AtomicBool::new(false);
+        let rejected_index = AtomicUsize::new(0);
+        let rejected_for_knot = AtomicBool::new(false);
         // LeashFenceKnotEntity.getOrCreateKnot requires one live knot per fence position.
         self.entities.rcu(|current| {
+            #[cfg(test)]
+            if let Some(probe) = &probe {
+                probe.attempt(self);
+            }
             let duplicate_uuid = members.iter().position(|member| {
                 let uuid = member.get_entity().entity_uuid;
                 current
@@ -163,17 +200,32 @@ impl World {
             next
         });
         if !accepted.load(Relaxed) {
-            if rejected_for_knot.load(Relaxed) {
-                return false;
-            }
-            let entity = members[rejected_index.load(Relaxed)].get_entity();
+            return Err(if rejected_for_knot.load(Relaxed) {
+                AppendRejection::Occupied
+            } else {
+                AppendRejection::DuplicateUuid(rejected_index.load(Relaxed))
+            });
+        }
+        Ok(())
+    }
+
+    fn report_append_rejection(members: &[Arc<dyn EntityBase>], reason: AppendRejection) {
+        if let AppendRejection::DuplicateUuid(index) = reason {
+            let entity = members[index].get_entity();
             tracing::warn!(
                 entity_type = entity.entity_type.resource_name,
                 "UUID of added entity already exists: {}",
                 entity.entity_uuid
             );
-            return false;
         }
+    }
+
+    fn publish_inserted_entities(
+        &self,
+        members: &[Arc<dyn EntityBase>],
+        skip_accounting: Option<uuid::Uuid>,
+        existing_mounts: &[ExistingMount],
+    ) {
         for (rider, mount) in existing_mounts {
             crate::entity::spawn_mount::attach_accepted_chicken(mount, rider.clone());
         }
@@ -186,7 +238,41 @@ impl World {
         for (_, mount) in existing_mounts {
             crate::entity::spawn_mount::publish_passengers(mount);
         }
-        true
+    }
+
+    // Projectile admission has already finished. Initialize before reserving; commit owns only
+    // source validation, the fallible list append and an infallible local storage debit.
+    pub(crate) fn insert_admitted_projectile(
+        self: &Arc<Self>,
+        projectile: Arc<dyn EntityBase>,
+        commit: impl FnOnce(&mut dyn FnMut() -> bool) -> bool,
+    ) -> bool {
+        if !Arc::ptr_eq(self, &projectile.get_entity().world.load_full()) {
+            return false;
+        }
+        projectile.init_data_tracker();
+        let members = [projectile];
+        let Some(reservation) = self.reserve_spawn_uuids(&members) else {
+            return false;
+        };
+        let mut rejection = None;
+        let inserted = commit(
+            &mut || match self.append_reserved_entities(&reservation, &members) {
+                Ok(()) => true,
+                Err(reason) => {
+                    rejection = Some(reason);
+                    false
+                }
+            },
+        );
+        drop(reservation);
+        if let Some(reason) = rejection {
+            Self::report_append_rejection(&members, reason);
+        }
+        if inserted {
+            self.publish_inserted_entities(&members, None, &[]);
+        }
+        inserted
     }
 
     /// Returns `false` when a plugin cancels the [`EntitySpawnEvent`].

@@ -940,3 +940,9 @@ crates/pumpkin-core/src/world/portal/end_return_test_support.rs::transfer::std::
 crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_end_return_cancellation_and_redirection_keep_anchor_charges::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/portal/end_return_tests.rs::b1019_g16_non_player_end_return_keeps_shared_spawn_behavior::std::sync::Mutex::new#1
 crates/pumpkin-core/src/world/portal/nether_axis_tests.rs::transfer::std::sync::Mutex::new#1
+# Test-only rejoined-session recorder; the guard is dropped before any await,
+# callback, packet, inventory access or world transition.
+crates/pumpkin-core/src/old_pr204_1020_tests/lifecycle.rs::transition_case::std::sync::Mutex::new#1
+# Test-only read-gap seam on an independent Java release worker. TLS borrow,
+# inventory owners and UUID reservations release before the bounded real teleport.
+crates/pumpkin-core/src/old_pr204_1020_tests/world_snapshot.rs::release_with_transfer::block_on#1

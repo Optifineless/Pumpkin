@@ -14,6 +14,7 @@ async fn dead_mob_dispenser_is_not_sheared() {
         world: &world,
         position: &position,
         facing: Facing::East,
+        projectile_source: None,
     };
     let tool = ItemStack::new(1, &Item::SHEARS);
     assert!(!DispenserBlock::shear_entity_in_front(&ctx, &tool));

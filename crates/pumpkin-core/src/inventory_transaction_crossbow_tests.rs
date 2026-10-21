@@ -85,7 +85,7 @@ impl EventHandler<ProjectileLaunchEvent> for LaunchEdit {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn inventory_transactions_crossbow_launch_callback_cannot_keep_ammunition() {
+async fn inventory_transactions_crossbow_launch_callback_change_aborts_without_payment() {
     run(|fixture| {
         let world = fixture.world();
         let player = TestPlayer::new(&world);
@@ -111,7 +111,7 @@ async fn inventory_transactions_crossbow_launch_callback_cannot_keep_ammunition(
             );
         CrossbowItem.normal_use(&Item::CROSSBOW, &player.player);
         assert_eq!(calls.load(SeqCst), 1);
-        assert_eq!(world.entities.load().len(), 1);
+        assert_eq!(world.entities.load().len(), 0);
         let actual = player.player.inventory.get_stack(0);
         assert_eq!((actual.uid, actual.item_count), (uid, 1));
         assert_eq!(
@@ -122,16 +122,14 @@ async fn inventory_transactions_crossbow_launch_callback_cannot_keep_ammunition(
                 .get_int("launch_edit"),
             Some(7)
         );
-        assert!(
-            charged(&actual).is_empty(),
-            "launch left charged ammunition on the source weapon"
-        );
+        assert_eq!(charged(&actual).len(), 1);
+        assert_eq!(actual.get_damage(), 0);
         CrossbowItem.normal_use(&Item::CROSSBOW, &player.player);
-        assert_eq!(
-            calls.load(SeqCst),
-            1,
-            "a second use fired the same charge again"
-        );
+        assert_eq!(calls.load(SeqCst), 2);
+        assert!(charged(&player.player.inventory.get_stack(0)).is_empty());
+        assert_eq!(world.entities.load().len(), 1);
+        CrossbowItem.normal_use(&Item::CROSSBOW, &player.player);
+        assert_eq!(calls.load(SeqCst), 2, "an empty charge fired again");
         assert_eq!(world.entities.load().len(), 1);
     })
     .await;

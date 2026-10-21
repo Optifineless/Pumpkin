@@ -73,6 +73,8 @@ mod sleep_status;
 #[cfg(test)]
 mod snapshot_boundary_tests;
 mod spawn_insertion;
+#[cfg(test)]
+pub(crate) use spawn_insertion::projectile_test_support;
 mod spawn_protection;
 pub mod stopwatches;
 mod straw_bed;

@@ -1,3 +1,6 @@
+#[path = "dispenser_projectile.rs"]
+mod projectile_source;
+
 use pumpkin_inventory::screen_handler::ScreenMutex;
 use rand::{Rng, RngExt, rng};
 use std::sync::Arc;
@@ -109,6 +112,7 @@ struct DispenseContext<'a> {
     world: &'a Arc<World>,
     position: &'a BlockPos,
     facing: Facing,
+    projectile_source: Option<(&'a DispenserBlockEntity, usize, &'a ItemStack)>,
 }
 
 fn triangle<R: Rng>(rng: &mut R, min: f64, max: f64) -> f64 {
@@ -262,7 +266,13 @@ impl BlockBehaviour for DispenserBlock {
                     world: args.world,
                     position: args.position,
                     facing: props.facing,
+                    projectile_source: projectile_source::is_projectile(expected.item)
+                        .then_some((dispenser, slot_index, &expected)),
                 };
+                if ctx.projectile_source.is_some() {
+                    Self::dispense(&ctx, dispenser, &mut expected.clone());
+                    return;
+                }
                 // DispenserBlock.dispenseFrom hands its behavior an owned stack, never a clone.
                 let mut item = pumpkin_inventory::inventory::slot_transaction::withdraw(
                     dispenser,
@@ -442,16 +452,15 @@ impl DispenserBlock {
 
     fn finish_projectile_launch(
         ctx: &DispenseContext<'_>,
-        item: &mut ItemStack,
+        item: &ItemStack,
         projectile: &Arc<impl EntityBase + 'static>,
         launch_event: WorldEvent,
     ) {
         // ProjectileDispenseBehavior.execute pays only after projectile admission.
-        if crate::entity::projectile::spawn_projectile(ctx.world, projectile.clone(), None) {
+        if projectile_source::launch(ctx, projectile.clone()) {
             if let Some(arrow) = projectile.cast_any().downcast_ref::<ArrowEntity>() {
                 arrow.apply_on_projectile_spawned(item);
             }
-            item.decrement(1);
             Self::play_dispense_effects(ctx, launch_event);
         }
     }
@@ -465,7 +474,7 @@ impl DispenserBlock {
         );
     }
 
-    fn fire_arrow(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn fire_arrow(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let projectile = item.copy_with_count(1);
 
         let facing = to_normal(ctx.facing);
@@ -623,7 +632,7 @@ impl DispenserBlock {
             .sync_world_event(WorldEvent::SoundDispenserDispense, *ctx.position, 0);
     }
 
-    fn dispense_snowball(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_snowball(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -644,7 +653,7 @@ impl DispenserBlock {
         );
     }
 
-    fn dispense_egg(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_egg(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),
@@ -667,7 +676,7 @@ impl DispenserBlock {
         );
     }
 
-    fn dispense_splash_potion(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_splash_potion(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),
@@ -690,7 +699,7 @@ impl DispenserBlock {
         );
     }
 
-    fn dispense_lingering_potion(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_lingering_potion(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),
@@ -713,7 +722,7 @@ impl DispenserBlock {
         );
     }
 
-    fn dispense_fire_charge(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_fire_charge(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -741,7 +750,7 @@ impl DispenserBlock {
         );
     }
 
-    fn dispense_wind_charge(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_wind_charge(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let entity = Entity::new(
             ctx.world.clone(),
             Self::projectile_spawn_position(ctx),
@@ -767,7 +776,7 @@ impl DispenserBlock {
         );
     }
 
-    fn dispense_firework_rocket(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_firework_rocket(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let rocket_item = item.copy_with_count(1);
         let facing = to_normal(ctx.facing);
         // Vanilla spawns fireworks closer to the dispenser face and slightly above center.
@@ -1141,7 +1150,7 @@ impl DispenserBlock {
         Some(true)
     }
 
-    fn dispense_experience_bottle(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
+    fn dispense_experience_bottle(ctx: &DispenseContext<'_>, item: &ItemStack) {
         let projectile = item.copy_with_count(1);
         let entity = Entity::new(
             ctx.world.clone(),

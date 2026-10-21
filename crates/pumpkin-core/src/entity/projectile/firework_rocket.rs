@@ -91,6 +91,18 @@ impl FireworkRocketEntity {
         yaw: f32,
         uncertainty: f32,
     ) -> bool {
+        let rocket = Self::prepare_shot(world, shooter, item, pitch, yaw, uncertainty);
+        super::spawn_projectile(world, std::sync::Arc::new(rocket), Some(shooter))
+    }
+
+    pub(crate) fn prepare_shot(
+        world: &std::sync::Arc<World>,
+        shooter: &Entity,
+        item: &ItemStack,
+        pitch: f32,
+        yaw: f32,
+        uncertainty: f32,
+    ) -> Self {
         let mut position = shooter.pos.load();
         position.y += shooter.get_eye_height() - 0.15;
         let entity = Entity::new(
@@ -103,7 +115,7 @@ impl FireworkRocketEntity {
         rocket
             .entity
             .set_velocity_from(pitch, yaw, 0.0, 1.6, uncertainty);
-        super::spawn_projectile(world, std::sync::Arc::new(rocket), Some(shooter))
+        rocket
     }
 
     /// Player.getProjectile / `CrossbowItem.getSupportedHeldProjectiles` allow rockets only in either hand.

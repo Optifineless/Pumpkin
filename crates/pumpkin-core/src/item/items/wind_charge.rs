@@ -48,9 +48,9 @@ impl ItemBehaviour for WindChargeItem {
         _pitch: f32,
         hand: pumpkin_util::Hand,
     ) -> bool {
-        // WindChargeItem.use consumes the observed hand, before effects in the concurrent tick.
-        let Some(receipt) =
-            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        // WindChargeItem.use pays the observed hand with admitted insertion.
+        let Some(mut source) =
+            crate::item::projectile_stock::ProjectileSource::plan_hand(player, hand, stack)
         else {
             return false;
         };
@@ -63,15 +63,9 @@ impl ItemBehaviour for WindChargeItem {
         let (yaw, pitch) = player.rotation();
         wind_charge.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
 
-        if !crate::entity::projectile::spawn_projectile(
-            &world,
-            Arc::new(WindChargeEntity::new_normal(wind_charge)),
-            Some(player.get_entity()),
-        ) {
-            receipt.refund(player);
+        if !source.launch(player, Arc::new(WindChargeEntity::new_normal(wind_charge))) {
             return false;
         }
-        receipt.publish(player);
         world.play_sound(
             Sound::EntityWindChargeThrow,
             pumpkin_data::sound::SoundCategory::Neutral,

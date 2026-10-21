@@ -36,14 +36,14 @@ impl ItemBehaviour for FireworkRocketItem {
         if player.get_entity().is_fall_flying() {
             return BlockActionResult::Pass;
         }
-        let Some(receipt) =
-            crate::item::projectile_stock::ProjectileStock::claim_observed(player, item)
+        let Some(mut source) =
+            crate::item::projectile_stock::ProjectileSource::plan_observed(player, item)
         else {
             return BlockActionResult::Fail;
         };
         let world = player.world();
         let entity = Entity::new(
-            world.clone(),
+            world,
             Vector3::new(
                 f64::from(location.0.x) + f64::from(cursor_pos.x),
                 f64::from(location.0.y) + f64::from(cursor_pos.y),
@@ -53,19 +53,10 @@ impl ItemBehaviour for FireworkRocketItem {
         );
         let entity =
             FireworkRocketEntity::with_item(entity, item.clone(), Some(player.get_entity()), false);
-        let admitted = crate::entity::projectile::spawn_projectile(
-            &world,
-            Arc::new(entity),
-            Some(player.get_entity()),
-        );
-        let source = receipt.source;
-        if admitted {
-            receipt.publish(player);
-        } else {
-            receipt.refund(player);
-        }
+        let admitted = source.launch(player, Arc::new(entity));
+        let source_slot = source.source;
         // Both protocol handlers condition clone writeback on their pre-use snapshot.
-        *item = player.inventory().get_slot(source);
+        *item = player.inventory().get_slot(source_slot);
         if admitted {
             BlockActionResult::Success
         } else {
@@ -103,15 +94,15 @@ impl ItemBehaviour for FireworkRocketItem {
             if observed.is_empty() || observed.item.id != Item::FIREWORK_ROCKET.id {
                 return false;
             }
-            let Some(receipt) =
-                crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, observed)
+            let Some(mut source) =
+                crate::item::projectile_stock::ProjectileSource::plan_hand(player, hand, observed)
             else {
                 return false;
             };
 
             let world = player.world();
             let entity = Entity::new(
-                world.clone(),
+                world,
                 player.get_entity().pos.load(),
                 &EntityType::FIREWORK_ROCKET,
             );
@@ -122,15 +113,9 @@ impl ItemBehaviour for FireworkRocketItem {
                 Some(player.get_entity()),
                 true,
             );
-            if !crate::entity::projectile::spawn_projectile(
-                &world,
-                Arc::new(rocket),
-                Some(player.get_entity()),
-            ) {
-                receipt.refund(player);
+            if !source.launch(player, Arc::new(rocket)) {
                 return false;
             }
-            receipt.publish(player);
             return true;
         }
         false

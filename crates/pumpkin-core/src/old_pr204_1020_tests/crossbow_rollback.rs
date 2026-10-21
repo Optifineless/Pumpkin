@@ -83,7 +83,7 @@ fn restored_charge_case(
             veto,
             false,
             Some(Arc::new(move |p| {
-                assert_eq!(charge(&p.inventory().get_stack(slot(hand))), 0);
+                assert_eq!(charge(&p.inventory().get_stack(slot(hand))), rounds);
                 p.inventory().set_stack(slot(hand), snapshot.clone());
             })),
         );
@@ -148,7 +148,7 @@ fn assert_successful_draw(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn old_pr204_1020_crossbow_other_charge_still_refunds_original_payment() {
+async fn old_pr204_1020_crossbow_other_charge_preserves_callback_stock() {
     run(|f| {
         for veto in [Veto::Launch, Veto::Spawn] {
             for fresh_uid in [false, true] {
@@ -183,7 +183,7 @@ async fn old_pr204_1020_crossbow_other_charge_still_refunds_original_payment() {
                 let current = p.player.inventory().get_stack(0);
                 assert_eq!(current.uid, expected.uid);
                 assert!(current.are_equal(&expected));
-                assert_eq!(loose(&p.player, &Item::ARROW), 2);
+                assert_eq!(loose(&p.player, &Item::ARROW), 1);
                 assert_eq!(ground(&p.player, &Item::ARROW), 0);
                 assert_eq!(f.world().entities.load().len(), before);
                 assert_eq!(current.get_damage(), 0);

@@ -27,9 +27,6 @@ async fn old_pr204_1020_powered_dispenser_admission_owns_stock() {
         ] {
             for veto in [Veto::Launch, Veto::Spawn, Veto::None] {
                 for edit in 0..4 {
-                    if veto == Veto::None && edit != 0 {
-                        continue;
-                    }
                     case(f, &mut p, &hooks, item, veto, edit);
                 }
             }
@@ -57,6 +54,7 @@ pub(super) fn case(
         veto,
         false,
         Some(Arc::new(move |_| {
+            assert_eq!(callback_dispenser.get_stack(0).item_count, 3);
             if edit == 1 {
                 callback_dispenser.set_stack(0, ItemStack::new(2, &Item::DIAMOND));
             }
@@ -105,7 +103,8 @@ pub(super) fn case(
         1,
         "scheduled queue did not attempt the projectile"
     );
-    let admitted = veto == Veto::None;
+    assert_eq!(hooks.state.lock().unwrap().dispenses, 1);
+    let admitted = veto == Veto::None && edit == 0;
     let stock = dispenser.get_stack(0);
     let retained = if stock.item == item {
         usize::from(stock.item_count)
@@ -114,8 +113,12 @@ pub(super) fn case(
     };
     assert_eq!(
         retained + ground(&p.player, item) + loose(&p.player, item) - ground_before,
-        3 - usize::from(admitted),
-        "dispenser consumed rejected local stock or lost retired refund"
+        if edit == 1 {
+            0
+        } else {
+            3 - usize::from(admitted)
+        },
+        "dispenser changed callback stock or lost real retirement stock"
     );
     if edit == 0 || admitted {
         assert_eq!(stock.item_count, 3 - u8::from(admitted));
@@ -171,4 +174,49 @@ fn prepare_dispenser(
     dispenser.set_stack(0, original);
     world.add_block_entity(dispenser.clone());
     dispenser
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn old_pr204_1020_dispenser_singleton_snapshot_denial_has_no_refund() {
+    use crate::block::{
+        BlockBehaviour, OnScheduledTickArgs, blocks::redstone::dispenser::DispenserBlock,
+    };
+    run(|f| {
+        for item in [&Item::ARROW, &Item::FIREWORK_ROCKET] {
+            for veto in [Veto::Launch, Veto::Spawn] {
+                let p = player(f);
+                let hooks = Hooks::install(&f.server, &p.player);
+                let world = f.world();
+                let dispenser = prepare_dispenser(&world, item);
+                let original = stack(1, item);
+                dispenser.set_stack(0, original.clone());
+                let before = world.entities.load().len();
+                let ground_before = ground(&p.player, item);
+                for _ in 0..3 {
+                    let snapshot = original.clone();
+                    let callback_dispenser = dispenser.clone();
+                    hooks.configure(
+                        veto,
+                        false,
+                        Some(Arc::new(move |_| {
+                            callback_dispenser.set_stack(0, snapshot.clone());
+                        })),
+                    );
+                    hooks.state.lock().unwrap().owner = Some(dispenser.slot_transaction(0));
+                    DispenserBlock.on_scheduled_tick(OnScheduledTickArgs {
+                        world: &world,
+                        block: &Block::DISPENSER,
+                        position: &BlockPos::new(8, 64, 8),
+                    });
+                    let actual = dispenser.get_stack(0);
+                    assert_eq!(actual.uid, original.uid);
+                    assert!(actual.are_equal(&original));
+                    assert_eq!(ground(&p.player, item), ground_before);
+                    assert_eq!(world.entities.load().len(), before);
+                    assert_eq!(hooks.state.lock().unwrap().dispenses, 1);
+                }
+            }
+        }
+    })
+    .await;
 }

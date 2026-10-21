@@ -29,7 +29,12 @@ impl TridentItem {
                 .is_some_and(|max| stack.get_damage() >= max - 1)
     }
 
-    fn damage_thrown_trident(player: &Player, trident: &TridentEntity, paid: bool) {
+    fn damage_thrown_trident(
+        player: &Player,
+        trident: &TridentEntity,
+        paid: bool,
+        session: &crate::item::projectile_stock::ProjectileSession,
+    ) {
         if !paid || player.gamemode.load() == GameMode::Creative {
             return;
         }
@@ -59,6 +64,9 @@ impl TridentItem {
                 return;
             }
             amount = event.damage;
+        }
+        if !session.is_current(player) {
+            return;
         }
         let mut stack = trident
             .item_stack
@@ -98,20 +106,21 @@ impl TridentItem {
 
     fn throw_trident(player: &Player, stack: &ItemStack) {
         let world = player.world();
-        let Some(receipt) =
-            crate::item::projectile_stock::ProjectileStock::claim_observed(player, stack)
+        #[cfg(test)]
+        crate::world::projectile_test_support::after_world_snapshot(&world, player);
+        let Some(mut source) =
+            crate::item::projectile_stock::ProjectileSource::plan_observed(player, stack)
         else {
             return;
         };
-        let paid = !receipt.receipt.is_empty();
-        receipt.publish(player);
+        let paid = source.paid();
         let (yaw, pitch) = player.rotation();
         let entity = Entity::new(world.clone(), player.position(), &EntityType::TRIDENT);
         let trident = Arc::new(TridentEntity::new_shot(
             entity,
             player.get_entity(),
             if paid {
-                receipt.receipt.clone()
+                source.transfer()
             } else {
                 stack.copy_with_count(1)
             },
@@ -126,17 +135,14 @@ impl TridentItem {
             &trident.entity,
             player.get_entity(),
         );
-        if !crate::entity::projectile::spawn_projectile(
-            &world,
-            trident.clone(),
-            Some(player.get_entity()),
-        ) {
-            receipt.refund(player);
+        if !source.launch(player, trident.clone()) {
             player.living_entity.clear_active_hand();
             return;
         }
         trident.apply_on_projectile_spawned(stack);
-        Self::damage_thrown_trident(player, &trident, paid);
+        if source.session_current(player) {
+            Self::damage_thrown_trident(player, &trident, paid, &source.session());
+        }
         super::projectile_weapon::ProjectileWeaponItem::finish_shooting(player, stack);
 
         world.play_sound(

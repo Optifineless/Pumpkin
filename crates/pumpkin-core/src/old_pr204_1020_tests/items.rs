@@ -133,8 +133,8 @@ async fn old_pr204_1020_firework_block_and_flying_claim_once() {
                             Some(Arc::new(move |p| {
                                 assert_eq!(
                                     p.inventory().get_stack(source).item_count,
-                                    1,
-                                    "rocket stock was not claimed before callback"
+                                    2,
+                                    "rocket callback did not observe the unconsumed source"
                                 );
                                 if edit == 1 {
                                     let mut grant = p.inventory().get_stack(source);
@@ -158,17 +158,13 @@ async fn old_pr204_1020_firework_block_and_flying_claim_once() {
                         } else {
                             block_rocket(&p, f, hand);
                         }
-                        let admitted = veto == Veto::None;
-                        // Callback grants and replacements happen after the authoritative claim.
-                        let expected = if admitted {
-                            if edit == 1 { 2 } else { usize::from(edit != 3) }
-                        } else if edit == 1 {
-                            3
-                        } else if edit == 3 {
-                            1
-                        } else {
-                            2
+                        let admitted = veto == Veto::None && edit == 0;
+                        let callback_stock = match edit {
+                            1 => 3,
+                            3 => 0,
+                            _ => 2,
                         };
+                        let expected = callback_stock - usize::from(admitted);
                         assert_eq!(
                             loose(&p.player, &Item::FIREWORK_ROCKET),
                             expected,
@@ -329,8 +325,12 @@ fn throwable_callback_controls(f: &crate::entity::death_test_world::DeathTestWor
             use_item(&p, f, Hand::Right);
             assert_eq!(
                 loose(&p.player, &Item::EGG) + ground(&p.player, &Item::EGG) - before,
-                if edit == 1 { 3 } else { 1 },
-                "callback stock or the paid refund was lost"
+                match edit {
+                    1 => 2,
+                    2 => 1,
+                    _ => 0,
+                },
+                "denial changed the callback's authoritative stock"
             );
             if edit == 0 || edit == 3 {
                 assert_eq!(p.player.inventory().get_stack(0).item, &Item::DIAMOND);
@@ -358,7 +358,7 @@ fn trident_callback_controls(f: &crate::entity::death_test_world::DeathTestWorld
         );
         shoot(&p, f, Hand::Right);
         assert_eq!(p.player.inventory().get_stack(0).item, &Item::DIAMOND);
-        assert_eq!(loose(&p.player, &Item::TRIDENT), 1);
+        assert_eq!(loose(&p.player, &Item::TRIDENT), 0);
     }
     let p = player(f);
     let hooks = Hooks::install(&f.server, &p.player);

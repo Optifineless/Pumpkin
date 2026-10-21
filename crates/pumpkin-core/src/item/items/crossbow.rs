@@ -8,15 +8,11 @@ use crate::entity::player::Player;
 use crate::item::items::projectile_weapon::ProjectileWeaponItem;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use pumpkin_data::data_component::DataComponent;
-use pumpkin_data::data_component_impl::{
-    ChargedProjectilesImpl, EquipmentSlot, IntangibleProjectileImpl,
-};
+use pumpkin_data::data_component_impl::{ChargedProjectilesImpl, EquipmentSlot};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_inventory::{
-    Inventory, inventory::slot_transaction, player::player_inventory::PlayerInventory,
-};
+use pumpkin_inventory::{Inventory, player::player_inventory::PlayerInventory};
 use pumpkin_util::{GameMode, Hand};
 
 pub struct CrossbowItem;
@@ -203,21 +199,15 @@ impl CrossbowItem {
         if projectiles.is_empty() {
             return;
         }
-        let paid_projectiles = projectiles
-            .iter()
-            .filter(|projectile| {
-                projectile
-                    .get_data_component::<IntangibleProjectileImpl>()
-                    .is_none()
-            })
-            .cloned()
-            .collect();
-        // CrossbowItem.performShooting takes and empties the charge before shoot can call plugins.
+        let Some(mut payment) =
+            crate::item::projectile_stock::ProjectileSource::charge(player, slot, &expected)
+        else {
+            return;
+        };
+        // CrossbowItem.performShooting gives projectiles an unloaded weapon snapshot;
+        // only the live inventory charge waits for the first insertion.
         held.patch
             .retain(|(id, _)| *id != DataComponent::ChargedProjectiles);
-        if !slot_transaction::exchange(player.inventory().as_ref(), slot, &expected, held.clone()) {
-            return;
-        }
         let world = player.world();
         let equipped = EquippedItem {
             stack: held,
@@ -227,6 +217,7 @@ impl CrossbowItem {
             },
             inventory_index: Some(slot),
         };
+        let session = payment.session();
         let admitted = ProjectileWeaponItem::shoot_projectiles_with_callback(
             &world,
             player.get_entity(),
@@ -236,7 +227,16 @@ impl CrossbowItem {
             1.0,
             false,
             player.has_infinite_materials(),
-            |projectile| ProjectileWeaponItem::hurt_shooting_weapon(player, &equipped, projectile),
+            |projectile| payment.insert(player, projectile),
+            |projectile| {
+                session.is_current(player)
+                    && ProjectileWeaponItem::hurt_shooting_weapon(
+                        player,
+                        &equipped,
+                        projectile,
+                        Some(&session),
+                    )
+            },
         );
         if admitted.contains(&true) {
             // A charge is one draw: even a later intangible round spends its shared payment.
@@ -247,60 +247,12 @@ impl CrossbowItem {
                 SoundCategory::Players,
                 &player.position(),
             );
-        } else {
-            Self::refund_denied_charge(player, &expected, paid_projectiles);
         }
-        player.sync_hand_slot(slot, player.inventory().get_stack(slot));
+        payment.publish(player);
         if let Some(destination) = ProjectileWeaponItem::weapon_slot(player, &expected)
             && destination != slot
         {
             player.sync_hand_slot(destination, player.inventory().get_stack(destination));
-        }
-    }
-
-    fn refund_denied_charge(
-        player: &Player,
-        expected: &ItemStack,
-        mut paid_projectiles: Vec<ItemStack>,
-    ) {
-        let inventory = player.inventory();
-        let owner = inventory.slot_transaction(0);
-        let guard = owner.lock();
-        if owner.is_live()
-            && let Some(slot) = ProjectileWeaponItem::weapon_slot(player, expected)
-        {
-            let current = inventory.get_stack(slot);
-            if let Some(charge) = current.get_data_component::<ChargedProjectilesImpl>() {
-                for retained in charge
-                    .projectiles
-                    .iter()
-                    .filter_map(ItemStack::read_item_stack)
-                {
-                    // Retained paid stock owns original payments, independently of free side rounds.
-                    if retained
-                        .get_data_component::<IntangibleProjectileImpl>()
-                        .is_none()
-                    {
-                        let mut retained_count = retained.item_count;
-                        for paid in &mut paid_projectiles {
-                            if paid.item == retained.item {
-                                let matched = paid.item_count.min(retained_count);
-                                paid.decrement(matched);
-                                retained_count -= matched;
-                            }
-                            if retained_count == 0 {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        drop(guard);
-        for projectile in paid_projectiles {
-            if !projectile.is_empty() {
-                crate::item::item_utils::give_or_drop(player, projectile);
-            }
         }
     }
 }

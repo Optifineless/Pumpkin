@@ -46,9 +46,9 @@ impl ItemBehaviour for SnowBallItem {
         _pitch: f32,
         hand: pumpkin_util::Hand,
     ) -> bool {
-        // SnowballItem.use consumes the observed hand, before effects in the concurrent tick.
-        let Some(receipt) =
-            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        // SnowballItem.use pays the observed hand with the first admitted insertion.
+        let Some(mut source) =
+            crate::item::projectile_stock::ProjectileSource::plan_hand(player, hand, stack)
         else {
             return false;
         };
@@ -60,15 +60,9 @@ impl ItemBehaviour for SnowBallItem {
         snowball
             .thrown
             .set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !crate::entity::projectile::spawn_projectile(
-            &world,
-            Arc::new(snowball),
-            Some(player.get_entity()),
-        ) {
-            receipt.refund(player);
+        if !source.launch(player, Arc::new(snowball)) {
             return false;
         }
-        receipt.publish(player);
         world.play_sound(
             Sound::EntitySnowballThrow,
             pumpkin_data::sound::SoundCategory::Neutral,

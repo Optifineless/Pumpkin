@@ -230,20 +230,27 @@ impl Player {
     }
 
     // Returns false after an actual break, even if its callback restores the same UID.
-    pub(crate) fn damage_projectile_weapon(&self, item: &EquippedItem, amount: i32) -> bool {
+    pub(crate) fn damage_projectile_weapon(
+        &self,
+        item: &EquippedItem,
+        amount: i32,
+        current: impl Fn() -> bool,
+    ) -> bool {
         item.inventory_index.is_none_or(|index| {
             self.damage_inventory_item_following(
                 &item.slot,
                 index,
                 None,
                 |stack| {
-                    (!stack.is_empty()
+                    (current()
+                        && !stack.is_empty()
                         && stack.uid == item.stack.uid
                         && stack.item == item.stack.item)
                         .then_some(amount)
                 },
                 true,
             ) != Some(DamageResult::Broken)
+                && current()
         })
     }
 

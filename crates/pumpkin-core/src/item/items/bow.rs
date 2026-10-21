@@ -6,7 +6,7 @@ use crate::entity::equipment_damage::EquippedItem;
 use crate::entity::player::Player;
 use crate::entity::projectile::arrow::ArrowEntity;
 use crate::item::items::projectile_weapon::ProjectileWeaponItem;
-use crate::item::projectile_stock::ProjectileStock;
+use crate::item::projectile_stock::ProjectileSource;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::item::Item;
@@ -21,7 +21,7 @@ pub struct BowItem;
 
 struct BowDraw {
     projectiles: Vec<ItemStack>,
-    payment: Option<ProjectileStock>,
+    payment: ProjectileSource,
 }
 
 impl ItemMetadata for BowItem {
@@ -116,12 +116,9 @@ impl BowItem {
             Hand::Right => usize::from(inventory.get_selected_slot()),
             Hand::Left => PlayerInventory::OFF_HAND_SLOT,
         };
-        let Some(drawn) = Self::draw_for_release(player, weapon, weapon_slot) else {
+        let Some(mut drawn) = Self::draw_for_release(player, weapon, weapon_slot) else {
             return;
         };
-        if let Some(payment) = &drawn.payment {
-            payment.publish(player);
-        }
 
         // Calculate power and fire
         let power = Self::get_power_for_time(use_ticks);
@@ -144,13 +141,9 @@ impl BowItem {
             power,
             1.0,
             is_crit,
-            Some(&equipped),
+            Some((&equipped, &mut drawn.payment)),
         );
-        if !admitted.contains(&true)
-            && let Some(payment) = drawn.payment
-        {
-            payment.refund(player);
-        }
+        drawn.payment.publish(player);
         if admitted.contains(&true) {
             ProjectileWeaponItem::finish_shooting(player, weapon);
         }
@@ -191,11 +184,10 @@ impl BowItem {
             &projectile,
             gamemode == GameMode::Creative,
         );
-        let ammo_update = if payment > 0 {
-            let slot = arrow_slot?;
-            Some(ProjectileStock::claim(player, slot, &projectile, payment)?)
+        let ammo_update = if let Some(slot) = arrow_slot {
+            ProjectileSource::plan(player, slot, &projectile, payment)?.with_weapon(weapon)
         } else {
-            None
+            ProjectileSource::free_weapon(player, weapon_slot, weapon)?
         };
         Some(BowDraw {
             projectiles,
@@ -265,8 +257,12 @@ impl BowItem {
         power: f32,
         uncertainty: f32,
         is_crit: bool,
-        equipped: Option<&EquippedItem>,
+        attempt: Option<(&EquippedItem, &mut ProjectileSource)>,
     ) -> Vec<bool> {
+        let (equipped, mut payment) = match attempt {
+            Some((equipped, source)) => (Some(equipped), Some(source)),
+            None => (None, None),
+        };
         if power < 0.1 || projectiles.is_empty() {
             return vec![false; projectiles.len()];
         }
@@ -275,6 +271,7 @@ impl BowItem {
         let is_creative = player.gamemode.load() == GameMode::Creative;
         let speed = power * ProjectileWeaponItem::ARROW_SPEED_MULTIPLIER;
 
+        let session = payment.as_ref().map(|source| source.session());
         let admitted = ProjectileWeaponItem::shoot_projectiles_with_callback(
             &world,
             player.get_entity(),
@@ -285,9 +282,23 @@ impl BowItem {
             is_crit,
             is_creative,
             |projectile| {
-                equipped.is_none_or(|equipped| {
-                    ProjectileWeaponItem::hurt_shooting_weapon(player, equipped, projectile)
-                })
+                payment.as_mut().map_or_else(
+                    || world.insert_admitted_projectile(projectile.clone(), |append| append()),
+                    |source| source.insert(player, projectile.clone()),
+                )
+            },
+            |projectile| {
+                session
+                    .as_ref()
+                    .is_none_or(|session| session.is_current(player))
+                    && equipped.is_none_or(|equipped| {
+                        ProjectileWeaponItem::hurt_shooting_weapon(
+                            player,
+                            equipped,
+                            projectile,
+                            session.as_ref(),
+                        )
+                    })
             },
         );
 

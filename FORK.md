@@ -2,73 +2,73 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
-## Projectile launch admission and conservation (#200)
+## Projectile launch admission and conservation (#200, PR #394 review round 4)
 
-One internal launch boundary honors `ProjectileLaunchEvent` before the existing
-world insertion and `EntitySpawnEvent` admission. Rejected item/dispenser shots
-restore paid stock, preserve callback replacements and publish live source slots;
-fully denied launches/casts publish no success sound, statistic, cooldown or wear.
-A bow or crossbow draw has one shared payment: full denial refunds paid rounds
-absent from the retained weapon; any admitted round spends the whole draw, with no
-remaining charge or loose refund. Wear follows the retained weapon for each
-admitted round and stops on actual break. Paid thrown tridents receive eligible,
-cancellable `hurtWithoutBreaking` damage; Creative copies remain noncollectible.
+Projectile items use admission-first payment. Launch callbacks see the original,
+still-unconsumed inventory stack or loaded crossbow charge. Each candidate receives
+one `ProjectileLaunchEvent`; only allowed launches receive `EntitySpawnEvent`.
+Bow and crossbow volleys preflight every candidate before publishing any round,
+clearing a charge, spending ammunition or applying wear. Callbacks therefore see
+no earlier published round or wear, and can observe candidates later discarded
+because the retained weapon breaks. Candidate order, spread, components and
+paid/Creative/intangible pickup rules stay unchanged.
 
-The supplied Java 26.3 `Projectile.spawnProjectile`, `ProjectileWeaponItem.shoot`,
-`CrossbowItem.performShooting` and `TridentItem.releaseUsing` establish the successful
-launch/payment/wear chain. Java does not test `addFreshEntity`'s boolean: refund,
-quiet veto and deferred throwable sounds are the fork's explicit plugin contract.
-Native API 8, public layouts/signatures, Wasm WIT and saved component meanings are
-unchanged. No impact/collision or Riptide movement/water/passenger overhaul is
-included. Implemented by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+The first successful entity-list insertion commits one shared draw payment or
+retires the exact loaded charge, under the live source inventory owner. Failed
+insertion, full denial and stale source/life/world/session attempts do not change
+server stock. Ordinary denied crossbows remain loaded. Partial success spends the
+payment once and never returns it. All callback stock edits are authoritative
+changes to the unconsumed source; there is no receipt matching, inferred rollback,
+loose refund or refund drop. Increments, component edits, replacements and moved
+ordinary ammunition invalidate that snapshot without compensation. An unchanged,
+uniquely retained weapon UID may move within its original inventory; commit and
+wear follow its validated destination. Publication stops after actual break,
+a missing retained weapon or an interrupted life, world or session.
 
-PR #394 review round 2: when a launch or spawn veto restores the original charged
-snapshot to the same crossbow UID, that matching charge already owns the paid
-ammunition. Full denial preserves it without also returning loose ammunition,
-including Multishot and rockets. Unrelated callback component edits survive;
-different charges and fresh-UID replacements still return the original payment.
-Native API 8, public layouts/signatures, Wasm WIT and saved-data meaning are
-unchanged. In-game verification: Not yet.
+Projectile dispensers run `BlockDispenseEvent` once before launch admission and
+leave their original slot untouched until insertion commits one item. Removed,
+recreated, retired and changed sources cannot pay. Container destruction and
+unloading continue to deliver or save their real stock through existing retirement;
+projectile denial never refunds into an obsolete block entity. Nonprojectile
+dispenser behavior keeps its existing withdrawal/refund path.
 
-PR #394 review round 3: crossbow firing tracks the original paid rounds separately
-from intangible Multishot copies. After full denial, each paid round still loaded
-in the same-UID weapon owns one matching original payment by projectile item.
-Only missing payments return loose; full, partial, intangible-only and empty
-callback charges keep their edits. Different-UID or different-projectile charges
-remain callback stock and do not consume the original payment. Ordinary full
-denial leaves the weapon empty and refunds its payment loose, so firing again
-requires reloading. Matching also accounts for quantities in saved charge entries.
-No lock is held during refunds or callbacks. Native API 8,
-public layouts/signatures, Wasm WIT and saved component meanings are unchanged.
-Implemented by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+Prepared projectiles must belong to their insertion world. A transfer between
+the initial world read and source planning cannot retarget an attempt.
+Metadata initialization and UUID reservation follow admission. The source owner
+covers validation, the fallible entity-list append and a precomputed infallible
+storage debit. No owner or new projectile reservation crosses callbacks, packet
+sends or tracker/accounting publication; retries never mutate payment. Generic
+riding-tree insertion keeps its existing behavior. Paid trident transfers retain
+cancellable `hurtWithoutBreaking`; Creative copies remain noncollectible. Rocket
+hand-clone reconciliation and Java/Bedrock authoritative slot publication remain.
 
-Round 3 checked against official Java 26.3 `CrossbowItem.performShooting` and
-`ProjectileWeaponItem.draw/useAmmo`, decompiled with Vineflower 1.12.0 (inner
-server JAR SHA-256 `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
+Checked against official Java 26.3 `Projectile.spawnProjectile`,
+`ProjectileWeaponItem.shoot/draw/useAmmo`, `BowItem.releaseUsing`,
+`CrossbowItem.tryLoadProjectiles/performShooting` and `TridentItem.releaseUsing`,
+decompiled with Vineflower 1.12.0 (inner server JAR SHA-256
+`a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`). Java clears the
+crossbow charge before shooting and does not check `addFreshEntity`'s boolean.
+The prepayment callback observations, complete-volley preflight, quiet denial and
+conditional payment above are deliberate fork event-order changes; exact Paper
+parity is not claimed. This supersedes rounds 2–3's retained-payment matching and
+loose denial refunds. AI/fishing vetoes and matching bobber cleanup remain;
+impact, Riptide and fall-flying behavior are outside this payment change.
 
-Twenty-four real use/release regressions cover both veto events and ammunition
-types, including repeated partial charges and split/merged saved counts. Each
-scenario has a recorded failing negative control against round 2, unconditional
-refunds, blanket charge suppression or quantity-blind entry matching. Admitted
-shots remain controls for spent payment. Temporary mutations are not retained.
+API 8 (same version): public signatures/layouts, Wasm WIT and saved
+`ChargedProjectiles`/`IntangibleProjectile` meanings are unchanged; the source plan
+and insertion split are internal. Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
 
-Audit backlog: loose-ammunition rollback needs explicit provenance. Restoring the
-pre-claim same-UID count is indistinguishable from the callback grant protected
-by `old_pr204_1020_tests/items.rs`; suppressing that refund would lose supported
-grants. Bow denial refunds introduce this ambiguity relative to the merge base.
-The charged-crossbow fix does not redefine that separate grant contract.
-
-Play test: with a protection plugin that restores the charged crossbow when
-cancelling launch or spawn, try firing three times with two arrows, then repeat
-with two rockets and with Multishot. Expect one loose item and one paid loaded
-charge throughout, no ground refund, shot sound or wear. Disable cancellation
-and fire; expect the charge to clear and only the loose item to remain. Record
-the ammunition counts and crossbow before and after the repeated vetoes.
-Also have the protection callback keep only the paid round, then only intangible
-side rounds, then an empty charge. Expect two physical items throughout: a paid
-loaded round prevents a loose refund; missing paid rounds return loose. Reload
-before retrying an empty crossbow. Repeat with arrows and rockets and capture the
-loaded, inventory and ground counts for both launch and spawn cancellation.
+Play test: cancel launch, then spawn, while restoring the original bow ammunition,
+trident, snowballs or charged crossbow. Repeat three times; expect unchanged stock,
+no loose refund, projectile, success sound, wear or cooldown. Repeat with arrows,
+rockets and Multishot. Allow part of a Multishot volley while restoring its original
+charged snapshot; expect one payment and no replayable charge. Move the unchanged
+weapon during admission; expect admitted wear and charge clearing at its destination.
+Replace or edit the payment source instead; expect the callback's exact stock and
+no projectile. Remove/recreate a firing dispenser during admission; expect only its
+real dropped stock. Record inventory, loaded charges, ground items and projectile
+counts from the holder and a nearby observer, including Java/Bedrock rocket use.
 
 ## Minecart placement centers once (#129)
 

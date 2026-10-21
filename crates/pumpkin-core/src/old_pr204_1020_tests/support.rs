@@ -36,6 +36,7 @@ use std::{
 
 pub use std::sync::atomic::Ordering::SeqCst;
 pub type Edit = Arc<dyn Fn(&Arc<Player>) + Send + Sync>;
+pub type AdmissionEdit = Arc<dyn Fn(&Arc<Player>, char, usize) + Send + Sync>;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Veto {
     None,
@@ -46,8 +47,10 @@ pub enum Veto {
 pub struct State {
     pub veto: Option<Veto>,
     pub partial: bool,
+    pub deny_index: Option<usize>,
     pub edit: Option<Edit>,
     pub observer: Option<Edit>,
+    pub admission_observer: Option<AdmissionEdit>,
     pub damage_edit: Option<Edit>,
     pub break_edit: Option<Edit>,
     pub cast_edit: Option<Edit>,
@@ -57,11 +60,14 @@ pub struct State {
     pub damage: usize,
     pub damage_amounts: Vec<i32>,
     pub casts: usize,
+    pub dispenses: usize,
     pub vibrations: usize,
     pub damage_amount: Option<i32>,
     pub cancel_damage: bool,
     pub owner: Option<Arc<Transaction>>,
     pub observe_any: bool,
+    pub check_reservations: bool,
+    pub packet_probes: usize,
 }
 pub struct Hooks {
     pub player: Arc<Player>,
@@ -83,6 +89,20 @@ impl Hooks {
             EventPriority::Normal,
             true,
         );
+        server
+            .plugin_manager
+            .register::<crate::plugin::api::events::block::block_dispense::BlockDispenseEvent, _>(
+                hook.clone(),
+                EventPriority::Normal,
+                true,
+            );
+        server
+            .plugin_manager
+            .register::<crate::plugin::api::events::server::packet::PacketSentEvent, _>(
+                hook.clone(),
+                EventPriority::Normal,
+                true,
+            );
         server.plugin_manager.register::<PlayerItemDamageEvent, _>(
             hook.clone(),
             EventPriority::Normal,
@@ -118,7 +138,7 @@ impl Hooks {
         (s.launches, s.spawns, s.damage)
     }
     fn admission(&self, stage: char, id: i32) -> bool {
-        let (deny, edit, owner) = {
+        let (deny, edit, owner, admission_observer, index) = {
             let mut s = self.state.lock().unwrap();
             if stage == 'S' && !s.order.contains(&('L', id)) {
                 return false;
@@ -140,22 +160,32 @@ impl Hooks {
                     Veto::Spawn
                 });
             (
-                selected && (!s.partial || n == 0),
+                selected
+                    && s.deny_index
+                        .map_or(!s.partial || n == 0, |index| n == index),
                 if (selected || (s.veto == Some(Veto::None) && stage == 'L')) && n == 0 {
                     s.edit.clone()
                 } else {
                     None
                 },
                 s.owner.clone(),
+                s.admission_observer.clone(),
+                n,
             )
         };
         assert_owner_released(self.player.inventory().slot_transaction(0));
         if let Some(owner) = owner {
             assert_owner_released(owner);
         }
+        if self.state.lock().unwrap().check_reservations {
+            assert_reservations_released(self.player.world());
+        }
         let observer = self.state.lock().unwrap().observer.clone();
         if let Some(observer) = observer {
             observer(&self.player);
+        }
+        if let Some(observer) = admission_observer {
+            observer(&self.player, stage, index);
         }
         if let Some(edit) = edit {
             edit(&self.player);
@@ -186,6 +216,43 @@ impl EventHandler<EntitySpawnEvent> for Hooks {
         event: &'a mut EntitySpawnEvent,
     ) -> BoxFuture<'a, ()> {
         event.cancelled |= self.admission('S', event.entity_id);
+        Box::pin(async {})
+    }
+}
+impl EventHandler<crate::plugin::api::events::block::block_dispense::BlockDispenseEvent> for Hooks {
+    fn handle_blocking<'a>(
+        &'a self,
+        _: &'a Arc<Server>,
+        _: &'a mut crate::plugin::api::events::block::block_dispense::BlockDispenseEvent,
+    ) -> BoxFuture<'a, ()> {
+        let owner = {
+            let mut state = self.state.lock().unwrap();
+            state.dispenses += 1;
+            state.owner.clone()
+        };
+        if let Some(owner) = owner {
+            assert_owner_released(owner);
+        }
+        Box::pin(async {})
+    }
+}
+impl EventHandler<crate::plugin::api::events::server::packet::PacketSentEvent> for Hooks {
+    fn handle_blocking<'a>(
+        &'a self,
+        _: &'a Arc<Server>,
+        event: &'a mut crate::plugin::api::events::server::packet::PacketSentEvent,
+    ) -> BoxFuture<'a, ()> {
+        let probe = {
+            let mut state = self.state.lock().unwrap();
+            let probe =
+                event.player.entity_id() == self.player.entity_id() && state.check_reservations;
+            state.packet_probes += usize::from(probe);
+            probe
+        };
+        if probe {
+            assert_owner_released(self.player.inventory().slot_transaction(0));
+            assert_reservations_released(self.player.world());
+        }
         Box::pin(async {})
     }
 }
@@ -228,6 +295,17 @@ pub fn assert_owner_released(owner: Arc<Transaction>) {
     assert!(
         recv.recv_timeout(Duration::from_secs(2)).unwrap(),
         "projectile callback retained transaction ownership"
+    );
+}
+pub fn assert_reservations_released(world: Arc<crate::world::World>) {
+    let (send, recv) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let released = crate::world::projectile_test_support::reservations_released(&world);
+        let _ = send.send(released);
+    });
+    assert!(
+        recv.recv_timeout(Duration::from_secs(2)).unwrap(),
+        "projectile callback or packet retained a UUID reservation"
     );
 }
 pub async fn run(action: impl FnOnce(&DeathTestWorld) + Send + 'static) {

@@ -162,7 +162,7 @@ async fn old_pr204_1020_crossbow_moved_uid_shared_payment() {
                     partial,
                     Some(Arc::new(|p| {
                         let firing = p.inventory().get_stack(0);
-                        assert_eq!(charge(&firing), 0);
+                        assert_eq!(charge(&firing), 3);
                         p.inventory().set_stack(4, firing);
                         p.inventory().set_stack(0, ItemStack::EMPTY.clone());
                         p.inventory().set_selected_slot(4);
@@ -175,10 +175,10 @@ async fn old_pr204_1020_crossbow_moved_uid_shared_payment() {
                 assert_eq!(current.uid, uid);
                 assert_eq!(
                     loose(&p.player, &Item::ARROW),
-                    if partial { 2 } else { 3 },
-                    "full denial must refund only its absent shared payment"
+                    2,
+                    "denial must retain the loaded payment without a loose refund"
                 );
-                assert_eq!(charge(&current), 0);
+                assert_eq!(charge(&current), if partial { 0 } else { 3 });
                 assert_eq!(current.get_damage(), if partial { 2 } else { 0 });
                 let packets = p.take_packets();
                 assert_slot(&packets, 0, &p.player.inventory().get_stack(0));
@@ -186,7 +186,7 @@ async fn old_pr204_1020_crossbow_moved_uid_shared_payment() {
                 if !partial {
                     assert_quiet(&packets);
                 }
-                // Every reload pays fresh stock; only full denial returns that payment.
+                // A denied charge stays loaded; successful volleys require a fresh reload.
                 hooks.configure(veto, partial, None);
                 let mut spent = usize::from(partial);
                 for _ in 0..2 {
@@ -290,8 +290,8 @@ async fn old_pr204_1020_crossbow_natural_break_never_refunds_spent_payment() {
                     assert_eq!(actual.uid, weapon.uid);
                     assert_eq!(
                         hooks.counts(),
-                        (2, 1, 1),
-                        "break callback replayed an unattempted round"
+                        (3, 2, 1),
+                        "break callback published a remaining prepared round"
                     );
                     assert_eq!(
                         p.player.stats.lock().unwrap().get(
@@ -305,11 +305,11 @@ async fn old_pr204_1020_crossbow_natural_break_never_refunds_spent_payment() {
                         actual.is_empty(),
                         "admitted wear did not break the firing weapon"
                     );
-                    assert_eq!(hooks.counts(), (2, 1, 1));
+                    assert_eq!(hooks.counts(), (3, 2, 1));
                 } else if control == 3 {
                     assert_eq!(actual.uid, weapon.uid);
                     assert_eq!(actual.get_damage(), weapon.get_damage());
-                    assert_eq!(charge(&actual), 0);
+                    assert_eq!(charge(&actual), 3);
                     assert_eq!(hooks.counts(), (3, 0, 0));
                 } else {
                     assert_eq!(actual.get_damage(), weapon.get_damage());
@@ -317,7 +317,7 @@ async fn old_pr204_1020_crossbow_natural_break_never_refunds_spent_payment() {
                 }
                 assert_eq!(
                     loose(&p.player, item),
-                    if control == 3 { 2 } else { 1 },
+                    1,
                     "natural break refunded a payment already spent by an intangible round"
                 );
                 let packets = p.take_packets();
@@ -353,8 +353,8 @@ fn crossbow_arrow_variants(f: &crate::entity::death_test_world::DeathTestWorld) 
                 f.world().entities.load().len() - before,
                 usize::from(admitted)
             );
-            assert_eq!(loose(&p.player, item), if admitted { 1 } else { 2 });
-            assert_eq!(charge(&actual), 0);
+            assert_eq!(loose(&p.player, item), 1);
+            assert_eq!(charge(&actual), usize::from(!admitted));
             if admitted {
                 assert_eq!(actual.get_damage(), 1);
             } else {

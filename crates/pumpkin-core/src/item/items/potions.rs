@@ -72,9 +72,9 @@ impl ItemBehaviour for SplashPotionItem {
         _pitch: f32,
         hand: pumpkin_util::Hand,
     ) -> bool {
-        // ThrowablePotionItem.use consumes getItemInHand(hand); claim before spawning here.
-        let Some(receipt) =
-            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        // ThrowablePotionItem.use consumes getItemInHand(hand); defer payment until admitted insertion here.
+        let Some(mut source) =
+            crate::item::projectile_stock::ProjectileSource::plan_hand(player, hand, stack)
         else {
             return false;
         };
@@ -86,15 +86,9 @@ impl ItemBehaviour for SplashPotionItem {
         splash.set_item_stack(stack.clone());
         let (yaw, pitch) = player.rotation();
         splash.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !crate::entity::projectile::spawn_projectile(
-            &world,
-            Arc::new(splash),
-            Some(player.get_entity()),
-        ) {
-            receipt.refund(player);
+        if !source.launch(player, Arc::new(splash)) {
             return false;
         }
-        receipt.publish(player);
         world.play_sound(
             Sound::EntityWitchThrow,
             pumpkin_data::sound::SoundCategory::Neutral,
@@ -135,9 +129,9 @@ impl ItemBehaviour for LingeringPotionItem {
         _pitch: f32,
         hand: pumpkin_util::Hand,
     ) -> bool {
-        // ThrowablePotionItem.use consumes getItemInHand(hand); claim before spawning here.
-        let Some(receipt) =
-            crate::item::projectile_stock::ProjectileStock::claim_hand(player, hand, stack)
+        // ThrowablePotionItem.use consumes getItemInHand(hand); defer payment until admitted insertion here.
+        let Some(mut source) =
+            crate::item::projectile_stock::ProjectileSource::plan_hand(player, hand, stack)
         else {
             return false;
         };
@@ -149,15 +143,9 @@ impl ItemBehaviour for LingeringPotionItem {
         ling.set_item_stack(stack.clone());
         let (yaw, pitch) = player.rotation();
         ling.thrown.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
-        if !crate::entity::projectile::spawn_projectile(
-            &world,
-            Arc::new(ling),
-            Some(player.get_entity()),
-        ) {
-            receipt.refund(player);
+        if !source.launch(player, Arc::new(ling)) {
             return false;
         }
-        receipt.publish(player);
         world.play_sound(
             Sound::EntityWitchThrow,
             pumpkin_data::sound::SoundCategory::Neutral,

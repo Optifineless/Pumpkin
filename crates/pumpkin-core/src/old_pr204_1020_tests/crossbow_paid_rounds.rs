@@ -9,7 +9,7 @@ use pumpkin_data::{
 use pumpkin_inventory::Inventory;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::Hand;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicUsize};
 
 #[derive(Clone, Copy, Debug)]
 enum Retained {
@@ -126,12 +126,15 @@ fn retention_case(f: &DeathTestWorld, veto: Veto, retained: Retained, item: &'st
         let rounds = charge(&firing);
         let replacement = replacement(&original, retained, item, attempt);
         let expected = replacement.clone();
+        let callback_stock = Arc::new(AtomicUsize::new(usize::MAX));
+        let observed_stock = callback_stock.clone();
         hooks.configure(
             veto,
             false,
             Some(Arc::new(move |p| {
-                assert_eq!(charge(&p.inventory().get_stack(0)), 0);
+                assert_eq!(charge(&p.inventory().get_stack(0)), rounds);
                 p.inventory().set_stack(0, replacement.clone());
+                observed_stock.store(stock(p, item), SeqCst);
             })),
         );
         let before = f.world().entities.load().len();
@@ -143,11 +146,10 @@ fn retention_case(f: &DeathTestWorld, veto: Veto, retained: Retained, item: &'st
             current.are_equal(&expected),
             "callback charge/component edits lost: {veto:?}, {retained:?}"
         );
-        let callback_created = usize::from(matches!(retained, Retained::FreshUid));
         assert_eq!(
             stock(&p.player, item),
-            stock_before + callback_created,
-            "physical stock changed: {veto:?}, {retained:?}, ammo={}, attempt={attempt}",
+            callback_stock.load(SeqCst),
+            "server changed callback stock: {veto:?}, {retained:?}, ammo={}, attempt={attempt}",
             item.registry_key
         );
         if matches!(retained, Retained::OtherItem) {
@@ -237,7 +239,7 @@ fn replacement(
         _ => {}
     }
     if matches!(retained, Retained::Paid) {
-        // Payment matching depends on item and tangibility, even if callback NBT differs.
+        // Callback edits remain authoritative, including the paid round's components.
         let mut paid = ItemStack::read_item_stack(&projectiles[0]).unwrap();
         let mut data = NbtCompound::new();
         data.put_int("edited_paid_round", 394);

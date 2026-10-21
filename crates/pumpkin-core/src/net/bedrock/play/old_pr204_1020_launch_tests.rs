@@ -115,7 +115,7 @@ fn case(
     if route == 4 {
         send_use(fixture, hand, false);
     }
-    let admitted = veto == Veto::None;
+    let admitted = veto == Veto::None && edit != 1;
     assert_eq!(
         used(&player, item) - used_before,
         i32::from(admitted),
@@ -128,7 +128,7 @@ fn case(
     );
     assert_eq!(world.entities.load().len() - before, usize::from(admitted));
     let actual = player.inventory().get_stack(source);
-    if !admitted && edit == 0 {
+    if !admitted && edit == 0 && route != 4 {
         assert_eq!(actual.uid, original.uid);
         assert!(actual.are_equal(&original));
     }
@@ -136,14 +136,14 @@ fn case(
         assert_eq!(actual.item, &Item::DIAMOND);
     }
     if route == 0 || route == 1 || route == 2 || route == 5 {
-        assert_eq!(loose(&player, item), usize::from(!admitted));
+        assert_eq!(loose(&player, item), usize::from(!admitted && edit != 1));
     }
     if route == 3 {
         assert_eq!(loose(&player, &Item::ARROW), 2 - usize::from(admitted));
     }
     if route == 4 {
-        assert_eq!(charge(&actual), 0);
-        assert_eq!(loose(&player, &Item::ARROW), 2 - usize::from(admitted));
+        assert_eq!(charge(&actual), usize::from(!admitted && edit != 1));
+        assert_eq!(loose(&player, &Item::ARROW), 1);
     }
     player.tick(&fixture.world.server);
     let packets = fixture.owner.take_packets();
