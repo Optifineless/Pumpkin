@@ -7,6 +7,9 @@
 mod entity_unload;
 mod hardcore_respawn_review;
 mod lifecycle;
+mod movement_game_events;
+mod movement_game_events_lifecycle;
+mod movement_game_events_unload;
 mod old_saves;
 mod ownership;
 mod ownership_tests;
@@ -185,9 +188,15 @@ impl Scenario {
         Self::new_with_hardcore(false).await
     }
     async fn new_with_hardcore(hardcore: bool) -> Self {
+        Self::new_with_advanced(hardcore, None).await
+    }
+    async fn new_with_advanced(
+        hardcore: bool,
+        advanced: Option<pumpkin_config::AdvancedConfiguration>,
+    ) -> Self {
         let isolation = SCENARIO_GATE.lock().await;
         let directory = tempfile::tempdir().unwrap();
-        let server = Self::services(directory.path(), hardcore);
+        let server = Self::services_with_advanced(directory.path(), hardcore, advanced);
         let scenario = Self {
             server,
             sessions: Rc::default(),
@@ -204,8 +213,18 @@ impl Scenario {
         scenario
     }
     fn services(path: &Path, hardcore: bool) -> Arc<Server> {
+        Self::services_with_advanced(path, hardcore, None)
+    }
+    fn services_with_advanced(
+        path: &Path,
+        hardcore: bool,
+        advanced: Option<pumpkin_config::AdvancedConfiguration>,
+    ) -> Arc<Server> {
         let mut server = combat_test_support::server(path);
         let services = Arc::get_mut(&mut server).unwrap();
+        if let Some(advanced) = advanced {
+            services.advanced_config = advanced;
+        }
         services.basic_config.hardcore = hardcore;
         services.dimensions = vec![Dimension::OVERWORLD, Dimension::THE_NETHER];
         services.advanced_config.networking.java.view_distance =

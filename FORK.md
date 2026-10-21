@@ -2,6 +2,57 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Accepted travel game events, Warden/sculk slice 3 (#162)
+
+Accepted Java position packets and actual clipped nonplayer travel share transient
+float distance accounting for STEP and the same vanilla SWIM/FLAP branches.
+Plugin-mutated destinations, support/effect block snapshots, Player flight/sneak
+policy and entity overrides follow vanilla 26.3 `Entity.move`,
+`applyMovementEmissionAndPlaySound` and `getMovementEmission`. Java vehicle packets
+account the vehicle's accepted displacement; passenger placement stays silent.
+Bat, Allay, Bee and Phantom FLAP use their existing resting/ground state and
+transient mob tick clock. Chicken and parrot flap animation state is not
+implemented, so it is not synthesized here.
+Existing sound, fall, glide, statistics, physics and save owners remain in place.
+
+```toml
+[movement_game_events]
+enabled = true
+```
+
+The default-ON switch controls only this slice's new accounting and notifications.
+`sculk_game_events.enabled = false` still leaves plugin notifications enabled.
+Counters reset at teleport/new life/reload; no movement counter is serialized.
+Direct placement, piston displacement and Bedrock player position packets do not
+enter the new movement emitter. Existing s1 source lookup cost remains until s2.
+Loaded X/Z columns use vanilla void air beyond build height.
+Terrain is sampled only from current loaded chunks; the affected block state is
+an immutable notification snapshot. The unchanged s1 boundary revalidates the
+source after callbacks, but has no separate terrain-incarnation callback guard.
+Concurrent retained-native movement during the inherited unload registry-to-mark
+window can still issue a Generic-only callback; s1 rejects typed forwarding for the
+retired source. Closing that authority gap remains with #368/#344 and s2.
+
+API 8 (same version): the private transient state changes public `Entity` layout;
+the public `MovementGameEventsConfig` and `AdvancedConfiguration::movement_game_events`
+field change native configuration layouts. Rebuild native plugins. Exhaustive
+configuration literals must add the field or use `Default`; existing method
+signatures, event payloads, plugin cancellation and Wasm WIT remain unchanged.
+Both Wasm host teleport adapters continue through the existing teleport entry.
+There are no new durable fields or migrations. Implemented by Codex with AI review.
+In-game verification: Not yet.
+
+Listener lifecycle/selection, travel, sensor/shrieker activation and Warden
+consumers remain later slices. This partial emission work does not close #162.
+
+Play test: walk normally, then sneak/fly over stone and wool; expect ordinary
+movement and unchanged sounds, with eligible STEP notifications at distance
+thresholds. Swim and watch a flying bat; expect their branch-specific notifications.
+Repeat with movement notifications disabled; expect unchanged travel, fall,
+statistics and fishing notifications. Sensors still do not activate through this
+unfinished path. Capture a moving player and a second client's view with plugin
+notification counts, including a boat rider and a restart.
+
 ## Fresh ordinary-horse statistics (#115, slice 1)
 
 Fresh ordinary horses initialize individual max health, movement speed and jump

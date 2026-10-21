@@ -10,7 +10,7 @@ use uuid::Uuid;
 #[cfg(test)]
 mod plugin_tests;
 #[cfg(test)]
-mod test_support;
+pub mod test_support;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

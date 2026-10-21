@@ -130,8 +130,25 @@ pub struct Scenario {
     pub _dir: tempfile::TempDir,
 }
 
+pub fn attach(world: &World) -> Arc<Mutex<Observations>> {
+    let sink = Arc::new(Mutex::new(Observations::default()));
+    let mut observers = OBSERVERS.lock().unwrap();
+    observers
+        .retain(|(id, sink)| *id != std::ptr::from_ref(world) as usize && sink.strong_count() > 0);
+    assert!(
+        observers.len() < LIMIT,
+        "bounded game-event observer registry overflow"
+    );
+    observers.push((std::ptr::from_ref(world) as usize, Arc::downgrade(&sink)));
+    sink
+}
+
 impl Scenario {
     pub fn new(enabled: bool) -> Self {
+        Self::with_movement(enabled, true)
+    }
+
+    pub fn with_movement(enabled: bool, movement: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let mut server = combat_test_support::server(dir.path());
         Arc::get_mut(&mut server)
@@ -139,6 +156,11 @@ impl Scenario {
             .advanced_config
             .sculk_game_events
             .enabled = enabled;
+        Arc::get_mut(&mut server)
+            .unwrap()
+            .advanced_config
+            .movement_game_events
+            .enabled = movement;
         let world = combat_test_support::world(&server, dir.path());
         server.worlds.store(Arc::new(vec![world.clone()]));
         let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
@@ -146,15 +168,7 @@ impl Scenario {
         world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
         let owner = TestPlayer::new(&world);
         owner.player.get_entity().set_pos(DEPARTURE);
-        let sink = Arc::new(Mutex::new(Observations::default()));
-        let mut observers = OBSERVERS.lock().unwrap();
-        observers.retain(|(_, sink)| sink.strong_count() > 0);
-        assert!(
-            observers.len() < LIMIT,
-            "bounded game-event observer registry overflow"
-        );
-        observers.push((Arc::as_ptr(&world) as usize, Arc::downgrade(&sink)));
-        drop(observers);
+        let sink = attach(&world);
         Self {
             server,
             world,

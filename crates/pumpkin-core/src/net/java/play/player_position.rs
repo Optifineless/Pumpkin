@@ -88,6 +88,7 @@ impl JavaClient {
             Self::clamp_horizontal(position.z),
         );
 
+        let emission = player.get_entity().begin_movement_emission(player.as_ref());
         send_cancellable_blocking! {{
             server;
             PlayerMoveEvent {
@@ -155,6 +156,9 @@ impl JavaClient {
                 }
                 player.known_movement.record(delta);
                 player.progress_motion(delta);
+                if let Some(emission) = emission {
+                    emission.finish(player.as_ref(), last_pos, pos, delta, entity.on_ground.load(Ordering::Relaxed));
+                }
             }
 
             'cancelled: {
@@ -213,6 +217,7 @@ impl JavaClient {
             Self::clamp_horizontal(position.z),
         );
 
+        let emission = player.get_entity().begin_movement_emission(player.as_ref());
         send_cancellable_blocking! {{
             server;
             PlayerMoveEvent::new(
@@ -292,6 +297,9 @@ impl JavaClient {
                 }
                 player.known_movement.record(delta);
                 player.progress_motion(delta);
+                if let Some(emission) = emission {
+                    emission.finish(player.as_ref(), last_pos, pos, delta, entity.on_ground.load(Ordering::Relaxed));
+                }
             }
 
             'cancelled: {
@@ -301,6 +309,7 @@ impl JavaClient {
     }
 
     pub fn force_tp(&self, player: &Arc<Player>, position: Vector3<f64>) {
+        player.get_entity().reset_movement_emission();
         let teleport_id = player.teleport_id_count.fetch_add(1, Ordering::Relaxed) + 1;
         *player
             .awaiting_teleport
