@@ -703,6 +703,11 @@ impl Mob for WanderingTraderEntity {
         if let Some(delay) = nbt.get_int("DespawnDelay") {
             self.despawn_delay.store(delay, Ordering::Relaxed);
         }
+        let legacy_target = (
+            nbt.get_int("wander_target_x"),
+            nbt.get_int("wander_target_y"),
+            nbt.get_int("wander_target_z"),
+        );
         if let Some(target_arr) = nbt.get_int_array("wander_target")
             && target_arr.len() >= 3
         {
@@ -711,11 +716,7 @@ impl Mob for WanderingTraderEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) =
                 Some(BlockPos::new(target_arr[0], target_arr[1], target_arr[2]));
-        } else if let (Some(x), Some(y), Some(z)) = (
-            nbt.get_int("wander_target_x"),
-            nbt.get_int("wander_target_y"),
-            nbt.get_int("wander_target_z"),
-        ) {
+        } else if let (Some(x), Some(y), Some(z)) = legacy_target {
             *self
                 .wander_target
                 .lock()

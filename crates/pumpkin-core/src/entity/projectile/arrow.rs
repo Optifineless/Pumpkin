@@ -283,7 +283,7 @@ impl ArrowEntity {
 
     fn read_item_stack_nbt(nbt: &pumpkin_nbt::compound::NbtCompound) -> Option<ItemStack> {
         nbt.get_compound("item")
-            .and_then(ItemStack::read_item_stack)
+            .and_then(crate::entity::unknown_nbt::read_item_stack)
             .map(|item_stack| item_stack.copy_with_count(1))
     }
 
@@ -511,7 +511,7 @@ impl EntityBase for ArrowEntity {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = nbt
             .get_compound("weapon")
-            .and_then(ItemStack::read_item_stack);
+            .and_then(crate::entity::unknown_nbt::read_item_stack);
         if let Some(item_stack) = Self::read_item_stack_nbt(nbt) {
             *self
                 .item_stack

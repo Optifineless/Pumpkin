@@ -5742,31 +5742,31 @@ impl NBTStorage for PlayerInventory {
         }
 
         if let Some(equipment) = nbt.get_compound("equipment") {
-            if let Some(offhand) = equipment.get_compound("offhand")
+            if let Some(offhand) = equipment.get("offhand").and_then(NbtTag::extract_compound)
                 && let Some(item_stack) = ItemStack::read_item_stack(offhand)
             {
                 set_stack_sync(40, item_stack);
             }
 
-            if let Some(head) = equipment.get_compound("head")
+            if let Some(head) = equipment.get("head").and_then(NbtTag::extract_compound)
                 && let Some(item_stack) = ItemStack::read_item_stack(head)
             {
                 set_stack_sync(39, item_stack);
             }
 
-            if let Some(chest) = equipment.get_compound("chest")
+            if let Some(chest) = equipment.get("chest").and_then(NbtTag::extract_compound)
                 && let Some(item_stack) = ItemStack::read_item_stack(chest)
             {
                 set_stack_sync(38, item_stack);
             }
 
-            if let Some(legs) = equipment.get_compound("legs")
+            if let Some(legs) = equipment.get("legs").and_then(NbtTag::extract_compound)
                 && let Some(item_stack) = ItemStack::read_item_stack(legs)
             {
                 set_stack_sync(37, item_stack);
             }
 
-            if let Some(feet) = equipment.get_compound("feet")
+            if let Some(feet) = equipment.get("feet").and_then(NbtTag::extract_compound)
                 && let Some(item_stack) = ItemStack::read_item_stack(feet)
             {
                 set_stack_sync(36, item_stack);
@@ -6136,7 +6136,7 @@ impl EntityBase for Player {
         if let Some(air) = nbt
             .get_short("Air")
             .map(i32::from)
-            .or_else(|| nbt.get_int("AirSupply"))
+            .or(nbt.get_int("AirSupply"))
         {
             self.breath_manager
                 .air_supply
@@ -6150,6 +6150,13 @@ impl EntityBase for Player {
         }
 
         // Load any saved spawnpoint data (both vanilla "respawn" compound and legacy SpawnX/SpawnY/SpawnZ)
+        let legacy_spawn = (
+            nbt.get_int("SpawnX"),
+            nbt.get_int("SpawnY"),
+            nbt.get_int("SpawnZ"),
+        );
+        let legacy_dimension = nbt.get_string("SpawnDimension");
+        let legacy_forced = nbt.get_bool("SpawnForced").unwrap_or(false);
         if let Some(respawn_compound) = nbt.get_compound("respawn") {
             let dim = respawn_compound
                 .get_string("dimension")
@@ -6173,16 +6180,11 @@ impl EntityBase for Player {
                 yaw,
                 force,
             });
-        } else if let (Some(x), Some(y), Some(z)) = (
-            nbt.get_int("SpawnX"),
-            nbt.get_int("SpawnY"),
-            nbt.get_int("SpawnZ"),
-        ) {
-            let dim = nbt
-                .get_string("SpawnDimension")
+        } else if let (Some(x), Some(y), Some(z)) = legacy_spawn {
+            let dim = legacy_dimension
                 .and_then(|s| Dimension::from_name(s).cloned())
                 .unwrap_or_else(|| self.world().dimension.clone());
-            let force = nbt.get_bool("SpawnForced").unwrap_or(false);
+            let force = legacy_forced;
             *self
                 .respawn_point
                 .lock()

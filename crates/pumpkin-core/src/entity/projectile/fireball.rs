@@ -178,7 +178,7 @@ impl EntityBase for FireballEntity {
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
         if let Some(item) = nbt
             .get_compound("Item")
-            .and_then(ItemStack::read_item_stack)
+            .and_then(crate::entity::unknown_nbt::read_item_stack)
         {
             self.set_item(item);
         }

@@ -83,7 +83,7 @@ impl EntityBase for ExperienceBottleEntity {
     fn read_custom_nbt(&self, nbt: &pumpkin_nbt::NbtCompound) {
         let stack = nbt
             .get_compound("Item")
-            .and_then(ItemStack::read_item_stack)
+            .and_then(crate::entity::unknown_nbt::read_item_stack)
             .unwrap_or_else(|| ItemStack::new(1, &Item::EXPERIENCE_BOTTLE));
         self.set_item_stack(&stack);
     }

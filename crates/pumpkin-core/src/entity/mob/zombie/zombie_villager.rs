@@ -1,3 +1,4 @@
+use pumpkin_nbt::tag::NbtTag;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -433,7 +434,7 @@ impl Mob for ZombieVillagerEntity {
         }
 
         let mut carried = NbtCompound::new();
-        if let Some(offers) = nbt.get_compound("Offers") {
+        if let Some(offers) = nbt.get("Offers").and_then(NbtTag::extract_compound) {
             carried.put_compound("Offers", offers.clone());
         }
         if let Some(gossips) = nbt.get_list("Gossips") {
@@ -444,10 +445,11 @@ impl Mob for ZombieVillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = carried;
 
+        let conversion_player = nbt.get_uuid("ConversionPlayer");
         if let Some(conversion_time) = nbt.get_int("ConversionTime")
             && conversion_time > 0
         {
-            self.start_converting(nbt.get_uuid("ConversionPlayer"), conversion_time);
+            self.start_converting(conversion_player, conversion_time);
         }
     }
 }

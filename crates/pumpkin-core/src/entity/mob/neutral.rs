@@ -45,11 +45,9 @@ pub const fn is_angry_at_time(anger_end_time: i64, now: i64) -> bool {
 
 /// End time from NBT: the current key, else the pre-`anger_end_time` countdown, else calm.
 fn anger_end_time_from_nbt(nbt: &NbtCompound, now: i64) -> i64 {
+    let legacy_remaining = nbt.get_int("AngerTime");
     nbt.get_long("anger_end_time")
-        .or_else(|| {
-            nbt.get_int("AngerTime")
-                .map(|remaining| now + i64::from(remaining))
-        })
+        .or_else(|| legacy_remaining.map(|remaining| now + i64::from(remaining)))
         .unwrap_or(NO_ANGER_END_TIME)
 }
 

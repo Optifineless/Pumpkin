@@ -2,6 +2,52 @@
 
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
+## Unknown entity save tags survive rollback (#414)
+
+Entity and player saves retain unread root fields and unread children of owned
+compounds. This build is the rollback baseline: later saved fields survive a
+rollback here, including unsupported villager age tags. Known saved-data meaning
+is unchanged; retained fields participate only in existing NBT inspection/edit APIs.
+
+Consumption is recorded during the existing synchronous entity reader: scalar,
+list and raw `get` reads own the entire value, including missing or mistyped keys;
+`get_compound` owns only children actually read. Opaque copied payloads and dynamic
+known entries use raw `get`. Legacy aliases are attempted eagerly. New reader keys
+therefore stop being retained automatically. Identity and `Passengers` are owned
+by the surrounding loader. Item-stack compounds retain unread immediate fields;
+component patches remain one owned payload. Live writers win; omitted known fields stay omitted,
+and retained children cannot recreate a removed optional owned compound.
+
+Partial native NBT writes update retained fields alongside their existing known-tag
+behavior. The inherent `Entity` helpers remain base-field-only; full entity NBT
+uses the existing `EntityBase`/`NBTStorage` entry points. `/data` supplies a complete
+edited image, so removal also deletes retained fields. Retention uses immutable snapshots, with cloning only during load/save/NBT
+edits and no per-tick work or new lock ordering. Chunk records, passenger trees,
+spawn-egg merges, held beehive occupants and player rejoin use the shared codec.
+Buckets keep their existing whitelist codec and raw item-component NBT remains
+unchanged. This baseline does not implement leash restoration; unread leash tags
+are retained like other unsupported data.
+
+API 8 (same version): private retention state changes the public `Entity` layout;
+rebuild native plugins against this checkout. Existing NBT method signatures and
+known-tag behavior, plugin API version and Wasm WIT are unchanged. `NbtCompound`
+keeps its layout. Implemented by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Checked known-field and passenger behavior against official Java 26.3
+`Entity.saveWithoutId/load`, `EntityType.loadPassengersRecursive` and
+`CompoundTag.merge`, decompiled with Vineflower 1.12.0 (inner server JAR SHA-256
+`a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`).
+Unknown-field retention is an intentional fork addition.
+
+Play test: save a villager, horse, zombie, dropped item and mounted passenger
+with future NBT fields; move away until their chunks unload, return and restart.
+Expect the fields, identities and normal behavior to survive. Change health and
+position, dismount, then repeat; expect current values and no restored mount.
+Rejoin a player saved with a future field; expect that field and current health
+to survive. Capture the saved NBT before and after each cycle, including villager
+age fields from a newer build. No deployment or player verification is claimed.
+
 ## Fresh ordinary-horse statistics (#115, slice 1)
 
 Fresh ordinary horses initialize individual max health, movement speed and jump

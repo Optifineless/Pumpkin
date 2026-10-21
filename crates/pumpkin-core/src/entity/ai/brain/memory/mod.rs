@@ -375,7 +375,7 @@ impl PackedMemories {
             return Self::empty();
         };
         let mut packed = Vec::with_capacity(memories.child_tags.len());
-        for (name, tag) in &memories.child_tags {
+        for name in memories.child_tags.keys() {
             let Some(id) = types::from_name(name) else {
                 tracing::debug!("Skipping unknown brain memory {name}");
                 continue;
@@ -384,7 +384,7 @@ impl PackedMemories {
                 tracing::debug!("Skipping non-persistent brain memory {name}");
                 continue;
             }
-            let NbtTag::Compound(entry) = tag else {
+            let Some(NbtTag::Compound(entry)) = memories.get(name) else {
                 continue;
             };
             let Some(value) = entry.get("value") else {

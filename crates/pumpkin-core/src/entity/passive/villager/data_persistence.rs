@@ -44,6 +44,10 @@ impl LoadedVillagerData {
 
     pub(crate) fn decode(nbt: &NbtCompound, previous: VillagerData) -> Self {
         // VillagerData.CODEC defaults missing/unknown registries and level to plains/none/1.
+        // Legacy aliases remain owned even when the modern compound takes precedence.
+        let type_id = nbt.get_int("Type");
+        let profession_id = nbt.get_int("Profession");
+        let level = nbt.get_int("Level");
         if nbt.get("type").is_some()
             || nbt.get("profession").is_some()
             || nbt.get("level").is_some()
@@ -66,9 +70,6 @@ impl LoadedVillagerData {
         }
 
         // Saves from earlier fork builds used uppercase numeric registry ids.
-        let type_id = nbt.get_int("Type");
-        let profession_id = nbt.get_int("Profession");
-        let level = nbt.get_int("Level");
         if type_id.is_some() || profession_id.is_some() || level.is_some() {
             Self {
                 data: VillagerData {

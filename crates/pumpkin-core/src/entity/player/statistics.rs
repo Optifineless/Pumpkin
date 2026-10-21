@@ -38,11 +38,12 @@ impl Statistics {
 
     pub fn read_nbt(&mut self, nbt: &NbtCompound) {
         if let Some(stats_compound) = nbt.get_compound("Statistics") {
-            for (key, tag) in &stats_compound.child_tags {
+            for key in stats_compound.child_tags.keys() {
                 let parts: Vec<&str> = key.split(':').collect();
-                if let (NbtTag::Int(value), [cat_str, stat_str]) = (tag, parts.as_slice())
+                if let [cat_str, stat_str] = parts.as_slice()
                     && let (Ok(category), Ok(stat)) =
                         (cat_str.parse::<i32>(), stat_str.parse::<i32>())
+                    && let Some(NbtTag::Int(value)) = stats_compound.get(key)
                 {
                     self.stats.insert((category, stat), *value);
                 }

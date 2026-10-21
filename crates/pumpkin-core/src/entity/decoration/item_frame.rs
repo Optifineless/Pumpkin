@@ -607,7 +607,7 @@ impl EntityBase for ItemFrameEntity {
         let observed = self.snapshot_item();
         let stack = nbt
             .get_compound("Item")
-            .and_then(ItemStack::read_item_stack)
+            .and_then(crate::entity::unknown_nbt::read_item_stack)
             .unwrap_or_else(|| ItemStack::EMPTY.clone());
         // ItemFrame.readAdditionalSaveData uses ItemStack.matches, including components.
         let cleanup_old = !observed.is_empty() && !stack.are_equal(observed.as_ref());

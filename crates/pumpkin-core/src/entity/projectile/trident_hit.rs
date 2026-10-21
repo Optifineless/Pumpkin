@@ -3,7 +3,6 @@ use crate::entity::{EntityBase, projectile_deflection::ProjectileDeflectionType}
 use pumpkin_data::{
     damage::DamageType,
     entity::EntityType,
-    item_stack::ItemStack,
     sound::{Sound, SoundCategory},
     tag::{self, Taggable},
 };
@@ -102,7 +101,7 @@ impl TridentEntity {
         );
         if let Some(item) = nbt
             .get_compound("item")
-            .and_then(ItemStack::read_item_stack)
+            .and_then(crate::entity::unknown_nbt::read_item_stack)
         {
             *self
                 .item_stack

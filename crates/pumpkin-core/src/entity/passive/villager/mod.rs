@@ -1861,6 +1861,7 @@ impl Mob for VillagerEntity {
                 .store(last_decay, Ordering::Relaxed);
         }
 
+        let job_site_pending = nbt.get_bool("JobSitePending").unwrap_or(false);
         if let (Some(x), Some(y), Some(z)) = (
             nbt.get_int("JobSiteX"),
             nbt.get_int("JobSiteY"),
@@ -1870,10 +1871,8 @@ impl Mob for VillagerEntity {
                 .job_site
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(BlockPos::new(x, y, z));
-            self.job_site_pending.store(
-                nbt.get_bool("JobSitePending").unwrap_or(false),
-                Ordering::Relaxed,
-            );
+            self.job_site_pending
+                .store(job_site_pending, Ordering::Relaxed);
         } else {
             *self
                 .job_site
@@ -1883,9 +1882,9 @@ impl Mob for VillagerEntity {
         }
 
         if let (Some(x), Some(y), Some(z)) = (
-            nbt.get_int("HomeX").or_else(|| nbt.get_int("BedX")),
-            nbt.get_int("HomeY").or_else(|| nbt.get_int("BedY")),
-            nbt.get_int("HomeZ").or_else(|| nbt.get_int("BedZ")),
+            nbt.get_int("HomeX").or(nbt.get_int("BedX")),
+            nbt.get_int("HomeY").or(nbt.get_int("BedY")),
+            nbt.get_int("HomeZ").or(nbt.get_int("BedZ")),
         ) {
             *self
                 .home_pos

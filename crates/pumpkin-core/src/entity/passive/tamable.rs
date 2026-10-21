@@ -146,10 +146,11 @@ pub trait TamableAnimal: Animal {
     }
 
     fn read_tamable_nbt(&self, nbt: &NbtCompound) {
+        let is_tame = nbt.get_bool("IsTame");
         if let Some(owner) = nbt.get_uuid("Owner") {
             self.set_owner(Some(owner));
             self.set_tame(true);
-        } else if let Some(is_tame) = nbt.get_bool("IsTame") {
+        } else if let Some(is_tame) = is_tame {
             self.set_tame(is_tame);
         }
         let sitting = nbt

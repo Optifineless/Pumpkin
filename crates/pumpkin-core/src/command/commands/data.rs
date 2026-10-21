@@ -230,6 +230,7 @@ impl DataAccessor for EntityDataAccessor {
             return Err(ERROR_ENTITY_INVALID.create_without_context());
         }
         self.entity.read_nbt_non_mut(tag);
+        self.entity.get_entity().retain_only_present_nbt(tag);
         Ok(())
     }
 

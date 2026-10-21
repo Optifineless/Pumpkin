@@ -1880,9 +1880,9 @@ impl LivingEntity {
                 .entity_equipment
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (name, tag) in &equipment.child_tags {
+            for name in equipment.child_tags.keys() {
                 if let Some(slot) = EquipmentSlot::get_from_name(name)
-                    && let Some(compound) = tag.extract_compound()
+                    && let Some(compound) = equipment.get(name).and_then(NbtTag::extract_compound)
                     && let Some(stack) = ItemStack::read_item_stack(compound)
                 {
                     guard.put(slot, stack);
@@ -1907,7 +1907,7 @@ impl LivingEntity {
         // a lethal fall distance that would immediately re-kill on spawn.
         let fd = nbt
             .get_float("FallDistance")
-            .or_else(|| nbt.get_float("fall_distance"))
+            .or(nbt.get_float("fall_distance"))
             .unwrap_or(0.0);
         if self.dead.load(Relaxed) {
             self.fall_distance.store(0.0);
