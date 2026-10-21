@@ -3463,6 +3463,7 @@ impl Player {
 
     // Approval is resolved once, before any cross-world placement or pearl effects.
     fn request_accepted_teleport(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
+        self.get_entity().reset_movement_emission();
         let i = self.teleport_id_count.fetch_add(1, Ordering::Relaxed);
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
         let teleport_id = i + 1;

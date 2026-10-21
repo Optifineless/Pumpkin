@@ -69,6 +69,11 @@ impl BatEntity {
         self.roosting.load(Relaxed)
     }
 
+    pub(crate) fn is_flapping(&self) -> bool {
+        // Bat.isFlapping uses Entity.tickCount, not persistent ageable Age.
+        !self.is_roosting() && self.mob_entity.ticks_lived.load(Relaxed) as f32 % 10.0 == 0.0
+    }
+
     pub fn set_roosting(&self, roosting: bool) {
         self.roosting.store(roosting, Relaxed);
         let flags: u8 = if roosting { ROOSTING_FLAG } else { 0 };

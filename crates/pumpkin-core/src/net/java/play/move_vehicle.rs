@@ -27,7 +27,10 @@ impl JavaClient {
             return;
         }
         let vehicle_entity = vehicle.get_entity();
-        let movement = pos - vehicle_entity.pos.load();
+        let driver = entity.begin_movement_emission(player.as_ref());
+        let emission = vehicle_entity.begin_movement_emission(vehicle.as_ref());
+        let vehicle_start = vehicle_entity.pos.load();
+        let movement = pos - vehicle_start;
         vehicle_entity.set_pos(pos);
         vehicle_entity.set_rotation(packet.yaw, packet.pitch);
         player.known_movement.record(movement);
@@ -43,5 +46,28 @@ impl JavaClient {
             );
         }
         chunker::update_position(player);
+        let controlling = vehicle_entity
+            .passengers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .first()
+            .cloned();
+        if driver.is_some_and(|driver| driver.is_current(player.as_ref()))
+            && controlling.is_some_and(|current| std::ptr::eq(current.get_entity(), entity))
+            && entity
+                .get_vehicle()
+                .is_some_and(|current| Arc::ptr_eq(&current, &vehicle))
+            && let Some(emission) = emission
+        {
+            let support =
+                vehicle_entity.find_supporting_block(vehicle.as_ref(), packet.on_ground, movement);
+            emission.with_support(support).finish(
+                vehicle.as_ref(),
+                vehicle_start,
+                pos,
+                movement,
+                packet.on_ground,
+            );
+        }
     }
 }

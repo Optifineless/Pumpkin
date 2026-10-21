@@ -36,7 +36,7 @@ fn old_player_save(legacy: bool) -> NbtCompound {
     nbt
 }
 
-fn distinctive_player_save(legacy: bool) -> NbtCompound {
+pub(super) fn distinctive_player_save(legacy: bool) -> NbtCompound {
     let mut nbt = old_player_save(legacy);
     nbt.put_list(
         "Pos",

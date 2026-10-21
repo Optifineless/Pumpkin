@@ -8,7 +8,17 @@ impl Entity {
         on_ground: bool,
         movement: Vector3<f64>,
     ) {
-        let support = if on_ground {
+        self.supporting_block_pos
+            .store(self.find_supporting_block(caller, on_ground, movement));
+    }
+
+    pub(crate) fn find_supporting_block(
+        &self,
+        caller: &dyn EntityBase,
+        on_ground: bool,
+        movement: Vector3<f64>,
+    ) -> Option<pumpkin_util::math::position::BlockPos> {
+        if on_ground {
             // Entity.checkSupportingBlock first probes the current collision footprint.
             let bounds = self.bounding_box.load();
             let footprint = BoundingBox::new(
@@ -25,7 +35,6 @@ impl Entity {
             })
         } else {
             None
-        };
-        self.supporting_block_pos.store(support);
+        }
     }
 }

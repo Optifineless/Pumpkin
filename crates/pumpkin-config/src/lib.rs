@@ -21,6 +21,7 @@ pub mod fun;
 pub mod horse_spawn_stats;
 /// Server logging configuration options.
 pub mod logging;
+pub mod movement_game_events;
 /// Networking and protocol configuration options.
 pub mod networking;
 /// Plugin management configuration options.
@@ -155,6 +156,8 @@ impl LoadConfiguration for PumpkinConfig {
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)]
 pub struct AdvancedConfiguration {
+    /// Distance-based movement notifications; defaults to enabled.
+    pub movement_game_events: movement_game_events::MovementGameEventsConfig,
     /// Built-in game events; plugin notifications are always preserved.
     pub sculk_game_events: sculk_game_events::SculkGameEventsConfig,
     /// Logging-related configuration such as log levels and output behaviour.

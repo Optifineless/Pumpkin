@@ -101,6 +101,7 @@ pub mod lightning;
 pub mod living;
 pub mod marker;
 pub mod mob;
+pub(crate) mod movement_emission;
 mod movement_safety;
 pub mod passive;
 mod pickability;
@@ -958,6 +959,7 @@ struct SpawnState {
 
 /// Represents a non-living Entity (e.g. Item, Egg, Snowball...)
 pub struct Entity {
+    movement_emission: movement_emission::MovementEmissionState,
     /// A unique identifier for the entity
     pub entity_id: i32,
     /// A persistent, unique identifier for the entity
@@ -1227,6 +1229,7 @@ impl Entity {
             last_sent_pos: AtomicCell::new(position),
             last_sent_velocity: AtomicCell::new(Vector3::default()),
             custom_data: std::sync::Mutex::new(NbtCompound::new()),
+            movement_emission: movement_emission::MovementEmissionState::default(),
         }
     }
 
@@ -1246,6 +1249,7 @@ impl Entity {
         if self.is_removed() {
             return;
         }
+        self.reset_movement_emission();
         let block_pos = self.block_pos.load();
         let biome = world.level.get_rough_biome(&block_pos);
         self.current_biome.store(Arc::new(biome));
@@ -2089,11 +2093,14 @@ impl Entity {
             return;
         }
 
+        let last_pos = self.pos.load();
+        let emission = self.begin_movement_emission(caller);
         let (final_move, stepped) = self.adjust_movement_for_collisions(motion, caller);
         self.vertical_collision
             .store(motion.y != final_move.y, Ordering::Relaxed);
 
         self.move_pos(final_move);
+        let accepted_pos = self.pos.load();
 
         let velocity_multiplier = f64::from(caller.get_block_speed_factor());
 
@@ -2119,6 +2126,15 @@ impl Entity {
             world
                 .block_registry
                 .update_entity_movement_after_fall_on(block, caller);
+        }
+        if let Some(emission) = emission {
+            emission.finish(
+                caller,
+                last_pos,
+                accepted_pos,
+                final_move,
+                self.on_ground.load(Relaxed),
+            );
         }
     }
 
@@ -3167,6 +3183,7 @@ impl Entity {
             return;
         }
         // Update server-side position and bounding box
+        self.reset_movement_emission();
         self.set_pos(position);
         if let Some(yaw) = yaw {
             self.yaw.store(yaw);
