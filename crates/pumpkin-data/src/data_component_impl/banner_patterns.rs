@@ -3,6 +3,7 @@ use crate::{dye_color::DyeColor, registry::REGISTRY_V_26_3};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::identifier::Identifier;
 
+/// Resource bound for untrusted Java input, independent of saved layers and publication.
 pub const MAX_BANNER_LAYERS: usize = 1024;
 pub const MAX_PATTERN_STRING_LENGTH: usize = 32767;
 
@@ -71,27 +72,22 @@ impl BannerPatternLayer {
 
     fn read_data(tag: &NbtTag) -> Option<Self> {
         let layer = tag.extract_compound()?;
-        let color = DyeColor::by_name(layer.get_string("color")?)?;
+        // Preserve the old saved reader's fallback for unrecognized color names.
+        let color = DyeColor::by_name(layer.get_string("color")?).unwrap_or_default();
         let (pattern, translation_key) = match layer.get("pattern")? {
             NbtTag::String(name) => {
-                if name.len() > MAX_PATTERN_STRING_LENGTH {
-                    return None;
-                }
                 // Compatibility input from the old PR's flattened direct form.
-                if let Some(key) = layer.get_string("translation_key") {
-                    (
-                        canonical_pattern_identifier(name)?,
-                        Some(bounded_translation_key(key)?),
-                    )
+                if let Some(key) = layer.get_string("translation_key")
+                    && let Some(pattern) = canonical_pattern_identifier(name)
+                {
+                    (pattern, Some(key.to_owned()))
                 } else {
                     (name.to_string(), None)
                 }
             }
             NbtTag::Compound(direct) => (
                 canonical_pattern_identifier(direct.get_string("asset_id")?)?,
-                Some(bounded_translation_key(
-                    direct.get_string("translation_key")?,
-                )?),
+                Some(direct.get_string("translation_key")?.to_owned()),
             ),
             _ => return None,
         };
@@ -117,10 +113,6 @@ impl BannerPatternLayer {
     }
 }
 
-fn bounded_translation_key(key: &str) -> Option<String> {
-    (key.encode_utf16().count() <= MAX_PATTERN_STRING_LENGTH).then(|| key.to_owned())
-}
-
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Default)]
 pub struct BannerPatternsImpl {
     pub layers: Vec<BannerPatternLayer>,
@@ -132,14 +124,13 @@ impl BannerPatternsImpl {
     #[must_use]
     pub fn read_data(data: &NbtTag) -> Option<Self> {
         let NbtTag::List(list) = data else {
-            return None;
+            return Some(Self::EMPTY);
         };
-        if list.len() > MAX_BANNER_LAYERS {
-            return None;
-        }
+        // BannerPatternLayers.CODEC uses an unrestricted list; retain legacy saved layers.
         Some(Self {
             layers: list
                 .iter()
+                .filter(|tag| matches!(tag, NbtTag::Compound(_)))
                 .map(BannerPatternLayer::read_data)
                 .collect::<Option<_>>()?,
         })
@@ -148,7 +139,6 @@ impl BannerPatternsImpl {
     pub fn java_layers(&self) -> impl Iterator<Item = (ProjectedBannerPattern, DyeColor)> + '_ {
         self.layers
             .iter()
-            .take(MAX_BANNER_LAYERS)
             .filter_map(|layer| Some((layer.java_projection()?, layer.color)))
     }
 }

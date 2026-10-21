@@ -17,6 +17,21 @@ Acceptance is Java-only. Bedrock conversion/initial equipment and general
 ItemName text preservation remain separate follow-ups. Implemented by
 GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
 
+PR #393 round 2 preserves all previously loadable banner layers and legacy color
+fallbacks through inventory saves, including 1,025-layer banners. Java
+`BannerPatternLayers.CODEC` and `STREAM_CODEC` have no such layer cap; the existing
+untrusted packet bound is separate. Saved tooltip names deduplicate without a
+raw-list cap, and booleans use `NbtOps.getBooleanValue` numeric semantics. A
+malformed recognized component is omitted while its item and other components
+survive. Direct banner translation keys publish with Java's UTF-16/UTF-8 bounds,
+so an accepted multibyte key cannot suppress full container or equipment updates.
+New direct keys exceeding Java NBT's modified UTF-8 string length are rejected
+before Creative admission, preventing truncated saves while retaining stored data.
+API 8 (same version): native plugins must rebuild for the changed opaque iterator
+layout returned by `java_layers`; named component/stack layouts and method
+signatures are unchanged.
+In-game verification: Not yet.
+
 API 8 (same version): native plugins must rebuild for the added
 `BannerPatternLayer.translation_key` and stateful `TooltipDisplayImpl` layouts.
 Banner layer struct literals require `translation_key: None` for references;

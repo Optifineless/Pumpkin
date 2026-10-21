@@ -874,7 +874,10 @@ impl ItemStack {
                         .push((DataComponent::try_from_name(name)?, None));
                 } else {
                     let id = DataComponent::try_from_name(name)?;
-                    item_stack.patch.push((id, Some(read_data(id, data)?)));
+                    // A malformed saved component must not erase the entire inventory item.
+                    if let Some(value) = read_data(id, data) {
+                        item_stack.patch.push((id, Some(value)));
+                    }
                 }
             }
         }

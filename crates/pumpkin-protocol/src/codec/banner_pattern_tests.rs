@@ -371,6 +371,35 @@ fn old_pr221_holder_and_tooltip_ingress_bounds_reject_malformed_data() {
 }
 
 #[test]
+fn old_pr221_review2_creative_direct_keys_must_fit_saved_nbt_strings() {
+    for (key, fits) in [
+        ("漢".repeat(21846), false), // 65538 bytes: fits the wire, exceeds saved NBT.
+        ("漢".repeat(21845), true),  // Exactly 65535 modified UTF-8 bytes.
+        ("\0".repeat(32767), true),  // Java NBT encodes NUL using two bytes.
+        ("😀".repeat(10923), false), // Six modified UTF-8 bytes per surrogate pair.
+    ] {
+        let mut layer = b"\x01\x00\x0dminecraft:foo".to_vec();
+        put_varint(&mut layer, key.len());
+        layer.extend_from_slice(key.as_bytes());
+        layer.push(9);
+        let admitted = read_creative(&creative_packet(&layer, &[0, 0]));
+        assert_eq!(
+            admitted.is_ok(),
+            fits,
+            "Creative keys must be safely persistable"
+        );
+        if let Ok(stack) = admitted {
+            let (loaded, _) = disk_roundtrip(&stack);
+            assert!(loaded.are_equal(&stack));
+            assert_eq!(
+                publication_components(&loaded),
+                expected_components(&layer, &[0, 0])
+            );
+        }
+    }
+}
+
+#[test]
 fn old_pr221_tooltip_duplicate_components_keep_set_order() {
     let stack = admitted_creative(&creative_packet(&[1, 2, 9], &[0, 3, 74, 9, 74]));
     let tooltip = stack.get_data_component::<TooltipDisplayImpl>().unwrap();

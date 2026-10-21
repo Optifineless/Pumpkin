@@ -36,7 +36,8 @@ impl DataComponentCodec<Self> for BannerPatternsImpl {
                 } => {
                     seq.write_var_int(&VarInt(0))?;
                     seq.write_string(&asset_id)?;
-                    seq.write_string(&translation_key)?;
+                    // Utf8String.write permits three UTF-8 bytes per validated UTF-16 unit.
+                    seq.write_string_bounded(&translation_key, MAX_PATTERN_STRING_LENGTH * 3)?;
                 }
             }
             seq.write_var_int(&VarInt(i32::from(color.id())))?;
@@ -55,6 +56,12 @@ impl DataComponentCodec<Self> for BannerPatternsImpl {
                     let asset = canonical_pattern_identifier(&asset)
                         .ok_or_else(|| invalid("Invalid banner asset identifier"))?;
                     let key = seq.get_str_bounded(MAX_PATTERN_STRING_LENGTH)?;
+                    // Java NBT stores modified UTF-8 lengths in a u16; reject unsaveable input.
+                    if cesu8::to_java_cesu8(&key).len() > u16::MAX as usize {
+                        return Err(ReadingError::TooLarge(
+                            "Saved banner translation key".into(),
+                        ));
+                    }
                     (asset, Some(key.into()))
                 }
                 1.. => (

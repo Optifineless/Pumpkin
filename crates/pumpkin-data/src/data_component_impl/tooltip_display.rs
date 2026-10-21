@@ -75,7 +75,8 @@ impl TooltipDisplayImpl {
         }
         let tag = data.extract_compound()?;
         let hide_tooltip = match tag.get("hide_tooltip") {
-            Some(value) => value.extract_bool()?,
+            // NbtOps.getBooleanValue accepts every numeric tag via doubleValue() != 0.0.
+            Some(value) => value.as_numeric_double()? != 0.0,
             None => false,
         };
         let mut hidden_components = Vec::new();
@@ -83,9 +84,7 @@ impl TooltipDisplayImpl {
             let NbtTag::List(list) = value else {
                 return None;
             };
-            if list.len() > Self::MAX_HIDDEN_COMPONENTS {
-                return None;
-            }
+            // TooltipDisplay.CODEC converts an unrestricted saved list to an ordered set.
             for entry in list {
                 let component = DataComponent::try_from_name(entry.extract_string()?)?;
                 if !hidden_components.contains(&component) {

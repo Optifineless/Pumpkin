@@ -236,7 +236,7 @@ pub(super) fn equipment(client: &mut TestPlayer, entity: i32) -> HashMap<i8, Ite
     result
 }
 
-fn read_published_stack(data: &mut &[u8]) -> ItemStack {
+pub(super) fn read_published_stack(data: &mut &[u8]) -> ItemStack {
     let count = data.get_var_int().unwrap().0;
     if count == 0 {
         return ItemStack::EMPTY.clone();
