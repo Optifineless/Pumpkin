@@ -9,8 +9,15 @@ use pumpkin_data::{
     block_transformer::{BlockTransformer, TransformResult, TransformType},
     data_component_impl::BlocksAttacksImpl,
     game_event::GameEvent,
+    sound::Sound,
+    tag::{self, Taggable},
+    world::WorldEvent,
 };
-use pumpkin_protocol::java::client::play::CWorldEvent;
+use pumpkin_protocol::{
+    VarInt,
+    bedrock::client::level_event::{CLevelEvent, LevelEvent},
+    java::client::play::CWorldEvent,
+};
 use pumpkin_util::{
     Hand,
     math::{position::BlockPos, vector3::Vector3},
@@ -83,6 +90,15 @@ pub(super) fn send_transform_effects(
             pumpkin_data::sound::SoundCategory::Blocks,
             location,
         );
+        let bedrock_sound = match sound {
+            Sound::ItemAxeScrape => Some("scrape"),
+            Sound::ItemAxeWaxOff => Some("copper.wax.off"),
+            Sound::ItemHoneycombWaxOn => Some("copper.wax.on"),
+            _ => None,
+        };
+        if let Some(sound) = bedrock_sound {
+            world.play_bedrock_level_sound(sound, &location.to_centered_f64(), -1);
+        }
     }
 
     let emit = |position: BlockPos| {
@@ -92,6 +108,23 @@ pub(super) fn send_transform_effects(
                 &[player.gameprofile.id],
                 &CWorldEvent::new(particle as i32, position, 0, false),
             );
+            // Cloudburst v431's particle map is inherited by negotiated v2193.
+            let bedrock_particle = match particle {
+                WorldEvent::ParticlesWaxOn => Some(LevelEvent::ParticlesWaxOn),
+                WorldEvent::ParticlesWaxOff => Some(LevelEvent::ParticlesWaxOff),
+                WorldEvent::ParticlesScrape => Some(LevelEvent::ParticlesScrape),
+                _ => None,
+            };
+            if let Some(particle) = bedrock_particle {
+                world.broadcast_to_chunk_bedrock(
+                    position.chunk_position(),
+                    &CLevelEvent {
+                        event_id: VarInt(particle as i32),
+                        position: position.to_centered_f64().to_f32_lossy(),
+                        data: VarInt(0),
+                    },
+                );
+            }
         }
         world.emit_game_event(GameEvent::BlockChange.name(), position.to_centered_f64());
     };
@@ -105,7 +138,21 @@ pub(super) fn send_transform_effects(
             } else {
                 properties.facing.rotate_counter_clockwise()
             };
-            emit(location.offset(direction.to_offset()));
+            let partner = location.offset(direction.to_offset());
+            let (block, state) = world.get_block_and_state_id(&partner);
+            if block.has_tag(&tag::Block::MINECRAFT_COPPER_CHESTS) {
+                let partner_properties = ChestLikeProperties::from_state_id(state);
+                if partner_properties.facing == properties.facing
+                    && partner_properties.r#type != ChestType::Single
+                    && partner_properties.r#type != properties.r#type
+                {
+                    emit(partner);
+                }
+            }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "b1020d_g10_transform_tests.rs"]
+mod b1020d_g10_tests;

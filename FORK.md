@@ -115,6 +115,43 @@ the elytra inside a start callback; expect the original request to remain denied
 and a fresh valid request to work. Record holder and observer views, durability
 and packet routes, including a flag plus embedded start in one packet.
 
+## Copper chest pairs and tool effects (#292, #352)
+
+Copper chest placement accepts mixed copper variants, chooses the least oxidation
+and unwaxes mixed-wax pairs. Menu, lock, deferred loot, obstruction and comparator
+access share exact reciprocal-pair validation; invalid neighbors leave a single
+inventory. Menus revalidate the source and pair after the inventory-open callback.
+Scraping and unwaxing reconcile retained mixed-stage companions through
+conditional writes and publish Bedrock sound and particles while preserving Java
+prediction exclusion. Campfires handle tagged dousing items before generic shield
+intent, after food handling, and charge the dispatched hand once. Dousing keeps
+vanilla's event/sound/state/damage order and revalidates its source across
+callbacks before the conditional state write.
+
+Mirrors the supplied Java 26.3 `CopperChestBlock`, `ChestBlock`,
+`DoubleBlockCombiner.combineWithNeigbour`, `BlockTransformer.transformBlock` and
+`CampfireBlock.useItemOn` methods. Bedrock wax/scrape particles follow Cloudburst
+Protocol commit `02b00ef606016b2329d0d9da549362318dc9c68c`, checked through the
+negotiated v2193 inheritance chain. Packet regressions do not establish real-client
+rendering or sound acceptance. Existing Bedrock main-hand chest use still opens
+the menu before item dispatch even while sneaking; main-hand effect fixtures use
+ordinary copper, and paired Bedrock actor fixtures set up a protocol offhand axe.
+Saved-data meaning and Wasm WIT are unchanged.
+API 8 (same version): `LevelEvent` gains additive wax/scrape variants with unchanged
+representation and packet layout; native plugins should rebuild and exhaustive
+source matches must handle the added variants. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: place mixed oxidation/wax copper chests in both orders and while
+crouching; expect one matching double chest with retained contents after restart.
+Replace a double partner with a single, differently faced chest or barrel; expect
+a 27-slot menu and single-chest comparator output, unaffected by that neighbor's
+lock or obstruction. Scrape and unwax either stocked half beside Java and Bedrock
+observers; expect both stages to match, one sound and one particle effect per
+applicable half. Douse a campfire with a main-hand shovel and offhand shield;
+expect one extinction and one durability, while food still fills cooking slots.
+Record both client views, menus, comparator, contents and durability before/after.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
