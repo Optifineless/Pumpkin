@@ -27,6 +27,9 @@ mod ext_review_tests;
 mod fall;
 pub use fall::FallContext;
 mod fall_damage;
+mod fall_distance;
+pub use fall_distance::FallDistance;
+pub(crate) use fall_distance::FallDistanceSnapshot;
 mod fall_flying;
 #[cfg(test)]
 mod fall_flying_tests;
@@ -137,7 +140,7 @@ pub struct LivingEntity {
     /// Indicates whether the entity is dead. (`on_death` called)
     pub dead: AtomicBool,
     /// The distance the entity has been falling.
-    pub fall_distance: AtomicCell<f32>,
+    pub fall_distance: FallDistance,
     hidden_effects:
         std::sync::Mutex<FxHashMap<&'static StatusEffect, Option<Box<effects::HiddenEffect>>>>,
     effect_versions: std::sync::Mutex<FxHashMap<&'static StatusEffect, u64>>,
@@ -329,7 +332,7 @@ impl LivingEntity {
             hurt_time: AtomicU8::new(0),
             last_damage_taken: AtomicCell::new(0.0),
             absorption: AtomicCell::new(0.0),
-            fall_distance: AtomicCell::new(0.0),
+            fall_distance: FallDistance::new(0.0),
             death_time: AtomicU8::new(0),
             dead: AtomicBool::new(false),
             item_use_time: AtomicI32::new(0),

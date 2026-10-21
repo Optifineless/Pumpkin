@@ -321,3 +321,114 @@ async fn b1020d_g07_upward_landing_cleanup_preserves_reentrant_descent() {
     assert_eq!(fixture.player().living_entity.health.load(), 19.0);
     assert_eq!(fixture.player().living_entity.fall_distance.load(), 4.0);
 }
+
+enum FallReplacement {
+    Movement,
+    PluginWrites,
+}
+
+struct ReplaceDescentOnStatistic {
+    turning: bool,
+    replacement: FallReplacement,
+    injected: Arc<AtomicBool>,
+}
+
+impl EventHandler<PlayerStatisticIncrementEvent> for ReplaceDescentOnStatistic {
+    fn handle_blocking<'a>(
+        &'a self,
+        server: &'a Arc<Server>,
+        event: &'a mut PlayerStatisticIncrementEvent,
+    ) -> BoxFuture<'a, ()> {
+        if !self.injected.swap(true, Relaxed) {
+            assert_eq!(event.amount, 100);
+            let player = &event.player;
+            if matches!(self.replacement, FallReplacement::PluginWrites) {
+                player.living_entity.fall_distance.store(0.0);
+                player.living_entity.fall_distance.store(4.0);
+                return Box::pin(async {});
+            }
+            let client = player.client.java().unwrap();
+            for (y, distance) in [(6.0, 0.0), (2.0, 4.0)] {
+                let position = Vector3::new(4.5, y, 4.5);
+                if self.turning {
+                    client.handle_position_rotation(
+                        player,
+                        server,
+                        &SPlayerPositionRotation {
+                            position,
+                            yaw: 25.0,
+                            pitch: 10.0,
+                            collision: 0,
+                        },
+                    );
+                } else {
+                    client.handle_position(
+                        player,
+                        server,
+                        &SPlayerPosition {
+                            position,
+                            collision: 0,
+                        },
+                    );
+                }
+                assert_eq!(player.get_entity().pos.load(), position);
+                assert_eq!(player.living_entity.fall_distance.load(), distance);
+            }
+        }
+        Box::pin(async {})
+    }
+}
+
+fn upward_cleanup_preserves_equal_reentrant_descent(turning: bool, replacement: FallReplacement) {
+    let fixture = MovementTest::new(&Block::STONE, false);
+    fixture.position(1.0, false, turning);
+    assert_eq!(fixture.player().living_entity.fall_distance.load(), 4.0);
+    let injected = Arc::new(AtomicBool::new(false));
+    fixture
+        .server
+        .plugin_manager
+        .register::<PlayerStatisticIncrementEvent, _>(
+            Arc::new(ReplaceDescentOnStatistic {
+                turning,
+                replacement,
+                injected: injected.clone(),
+            }),
+            EventPriority::Normal,
+            true,
+        );
+    let damage_calls = Arc::new(AtomicUsize::new(0));
+    let seen = damage_calls.clone();
+    on_damage(&fixture.server, move |event| {
+        assert_eq!(event.damage_type, pumpkin_data::damage::DamageType::FALL);
+        assert_eq!(event.damage, 2.0);
+        seen.fetch_add(1, Relaxed);
+    });
+    fixture.position(2.0, false, turning);
+    assert!(injected.load(Relaxed));
+    assert_eq!(fixture.player().living_entity.fall_distance.load(), 4.0);
+    assert_eq!(fixture.player().living_entity.health.load(), 20.0);
+    assert_eq!(damage_calls.load(Relaxed), 0);
+    fixture.position(1.0, true, turning);
+    fixture.assert_landed(18.0, 500);
+    assert_eq!(damage_calls.load(Relaxed), 1);
+    fixture.position(1.0, true, turning);
+    fixture.assert_landed(18.0, 500);
+    assert_eq!(damage_calls.load(Relaxed), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020d_g07_upward_cleanup_preserves_equal_reentrant_descent_position() {
+    upward_cleanup_preserves_equal_reentrant_descent(false, FallReplacement::Movement);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020d_g07_upward_cleanup_preserves_equal_reentrant_descent_position_rotation() {
+    upward_cleanup_preserves_equal_reentrant_descent(true, FallReplacement::Movement);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1020d_g07_upward_cleanup_preserves_equal_reentrant_descent_plugin_writes() {
+    for turning in [false, true] {
+        upward_cleanup_preserves_equal_reentrant_descent(turning, FallReplacement::PluginWrites);
+    }
+}

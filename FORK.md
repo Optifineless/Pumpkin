@@ -32,6 +32,26 @@ damage, respawn and release the old callback; expect unchanged replacement healt
 fall state and no old fall sound. Record the launch/landing, hearts and plugin gate,
 including an unchanged-life release that damages once.
 
+PR #406 round 2: upward cleanup compares an atomic fall-distance snapshot with
+its mutation revision. Nested movement or plugin writes that replace a descent
+retain the replacement even when position and distance return to their original
+values. The real position and position+rotation regressions preserve a new
+four-block descent and apply the subsequent five-block landing's two damage once.
+This preserves the vanilla order above across the fork's reentrant callbacks.
+
+API 8 (same version): `LivingEntity::fall_distance` now uses `FallDistance` instead
+of `AtomicCell<f32>`, changing its concrete type and the public entity layout.
+Rebuild native plugins; code naming the old cell type must use `FallDistance`.
+The `new`, `load`, `store`, `swap`, `take` and `into_inner` operations retain their
+float behavior; every mutation also advances the runtime revision. Wasm WIT and
+saved-data fields/defaults/meaning are unchanged. Implemented by GPT-6.1 Sol
+(Codex Cloud). In-game verification: Not yet.
+
+Play test: with a once-only movement-statistic plugin processing airborne packets,
+descend from feet Y=5 to Y=1, rise to Y=2, and have the plugin rise to Y=6 then
+descend to Y=2. Land on stone at Y=1; expect one heart lost exactly once. Repeat
+while turning and record the movement, hearts and callback sequence.
+
 ## Stable Bedrock score identities (#289)
 
 The shared scoreboard assigns transient IDs to logical holder/objective pairs.
