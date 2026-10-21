@@ -27,7 +27,8 @@ pub struct EnchantingTableBlock;
 impl BlockBehaviour for EnchantingTableBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let entity = EnchantingTableBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(entity), args.state_id);
     }
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {

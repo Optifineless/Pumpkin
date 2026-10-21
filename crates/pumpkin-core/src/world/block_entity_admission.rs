@@ -16,11 +16,10 @@ impl World {
         &self,
         pos: BlockPos,
     ) -> Option<BlockEntityMutationPermit<'_>> {
-        let permit = self.reserve_block_entity_mutation(pos)?;
         // LevelChunk.setBlockState needs the old entity before changing terrain: a
         // pending chest must deliver its captured inventory to removal callbacks.
         let _ = self.get_block_entity(&pos);
-        Some(permit)
+        self.reserve_block_entity_mutation(pos)
     }
 
     pub(in crate::world) fn reserve_block_entity_mutation(

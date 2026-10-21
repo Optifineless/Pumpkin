@@ -313,6 +313,10 @@ impl BlockBehaviour for FireBlock {
     #[expect(clippy::too_many_lines)]
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let (world, block, pos) = (args.world, args.block, args.position);
+        let mut observed = world.get_block_state_id(pos);
+        if observed.to_block() != block {
+            return;
+        }
         // Schedule next tick first
         world.schedule_block_tick(
             block,
@@ -339,11 +343,16 @@ impl BlockBehaviour for FireBlock {
             use_item_on: None,
         }) {
             // Vanilla Level.removeBlock notifies both clients and neighbors.
-            world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
+            world.set_block_state_from_observed(
+                pos,
+                observed,
+                Block::AIR.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            );
             return;
         }
 
-        let block_state = world.get_block_state(pos);
+        let block_state = observed.to_state();
         let block_below = world.get_block(&pos.down());
 
         // Check for infiniburn blocks (depending on dimension)
@@ -368,7 +377,12 @@ impl BlockBehaviour for FireBlock {
             let rain_chance = 0.2 + (age as f32) * 0.03;
             if Self::random_f32() < rain_chance {
                 // Vanilla Level.removeBlock notifies both clients and neighbors.
-                world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
+                world.set_block_state_from_observed(
+                    pos,
+                    observed,
+                    Block::AIR.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                );
                 return;
             }
         }
@@ -379,7 +393,15 @@ impl BlockBehaviour for FireBlock {
         if new_age != age {
             fire_props.age = new_age;
             let new_state_id = fire_props.to_state_id(&Block::FIRE);
-            world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                pos,
+                observed,
+                new_state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
+            observed = new_state_id;
         }
 
         if !infiniburn {
@@ -387,7 +409,12 @@ impl BlockBehaviour for FireBlock {
             if !Self::are_blocks_around_flammable(world.as_ref(), pos) {
                 let block_below_state = world.get_block_state(&pos.down());
                 if !block_below_state.is_side_solid(BlockDirection::Up) || new_age > 3 {
-                    world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
+                    world.set_block_state_from_observed(
+                        pos,
+                        observed,
+                        Block::AIR.default_state.id,
+                        BlockFlags::NOTIFY_ALL,
+                    );
                     return;
                 }
             }
@@ -397,7 +424,12 @@ impl BlockBehaviour for FireBlock {
                 && Self::random_range(0..4) == 0
                 && !Self::is_flammable(world.get_block_state_id(&pos.down()))
             {
-                world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
+                world.set_block_state_from_observed(
+                    pos,
+                    observed,
+                    Block::AIR.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                );
                 return;
             }
         }

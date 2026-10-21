@@ -43,8 +43,14 @@ impl BlockBehaviour for AzaleaBlock {
         rand::random::<f32>() < 0.45
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
-        SaplingBlock::advance_tree(args.world, args.position, args.block, args.state_id, true);
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
+        SaplingBlock::advance_tree_checked(
+            args.world,
+            args.position,
+            args.block,
+            args.state_id,
+            true,
+        )
     }
 
     fn is_pathfindable(

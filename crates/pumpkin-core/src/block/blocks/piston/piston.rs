@@ -5,14 +5,16 @@ use crate::entity::EntityBase;
 use pumpkin_data::BlockId;
 use pumpkin_data::{
     Block, BlockDirection, BlockState, BlockStateId, FacingExt,
-    block_properties::{MovingPistonLikeProperties, PistonHeadLikeProperties, PistonType},
+    block_properties::MovingPistonLikeProperties,
     block_state::PistonBehavior,
     sound::{Sound, SoundCategory},
 };
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
-use rustc_hash::FxHashMap;
+#[path = "movement.rs"]
+mod movement;
+use movement::{PistonMove, move_piston};
 
 use crate::{
     block::{
@@ -99,9 +101,19 @@ impl BlockBehaviour for PistonBlock {
                 return;
             }
 
-            args.world.break_block(&pos, None, BlockFlags::SKIP_DROPS);
+            args.world.break_block_from_observed(
+                &pos,
+                block_to_check_state_id,
+                None,
+                BlockFlags::SKIP_DROPS,
+            );
         } else if &Block::MOVING_PISTON == block_to_check {
-            args.world.break_block(&pos, None, BlockFlags::SKIP_DROPS);
+            args.world.break_block_from_observed(
+                &pos,
+                block_to_check_state_id,
+                None,
+                BlockFlags::SKIP_DROPS,
+            );
         }
     }
 
@@ -137,6 +149,9 @@ impl PistonBlock {
         data: u8,
     ) -> bool {
         let state = world.get_block_state(pos);
+        if state.id.to_block() != block {
+            return false;
+        }
         let mut props = PistonProps::from_state_id(state.id);
         let dir = props.facing.to_block_direction();
 
@@ -146,7 +161,12 @@ impl PistonBlock {
         let should_extend = should_extend(world, pos, dir);
         if should_extend && (r#type == 1 || r#type == 2) {
             props.extended = true;
-            world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
+            world.set_block_state_from_observed(
+                pos,
+                state.id,
+                props.to_state_id(block),
+                BlockFlags::NOTIFY_LISTENERS,
+            );
             return false;
         }
 
@@ -169,15 +189,20 @@ impl PistonBlock {
                 return false;
             }
 
-            if !move_piston(world, dir, pos, true, sticky) {
+            if !move_piston(
+                world,
+                &PistonMove {
+                    position: *pos,
+                    observed: state.id,
+                    direction: dir,
+                    extending: true,
+                    sticky,
+                    pull: None,
+                    event_data: data,
+                },
+            ) {
                 return false;
             }
-            props.extended = true;
-            world.set_block_state(
-                pos,
-                props.to_state_id(block),
-                BlockFlags::NOTIFY_ALL | BlockFlags::MOVED,
-            );
             // Play piston extend sound
             let pitch = rand::rng().random_range(0.6f32..0.85);
             world.play_sound_fine(
@@ -211,45 +236,13 @@ impl PistonBlock {
             piston.finish(world);
         }
 
-        let mut props = MovingPistonLikeProperties::default(&Block::MOVING_PISTON);
-        props.facing = dir.to_facing();
-        props.r#type = if sticky {
-            PistonType::Sticky
-        } else {
-            PistonType::Normal
-        };
-
-        world.set_block_state(
-            pos,
-            props.to_state_id(&Block::MOVING_PISTON),
-            BlockFlags::NOTIFY_ALL | BlockFlags::FORCE_STATE,
-        );
-
-        let mut props = PistonProps::default(block);
-        props.facing = BlockDirection::by_index((data & 7) as usize)
-            .unwrap_or(BlockDirection::North)
-            .to_facing();
-
-        world.add_block_entity(Arc::new(PistonBlockEntity {
-            position: *pos,
-            facing: dir,
-            pushed_block_state: BlockState::from_id(props.to_state_id(block)),
-            current_progress: 0.0.into(),
-            last_progress: 0.0.into(),
-            extending: false,
-            source: true,
-        }));
-
-        world.update_neighbors(pos, None);
+        let mut pull = None;
         if sticky {
             let pull_pos = pos.offset_dir(dir.to_offset(), 2);
-            let (block, state) = world.get_block_and_state(&pull_pos);
-
-            // Vanilla finishes a block this piston is still pushing instead of pulling it back,
-            // which is how a short pulse drops the block.
-            let piston_piece = if block == &Block::MOVING_PISTON
-                && let Some(block_entity) = world.get_block_entity(&pull_pos)
-                && let Some(moving) = block_entity.as_any().downcast_ref::<PistonBlockEntity>()
+            let (candidate, candidate_state) = world.get_block_and_state(&pull_pos);
+            let piston_piece = if candidate == &Block::MOVING_PISTON
+                && let Some(entity) = world.get_block_entity(&pull_pos)
+                && let Some(moving) = entity.as_any().downcast_ref::<PistonBlockEntity>()
                 && moving.facing == dir
                 && moving.extending
             {
@@ -258,32 +251,30 @@ impl PistonBlock {
             } else {
                 false
             };
-
-            if !piston_piece {
-                // Event 2 is a retraction that came too soon after extending, so nothing is pulled.
-                if r#type != 1
-                    || state.is_air()
-                    || !Self::is_movable(block, state, dir.opposite(), false, dir)
-                    || (state.piston_behavior != PistonBehavior::Normal
-                        && block != &Block::PISTON
-                        && block != &Block::STICKY_PISTON)
-                {
-                    world.set_block_state(
-                        &extended_pos,
-                        Block::AIR.default_state.id,
-                        BlockFlags::NOTIFY_ALL,
-                    );
-                } else {
-                    move_piston(world, dir, pos, false, sticky);
-                }
+            let can_pull = !piston_piece
+                && r#type == 1
+                && !candidate_state.is_air()
+                && Self::is_movable(candidate, candidate_state, dir.opposite(), false, dir)
+                && (candidate_state.piston_behavior == PistonBehavior::Normal
+                    || candidate == &Block::PISTON
+                    || candidate == &Block::STICKY_PISTON);
+            if can_pull {
+                pull = Some(candidate_state.id);
             }
-        } else {
-            // remove
-            world.set_block_state(
-                &extended_pos,
-                Block::AIR.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            );
+        }
+        if !move_piston(
+            world,
+            &PistonMove {
+                position: *pos,
+                observed: state.id,
+                direction: dir,
+                extending: false,
+                sticky,
+                pull,
+                event_data: data,
+            },
+        ) {
+            return false;
         }
         // Play piston contract sound
         let pitch = rand::rng().random_range(0.6f32..0.75);
@@ -329,6 +320,9 @@ fn should_extend(world: &World, block_pos: &BlockPos, piston_dir: BlockDirection
 
 pub fn try_move(world: &Arc<World>, _block: &Block, block_pos: &BlockPos) {
     let state = world.get_block_state(block_pos);
+    if state.id.to_block() != &Block::PISTON && state.id.to_block() != &Block::STICKY_PISTON {
+        return;
+    }
     let props = PistonProps::from_state_id(state.id);
     let dir = props.facing.to_block_direction();
     let should_extent = should_extend(world, block_pos, dir);
@@ -362,175 +356,4 @@ pub fn try_move(world: &Arc<World>, _block: &Block, block_pos: &BlockPos) {
         }
         world.add_synced_block_event(*block_pos, r#type, dir.to_index());
     }
-}
-
-#[expect(clippy::too_many_lines)]
-fn move_piston(
-    world: &Arc<World>,
-    dir: BlockDirection,
-    block_pos: &BlockPos,
-    extend: bool,
-    sticky: bool,
-) -> bool {
-    let extended_pos = block_pos.offset(dir.to_offset());
-    if !extend && world.get_block(&extended_pos) == &Block::PISTON_HEAD {
-        world.set_block_state(
-            &extended_pos,
-            Block::AIR.default_state.id,
-            BlockFlags::FORCE_STATE,
-        );
-    }
-    let mut handler = PistonHandler::new(world, *block_pos, dir, extend);
-    if !handler.calculate_push() {
-        return false;
-    }
-
-    let mut moved_blocks_map: FxHashMap<BlockPos, &BlockState> = FxHashMap::default();
-    let moved_blocks: Vec<BlockPos> = handler.moved_blocks;
-
-    let mut moved_block_states: Vec<&BlockState> = Vec::new();
-
-    for &block_pos in &moved_blocks {
-        let block_state = world.get_block_state(&block_pos);
-        moved_block_states.push(block_state);
-        moved_blocks_map.insert(block_pos, block_state);
-    }
-
-    let broken_blocks: Vec<BlockPos> = handler.broken_blocks;
-    let mut affected_block_states: Vec<&BlockState> =
-        Vec::with_capacity(moved_blocks.len() + broken_blocks.len());
-    let move_direction = if extend { dir } else { dir.opposite() };
-
-    for &broken_block_pos in broken_blocks.iter().rev() {
-        let block_state = world.get_block_state(&broken_block_pos);
-        world.break_block(
-            &broken_block_pos,
-            None,
-            BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE,
-        );
-        affected_block_states.push(block_state);
-    }
-
-    for (index, &moved_block_pos) in moved_blocks.iter().rev().enumerate() {
-        let block_state = world.get_block_state(&moved_block_pos);
-        let target_pos = moved_block_pos.offset(move_direction.to_offset());
-        moved_blocks_map.remove(&target_pos);
-
-        let mut props = MovingPistonLikeProperties::default(&Block::MOVING_PISTON);
-        props.facing = dir.to_facing();
-        let state = props.to_state_id(&Block::MOVING_PISTON);
-
-        world.set_block_state(
-            &target_pos,
-            state,
-            BlockFlags::NOTIFY_LISTENERS | BlockFlags::MOVED,
-        );
-
-        if let Some(moved_state) = moved_block_states.get(moved_blocks.len() - 1 - index) {
-            world.add_block_entity(Arc::new(PistonBlockEntity {
-                position: target_pos,
-                facing: dir.to_facing().to_block_direction(),
-                pushed_block_state: moved_state,
-                current_progress: 0.0.into(),
-                last_progress: 0.0.into(),
-                extending: extend,
-                source: false,
-            }));
-        }
-        affected_block_states.push(block_state);
-    }
-
-    if extend {
-        let pistion_type = if sticky {
-            PistonType::Sticky
-        } else {
-            PistonType::Normal
-        };
-        let mut props = MovingPistonLikeProperties::default(&Block::MOVING_PISTON);
-        props.facing = dir.to_facing();
-        props.r#type = pistion_type;
-        moved_blocks_map.remove(&extended_pos);
-        world.set_block_state(
-            &extended_pos,
-            props.to_state_id(&Block::MOVING_PISTON),
-            BlockFlags::NOTIFY_LISTENERS | BlockFlags::MOVED,
-        );
-        let mut props = PistonHeadLikeProperties::default(&Block::PISTON_HEAD);
-        props.facing = dir.to_facing();
-        props.r#type = pistion_type;
-        world.add_block_entity(Arc::new(PistonBlockEntity {
-            position: extended_pos,
-            facing: dir.to_facing().to_block_direction(),
-            pushed_block_state: BlockState::from_id(props.to_state_id(&Block::PISTON_HEAD)),
-            current_progress: 0.0.into(),
-            last_progress: 0.0.into(),
-            extending: true,
-            source: true,
-        }));
-    }
-
-    let air_state = Block::AIR.default_state.id;
-    for &pos in moved_blocks_map.keys() {
-        world.set_block_state(
-            &pos,
-            air_state,
-            BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE | BlockFlags::MOVED,
-        );
-    }
-
-    for (pos, state) in &moved_blocks_map {
-        world.block_registry.prepare(
-            world,
-            pos,
-            Block::from_state_id(state.id),
-            state.id,
-            BlockFlags::NOTIFY_LISTENERS,
-        );
-        world
-            .block_registry
-            .update_neighbors(world, pos, BlockFlags::NOTIFY_LISTENERS);
-        world.block_registry.prepare(
-            world,
-            pos,
-            &Block::AIR,
-            air_state,
-            BlockFlags::NOTIFY_LISTENERS,
-        );
-    }
-
-    for (i, &broken_block_pos) in broken_blocks.iter().rev().enumerate() {
-        if let Some(block_state) = affected_block_states.get(i) {
-            world.block_registry.on_state_replaced(
-                world,
-                Block::from_state_id(block_state.id),
-                &broken_block_pos,
-                block_state.id, // ?
-                false,
-            );
-            world.block_registry.prepare(
-                world,
-                &broken_block_pos,
-                Block::from_state_id(block_state.id),
-                block_state.id,
-                BlockFlags::NOTIFY_LISTENERS,
-            );
-            world.update_neighbors_at(
-                &broken_block_pos,
-                Block::from_state_id(block_state.id),
-                None,
-            );
-        }
-    }
-    for (i, &moved_block_pos) in moved_blocks.iter().rev().enumerate() {
-        if let Some(old_state) = moved_block_states.get(moved_blocks.len() - 1 - i) {
-            let old_block = Block::from_state_id(old_state.id);
-            world.update_neighbors_at(&moved_block_pos, old_block, None);
-        }
-    }
-
-    if extend {
-        world.update_neighbors_at(&extended_pos, &Block::PISTON_HEAD, None);
-    }
-
-    true
 }

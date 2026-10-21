@@ -6,7 +6,7 @@ use std::sync::{
 
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::world::WorldEvent;
-use pumpkin_data::{Block, BlockId, BlockStateId};
+use pumpkin_data::{Block, BlockId};
 use pumpkin_util::Difficulty;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
@@ -102,10 +102,17 @@ impl LightningBoltEntity {
         let pos = self.entity.block_pos.load();
 
         let try_place = |p: BlockPos| {
-            if world.get_block_state(&p).is_air() && FireBlockBase::can_place_at(world, &p) {
+            let observed = world.get_block_state(&p);
+            if observed.is_air() && FireBlockBase::can_place_at(world, &p) {
                 let fire_block = FireBlockBase::get_fire_type(world, &p);
-                world.set_block_state(&p, fire_block.default_state.id, BlockFlags::NOTIFY_ALL);
-                self.blocks_set_on_fire.fetch_add(1, Ordering::Relaxed);
+                if world.set_block_state_from_observed(
+                    &p,
+                    observed.id,
+                    fire_block.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    self.blocks_set_on_fire.fetch_add(1, Ordering::Relaxed);
+                }
             }
         };
 
@@ -131,14 +138,14 @@ impl LightningBoltEntity {
         if is_weathering || is_waxed {
             if is_weathering && let Some(first_block_id) = get_first_stage_copper(struck_block.id) {
                 let first_block = first_block_id.to_block();
-                let offset = struck_state
-                    .id
-                    .as_u16()
-                    .saturating_sub(struck_block.default_state.id.as_u16());
-                let new_state_id =
-                    BlockStateId::new(first_block.default_state.id.as_u16() + offset)
-                        .unwrap_or(first_block.default_state.id);
-                world.set_block_state(&strike_pos, new_state_id, BlockFlags::NOTIFY_ALL);
+                if !crate::block::blocks::weathering_copper::set_stage_from_observed(
+                    world,
+                    &strike_pos,
+                    struck_state.id,
+                    first_block,
+                ) {
+                    return;
+                }
             }
 
             let strikes_count = rand::rng().random_range(3..=5);
@@ -176,13 +183,11 @@ impl LightningBoltEntity {
                 && let Some(prev_block_id) = get_previous_stage_copper(block.id)
             {
                 let prev_block = prev_block_id.to_block();
-                let offset = state
-                    .id
-                    .as_u16()
-                    .saturating_sub(block.default_state.id.as_u16());
-                let new_state_id = BlockStateId::new(prev_block.default_state.id.as_u16() + offset)
-                    .unwrap_or(prev_block.default_state.id);
-                world.set_block_state(&candidate, new_state_id, BlockFlags::NOTIFY_ALL);
+                if !crate::block::blocks::weathering_copper::set_stage_from_observed(
+                    world, &candidate, state.id, prev_block,
+                ) {
+                    continue;
+                }
                 world.sync_world_event(WorldEvent::ParticlesElectricSpark, candidate, -1);
                 return Some(candidate);
             }

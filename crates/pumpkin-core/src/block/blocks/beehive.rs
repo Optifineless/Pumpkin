@@ -34,10 +34,14 @@ impl BlockBehaviour for BeehiveBlock {
     // BeehiveBlock.useItemOn bottles honey, then applies smoke or emergency bee release.
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
         let state = args.world.get_block_state_id(args.position);
+        if state.to_block() != args.block {
+            return BlockActionResult::PassToDefaultBlockAction;
+        }
         let props = BeeNestLikeProperties::from_state_id(state);
         if props.honey_level < 5 || args.item_stack.item != &Item::GLASS_BOTTLE {
             return BlockActionResult::PassToDefaultBlockAction;
         }
+        let harvested_hive = args.world.get_block_entity(args.position);
         let mut event =
             crate::plugin::api::events::player::player_harvest_block::PlayerHarvestBlockEvent {
                 player: args.player.clone(),
@@ -48,7 +52,7 @@ impl BlockBehaviour for BeehiveBlock {
         if let Some(server) = args.world.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
-        if event.cancelled {
+        if event.cancelled || !take_honey(args.world, *args.position, state) {
             return BlockActionResult::Fail;
         }
         args.player.increment_stat(
@@ -72,7 +76,14 @@ impl BlockBehaviour for BeehiveBlock {
         );
         args.world
             .emit_game_event("fluid_pickup", args.position.to_centered_f64());
-        finish_harvest(args.world, *args.position, args.player);
+        if let Some(harvested_hive) = harvested_hive
+            && args
+                .world
+                .get_block_entity(args.position)
+                .is_some_and(|current| Arc::ptr_eq(&current, &harvested_hive))
+        {
+            finish_harvest(args.world, *args.position, args.player);
+        }
         BlockActionResult::Success
     }
 
@@ -109,17 +120,52 @@ fn is_lit_campfire(state: pumpkin_data::BlockStateId) -> bool {
         && CampfireLikeProperties::from_state_id(state).lit
 }
 
-/// Resets honey and releases hive occupants when the harvest is not protected by smoke.
-/// Mirrors BeehiveBlock.releaseBeesAndResetHoneyLevel and BeehiveBlockEntity.emptyAllLivingFromHive.
+/// Claims a full honey level before publishing a harvest's output.
+pub(crate) fn take_honey(
+    world: &Arc<World>,
+    position: BlockPos,
+    observed: pumpkin_data::BlockStateId,
+) -> bool {
+    let block = Block::from_state_id(observed);
+    if block != &Block::BEE_NEST && block != &Block::BEEHIVE {
+        return false;
+    }
+    let mut props = BeeNestLikeProperties::from_state_id(observed);
+    if props.honey_level != 5 {
+        return false;
+    }
+    props.honey_level = 0;
+    world.set_block_state_from_observed(
+        &position,
+        observed,
+        props.to_state_id(block),
+        BlockFlags::NOTIFY_ALL,
+    )
+}
+
+/// Releases hive occupants when the harvest is not protected by smoke.
+/// Mirrors BeehiveBlockEntity.emptyAllLivingFromHive after honey admission.
 pub fn finish_harvest(
     world: &Arc<World>,
     position: BlockPos,
     player: &Arc<crate::entity::player::Player>,
 ) {
     let (block, state) = world.get_block_and_state_id(&position);
+    if block != &Block::BEE_NEST && block != &Block::BEEHIVE {
+        return;
+    }
     let mut props = BeeNestLikeProperties::from_state_id(state);
-    props.honey_level = 0;
-    world.set_block_state(&position, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+    if props.honey_level != 0 {
+        props.honey_level = 0;
+        if !world.set_block_state_from_observed(
+            &position,
+            state,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return;
+        }
+    }
     if is_smokey_pos(world, position) {
         return;
     }

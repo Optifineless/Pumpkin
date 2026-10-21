@@ -1,3 +1,4 @@
+mod observed_writes;
 mod random_tick_membership;
 use crate::chunk::format::LightContainer;
 use crate::tick::scheduler::ChunkTickScheduler;

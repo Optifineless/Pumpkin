@@ -13,7 +13,7 @@ const WARNING_CHECK_DIAMETER: f64 = 48.0;
 const DECREASE_WARNING_LEVEL_EVERY_INTERVAL: i32 = 12000;
 const WARNING_LEVEL_INCREASE_COOLDOWN: i32 = 200;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub struct WardenSpawnTracker {
     ticks_since_last_warning: i32,
     warning_level: i32,
@@ -35,10 +35,20 @@ impl WardenSpawnTracker {
     }
 
     pub fn try_warn(world: &World, pos: &BlockPos, trigger_player: &Arc<Player>) -> Option<i32> {
+        let warning = Self::prepare_warning(world, pos, trigger_player)?;
+        let level = warning.level();
+        warning.commit();
+        Some(level)
+    }
+
+    pub(crate) fn prepare_warning(
+        world: &World,
+        pos: &BlockPos,
+        trigger_player: &Arc<Player>,
+    ) -> Option<WarningPlan> {
         if Self::has_nearby_warden(world, pos) {
             return None;
         }
-
         let mut players = Self::get_nearby_players(world, pos);
         if !players
             .iter()
@@ -46,24 +56,22 @@ impl WardenSpawnTracker {
         {
             players.push(trigger_player.clone());
         }
-
-        let trackers: Vec<Self> = players.iter().map(|player| *Self::lock(player)).collect();
-        if trackers.iter().any(Self::on_cooldown) {
+        let snapshots: Vec<_> = players
+            .into_iter()
+            .map(|player| {
+                let tracker = *Self::lock(&player);
+                (player, tracker)
+            })
+            .collect();
+        if snapshots.iter().any(|(_, tracker)| tracker.on_cooldown()) {
             return None;
         }
-
-        let mut highest = trackers.into_iter().reduce(|best, tracker| {
-            if tracker.warning_level >= best.warning_level {
-                tracker
-            } else {
-                best
-            }
-        })?;
+        let mut highest = snapshots
+            .iter()
+            .map(|(_, tracker)| *tracker)
+            .max_by_key(|tracker| tracker.warning_level)?;
         highest.increase_warning_level();
-        for player in &players {
-            *Self::lock(player) = highest;
-        }
-        Some(highest.warning_level)
+        Some(WarningPlan { snapshots, highest })
     }
 
     fn lock(player: &Player) -> std::sync::MutexGuard<'_, Self> {
@@ -132,5 +140,26 @@ impl WardenSpawnTracker {
         nbt.put_int("warning_level", self.warning_level);
         nbt.put_int("cooldown_ticks", self.cooldown_ticks);
         nbt
+    }
+}
+
+// Warning state is published only after the triggering shrieker transition commits.
+pub(crate) struct WarningPlan {
+    snapshots: Vec<(Arc<Player>, WardenSpawnTracker)>,
+    highest: WardenSpawnTracker,
+}
+
+impl WarningPlan {
+    pub(crate) const fn level(&self) -> i32 {
+        self.highest.warning_level
+    }
+
+    pub(crate) fn commit(self) {
+        for (player, observed) in self.snapshots {
+            let mut current = WardenSpawnTracker::lock(&player);
+            if *current == observed {
+                *current = self.highest;
+            }
+        }
     }
 }

@@ -131,6 +131,12 @@ pub(in crate::world) struct RetiredBlockEntity {
 }
 
 impl RetiredBlockEntity {
+    pub(in crate::world) fn retire_owner(&self) {
+        if let Some(entity) = &self.live {
+            crate::world::container_lifecycle::retire_block_entity(entity);
+        }
+    }
+
     pub(in crate::world) fn on_block_replaced(self, world: &Arc<World>, position: &BlockPos) {
         // LevelChunk.setBlockState/preRemoveSideEffects: use the retired instance,
         // never a replacement installed by an earlier callback in this batch.
@@ -156,7 +162,7 @@ pub(super) fn frame_mutation_permits(
     for chunk_x in ((lower_corner.0.x - 2) >> 4)..=((lower_corner.0.x + 2) >> 4) {
         for chunk_z in ((lower_corner.0.z - 2) >> 4)..=((lower_corner.0.z + 2) >> 4) {
             let position = BlockPos::new(chunk_x << 4, lower_corner.0.y, chunk_z << 4);
-            permits.push(world.block_entity_mutation_permit(position)?);
+            permits.push(world.reserve_block_entity_mutation(position)?);
         }
     }
     Some(permits)
@@ -175,22 +181,32 @@ pub(super) fn set_frame_block(
     if !world.is_in_build_limit(*position) {
         return;
     }
-    let Some(_mutation) = world.block_entity_mutation_permit(*position) else {
+    let Some(mutation) = world.reserve_block_entity_mutation(*position) else {
         tracing::warn!("Portal frame update rejected while chunk is unloading at {position:?}");
         return;
     };
-    let old = world
-        .write_block_state_if(position, state, |_| true)
-        .unwrap_or(Block::AIR.default_state.id);
-    let retired_effects = RetiredBlockEffects::capture(world, position, old);
-    // Retire live and saved caches under their existing publication gate. Constructing
-    // pending entities or binding native context must wait until creation unlocks.
-    let retired = (Block::from_state_id(old) != Block::from_state_id(state)
-        && block_entity_name(Block::from_state_id(old)).is_some())
-    .then(|| world.remove_loaded_block_entity(position));
+    let (old, retired_effects, retired) = {
+        let mut loads = world
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(old) = world.write_block_state_if(position, state, |_| true) else {
+            return;
+        };
+        let retired_effects = RetiredBlockEffects::capture(world, position, old);
+        // Detach the exact old entity at terrain commit; native work waits for creation unlock.
+        let retired = (Block::from_state_id(old) != Block::from_state_id(state)
+            && block_entity_name(Block::from_state_id(old)).is_some())
+        .then(|| world.remove_block_entity_under_publication_gate(position, &mut loads));
+        (old, retired_effects, retired)
+    };
+    drop(mutation);
     let world = world.clone();
     let position = *position;
     let effect = move || {
+        if let Some(retired) = &retired {
+            retired.retire_owner();
+        }
         if let Some(retired) = retired
             && !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK)
         {

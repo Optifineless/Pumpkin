@@ -649,7 +649,7 @@ impl EnderDragonEntity {
         let max = bbox.max_block_pos();
 
         for pos in BlockPos::iterate(min, max) {
-            let block = world.get_block(&pos);
+            let (block, observed) = world.get_block_and_state_id(&pos);
             if block != &Block::BEDROCK
                 && block != &Block::END_STONE
                 && block != &Block::OBSIDIAN
@@ -657,7 +657,12 @@ impl EnderDragonEntity {
                 && block != &Block::END_PORTAL
                 && block != &Block::END_PORTAL_FRAME
             {
-                world.set_block_state(&pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
+                world.set_block_state_from_observed(
+                    &pos,
+                    observed,
+                    BlockStateId::AIR,
+                    BlockFlags::NOTIFY_ALL,
+                );
             }
         }
     }

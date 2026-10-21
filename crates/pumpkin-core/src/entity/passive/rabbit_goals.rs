@@ -333,8 +333,14 @@ impl Goal for RaidGardenGoal {
             if let Some(server) = world.server.upgrade() {
                 server.plugin_manager.fire_blocking(&server, &mut event);
             }
-            if !event.cancelled {
-                world.set_block_state(&crops, next, BlockFlags::NOTIFY_LISTENERS);
+            if !event.cancelled
+                && world.set_block_state_from_observed(
+                    &crops,
+                    state,
+                    next,
+                    BlockFlags::NOTIFY_LISTENERS,
+                )
+            {
                 if age > 0 {
                     world.emit_game_event("minecraft:block_change", crops.to_f64());
                     world.sync_world_event(

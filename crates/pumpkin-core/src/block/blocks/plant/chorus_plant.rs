@@ -59,11 +59,20 @@ impl BlockBehaviour for ChorusPlantBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         // Destroy if unsupported; breaking propagates neighbor-update callbacks
         // to connected chorus blocks, which schedule their own ticks.
         if !can_survive(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 

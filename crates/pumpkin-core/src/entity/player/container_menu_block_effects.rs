@@ -55,10 +55,20 @@ fn on_take_anvil(world: &Arc<World>, pos: BlockPos, infinite_materials: bool) {
         && rand::random::<f32>() < ANVIL_DAMAGE_CHANCE
     {
         if let Some(new_state) = crate::block::blocks::anvil::AnvilBlock::damage(state.id) {
-            world.set_block_state(&pos, new_state, BlockFlags::NOTIFY_ALL);
-            world.sync_world_event(WorldEvent::SoundAnvilUsed, pos, 0);
-        } else {
-            world.set_block_state(&pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
+            if world.set_block_state_from_observed(
+                &pos,
+                state.id,
+                new_state,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                world.sync_world_event(WorldEvent::SoundAnvilUsed, pos, 0);
+            }
+        } else if world.set_block_state_from_observed(
+            &pos,
+            state.id,
+            BlockStateId::AIR,
+            BlockFlags::NOTIFY_ALL,
+        ) {
             world.sync_world_event(WorldEvent::SoundAnvilBroken, pos, 0);
         }
     } else {

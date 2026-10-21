@@ -23,6 +23,11 @@ enum SnapshotPublication {
     Older,
 }
 
+pub(super) enum ObservedBlockEntityInstallation {
+    Rejected,
+    Installed(Option<Arc<dyn BlockEntity>>),
+}
+
 // Admission level 10 precedes block-entity registry and chunk-leaf access; no callbacks run under it.
 pub(super) enum PendingBlockEntityLoadsLock {}
 impl LockClass for PendingBlockEntityLoadsLock {
@@ -575,6 +580,40 @@ impl World {
         drop(retired);
     }
 
+    pub(super) fn install_block_entity_from_observed(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+        entity: &Arc<dyn BlockEntity>,
+    ) -> ObservedBlockEntityInstallation {
+        let chunk_pos = position.chunk_position();
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if loads.unloading.contains_key(&chunk_pos)
+            || self.get_block_state_id_if_loaded(&position) != Some(expected)
+        {
+            return ObservedBlockEntityInstallation::Rejected;
+        }
+        // LevelChunk.setBlockEntity: admission and the registry swap share the terrain gate.
+        // Retain the exact predecessor so native retirement runs after all ownership releases.
+        let previous = self
+            .block_entities
+            .entry(chunk_pos)
+            .or_default()
+            .insert(position, entity.clone());
+        loads.snapshots.remove(&position);
+        if previous
+            .as_ref()
+            .is_none_or(|previous| !Arc::ptr_eq(previous, entity))
+        {
+            loads.published_capture_stamps.remove(&position);
+        }
+        drop(loads);
+        ObservedBlockEntityInstallation::Installed(previous)
+    }
+
     pub(super) fn replace_live_block_entity(
         &self,
         pos: BlockPos,
@@ -627,6 +666,20 @@ impl World {
             drop(previous);
             return true;
         }
+    }
+
+    pub(super) fn remove_observed_block(
+        &self,
+        position: &BlockPos,
+        expected: BlockStateId,
+        replacement: BlockStateId,
+    ) -> Option<RetiredBlockEntity> {
+        let mut loads = self
+            .pending_block_entity_loads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.write_block_state_if(position, replacement, |current| current == expected)?;
+        Some(self.remove_block_entity_under_publication_gate(position, &mut loads))
     }
 
     pub(super) fn remove_loaded_block_entity(&self, pos: &BlockPos) -> RetiredBlockEntity {
@@ -747,48 +800,36 @@ impl World {
         }) {
             return Vec::new();
         }
+        let mut chunks = Vec::new();
+        for (position, _) in halves {
+            let Some(chunk) = self
+                .level
+                .read_chunk_sync(&position.chunk_position(), Arc::clone)
+            else {
+                return Vec::new();
+            };
+            if !chunks.iter().any(|other| Arc::ptr_eq(other, &chunk)) {
+                chunks.push(chunk);
+            }
+        }
+        let updates = halves
+            .iter()
+            .map(|&(position, expected)| (position, expected, BlockStateId::AIR))
+            .collect::<Vec<_>>();
+        if !ChunkData::set_observed_blocks(&chunks, &updates) {
+            return Vec::new();
+        }
         let mut committed = Vec::with_capacity(halves.len());
         for &(position, expected) in halves {
-            if self
-                .write_block_state_if(&position, BlockStateId::AIR, |current| current == expected)
-                .is_none()
-            {
-                break;
-            }
             // Keep add_block_entity/pending promotion outside the raw-write/retirement gap.
             // All native retirement callbacks run only after this gate is released.
             let retired = self.remove_block_entity_under_publication_gate(&position, loads);
             committed.push((position, expected, retired));
-            #[cfg(test)]
-            if halves.len() == 2 && committed.len() == 1 {
-                use std::sync::atomic::Ordering::Relaxed;
-                // A bounded test rendezvous, with no callback or additional lock under the gate.
-                if self
-                    .persistence_test_hooks
-                    .bed_half_write_test
-                    .compare_exchange(1, 2, Relaxed, Relaxed)
-                    .is_ok()
-                {
-                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-                    while self
-                        .persistence_test_hooks
-                        .bed_half_write_test
-                        .load(Relaxed)
-                        == 2
-                    {
-                        assert!(
-                            std::time::Instant::now() < deadline,
-                            "bed writer test timed out"
-                        );
-                        std::thread::yield_now();
-                    }
-                }
-            }
         }
         committed
     }
 
-    fn remove_block_entity_under_publication_gate(
+    pub(super) fn remove_block_entity_under_publication_gate(
         &self,
         pos: &BlockPos,
         loads: &mut PendingBlockEntityLoads,

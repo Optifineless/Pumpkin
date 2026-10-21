@@ -24,11 +24,7 @@ async fn waterloggable_falling_block_lands_waterlogged_in_source_water() {
     ] {
         let pos = BlockPos::new(x, 64, 4);
         world.set_block_state(&pos, landing_state, BlockFlags::FORCE_STATE);
-        let falling = FallingEntity::replace_spawn(
-            &world,
-            pos.up_height(5),
-            Block::OAK_SLAB.default_state.id,
-        );
+        let falling = spawn_falling(&world, pos.up_height(5), Block::OAK_SLAB.default_state.id);
         falling
             .entity
             .set_pos(Vector3::new(f64::from(x) + 0.5, 64.0, 4.5));
@@ -50,7 +46,7 @@ async fn falling_anvil_damages_entities_below_and_can_crack() {
     let living = cow.get_living_entity().unwrap();
     living.set_max_health(100.0);
     living.set_health(100.0);
-    let falling = FallingEntity::replace_spawn(
+    let falling = spawn_falling(
         &world,
         BlockPos::new(4, 85, 4),
         Block::ANVIL.default_state.id,
@@ -68,7 +64,7 @@ async fn falling_anvil_damages_entities_below_and_can_crack() {
     short_cow.get_living_entity().unwrap().set_max_health(20.0);
     short_cow.get_living_entity().unwrap().set_health(20.0);
     short_cow.get_entity().set_pos(Vector3::new(8.5, 64.0, 8.5));
-    let short = FallingEntity::replace_spawn(
+    let short = spawn_falling(
         &world,
         BlockPos::new(8, 65, 8),
         Block::ANVIL.default_state.id,
@@ -79,7 +75,7 @@ async fn falling_anvil_damages_entities_below_and_can_crack() {
     short.land();
     assert_eq!(world.get_block(&BlockPos::new(8, 64, 8)), &Block::ANVIL);
 
-    let broken = FallingEntity::replace_spawn(
+    let broken = spawn_falling(
         &world,
         BlockPos::new(12, 85, 12),
         Block::DAMAGED_ANVIL.default_state.id,
@@ -113,7 +109,7 @@ async fn falling_anvil_tick_accumulates_distance_and_skips_creative_and_spectato
     let spectator = fixture.player("spectator");
     spectator.set_gamemode(pumpkin_util::GameMode::Spectator);
     spectator.get_entity().set_pos(Vector3::new(6.5, 64.0, 6.5));
-    let falling = FallingEntity::replace_spawn(
+    let falling = spawn_falling(
         &world,
         BlockPos::new(6, 69, 6),
         Block::ANVIL.default_state.id,
@@ -156,7 +152,7 @@ async fn falling_anvil_respects_the_landing_blocks_fall_damage_rule() {
         let living = cow.get_living_entity().unwrap();
         living.set_max_health(100.0);
         living.set_health(100.0);
-        let falling = FallingEntity::replace_spawn(
+        let falling = spawn_falling(
             &world,
             BlockPos::new(x, 69, 4),
             Block::ANVIL.default_state.id,
@@ -169,4 +165,13 @@ async fn falling_anvil_respects_the_landing_blocks_fall_damage_rule() {
         assert_eq!(living.health.load(), health);
     }
     fixture.server.shutdown().await;
+}
+
+fn spawn_falling(
+    world: &Arc<World>,
+    position: BlockPos,
+    state: BlockStateId,
+) -> Arc<FallingEntity> {
+    world.set_block_state(&position, state, BlockFlags::FORCE_STATE);
+    FallingEntity::replace_spawn(world, position, state).unwrap()
 }

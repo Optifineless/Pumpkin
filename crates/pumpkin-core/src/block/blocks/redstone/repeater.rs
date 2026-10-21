@@ -42,6 +42,9 @@ impl BlockBehaviour for RepeaterBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let (block, state) = args.world.get_block_and_state(args.position);
+        if block != args.block {
+            return;
+        }
         if self.is_locked(args.world, *args.position, state.id, block) {
             return;
         }
@@ -54,11 +57,14 @@ impl BlockBehaviour for RepeaterBlock {
         // in front. Pumpkin's `placed` only sets the block-type, so `update_target` below does it.
         if now_powered && !should_be_powered {
             props.powered = false;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
             RedstoneGateBlock::update_target(
                 self,
                 args.world,
@@ -68,11 +74,14 @@ impl BlockBehaviour for RepeaterBlock {
             );
         } else if !now_powered {
             props.powered = true;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
             if !should_be_powered {
                 args.world.schedule_block_tick(
                     block,
@@ -97,6 +106,9 @@ impl BlockBehaviour for RepeaterBlock {
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let props = RepeaterProperties::from_state_id(state.id);
         Self::on_use(props, args.world, *args.position, args.block);
 
@@ -218,10 +230,11 @@ impl RedstoneGateBlock<RepeaterProperties> for RepeaterBlock {
 
 impl RepeaterBlock {
     fn on_use(props: RepeaterProperties, world: &Arc<World>, block_pos: BlockPos, block: &Block) {
+        let observed = props.to_state_id(block);
         let mut props = props;
         props.delay = if props.delay == 4 { 1 } else { props.delay + 1 };
         let state = props.to_state_id(block);
-        world.set_block_state(&block_pos, state, BlockFlags::NOTIFY_ALL);
+        world.set_block_state_from_observed(&block_pos, observed, state, BlockFlags::NOTIFY_ALL);
     }
 
     fn is_locked(

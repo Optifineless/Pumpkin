@@ -189,6 +189,8 @@ impl EventHandler<crate::plugin::block::block_drop_item::BlockDropItemEvent> for
         event: &'a mut crate::plugin::block::block_drop_item::BlockDropItemEvent,
     ) -> BoxFuture<'a, ()> {
         let state = event.world.get_block_state(&event.block_pos);
+        assert_eq!(state.id.to_block(), &Block::DECORATED_POT);
+        assert!(event.world.get_block_entity(&event.block_pos).is_some());
         let properties = DecoratedPotLikeProperties::from_state_id(state.id);
         self.0.store(properties.cracked, Relaxed);
         Box::pin(async {})

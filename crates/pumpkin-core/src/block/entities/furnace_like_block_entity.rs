@@ -612,15 +612,14 @@ macro_rules! impl_block_entity_for_cooking {
                     is_dirty = true;
                     let (furnace_block, furnace_block_state) =
                         world.get_block_and_state(&self.position);
+                    if furnace_block.name != Self::ID.strip_prefix("minecraft:").unwrap_or(Self::ID) { return; }
                     let mut props =
                         pumpkin_data::block_properties::FurnaceLikeProperties::from_state_id(furnace_block_state.id);
 
                     props.lit = self.is_burning();
-                    world.set_block_state(
-                        &self.position,
-                        props.to_state_id(furnace_block),
-                        $crate::world::BlockFlags::NOTIFY_ALL,
-                    );
+                    if world.set_block_state_if(&self.position, props.to_state_id(furnace_block), $crate::world::BlockFlags::NOTIFY_ALL, |current| current == furnace_block_state.id && self.transaction.is_live()).is_none() {
+                        return;
+                    }
                 }
 
                 if is_dirty {

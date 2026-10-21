@@ -1,3 +1,4 @@
+use pumpkin_data::Block;
 use std::any::Any;
 use std::sync::{
     Arc, Mutex as StdMutex, RwLock,
@@ -604,6 +605,9 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
         if needs_update {
             // Update the block state properties for the brewing stand to reflect bottle presence
             let (block, state) = world.get_block_and_state(&self.position);
+            if block != &Block::BREWING_STAND {
+                return;
+            }
             // Use generated block properties helper to produce a new state id with the bits set
             let mut props =
                 pumpkin_data::block_properties::BrewingStandLikeProperties::from_state_id(state.id);
@@ -612,11 +616,17 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
             props.r#has_bottle_1 = current[1];
             props.r#has_bottle_2 = current[2];
 
-            world.set_block_state(
-                &self.position,
-                props.to_state_id(block),
-                crate::world::BlockFlags::NOTIFY_ALL,
-            );
+            if world
+                .set_block_state_if(
+                    &self.position,
+                    props.to_state_id(block),
+                    crate::world::BlockFlags::NOTIFY_ALL,
+                    |current| current == state.id && self.transaction.is_live(),
+                )
+                .is_none()
+            {
+                return;
+            }
 
             // Also mark dirty so inventory/container updates are sent to open screens.
             // The slot change that flipped these bits already flagged the comparator.

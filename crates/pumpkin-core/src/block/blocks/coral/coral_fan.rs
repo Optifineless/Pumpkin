@@ -107,6 +107,9 @@ impl BlockBehaviour for CoralFanBlock {
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         if !scan_for_water(args.world, args.position) && !is_dead_coral(args.block) {
             let current_state = args.world.get_block_state(args.position);
+            if current_state.id.to_block() != args.block {
+                return;
+            }
 
             let Some(dead_block) = get_dead_type(args.block.id) else {
                 return;
@@ -123,8 +126,12 @@ impl BlockBehaviour for CoralFanBlock {
                 props.to_state_id(dead_block)
             };
 
-            args.world
-                .set_block_state(args.position, dead_block_state_id, BlockFlags::NOTIFY_ALL);
+            args.world.set_block_state_from_observed(
+                args.position,
+                current_state.id,
+                dead_block_state_id,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 

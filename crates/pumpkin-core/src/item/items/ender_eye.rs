@@ -49,6 +49,9 @@ impl ItemBehaviour for EnderEyeItem {
 
         let world = player.world();
         let state_id = world.get_block_state_id(&location);
+        if Block::from_state_id(state_id) != block {
+            return BlockActionResult::Pass;
+        }
 
         // Skip if the frame already holds an eye.
         let mut props = EndPortalFrameLikeProperties::from_state_id(state_id);
@@ -58,9 +61,15 @@ impl ItemBehaviour for EnderEyeItem {
         props.eye = true;
         let new_state_id = props.to_state_id(block);
 
-        // EnderEyeItem.useOn lifts occupants before writing the frame's larger shape.
+        if !world.set_block_state_from_observed(
+            &location,
+            state_id,
+            new_state_id,
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
+            return BlockActionResult::Pass;
+        }
         crate::block::push_entities_up(state_id, new_state_id, &world, &location);
-        world.set_block_state(&location, new_state_id, BlockFlags::NOTIFY_LISTENERS);
         // Consume one item.
         item.decrement_unless_creative(player.gamemode.load(), 1);
         world.sync_world_event(WorldEvent::EndPortalFrameFill, location, 0);

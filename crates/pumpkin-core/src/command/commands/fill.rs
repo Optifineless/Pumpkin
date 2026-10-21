@@ -103,9 +103,6 @@ fn fill_blocks(
         from.0.z.max(to.0.z),
     );
     check_region_loaded(source, min, max)?;
-    let _mutation = world
-        .block_entity_mutation_permit(from)
-        .ok_or_else(|| ERROR_FAILED.create_without_context())?;
     let air = BlockInput {
         state: BlockStateId::AIR,
         properties: Vec::new(),
@@ -134,16 +131,19 @@ fn fill_blocks(
                 if matches!(mode, FillMode::Outline) && !edge {
                     continue;
                 }
-                let destroyed = matches!(mode, FillMode::Destroy)
-                    && world
-                        .break_block(&pos, None, BlockFlags::NOTIFY_ALL)
-                        .is_some();
                 let input = if matches!(mode, FillMode::Hollow) && !edge {
                     &air
                 } else {
                     target
                 };
-                let placed = super::block_input::place(input, world, &pos, strict);
+                let (placed, destroyed) = fill_position(
+                    world,
+                    &pos,
+                    input,
+                    old,
+                    matches!(mode, FillMode::Destroy),
+                    strict,
+                );
                 if placed || destroyed {
                     count += 1;
                 }
@@ -169,6 +169,33 @@ fn fill_blocks(
         true,
     );
     Ok(count)
+}
+
+fn fill_position(
+    world: &std::sync::Arc<crate::world::World>,
+    pos: &BlockPos,
+    input: &BlockInput,
+    old: BlockStateId,
+    destroy: bool,
+    strict: bool,
+) -> (bool, bool) {
+    let destroyed = destroy
+        && !old.to_state().is_air()
+        && world
+            .break_block_from_observed(pos, old, None, BlockFlags::NOTIFY_ALL)
+            .is_some();
+    if destroy && !old.to_state().is_air() && !destroyed {
+        return (false, false);
+    }
+    let expected = if destroyed {
+        crate::block::blocks::growing_plant::fluid_state_after_break(old)
+    } else {
+        old
+    };
+    (
+        super::block_input::place_from_observed(input, world, pos, expected, strict),
+        destroyed,
+    )
 }
 
 struct FillExecutor {

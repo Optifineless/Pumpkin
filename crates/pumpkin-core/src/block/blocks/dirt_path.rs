@@ -16,14 +16,23 @@ pub struct DirtPathBlock;
 impl BlockBehaviour for DirtPathBlock {
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         // PathBlock.tick / turnToBaseBlock.
-        let state = push_entities_up(
-            args.world.get_block_state_id(args.position),
-            Block::DIRT.default_state.id,
-            args.world,
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+        if args.world.set_block_state_from_observed(
             args.position,
-        );
-        args.world
-            .set_block_state(args.position, state, BlockFlags::NOTIFY_ALL);
+            observed,
+            Block::DIRT.default_state.id,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            push_entities_up(
+                observed,
+                Block::DIRT.default_state.id,
+                args.world,
+                args.position,
+            );
+        }
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {

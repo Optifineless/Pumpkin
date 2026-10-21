@@ -55,9 +55,18 @@ impl BlockBehaviour for EyeblossomBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         if !<Self as PlantBlockBase>::can_place_at(self, args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
             return;
         }
 
@@ -132,7 +141,14 @@ pub fn try_changing_state(world: &Arc<World>, current_block: &Block, pos: &Block
         &Block::OPEN_EYEBLOSSOM
     };
 
-    world.set_block_state(pos, new_block.default_state.id, BlockFlags::NOTIFY_ALL);
+    if !world.set_block_state_from_observed(
+        pos,
+        current_block.default_state.id,
+        new_block.default_state.id,
+        BlockFlags::NOTIFY_ALL,
+    ) {
+        return false;
+    }
 
     let mut rng = rand::rng();
     world.spawn_particle_with_options(

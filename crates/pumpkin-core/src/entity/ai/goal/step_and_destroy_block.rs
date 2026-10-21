@@ -121,6 +121,10 @@ impl<S: Stepping + Send + Sync, M: MoveToTargetPos + Send + Sync> Goal
         let Some(tweak_pos) = self.tweak_to_proper_pos(block_pos, &world) else {
             return;
         };
+        let (block, observed) = world.get_block_and_state_id(&tweak_pos);
+        if block.id != self.target_block.id {
+            return;
+        }
         if !self.move_to_target_pos_goal.reached {
             return;
         }
@@ -152,7 +156,14 @@ impl<S: Stepping + Send + Sync, M: MoveToTargetPos + Send + Sync> Goal
 
         if counter > 60 {
             // Replace with air, no drops.
-            world.set_block_state(&tweak_pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                &tweak_pos,
+                observed,
+                BlockStateId::AIR,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
             // TODO: spawn the poof particles
             if let Some(stepping) = self.stepping.get() {
                 stepping.on_destroy_block(world, tweak_pos);

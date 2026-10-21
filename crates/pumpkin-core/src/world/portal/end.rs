@@ -88,25 +88,38 @@ impl EndPortal {
     }
 
     fn create_portal(world: &Arc<World>, pos: BlockPos) {
+        let mut changed = false;
         for x in -1..=1 {
             for z in -1..=1 {
                 let portal_pos = pos.offset(Vector3::new(x, 0, z));
                 // EnderEyeItem.useOn destroys each interior block, including container contents.
-                if !world.get_block_state(&portal_pos).is_air()
-                    && world
-                        .break_block(&portal_pos, None, BlockFlags::NOTIFY_ALL)
+                let mut expected = world.get_block_state_id(&portal_pos);
+                if !expected.to_state().is_air() {
+                    if world
+                        .break_block_from_observed(
+                            &portal_pos,
+                            expected,
+                            None,
+                            BlockFlags::NOTIFY_ALL,
+                        )
                         .is_none()
-                {
-                    continue;
+                    {
+                        continue;
+                    }
+                    expected =
+                        crate::block::blocks::growing_plant::fluid_state_after_break(expected);
                 }
-                world.set_block_state(
+                changed |= world.set_block_state_from_observed(
                     &portal_pos,
+                    expected,
                     Block::END_PORTAL.default_state.id,
                     BlockFlags::NOTIFY_LISTENERS,
                 );
             }
         }
 
-        world.sync_global_world_event(WorldEvent::SoundEndPortalSpawn, pos, 0);
+        if changed {
+            world.sync_global_world_event(WorldEvent::SoundEndPortalSpawn, pos, 0);
+        }
     }
 }

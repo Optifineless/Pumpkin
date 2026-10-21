@@ -69,6 +69,7 @@ impl DebugStickItem {
         }
 
         if cycle {
+            drop(map);
             let mut possible_values: Vec<&'static str> = Vec::new();
             for state in block.states {
                 if let Some(state_props) = block.properties(state.id) {
@@ -109,7 +110,14 @@ impl DebugStickItem {
 
             let new_state_id = block.from_properties(&new_props).to_state_id(block);
             let world = player.world();
-            world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                pos,
+                state_id,
+                new_state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return false;
+            }
 
             player.send_system_message_raw(
                 &TextComponent::translate(
@@ -134,6 +142,7 @@ impl DebugStickItem {
             };
             let new_selected_prop = prop_names[new_idx];
             map.insert(block.id, new_selected_prop);
+            drop(map);
 
             let current_val = prop_list
                 .iter()

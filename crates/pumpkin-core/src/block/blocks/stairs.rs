@@ -47,6 +47,9 @@ impl BlockBehaviour for StairBlock {
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         {
             let state_id = args.world.get_block_state_id(args.position);
+            if state_id.to_block() != args.block {
+                return;
+            }
             let mut stair_props = StairsProperties::from_state_id(state_id);
 
             let new_shape = compute_stair_shape(
@@ -58,8 +61,9 @@ impl BlockBehaviour for StairBlock {
 
             if stair_props.shape != new_shape {
                 stair_props.shape = new_shape;
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    state_id,
                     stair_props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
                 );

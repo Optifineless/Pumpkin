@@ -19,7 +19,8 @@ impl BlockBehaviour for ConduitBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         {
             let entity = ConduitBlockEntity::new(*args.position);
-            args.world.add_block_entity(Arc::new(entity));
+            args.world
+                .add_block_entity_from_observed(Arc::new(entity), args.state_id);
         }
     }
 

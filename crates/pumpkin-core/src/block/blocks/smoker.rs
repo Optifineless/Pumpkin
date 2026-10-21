@@ -128,7 +128,8 @@ impl BlockBehaviour for SmokerBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let smoker_block_entity = SmokerBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(smoker_block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(smoker_block_entity), args.state_id);
     }
 
     fn get_comparator_output(&self, args: GetComparatorOutputArgs<'_>) -> Option<u8> {

@@ -45,12 +45,29 @@ impl SaplingBlock {
         state_id: BlockStateId,
         bone_meal: bool,
     ) {
+        Self::advance_tree_checked(world, pos, block, state_id, bone_meal);
+    }
+
+    pub(crate) fn advance_tree_checked(
+        world: &Arc<World>,
+        pos: &BlockPos,
+        block: &Block,
+        state_id: BlockStateId,
+        bone_meal: bool,
+    ) -> bool {
+        if state_id.to_block() != block {
+            return false;
+        }
         if OakSaplingLikeProperties::handles_block_id(block.id) {
             let mut props = OakSaplingLikeProperties::from_state_id(state_id);
             if props.stage == 0 {
                 props.stage = 1;
-                world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
-                return;
+                return world.set_block_state_from_observed(
+                    pos,
+                    state_id,
+                    props.to_state_id(block),
+                    BlockFlags::NOTIFY_ALL,
+                );
             }
         }
 
@@ -59,14 +76,20 @@ impl SaplingBlock {
         if let Some(server) = world.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
             if event.cancelled {
-                return;
+                return true;
             }
         }
         let Some(grower) = TreeGrower::for_block(block) else {
-            return;
+            return true;
         };
         let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(rand::random::<u64>()));
-        grower.grow_tree(world, pos, block, state_id, &mut random);
+        // A failed feature attempt still consumes bone meal in vanilla.
+        if world.get_block_state_id(pos) != state_id {
+            return false;
+        }
+        grower
+            .grow_tree_checked(world, pos, block, state_id, &mut random)
+            .is_some()
     }
 }
 
@@ -114,10 +137,8 @@ impl BlockBehaviour for SaplingBlock {
         rand::random::<f32>() < 0.45
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
-        {
-            Self::advance_tree(args.world, args.position, args.block, args.state_id, true);
-        }
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
+        Self::advance_tree_checked(args.world, args.position, args.block, args.state_id, true)
     }
 }
 

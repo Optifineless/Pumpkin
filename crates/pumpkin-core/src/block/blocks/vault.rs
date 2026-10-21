@@ -30,7 +30,8 @@ impl BlockBehaviour for VaultBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         {
             let entity = VaultBlockEntity::new(*args.position);
-            args.world.add_block_entity(Arc::new(entity));
+            args.world
+                .add_block_entity_from_observed(Arc::new(entity), args.state_id);
         }
     }
 
@@ -61,6 +62,21 @@ impl BlockBehaviour for VaultBlock {
                 return BlockActionResult::Success;
             }
 
+            let observed = args.world.get_block_state_id(args.position);
+            if observed.to_block() != args.block {
+                return BlockActionResult::Pass;
+            }
+            let mut props = VaultLikeProperties::from_state_id(observed);
+            props.vault_state = VaultState::Ejecting;
+            let ejecting = props.to_state_id(args.block);
+            if !args.world.set_block_state_from_observed(
+                args.position,
+                observed,
+                ejecting,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return BlockActionResult::Pass;
+            }
             vault_entity.mark_rewarded(player_uuid);
 
             args.item_stack
@@ -75,15 +91,6 @@ impl BlockBehaviour for VaultBlock {
                 Sound::BlockVaultOpenShutter,
                 SoundCategory::Blocks,
                 &args.position.to_f64(),
-            );
-
-            let state_id = args.world.get_block_state_id(args.position);
-            let mut props = VaultLikeProperties::from_state_id(state_id);
-            props.vault_state = VaultState::Ejecting;
-            args.world.set_block_state(
-                args.position,
-                props.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL,
             );
 
             args.world.play_sound(
@@ -104,8 +111,9 @@ impl BlockBehaviour for VaultBlock {
             }
 
             props.vault_state = VaultState::Active;
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                ejecting,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
             );

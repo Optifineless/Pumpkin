@@ -34,13 +34,19 @@ impl BlockBehaviour for LightBlock {
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         if args.player.gamemode.load() == pumpkin_util::GameMode::Creative {
             let state_id = args.world.get_block_state_id(args.position);
+            if state_id.to_block() != args.block {
+                return BlockActionResult::Consume;
+            }
             let mut props = LightLikeProperties::from_state_id(state_id);
             props.level = (props.level + 1) % 16;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return BlockActionResult::Consume;
+            }
             BlockActionResult::SuccessServer
         } else {
             BlockActionResult::Consume

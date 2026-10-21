@@ -18,16 +18,29 @@ pub struct CactusBlock;
 
 impl BlockBehaviour for CactusBlock {
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let block_up = args.position.up();
-        if args.world.get_block_state(&block_up).is_air() {
+        let above_state = args.world.get_block_state_id(&block_up);
+        if above_state.to_state().is_air() {
             let state = args.world.get_block_state(args.position);
+            if state.id.to_block() != args.block {
+                return;
+            }
             let mut props = CactusLikeProperties::from_state_id(state.id);
             let age = props.age;
             let mut i = 1;
@@ -40,31 +53,42 @@ impl BlockBehaviour for CactusBlock {
 
             if age == 8 && can_place_at(args.world.as_ref(), &block_up) {
                 let d = if i >= 3 { 0.25 } else { 0.1 };
-                if rand::rng().random_range(0.0..1.0) <= d {
-                    args.world.set_block_state(
-                        &block_up,
-                        Block::CACTUS_FLOWER.default_state.id,
-                        BlockFlags::NOTIFY_ALL,
-                    );
+                if rand::rng().random_range(0.0..1.0) <= d
+                    && !args.world.set_block_states_from_observed(&[
+                        (*args.position, state.id, state.id, BlockFlags::empty()),
+                        (
+                            block_up,
+                            above_state,
+                            Block::CACTUS_FLOWER.default_state.id,
+                            BlockFlags::NOTIFY_ALL,
+                        ),
+                    ])
+                {
+                    return;
                 }
             } else if age == 15 && i < 3 {
-                args.world.set_block_state(
-                    &block_up,
-                    Block::CACTUS.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                );
                 let mut new_props = CactusLikeProperties::default(&Block::CACTUS);
                 new_props.age = 0;
-                args.world.set_block_state(
-                    args.position,
-                    new_props.to_state_id(&Block::CACTUS),
-                    BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK,
-                );
+                args.world.set_block_states_from_observed(&[
+                    (
+                        block_up,
+                        above_state,
+                        Block::CACTUS.default_state.id,
+                        BlockFlags::NOTIFY_ALL,
+                    ),
+                    (
+                        *args.position,
+                        state.id,
+                        new_props.to_state_id(&Block::CACTUS),
+                        BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK,
+                    ),
+                ]);
             }
             if age < 15 {
                 props.age = age + 1;
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    state.id,
                     props.to_state_id(&Block::CACTUS),
                     BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK,
                 );

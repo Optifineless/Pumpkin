@@ -228,7 +228,13 @@ async fn sign_item_data_load_into_preserves_merged_fields_and_editor() {
         custom_data.put_compound("front_text", front);
         let mut stack = ItemStack::new(1, &Item::OAK_SIGN);
         stack.set_data_component(BlockEntityDataImpl { nbt: custom_data });
-        apply_trusted_item_data(&entity, &stack, &fixture.player, &world);
+        apply_trusted_item_data(
+            &entity,
+            &stack,
+            &fixture.player,
+            &world,
+            world.get_block_state_id(&pos),
+        );
         let loaded = world.get_block_entity(&pos).unwrap();
         let loaded = SignEntityRef::from_block_entity(&*loaded).unwrap();
         assert_eq!(
@@ -266,7 +272,13 @@ async fn sign_item_unchanged_custom_data_does_not_reload() {
     nbt.put_string("id", SignBlockEntity::ID.to_string());
     let mut stack = ItemStack::new(1, &Item::OAK_SIGN);
     stack.set_data_component(BlockEntityDataImpl { nbt });
-    apply_trusted_item_data(&entity, &stack, &fixture.player, &world);
+    apply_trusted_item_data(
+        &entity,
+        &stack,
+        &fixture.player,
+        &world,
+        world.get_block_state_id(&pos),
+    );
     assert!(Arc::ptr_eq(&entity, &world.get_block_entity(&pos).unwrap()));
     world.level.shutdown().await.unwrap();
 }

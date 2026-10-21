@@ -489,14 +489,14 @@ impl WitherEntity {
                                     min_pos.0.y + dy,
                                     min_pos.0.z + dz,
                                 );
-                                let block = world.get_block(&bpos);
+                                let (block, observed) = world.get_block_and_state_id(&bpos);
                                 if Self::can_destroy(block) {
-                                    world.set_block_state(
+                                    destroyed |= world.set_block_state_from_observed(
                                         &bpos,
+                                        observed,
                                         Block::AIR.default_state.id,
                                         BlockFlags::NOTIFY_ALL,
                                     );
-                                    destroyed = true;
                                 }
                             }
                         }

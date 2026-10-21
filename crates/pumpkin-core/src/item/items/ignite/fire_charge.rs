@@ -6,7 +6,6 @@ use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::{Block, BlockStateId};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_world::world::BlockFlags;
 use rand::{RngExt, rng};
 use std::sync::Arc;
 
@@ -59,9 +58,7 @@ impl ItemBehaviour for FireChargeItem {
         }
 
         let ignited = Ignition::ignite_block(
-            |world: Arc<World>, pos: BlockPos, new_state_id: BlockStateId| {
-                world.set_block_state(&pos, new_state_id, BlockFlags::NOTIFY_ALL);
-
+            |world: Arc<World>, pos: BlockPos, _new_state_id: BlockStateId| {
                 let pitch = (rng().random::<f32>() - rng().random::<f32>()).mul_add(0.2, 1.0);
                 world.play_sound_fine(
                     Sound::ItemFirechargeUse,

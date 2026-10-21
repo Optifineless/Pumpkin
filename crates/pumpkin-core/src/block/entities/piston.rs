@@ -194,14 +194,21 @@ impl PistonBlockEntity {
     pub fn finish(&self, world: &Arc<World>) {
         if self.last_progress.load() < 1.0 {
             let pos = self.position;
-            world.remove_block_entity(&pos);
-            if world.get_block(&pos) == &Block::MOVING_PISTON {
+            let observed = world.get_block_state_id(&pos);
+            if observed.to_block() == &Block::MOVING_PISTON {
                 let state = if self.source {
                     Block::AIR.default_state.id
                 } else {
                     world.update_from_neighbor_shapes(self.pushed_block_state.id, &pos)
                 };
-                world.set_block_state(&pos, state, BlockFlags::NOTIFY_ALL);
+                if !world.set_block_state_from_observed(
+                    &pos,
+                    observed,
+                    state,
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return;
+                }
                 world.update_neighbors(&pos, None);
             }
         }
@@ -228,22 +235,26 @@ impl BlockEntity for PistonBlockEntity {
         self.last_progress.store(current_progress);
         if current_progress >= 1.0 {
             let pos = self.position;
-            world.remove_block_entity(&pos);
-            if world.get_block(&pos) == &Block::MOVING_PISTON {
+            let observed = world.get_block_state_id(&pos);
+            if observed.to_block() == &Block::MOVING_PISTON {
                 if self.pushed_block_state.is_air() {
-                    world.set_block_state(
+                    world.set_block_state_from_observed(
                         &pos,
+                        observed,
                         self.pushed_block_state.id,
                         BlockFlags::FORCE_STATE | BlockFlags::MOVED,
                     );
                 } else {
                     let updated_state =
                         world.update_from_neighbor_shapes(self.pushed_block_state.id, &pos);
-                    world.set_block_state(
+                    if !world.set_block_state_from_observed(
                         &pos,
+                        observed,
                         updated_state,
                         BlockFlags::NOTIFY_ALL | BlockFlags::MOVED,
-                    );
+                    ) {
+                        return;
+                    }
                     world.update_neighbors(&pos, None);
                 }
             }

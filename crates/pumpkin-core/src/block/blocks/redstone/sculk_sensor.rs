@@ -46,8 +46,21 @@ impl SculkSensorBlock {
     pub fn trigger(world: &Arc<World>, pos: &BlockPos, block: &Block, power: u8) {
         if block.id == BlockId::SCULK_SENSOR {
             let state = world.get_block_state(pos);
+            if state.id.to_block() != block {
+                return;
+            }
             let mut props = SculkSensorLikeProperties::from_state_id(state.id);
             if props.sculk_sensor_phase == SculkSensorPhase::Inactive {
+                props.sculk_sensor_phase = SculkSensorPhase::Active;
+                props.power = power;
+                if !world.set_block_state_from_observed(
+                    pos,
+                    state.id,
+                    props.to_state_id(block),
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return;
+                }
                 if let Some(be) = world.get_block_entity(pos)
                     && let Some(sensor_be) = be.as_any().downcast_ref::<SculkSensorBlockEntity>()
                 {
@@ -57,14 +70,14 @@ impl SculkSensorBlock {
                         .unwrap_or_else(std::sync::PoisonError::into_inner) = power as i32;
                 }
 
-                props.sculk_sensor_phase = SculkSensorPhase::Active;
-                props.power = power;
-                world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
                 world.update_neighbors(pos, None);
                 world.schedule_block_tick(block, *pos, 30, TickPriority::Normal);
             }
         } else if block.id == BlockId::CALIBRATED_SCULK_SENSOR {
             let state = world.get_block_state(pos);
+            if state.id.to_block() != block {
+                return;
+            }
             let mut props = CalibratedSculkSensorLikeProperties::from_state_id(state.id);
             if props.sculk_sensor_phase == SculkSensorPhase::Inactive {
                 let back_dir = horizontal_facing_to_dir(props.facing).opposite();
@@ -80,6 +93,16 @@ impl SculkSensorBlock {
                     return;
                 }
 
+                props.sculk_sensor_phase = SculkSensorPhase::Active;
+                props.power = power;
+                if !world.set_block_state_from_observed(
+                    pos,
+                    state.id,
+                    props.to_state_id(block),
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return;
+                }
                 if let Some(be) = world.get_block_entity(pos)
                     && let Some(cal_be) = be
                         .as_any()
@@ -91,9 +114,6 @@ impl SculkSensorBlock {
                         .unwrap_or_else(std::sync::PoisonError::into_inner) = power as i32;
                 }
 
-                props.sculk_sensor_phase = SculkSensorPhase::Active;
-                props.power = power;
-                world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
                 world.update_neighbors(pos, None);
                 world.schedule_block_tick(block, *pos, 30, TickPriority::Normal);
             }
@@ -116,10 +136,12 @@ impl BlockBehaviour for SculkSensorBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         if args.block.id == BlockId::CALIBRATED_SCULK_SENSOR {
             let entity = CalibratedSculkSensorBlockEntity::new(*args.position);
-            args.world.add_block_entity(Arc::new(entity));
+            args.world
+                .add_block_entity_from_observed(Arc::new(entity), args.state_id);
         } else if args.block.id == BlockId::SCULK_SENSOR {
             let entity = SculkSensorBlockEntity::new(*args.position);
-            args.world.add_block_entity(Arc::new(entity));
+            args.world
+                .add_block_entity_from_observed(Arc::new(entity), args.state_id);
         }
     }
 
@@ -178,17 +200,23 @@ impl BlockBehaviour for SculkSensorBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         if args.block.id == BlockId::SCULK_SENSOR {
             let mut props = SculkSensorLikeProperties::from_state_id(state.id);
             match props.sculk_sensor_phase {
                 SculkSensorPhase::Active => {
                     props.sculk_sensor_phase = SculkSensorPhase::Cooldown;
                     props.power = 0;
-                    args.world.set_block_state(
+                    if !args.world.set_block_state_from_observed(
                         args.position,
+                        state.id,
                         props.to_state_id(args.block),
                         BlockFlags::NOTIFY_ALL,
-                    );
+                    ) {
+                        return;
+                    }
                     args.world.schedule_block_tick(
                         args.block,
                         *args.position,
@@ -199,8 +227,9 @@ impl BlockBehaviour for SculkSensorBlock {
                 SculkSensorPhase::Cooldown => {
                     props.sculk_sensor_phase = SculkSensorPhase::Inactive;
                     props.power = 0;
-                    args.world.set_block_state(
+                    args.world.set_block_state_from_observed(
                         args.position,
+                        state.id,
                         props.to_state_id(args.block),
                         BlockFlags::NOTIFY_ALL,
                     );
@@ -213,11 +242,14 @@ impl BlockBehaviour for SculkSensorBlock {
                 SculkSensorPhase::Active => {
                     props.sculk_sensor_phase = SculkSensorPhase::Cooldown;
                     props.power = 0;
-                    args.world.set_block_state(
+                    if !args.world.set_block_state_from_observed(
                         args.position,
+                        state.id,
                         props.to_state_id(args.block),
                         BlockFlags::NOTIFY_ALL,
-                    );
+                    ) {
+                        return;
+                    }
                     args.world.schedule_block_tick(
                         args.block,
                         *args.position,
@@ -228,8 +260,9 @@ impl BlockBehaviour for SculkSensorBlock {
                 SculkSensorPhase::Cooldown => {
                     props.sculk_sensor_phase = SculkSensorPhase::Inactive;
                     props.power = 0;
-                    args.world.set_block_state(
+                    args.world.set_block_state_from_observed(
                         args.position,
+                        state.id,
                         props.to_state_id(args.block),
                         BlockFlags::NOTIFY_ALL,
                     );

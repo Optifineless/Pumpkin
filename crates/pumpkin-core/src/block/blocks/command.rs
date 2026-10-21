@@ -345,7 +345,8 @@ impl BlockBehaviour for CommandBlock {
                 send_command_feedback,
                 args.block.id == Block::CHAIN_COMMAND_BLOCK.id,
             );
-            args.world.add_block_entity(Arc::new(entity));
+            args.world
+                .add_block_entity_from_observed(Arc::new(entity), args.state_id);
         }
     }
 

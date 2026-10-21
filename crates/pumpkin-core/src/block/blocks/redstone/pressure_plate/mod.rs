@@ -93,8 +93,16 @@ pub(crate) trait PressurePlate {
             } else {
                 calc_output
             };
+            let observed = state.id;
             let state = self.set_redstone_output(block, state, next_output);
-            world.set_block_state(pos, state, BlockFlags::NOTIFY_LISTENERS);
+            if !world.set_block_state_from_observed(
+                pos,
+                observed,
+                state,
+                BlockFlags::NOTIFY_LISTENERS,
+            ) {
+                return;
+            }
             world.update_neighbors(pos, None);
             world.update_neighbors(&pos.down(), None);
         }

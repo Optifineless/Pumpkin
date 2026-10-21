@@ -1,5 +1,6 @@
 use crate::block::entities::BlockEntity;
 use crate::world::World;
+use pumpkin_data::Block;
 use pumpkin_data::block_properties::CrafterLikeProperties;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::crafting::recipes::RecipeInputInventory;
@@ -100,13 +101,17 @@ impl BlockEntity for CrafterBlockEntity {
             self.crafting_ticks_remaining.store(next, Ordering::Relaxed);
             if next == 0 {
                 let state = world.get_block_state(&self.position);
+                if state.id.to_block() != &Block::CRAFTER {
+                    return;
+                }
                 let mut props = CrafterLikeProperties::from_state_id(state.id);
                 if props.crafting {
                     props.crafting = false;
-                    world.set_block_state(
+                    let _ = world.set_block_state_if(
                         &self.position,
                         props.to_state_id(state.id.to_block()),
                         BlockFlags::NOTIFY_ALL,
+                        |current| current == state.id && self.transaction.is_live(),
                     );
                 }
             }

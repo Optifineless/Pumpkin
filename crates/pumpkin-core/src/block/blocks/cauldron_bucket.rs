@@ -195,6 +195,9 @@ fn empty_bucket(
     ) {
         return BlockActionResult::Consume;
     }
+    let Some(mutation) = args.world.block_entity_mutation_permit(*args.position) else {
+        return BlockActionResult::Consume;
+    };
     let inventory = args.player.inventory();
     let owner = inventory.slot_transaction(source);
     let guard = owner.lock();
@@ -222,6 +225,7 @@ fn empty_bucket(
     else {
         let excess = claim.refund(args.player);
         drop(guard);
+        drop(mutation);
         if !excess.is_empty() {
             crate::item::item_utils::give_or_drop(args.player, excess);
         }
@@ -229,6 +233,7 @@ fn empty_bucket(
     };
     let result = claim.finish(args.player, args.item_stack);
     drop(guard);
+    drop(mutation);
     result.publish(args.player);
     args.player.increment_stat(
         StatisticCategory::Custom,

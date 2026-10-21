@@ -121,29 +121,38 @@ impl BlockBehaviour for DropperBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let dropper_block_entity = DropperBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(dropper_block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(dropper_block_entity), args.state_id);
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         let powered = block_receives_redstone_power(args.world, args.position)
             || block_receives_redstone_power(args.world, &args.position.up());
 
-        let mut props =
-            DispenserLikeProperties::from_state_id(args.world.get_block_state(args.position).id);
+        let state = args.world.get_block_state(args.position);
+
+        if state.id.to_block() != args.block {
+            return;
+        }
+        let mut props = DispenserLikeProperties::from_state_id(state.id);
 
         if powered && !props.triggered {
-            args.world
-                .schedule_block_tick(args.block, *args.position, 4, TickPriority::Normal);
             props.triggered = true;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
+            args.world
+                .schedule_block_tick(args.block, *args.position, 4, TickPriority::Normal);
         } else if !powered && props.triggered {
             props.triggered = false;
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
             );

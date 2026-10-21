@@ -46,16 +46,25 @@ impl Explosion {
         } else if block.has_tag(&tag::Block::MINECRAFT_DOORS) {
             let props = OakDoorLikeProperties::from_state_id(state.id);
             // BlockSetType.IRON alone cannot open by wind charge (including copper/gold).
-            if block != &Block::IRON_DOOR && !props.powered && props.half == DoubleBlockHalf::Lower
+            if block != &Block::IRON_DOOR
+                && !props.powered
+                && props.half == DoubleBlockHalf::Lower
+                && DoorBlock::set_open_from_observed(world, pos, state.id, !props.open)
             {
-                DoorBlock::set_open(world, pos, !props.open);
                 emit_open(world, pos, !props.open);
             }
         } else if block.has_tag(&tag::Block::MINECRAFT_TRAPDOORS) {
             let mut props = OakTrapdoorLikeProperties::from_state_id(state.id);
             if block != &Block::IRON_TRAPDOOR && !props.powered {
                 props.open = !props.open;
-                world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
+                if !world.set_block_state_from_observed(
+                    pos,
+                    state.id,
+                    props.to_state_id(block),
+                    BlockFlags::NOTIFY_LISTENERS,
+                ) {
+                    return;
+                }
                 world.play_sound_fine(
                     trapdoor::get_sound(block, props.open),
                     SoundCategory::Blocks,
@@ -77,7 +86,14 @@ impl Explosion {
             let mut props = OakFenceGateLikeProperties::from_state_id(state.id);
             if !props.powered {
                 props.open = !props.open;
-                world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+                if !world.set_block_state_from_observed(
+                    pos,
+                    state.id,
+                    props.to_state_id(block),
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return;
+                }
                 world.play_sound_fine(
                     fence_gates::get_sound(block, props.open),
                     SoundCategory::Blocks,

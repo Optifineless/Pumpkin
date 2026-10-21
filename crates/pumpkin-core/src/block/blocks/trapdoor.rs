@@ -20,20 +20,25 @@ type TrapDoorProperties = pumpkin_data::block_properties::OakTrapdoorLikePropert
 
 fn toggle_trapdoor(player: &Player, world: &Arc<World>, block_pos: &BlockPos) {
     let (block, block_state) = world.get_block_and_state_id(block_pos);
+    if !block.has_tag(&tag::Block::MINECRAFT_TRAPDOORS) {
+        return;
+    }
     let mut trapdoor_props = TrapDoorProperties::from_state_id(block_state);
     trapdoor_props.open = !trapdoor_props.open;
 
+    if !world.set_block_state_from_observed(
+        block_pos,
+        block_state,
+        trapdoor_props.to_state_id(block),
+        BlockFlags::NOTIFY_LISTENERS,
+    ) {
+        return;
+    }
     world.play_block_sound_expect(
         player,
         get_sound(block, trapdoor_props.open),
         SoundCategory::Blocks,
         *block_pos,
-    );
-
-    world.set_block_state(
-        block_pos,
-        trapdoor_props.to_state_id(block),
-        BlockFlags::NOTIFY_LISTENERS,
     );
 }
 
@@ -113,29 +118,32 @@ impl BlockBehaviour for TrapDoorBlock {
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        {
-            let block_state = args.world.get_block_state(args.position);
-            let mut trapdoor_props = TrapDoorProperties::from_state_id(block_state.id);
-            let powered = block_receives_redstone_power(args.world, args.position);
-
-            if powered != trapdoor_props.powered {
-                trapdoor_props.powered = !trapdoor_props.powered;
-
-                if powered != trapdoor_props.open {
-                    trapdoor_props.open = trapdoor_props.powered;
-
-                    args.world.play_block_sound(
-                        get_sound(args.block, powered),
-                        SoundCategory::Blocks,
-                        *args.position,
-                    );
-                }
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+        let mut props = TrapDoorProperties::from_state_id(observed);
+        let powered = block_receives_redstone_power(args.world, args.position);
+        let changed_open = powered != props.powered && powered != props.open;
+        if powered != props.powered {
+            props.powered = powered;
+            if changed_open {
+                props.open = powered;
             }
-
-            args.world.set_block_state(
-                args.position,
-                trapdoor_props.to_state_id(args.block),
-                BlockFlags::NOTIFY_LISTENERS,
+        }
+        if !args.world.set_block_state_from_observed(
+            args.position,
+            observed,
+            props.to_state_id(args.block),
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
+            return;
+        }
+        if changed_open {
+            args.world.play_block_sound(
+                get_sound(args.block, powered),
+                SoundCategory::Blocks,
+                *args.position,
             );
         }
     }

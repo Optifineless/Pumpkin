@@ -69,8 +69,9 @@ pub fn handle_big_dripleaf_breaking(world: &Arc<World>, position: &BlockPos) {
         let mut dripleaf_props = BigDripleafLikeProperties::default(&Block::BIG_DRIPLEAF);
         dripleaf_props.facing = dripleaf_stem_props.facing;
         dripleaf_props.waterlogged = dripleaf_stem_props.waterlogged;
-        world.set_block_state(
+        world.set_block_state_from_observed(
             &support_pos,
+            support_state_id,
             dripleaf_props.to_state_id(&Block::BIG_DRIPLEAF),
             BlockFlags::empty(),
         );

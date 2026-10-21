@@ -27,10 +27,15 @@ const MAX_MOISTURE: u8 = 7;
 impl BlockBehaviour for FarmlandBlock {
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         // FarmlandBlock.tick rechecks survival after the delayed update.
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if !can_place_at(args.world.as_ref(), args.position) {
             // TODO: push up entities
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                observed,
                 Block::DIRT.default_state.id,
                 BlockFlags::NOTIFY_ALL,
             );
@@ -61,7 +66,11 @@ impl BlockBehaviour for FarmlandBlock {
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         // FarmlandBlock.randomTick: rain/water only change moisture below the maximum.
-        let props = FarmlandProperties::from_state_id(args.world.get_block_state_id(args.position));
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+        let props = FarmlandProperties::from_state_id(observed);
         if is_water_nearby(args.world, args.position)
             || args.world.is_raining_at(&args.position.up())
         {
@@ -73,8 +82,9 @@ impl BlockBehaviour for FarmlandBlock {
             change_moisture(&args, props, moisture);
         } else if !should_maintain_farmland(args.world.as_ref(), args.position) {
             // TODO: push up entities
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                observed,
                 Block::DIRT.default_state.id,
                 BlockFlags::NOTIFY_NEIGHBORS,
             );
@@ -98,6 +108,7 @@ fn should_maintain_farmland(world: &dyn BlockAccessor, block_pos: &BlockPos) -> 
 }
 
 fn change_moisture(args: &RandomTickArgs<'_>, mut props: FarmlandProperties, mut moisture: i32) {
+    let observed = props.to_state_id(args.block);
     if let Some(server) = args.world.server.upgrade() {
         let mut event =
             crate::plugin::api::events::block::moisture_change::MoistureChangeEvent::new(
@@ -113,8 +124,9 @@ fn change_moisture(args: &RandomTickArgs<'_>, mut props: FarmlandProperties, mut
     }
     props.moisture = moisture.clamp(0, i32::from(MAX_MOISTURE)) as u8;
     // FarmlandBlock.randomTick uses UPDATE_CLIENTS for moisture changes.
-    args.world.set_block_state(
+    args.world.set_block_state_from_observed(
         args.position,
+        observed,
         props.to_state_id(args.block),
         BlockFlags::NOTIFY_LISTENERS,
     );

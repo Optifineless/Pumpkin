@@ -167,6 +167,9 @@ impl BlockBehaviour for RedstoneTorchBlock {
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         {
             let state = args.world.get_block_state(args.position);
+            if state.id.to_block() != args.block {
+                return;
+            }
 
             if args
                 .world
@@ -259,7 +262,9 @@ impl BlockBehaviour for RedstoneTorchBlock {
 
         if lit {
             if neighbor_signal {
-                set_lit(args.world, args.position, block, state.id, false);
+                if !set_lit(args.world, args.position, block, state.id, false) {
+                    return;
+                }
                 if is_toggled_too_frequently(args.world, args.position, true) {
                     args.world.sync_world_event(
                         WorldEvent::RedstoneTorchBurnout,
@@ -294,7 +299,13 @@ pub fn should_be_lit(world: &World, pos: &BlockPos, face: BlockDirection) -> boo
     get_redstone_power(block, state, world, &other_pos, face) == 0
 }
 
-fn set_lit(world: &Arc<World>, pos: &BlockPos, block: &Block, state_id: BlockStateId, lit: bool) {
+fn set_lit(
+    world: &Arc<World>,
+    pos: &BlockPos,
+    block: &Block,
+    state_id: BlockStateId,
+    lit: bool,
+) -> bool {
     let new_state_id = if block == &Block::REDSTONE_WALL_TORCH {
         let mut props = RWallTorchProps::from_state_id(state_id);
         props.lit = lit;
@@ -304,8 +315,11 @@ fn set_lit(world: &Arc<World>, pos: &BlockPos, block: &Block, state_id: BlockSta
         props.lit = lit;
         props.to_state_id(block)
     };
-    world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_ALL);
+    if !world.set_block_state_from_observed(pos, state_id, new_state_id, BlockFlags::NOTIFY_ALL) {
+        return false;
+    }
     update_neighbors(world, pos);
+    true
 }
 
 pub fn update_neighbors(world: &Arc<World>, pos: &BlockPos) {

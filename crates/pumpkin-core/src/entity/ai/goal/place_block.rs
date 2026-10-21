@@ -81,7 +81,14 @@ impl Goal for PlaceBlockGoal {
         }
 
         // TODO: also check the carried block can survive there.
-        world_clone.set_block_state(&target_pos, block_state_id, BlockFlags::NOTIFY_ALL);
+        if !world_clone.set_block_state_from_observed(
+            &target_pos,
+            state_id,
+            block_state_id,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return;
+        }
         self.enderman.set_carried_block(None);
     }
 }

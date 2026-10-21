@@ -164,9 +164,16 @@ impl CrafterBlock {
             let state = world.get_block_state(pos);
             let mut props = CrafterLikeProperties::from_state_id(state.id);
 
-            crafter.set_crafting_ticks_remaining(Self::MAX_CRAFTING_TICKS);
             props.crafting = true;
-            world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
+            if !world.set_block_state_from_observed(
+                pos,
+                state.id,
+                props.to_state_id(block),
+                BlockFlags::NOTIFY_LISTENERS,
+            ) {
+                return;
+            }
+            crafter.set_crafting_ticks_remaining(Self::MAX_CRAFTING_TICKS);
 
             let mut result_stack = recipe_result.stack;
             if let Some(server) = world.server.upgrade() {
@@ -329,11 +336,15 @@ impl BlockBehaviour for CrafterBlock {
     }
 
     fn placed(&self, args: PlacedArgs<'_>) {
-        let state = args.world.get_block_state(args.position);
-        let props = CrafterLikeProperties::from_state_id(state.id);
+        let props = CrafterLikeProperties::from_state_id(args.state_id);
         let crafter_block_entity = CrafterBlockEntity::new(*args.position);
         crafter_block_entity.set_triggered(props.triggered);
-        args.world.add_block_entity(Arc::new(crafter_block_entity));
+        if !args
+            .world
+            .add_block_entity_from_observed(Arc::new(crafter_block_entity), args.state_id)
+        {
+            return;
+        }
 
         if props.triggered {
             args.world.schedule_block_tick(
@@ -347,21 +358,27 @@ impl BlockBehaviour for CrafterBlock {
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         let powered = block_receives_redstone_power(args.world, args.position);
-        let mut props =
-            CrafterLikeProperties::from_state_id(args.world.get_block_state(args.position).id);
+        let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
+        let mut props = CrafterLikeProperties::from_state_id(state.id);
 
         if powered && !props.triggered {
             props.triggered = true;
+            if !args.world.set_block_state_from_observed(
+                args.position,
+                state.id,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_LISTENERS,
+            ) {
+                return;
+            }
             args.world.schedule_block_tick(
                 args.block,
                 *args.position,
                 Self::CRAFTING_TICK_DELAY,
                 TickPriority::Normal,
-            );
-            args.world.set_block_state(
-                args.position,
-                props.to_state_id(args.block),
-                BlockFlags::NOTIFY_LISTENERS,
             );
             if let Some(be) = args.world.get_block_entity(args.position)
                 && let Some(crafter) = be.as_any().downcast_ref::<CrafterBlockEntity>()
@@ -371,11 +388,14 @@ impl BlockBehaviour for CrafterBlock {
         } else if !powered && props.triggered {
             props.triggered = false;
             props.crafting = false;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
             if let Some(be) = args.world.get_block_entity(args.position)
                 && let Some(crafter) = be.as_any().downcast_ref::<CrafterBlockEntity>()
             {

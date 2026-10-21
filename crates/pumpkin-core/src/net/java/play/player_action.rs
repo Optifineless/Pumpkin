@@ -50,8 +50,9 @@ impl JavaClient {
                     // TODO: Config
                     if player.gamemode.load() == GameMode::Creative {
                         // Block break & play sound
-                        let new_state = world.break_block(
+                        let new_state = world.break_block_from_observed(
                             &position,
+                            state.id,
                             Some(player),
                             BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
                         );
@@ -75,14 +76,19 @@ impl JavaClient {
                         let speed = block::calc_block_breaking(player, state, block);
                         // Instant break
                         if speed >= 1.0 {
-                            let broken_state = world.get_block_state(&position);
+                            let broken_state = state;
                             let can_harvest = player.can_harvest(broken_state, block);
                             let flags = if can_harvest {
                                 BlockFlags::NOTIFY_ALL
                             } else {
                                 BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
                             };
-                            let new_state = world.break_block(&position, Some(player), flags);
+                            let new_state = world.break_block_from_observed(
+                                &position,
+                                state.id,
+                                Some(player),
+                                flags,
+                            );
                             if new_state.is_some() {
                                 server.block_registry.broken(
                                     &world,
@@ -184,8 +190,9 @@ impl JavaClient {
                     let block_drop = player.gamemode.load() != GameMode::Creative
                         && player.can_harvest(state, block);
 
-                    let new_state = world.break_block(
+                    let new_state = world.break_block_from_observed(
                         &location,
+                        state.id,
                         Some(player),
                         if block_drop {
                             BlockFlags::NOTIFY_ALL

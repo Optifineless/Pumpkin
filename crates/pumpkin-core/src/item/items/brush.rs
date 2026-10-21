@@ -125,12 +125,22 @@ impl ItemBehaviour for BrushItem {
         }
 
         let current_state_id = world.get_block_state_id(&location);
+        if Block::from_state_id(current_state_id) != block {
+            return BlockActionResult::Fail;
+        }
         let mut props = SuspiciousSandLikeProperties::from_state_id(current_state_id);
 
         if props.dusted < 3 {
             props.dusted += 1;
             let next_stage_id = props.to_state_id(block);
-            world.set_block_state(&location, next_stage_id, BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                &location,
+                current_state_id,
+                next_stage_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return BlockActionResult::Fail;
+            }
 
             world.play_sound(
                 if is_sand {
@@ -148,7 +158,14 @@ impl ItemBehaviour for BrushItem {
                 Block::GRAVEL.default_state.id
             };
 
-            world.set_block_state(&location, replacement_state_id, BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                &location,
+                current_state_id,
+                replacement_state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return BlockActionResult::Fail;
+            }
 
             world.play_sound(
                 if is_sand {

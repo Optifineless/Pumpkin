@@ -77,6 +77,9 @@ pub trait RedstoneGateBlock<T: Send + Sync + BlockProperties + RedstoneGateBlock
             return;
         }
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         if RedstoneGateBlock::can_place_at(self, args.world.as_ref(), *args.position) {
             self.update_powered(args.world, *args.position, state, args.block);
             return;
@@ -84,7 +87,7 @@ pub trait RedstoneGateBlock<T: Send + Sync + BlockProperties + RedstoneGateBlock
         // Vanilla `dropResources` then `removeBlock`, then `updateNeighborsAt` on each
         // neighbour with source `this` (the diode, not the block that poked).
         args.world
-            .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            .break_block_from_observed(args.position, state.id, None, BlockFlags::NOTIFY_ALL);
     }
 
     fn update_powered(&self, world: &World, pos: BlockPos, state: &BlockState, block: &Block);

@@ -58,26 +58,45 @@ impl TurtleEggBlock {
         state_id: BlockStateId,
         block: &Block,
     ) {
-        world.play_sound_raw(
-            Sound::EntityTurtleEggBreak as u16,
-            SoundCategory::Blocks,
-            &pos.to_f64(),
-            0.7,
-            rand::random::<f32>().mul_add(0.2, 0.9),
-        );
+        Self::decrease_eggs_from_observed(world, pos, state_id, state_id, block);
+    }
 
+    fn decrease_eggs_from_observed(
+        world: &Arc<World>,
+        pos: &BlockPos,
+        state_id: BlockStateId,
+        observed: BlockStateId,
+        block: &Block,
+    ) {
         let props = TurtleEggProperties::from_state_id(state_id);
-        if props.eggs <= 1 {
+        if props.eggs <= 1 && observed.to_state().is_air() {
+            if !world.set_block_state_from_observed(pos, observed, observed, BlockFlags::empty()) {
+                return;
+            }
+        } else if props.eggs <= 1 {
             // Vanilla destroys the last egg without drops.
-            world.break_block(pos, None, BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS);
+            if world
+                .break_block_from_observed(
+                    pos,
+                    observed,
+                    None,
+                    BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
+                )
+                .is_none()
+            {
+                return;
+            }
         } else {
             let mut new_props = props;
             new_props.eggs -= 1;
-            world.set_block_state(
+            if !world.set_block_state_from_observed(
                 pos,
+                observed,
                 new_props.to_state_id(block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
             world.emit_game_event(
                 pumpkin_data::game_event::GameEvent::BlockDestroy.name(),
                 pos.to_f64(),
@@ -88,6 +107,13 @@ impl TurtleEggBlock {
                 i32::from(state_id.as_u16()),
             );
         }
+        world.play_sound_raw(
+            Sound::EntityTurtleEggBreak as u16,
+            SoundCategory::Blocks,
+            &pos.to_f64(),
+            0.7,
+            rand::random::<f32>().mul_add(0.2, 0.9),
+        );
     }
 
     pub fn destroy_egg(
@@ -145,9 +171,18 @@ impl BlockBehaviour for TurtleEggBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
@@ -189,15 +224,21 @@ impl BlockBehaviour for TurtleEggBlock {
         }
 
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let mut props = TurtleEggProperties::from_state_id(state_id);
 
         if props.hatch < 2 {
             props.hatch += 1;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return;
+            }
 
             args.world.play_sound(
                 Sound::EntityTurtleEggCrack,
@@ -205,8 +246,13 @@ impl BlockBehaviour for TurtleEggBlock {
                 &args.position.to_f64(),
             );
         } else {
-            args.world
-                .break_block(args.position, None, BlockFlags::SKIP_DROPS);
+            if args
+                .world
+                .break_block_from_observed(args.position, state_id, None, BlockFlags::SKIP_DROPS)
+                .is_none()
+            {
+                return;
+            }
 
             args.world.play_sound(
                 Sound::EntityTurtleEggHatch,
@@ -233,7 +279,13 @@ impl BlockBehaviour for TurtleEggBlock {
     fn broken(&self, args: BrokenArgs<'_>) {
         // TurtleEggBlock.playerDestroy runs after loot; Creative skips playerDestroy entirely.
         if args.player.gamemode.load() != pumpkin_util::GameMode::Creative {
-            Self::decrease_eggs(args.world, args.position, args.state.id, args.block);
+            Self::decrease_eggs_from_observed(
+                args.world,
+                args.position,
+                args.state.id,
+                super::growing_plant::fluid_state_after_break(args.state.id),
+                args.block,
+            );
         }
     }
 }

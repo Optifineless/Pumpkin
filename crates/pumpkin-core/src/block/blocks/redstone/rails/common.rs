@@ -125,12 +125,16 @@ pub(super) fn update_flanking_rails_shape(
             compute_flanking_rail_new_shape(world, &flanking_rail, direction.opposite());
 
         if new_shape != flanking_rail.properties.shape() {
+            let observed = flanking_rail.properties.to_state_id(flanking_rail.block);
             flanking_rail.properties.set_shape(new_shape);
-            world.set_block_state(
+            if !world.set_block_state_from_observed(
                 &flanking_rail.position,
+                observed,
                 flanking_rail.properties.to_state_id(flanking_rail.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return;
+            }
         }
     }
 }

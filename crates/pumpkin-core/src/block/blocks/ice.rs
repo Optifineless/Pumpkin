@@ -16,15 +16,19 @@ use crate::world::World;
 
 /// Melts ice at the given position into water (or removes it where water evaporates).
 pub fn melt(world: &Arc<World>, position: &BlockPos) {
-    if world.dimension.water_evaporates {
-        world.set_block_state(position, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
-    } else {
-        world.set_block_state(
-            position,
-            Block::WATER.default_state.id,
-            BlockFlags::NOTIFY_ALL,
-        );
+    let observed = world.get_block_state_id(position);
+    if matches!(observed.to_block_id(), BlockId::ICE | BlockId::FROSTED_ICE) {
+        melt_from_observed(world, position, observed);
     }
+}
+
+fn melt_from_observed(world: &Arc<World>, position: &BlockPos, observed: BlockStateId) -> bool {
+    let next = if world.dimension.water_evaporates {
+        BlockStateId::AIR
+    } else {
+        Block::WATER.default_state.id
+    };
+    world.set_block_state_from_observed(position, observed, next, BlockFlags::NOTIFY_ALL)
 }
 
 /// Returns whether the frosted ice block at `pos` has fewer adjacent frosted ice blocks than `limit`.
@@ -42,15 +46,24 @@ pub fn fewer_neighbors_than(world: &World, pos: &BlockPos, limit: usize) -> bool
     true
 }
 
-fn slightly_melt(world: &Arc<World>, pos: &BlockPos, block: &Block, age: u8) -> bool {
+fn slightly_melt(world: &Arc<World>, pos: &BlockPos, block: &Block, age: u8) -> Option<bool> {
     if age < 3 {
         let mut new_props = NetherWartLikeProperties::default(block);
         new_props.r#age = age + 1;
-        world.set_block_state(pos, new_props.to_state_id(block), BlockFlags::NOTIFY_ALL);
-        false
+        let mut old_props = new_props;
+        old_props.r#age = age;
+        world
+            .set_block_state_from_observed(
+                pos,
+                old_props.to_state_id(block),
+                new_props.to_state_id(block),
+                BlockFlags::NOTIFY_ALL,
+            )
+            .then_some(false)
     } else {
-        melt(world, pos);
-        true
+        let mut props = NetherWartLikeProperties::default(block);
+        props.r#age = age;
+        melt_from_observed(world, pos, props.to_state_id(block)).then_some(true)
     }
 }
 
@@ -69,8 +82,9 @@ impl BlockBehaviour for IceBlock {
             let has_silk_touch = held_item.get_enchantment_level(&Enchantment::SILK_TOUCH) > 0;
             if !has_silk_touch {
                 if args.world.dimension.water_evaporates {
-                    args.world.set_block_state(
+                    args.world.set_block_state_from_observed(
                         args.position,
+                        super::growing_plant::fluid_state_after_break(args.state.id),
                         BlockStateId::AIR,
                         BlockFlags::NOTIFY_ALL,
                     );
@@ -84,8 +98,9 @@ impl BlockBehaviour for IceBlock {
                     || below_state.is_liquid()
                     || below_state.is_solid()
                 {
-                    args.world.set_block_state(
+                    args.world.set_block_state_from_observed(
                         args.position,
+                        super::growing_plant::fluid_state_after_break(args.state.id),
                         Block::WATER.default_state.id,
                         BlockFlags::NOTIFY_ALL,
                     );
@@ -96,9 +111,12 @@ impl BlockBehaviour for IceBlock {
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         let block_light = args.world.get_block_light_level(args.position).unwrap_or(0);
         if block_light > (11u8.saturating_sub(state.opacity)) {
-            melt(args.world, args.position);
+            melt_from_observed(args.world, args.position, state.id);
         }
     }
 }
@@ -126,7 +144,10 @@ impl BlockBehaviour for FrostedIceBlock {
 
         if should_check_melt {
             let state_id = args.world.get_block_state_id(args.position);
-            let state = args.world.get_block_state(args.position);
+            if state_id.to_block() != args.block {
+                return;
+            }
+            let state = state_id.to_state();
             let props = NetherWartLikeProperties::from_state_id(state_id);
             let age = props.r#age;
 
@@ -137,7 +158,15 @@ impl BlockBehaviour for FrostedIceBlock {
             };
 
             let threshold = 11u8.saturating_sub(age).saturating_sub(state.opacity);
-            if brightness > threshold && slightly_melt(args.world, args.position, args.block, age) {
+            let melted = if brightness > threshold {
+                let Some(melted) = slightly_melt(args.world, args.position, args.block, age) else {
+                    return;
+                };
+                melted
+            } else {
+                false
+            };
+            if melted {
                 for dir in BlockDirection::all() {
                     let neighbor_pos = args.position.offset(dir.to_offset());
                     let (neighbor_block, neighbor_state_id) =
@@ -145,12 +174,13 @@ impl BlockBehaviour for FrostedIceBlock {
                     if neighbor_block == &Block::FROSTED_ICE {
                         let neighbor_props =
                             NetherWartLikeProperties::from_state_id(neighbor_state_id);
-                        if !slightly_melt(
+                        if slightly_melt(
                             args.world,
                             &neighbor_pos,
                             neighbor_block,
                             neighbor_props.r#age,
-                        ) {
+                        ) == Some(false)
+                        {
                             let delay = rand::rng().random_range(20..=40);
                             args.world.schedule_block_tick(
                                 neighbor_block,
@@ -171,10 +201,14 @@ impl BlockBehaviour for FrostedIceBlock {
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if args.source_block == &Block::FROSTED_ICE
             && fewer_neighbors_than(args.world, args.position, 2)
         {
-            melt(args.world, args.position);
+            melt_from_observed(args.world, args.position, observed);
         }
     }
 

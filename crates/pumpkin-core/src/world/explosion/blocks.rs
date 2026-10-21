@@ -3,7 +3,7 @@ use super::{
 };
 use crate::{
     block::{ExplodeArgs, blocks::fire::FireBlockBase},
-    world::loot::LootContextParameters,
+    world::{loot::LootContextParameters, observed_loot::PreparedBlockDrops},
 };
 use pumpkin_data::{Block, BlockState, BlockStateId, item_stack::ItemStack};
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
@@ -103,42 +103,8 @@ impl Explosion {
         positions.shuffle(&mut rand::rng());
         let mut drops = Vec::new();
         for pos in positions {
-            // ServerExplosion.interactWithBlocks rereads after every neighbor update/chain reaction.
-            let state = world.get_block_state(&pos);
-            let block = state.id.to_block();
-            if state.is_air() {
-                continue;
-            }
-            let behavior = world.block_registry.get_pumpkin_block(block.id);
-            let args = ExplodeArgs {
-                world,
-                block,
-                position: &pos,
-                explosion: Some(self),
-            };
-            if self.block_interaction == BlockInteraction::TriggerBlock {
-                self.trigger_block(world, &pos, block, state);
-                continue;
-            }
-            if behavior.is_none_or(|behavior| behavior.should_drop_items_on_explosion()) {
-                // BlockBehaviour.onExplosionHit / spawnAfterBreak: only player-caused blasts drop XP.
-                if world.level_info.load().game_rules.block_drops
-                    && self
-                        .cause
-                        .as_ref()
-                        .is_some_and(|cause| cause.get_player().is_some())
-                {
-                    crate::block::drop_experience(world, block, &pos, None);
-                }
-                for stack in self.block_drops(world, &pos, block, state) {
-                    add_or_append_stack(&mut drops, stack, pos);
-                }
-            }
-            // Block.onExplosionHit: loot before removal, then wasExploded (TNT uses the cause).
-            world.set_block_state(&pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
-            world.close_container_screens_at(&pos);
-            if let Some(behavior) = behavior {
-                behavior.explode(args);
+            for stack in self.interact_with_block(world, &pos) {
+                add_or_append_stack(&mut drops, stack, pos);
             }
         }
         // Block.popResource obeys block_drops after the loot and block callbacks have run.
@@ -149,13 +115,90 @@ impl Explosion {
         }
     }
 
-    fn block_drops(
+    fn interact_with_block(&self, world: &Arc<World>, pos: &BlockPos) -> Vec<ItemStack> {
+        // ServerExplosion.interactWithBlocks rereads after every neighbor update/chain reaction.
+        let state = world.get_block_state(pos);
+        let block = state.id.to_block();
+        if state.is_air() {
+            return Vec::new();
+        }
+        let behavior = world.block_registry.get_pumpkin_block(block.id);
+        if self.block_interaction == BlockInteraction::TriggerBlock {
+            self.trigger_block(world, pos, block, state);
+            return Vec::new();
+        }
+        let should_drop = behavior.is_none_or(|behavior| behavior.should_drop_items_on_explosion());
+        // BlockBehaviour.onExplosionHit evaluates player-caused XP before item loot.
+        let experience = if should_drop
+            && world.level_info.load().game_rules.block_drops
+            && self
+                .cause
+                .as_ref()
+                .is_some_and(|cause| cause.get_player().is_some())
+        {
+            crate::block::prepare_block_experience(world, block, pos, None)
+        } else {
+            0
+        };
+        let prepared = should_drop.then(|| self.prepare_block_drops(world, pos, state));
+        let _ = world.get_block_entity(pos);
+        let retired_effects =
+            super::super::portal::frame_effects::RetiredBlockEffects::capture(world, pos, state.id);
+        #[cfg(test)]
+        world.before_state_write_test(*pos);
+        let Some(mutation) = world.reserve_block_entity_mutation(*pos) else {
+            return Vec::new();
+        };
+        let Some(retired) = world.remove_observed_block(pos, state.id, BlockStateId::AIR) else {
+            return Vec::new();
+        };
+        drop(mutation);
+        let entity = retired.live.clone().or_else(|| {
+            retired
+                .pending
+                .as_ref()
+                .and_then(crate::block::entities::block_entity_from_nbt)
+        });
+        if let Some(entity) = &entity {
+            super::super::container_lifecycle::retire_block_entity(entity);
+        }
+        if experience > 0 {
+            crate::entity::experience_orb::ExperienceOrbEntity::award(
+                world,
+                pos.to_centered_f64(),
+                experience,
+            );
+        }
+        let drops = prepared.map_or_else(Vec::new, |prepared| {
+            prepared.finish(world, pos, entity.as_deref())
+        });
+        retired.on_block_replaced(world, pos);
+        world.on_block_state_set_with_block_entity(
+            pos,
+            state.id,
+            BlockStateId::AIR,
+            BlockFlags::NOTIFY_ALL,
+            super::super::neighbor_updater::UPDATE_LIMIT,
+            Some(&retired_effects),
+        );
+        world.close_container_screens_at(pos);
+        if let Some(behavior) = behavior {
+            behavior.explode(ExplodeArgs {
+                world,
+                block,
+                position: pos,
+                explosion: Some(self),
+            });
+        }
+        drops
+    }
+
+    fn prepare_block_drops(
         &self,
         world: &Arc<World>,
         pos: &BlockPos,
-        block: &Block,
         state: &'static BlockState,
-    ) -> Vec<ItemStack> {
+    ) -> PreparedBlockDrops {
         let params = LootContextParameters {
             block_state: Some(state),
             tool: Some(ItemStack::EMPTY.clone()),
@@ -169,10 +212,15 @@ impl Explosion {
             world_time: world.level_info.load().day_time as u64,
             is_raining: Some(world.is_raining()),
             is_thundering: Some(world.is_thundering()),
+            world: Some(world.clone()),
+            registry: world
+                .server
+                .upgrade()
+                .map(|server| server.datapack_manager.clone()),
             ..Default::default()
         };
         // BlockBehaviour.onExplosionHit uses the same Block.getDrops context as harvesting.
-        crate::block::block_drops(world, block, pos, &params)
+        PreparedBlockDrops::prepare(world, pos, state.id, &params)
     }
 
     pub(super) fn create_fire(&self, world: &Arc<World>, positions: &[BlockPos]) {
@@ -181,8 +229,9 @@ impl Explosion {
         }
         // ServerExplosion.createFire samples every affected position, including original air.
         for pos in positions {
+            let observed = world.get_block_state(pos);
             if rand::rng().random_range(0..3) == 0
-                && world.get_block_state(pos).is_air()
+                && observed.is_air()
                 && world.get_block_state(&pos.down()).is_solid_render()
             {
                 let block = FireBlockBase::get_fire_type(world, pos);
@@ -192,7 +241,12 @@ impl Explosion {
                 } else {
                     block.default_state.id
                 };
-                world.set_block_state(pos, state, BlockFlags::NOTIFY_ALL);
+                world.set_block_state_from_observed(
+                    pos,
+                    observed.id,
+                    state,
+                    BlockFlags::NOTIFY_ALL,
+                );
             }
         }
     }

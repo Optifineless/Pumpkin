@@ -39,12 +39,19 @@ impl BlockBehaviour for CoralPlantBlock {
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         if !scan_for_water(args.world, args.position) && !is_dead_coral(args.block) {
             let current_state = args.world.get_block_state(args.position);
+            if current_state.id.to_block() != args.block {
+                return;
+            }
             let dead_block_state_id = {
                 let props = CoralPlantLikeProperties::from_state_id(current_state.id);
                 props.to_state_id(get_dead_type(args.block.id).unwrap_or_default().to_block())
             };
-            args.world
-                .set_block_state(args.position, dead_block_state_id, BlockFlags::NOTIFY_ALL);
+            args.world.set_block_state_from_observed(
+                args.position,
+                current_state.id,
+                dead_block_state_id,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {

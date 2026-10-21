@@ -49,8 +49,9 @@ impl BedrockClient {
                 }
 
                 if player.gamemode.load() == GameMode::Creative {
-                    let new_state = world.break_block(
+                    let new_state = world.break_block_from_observed(
                         &location,
+                        state.id,
                         Some(player),
                         BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
                     );
@@ -74,14 +75,19 @@ impl BedrockClient {
                     let speed = crate::block::calc_block_breaking(player, state, block);
                     if speed >= 1.0 {
                         player.stop_mining();
-                        let broken_state = world.get_block_state(&location);
+                        let broken_state = state;
                         let can_harvest = player.can_harvest(broken_state, block);
                         let flags = if can_harvest {
                             BlockFlags::NOTIFY_ALL
                         } else {
                             BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
                         };
-                        let new_state = world.break_block(&location, Some(player), flags);
+                        let new_state = world.break_block_from_observed(
+                            &location,
+                            state.id,
+                            Some(player),
+                            flags,
+                        );
                         if new_state.is_some() {
                             server.block_registry.broken(
                                 &world,
@@ -184,7 +190,10 @@ impl BedrockClient {
                         } else {
                             BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
                         };
-                        if world.break_block(&location, Some(player), flags).is_some() {
+                        if world
+                            .break_block_from_observed(&location, state.id, Some(player), flags)
+                            .is_some()
+                        {
                             server
                                 .block_registry
                                 .broken(&world, block, player, &location, server, state);

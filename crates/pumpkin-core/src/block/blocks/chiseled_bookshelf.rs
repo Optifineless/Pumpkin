@@ -101,7 +101,8 @@ impl BlockBehaviour for ChiseledBookshelfBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let block_entity = ChiseledBookshelfBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(block_entity), args.state_id);
     }
 
     fn get_comparator_output(&self, args: GetComparatorOutputArgs<'_>) -> Option<u8> {

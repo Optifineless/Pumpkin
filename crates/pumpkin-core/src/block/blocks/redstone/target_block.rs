@@ -49,6 +49,29 @@ impl BlockBehaviour for TargetBlock {
     }
 
     fn on_projectile_hit(&self, args: OnProjectileHitArgs<'_>) {
+        if !args
+            .world
+            .is_block_tick_scheduled(args.position, args.block)
+        {
+            let power = get_redstone_strength(args.hit_pos);
+            let mut props = TargetProperties::from_state_id(args.state.id);
+            props.r#power = power;
+            if !args.world.set_block_state_from_observed(
+                args.position,
+                args.state.id,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
+            let delay = if is_arrow_family(args.projectile) {
+                20
+            } else {
+                8
+            };
+            args.world
+                .schedule_block_tick(args.block, *args.position, delay, TickPriority::Normal);
+        }
         if let Some(owner_id) = args.projectile.get_owner_id()
             && let Some(player) = args.world.get_player_by_id(owner_id)
         {
@@ -58,35 +81,19 @@ impl BlockBehaviour for TargetBlock {
                 1,
             );
         }
-        if !args
-            .world
-            .is_block_tick_scheduled(args.position, args.block)
-        {
-            let power = get_redstone_strength(args.hit_pos);
-            let mut props = TargetProperties::from_state_id(args.state.id);
-            props.r#power = power;
-            args.world.set_block_state(
-                args.position,
-                props.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL,
-            );
-            let delay = if is_arrow_family(args.projectile) {
-                20
-            } else {
-                8
-            };
-            args.world
-                .schedule_block_tick(args.block, *args.position, delay, TickPriority::Normal);
-        }
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let mut props = TargetProperties::from_state_id(state_id);
         if props.r#power != 0 {
             props.r#power = 0;
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
             );

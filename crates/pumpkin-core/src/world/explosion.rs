@@ -143,13 +143,14 @@ impl Explosion {
     }
 
     pub fn explode(&self, world: &Arc<World>) -> ExplosionResult {
-        let Some(_mutation) = world.block_entity_mutation_permit(self.pos.to_block_pos()) else {
+        let Some(mutation) = world.block_entity_mutation_permit(self.pos.to_block_pos()) else {
             return ExplosionResult {
                 block_count: 0,
                 player_knockback: FxHashMap::default(),
                 player_lifecycles: FxHashMap::default(),
             };
         };
+        drop(mutation);
         // ServerExplosion.explode calculates positions before entity damage and block callbacks.
         world.emit_game_event(
             pumpkin_data::game_event::GameEvent::Explode.name(),

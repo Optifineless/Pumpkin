@@ -78,21 +78,25 @@ impl FlowingLava {
             .all(|dir| world.is_loaded(&pos.offset(dir.to_offset())))
     }
 
-    fn ignite_fire_if_possible(world: &Arc<World>, pos: &BlockPos) {
+    fn ignite_fire_if_possible(world: &Arc<World>, pos: &BlockPos, observed: BlockStateId) {
         if !Self::can_resolve_fire_state_without_loading(world, pos) {
             return;
         }
 
         let fire_state_id = FireBlock.get_state_for_position(world.as_ref(), &Block::FIRE, pos);
-        world.set_block_state(pos, fire_state_id, BlockFlags::NOTIFY_ALL);
+        world.set_block_state_from_observed(pos, observed, fire_state_id, BlockFlags::NOTIFY_ALL);
     }
 
     fn receive_neighbor_fluids(world: &Arc<World>, block_pos: &BlockPos) -> bool {
+        let observed = world.get_block_state_id(block_pos);
+        if Block::from_state_id(observed) != &Block::LAVA {
+            return false;
+        }
         // Logic to determine if we should replace the fluid with any of (cobble, obsidian, stone, etc.)
         let below_is_soul_soil = world
             .get_block(&block_pos.offset(BlockDirection::Down.to_offset()))
             == &Block::SOUL_SOIL;
-        let is_still = world.get_block_state_id(block_pos) == Block::LAVA.default_state.id;
+        let is_still = observed == Block::LAVA.default_state.id;
 
         for dir in BlockDirection::all() {
             // Vanilla tests every direction but Down here. Lava landing in water
@@ -113,8 +117,14 @@ impl FlowingLava {
                 } else {
                     Block::COBBLESTONE
                 };
-                world.set_block_state(block_pos, block.default_state.id, BlockFlags::NOTIFY_ALL);
-                world.sync_world_event(WorldEvent::LavaFizz, *block_pos, 0);
+                if world.set_block_state_from_observed(
+                    block_pos,
+                    observed,
+                    block.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    world.sync_world_event(WorldEvent::LavaFizz, *block_pos, 0);
+                }
                 return false;
             }
             if below_is_soul_soil && world.get_block(&neighbor_pos) == &Block::BLUE_ICE {
@@ -129,12 +139,14 @@ impl FlowingLava {
                         return false;
                     }
                 }
-                world.set_block_state(
+                if world.set_block_state_from_observed(
                     block_pos,
+                    observed,
                     Block::BASALT.default_state.id,
                     BlockFlags::NOTIFY_ALL,
-                );
-                world.sync_world_event(WorldEvent::LavaFizz, *block_pos, 0);
+                ) {
+                    world.sync_world_event(WorldEvent::LavaFizz, *block_pos, 0);
+                }
                 return false;
             }
         }
@@ -204,12 +216,13 @@ impl FluidBehaviour for FlowingLava {
                     rand::random_range(-1..=1),
                 ));
 
-                let (block, _) = world.get_block_and_state_id(&test_pos);
+                let (block, observed) = world.get_block_and_state_id(&test_pos);
 
                 if block.id == Block::AIR.id {
                     if Self::has_flammable_neighbours(world, &test_pos) {
-                        world.set_block_state(
+                        world.set_block_state_from_observed(
                             &test_pos,
+                            observed,
                             Block::FIRE.default_state.id,
                             BlockFlags::NOTIFY_ALL,
                         );
@@ -232,12 +245,11 @@ impl FluidBehaviour for FlowingLava {
                 }
 
                 let above_pos = test_pos.up();
-                if world
-                    .get_block_state_if_loaded(&above_pos)
-                    .is_some_and(BlockState::is_air)
+                if let Some(above_state) = world.get_block_state_if_loaded(&above_pos)
+                    && above_state.is_air()
                     && Self::is_flammable(world, &test_pos)
                 {
-                    Self::ignite_fire_if_possible(world, &above_pos);
+                    Self::ignite_fire_if_possible(world, &above_pos, above_state.id);
                 }
             }
         }
@@ -267,16 +279,29 @@ impl FlowingFluid for FlowingLava {
         world.level_info.load().game_rules.lava_source_conversion
     }
 
-    fn spread_to(&self, world: &Arc<World>, fluid: &Fluid, pos: &BlockPos, state_id: BlockStateId) {
+    fn spread_to(
+        &self,
+        world: &Arc<World>,
+        fluid: &Fluid,
+        pos: &BlockPos,
+        observed: BlockStateId,
+        state_id: BlockStateId,
+    ) {
         let new_props = FlowingFluidProperties::from_state_id(state_id, fluid);
-        let current_state_id = world.get_block_state_id(pos);
+        let current_state_id = observed;
         let block = Block::from_state_id(current_state_id);
 
         if new_props.level == Level::L8 && new_props.falling == Falling::True {
             // Stone creation when lava meets water
             if block == &Block::WATER {
-                world.set_block_state(pos, Block::STONE.default_state.id, BlockFlags::NOTIFY_ALL);
-                world.sync_world_event(WorldEvent::LavaFizz, *pos, 0);
+                if world.set_block_state_from_observed(
+                    pos,
+                    observed,
+                    Block::STONE.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    world.sync_world_event(WorldEvent::LavaFizz, *pos, 0);
+                }
                 return;
             }
         }
@@ -287,6 +312,6 @@ impl FlowingFluid for FlowingLava {
         }
 
         // Delegate quiescence, replacement and scheduling to the shared helper
-        self.apply_spread(world, fluid, pos, state_id, new_props);
+        self.apply_spread(world, fluid, pos, observed, state_id, new_props);
     }
 }

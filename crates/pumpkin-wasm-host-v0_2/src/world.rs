@@ -161,12 +161,11 @@ async fn set_block_state_with_store(
     plugin
         .store
         .pump_blocking(&mut host, move || {
-            let _mutation = world
-                .block_entity_mutation_permit(internal_pos)
+            world
+                .set_block_state_if(&internal_pos, state_id, internal_flags, |_| true)
                 .ok_or_else(|| {
                     wasmtime::Error::msg("Block write rejected during chunk capture or shutdown")
                 })?;
-            world.set_block_state(&internal_pos, state_id, internal_flags);
             Ok(())
         })
         .await?
@@ -1201,11 +1200,12 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         plugin
             .store
             .pump_blocking(&mut host, move || {
-                let _mutation = world
+                let mutation = world
                     .block_entity_mutation_permit(pos.to_block_pos())
                     .ok_or_else(|| {
                         wasmtime::Error::msg("Explosion rejected during chunk capture or shutdown")
                     })?;
+                drop(mutation);
                 world.explode(pos, power, interaction);
                 Ok(())
             })

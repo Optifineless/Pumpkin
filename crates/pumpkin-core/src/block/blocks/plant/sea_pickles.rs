@@ -31,7 +31,11 @@ impl BlockBehaviour for SeaPickleBlock {
                 .has_tag(&tag::Block::MINECRAFT_CORAL_BLOCKS)
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
+        let mut properties = SeaPickleProperties::from_state_id(args.state_id);
+        properties.pickles = 4;
+        let source = properties.to_state_id(args.block);
+        let mut updates = Vec::new();
         // SeaPickleBlock.performBonemeal spreads only into water over living coral.
         let mut z_span = 1;
         let mut z_offset = 0;
@@ -43,9 +47,10 @@ impl BlockBehaviour for SeaPickleBlock {
                         y,
                         args.position.0.z - z_offset + z,
                     );
+                    let observed = args.world.get_block_state_id(&target);
                     if target != *args.position
                         && rand::rng().random_range(0..6) == 0
-                        && args.world.get_block(&target) == &Block::WATER
+                        && observed.to_block() == &Block::WATER
                         && args
                             .world
                             .get_block(&target.down())
@@ -53,11 +58,12 @@ impl BlockBehaviour for SeaPickleBlock {
                     {
                         let mut properties = SeaPickleProperties::default(args.block);
                         properties.pickles = rand::rng().random_range(1..=4);
-                        args.world.set_block_state(
-                            &target,
+                        updates.push((
+                            target,
+                            observed,
                             properties.to_state_id(args.block),
                             BlockFlags::NOTIFY_ALL,
-                        );
+                        ));
                     }
                 }
             }
@@ -70,13 +76,13 @@ impl BlockBehaviour for SeaPickleBlock {
             }
         }
 
-        let mut properties = SeaPickleProperties::from_state_id(args.state_id);
-        properties.pickles = 4;
-        args.world.set_block_state(
-            args.position,
-            properties.to_state_id(args.block),
+        updates.push((
+            *args.position,
+            args.state_id,
+            source,
             BlockFlags::NOTIFY_LISTENERS,
-        );
+        ));
+        args.world.set_block_states_from_observed(&updates)
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {

@@ -34,7 +34,7 @@ const SURVIVAL_LIGHT: u8 = 8;
 const GROWTH_LIGHT: u8 = 9;
 
 /// Shares vanilla crop survival and growth behavior within the plant module.
-pub(super) trait CropBlockBase: PlantBlockBase {
+pub(super) trait CropBlockBase: PlantBlockBase + crate::block::BlockMetadata {
     /// Mirrors CropBlock.canSurvive and hasSufficientLight.
     fn can_place_crop_at(&self, args: &CanPlaceAtArgs<'_>) -> bool {
         args.world
@@ -95,18 +95,22 @@ pub(super) trait CropBlockBase: PlantBlockBase {
 
     fn is_valid_bonemeal_target(&self, world: &World, pos: &BlockPos) -> bool {
         let (block, state) = world.get_block_and_state_id(pos);
-        self.get_age(state, block) < self.max_age()
+        Self::ids().contains(&block.id) && self.get_age(state, block) < self.max_age()
     }
 
-    fn perform_bonemeal(&self, world: &Arc<World>, pos: &BlockPos) {
-        let (block, state) = world.get_block_and_state_id(pos);
+    fn perform_bonemeal(&self, world: &Arc<World>, pos: &BlockPos, state: BlockStateId) -> bool {
+        let block = state.to_block();
+        if !Self::ids().contains(&block.id) {
+            return false;
+        }
         let age = self.get_age(state, block);
         let new_age = (age + self.bonemeal_age_increase()).min(self.max_age());
-        world.set_block_state(
+        world.set_block_state_from_observed(
             pos,
+            state,
             self.state_with_age(block, state, new_age),
             BlockFlags::NOTIFY_LISTENERS,
-        );
+        )
     }
 
     fn random_tick(&self, world: &Arc<World>, pos: &BlockPos) {
@@ -125,6 +129,9 @@ pub(super) trait CropBlockBase: PlantBlockBase {
             return;
         }
         let (block, state) = world.get_block_and_state_id(pos);
+        if !Self::ids().contains(&block.id) {
+            return;
+        }
         let age = self.get_age(state, block);
         if age < self.max_age() {
             let f = get_available_moisture(world, pos, block);
@@ -144,9 +151,19 @@ pub(super) trait CropBlockBase: PlantBlockBase {
                     if event.cancelled {
                         return;
                     }
-                    world.set_block_state(pos, event.new_state_id, BlockFlags::NOTIFY_LISTENERS);
+                    world.set_block_state_from_observed(
+                        pos,
+                        state,
+                        event.new_state_id,
+                        BlockFlags::NOTIFY_LISTENERS,
+                    );
                 } else {
-                    world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_LISTENERS);
+                    world.set_block_state_from_observed(
+                        pos,
+                        state,
+                        new_state_id,
+                        BlockFlags::NOTIFY_LISTENERS,
+                    );
                 }
             }
         }

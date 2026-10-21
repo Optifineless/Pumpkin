@@ -7,7 +7,9 @@ use crate::block::{
 };
 use crate::entity::Entity;
 use crate::entity::mob::warden::WardenEntity;
-use crate::entity::mob::warden_spawn_tracker::{MAX_WARNING_LEVEL, WardenSpawnTracker};
+use crate::entity::mob::warden_spawn_tracker::{
+    MAX_WARNING_LEVEL, WardenSpawnTracker, WarningPlan,
+};
 use crate::entity::player::Player;
 use crate::entity::spawn_util::{SpawnStrategy, try_spawn_mob};
 use crate::world::World;
@@ -73,38 +75,46 @@ impl SculkShriekerBlock {
     }
 
     pub fn try_shriek(world: &Arc<World>, pos: &BlockPos, player: &Arc<Player>) {
-        let block = world.get_block(pos);
+        let (block, state) = world.get_block_and_state(pos);
         if block.id != BlockId::SCULK_SHRIEKER {
             return;
         }
-        let state = world.get_block_state(pos);
         let mut props = SculkShriekerLikeProperties::from_state_id(state.id);
         if props.shrieking {
             return;
         }
 
         let can_respond = Self::can_respond(world, props.can_summon);
-        let warning_level = if can_respond {
-            WardenSpawnTracker::try_warn(world, pos, player)
+        let warning = if can_respond {
+            let Some(warning) = WardenSpawnTracker::prepare_warning(world, pos, player) else {
+                return;
+            };
+            Some(warning)
         } else {
-            Some(0)
+            None
         };
+        let warning_level = warning.as_ref().map_or(0, WarningPlan::level);
+        props.shrieking = true;
+        if !world.set_block_state_from_observed(
+            pos,
+            state.id,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
+            return;
+        }
+        if let Some(warning) = warning {
+            warning.commit();
+        }
         Self::with_shrieker(world, pos, |shrieker| {
             *shrieker
                 .warning_level
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = warning_level.unwrap_or(0);
-            shrieker.shrieking_can_summon.store(
-                warning_level.is_some() && props.can_summon,
-                Ordering::Relaxed,
-            );
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = warning_level;
+            shrieker
+                .shrieking_can_summon
+                .store(props.can_summon, Ordering::Relaxed);
         });
-        if warning_level.is_none() {
-            return;
-        }
-
-        props.shrieking = true;
-        world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
         world.schedule_block_tick(block, *pos, SHRIEKING_TICKS, TickPriority::Normal);
         world.sync_world_event(WorldEvent::ParticlesSculkShriek, *pos, 0);
         world.emit_game_event(GameEvent::Shriek.name(), pos.to_centered_f64());
@@ -197,14 +207,20 @@ impl BlockBehaviour for SculkShriekerBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         let mut props = SculkShriekerLikeProperties::from_state_id(state.id);
         if props.shrieking {
             props.shrieking = false;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return;
+            }
             Self::try_respond(args.world, args.position, props.can_summon);
         }
     }

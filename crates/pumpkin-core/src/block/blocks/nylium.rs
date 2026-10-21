@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::tag::Taggable;
-use pumpkin_data::{Block, BlockDirection, BlockState, tag};
+use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::lighting::LightEngine;
@@ -42,9 +42,13 @@ impl NyliumBlock {
 impl BlockBehaviour for NyliumBlock {
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         if !Self::can_be_nylium(state, args.world, args.position) {
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 Block::NETHERRACK.default_state.id,
                 BlockFlags::NOTIFY_ALL,
             );
@@ -62,33 +66,60 @@ impl BlockBehaviour for NyliumBlock {
         true
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         let world = args.world;
         let block = args.block;
         let above_pos = args.position.up();
 
+        let mut outcomes = Vec::new();
         if block == &Block::CRIMSON_NYLIUM {
-            place_crimson_vegetation(world, &above_pos);
+            outcomes.extend(place_crimson_vegetation(
+                world,
+                &above_pos,
+                (*args.position, args.state_id),
+            ));
         } else if block == &Block::WARPED_NYLIUM {
-            place_warped_vegetation(world, &above_pos);
-            place_nether_sprouts(world, &above_pos);
+            outcomes.extend(place_warped_vegetation(
+                world,
+                &above_pos,
+                (*args.position, args.state_id),
+            ));
+            outcomes.extend(place_nether_sprouts(
+                world,
+                &above_pos,
+                (*args.position, args.state_id),
+            ));
             if rand::rng().random_range(0..8) == 0 {
-                place_twisting_vines(world, &above_pos);
+                outcomes.extend(place_twisting_vines(
+                    world,
+                    &above_pos,
+                    (*args.position, args.state_id),
+                ));
             }
         }
+        outcomes
+            .into_iter()
+            .reduce(|previous, next| previous || next)
+            .unwrap_or(true)
     }
 }
 
-fn place_crimson_vegetation(world: &Arc<World>, origin: &BlockPos) {
+fn place_crimson_vegetation(
+    world: &Arc<World>,
+    origin: &BlockPos,
+    source: (BlockPos, BlockStateId),
+) -> Option<bool> {
+    let mut result = None;
     for _ in 0..9 {
         let dx = rand::rng().random_range(0..3) - rand::rng().random_range(0..3);
         let dy = rand::rng().random_range(0..1) - rand::rng().random_range(0..1);
         let dz = rand::rng().random_range(0..3) - rand::rng().random_range(0..3);
         let target_pos = origin.add(dx, dy, dz);
 
+        let observed = world.get_block_state_id(&target_pos);
         if !world.is_in_height_limit(target_pos.0.y)
             || !world.is_loaded(&target_pos)
-            || !world.get_block_state(&target_pos).is_air()
+            || !observed.to_state().is_air()
         {
             continue;
         }
@@ -126,20 +157,31 @@ fn place_crimson_vegetation(world: &Arc<World>, origin: &BlockPos) {
             continue;
         }
 
-        world.set_block_state(&target_pos, state.id, BlockFlags::NOTIFY_ALL);
+        let committed = world.set_block_states_from_observed(&[
+            (source.0, source.1, source.1, BlockFlags::empty()),
+            (target_pos, observed, state.id, BlockFlags::NOTIFY_ALL),
+        ]);
+        result = Some(result.unwrap_or(false) || committed);
     }
+    result
 }
 
-fn place_warped_vegetation(world: &Arc<World>, origin: &BlockPos) {
+fn place_warped_vegetation(
+    world: &Arc<World>,
+    origin: &BlockPos,
+    source: (BlockPos, BlockStateId),
+) -> Option<bool> {
+    let mut result = None;
     for _ in 0..9 {
         let dx = rand::rng().random_range(0..3) - rand::rng().random_range(0..3);
         let dy = rand::rng().random_range(0..1) - rand::rng().random_range(0..1);
         let dz = rand::rng().random_range(0..3) - rand::rng().random_range(0..3);
         let target_pos = origin.add(dx, dy, dz);
 
+        let observed = world.get_block_state_id(&target_pos);
         if !world.is_in_height_limit(target_pos.0.y)
             || !world.is_loaded(&target_pos)
-            || !world.get_block_state(&target_pos).is_air()
+            || !observed.to_state().is_air()
         {
             continue;
         }
@@ -179,20 +221,31 @@ fn place_warped_vegetation(world: &Arc<World>, origin: &BlockPos) {
             continue;
         }
 
-        world.set_block_state(&target_pos, state.id, BlockFlags::NOTIFY_ALL);
+        let committed = world.set_block_states_from_observed(&[
+            (source.0, source.1, source.1, BlockFlags::empty()),
+            (target_pos, observed, state.id, BlockFlags::NOTIFY_ALL),
+        ]);
+        result = Some(result.unwrap_or(false) || committed);
     }
+    result
 }
 
-fn place_nether_sprouts(world: &Arc<World>, origin: &BlockPos) {
+fn place_nether_sprouts(
+    world: &Arc<World>,
+    origin: &BlockPos,
+    source: (BlockPos, BlockStateId),
+) -> Option<bool> {
+    let mut result = None;
     for _ in 0..9 {
         let dx = rand::rng().random_range(0..3) - rand::rng().random_range(0..3);
         let dy = rand::rng().random_range(0..1) - rand::rng().random_range(0..1);
         let dz = rand::rng().random_range(0..3) - rand::rng().random_range(0..3);
         let target_pos = origin.add(dx, dy, dz);
 
+        let observed = world.get_block_state_id(&target_pos);
         if !world.is_in_height_limit(target_pos.0.y)
             || !world.is_loaded(&target_pos)
-            || !world.get_block_state(&target_pos).is_air()
+            || !observed.to_state().is_air()
         {
             continue;
         }
@@ -222,11 +275,21 @@ fn place_nether_sprouts(world: &Arc<World>, origin: &BlockPos) {
             continue;
         }
 
-        world.set_block_state(&target_pos, state.id, BlockFlags::NOTIFY_ALL);
+        let committed = world.set_block_states_from_observed(&[
+            (source.0, source.1, source.1, BlockFlags::empty()),
+            (target_pos, observed, state.id, BlockFlags::NOTIFY_ALL),
+        ]);
+        result = Some(result.unwrap_or(false) || committed);
     }
+    result
 }
 
-fn place_twisting_vines(world: &Arc<World>, origin: &BlockPos) {
+fn place_twisting_vines(
+    world: &Arc<World>,
+    origin: &BlockPos,
+    source: (BlockPos, BlockStateId),
+) -> Option<bool> {
+    let mut result = None;
     for _ in 0..9 {
         let dx = rand::rng().random_range(0..3) - rand::rng().random_range(0..3);
         let dy = rand::rng().random_range(0..1) - rand::rng().random_range(0..1);
@@ -247,9 +310,10 @@ fn place_twisting_vines(world: &Arc<World>, origin: &BlockPos) {
 
         let mut current_pos = target_pos;
         for i in 0..height {
+            let observed = world.get_block_state_id(&current_pos);
             if !world.is_in_height_limit(current_pos.0.y)
                 || !world.is_loaded(&current_pos)
-                || !world.get_block_state(&current_pos).is_air()
+                || !observed.to_state().is_air()
             {
                 break;
             }
@@ -260,21 +324,35 @@ fn place_twisting_vines(world: &Arc<World>, origin: &BlockPos) {
                 || !world.get_block_state(&current_pos.up()).is_air();
 
             if is_top {
-                world.set_block_state(
-                    &current_pos,
-                    Block::TWISTING_VINES.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                );
+                let committed = world.set_block_states_from_observed(&[
+                    (source.0, source.1, source.1, BlockFlags::empty()),
+                    (
+                        current_pos,
+                        observed,
+                        Block::TWISTING_VINES.default_state.id,
+                        BlockFlags::NOTIFY_ALL,
+                    ),
+                ]);
+                result = Some(result.unwrap_or(false) || committed);
                 break;
             }
-            world.set_block_state(
-                &current_pos,
-                Block::TWISTING_VINES_PLANT.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            );
+            let committed = world.set_block_states_from_observed(&[
+                (source.0, source.1, source.1, BlockFlags::empty()),
+                (
+                    current_pos,
+                    observed,
+                    Block::TWISTING_VINES_PLANT.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                ),
+            ]);
+            result = Some(result.unwrap_or(false) || committed);
+            if !committed {
+                break;
+            }
             current_pos = current_pos.up();
         }
     }
+    result
 }
 
 fn find_twisting_vines_target_y(world: &World, pos: &mut BlockPos) -> bool {

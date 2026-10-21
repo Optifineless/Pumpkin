@@ -59,10 +59,11 @@ impl ItemBehaviour for PlaceOnWaterBlockItem {
             return false;
         };
 
-        let above_pos = hit_pos.up();
-        let Some(_mutation) = world.block_entity_mutation_permit(above_pos) else {
+        let hit_state = world.get_block_state_id(&hit_pos);
+        if Fluid::from_state_id(hit_state).is_none() {
             return false;
-        };
+        }
+        let above_pos = hit_pos.up();
         let above_state = world.get_block_state(&above_pos);
         if above_state.is_air() {
             let (placed_block, sound) = if item.id == Item::LILY_PAD.id {
@@ -72,14 +73,22 @@ impl ItemBehaviour for PlaceOnWaterBlockItem {
             };
 
             // PlaceOnWaterBlockItem.use / BlockItem.place consume the same used hand.
-            if crate::item::item_utils::claim_item_in_hand(player, hand, stack).is_none() {
+            let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack)
+            else {
+                return false;
+            };
+            if !world.set_block_states_from_observed(&[
+                (hit_pos, hit_state, hit_state, BlockFlags::empty()),
+                (
+                    above_pos,
+                    above_state.id,
+                    placed_block.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                ),
+            ]) {
+                crate::item::item_utils::give_or_drop(player, receipt);
                 return false;
             }
-            world.set_block_state(
-                &above_pos,
-                placed_block.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            );
             world.play_sound(
                 sound,
                 pumpkin_data::sound::SoundCategory::Blocks,

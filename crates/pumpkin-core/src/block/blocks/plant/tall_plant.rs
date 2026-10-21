@@ -79,11 +79,24 @@ impl BlockBehaviour for TallPlantBlock {
         {
             let mut tall_plant_props = TallSeagrassLikeProperties::from_state_id(args.state_id);
             tall_plant_props.half = DoubleBlockHalf::Upper;
-            args.world.set_block_state(
-                &args.position.offset(BlockDirection::Up.to_offset()),
-                tall_plant_props.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
-            );
+            let upper = args.position.offset(BlockDirection::Up.to_offset());
+            let observed = args.world.get_block_state_id(&upper);
+            if observed.to_state().is_air() {
+                args.world.set_block_states_from_observed(&[
+                    (
+                        *args.position,
+                        args.state_id,
+                        args.state_id,
+                        BlockFlags::empty(),
+                    ),
+                    (
+                        upper,
+                        observed,
+                        tall_plant_props.to_state_id(args.block),
+                        BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
+                    ),
+                ]);
+            }
         }
     }
 
@@ -104,8 +117,9 @@ impl BlockBehaviour for TallPlantBlock {
                 };
                 if other_props.half == opposite_half {
                     // Break the other half, using SKIP_DROPS to prevent double drops
-                    args.world.break_block(
+                    args.world.break_block_from_observed(
                         &other_block_pos,
+                        other_state_id,
                         None,
                         BlockFlags::SKIP_DROPS
                             | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK

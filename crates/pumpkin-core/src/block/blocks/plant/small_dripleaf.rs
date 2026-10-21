@@ -55,16 +55,30 @@ impl BlockBehaviour for SmallDripleafBlock {
             let mut upper_small_dripleaf_props =
                 SmallDripleafLikeProperties::default(&Block::SMALL_DRIPLEAF);
 
-            let upper_block = args.world.get_block(&args.position.up());
+            let upper = args.position.up();
+            let observed = args.world.get_block_state_id(&upper);
+            let upper_block = observed.to_block();
+            if !observed.to_state().is_air() && upper_block != &Block::WATER {
+                return;
+            }
             upper_small_dripleaf_props.facing = lower_small_dripleaf_props.facing;
             upper_small_dripleaf_props.waterlogged = upper_block == &Block::WATER;
             upper_small_dripleaf_props.half = DoubleBlockHalf::Upper;
 
-            args.world.set_block_state(
-                &args.position.up(),
-                upper_small_dripleaf_props.to_state_id(&Block::SMALL_DRIPLEAF),
-                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
-            );
+            args.world.set_block_states_from_observed(&[
+                (
+                    *args.position,
+                    args.state_id,
+                    args.state_id,
+                    BlockFlags::empty(),
+                ),
+                (
+                    upper,
+                    observed,
+                    upper_small_dripleaf_props.to_state_id(&Block::SMALL_DRIPLEAF),
+                    BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
+                ),
+            ]);
         }
     }
 }

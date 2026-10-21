@@ -57,16 +57,18 @@ impl BlockBehaviour for GrassBlock {
         true
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
         const SPREAD_ATTEMPTS: i32 = 128;
         const ATTEMPTS_PER_STEP: i32 = 16;
         const FLOWER_CHANCE: i32 = 8;
 
         if args.block != &Block::GRASS_BLOCK {
-            return;
+            return true;
         }
 
         let origin = args.position.up();
+        let mut attempted = false;
+        let mut committed = false;
         for attempt in 0..SPREAD_ATTEMPTS {
             let mut target = origin;
             let mut valid = true;
@@ -102,7 +104,13 @@ impl BlockBehaviour for GrassBlock {
                     && args.world.is_loaded(&above)
                     && args.world.get_block_state(&above).is_air()
                 {
-                    place_tall_grass(args.world, target);
+                    attempted = true;
+                    committed |= place_tall_grass(
+                        args.world,
+                        (*args.position, args.state_id),
+                        target,
+                        target_state.id,
+                    );
                 }
             } else if target_state.is_air() && args.world.is_in_height_limit(target.0.y) {
                 let selected = if rand::rng().random_range(0..FLOWER_CHANCE) == 0 {
@@ -127,35 +135,56 @@ impl BlockBehaviour for GrassBlock {
                 ) {
                     continue;
                 }
-                args.world
-                    .set_block_state(&target, state.id, BlockFlags::NOTIFY_LISTENERS);
-                if schedule_tick {
+                attempted = true;
+                let placed = args.world.set_block_states_from_observed(&[
+                    (
+                        *args.position,
+                        args.state_id,
+                        args.state_id,
+                        BlockFlags::empty(),
+                    ),
+                    (
+                        target,
+                        target_state.id,
+                        state.id,
+                        BlockFlags::NOTIFY_LISTENERS,
+                    ),
+                ]);
+                committed |= placed;
+                if placed && schedule_tick {
                     args.world
                         .schedule_block_tick(placed_block, target, 1, TickPriority::Normal);
                 }
             }
         }
+        committed || !attempted
     }
 }
 
-fn place_tall_grass(world: &std::sync::Arc<crate::world::World>, position: BlockPos) {
-    let state = Block::TALL_GRASS.default_state.id;
-    world.set_block_state(&position, state, BlockFlags::NOTIFY_LISTENERS);
-    place_tall_grass_upper(world, position, state);
-}
-
-fn place_tall_grass_upper(
+fn place_tall_grass(
     world: &std::sync::Arc<crate::world::World>,
+    source: (BlockPos, BlockStateId),
     position: BlockPos,
-    lower_state: BlockStateId,
-) {
-    let mut props = TallSeagrassLikeProperties::from_state_id(lower_state);
+    observed: BlockStateId,
+) -> bool {
+    let lower = Block::TALL_GRASS.default_state.id;
+    let upper = position.up();
+    let upper_observed = world.get_block_state_id(&upper);
+    if !upper_observed.to_state().is_air() {
+        return false;
+    }
+    let mut props = TallSeagrassLikeProperties::from_state_id(lower);
     props.half = DoubleBlockHalf::Upper;
-    world.set_block_state(
-        &position.up(),
-        props.to_state_id(&Block::TALL_GRASS),
-        BlockFlags::NOTIFY_LISTENERS,
-    );
+    world.set_block_states_from_observed(&[
+        (source.0, source.1, source.1, BlockFlags::empty()),
+        (position, observed, lower, BlockFlags::NOTIFY_LISTENERS),
+        (
+            upper,
+            upper_observed,
+            props.to_state_id(&Block::TALL_GRASS),
+            BlockFlags::NOTIFY_LISTENERS,
+        ),
+    ])
 }
 
 fn biome_bonemeal_state(

@@ -2180,7 +2180,10 @@ impl Player {
                         pumpkin_world::world::BlockFlags::SKIP_DROPS
                             | pumpkin_world::world::BlockFlags::NOTIFY_ALL
                     };
-                    if world.break_block(&pos, Some(&p), flags).is_some() {
+                    if world
+                        .break_block_from_observed(&pos, state.id, Some(&p), flags)
+                        .is_some()
+                    {
                         if let Some(server) = server_clone {
                             server
                                 .block_registry

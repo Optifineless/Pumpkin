@@ -34,8 +34,14 @@ fn set_block(world: &Arc<World>, pos: &BlockPos, block: &Block) {
 }
 
 fn drop_previous_and_set_block(world: &Arc<World>, pos: &BlockPos, block: &Block) {
-    if world.get_block(pos) != block {
-        set_block(world, pos, block);
+    let expected = world.get_block_state_id(pos);
+    if expected.to_block() != block {
+        world.set_block_state_from_observed(
+            pos,
+            expected,
+            block.default_state.id,
+            BlockFlags::NOTIFY_LISTENERS,
+        );
     }
 }
 

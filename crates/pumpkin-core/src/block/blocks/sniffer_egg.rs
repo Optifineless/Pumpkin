@@ -52,15 +52,21 @@ impl BlockBehaviour for SnifferEggBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let mut props = SnifferEggLikeProperties::from_state_id(state_id);
 
         if props.hatch < 2 {
             props.hatch += 1;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return;
+            }
 
             args.world.play_sound(
                 Sound::BlockSnifferEggCrack,
@@ -73,8 +79,13 @@ impl BlockBehaviour for SnifferEggBlock {
             args.world
                 .schedule_block_tick(args.block, *args.position, delay, TickPriority::Normal);
         } else {
-            args.world
-                .break_block(args.position, None, BlockFlags::SKIP_DROPS);
+            if args
+                .world
+                .break_block_from_observed(args.position, state_id, None, BlockFlags::SKIP_DROPS)
+                .is_none()
+            {
+                return;
+            }
 
             args.world.play_sound(
                 Sound::BlockSnifferEggHatch,

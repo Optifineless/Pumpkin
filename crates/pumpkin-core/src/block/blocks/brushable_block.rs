@@ -23,57 +23,62 @@ impl BrushableBlock {
         block: &Block,
     ) {
         let state = world.get_block_state(pos);
+        if Block::from_state_id(state.id) != block {
+            return;
+        }
         let mut props = SuspiciousSandLikeProperties::from_state_id(state.id);
-
+        let Some(be) = world.get_block_entity(pos) else {
+            return;
+        };
+        let Some(brush_be) = be.as_any().downcast_ref::<BrushableBlockBlockEntity>() else {
+            return;
+        };
         let is_gravel = block.id == BlockId::SUSPICIOUS_GRAVEL;
-
-        if let Some(be) = world.get_block_entity(pos)
-            && let Some(brush_be) = be.as_any().downcast_ref::<BrushableBlockBlockEntity>()
-        {
-            let mut hits = brush_be
+        let hits = {
+            let hits = brush_be
                 .hits
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *hits += 1;
-
-            if *hits >= 4 {
-                let item = brush_be
-                    .item
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .take();
-                if let Some(item_stack) = item {
-                    world.drop_stack(pos, item_stack);
-                }
-
-                let target_block = if is_gravel {
-                    &Block::GRAVEL
-                } else {
-                    &Block::SAND
-                };
-
-                world.set_block_state(pos, target_block.default_state.id, BlockFlags::NOTIFY_ALL);
-
-                let sound = if is_gravel {
-                    Sound::ItemBrushBrushingGravelComplete
-                } else {
-                    Sound::ItemBrushBrushingSandComplete
-                };
-
-                world.play_sound(sound, SoundCategory::Blocks, &pos.to_f64());
+            (*hits).max(i32::from(props.dusted)).saturating_add(1)
+        };
+        let complete = hits >= 4;
+        props.dusted = (hits as u8).min(3);
+        let new_state = if complete {
+            if is_gravel {
+                Block::GRAVEL.default_state.id
             } else {
-                props.dusted = (*hits as u8).min(3);
-                world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
-
-                let sound = if is_gravel {
-                    Sound::ItemBrushBrushingGravel
-                } else {
-                    Sound::ItemBrushBrushingSand
-                };
-
-                world.play_sound(sound, SoundCategory::Blocks, &pos.to_f64());
+                Block::SAND.default_state.id
+            }
+        } else {
+            props.to_state_id(block)
+        };
+        if !world.set_block_state_from_observed(pos, state.id, new_state, BlockFlags::NOTIFY_ALL) {
+            return;
+        }
+        {
+            let mut current = brush_be
+                .hits
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *current = (*current).max(hits);
+        };
+        if complete {
+            let item = brush_be
+                .item
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(item) = item {
+                world.drop_stack(pos, item);
             }
         }
+        let sound = match (is_gravel, complete) {
+            (true, true) => Sound::ItemBrushBrushingGravelComplete,
+            (false, true) => Sound::ItemBrushBrushingSandComplete,
+            (true, false) => Sound::ItemBrushBrushingGravel,
+            (false, false) => Sound::ItemBrushBrushingSand,
+        };
+        world.play_sound(sound, SoundCategory::Blocks, &pos.to_f64());
     }
 }
 
@@ -85,7 +90,8 @@ impl BlockBehaviour for BrushableBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let entity = BrushableBlockBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(entity), args.state_id);
     }
 
     fn broken(&self, args: BrokenArgs<'_>) {

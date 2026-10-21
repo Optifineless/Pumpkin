@@ -70,17 +70,22 @@ impl CandleCakeBlock {
             return BlockActionResult::Pass;
         }
 
+        let observed = world.get_block_state_id(location);
+        if pumpkin_data::Block::from_state_id(observed) != block
+            || !world.set_block_state_from_observed(
+                location,
+                observed,
+                Block::CAKE.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            )
+        {
+            return BlockActionResult::Pass;
+        }
         let candle_item = candle_from_cake(block);
 
         let item_stack = ItemStack::new(1, candle_item);
 
         world.drop_stack(location, item_stack);
-
-        world.set_block_state(
-            location,
-            Block::CAKE.default_state.id,
-            BlockFlags::NOTIFY_ALL,
-        );
 
         let (block, state) = world.get_block_and_state_id(location);
 
@@ -94,8 +99,11 @@ impl BlockBehaviour for CandleCakeBlock {
         let properties = RedstoneOreLikeProperties::from_state_id(state_id);
         // CandleCakeBlock.useItemOn and candleHit keep extinguishing separate from eating.
         if args.item_stack.is_empty() && candle_hit(args.hit.cursor_pos.y) && properties.lit {
-            super::candles::extinguish(args.world, args.block, args.position);
-            return BlockActionResult::Success;
+            return if super::candles::extinguish(args.world, args.block, args.position) {
+                BlockActionResult::Success
+            } else {
+                BlockActionResult::Pass
+            };
         }
         let item_id = args.item_stack.item.id;
         match item_id {
@@ -111,9 +119,17 @@ impl BlockBehaviour for CandleCakeBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if Block::from_state_id(observed) != args.block {
+            return;
+        }
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
