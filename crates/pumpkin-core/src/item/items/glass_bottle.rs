@@ -216,10 +216,8 @@ impl GlassBottleItem {
             return;
         }
 
-        let (block, _) = world.get_block_and_state(&position);
         let (fluid, fluid_state) = world.get_fluid_and_fluid_state(&position);
-        if block != &Block::WATER
-            || !fluid.matches_type(&Fluid::WATER)
+        if !fluid.matches_type(&Fluid::WATER)
             || !fluid_state.is_source
             || !Self::hand_matches(player, hand, expected)
         {

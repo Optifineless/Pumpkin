@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
+#[path = "glass_bottle_b1020d_g12_tests.rs"]
+mod b1020d_g12;
 #[path = "glass_bottle_test_support.rs"]
 mod support;
 
@@ -137,7 +139,7 @@ async fn flowing_water_is_not_bottled() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn waterlogged_fluid_is_not_bottled_as_a_source_block() {
+async fn waterlogged_source_water_is_bottled() {
     let fixture = Fixture::new();
     let waterlogged_stairs = Block::OAK_STAIRS
         .default_state
@@ -150,10 +152,13 @@ async fn waterlogged_fluid_is_not_bottled_as_a_source_block() {
 
     assert_eq!(
         fixture.actor.player.inventory().held_item().item,
-        &Item::GLASS_BOTTLE
+        &Item::POTION
     );
-    assert_eq!(fixture.potion_count(), 0);
-    assert_eq!(fixture.used_bottle_stat(), 0);
+    assert_eq!(fixture.potion_count(), 1);
+    assert_eq!(fixture.used_bottle_stat(), 1);
+    let state = fixture.world.get_block_state_id(&WATER_POSITION);
+    assert_eq!(state, waterlogged_stairs.id);
+    assert!(state.is_waterlogged());
     fixture.finish().await;
 }
 
