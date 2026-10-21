@@ -123,9 +123,9 @@ impl BlockBehaviour for MultifaceBlock {
         active.len() < 6
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         if args.block != &Block::GLOW_LICHEN {
-            return;
+            return true;
         }
         let mut props = GlowLichenLikeProperties::from_state_id(args.state_id);
         for dir in BlockDirection::all() {
@@ -136,11 +136,12 @@ impl BlockBehaviour for MultifaceBlock {
                 set_face(&mut props, dir);
             }
         }
-        args.world.set_block_state(
+        args.world.set_block_state_from_observed(
             args.position,
+            args.state_id,
             props.to_state_id(args.block),
             BlockFlags::NOTIFY_ALL,
-        );
+        )
     }
 }
 

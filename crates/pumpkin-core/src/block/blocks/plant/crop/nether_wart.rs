@@ -72,10 +72,14 @@ impl CropBlockBase for NetherWartBlock {
 
     fn random_tick(&self, world: &Arc<World>, pos: &BlockPos) {
         let (block, state) = world.get_block_and_state_id(pos);
+        if !<Self as crate::block::BlockMetadata>::ids().contains(&block.id) {
+            return;
+        }
         let age = self.get_age(state, block);
         if age < self.max_age() && rand::rng().random_range(0..10) == 0 {
-            world.set_block_state(
+            world.set_block_state_from_observed(
                 pos,
+                state,
                 self.state_with_age(block, state, age + 1),
                 BlockFlags::NOTIFY_NEIGHBORS,
             );

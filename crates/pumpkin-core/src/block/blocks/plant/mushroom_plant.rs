@@ -53,6 +53,14 @@ impl MushroomPlantBlock {
     }
 
     pub fn grow_mushroom(world: &Arc<World>, pos: &BlockPos, block: &Block) -> bool {
+        Self::grow_mushroom_checked(world, pos, block).unwrap_or(false)
+    }
+
+    fn grow_mushroom_checked(world: &Arc<World>, pos: &BlockPos, block: &Block) -> Option<bool> {
+        let observed = world.get_block_state_id(pos);
+        if observed.to_block() != block {
+            return None;
+        }
         let species = if block == &Block::BROWN_MUSHROOM {
             TreeType::BrownMushroom
         } else if block == &Block::RED_MUSHROOM {
@@ -66,7 +74,7 @@ impl MushroomPlantBlock {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
         if event.cancelled {
-            return false;
+            return Some(false);
         }
 
         let tree_height = mushroom_tree_height(&mut rand::rng());
@@ -74,7 +82,7 @@ impl MushroomPlantBlock {
         let min_y = world.get_bottom_y();
         let max_y = world.get_top_y();
         if pos.0.y < min_y + 1 || pos.0.y + tree_height + 1 > max_y {
-            return false;
+            return Some(false);
         }
 
         let below_block = world.get_block(&pos.down());
@@ -84,7 +92,7 @@ impl MushroomPlantBlock {
             below_block.has_tag(&tag::Block::MINECRAFT_HUGE_RED_MUSHROOM_CAN_PLACE_ON)
         };
         if !can_place_on {
-            return false;
+            return Some(false);
         }
 
         for dy in 0..=tree_height {
@@ -103,19 +111,26 @@ impl MushroomPlantBlock {
                         continue;
                     }
                     if !world.is_loaded(&check_pos) {
-                        return false;
+                        return Some(false);
                     }
                     let check_state = world.get_block_state(&check_pos);
                     let check_block = world.get_block(&check_pos);
                     if !check_state.is_air() && !check_block.has_tag(&tag::Block::MINECRAFT_LEAVES)
                     {
-                        return false;
+                        return Some(false);
                     }
                 }
             }
         }
 
-        world.set_block_state(pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
+        if !world.set_block_state_from_observed(
+            pos,
+            observed,
+            BlockStateId::AIR,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return None;
+        }
 
         if block == &Block::BROWN_MUSHROOM {
             place_huge_brown_mushroom(world, pos, tree_height);
@@ -123,15 +138,14 @@ impl MushroomPlantBlock {
             place_huge_red_mushroom(world, pos, tree_height);
         }
 
-        true
+        Some(true)
     }
 }
 
 fn place_mushroom_block(world: &Arc<World>, pos: &BlockPos, state_id: BlockStateId) {
-    let block = world.get_block(pos);
-    let state = world.get_block_state(pos);
+    let (block, state) = world.get_block_and_state(pos);
     if state.is_air() || block.has_tag(&tag::Block::MINECRAFT_REPLACEABLE_BY_MUSHROOMS) {
-        world.set_block_state(pos, state_id, BlockFlags::NOTIFY_ALL);
+        world.set_block_state_from_observed(pos, state.id, state_id, BlockFlags::NOTIFY_ALL);
     }
 }
 
@@ -244,6 +258,9 @@ impl BlockBehaviour for MushroomPlantBlock {
         let world = args.world;
         let this_block = args.block;
         let state_id = world.get_block_state_id(&pos);
+        if state_id.to_block() != this_block {
+            return;
+        }
 
         let mut max = 5;
         for dx in -4..=4 {
@@ -281,11 +298,17 @@ impl BlockBehaviour for MushroomPlantBlock {
             );
         }
 
+        let observed = world.get_block_state_id(&offset);
         if world.is_loaded(&offset)
-            && world.get_block_state(&offset).is_air()
+            && observed.to_state().is_air()
             && Self::can_survive(world.as_ref(), Some(world.as_ref()), &offset)
         {
-            world.set_block_state(&offset, state_id, BlockFlags::NOTIFY_LISTENERS);
+            world.set_block_state_from_observed(
+                &offset,
+                observed,
+                state_id,
+                BlockFlags::NOTIFY_LISTENERS,
+            );
         }
     }
 
@@ -304,8 +327,8 @@ impl BlockBehaviour for MushroomPlantBlock {
         rand::rng().random::<f32>() < 0.4
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
-        Self::grow_mushroom(args.world, args.position, args.block);
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
+        Self::grow_mushroom_checked(args.world, args.position, args.block).is_some()
     }
 }
 

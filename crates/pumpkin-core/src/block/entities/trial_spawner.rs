@@ -921,8 +921,7 @@ impl TrialSpawner {
     }
 
     pub fn get_state(&self, world: &World, spawner_pos: BlockPos) -> TrialSpawnerState {
-        let block_id = world.get_block_state_id(&spawner_pos);
-        let block = world.get_block(&spawner_pos);
+        let (block, block_id) = world.get_block_and_state_id(&spawner_pos);
         if block.id == pumpkin_data::BlockId::TRIAL_SPAWNER {
             TrialSpawnerLikeProperties::from_state_id(block_id).trial_spawner_state
         } else {
@@ -931,14 +930,14 @@ impl TrialSpawner {
     }
 
     pub fn set_state(&self, world: &Arc<World>, spawner_pos: BlockPos, state: TrialSpawnerState) {
-        let block_id = world.get_block_state_id(&spawner_pos);
-        let block = world.get_block(&spawner_pos);
+        let (block, block_id) = world.get_block_and_state_id(&spawner_pos);
         if block.id == pumpkin_data::BlockId::TRIAL_SPAWNER {
             let mut props = TrialSpawnerLikeProperties::from_state_id(block_id);
             if props.trial_spawner_state != state {
                 props.trial_spawner_state = state;
-                world.set_block_state(
+                world.set_block_state_from_observed(
                     &spawner_pos,
+                    block_id,
                     props.to_state_id(block),
                     pumpkin_world::world::BlockFlags::NOTIFY_ALL,
                 );
@@ -947,14 +946,14 @@ impl TrialSpawner {
     }
 
     pub fn set_ominous(&self, world: &Arc<World>, spawner_pos: BlockPos, ominous: bool) {
-        let block_id = world.get_block_state_id(&spawner_pos);
-        let block = world.get_block(&spawner_pos);
+        let (block, block_id) = world.get_block_and_state_id(&spawner_pos);
         if block.id == pumpkin_data::BlockId::TRIAL_SPAWNER {
             let mut props = TrialSpawnerLikeProperties::from_state_id(block_id);
             if props.ominous != ominous {
                 props.ominous = ominous;
-                world.set_block_state(
+                world.set_block_state_from_observed(
                     &spawner_pos,
+                    block_id,
                     props.to_state_id(block),
                     pumpkin_world::world::BlockFlags::NOTIFY_ALL,
                 );

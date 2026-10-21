@@ -1786,10 +1786,9 @@ impl VillagerEntity {
                         let (block, state) = world.get_block_and_state(&home_pos);
                         if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS) {
                             let bed_props = BedProperties::from_state_id(state.id);
-                            if !bed_props.occupied {
-                                // Make bed occupied
-                                BedBlock::set_occupied(true, &world, block, &home_pos, state.id);
-
+                            if !bed_props.occupied
+                                && BedBlock::set_occupied(true, &world, block, &home_pos, state.id)
+                            {
                                 self.get_entity().set_pose(EntityPose::Sleeping);
                                 self.record_last_slept(game_time);
                                 self.get_entity().set_synced_data(

@@ -24,14 +24,20 @@ use crate::{
 
 pub(crate) fn toggle_lever(world: &Arc<World>, block_pos: &BlockPos) {
     let (block, state) = world.get_block_and_state_id(block_pos);
+    if block != &Block::LEVER {
+        return;
+    }
 
     let mut lever_props = LeverLikeProperties::from_state_id(state);
     lever_props.powered = !lever_props.powered;
-    world.set_block_state(
+    if !world.set_block_state_from_observed(
         block_pos,
+        state,
         lever_props.to_state_id(block),
         BlockFlags::NOTIFY_ALL,
-    );
+    ) {
+        return;
+    }
 
     LeverBlock::update_neighbors(world, block_pos, lever_props);
 

@@ -19,6 +19,12 @@ pub fn collect_block_entity_components(
     let Some(entity) = world.get_block_entity(pos) else {
         return HashMap::new();
     };
+    collect_retired_block_entity_components(entity.as_ref())
+}
+
+pub fn collect_retired_block_entity_components(
+    entity: &dyn crate::block::entities::BlockEntity,
+) -> HashMap<DataComponent, Box<dyn DataComponentImpl>> {
     let mut stack = ItemStack::new(1, &Item::AIR);
     entity.collect_item_components(&mut stack);
     let mut result: HashMap<_, _> = stack

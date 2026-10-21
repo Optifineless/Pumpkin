@@ -56,6 +56,9 @@ mod lectern_update;
 pub mod loot;
 pub mod map;
 pub(crate) mod neighbor_updater;
+mod observed_block_entities;
+mod observed_loot;
+mod observed_writes;
 mod particle_senders;
 mod pending_block_entity;
 pub(crate) use pending_block_entity::BlockEntityMutationPermit;
@@ -88,12 +91,9 @@ use crate::{
     entity::{Entity, EntityBase, player::Player},
     error::PumpkinError,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
-    plugin::{
-        block::block_break::BlockBreakEvent,
-        player::{
-            player_change_world::PlayerChangeWorldEvent, player_join::PlayerJoinEvent,
-            player_leave::PlayerLeaveEvent, player_respawn::PlayerRespawnEvent,
-        },
+    plugin::player::{
+        player_change_world::PlayerChangeWorldEvent, player_join::PlayerJoinEvent,
+        player_leave::PlayerLeaveEvent, player_respawn::PlayerRespawnEvent,
     },
     server::Server,
 };
@@ -3737,9 +3737,10 @@ impl World {
 
     pub(crate) fn run_explosion(self: &Arc<Self>, explosion: &Explosion) {
         let position = explosion.pos;
-        let Some(_mutation) = self.block_entity_mutation_permit(position.to_block_pos()) else {
+        let Some(mutation) = self.block_entity_mutation_permit(position.to_block_pos()) else {
             return;
         };
+        drop(mutation);
         let power = explosion.power;
         let mut event = crate::plugin::api::events::entity::entity_explode::EntityExplodeEvent::new(
             explosion.source_id(),
@@ -4789,30 +4790,20 @@ impl World {
     ) -> BlockStateId {
         assert_not_in_snapshot(SB::Mutation, "World::set_block_state");
         if !self.is_in_build_limit(*position) {
-            return Block::AIR.default_state.id;
+            return BlockStateId::AIR;
         }
-        // LevelChunk.setBlockState installs an EntityBlock entity after committing terrain.
-        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
-            tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
-            return self.get_block_state_id(position);
-        };
-        #[cfg(test)]
-        self.before_state_write_test(*position);
-        let replaced_block_state_id = self
-            .write_block_state_if(position, block_state_id, |_| true)
-            .unwrap_or(Block::AIR.default_state.id);
-        self.on_block_state_set(
+        self.commit_block_state_if(
             position,
-            replaced_block_state_id,
             block_state_id,
             flags,
             neighbor_updater::UPDATE_LIMIT,
+            |_| true,
         )
+        .unwrap_or_else(|| self.get_block_state_id(position))
     }
 
-    /// `set_block_state`, but only when `condition` accepts the current state. The check and
-    /// the write are atomic, so a block another task placed in between is never overwritten.
-    /// Returns the replaced state, or `None` when nothing was written.
+    /// Checks and replaces the current state atomically, returning `None` on rejection.
+    /// The predicate must be pure and cannot call world, plugin or packet callbacks.
     pub fn set_block_state_if(
         self: &Arc<Self>,
         position: &BlockPos,
@@ -4821,23 +4812,13 @@ impl World {
         condition: impl Fn(BlockStateId) -> bool,
     ) -> Option<BlockStateId> {
         assert_not_in_snapshot(SB::Mutation, "World::set_block_state_if");
-        if !self.is_in_build_limit(*position) {
-            return None;
-        }
-        // Keep LevelChunk.setBlockState callbacks in the same unload admission window as the write.
-        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
-            tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
-            return None;
-        };
-        let replaced_block_state_id =
-            self.write_block_state_if(position, block_state_id, condition)?;
-        Some(self.on_block_state_set(
+        self.commit_block_state_if(
             position,
-            replaced_block_state_id,
             block_state_id,
             flags,
             neighbor_updater::UPDATE_LIMIT,
-        ))
+            condition,
+        )
     }
 
     /// Writes the state into the loaded chunk
@@ -4896,6 +4877,12 @@ impl World {
         update_limit: u32,
         retired: Option<&portal::frame_effects::RetiredBlockEffects>,
     ) -> BlockStateId {
+        if self.get_block_state_id(position) != block_state_id {
+            if let Some(retired) = retired {
+                retired.notify_replaced_pair(self, position, replaced_block_state_id, flags);
+            }
+            return replaced_block_state_id;
+        }
         if !flags.contains(BlockFlags::FORCE_STATE) && replaced_block_state_id == block_state_id {
             return block_state_id;
         }
@@ -5049,107 +5036,13 @@ impl World {
         flags: BlockFlags,
         update_limit: u32,
     ) -> Option<BlockStateId> {
-        if let Some(player) = cause
-            && self.is_in_spawn_protection(player, position)
-        {
-            player.send_system_message(&TextComponent::translate_cross(
-                pumpkin_data::translation::java::BUILD_SPAWN_PROTECTION,
-                pumpkin_data::translation::java::BUILD_SPAWN_PROTECTION,
-                [TextComponent::text(player.gameprofile.name.clone())],
-            ));
-            return None;
-        }
-
-        let (broken_block, broken_block_state) = self.get_block_and_state(position);
-        if broken_block_state.is_air() {
-            return None;
-        }
-
-        if broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
-            || broken_block == &Block::STRAW_BED
-        {
-            return self.break_bed_block(
-                position,
-                cause,
-                cause,
-                flags,
-                update_limit,
-                broken_block_state.id,
-            );
-        }
-
-        let mut flags = flags;
-        if flags.contains(BlockFlags::SKIP_DROPS)
-            && cause.is_some_and(|p| p.gamemode.load() == pumpkin_util::GameMode::Creative)
-            && self
-                .get_block_entity(position)
-                .is_some_and(|entity| entity.drops_for_creative_player())
-        {
-            flags.remove(BlockFlags::SKIP_DROPS);
-        }
-
-        let mut event = BlockBreakEvent::new(
-            cause.cloned(),
-            broken_block,
-            *position,
-            0,
-            !flags.contains(BlockFlags::SKIP_DROPS),
-        );
-        if let Some(server) = self.server.upgrade() {
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
-        if event.cancelled {
-            return None;
-        }
-
-        // Level.destroyBlock must admit removal before callbacks retire or drop the container.
-        let _mutation = self.block_entity_mutation_permit(*position)?;
-
-        if event.drop {
-            flags.remove(BlockFlags::SKIP_DROPS);
-        } else {
-            flags.insert(BlockFlags::SKIP_DROPS);
-        }
-
-        self.block_registry
-            .player_will_destroy(self, cause, position, broken_block_state);
-        self.retire_container(position);
-
-        if !flags.contains(BlockFlags::SKIP_DROPS) {
-            let tool = cause.as_ref().and_then(|p| {
-                let item = p.inventory().held_item();
-                if item.is_empty() { None } else { Some(item) }
-            });
-            let params = crate::world::loot::LootContextParameters {
-                tool,
-                // Vanilla evaluates loot against the state returned by playerWillDestroy.
-                block_state: Some(self.get_block_state(position)),
-                position: Some(position.to_f64()),
-                killed_by_player: Some(cause.is_some()),
-                ..Default::default()
-            };
-            crate::block::drop_loot(self, broken_block, position, true, &params);
-        }
-
-        let new_state_id =
-            crate::block::blocks::growing_plant::fluid_state_after_break(broken_block_state.id);
-
-        let broken_state_id = self.set_block_state_with_limit(
+        self.break_block_with_limit_from_observed(
             position,
-            new_state_id,
-            flags - BlockFlags::SKIP_DROPS,
+            cause,
+            flags,
             update_limit,
-        );
-        let broken_block = Block::from_state_id(broken_state_id);
-        if !broken_block.is_air()
-            && broken_state_id != new_state_id
-            && broken_block != &Block::FIRE
-            && broken_block != &Block::SOUL_FIRE
-        {
-            self.send_block_destroy_effect(position, broken_state_id, cause);
-        }
-
-        Some(broken_state_id)
+            self.get_block_state_id(position),
+        )
     }
 
     #[must_use]

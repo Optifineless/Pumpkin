@@ -19,13 +19,14 @@ use crate::{
 pub struct GolemPattern {
     entity_type: &'static EntityType,
     body: &'static Block,
-    blocks: Vec<BlockPos>,
+    blocks: Vec<(BlockPos, BlockStateId)>,
     base: BlockPos,
 }
 
 // Mojang uses some BlockPattern magic, way too complex tbh
 #[must_use]
 pub fn find_golem_pattern(world: &Arc<World>, pos: &BlockPos) -> Option<GolemPattern> {
+    let head = world.get_block_state_id(pos);
     let down_pos = pos.down();
     let upper = world.get_block(&down_pos);
     let lower = world.get_block(&down_pos.down());
@@ -34,7 +35,11 @@ pub fn find_golem_pattern(world: &Arc<World>, pos: &BlockPos) -> Option<GolemPat
         return Some(GolemPattern {
             entity_type: &EntityType::SNOW_GOLEM,
             body: &Block::SNOW_BLOCK,
-            blocks: vec![*pos, down_pos, down_pos.down()],
+            blocks: vec![
+                (*pos, head),
+                (down_pos, upper.default_state.id),
+                (down_pos.down(), lower.default_state.id),
+            ],
             base: down_pos.down(),
         });
     }
@@ -53,7 +58,13 @@ pub fn find_golem_pattern(world: &Arc<World>, pos: &BlockPos) -> Option<GolemPat
             return Some(GolemPattern {
                 entity_type: &EntityType::IRON_GOLEM,
                 body: &Block::IRON_BLOCK,
-                blocks: vec![*pos, down_pos, down_pos.down(), arm1, arm2],
+                blocks: vec![
+                    (*pos, head),
+                    (down_pos, upper.default_state.id),
+                    (down_pos.down(), lower.default_state.id),
+                    (arm1, Block::IRON_BLOCK.default_state.id),
+                    (arm2, Block::IRON_BLOCK.default_state.id),
+                ],
                 base: down_pos.down(),
             });
         }
@@ -63,12 +74,22 @@ pub fn find_golem_pattern(world: &Arc<World>, pos: &BlockPos) -> Option<GolemPat
 }
 
 fn spawn_golem(world: &Arc<World>, pattern: GolemPattern) {
-    for pos in pattern.blocks {
-        world.set_block_state(
-            &pos,
-            Block::AIR.default_state.id,
-            BlockFlags::NOTIFY_LISTENERS,
-        );
+    let updates: Vec<_> = pattern
+        .blocks
+        .iter()
+        .map(|(pos, expected)| {
+            (
+                *pos,
+                *expected,
+                BlockStateId::AIR,
+                BlockFlags::NOTIFY_LISTENERS,
+            )
+        })
+        .collect();
+    if !world.set_block_states_from_observed(&updates) {
+        return;
+    }
+    for (pos, _) in pattern.blocks {
         world.sync_world_event(
             WorldEvent::ParticlesDestroyBlock,
             pos,

@@ -8,7 +8,10 @@ use pumpkin_data::Block;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::world::BlockFlags;
 use std::{
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -161,7 +164,7 @@ async fn capture_window_reentrant_command_refuses_then_reopens() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn capture_window_command_callback_defers_neighbour_retirement() {
+async fn capture_window_command_callback_allows_neighbour_retirement() {
     let fixture = Fixture::new();
     let neighbour = Vector2::new(1, 0);
     let storage = fixture
@@ -172,16 +175,23 @@ async fn capture_window_command_callback_defers_neighbour_retirement() {
         .unwrap();
     assert!(fixture.world.make_chunk_entities_live(&storage, None));
     let world = fixture.world.clone();
+    let callback_storage = storage.clone();
+    let retired_in_callback = Arc::new(AtomicBool::new(false));
+    let callback_retired = retired_in_callback.clone();
     *fixture
         .world
         .persistence_test_hooks
         .registration
         .lock()
         .unwrap() = Some(Arc::new(move || {
-        // A real BlockInput.place callback tries to retire another chunk while the
-        // command owns its source. A neighbour callback must retain that same exclusion.
+        // Registration releases mutation ownership before native callbacks. An unrelated
+        // chunk can retire while the command's source image still awaits publication.
         world.level.request_entity_unloads([neighbour]);
         world.process_entity_chunk_lifecycle();
+        callback_retired.store(
+            !callback_storage.live.load(Ordering::Acquire),
+            Ordering::Release,
+        );
     }));
     let source = CommandSender::Console
         .into_source(&fixture.server)
@@ -198,17 +208,37 @@ async fn capture_window_command_callback_defers_neighbour_retirement() {
         .lock()
         .unwrap()
         .take();
-    let deferred = storage.live.load(std::sync::atomic::Ordering::Acquire);
+    let source_block = fixture.world.get_block(&TARGET);
+    let source_live = fixture
+        .world
+        .get_block_entity(&TARGET)
+        .is_some_and(|entity| entity.as_any().is::<ChestBlockEntity>());
+    let chunk = fixture
+        .world
+        .level
+        .read_chunk_sync(&TARGET.chunk_position(), Arc::clone)
+        .unwrap();
+    let image = chunk
+        .pending_block_entities
+        .lock()
+        .unwrap()
+        .get(&TARGET)
+        .cloned()
+        .unwrap();
     fixture.world.process_entity_chunk_lifecycle();
-    let retired_after_command = !storage.live.load(std::sync::atomic::Ordering::Acquire);
+    let retired_after_command = !storage.live.load(Ordering::Acquire);
     fixture.world.level.shutdown().await.unwrap();
     assert_eq!(result, Ok(1));
     assert!(
-        deferred,
-        "cross-chunk retirement entered a command's callback window"
+        retired_in_callback.load(Ordering::Acquire),
+        "command retained mutation ownership during its registration callback"
     );
     assert!(
         retired_after_command,
-        "deferred neighbour retirement was lost"
+        "callback neighbour retirement was lost"
     );
+    assert_eq!(source_block, &Block::CHEST);
+    assert!(source_live, "callback retirement lost the command's chest");
+    assert_eq!(image.get_string("id"), Some("minecraft:chest"));
+    assert_eq!(image.get_int("x"), Some(TARGET.0.x));
 }

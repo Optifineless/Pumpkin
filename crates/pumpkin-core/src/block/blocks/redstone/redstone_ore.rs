@@ -22,7 +22,12 @@ impl RedstoneOreBlock {
         let mut props = RedstoneOreLikeProperties::from_state_id(state.id);
         if !props.lit {
             props.lit = true;
-            world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+            world.set_block_state_from_observed(
+                pos,
+                state.id,
+                props.to_state_id(block),
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 }
@@ -30,28 +35,41 @@ impl RedstoneOreBlock {
 impl BlockBehaviour for RedstoneOreBlock {
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         Self::light_up(args.world, args.position, args.block, state);
         BlockActionResult::Success
     }
 
     fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         Self::light_up(args.world, args.position, args.block, state);
     }
 
     fn on_entity_step(&self, args: OnEntityStepArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         Self::light_up(args.world, args.position, args.block, state);
     }
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         let mut props = RedstoneOreLikeProperties::from_state_id(state.id);
 
         if props.lit {
             props.lit = false;
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
             );

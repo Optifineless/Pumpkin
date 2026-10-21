@@ -143,6 +143,9 @@ impl BlockBehaviour for RedstoneWireBlock {
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let wire = RedstoneWireProperties::from_state_id(state.id);
 
         if is_cross(wire) || is_dot(wire) {
@@ -155,11 +158,14 @@ impl BlockBehaviour for RedstoneWireBlock {
             new_wire = get_connection_state(args.world, new_wire, args.position);
 
             if wire != new_wire {
-                args.world.set_block_state(
+                if !args.world.set_block_state_from_observed(
                     args.position,
+                    state.id,
                     new_wire.to_state_id(&Block::REDSTONE_WIRE),
                     BlockFlags::NOTIFY_ALL,
-                );
+                ) {
+                    return BlockActionResult::Pass;
+                }
 
                 for direction in BlockDirection::horizontal() {
                     let relative_pos = args.position.offset(direction.to_offset());
@@ -184,12 +190,23 @@ impl BlockBehaviour for RedstoneWireBlock {
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if can_survive(args.world.as_ref(), args.position) {
             let state_id = args.world.get_block_state_id(args.position);
+            if state_id.to_block() != args.block {
+                return;
+            }
             update_power_strength(args.world, args.position, state_id);
         } else {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
@@ -296,7 +313,14 @@ pub fn update_power_strength(world: &Arc<World>, pos: &BlockPos, state_id: Block
         if world.get_block_state_id(pos) == state_id {
             wire.power = target_strength;
             let new_state_id = wire.to_state_id(&Block::REDSTONE_WIRE);
-            world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_LISTENERS);
+            if !world.set_block_state_from_observed(
+                pos,
+                state_id,
+                new_state_id,
+                BlockFlags::NOTIFY_LISTENERS,
+            ) {
+                return;
+            }
         }
 
         let mut to_update = Vec::with_capacity(7);

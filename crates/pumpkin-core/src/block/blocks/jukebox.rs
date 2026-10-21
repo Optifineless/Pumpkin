@@ -68,7 +68,8 @@ impl BlockBehaviour for JukeboxBlock {
     /// Called when the jukebox is placed - creates the block entity
     fn placed(&self, args: PlacedArgs<'_>) {
         let block_entity = JukeboxBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(block_entity), args.state_id);
     }
 
     /// Called when player right-clicks with empty hand or non-disc item

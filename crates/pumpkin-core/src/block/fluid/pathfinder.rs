@@ -35,9 +35,13 @@ pub fn get_spread<T: FlowingFluid + Sync + ?Sized>(
     world: &Arc<World>,
     fluid: &Fluid,
     block_pos: &BlockPos,
-) -> ([(BlockDirection, BlockStateId); 4], usize) {
+) -> ([(BlockDirection, BlockStateId, BlockStateId); 4], usize) {
     let mut min_dist = 1000;
-    let mut result = [(BlockDirection::North, BlockStateId::default()); 4];
+    let mut result = [(
+        BlockDirection::North,
+        BlockStateId::default(),
+        BlockStateId::default(),
+    ); 4];
     let mut result_count = 0;
 
     for direction in [
@@ -98,7 +102,7 @@ pub fn get_spread<T: FlowingFluid + Sync + ?Sized>(
             });
 
             if can_replace && result_count < 4 {
-                result[result_count] = (direction, new_state_id);
+                result[result_count] = (direction, side_state_id, new_state_id);
                 result_count += 1;
             }
 

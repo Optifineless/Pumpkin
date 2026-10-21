@@ -135,11 +135,16 @@ impl BlockBehaviour for BellBlock {
     }
 
     fn placed(&self, args: PlacedArgs<'_>) {
-        args.world
-            .add_block_entity(Arc::new(BellBlockEntity::new(*args.position)));
+        args.world.add_block_entity_from_observed(
+            Arc::new(BellBlockEntity::new(*args.position)),
+            args.state_id,
+        );
     }
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
 
         let props = BellLikeProperties::from_state_id(state.id);
 
@@ -197,17 +202,23 @@ impl BlockBehaviour for BellBlock {
 
         let is_receiving_power = block_receives_redstone_power(world, args.position);
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
 
         let mut props = BellLikeProperties::from_state_id(state.id);
 
         if props.powered != is_receiving_power {
             props.powered = is_receiving_power;
 
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return;
+            }
 
             if is_receiving_power {
                 ring_bell(*args.position, args.world, None, None);

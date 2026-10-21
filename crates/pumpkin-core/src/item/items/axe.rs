@@ -27,89 +27,84 @@ impl ItemMetadata for AxeItem {
 }
 
 impl AxeItem {
-    fn transform_companions(
+    fn transform_updates(
         world: &Arc<World>,
         location: BlockPos,
         block: &Block,
         current_state_id: pumpkin_data::BlockStateId,
         result: &TransformResult,
-    ) {
+    ) -> Vec<(
+        BlockPos,
+        pumpkin_data::BlockStateId,
+        pumpkin_data::BlockStateId,
+        BlockFlags,
+    )> {
+        let mut updates = Vec::new();
         if block.has_tag(&tag::Block::MINECRAFT_DOORS) {
-            let door_props = OakDoorLikeProperties::from_state_id(current_state_id);
-            let other_half_pos = match door_props.half {
-                DoubleBlockHalf::Lower => location.up(),
-                DoubleBlockHalf::Upper => location.down(),
+            let props = OakDoorLikeProperties::from_state_id(current_state_id);
+            let partner = if props.half == DoubleBlockHalf::Lower {
+                location.up()
+            } else {
+                location.down()
             };
-            let (other_block, other_state_id) = world.get_block_and_state_id(&other_half_pos);
-            if other_block == block {
-                let other_props = OakDoorLikeProperties::from_state_id(other_state_id);
-                if other_props.half != door_props.half {
-                    let other_new_state_id = if result.target_block.states.len() <= 1 {
-                        result.target_block.default_state.id
-                    } else {
-                        result
-                            .target_block
-                            .from_properties(&other_props.to_props())
-                            .to_state_id(result.target_block)
-                    };
-                    #[cfg(test)]
-                    super::block_transformer::before_transform_write(world, other_half_pos);
-                    let _ = world.set_block_state_if(
-                        &other_half_pos,
-                        other_new_state_id,
+            let observed = world.get_block_state_id(&partner);
+            if observed.to_block() == block {
+                let other_props = OakDoorLikeProperties::from_state_id(observed);
+                if other_props.half != props.half {
+                    let next = result
+                        .target_block
+                        .from_properties(&other_props.to_props())
+                        .to_state_id(result.target_block);
+                    updates.push((
+                        partner,
+                        observed,
+                        next,
                         BlockFlags::NOTIFY_LISTENERS
                             | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
                             | BlockFlags::UPDATE_KNOWN_SHAPE,
-                        |current| current == other_state_id,
-                    );
+                    ));
                 }
             }
-        }
-
-        if result.entry.transform_type == Some(TransformType::CopperChest) {
-            let chest_props = ChestLikeProperties::from_state_id(current_state_id);
-            let (direction, expected_partner_type) = match chest_props.r#type {
-                ChestType::Single => (None, None),
-                ChestType::Left => (
-                    Some(chest_props.facing.rotate_clockwise()),
-                    Some(ChestType::Right),
-                ),
-                ChestType::Right => (
-                    Some(chest_props.facing.rotate_counter_clockwise()),
-                    Some(ChestType::Left),
-                ),
+        } else if result.entry.transform_type == Some(TransformType::CopperChest) {
+            let props = ChestLikeProperties::from_state_id(current_state_id);
+            let direction = match props.r#type {
+                ChestType::Single => None,
+                ChestType::Left => Some((props.facing.rotate_clockwise(), ChestType::Right)),
+                ChestType::Right => {
+                    Some((props.facing.rotate_counter_clockwise(), ChestType::Left))
+                }
             };
-            if let (Some(direction), Some(expected_partner_type)) =
-                (direction, expected_partner_type)
-            {
-                let partner_pos = location.offset(direction.to_offset());
-                let (partner_block, partner_state_id) = world.get_block_and_state_id(&partner_pos);
-                if partner_block == block {
-                    let partner_props = ChestLikeProperties::from_state_id(partner_state_id);
-                    if partner_props.facing == chest_props.facing
-                        && partner_props.r#type == expected_partner_type
-                    {
-                        let partner_new_state_id = if result.target_block.states.len() <= 1 {
-                            result.target_block.default_state.id
-                        } else {
-                            result
-                                .target_block
-                                .from_properties(&partner_props.to_props())
-                                .to_state_id(result.target_block)
-                        };
-                        // CopperChestBlock.updateShape keeps both connected halves at one stage.
-                        #[cfg(test)]
-                        super::block_transformer::before_transform_write(world, partner_pos);
-                        let _ = world.set_block_state_if(
-                            &partner_pos,
-                            partner_new_state_id,
-                            BlockFlags::NOTIFY_LISTENERS,
-                            |current| current == partner_state_id,
-                        );
+            if let Some((direction, expected_type)) = direction {
+                let partner = location.offset(direction.to_offset());
+                let observed = world.get_block_state_id(&partner);
+                if observed.to_block() == block {
+                    let other_props = ChestLikeProperties::from_state_id(observed);
+                    if other_props.facing == props.facing && other_props.r#type == expected_type {
+                        let next = result
+                            .target_block
+                            .from_properties(&other_props.to_props())
+                            .to_state_id(result.target_block);
+                        updates.push((partner, observed, next, BlockFlags::NOTIFY_LISTENERS));
                     }
                 }
             }
         }
+        let flags = if block.has_tag(&tag::Block::MINECRAFT_DOORS) {
+            BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
+        } else {
+            BlockFlags::NOTIFY_ALL
+        };
+        let clicked_state = if result.entry.transform_type == Some(TransformType::CopperChest)
+            && updates.is_empty()
+        {
+            let mut props = ChestLikeProperties::from_state_id(result.new_state_id);
+            props.r#type = ChestType::Single;
+            props.to_state_id(result.target_block)
+        } else {
+            result.new_state_id
+        };
+        updates.push((location, current_state_id, clicked_state, flags));
+        updates
     }
 }
 
@@ -164,32 +159,32 @@ impl ItemBehaviour for AxeItem {
                 Ok(None) => return BlockActionResult::Pass,
                 Err(action) => return action,
             };
-            let is_door = block.has_tag(&tag::Block::MINECRAFT_DOORS);
-            Self::transform_companions(&world, location, block, current_state_id, &result);
-
-            let flags = if is_door {
-                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
-            } else {
-                BlockFlags::NOTIFY_ALL
-            };
+            let updates =
+                Self::transform_updates(&world, location, block, current_state_id, &result);
             #[cfg(test)]
-            super::block_transformer::before_transform_write(&world, location);
-            if world
-                .set_block_state_if(&location, result.new_state_id, flags, |current| {
-                    current == current_state_id
-                })
-                .is_none()
-            {
-                // A same-block property update can still admit a freshly computed transform.
+            for (position, _, _, _) in &updates {
+                super::block_transformer::before_transform_write(&world, *position);
+            }
+            if !world.set_block_states_from_observed(&updates) {
+                // Retry from the current pair when callbacks changed either observation.
                 continue;
             }
             if player.gamemode.load() != GameMode::Creative {
                 let _ = item.damage_item(i32::from(result.entry.item_damage_per_use));
             }
+            let effect_state = if result.entry.transform_type == Some(TransformType::CopperChest)
+                && updates.len() == 1
+            {
+                let mut props = ChestLikeProperties::from_state_id(current_state_id);
+                props.r#type = ChestType::Single;
+                props.to_state_id(block)
+            } else {
+                current_state_id
+            };
             super::block_transformer::send_transform_effects(
                 player,
                 location,
-                current_state_id,
+                effect_state,
                 result,
             );
             return BlockActionResult::Success;

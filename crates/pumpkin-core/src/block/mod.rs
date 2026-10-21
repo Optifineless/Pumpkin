@@ -12,6 +12,7 @@ use std::sync::Arc;
 mod block_item;
 mod loot;
 pub use loot::{block_drops, drop_experience, drop_loot, loot_table_name};
+pub(crate) use loot::{block_drops_with_context, prepare_block_experience};
 pub mod blocks;
 pub mod entities;
 pub mod fluid;
@@ -84,7 +85,10 @@ pub trait BlockBehaviour: Send + Sync {
         true
     }
 
-    fn perform_bonemeal(&self, _args: BonemealArgs<'_>) {}
+    /// Returns false when a conflicting world change rejected the admitted use.
+    fn perform_bonemeal(&self, _args: BonemealArgs<'_>) -> bool {
+        true
+    }
 
     fn normal_use(&self, _args: NormalUseArgs<'_>) -> BlockActionResult {
         BlockActionResult::Pass

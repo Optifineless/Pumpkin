@@ -1,15 +1,14 @@
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::generation::structure::template::BlockPlacer;
-use pumpkin_world::level::Level;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::block::entities::block_entity_name;
-use crate::world::{BlockEntityMutationPermit, World};
+use crate::world::World;
 
 impl World {
     pub fn clear_synced_block_events_in_box(&self, min: &BlockPos, max: &BlockPos) {
@@ -33,7 +32,7 @@ pub struct WorldBlockPlacer<'a> {
     world: &'a Arc<World>,
     pub block_entity_nbts: Vec<NbtCompound>,
     pub changed_positions: Vec<(BlockPos, BlockStateId)>,
-    mutation_permits: Vec<BlockEntityMutationPermit<'a>>,
+    observed: RefCell<FxHashMap<BlockPos, BlockStateId>>,
     rejected_positions: FxHashSet<BlockPos>,
 }
 
@@ -44,7 +43,7 @@ impl<'a> WorldBlockPlacer<'a> {
             world,
             block_entity_nbts: Vec::new(),
             changed_positions: Vec::new(),
-            mutation_permits: Vec::new(),
+            observed: RefCell::new(FxHashMap::with_hasher(rustc_hash::FxBuildHasher)),
             rejected_positions: FxHashSet::with_hasher(rustc_hash::FxBuildHasher),
         }
     }
@@ -52,12 +51,16 @@ impl<'a> WorldBlockPlacer<'a> {
     #[allow(clippy::unused_async)]
     pub fn finalize(&self) {
         for nbt in &self.block_entity_nbts {
-            if let Some(block_entity) = crate::block::entities::block_entity_from_nbt(nbt)
-                && !self
-                    .rejected_positions
-                    .contains(&block_entity.get_position())
+            let Some(block_entity) = crate::block::entities::block_entity_from_nbt(nbt) else {
+                continue;
+            };
+            let position = block_entity.get_position();
+            let expected = self.observed.borrow().get(&position).copied();
+            if !self.rejected_positions.contains(&position)
+                && let Some(expected) = expected
             {
-                self.world.add_block_entity(block_entity);
+                self.world
+                    .add_block_entity_from_observed(block_entity, expected);
             }
         }
     }
@@ -65,8 +68,9 @@ impl<'a> WorldBlockPlacer<'a> {
 
 impl BlockPlacer for WorldBlockPlacer<'_> {
     fn get_block_state(&self, pos: &Vector3<i32>) -> BlockStateId {
-        self.world
-            .get_block_state_id(&BlockPos::new(pos.x, pos.y, pos.z))
+        let position = BlockPos::new(pos.x, pos.y, pos.z);
+        let state = self.world.get_block_state_id(&position);
+        *self.observed.borrow_mut().entry(position).or_insert(state)
     }
 
     fn set_block_state(&mut self, pos: &Vector3<i32>, state: &BlockState) {
@@ -78,22 +82,44 @@ impl BlockPlacer for WorldBlockPlacer<'_> {
             );
             return;
         };
+        let expected = self
+            .observed
+            .borrow()
+            .get(&block_pos)
+            .copied()
+            .unwrap_or_else(|| self.world.get_block_state_id(&block_pos));
+        let retired = {
+            let mut loads = self
+                .world
+                .pending_block_entity_loads
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(replaced) = self
+                .world
+                .write_block_state_if(&block_pos, state.id, |current| current == expected)
+            else {
+                self.rejected_positions.insert(block_pos);
+                return;
+            };
+            (replaced.to_block() != state.id.to_block()
+                && block_entity_name(Block::from_state_id(replaced)).is_some())
+            .then(|| {
+                self.world
+                    .remove_block_entity_under_publication_gate(&block_pos, &mut loads)
+            })
+        };
+        drop(mutation);
+        self.observed.borrow_mut().insert(block_pos, state.id);
         self.rejected_positions.remove(&block_pos);
-        let replaced = Level::set_block_state(&self.world.level, &block_pos, state.id);
-        if replaced.to_block() != state.id.to_block()
-            && block_entity_name(Block::from_state_id(replaced)).is_some()
-        {
-            // Like vanilla `StructureTemplate::placeInWorld`: the old contents drop, unless the
-            // new block brings its own block entity, which clears the old one silently.
-            if block_entity_name(Block::from_state_id(state.id)).is_none()
-                && let Some(entity) = self.world.get_block_entity(&block_pos)
-            {
-                entity.on_block_replaced(self.world, &block_pos);
+        if let Some(retired) = retired {
+            retired.retire_owner();
+            // StructureTemplate.placeInWorld drops original contents unless the template
+            // installs another block entity, which clears the original silently.
+            if block_entity_name(Block::from_state_id(state.id)).is_none() {
+                retired.on_block_replaced(self.world, &block_pos);
             }
-            self.world.remove_block_entity(&block_pos);
         }
         self.changed_positions.push((block_pos, state.id));
-        self.mutation_permits.push(mutation);
     }
 
     fn add_block_entity(&mut self, nbt: NbtCompound) {
@@ -113,7 +139,12 @@ impl BlockPlacer for WorldBlockPlacer<'_> {
             );
             return;
         };
-        self.mutation_permits.push(mutation);
+        let expected = self.world.get_block_state_id(&position);
+        drop(mutation);
+        self.observed
+            .borrow_mut()
+            .entry(position)
+            .or_insert(expected);
         self.block_entity_nbts.push(nbt);
     }
 }

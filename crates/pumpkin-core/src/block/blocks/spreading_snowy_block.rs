@@ -126,8 +126,16 @@ impl SpreadingSnowyBlock {
         base_block: &'static Block,
         default_block_state: &'static BlockState,
     ) {
+        if state.id.to_block() != default_block_state.id.to_block() {
+            return;
+        }
         if !Self::can_stay_alive(state, world, pos) {
-            world.set_block_state(pos, base_block.default_state.id, BlockFlags::NOTIFY_ALL);
+            world.set_block_state_from_observed(
+                pos,
+                state.id,
+                base_block.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            );
         } else if world.get_max_local_raw_brightness(&pos.up()) >= 9 {
             let mut rng = rand::rng();
             for _ in 0..4 {
@@ -138,7 +146,8 @@ impl SpreadingSnowyBlock {
                 if !world.is_loaded(&test_pos) {
                     continue;
                 }
-                if world.get_block(&test_pos) == base_block
+                let observed = world.get_block_state_id(&test_pos);
+                if observed.to_block() == base_block
                     && Self::can_propagate(default_block_state, world, &test_pos)
                 {
                     let above_test = test_pos.up();
@@ -150,7 +159,12 @@ impl SpreadingSnowyBlock {
                     let mut props = GrassBlockLikeProperties::from_state_id(default_block_state.id);
                     props.snowy = is_snowy;
                     let new_state_id = props.to_state_id(default_block_state.id.to_block());
-                    world.set_block_state(&test_pos, new_state_id, BlockFlags::NOTIFY_ALL);
+                    world.set_block_state_from_observed(
+                        &test_pos,
+                        observed,
+                        new_state_id,
+                        BlockFlags::NOTIFY_ALL,
+                    );
                 }
             }
         }

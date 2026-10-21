@@ -110,10 +110,11 @@ impl EntityBase for SmallFireballEntity {
                 let world = self.get_entity().world.load();
                 // SmallFireball.onHitBlock only ignites empty space, respecting a mob owner's griefing rule.
                 let owner = self.projectile_owner();
+                let observed = world.get_block_state(&block_to_place);
                 if owner.as_ref().is_some_and(|owner| {
                     owner.get_living_entity().is_some() && owner.get_player().is_none()
                 }) && !world.level_info.load().game_rules.mob_griefing
-                    || !world.get_block_state(&block_to_place).is_air()
+                    || !observed.is_air()
                 {
                     return;
                 }
@@ -130,8 +131,9 @@ impl EntityBase for SmallFireballEntity {
                 } else {
                     block.default_state.id
                 };
-                world.set_block_state(
+                world.set_block_state_from_observed(
                     &block_to_place,
+                    observed.id,
                     fire_state,
                     pumpkin_world::world::BlockFlags::NOTIFY_ALL,
                 );

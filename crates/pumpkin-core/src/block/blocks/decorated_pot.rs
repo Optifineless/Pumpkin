@@ -35,7 +35,8 @@ impl BlockBehaviour for DecoratedPotBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let entity = DecoratedPotBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(entity), args.state_id);
     }
 
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
@@ -133,8 +134,9 @@ impl BlockBehaviour for DecoratedPotBlock {
         let mut properties = DecoratedPotLikeProperties::from_state_id(args.state.id);
         properties.cracked = true;
         // Mirrors vanilla's setBlock(..., 260): UPDATE_KNOWN_SHAPE | NOTIFY_LISTENERS.
-        args.world.set_block_state(
+        args.world.set_block_state_from_observed(
             args.position,
+            args.state.id,
             properties.to_state_id(args.block),
             BlockFlags::UPDATE_KNOWN_SHAPE | BlockFlags::NOTIFY_LISTENERS,
         );

@@ -81,7 +81,8 @@ impl BlockBehaviour for BrewingStandBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let be = BrewingStandBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(be));
+        args.world
+            .add_block_entity_from_observed(Arc::new(be), args.state_id);
     }
 
     fn get_comparator_output(&self, args: GetComparatorOutputArgs<'_>) -> Option<u8> {

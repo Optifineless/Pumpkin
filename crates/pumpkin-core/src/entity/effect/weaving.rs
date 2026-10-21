@@ -4,7 +4,7 @@ use pumpkin_data::world::WorldEvent;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
-use rustc_hash::FxHashSet;
+use rustc_hash::FxHashMap;
 
 use crate::entity::effect::MobEffect;
 use crate::entity::living::LivingEntity;
@@ -24,7 +24,7 @@ impl MobEffect for WeavingMobEffect {
         let center_pos = living.entity.block_pos.load();
         let cobweb_count = (rand::random::<u32>() % 2 + 2) as usize; // 2 to 3 cobwebs
 
-        let mut positions_to_transform = FxHashSet::default();
+        let mut positions_to_transform = FxHashMap::default();
 
         // Sample up to 15 random positions in a cube of radius 1
         for _ in 0..15 {
@@ -40,19 +40,24 @@ impl MobEffect for WeavingMobEffect {
 
             if target_state.is_air()
                 && !below_state.is_air()
-                && positions_to_transform.insert(target_pos)
+                && positions_to_transform
+                    .insert(target_pos, target_state.id)
+                    .is_none()
                 && positions_to_transform.len() >= cobweb_count
             {
                 break;
             }
         }
 
-        for target_pos in positions_to_transform {
-            world.set_block_state(
+        for (target_pos, observed) in positions_to_transform {
+            if !world.set_block_state_from_observed(
                 &target_pos,
+                observed,
                 Block::COBWEB.default_state.id,
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                continue;
+            }
             world.sync_world_event(WorldEvent::AnimationSpawnCobweb, target_pos, 0);
         }
     }

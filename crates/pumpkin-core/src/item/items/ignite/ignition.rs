@@ -22,28 +22,68 @@ impl Ignition {
     where
         F: FnOnce(Arc<World>, BlockPos, BlockStateId),
     {
-        let Some(_mutation) = world.block_entity_mutation_permit(location) else {
-            return false;
-        };
+        Self::try_ignite_block(ignite_logic, world, location, fire_pos, block).unwrap_or(false)
+    }
+
+    pub(crate) fn try_ignite_block<F>(
+        ignite_logic: F,
+        world: &Arc<World>,
+        location: BlockPos,
+        fire_pos: BlockPos,
+        block: &Block,
+    ) -> Option<bool>
+    where
+        F: FnOnce(Arc<World>, BlockPos, BlockStateId),
+    {
         if *world.get_fluid(&location) != Fluid::EMPTY {
-            return false;
+            return Some(false);
         }
         let fire_block = FireBlockBase::get_fire_type(world, &fire_pos);
 
         let state_id = world.get_block_state_id(&location);
+        if Block::from_state_id(state_id) != block {
+            return Some(false);
+        }
 
         if let Some(new_state_id) = can_be_lit(block, state_id) {
+            if !world.set_block_state_from_observed(
+                &location,
+                state_id,
+                new_state_id,
+                pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+            ) {
+                return None;
+            }
             ignite_logic(world.clone(), location, new_state_id);
-            return true;
+            return Some(true);
         }
 
+        let clicked = state_id;
+        let observed = world.get_block_state_id(&fire_pos);
         let state_id = FireBlock.get_state_for_position(world, &fire_block, &fire_pos);
         if FireBlockBase::can_place_at(world, &fire_pos) {
+            let flags = pumpkin_world::world::BlockFlags::NOTIFY_ALL;
+            let applied = if location == fire_pos {
+                world.set_block_state_from_observed(&fire_pos, observed, state_id, flags)
+            } else {
+                world.set_block_states_from_observed(&[
+                    (
+                        location,
+                        clicked,
+                        clicked,
+                        pumpkin_world::world::BlockFlags::empty(),
+                    ),
+                    (fire_pos, observed, state_id, flags),
+                ])
+            };
+            if !applied {
+                return None;
+            }
             ignite_logic(world.clone(), fire_pos, state_id);
-            return true;
+            return Some(true);
         }
 
-        false
+        Some(false)
     }
 }
 

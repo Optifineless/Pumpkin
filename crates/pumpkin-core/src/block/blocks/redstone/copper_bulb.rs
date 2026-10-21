@@ -75,11 +75,26 @@ impl BlockBehaviour for CopperBulbBlock {
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         {
             let state = args.world.get_block_state(args.position);
+            if state.id.to_block() != args.block {
+                return;
+            }
             let mut props = CopperBulbLikeProperties::from_state_id(state.id);
             let is_receiving_power = block_receives_redstone_power(args.world, args.position);
             if props.powered != is_receiving_power {
-                if !props.powered {
+                let toggled = !props.powered;
+                if toggled {
                     props.lit = !props.lit;
+                }
+                props.powered = is_receiving_power;
+                if !args.world.set_block_state_from_observed(
+                    args.position,
+                    state.id,
+                    props.to_state_id(args.block),
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return;
+                }
+                if toggled {
                     args.world.play_block_sound(
                         if props.lit {
                             Sound::BlockCopperBulbTurnOn
@@ -90,12 +105,6 @@ impl BlockBehaviour for CopperBulbBlock {
                         *args.position,
                     );
                 }
-                props.powered = is_receiving_power;
-                args.world.set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_ALL,
-                );
             }
         }
     }

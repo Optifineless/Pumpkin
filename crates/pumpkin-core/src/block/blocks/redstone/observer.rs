@@ -33,33 +33,45 @@ impl BlockBehaviour for ObserverBlock {
         {
             props.powered = false;
             // Vanilla flag 18 (clients, no shape updates); MOVED is what skips shape updates here.
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                args.state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS | BlockFlags::MOVED,
-            );
+            ) {
+                return;
+            }
             Self::update_neighbors(args.world, args.block, args.position, props);
         }
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         let mut props = ObserverLikeProperties::from_state_id(state.id);
 
         if props.powered {
             props.powered = false;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
         } else {
             props.powered = true;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
             args.world
                 .schedule_block_tick(args.block, *args.position, 2, TickPriority::Normal);
         }

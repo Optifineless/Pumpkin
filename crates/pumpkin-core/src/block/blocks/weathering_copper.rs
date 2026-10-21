@@ -506,6 +506,11 @@ pub fn scan_neighbor_oxidation_levels(
 pub fn change_over_time(world: &Arc<World>, position: &BlockPos, block: &Block) {
     use rand::RngExt;
 
+    let observed = world.get_block_state_id(position);
+    if observed.to_block() != block {
+        return;
+    }
+
     // 1. Roll base degradation chance (~5.69%)
     if rand::rng().random::<f32>() >= BASE_DEGRADATION_CHANCE {
         return;
@@ -534,42 +539,69 @@ pub fn change_over_time(world: &Arc<World>, position: &BlockPos, block: &Block) 
         return;
     }
 
-    // 5. Apply state change
-    let current_state_id = world.get_block_state_id(position);
-    let new_state_id = with_properties_of(block, current_state_id, next_block);
+    set_stage_from_observed(world, position, observed, next_block);
+}
 
-    world.set_block_state(position, new_state_id, BlockFlags::NOTIFY_ALL);
-
-    // Special handling for multi-block structures:
-    // Door: update upper half if present
+// CopperChestBlock.updateShape and DoorBlock.updateShape keep both halves at one stage.
+pub(crate) fn set_stage_from_observed(
+    world: &Arc<World>,
+    position: &BlockPos,
+    observed: BlockStateId,
+    next_block: &Block,
+) -> bool {
+    let block = observed.to_block();
+    let next = with_properties_of(block, observed, next_block);
+    let mut updates = vec![(*position, observed, next, BlockFlags::NOTIFY_ALL)];
     if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_DOORS) {
-        let door_props = OakDoorLikeProperties::from_state_id(current_state_id);
-        if door_props.half == DoubleBlockHalf::Lower {
-            let top_pos = position.up();
-            let (top_block, top_state_id) = world.get_block_and_state_id(&top_pos);
-            if top_block == block {
-                let top_new_state_id = with_properties_of(top_block, top_state_id, next_block);
-                world.set_block_state(&top_pos, top_new_state_id, BlockFlags::NOTIFY_ALL);
+        let props = OakDoorLikeProperties::from_state_id(observed);
+        let other = if props.half == DoubleBlockHalf::Lower {
+            position.up()
+        } else {
+            position.down()
+        };
+        let (other_block, other_state) = world.get_block_and_state_id(&other);
+        if other_block != block {
+            return false;
+        }
+        let other_props = OakDoorLikeProperties::from_state_id(other_state);
+        if other_props.half == props.half || other_props.facing != props.facing {
+            return false;
+        }
+        updates.push((
+            other,
+            other_state,
+            with_properties_of(block, other_state, next_block),
+            BlockFlags::NOTIFY_ALL,
+        ));
+    } else if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_COPPER_CHESTS) {
+        let props = ChestLikeProperties::from_state_id(observed);
+        if props.r#type != ChestType::Single {
+            let direction = if props.r#type == ChestType::Left {
+                props.facing.rotate_clockwise()
+            } else {
+                props.facing.rotate_counter_clockwise()
+            };
+            let other = position.offset(direction.to_offset());
+            let (other_block, other_state) = world.get_block_and_state_id(&other);
+            if other_block != block {
+                return false;
             }
+            let other_props = ChestLikeProperties::from_state_id(other_state);
+            if other_props.r#type == ChestType::Single
+                || other_props.r#type == props.r#type
+                || other_props.facing != props.facing
+            {
+                return false;
+            }
+            updates.push((
+                other,
+                other_state,
+                with_properties_of(block, other_state, next_block),
+                BlockFlags::NOTIFY_LISTENERS,
+            ));
         }
     }
-    // Chest: update right companion chest if double chest
-    else if block == &Block::COPPER_CHEST
-        || block == &Block::EXPOSED_COPPER_CHEST
-        || block == &Block::WEATHERED_COPPER_CHEST
-    {
-        let chest_props = ChestLikeProperties::from_state_id(current_state_id);
-        if chest_props.r#type == ChestType::Left {
-            let right_dir = chest_props.facing.rotate_clockwise();
-            let right_pos = position.offset(right_dir.to_offset());
-            let (right_block, right_state_id) = world.get_block_and_state_id(&right_pos);
-            if right_block == block {
-                let right_new_state_id =
-                    with_properties_of(right_block, right_state_id, next_block);
-                world.set_block_state(&right_pos, right_new_state_id, BlockFlags::NOTIFY_LISTENERS);
-            }
-        }
-    }
+    world.set_block_states_from_observed(&updates)
 }
 
 // ---------------------------------------------------------------------------

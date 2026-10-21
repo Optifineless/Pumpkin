@@ -42,23 +42,35 @@ impl CommandExecutor for SetBlockExecutor {
         let block = BlockStateArgumentType::get(context, "block")?;
         let world = context.source.world();
         let pos = BlockPosArgumentType::get_loaded_block_pos(context, "pos")?;
-        let _mutation = world
-            .block_entity_mutation_permit(pos)
-            .ok_or_else(|| ERROR_FAILED.create_without_context())?;
         // SetBlockCommand.setBlock checks keep, destroys with drops, then calls BlockInput.place.
-        if matches!(self.0, Mode::Keep) && !world.get_block_state(&pos).is_air() {
+        let observed = world.get_block_state_id(&pos);
+        if matches!(self.0, Mode::Keep) && !observed.to_state().is_air() {
             return Err(ERROR_FAILED.create_without_context());
         }
         let destroy = matches!(self.0, Mode::Destroy);
-        if destroy {
-            world.break_block(&pos, None, BlockFlags::NOTIFY_ALL);
+        if destroy
+            && !observed.to_state().is_air()
+            && world
+                .break_block_from_observed(&pos, observed, None, BlockFlags::NOTIFY_ALL)
+                .is_none()
+        {
+            return Err(ERROR_FAILED.create_without_context());
         }
-        let old = world.get_block_state_id(&pos);
+        let old = if destroy {
+            crate::block::blocks::growing_plant::fluid_state_after_break(observed)
+        } else {
+            observed
+        };
         let strict = matches!(self.0, Mode::Strict);
         let place_needed = !destroy
             || !pumpkin_data::Block::from_state_id(block.state).is_air()
             || !pumpkin_data::Block::from_state_id(old).is_air();
-        let success = !place_needed || super::block_input::place(block, world, &pos, strict);
+        let success = !place_needed
+            || if matches!(self.0, Mode::Keep | Mode::Destroy) {
+                super::block_input::place_from_observed(block, world, &pos, old, strict)
+            } else {
+                super::block_input::place(block, world, &pos, strict)
+            };
         if success && !strict {
             super::block_input::update_neighbors(world, &pos, old);
         }

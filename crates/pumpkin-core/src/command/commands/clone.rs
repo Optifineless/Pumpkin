@@ -13,6 +13,7 @@ use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
 use pumpkin_world::world::BlockFlags;
+use rustc_hash::FxHashMap;
 
 const DESCRIPTION: &str = "Clones blocks from one region to another.";
 const PERMISSION: &str = "minecraft:command.clone";
@@ -71,6 +72,7 @@ struct ClonedBlock {
     src_pos: BlockPos,
     dest_pos: BlockPos,
     state_id: BlockStateId,
+    destination_state_id: BlockStateId,
     block_entity_nbt: Option<NbtCompound>,
 }
 
@@ -158,30 +160,6 @@ impl CommandExecutor for CloneExecutor {
             }
         }
 
-        // Vanilla clones inside one tick, so no chunk retires mid-command. Admit every touched chunk
-        // before the first write, so MOVE never copies a container whose source it cannot clear.
-        let mut touched_chunks = std::collections::BTreeSet::new();
-        let mut add_chunks = |min_x: i32, max_x: i32, min_z: i32, max_z: i32| {
-            for cx in (min_x >> 4)..=(max_x >> 4) {
-                for cz in (min_z >> 4)..=(max_z >> 4) {
-                    touched_chunks.insert((cx, cz));
-                }
-            }
-        };
-        add_chunks(dest_min_x, dest_max_x, dest_min_z, dest_max_z);
-        if self.clone_mode == CloneMode::Move {
-            add_chunks(min_x, max_x, min_z, max_z);
-        }
-        let mut mutations = Vec::with_capacity(touched_chunks.len());
-        for (cx, cz) in touched_chunks {
-            let pos = BlockPos::new(cx << 4, dest_min_y, cz << 4);
-            let Some(mutation) = world.block_entity_mutation_permit(pos) else {
-                tracing::warn!("Clone rejected while chunk ({cx}, {cz}) is unloading");
-                return Err(FAILED_ERROR.create_without_context());
-            };
-            mutations.push(mutation);
-        }
-
         let mut blocks_to_clone = Vec::new();
 
         for x in 0..size_x {
@@ -202,6 +180,7 @@ impl CommandExecutor for CloneExecutor {
                     };
 
                     if should_clone {
+                        let destination_state_id = world.get_block_state_id(&dest_pos);
                         let block_entity_nbt = world.get_block_entity(&src_pos).map(|be| {
                             let mut nbt = NbtCompound::new();
                             be.write_internal(&mut nbt);
@@ -212,6 +191,7 @@ impl CommandExecutor for CloneExecutor {
                             src_pos,
                             dest_pos,
                             state_id,
+                            destination_state_id,
                             block_entity_nbt,
                         });
                     }
@@ -219,46 +199,28 @@ impl CommandExecutor for CloneExecutor {
             }
         }
 
-        let mut count = 0;
+        let count = blocks_to_clone.len() as i32;
+        if count == 0 {
+            return Err(FAILED_ERROR.create_without_context());
+        }
+        let Some(changes) = clone_changes(&blocks_to_clone, self.clone_mode) else {
+            return Err(FAILED_ERROR.create_without_context());
+        };
+        if !world.set_block_states_from_observed(&changes) {
+            return Err(FAILED_ERROR.create_without_context());
+        }
         for block in &blocks_to_clone {
-            // CloneCommands.clone restores block-entity NBT after setting destination terrain.
-            world.set_block_state(&block.dest_pos, block.state_id, BlockFlags::NOTIFY_ALL);
-
+            // CloneCommands.clone restores block-entity NBT after admitted destination terrain.
+            if world.get_block_state_id(&block.dest_pos) != block.state_id {
+                continue;
+            }
             if let Some(nbt) = &block.block_entity_nbt {
                 let mut new_nbt = nbt.clone();
                 new_nbt.put_int("x", block.dest_pos.0.x);
                 new_nbt.put_int("y", block.dest_pos.0.y);
                 new_nbt.put_int("z", block.dest_pos.0.z);
-
                 if let Some(be) = crate::block::entities::block_entity_from_nbt(&new_nbt) {
-                    world.add_block_entity(be);
-                }
-            }
-
-            count += 1;
-        }
-
-        if count == 0 {
-            return Err(FAILED_ERROR.create_without_context());
-        }
-
-        let is_dest_pos = |pos: &BlockPos| {
-            pos.0.x >= dest_min_x
-                && pos.0.x <= dest_max_x
-                && pos.0.y >= dest_min_y
-                && pos.0.y <= dest_max_y
-                && pos.0.z >= dest_min_z
-                && pos.0.z <= dest_max_z
-        };
-
-        if self.clone_mode == CloneMode::Move {
-            for block in &blocks_to_clone {
-                if !is_dest_pos(&block.src_pos) {
-                    world.set_block_state(
-                        &block.src_pos,
-                        BlockStateId::AIR,
-                        BlockFlags::NOTIFY_ALL,
-                    );
+                    world.add_block_entity_from_observed(be, block.state_id);
                 }
             }
         }
@@ -274,9 +236,43 @@ impl CommandExecutor for CloneExecutor {
             true,
         );
 
-        drop(mutations);
         Ok(count)
     }
+}
+
+fn clone_changes(
+    blocks: &[ClonedBlock],
+    mode: CloneMode,
+) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId, BlockFlags)>> {
+    let mut changes = Vec::with_capacity(blocks.len() * 2);
+    let mut indices = FxHashMap::default();
+    for block in blocks {
+        indices.insert(block.src_pos, changes.len());
+        let next = if mode == CloneMode::Move {
+            BlockStateId::AIR
+        } else {
+            block.state_id
+        };
+        changes.push((block.src_pos, block.state_id, next, BlockFlags::NOTIFY_ALL));
+    }
+    for block in blocks {
+        if let Some(&index) = indices.get(&block.dest_pos) {
+            let entry = &mut changes[index];
+            if entry.1 != block.destination_state_id {
+                return None;
+            }
+            entry.2 = block.state_id;
+        } else {
+            indices.insert(block.dest_pos, changes.len());
+            changes.push((
+                block.dest_pos,
+                block.destination_state_id,
+                block.state_id,
+                BlockFlags::NOTIFY_ALL,
+            ));
+        }
+    }
+    Some(changes)
 }
 
 pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {

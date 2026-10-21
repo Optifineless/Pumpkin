@@ -129,7 +129,8 @@ impl BlockBehaviour for FurnaceBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let furnace_block_entity = FurnaceBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(furnace_block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(furnace_block_entity), args.state_id);
     }
 
     fn get_comparator_output(&self, args: GetComparatorOutputArgs<'_>) -> Option<u8> {

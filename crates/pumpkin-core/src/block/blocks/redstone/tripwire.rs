@@ -31,8 +31,14 @@ impl BlockBehaviour for TripwireBlock {
         props.powered = true;
 
         let state_id = props.to_state_id(args.block);
-        args.world
-            .set_block_state(args.position, state_id, BlockFlags::NOTIFY_ALL);
+        if !args.world.set_block_state_from_observed(
+            args.position,
+            args.state.id,
+            state_id,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return;
+        }
 
         Self::update(args.world, args.position, state_id);
 
@@ -76,8 +82,9 @@ impl BlockBehaviour for TripwireBlock {
         if has_shears {
             let mut props = TripwireProperties::from_state_id(args.state.id);
             props.disarmed = true;
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                args.state.id,
                 props.to_state_id(args.block),
                 BlockFlags::empty(),
             );
@@ -106,6 +113,9 @@ impl BlockBehaviour for TripwireBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
 
         let mut props = TripwireProperties::from_state_id(state_id);
         if !props.powered {
@@ -118,9 +128,16 @@ impl BlockBehaviour for TripwireBlock {
             && args.world.get_players_at_box(&aabb).is_empty()
         {
             props.powered = false;
+            let observed = state_id;
             let state_id = props.to_state_id(args.block);
-            args.world
-                .set_block_state(args.position, state_id, BlockFlags::NOTIFY_ALL);
+            if !args.world.set_block_state_from_observed(
+                args.position,
+                observed,
+                state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
             Self::update(args.world, args.position, state_id);
         } else {
             args.world
@@ -133,6 +150,9 @@ impl BlockBehaviour for TripwireBlock {
             return;
         }
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         Self::update(args.world, args.position, state_id);
     }
 }

@@ -60,8 +60,11 @@ impl BlockBehaviour for CandleBlock {
         {
             return BlockActionResult::Pass;
         }
-        extinguish(args.world, args.block, args.position);
-        BlockActionResult::Success
+        if extinguish(args.world, args.block, args.position) {
+            BlockActionResult::Success
+        } else {
+            BlockActionResult::Pass
+        }
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
@@ -76,9 +79,17 @@ impl BlockBehaviour for CandleBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if Block::from_state_id(observed) != args.block {
+            return;
+        }
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
@@ -105,23 +116,21 @@ pub(crate) fn extinguish(
     world: &std::sync::Arc<crate::world::World>,
     block: &Block,
     position: &BlockPos,
-) {
+) -> bool {
     let state = world.get_block_state_id(position);
-    if block.has_tag(&tag::Block::MINECRAFT_CANDLES) {
+    if pumpkin_data::Block::from_state_id(state) != block {
+        return false;
+    }
+    let new_state = if block.has_tag(&tag::Block::MINECRAFT_CANDLES) {
         let mut properties = CandleLikeProperties::from_state_id(state);
         properties.lit = false;
-        world.set_block_state(
-            position,
-            properties.to_state_id(block),
-            BlockFlags::NOTIFY_ALL,
-        );
+        properties.to_state_id(block)
     } else {
         let properties = pumpkin_data::block_properties::RedstoneOreLikeProperties { lit: false };
-        world.set_block_state(
-            position,
-            properties.to_state_id(block),
-            BlockFlags::NOTIFY_ALL,
-        );
+        properties.to_state_id(block)
+    };
+    if !world.set_block_state_from_observed(position, state, new_state, BlockFlags::NOTIFY_ALL) {
+        return false;
     }
     // AbstractCandleBlock.extinguish uses Level.addParticle, a no-op on the server.
     world.play_sound(
@@ -130,4 +139,5 @@ pub(crate) fn extinguish(
         &position.to_centered_f64(),
     );
     world.emit_game_event(GameEvent::BlockChange.name(), position.to_centered_f64());
+    true
 }

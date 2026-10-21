@@ -214,10 +214,12 @@ impl FightAction {
             for dx in -3i32..=3 {
                 for dz in -3i32..=3 {
                     let p = BlockPos::new(loc.0.x + dx, loc.0.y + dy, loc.0.z + dz);
-                    let b = world.get_block(&p);
+                    let expected = world.get_block_state_id(&p);
+                    let b = expected.to_block();
                     if b == &Block::BEDROCK || b == &Block::END_PORTAL {
-                        world.set_block_state(
+                        world.set_block_state_from_observed(
                             &p,
+                            expected,
                             Block::END_STONE.default_state.id,
                             BlockFlags::NOTIFY_ALL,
                         );

@@ -13,6 +13,9 @@ This checkout is the Murgicraft fork of Pumpkin (see [FORK.md](FORK.md)), not up
 - Do the "Read your own diff before handover" checks below on every commit, not just before handover.
 - If you could not verify part of a change, say so plainly to the owner. Never claim a play test, review or capture that didn't happen.
 
+Block writes derived from an earlier observation must use `set_block_state_from_observed` or equivalent CAS; delayed entity data uses `add_block_entity_from_observed`; publish effects only after success.
+Use `set_block_states_from_observed` for paired/dependent cells, including unchanged source guards; release ownership before callbacks or packet sends.
+
 **Changing shared state.** Most regressions so far came from changing what a piece of state means without updating everything around it (for example a saved `Invulnerable` tag written by older builds loading as permanent immunity, #130, or `/clear` leaving cached armor attributes behind, #98). When a change alters an entity, player, world or saved field, a cache, or a lock, write down in the PR and check:
 
 - every place that writes, reads or derives the state, not only the one you changed;

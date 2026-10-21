@@ -75,10 +75,17 @@ impl BlockBehaviour for LanternBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let props = LanternLikeProperties::from_state_id(state_id);
         if !can_survive(args.world, args.position, props.r#hanging) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                state_id,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 

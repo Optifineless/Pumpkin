@@ -512,6 +512,7 @@ pub(crate) fn apply_trusted_item_data(
     stack: &pumpkin_data::item_stack::ItemStack,
     player: &crate::entity::player::Player,
     world: &Arc<crate::world::World>,
+    expected: pumpkin_data::BlockStateId,
 ) {
     if !player.can_use_game_master_blocks() {
         return;
@@ -558,7 +559,7 @@ pub(crate) fn apply_trusted_item_data(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
     }
-    world.add_block_entity(loaded);
+    world.add_block_entity_from_observed(loaded, expected);
 }
 
 #[cfg(test)]

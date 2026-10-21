@@ -19,6 +19,10 @@ impl crate::block::BlockBehaviour for PumpkinBlock {
         if args.item_stack.item != &Item::SHEARS {
             return BlockActionResult::Pass;
         }
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let mut props = WallTorchLikeProperties::default(&Block::CARVED_PUMPKIN);
         props.facing = args
             .player
@@ -26,11 +30,14 @@ impl crate::block::BlockBehaviour for PumpkinBlock {
             .entity
             .get_horizontal_facing()
             .opposite();
-        args.world.set_block_state(
+        if !args.world.set_block_state_from_observed(
             args.position,
+            observed,
             props.to_state_id(&Block::CARVED_PUMPKIN),
             BlockFlags::NOTIFY_ALL,
-        );
+        ) {
+            return BlockActionResult::Pass;
+        }
         let entity = Entity::new(
             args.world.clone(),
             args.position.to_f64(),

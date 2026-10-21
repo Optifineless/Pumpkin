@@ -45,18 +45,36 @@ impl BlockBehaviour for LayeredSnowBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         // Snow layers melt when lit by block light above level 11,
         // e.g. from a nearby torch.
         if args.world.get_block_light_level(args.position).unwrap_or(0) > 11 {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 

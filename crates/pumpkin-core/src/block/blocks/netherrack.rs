@@ -33,7 +33,7 @@ impl BlockBehaviour for NetherrackBlock {
         false
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
         let mut warped = false;
         let mut crimson = false;
 
@@ -54,7 +54,7 @@ impl BlockBehaviour for NetherrackBlock {
         }
 
         if !warped && !crimson {
-            return;
+            return true;
         }
 
         let end_block: BlockStateId = match (warped, crimson) {
@@ -70,7 +70,11 @@ impl BlockBehaviour for NetherrackBlock {
             (false, false) => Block::NETHERRACK.default_state.id,
         };
 
-        args.world
-            .set_block_state(args.position, end_block, BlockFlags::NOTIFY_ALL);
+        args.world.set_block_state_from_observed(
+            args.position,
+            args.state_id,
+            end_block,
+            BlockFlags::NOTIFY_ALL,
+        )
     }
 }

@@ -33,8 +33,8 @@ impl BlockBehaviour for BambooBlock {
             && args.world.get_block_state(&top.up()).is_air()
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
-        bone_meal(args.world, args.position);
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
+        bone_meal(args.world, args.position)
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
@@ -70,12 +70,22 @@ impl BlockBehaviour for BambooBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         if !<Self as PlantBlockBase>::can_place_at(self, args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         } else if args.world.get_block(&args.position.down()) == &Block::BAMBOO_SAPLING {
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 &args.position.down(),
+                Block::BAMBOO_SAPLING.default_state.id,
                 Block::BAMBOO.default_state.id,
                 BlockFlags::empty(),
             );
@@ -116,7 +126,7 @@ impl BlockBehaviour for BambooBlock {
     }
 }
 
-fn update_leaves_and_grow(world: &Arc<World>, position: &BlockPos) {
+fn update_leaves_and_grow(world: &Arc<World>, position: &BlockPos) -> bool {
     let above_pos = position.up();
     let below_pos = position.down();
     let two_below_pos = position.down_height(2);
@@ -125,17 +135,21 @@ fn update_leaves_and_grow(world: &Arc<World>, position: &BlockPos) {
     let state_above = world.get_block_state(&above_pos);
 
     if !state_above.is_air() {
-        return;
+        return false;
     }
 
+    if block != &Block::BAMBOO {
+        return false;
+    }
+    let mut updates = vec![(*position, state_id, state_id, BlockFlags::empty())];
     let mut props = BambooLikeProperties::from_state_id(state_id);
     if props.stage != 0 {
-        return;
+        return false;
     }
 
     let bamboo_count = count_bamboo_below(world, position);
     if bamboo_count >= 16 {
-        return;
+        return false;
     }
     let (block_below, state_id_below) = world.get_block_and_state_id(&below_pos);
     let (block_two_below, state_id_two_below) = world.get_block_and_state_id(&two_below_pos);
@@ -158,16 +172,18 @@ fn update_leaves_and_grow(world: &Arc<World>, position: &BlockPos) {
             let mut props_two_below = BambooLikeProperties::from_state_id(state_id_two_below);
             props_two_below.leaves = BambooLeaves::None;
 
-            world.set_block_state(
-                &below_pos,
+            updates.push((
+                below_pos,
+                state_id_below,
                 props_below.to_state_id(block_below),
                 BlockFlags::NOTIFY_ALL,
-            );
-            world.set_block_state(
-                &two_below_pos,
+            ));
+            updates.push((
+                two_below_pos,
+                state_id_two_below,
                 props_two_below.to_state_id(block_two_below),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ));
         }
     }
 
@@ -177,7 +193,13 @@ fn update_leaves_and_grow(world: &Arc<World>, position: &BlockPos) {
         !((bamboo_count < 11 || rand::rng().random::<f32>() >= 0.25) && bamboo_count != 15),
     );
 
-    world.set_block_state(&above_pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+    updates.push((
+        above_pos,
+        state_above.id,
+        props.to_state_id(block),
+        BlockFlags::NOTIFY_ALL,
+    ));
+    world.set_block_states_from_observed(&updates)
 }
 
 fn count_bamboo_below(world: &World, pos: &BlockPos) -> usize {
@@ -210,7 +232,8 @@ fn count_bamboo_above(world: &World, pos: &BlockPos) -> usize {
     bamboo_count
 }
 
-fn bone_meal(world: &Arc<World>, position: &BlockPos) {
+fn bone_meal(world: &Arc<World>, position: &BlockPos) -> bool {
+    let mut committed = false;
     let bamboo_below = count_bamboo_below(world, position);
 
     let growth_amount = rand::rng().random_range(1..=2);
@@ -227,16 +250,20 @@ fn bone_meal(world: &Arc<World>, position: &BlockPos) {
             || !world.is_in_height_limit(next_pos.up().0.y)
             || !world.get_block_state(&next_pos.up()).is_air()
         {
-            return;
+            return true;
         }
 
         let next_props = BambooLikeProperties::from_state_id(next_state.id);
         if next_props.stage == 1 {
-            return;
+            return true;
         }
 
-        update_leaves_and_grow(world, &next_pos);
+        if !update_leaves_and_grow(world, &next_pos) {
+            return committed;
+        }
+        committed = true;
     }
+    true
 }
 
 impl PlantBlockBase for BambooBlock {

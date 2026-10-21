@@ -161,3 +161,6 @@ mod ladder_tests;
 
 #[cfg(test)]
 mod lanterns_tests;
+
+#[cfg(test)]
+mod stale_block_write_tests;

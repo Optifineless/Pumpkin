@@ -79,10 +79,11 @@ impl World {
             )
         });
         // Revalidate after callbacks; an occupied-state edit must not leave both a bed and loot.
-        let _mutation = self.block_entity_mutation_permit(*position)?;
+        let mutation = self.block_entity_mutation_permit(*position)?;
         let entity = self.remove_reserved_bed(&snapshot);
         let current_chunk = snapshot.chunk_is_current();
         drop(snapshot);
+        drop(mutation);
         let committed = entity.is_some();
         if !committed && !current_chunk {
             return None;
@@ -134,7 +135,7 @@ impl World {
         Some(expected)
     }
 
-    pub(super) fn send_block_destroy_effect(
+    pub(crate) fn send_block_destroy_effect(
         &self,
         position: &BlockPos,
         state: BlockStateId,

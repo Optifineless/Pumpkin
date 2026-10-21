@@ -28,9 +28,17 @@ impl BlockBehaviour for CarpetBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 }
@@ -55,9 +63,17 @@ impl BlockBehaviour for MossCarpetBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 }
@@ -82,9 +98,17 @@ impl BlockBehaviour for PaleMossCarpetBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 }

@@ -82,14 +82,28 @@ impl DetectorRailBlock {
         if has_minecart && !was_pressed {
             props.powered = true;
             let new_state_id = props.to_state_id(block);
-            world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                pos,
+                state_id,
+                new_state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
             update_power_to_connected(world, pos, props.shape);
             world.update_neighbors(pos, None);
             world.update_neighbors(&pos.down(), None);
         } else if !has_minecart && was_pressed {
             props.powered = false;
             let new_state_id = props.to_state_id(block);
-            world.set_block_state(pos, new_state_id, BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                pos,
+                state_id,
+                new_state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
             update_power_to_connected(world, pos, props.shape);
             world.update_neighbors(pos, None);
             world.update_neighbors(&pos.down(), None);
@@ -122,9 +136,17 @@ impl BlockBehaviour for DetectorRailBlock {
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if !rail_placement_is_valid(args.world, args.block, args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
@@ -137,6 +159,9 @@ impl BlockBehaviour for DetectorRailBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let props = DetectorRailProperties::from_state_id(state_id);
         if props.powered {
             self.check_pressed(args.world, args.position, args.block, state_id);

@@ -1,5 +1,57 @@
 # Murgicraft fork of Pumpkin
 
+## Conditional observed block writes (#413)
+
+State-derived terrain changes retain their original observation through random and
+scheduled ticks, item and entity actions, physics, fluid flow, explosions, native
+and Wasm dispatch, and live feature application. A rejected comparison publishes
+no dependent loot, payment, sound, particles or game event. Paired/dependent transformations
+commit together before callbacks. Delayed block-entity data and typed initializers
+compare their retained terrain under the registry publication gate; unchanged-terrain
+NBT remains supported. Old block entities are detached at terrain
+commit so delayed retirement cannot target a replacement; all new mutation
+permits release before callbacks and packet publication.
+
+The inventory is recorded in [.fork/stale-block-write-inventory.md](.fork/stale-block-write-inventory.md).
+Recorded negative controls and checks are in [.fork/stale-block-write-validation.md](.fork/stale-block-write-validation.md).
+Loot and XP plugin preparation retain the original block/entity view; physical
+outputs follow successful admission and use the retired owner's current contents.
+Explicit command/plugin replacement and geometric structure recipes keep their
+replacement intent; eligibility-derived command paths retain expected states.
+This changes admission under interference, preserving uncontested state, loot,
+flags, oxidation chance and inventory inputs. Same-state remove/reinstall (ABA)
+requires a separate incarnation mechanism and retains existing state-CAS semantics.
+
+API 8 (same version): rebuild native plugins. Additive observed-write methods on
+`World` and `ChunkData`; `BlockBehaviour::perform_bonemeal` returns admission;
+`FallingEntity::replace_spawn` returns `Option`; fluid spread helpers retain the
+observed target; `DoorBlock::set_open_from_observed` is additive. Composter helpers
+and `BedBlock::set_occupied` return admission. `WorldGenerationCache`, `WorldBlockPlacer`, `GolemPattern`,
+`WitherPattern`, `PistonHandler` and `BlockDataAccessor` private runtime layouts change. Native API
+version, Wasm WIT and saved-data meanings are unchanged.
+
+Compared with official Java 26.3 `ChangeOverTimeBlock.changeOverTime`,
+`CopperChestBlock.updateShape/shouldChangedStateKeepBlockEntity`,
+`WeatheringCopperChestBlock.randomTick`, `WeatheringCopperDoorBlock.randomTick`,
+`CropBlock.randomTick`, `PistonBaseBlock.triggerEvent/moveBlocks` and
+`PistonMovingBlockEntity.finalTick/tick`, decompiled with Vineflower 1.12.0.
+Inner server JAR SHA-256: `a362163eec5d1612d520772bc16e5b39c09e3b234fdc045f56bf544284ee8ae6`.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: **Not yet**.
+
+The existing upper-door mining path yields no door item: replacement cleanup
+removes the lower half with `SKIP_DROPS` before the player broken hook. This is
+unchanged; regressions preserve its current count while requiring both cells air.
+
+Play test: mine a single or either half of a stocked double copper chest while it
+oxidizes; expect one chest drop, retained surviving contents, and no returning
+mined block. Repeat with copper doors/trapdoors and harvest growing wheat. With
+no interference, expect ordinary oxidation/growth and one payment per item use.
+Scrape a double copper chest while replacing its partner; expect the replacement
+and contents to remain and one durability use. Extend/retract ordinary and sticky
+pistons with moved blocks and obstruction; expect ordinary movement and no lost
+or duplicated blocks. Record block states, ground drops and container contents.
+
+
 This is a fork of [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) maintained for the Murgicraft server. It tracks upstream `master` and adds fixes aimed at running a survival server: redstone, combat, world generation, commands and the plugin API.
 
 ## Fresh ordinary-horse statistics (#115, slice 1)

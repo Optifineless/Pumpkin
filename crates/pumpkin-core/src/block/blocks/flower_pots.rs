@@ -20,11 +20,14 @@ impl BlockBehaviour for FlowerPotBlock {
         if args.block != &Block::FLOWER_POT {
             return BlockActionResult::Consume;
         }
-        args.world.set_block_state(
+        if !args.world.set_block_state_from_observed(
             args.position,
+            args.block.default_state.id,
             Block::from_id(potted).default_state.id,
             BlockFlags::NOTIFY_ALL,
-        );
+        ) {
+            return BlockActionResult::Pass;
+        }
         args.world
             .emit_game_event("block_change", args.position.to_centered_f64());
         args.player.increment_stat(
@@ -42,17 +45,20 @@ impl BlockBehaviour for FlowerPotBlock {
         if args.block == &Block::FLOWER_POT {
             return BlockActionResult::Consume;
         }
+        if !args.world.set_block_state_from_observed(
+            args.position,
+            args.block.default_state.id,
+            Block::FLOWER_POT.default_state.id,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return BlockActionResult::Pass;
+        }
         if let Some(item) = potted_content(args.block) {
             crate::item::item_utils::give_or_drop(
                 args.player,
                 pumpkin_data::item_stack::ItemStack::new(1, item),
             );
         }
-        args.world.set_block_state(
-            args.position,
-            Block::FLOWER_POT.default_state.id,
-            BlockFlags::NOTIFY_ALL,
-        );
         args.world
             .emit_game_event("block_change", args.position.to_centered_f64());
         BlockActionResult::Success
@@ -74,8 +80,9 @@ impl BlockBehaviour for FlowerPotBlock {
             } else {
                 &Block::POTTED_CLOSED_EYEBLOSSOM
             };
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                args.block.default_state.id,
                 next_block.default_state.id,
                 BlockFlags::NOTIFY_ALL,
             );

@@ -97,6 +97,10 @@ impl BlockBehaviour for EnderChestBlock {
         &self,
         args: GetScreenHandlerFactoryArgs<'_>,
     ) -> Option<Box<dyn ScreenHandlerFactory>> {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return None;
+        }
         if is_chest_blocked(args.world, args.position) {
             return None;
         }
@@ -105,7 +109,12 @@ impl BlockBehaviour for EnderChestBlock {
             be
         } else {
             let be = Arc::new(EnderChestBlockEntity::new(*args.position));
-            args.world.add_block_entity(be.clone());
+            if !args
+                .world
+                .add_block_entity_from_observed(be.clone(), observed)
+            {
+                return None;
+            }
             be
         };
 
@@ -123,7 +132,8 @@ impl BlockBehaviour for EnderChestBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let block_entity = EnderChestBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(block_entity), args.state_id);
     }
 
     fn is_pathfindable(&self, _state: &BlockState, _computation_type: PathComputationType) -> bool {

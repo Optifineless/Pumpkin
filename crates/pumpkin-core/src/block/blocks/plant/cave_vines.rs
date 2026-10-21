@@ -55,30 +55,39 @@ impl BlockBehaviour for CaveVinesBlock {
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         if args.block == &Block::CAVE_VINES {
             let mut props = CaveVinesLikeProperties::from_state_id(state_id);
             if props.berries {
                 props.berries = false;
-                args.world
-                    .drop_stack(args.position, ItemStack::new(1, &Item::GLOW_BERRIES));
-                args.world.set_block_state(
+                if !args.world.set_block_state_from_observed(
                     args.position,
+                    state_id,
                     props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
-                );
+                ) {
+                    return BlockActionResult::Pass;
+                }
+                args.world
+                    .drop_stack(args.position, ItemStack::new(1, &Item::GLOW_BERRIES));
                 return BlockActionResult::SuccessServer;
             }
         } else if args.block == &Block::CAVE_VINES_PLANT {
             let mut props = CaveVinesPlantLikeProperties::from_state_id(state_id);
             if props.berries {
                 props.berries = false;
-                args.world
-                    .drop_stack(args.position, ItemStack::new(1, &Item::GLOW_BERRIES));
-                args.world.set_block_state(
+                if !args.world.set_block_state_from_observed(
                     args.position,
+                    state_id,
                     props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
-                );
+                ) {
+                    return BlockActionResult::Pass;
+                }
+                args.world
+                    .drop_stack(args.position, ItemStack::new(1, &Item::GLOW_BERRIES));
                 return BlockActionResult::SuccessServer;
             }
         }
@@ -95,23 +104,27 @@ impl BlockBehaviour for CaveVinesBlock {
         }
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         if args.block == &Block::CAVE_VINES {
             let mut props = CaveVinesLikeProperties::from_state_id(args.state_id);
             props.berries = true;
-            args.world.set_block_state(
+            return args.world.set_block_state_from_observed(
                 args.position,
-                props.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL,
-            );
-        } else if args.block == &Block::CAVE_VINES_PLANT {
-            let mut props = CaveVinesPlantLikeProperties::from_state_id(args.state_id);
-            props.berries = true;
-            args.world.set_block_state(
-                args.position,
+                args.state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
             );
         }
+        if args.block == &Block::CAVE_VINES_PLANT {
+            let mut props = CaveVinesPlantLikeProperties::from_state_id(args.state_id);
+            props.berries = true;
+            return args.world.set_block_state_from_observed(
+                args.position,
+                args.state_id,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_ALL,
+            );
+        }
+        true
     }
 }

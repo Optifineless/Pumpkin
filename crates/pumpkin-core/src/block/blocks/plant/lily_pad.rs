@@ -23,8 +23,12 @@ impl BlockBehaviour for LilyPadBlock {
                 .resource_name
                 .ends_with("_boat")
             {
-                args.world
-                    .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+                args.world.break_block_from_observed(
+                    args.position,
+                    args.state.id,
+                    None,
+                    BlockFlags::NOTIFY_ALL,
+                );
             }
         }
     }

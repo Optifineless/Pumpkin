@@ -124,6 +124,7 @@ impl ChiseledBookshelfBlockEntity {
         world: &Arc<World>,
         slot: usize,
     ) {
+        let observed = properties.to_state_id(&Block::CHISELED_BOOKSHELF);
         if (0..Self::INVENTORY_SIZE).contains(&slot) {
             self.last_interacted_slot
                 .store(slot as i8, Ordering::Relaxed);
@@ -144,10 +145,11 @@ impl ChiseledBookshelfBlockEntity {
                 _ => {}
             }
 
-            world.set_block_state(
+            let _ = world.set_block_state_if(
                 &self.position,
                 properties.to_state_id(&Block::CHISELED_BOOKSHELF),
                 BlockFlags::NOTIFY_LISTENERS,
+                |current| current == observed && self.transaction.is_live(),
             );
         } else {
             warn!(

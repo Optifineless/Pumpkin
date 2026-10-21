@@ -35,37 +35,65 @@ use pumpkin_util::GameMode;
 type DoorProperties = pumpkin_data::block_properties::OakDoorLikeProperties;
 
 fn toggle_door(player: &Player, world: &Arc<World>, block_pos: &BlockPos) {
-    let (block, block_state) = world.get_block_and_state_id(block_pos);
-    let mut door_props = DoorProperties::from_state_id(block_state);
-    door_props.open = !door_props.open;
+    let observed = world.get_block_state_id(block_pos);
+    let block = observed.to_block();
+    if !block.has_tag(&tag::Block::MINECRAFT_DOORS) {
+        return;
+    }
+    let open = !DoorProperties::from_state_id(observed).open;
+    if write_open_pair(world, block_pos, observed, open) {
+        world.play_block_sound_expect(
+            player,
+            get_sound(block, open),
+            SoundCategory::Blocks,
+            *block_pos,
+        );
+    }
+}
 
-    let other_half = match door_props.half {
-        DoubleBlockHalf::Upper => BlockDirection::Down,
-        DoubleBlockHalf::Lower => BlockDirection::Up,
+fn write_open_pair(
+    world: &Arc<World>,
+    block_pos: &BlockPos,
+    observed: BlockStateId,
+    open: bool,
+) -> bool {
+    let block = observed.to_block();
+    if !block.has_tag(&tag::Block::MINECRAFT_DOORS) {
+        return false;
+    }
+    let mut props = DoorProperties::from_state_id(observed);
+    if props.open == open {
+        return false;
+    }
+    let other_pos = if props.half == DoubleBlockHalf::Lower {
+        block_pos.up()
+    } else {
+        block_pos.down()
     };
-    let other_pos = block_pos.offset(other_half.to_offset());
-
-    let (other_block, other_state_id) = world.get_block_and_state_id(&other_pos);
-    let mut other_door_props = DoorProperties::from_state_id(other_state_id);
-    other_door_props.open = door_props.open;
-
-    world.play_block_sound_expect(
-        player,
-        get_sound(block, door_props.open),
-        SoundCategory::Blocks,
-        *block_pos,
-    );
-
-    world.set_block_state(
-        block_pos,
-        door_props.to_state_id(block),
-        BlockFlags::NOTIFY_LISTENERS,
-    );
-    world.set_block_state(
-        &other_pos,
-        other_door_props.to_state_id(other_block),
-        BlockFlags::NOTIFY_LISTENERS,
-    );
+    let other_state = world.get_block_state_id(&other_pos);
+    if other_state.to_block() != block {
+        return false;
+    }
+    let mut other = DoorProperties::from_state_id(other_state);
+    if other.half == props.half {
+        return false;
+    }
+    props.open = open;
+    other.open = open;
+    world.set_block_states_from_observed(&[
+        (
+            *block_pos,
+            observed,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_LISTENERS,
+        ),
+        (
+            other_pos,
+            other_state,
+            other.to_state_id(block),
+            BlockFlags::NOTIFY_LISTENERS,
+        ),
+    ])
 }
 
 fn can_open_door(block: &Block) -> bool {
@@ -175,41 +203,26 @@ impl DoorBlock {
     }
 
     pub fn set_open(world: &Arc<World>, block_pos: &BlockPos, open: bool) {
-        let (block, block_state) = world.get_block_and_state_id(block_pos);
-        if !block.has_tag(&tag::Block::MINECRAFT_DOORS) {
-            return;
+        let observed = world.get_block_state_id(block_pos);
+        Self::set_open_from_observed(world, block_pos, observed, open);
+    }
+
+    /// Opens or closes both halves only while their observed states are current.
+    pub fn set_open_from_observed(
+        world: &Arc<World>,
+        block_pos: &BlockPos,
+        observed: BlockStateId,
+        open: bool,
+    ) -> bool {
+        if !write_open_pair(world, block_pos, observed, open) {
+            return false;
         }
-        let mut door_props = DoorProperties::from_state_id(block_state);
-        if door_props.open == open {
-            return;
-        }
-        door_props.open = open;
-
-        let other_half = match door_props.half {
-            DoubleBlockHalf::Upper => BlockDirection::Down,
-            DoubleBlockHalf::Lower => BlockDirection::Up,
-        };
-        let other_pos = block_pos.offset(other_half.to_offset());
-
-        let (other_block, other_state_id) = world.get_block_and_state_id(&other_pos);
-
-        world.play_block_sound(get_sound(block, open), SoundCategory::Blocks, *block_pos);
-
-        world.set_block_state(
-            block_pos,
-            door_props.to_state_id(block),
-            BlockFlags::NOTIFY_LISTENERS,
+        world.play_block_sound(
+            get_sound(observed.to_block(), open),
+            SoundCategory::Blocks,
+            *block_pos,
         );
-
-        if other_block.id == block.id {
-            let mut other_door_props = DoorProperties::from_state_id(other_state_id);
-            other_door_props.open = open;
-            world.set_block_state(
-                &other_pos,
-                other_door_props.to_state_id(other_block),
-                BlockFlags::NOTIFY_LISTENERS,
-            );
-        }
+        true
     }
 }
 
@@ -234,16 +247,27 @@ impl BlockBehaviour for DoorBlock {
     }
 
     fn placed(&self, args: PlacedArgs<'_>) {
-        {
-            let mut door_props = DoorProperties::from_state_id(args.state_id);
-            door_props.half = DoubleBlockHalf::Upper;
-
-            args.world.set_block_state(
-                &args.position.offset(BlockDirection::Up.to_offset()),
-                door_props.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
-            );
+        let mut props = DoorProperties::from_state_id(args.state_id);
+        props.half = DoubleBlockHalf::Upper;
+        let upper_pos = args.position.up();
+        let upper = args.world.get_block_state_id(&upper_pos);
+        if !upper.to_state().replaceable() {
+            return;
         }
+        args.world.set_block_states_from_observed(&[
+            (
+                *args.position,
+                args.state_id,
+                args.state_id,
+                BlockFlags::empty(),
+            ),
+            (
+                upper_pos,
+                upper,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
+            ),
+        ]);
     }
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
@@ -283,12 +307,19 @@ impl BlockBehaviour for DoorBlock {
             BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
         };
 
-        args.world
-            .break_block(&other_half_pos, Some(args.player), flags);
+        args.world.break_block_from_observed(
+            &other_half_pos,
+            other_state.id,
+            Some(args.player),
+            flags,
+        );
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         let block_state = args.world.get_block_state(args.position);
+        if block_state.id.to_block() != args.block {
+            return;
+        }
         let mut door_props = DoorProperties::from_state_id(block_state.id);
         let other_half = match door_props.half {
             DoubleBlockHalf::Upper => BlockDirection::Down,
@@ -321,6 +352,22 @@ impl BlockBehaviour for DoorBlock {
                 other_door_props.open = powered;
             }
 
+            if !args.world.set_block_states_from_observed(&[
+                (
+                    *args.position,
+                    block_state.id,
+                    door_props.to_state_id(args.block),
+                    BlockFlags::NOTIFY_ALL,
+                ),
+                (
+                    other_pos,
+                    other_state_id,
+                    other_door_props.to_state_id(other_block),
+                    BlockFlags::NOTIFY_ALL,
+                ),
+            ]) {
+                return;
+            }
             if door_props.half == sound_half {
                 args.world.play_block_sound(
                     get_sound(args.block, powered),
@@ -328,17 +375,6 @@ impl BlockBehaviour for DoorBlock {
                     *args.position,
                 );
             }
-
-            args.world.set_block_state(
-                args.position,
-                door_props.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL,
-            );
-            args.world.set_block_state(
-                &other_pos,
-                other_door_props.to_state_id(other_block),
-                BlockFlags::NOTIFY_ALL,
-            );
         }
     }
 
@@ -383,8 +419,9 @@ impl BlockBehaviour for DoorBlock {
         if other_block.id == args.block.id {
             let other_props = DoorProperties::from_state_id(other_state.id);
             if other_props.half != door_props.half {
-                args.world.break_block(
+                args.world.break_block_from_observed(
                     &other_half_pos,
+                    other_state.id,
                     None,
                     BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL,
                 );

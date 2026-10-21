@@ -137,6 +137,7 @@ impl ReplaceDisk {
     ) {
         let mut changed = false;
         for pos in self.iterate_blocks(enchantment_level, position) {
+            let observed = world.get_block_state_id(&pos);
             let passes_predicate = self
                 .predicate
                 .as_ref()
@@ -146,8 +147,13 @@ impl ReplaceDisk {
             }
 
             let new_state = self.block_state;
-            let old_state_id = world.set_block_state(&pos, new_state.id, BlockFlags::NOTIFY_ALL);
-            if old_state_id != new_state.id {
+            if world.set_block_state_from_observed(
+                &pos,
+                observed,
+                new_state.id,
+                BlockFlags::NOTIFY_ALL,
+            ) && observed != new_state.id
+            {
                 changed = true;
                 if let Some(event) = self.trigger_game_event {
                     world.emit_game_event(event.name(), pos.to_centered_f64());

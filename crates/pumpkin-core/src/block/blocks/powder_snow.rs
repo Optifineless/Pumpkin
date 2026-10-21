@@ -106,8 +106,9 @@ impl BlockBehaviour for PowderSnowBlock {
             let can_destroy = args.entity.get_player().is_some()
                 || args.world.level_info.load().game_rules.mob_griefing;
             if can_destroy {
-                let _ = args.world.break_block(
+                let _ = args.world.break_block_from_observed(
                     args.position,
+                    args.state.id,
                     None,
                     BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
                 );

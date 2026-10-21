@@ -123,8 +123,7 @@ impl PortalType {
                         let job_world = dest_world.clone();
                         residency::run_portal_job(&job_world, move || {
                             let _residency = residency;
-                            let mutations =
-                                frame_effects::frame_mutation_permits(&dest_world, platform_pos)?;
+                            let mut updates = Vec::new();
                             // Generate/regenerate the obsidian platform (5x5 obsidian at Y=48, and 5x5x3 air above it)
                             for dx in -2..=2 {
                                 for dz in -2..=2 {
@@ -139,15 +138,18 @@ impl PortalType {
                                             platform_pos.0.y + dy,
                                             platform_pos.0.z + dz,
                                         );
-                                        dest_world.set_block_state(
-                                            &target_pos,
+                                        updates.push((
+                                            target_pos,
+                                            dest_world.get_block_state_id(&target_pos),
                                             block.default_state.id,
                                             BlockFlags::NOTIFY_ALL,
-                                        );
+                                        ));
                                     }
                                 }
                             }
-                            drop(mutations);
+                            if !dest_world.set_block_states_from_observed(&updates) {
+                                return None;
+                            }
 
                             Some(TeleportTransition {
                                 new_world: dest_world,

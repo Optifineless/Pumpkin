@@ -11,7 +11,8 @@ pub struct TrialSpawnerBlock;
 impl BlockBehaviour for TrialSpawnerBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let entity = TrialSpawnerBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(entity), args.state_id);
     }
 
     fn broken(&self, args: BrokenArgs<'_>) {

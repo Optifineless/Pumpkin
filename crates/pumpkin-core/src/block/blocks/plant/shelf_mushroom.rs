@@ -95,16 +95,18 @@ impl BlockBehaviour for ShelfMushroomBlock {
         true
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         let mut props = ShelfMushroomProperties::from_state_id(args.state_id);
         if props.age < MAX_AGE {
             props.age += 1;
-            args.world.set_block_state(
+            return args.world.set_block_state_from_observed(
                 args.position,
+                args.state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
             );
         }
+        true
     }
 
     fn on_landed_upon(&self, args: OnLandedUponArgs<'_>) {

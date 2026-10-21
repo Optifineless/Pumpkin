@@ -101,21 +101,43 @@ impl BlockBehaviour for BedBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         {
             let bed_entity = BedBlockEntity::new(*args.position);
-            args.world.add_block_entity(Arc::new(bed_entity));
+            if !args
+                .world
+                .add_block_entity_from_observed(Arc::new(bed_entity), args.state_id)
+            {
+                return;
+            }
 
             let mut bed_head_props = BedProperties::default(args.block);
             bed_head_props.facing = BedProperties::from_state_id(args.state_id).facing;
             bed_head_props.part = BedPart::Head;
 
             let bed_head_pos = args.position.offset(bed_head_props.facing.to_offset());
-            args.world.set_block_state(
-                &bed_head_pos,
-                bed_head_props.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
-            );
+            let head_state = bed_head_props.to_state_id(args.block);
+            let observed = args.world.get_block_state_id(&bed_head_pos);
+            if observed != head_state
+                && (!observed.to_state().replaceable()
+                    || !args.world.set_block_states_from_observed(&[
+                        (
+                            *args.position,
+                            args.state_id,
+                            args.state_id,
+                            BlockFlags::empty(),
+                        ),
+                        (
+                            bed_head_pos,
+                            observed,
+                            head_state,
+                            BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
+                        ),
+                    ]))
+            {
+                return;
+            }
 
             let bed_head_entity = BedBlockEntity::new(bed_head_pos);
-            args.world.add_block_entity(Arc::new(bed_head_entity));
+            args.world
+                .add_block_entity_from_observed(Arc::new(bed_head_entity), head_state);
         }
     }
 
@@ -288,6 +310,9 @@ impl BedBlock {
             }
         }
 
+        if !Self::set_occupied(true, world, block, &bed_head_pos, state_id) {
+            return BlockActionResult::SuccessServer;
+        }
         player.sleep(bed_head_pos);
         player.trigger_advancement(
             crate::entity::player::advancement::trigger::AdvancementTrigger::SleptInBed,
@@ -297,8 +322,6 @@ impl BedBlock {
             pumpkin_data::statistic::CustomStatistic::SleepInBed as i32,
             1,
         );
-        Self::set_occupied(true, world, block, &bed_head_pos, state_id);
-
         BlockActionResult::SuccessServer
     }
 }
@@ -310,30 +333,40 @@ impl BedBlock {
         block: &Block,
         block_pos: &BlockPos,
         state_id: BlockStateId,
-    ) {
+    ) -> bool {
+        if state_id.to_block() != block {
+            return false;
+        }
         let mut bed_props = BedProperties::from_state_id(state_id);
-        bed_props.occupied = occupied;
-        world.set_block_state(
-            block_pos,
-            bed_props.to_state_id(block),
-            BlockFlags::NOTIFY_LISTENERS,
-        );
-
         let other_half_pos = if bed_props.part == BedPart::Head {
             block_pos.offset(bed_props.facing.opposite().to_offset())
         } else {
             block_pos.offset(bed_props.facing.to_offset())
         };
-        bed_props.part = if bed_props.part == BedPart::Head {
-            BedPart::Foot
-        } else {
-            BedPart::Head
-        };
-        world.set_block_state(
-            &other_half_pos,
-            bed_props.to_state_id(block),
-            BlockFlags::NOTIFY_LISTENERS,
-        );
+        let other_state = world.get_block_state_id(&other_half_pos);
+        if other_state.to_block() != block {
+            return false;
+        }
+        let mut other_props = BedProperties::from_state_id(other_state);
+        if other_props.part == bed_props.part || other_props.facing != bed_props.facing {
+            return false;
+        }
+        bed_props.occupied = occupied;
+        other_props.occupied = occupied;
+        world.set_block_states_from_observed(&[
+            (
+                *block_pos,
+                state_id,
+                bed_props.to_state_id(block),
+                BlockFlags::NOTIFY_LISTENERS,
+            ),
+            (
+                other_half_pos,
+                other_state,
+                other_props.to_state_id(block),
+                BlockFlags::NOTIFY_LISTENERS,
+            ),
+        ])
     }
 }
 

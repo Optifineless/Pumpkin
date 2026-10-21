@@ -155,11 +155,14 @@ impl Player {
                     let new_charges = charges - 1;
                     let mut new_props = anchor_props;
                     new_props.charges = new_charges;
-                    world.set_block_state(
+                    if !world.set_block_state_from_observed(
                         pos,
+                        state_id,
                         new_props.to_state_id(block),
                         pumpkin_world::world::BlockFlags::NOTIFY_ALL,
-                    );
+                    ) {
+                        return None;
+                    }
                 }
 
                 return Some(respawn_point_at(

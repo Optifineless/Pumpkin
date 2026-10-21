@@ -86,11 +86,15 @@ impl BlockBehaviour for CocoaBlock {
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         if rand::random::<u8>().is_multiple_of(5) {
             let state_id = args.world.get_block_state_id(args.position);
+            if state_id.to_block() != args.block {
+                return;
+            }
             let mut props = CocoaProperties::from_state_id(state_id);
             if props.age < MAX_AGE {
                 props.age += 1;
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    state_id,
                     props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
                 );
@@ -107,18 +111,20 @@ impl BlockBehaviour for CocoaBlock {
         true
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         {
             let mut props = CocoaProperties::from_state_id(args.state_id);
             if props.age < MAX_AGE {
                 props.age += 1;
-                args.world.set_block_state(
+                return args.world.set_block_state_from_observed(
                     args.position,
+                    args.state_id,
                     props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
                 );
             }
         }
+        true
     }
 
     fn rotate(

@@ -13,6 +13,7 @@ use crate::block::{
     BlockBehaviour, BonemealArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
     RandomTickArgs,
 };
+use crate::plugin::api::events::world::structure_grow::{StructureGrowEvent, TreeType};
 use crate::world::World;
 
 pub const MAX_AGE: u8 = 4;
@@ -61,29 +62,31 @@ impl MangrovePropaguleBlock {
         pos: &BlockPos,
         block: &Block,
         mut props: MangrovePropaguleLikeProperties,
-    ) {
+    ) -> bool {
+        let observed = props.to_state_id(block);
         if props.stage == 0 {
             props.stage = 1;
-            world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
-        } else {
-            use crate::plugin::api::events::world::structure_grow::{StructureGrowEvent, TreeType};
-            let mut event = StructureGrowEvent::new(*pos, TreeType::Mangrove, false);
-            if let Some(server) = world.server.upgrade() {
-                server.plugin_manager.fire_blocking(&server, &mut event);
-                if event.cancelled {
-                    return;
-                }
-            }
-            let mut random =
-                RandomGenerator::Xoroshiro(Xoroshiro::from_seed(rand::random::<u64>()));
-            TreeGrower::MANGROVE.grow_tree(
-                world,
+            return world.set_block_state_from_observed(
                 pos,
-                block,
+                observed,
                 props.to_state_id(block),
-                &mut random,
+                BlockFlags::NOTIFY_ALL,
             );
         }
+        let mut event = StructureGrowEvent::new(*pos, TreeType::Mangrove, false);
+        if let Some(server) = world.server.upgrade() {
+            server.plugin_manager.fire_blocking(&server, &mut event);
+            if event.cancelled {
+                return true;
+            }
+        }
+        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(rand::random::<u64>()));
+        if world.get_block_state_id(pos) != observed {
+            return false;
+        }
+        TreeGrower::MANGROVE
+            .grow_tree_checked(world, pos, block, props.to_state_id(block), &mut random)
+            .is_some()
     }
 }
 
@@ -115,6 +118,9 @@ impl BlockBehaviour for MangrovePropaguleBlock {
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let mut props = MangrovePropaguleLikeProperties::from_state_id(state_id);
         if !props.hanging {
             if rand::random::<u8>().is_multiple_of(7) {
@@ -122,8 +128,9 @@ impl BlockBehaviour for MangrovePropaguleBlock {
             }
         } else if props.age < MAX_AGE {
             props.age += 1;
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
             );
@@ -144,18 +151,19 @@ impl BlockBehaviour for MangrovePropaguleBlock {
         }
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         {
             let mut props = MangrovePropaguleLikeProperties::from_state_id(args.state_id);
             if props.hanging && props.age < MAX_AGE {
                 props.age += 1;
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    args.state_id,
                     props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
-                );
+                )
             } else {
-                Self::advance_tree(args.world, args.position, args.block, props);
+                Self::advance_tree(args.world, args.position, args.block, props)
             }
         }
     }

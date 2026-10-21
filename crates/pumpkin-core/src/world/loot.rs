@@ -18,6 +18,7 @@ mod captain_raid_tick_tests;
 mod captain_tests;
 mod context;
 mod fishing_context;
+pub(crate) use block_context::collect_retired_block_entity_components;
 pub use block_context::{build_block_loot_context, collect_block_entity_components};
 pub use fishing_context::build_fishing_loot_context;
 mod conditions;

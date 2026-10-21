@@ -243,11 +243,14 @@ impl BlockBehaviour for WetSpongeBlock {
         {
             // Check if placed where water evaporates (EnvironmentAttributes.WATER_EVAPORATES), if so, dry out
             if args.world.dimension.water_evaporates {
-                args.world.set_block_state(
+                if !args.world.set_block_state_from_observed(
                     args.position,
+                    args.state_id,
                     Block::SPONGE.default_state.id,
                     BlockFlags::NOTIFY_ALL,
-                );
+                ) {
+                    return;
+                }
 
                 // Play dry sound and spawn smoke particles
                 args.world.play_block_sound(

@@ -6,6 +6,7 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::HorizontalFacingExt;
 use pumpkin_data::block_properties::AttachFace;
 use pumpkin_data::sound::{Sound, SoundCategory};
+use pumpkin_data::tag::Taggable;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
@@ -50,6 +51,9 @@ pub(crate) fn click_button(
     block_pos: &BlockPos,
 ) -> bool {
     let (block, state) = world.get_block_and_state_id(block_pos);
+    if !block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BUTTONS) {
+        return false;
+    }
 
     let mut button_props = ButtonLikeProperties::from_state_id(state);
     if button_props.powered {
@@ -57,11 +61,14 @@ pub(crate) fn click_button(
     }
 
     button_props.powered = true;
-    world.set_block_state(
+    if !world.set_block_state_from_observed(
         block_pos,
+        state,
         button_props.to_state_id(block),
         BlockFlags::NOTIFY_ALL,
-    );
+    ) {
+        return false;
+    }
     let delay = if block == &Block::STONE_BUTTON {
         20
     } else {
@@ -98,14 +105,20 @@ impl BlockBehaviour for ButtonBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         let mut props = ButtonLikeProperties::from_state_id(state.id);
         if props.powered {
             props.powered = false;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return;
+            }
             Self::update_neighbors(args.world, args.position, props);
             args.world.play_block_sound(
                 get_sound(args.block, false),

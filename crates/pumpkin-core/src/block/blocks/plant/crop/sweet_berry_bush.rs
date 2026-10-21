@@ -27,12 +27,15 @@ impl BlockBehaviour for SweetBerryBushBlock {
         <Self as CropBlockBase>::is_valid_bonemeal_target(self, args.world, args.position)
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
-        <Self as CropBlockBase>::perform_bonemeal(self, args.world, args.position);
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
+        <Self as CropBlockBase>::perform_bonemeal(self, args.world, args.position, args.state_id)
     }
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let mut props = NetherWartLikeProperties::from_state_id(state_id);
         match props.age {
             2 | 3 => {
@@ -55,14 +58,17 @@ impl BlockBehaviour for SweetBerryBushBlock {
                     drops = event.harvested_items;
                 }
                 props.age = 1;
+                if !args.world.set_block_state_from_observed(
+                    args.position,
+                    state_id,
+                    props.to_state_id(&Block::SWEET_BERRY_BUSH),
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return BlockActionResult::Pass;
+                }
                 for stack in drops {
                     args.world.drop_stack(args.position, stack);
                 }
-                args.world.set_block_state(
-                    args.position,
-                    props.to_state_id(&Block::SWEET_BERRY_BUSH),
-                    BlockFlags::NOTIFY_ALL,
-                );
                 BlockActionResult::SuccessServer
             }
             _ => BlockActionResult::Pass,
@@ -173,6 +179,9 @@ impl CropBlockBase for SweetBerryBushBlock {
 
     fn random_tick(&self, world: &Arc<World>, pos: &BlockPos) {
         let (block, state) = world.get_block_and_state_id(pos);
+        if !<Self as crate::block::BlockMetadata>::ids().contains(&block.id) {
+            return;
+        }
         let age = self.get_age(state, block);
         if age < self.max_age() {
             let state_above = world.get_block_state(&pos.up());
@@ -180,8 +189,9 @@ impl CropBlockBase for SweetBerryBushBlock {
             if state_above.is_full_cube() || state_above.is_solid() {
                 return;
             }
-            world.set_block_state(
+            world.set_block_state_from_observed(
                 pos,
+                state,
                 self.state_with_age(block, state, age + 1),
                 BlockFlags::NOTIFY_NEIGHBORS,
             );

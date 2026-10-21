@@ -9,11 +9,26 @@ use std::sync::Arc;
 
 /// Places parsed state and block entity data using vanilla BlockInput.place's callbacks.
 pub(super) fn place(input: &BlockInput, world: &Arc<World>, pos: &BlockPos, strict: bool) -> bool {
-    // BlockInput.place can create a skipped block entity after World::set_block_state returns.
-    let Some(_mutation) = world.block_entity_mutation_permit(*pos) else {
-        tracing::warn!("Block placement rejected while chunk is unloading at {pos:?}");
-        return false;
-    };
+    place_inner(input, world, pos, None, strict)
+}
+
+pub(super) fn place_from_observed(
+    input: &BlockInput,
+    world: &Arc<World>,
+    pos: &BlockPos,
+    observed: BlockStateId,
+    strict: bool,
+) -> bool {
+    place_inner(input, world, pos, Some(observed), strict)
+}
+
+fn place_inner(
+    input: &BlockInput,
+    world: &Arc<World>,
+    pos: &BlockPos,
+    observed: Option<BlockStateId>,
+    strict: bool,
+) -> bool {
     let mut state = input.state;
     if !strict {
         state = world.update_from_neighbor_shapes(state, pos);
@@ -28,18 +43,31 @@ pub(super) fn place(input: &BlockInput, world: &Arc<World>, pos: &BlockPos, stri
             | BlockFlags::SKIP_DROPS
             | BlockFlags::SKIP_BLOCK_ADDED_CALLBACK;
     }
-    let old = world.set_block_state(pos, state, flags);
+    // Explicit replace/strict commands keep replacement intent; keep/filter/destroy
+    // callers retain the observation on which their eligibility depended.
+    let Some(previous) = world.set_block_state_if(pos, state, flags, |current| {
+        observed.is_none_or(|expected| current == expected)
+    }) else {
+        return false;
+    };
+    let mut affected = previous != state;
     // LevelChunk.setBlockState creates block entities even when onPlace is suppressed (flag 512).
     let placed = world.get_block_state(pos);
+    if placed.id != state {
+        return affected;
+    }
     if world.get_block_entity(pos).is_none()
         && let Some(entity) =
             crate::block::entities::create_block_entity(placed.block_entity_type, *pos)
+        && !world.add_block_entity_from_observed(entity, state)
     {
-        world.add_block_entity(entity);
+        return affected;
     }
-    let mut affected = old != state;
+    if world.get_block_state_id(pos) != state {
+        return affected;
+    }
     if let Some(tag) = &input.tag
-        && let Ok(accessor) = BlockDataAccessor::new(*pos, world.clone())
+        && let Ok(accessor) = BlockDataAccessor::from_observed(*pos, world.clone(), state)
     {
         // BlockInput.place reports data problems through ProblemReporter and keeps placing blocks.
         match apply_tag(&accessor, tag) {

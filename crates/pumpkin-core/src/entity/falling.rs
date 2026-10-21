@@ -52,7 +52,7 @@ impl FallingEntity {
         world: &Arc<World>,
         position: BlockPos,
         block_state: BlockStateId,
-    ) -> Arc<Self> {
+    ) -> Option<Arc<Self>> {
         // FallingBlockEntity.fall leaves the source fluid and strips WATERLOGGED from the entity.
         let state = block_state.to_state();
         let source = if state.is_waterlogged() {
@@ -60,10 +60,17 @@ impl FallingEntity {
         } else {
             Block::AIR.default_state.id
         };
+        if !world.set_block_state_from_observed(
+            &position,
+            block_state,
+            source,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return None;
+        }
         let block_state = state
             .set_waterlogged(false)
             .map_or(block_state, |state| state.id);
-        world.set_block_state(&position, source, BlockFlags::NOTIFY_ALL);
 
         let position = position.0.to_f64().add_raw(0.5, 0.0, 0.5);
         let entity = Entity::new(world.clone(), position, &EntityType::FALLING_BLOCK);
@@ -75,7 +82,7 @@ impl FallingEntity {
             AnvilBlock::falling(&entity);
         }
         world.spawn_entity_non_save(entity.clone());
-        entity
+        Some(entity)
     }
 
     /// Configures `FallingBlockEntity.setHurtsEntities` for the next landing.
@@ -250,7 +257,14 @@ impl FallingEntity {
                     entity.remove();
                     return;
                 }
-                world.set_block_state(&landing_pos, state_id, BlockFlags::NOTIFY_ALL);
+                if !world.set_block_state_from_observed(
+                    &landing_pos,
+                    current_state.id,
+                    state_id,
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return;
+                }
                 // block updates to watchers before the despawn, else a invisible block gap until the tick flush.
                 let placed = world.get_block_state_id(&landing_pos);
                 world.send_to_tracking_players_editioned(

@@ -199,7 +199,8 @@ impl EndGatewayBlockEntity {
         current_level: &Arc<World>,
         portal_entry_pos: BlockPos,
     ) -> Option<Vector3<f64>> {
-        let _mutation = current_level.block_entity_mutation_permit(portal_entry_pos)?;
+        let mutation = current_level.block_entity_mutation_permit(portal_entry_pos)?;
+        drop(mutation);
         let exit_portal_opt = self.exit_portal.lock().ok().and_then(|opt| *opt);
         if exit_portal_opt.is_none()
             && current_level.dimension == pumpkin_data::dimension::Dimension::THE_END
@@ -446,7 +447,10 @@ impl EndGatewayBlockEntity {
                             exact_teleport: Mutex::new(false),
                             exit_portal: Mutex::new(Some(exit_pos)),
                         });
-                        world.add_block_entity(return_gateway);
+                        world.add_block_entity_from_observed(
+                            return_gateway,
+                            Block::END_GATEWAY.default_state.id,
+                        );
                     } else if same_y {
                         world.set_block_state(
                             &target,

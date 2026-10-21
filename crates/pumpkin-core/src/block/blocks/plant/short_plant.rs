@@ -23,7 +23,7 @@ impl BlockBehaviour for ShortPlantBlock {
             && args.world.get_block_state(&above).is_air()
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
         {
             let grown = if args.block == &Block::FERN {
                 &Block::LARGE_FERN
@@ -31,15 +31,27 @@ impl BlockBehaviour for ShortPlantBlock {
                 &Block::TALL_GRASS
             };
             let lower = grown.default_state.id;
-            args.world
-                .set_block_state(args.position, lower, BlockFlags::NOTIFY_LISTENERS);
+            let upper_pos = args.position.up();
+            let upper_observed = args.world.get_block_state_id(&upper_pos);
+            if !upper_observed.to_state().is_air() {
+                return false;
+            }
             let mut props = TallSeagrassLikeProperties::from_state_id(lower);
             props.half = DoubleBlockHalf::Upper;
-            args.world.set_block_state(
-                &args.position.up(),
-                props.to_state_id(grown),
-                BlockFlags::NOTIFY_LISTENERS,
-            );
+            args.world.set_block_states_from_observed(&[
+                (
+                    *args.position,
+                    args.state_id,
+                    lower,
+                    BlockFlags::NOTIFY_LISTENERS,
+                ),
+                (
+                    upper_pos,
+                    upper_observed,
+                    props.to_state_id(grown),
+                    BlockFlags::NOTIFY_LISTENERS,
+                ),
+            ])
         }
     }
 
