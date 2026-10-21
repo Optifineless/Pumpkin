@@ -12,6 +12,24 @@ use crate::block::entities::block_entity_name;
 use crate::world::{BlockEntityMutationPermit, World};
 
 impl World {
+    pub(crate) fn cancel_synced_block_event(
+        &self,
+        pos: &BlockPos,
+        block: &Block,
+        r#type: u8,
+        data: u8,
+    ) {
+        self.synced_block_event_queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|event| {
+                event.pos != *pos
+                    || event.block != block
+                    || event.r#type != r#type
+                    || event.data != data
+            });
+    }
+
     pub fn clear_synced_block_events_in_box(&self, min: &BlockPos, max: &BlockPos) {
         let mut events = self
             .synced_block_event_queue

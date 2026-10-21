@@ -260,6 +260,19 @@ impl World {
         self.break_block_with_limit(position, cause, flags, UPDATE_LIMIT)
     }
 
+    pub(crate) fn break_block_for_replacement(
+        self: &Arc<Self>,
+        position: &BlockPos,
+        cause: Option<&Arc<Player>>,
+        flags: BlockFlags,
+    ) -> Option<BlockStateId> {
+        self.break_block(position, cause, flags).filter(|broken| {
+            // A successful claim's callbacks can also install a replacement before returning.
+            self.get_block_state_id(position)
+                == crate::block::blocks::growing_plant::fluid_state_after_break(*broken)
+        })
+    }
+
     // Level.setBlock's explicit depth argument is retained through shape replacements.
     pub(crate) fn set_block_state_with_limit(
         self: &Arc<Self>,

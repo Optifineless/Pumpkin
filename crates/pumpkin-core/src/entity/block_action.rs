@@ -67,7 +67,7 @@ impl Player {
     }
 }
 
-fn matches(predicate: &NbtTag, world: &World, position: &BlockPos) -> bool {
+pub fn matches(predicate: &NbtTag, world: &World, position: &BlockPos) -> bool {
     let NbtTag::Compound(fields) = predicate else {
         return false;
     };

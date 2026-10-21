@@ -882,6 +882,213 @@ Play test: Break an empty decorated pot with a diamond pickaxe, with and without
 a diamond stored inside; expect one pot item back and the stored diamond when
 present. Break a pot with sherds the same way; expect the sherds instead.
 
+## Decorated-pot projectile, face data and prediction (#263, #297, #298, #313, #314)
+
+Impact projectiles shatter admitted pots through the normal destruction and loot
+flow. Denied permissions and cancelled hits/breaks preserve the pot. Generic
+dynamic sherd loot requires a real provider; legacy pots retain their four bricks.
+Current typed face templates are sent and saved as vanilla's named `sherds`
+compound, including counts and component patches. Pot prediction hashes compose
+the vanilla HashOps face/template/patch maps using existing component hash contracts.
+Placement refreshes the authoritative chunk image after applying claimed faces.
+Unrelated child-component hash limitations remain; this is not a claim that every
+component's hash is implemented.
+
+Older active `PotDecorations` retains its existing precedence on import. New saves
+keep imported raw data in inert `PotDecorationsRetained` backups and distinguish
+explicit EMPTY from missing legacy data with `PotDecorationsEmpty`; absent new
+fields retain old-save defaults. Client updates expose current vanilla fields.
+Denied Bedrock pot use resends the supported protocol 2193 actor format, checked
+against Geyser's current translator: coordinates, `DecoratedPot` ID and four sherd
+names. That authority exposes no stored-item contents field; no contents-rendering
+correction or general non-bed actor coverage is claimed.
+Explicit pottery-pattern component overrides fall back to brick while that
+registry mapping remains unmodeled. Restricted projectile types that do not
+retain item predicates remain denied rather than borrowing the owner's held item.
+Permission uses the retained item; separately captured vanilla `can_break` data
+and a pickup item changed by plugins can differ. Capturing new projectile state
+and changing generic launch behavior remain outside this patch.
+
+Mirrors vanilla 26.3 `DecoratedPotBlock.onProjectileHit/getDrops`,
+`DecoratedPotBlockEntity.saveAdditional/getUpdateTag`, `PotDecorations.CODEC`,
+`ItemStackTemplate.CODEC` and `HashOps`. API 8 (same version): the pot entity's
+private runtime layout changes; rebuild native plugins. Existing public fields
+and signatures remain source compatible; native API version and Wasm WIT are unchanged.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+PR #330 review: overlapping projectile hits conditionally remove the original pot
+state and block-entity instance before evaluating or publishing any drops. Only
+the winning hit uses its retained face templates and stored item; drop callbacks
+may re-enter without generating another set or removing a replacement pot.
+Break cancellation still preserves the original pot and contents. Mirrors vanilla
+26.3 `DecoratedPotBlock.onProjectileHit/getDrops` with removal claimed before
+effects for the fork's parallel ticks. Native API 8, public layouts, Wasm WIT and
+saved-data meaning are unchanged. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+PR #330 review round 3: player, piston, native/plugin world-break, explosion and
+projectile destruction share one conditional claim on the original terrain and
+block entity before evaluating face or contents loot. Losing destroyers publish
+nothing; drop callbacks retain replacement pots. An invalidated lazy entity load
+with pending NBT rejects removal and leaves the pot and its saved stock intact.
+The publication gate and mutation permit end before callbacks, events and sends;
+the claim uses existing lock order. Live registry, pending image, custom-data and
+capture caches retire together. The lifecycle manifest moves ten existing keys
+and updates two family fingerprints, preserving all statuses and notes with no
+new rows. No saved fields, unload/save semantics or native
+API 8 layouts/signatures change.
+
+Projectile loot retains its actual THIS_ENTITY type/state with an empty tool;
+successful shattering emits BLOCK_DESTROY once. Trident and thrown-projectile
+impacts now admit the pot callback
+through ProjectileHitEvent cancellation. Placement sends post-application pot actor
+data to Bedrock watchers, including when the initial terrain update already flushed.
+The documented EMPTY-pot compatibility policy above remains pre-existing backlog;
+changing it would change the behavior of old saves.
+
+Checked against decompiled Mojang vanilla 26.3 DecoratedPotBlock.getDrops /
+playerWillDestroy / onProjectileHit, Level.destroyBlock, Block.getDrops and
+LevelChunk.getBlockEntity. No analogous upstream open PR was found; #3859 and
+#3507 cover other block-entity/component work. Written by GPT-6.1 Sol (Codex Cloud).
+In-game verification: Not yet.
+
+Play test: mine the mixed pot with a diamond pickaxe while an arrow hits it, then
+repeat with a piston, explosion and plugin break; expect one complete face set
+(loose or retained on the intact pot drop) and one stored diamond. Cancel egg and
+trident hits; expect the pot and contents to remain. Place the mixed pot in front
+of a second Bedrock client; expect that watcher to see the selected faces at once.
+Capture the drops and both clients' placement views.
+
+Play test: put a diamond into a pot made with two bricks and two different sherds,
+then hit it with two arrows together; expect two bricks, one of each sherd and one
+diamond. Repeat with one arrow; expect the same drops. Record both breaks and the
+collected items.
+
+PR #330 review round 4: pot removal honors the existing skip-replacement-callback
+flag used to move captured block-entity data without scattering a second copy of
+its contents. Terrain and caches still retire. Pistons, destroy-mode commands and
+fluid spreading reject a failed destruction or a callback replacement before
+writing their following terrain. An aborted piston also discards its matching
+retry queued by removal callbacks, preserving other piston events. This preserves
+the round-3 removal claim and mirrors `LevelChunk.setBlockState`'s side-effect flag and `PistonBaseBlock.moveBlocks`'s
+destruction-before-movement order. API 8 (same version): public layouts and
+signatures, Wasm WIT and saved-data meaning are unchanged. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: **Not yet**.
+
+Play test: move a diamond-filled pot using a plugin that captures its data and
+uses both skip-drop and skip-replacement-callback flags; expect no source diamond
+and exactly one diamond in the destination pot. Break the moved pot normally;
+expect its contents once. With a plugin that lets an arrow break a pot during a
+piston's break callback and places a differently decorated emerald-filled pot
+there, power the piston; expect one original face set and diamond, the new pot
+and emerald intact, and the piston still retracted. Capture the move, piston and
+collected drops before opening or updating the PR.
+
+PR #330 review round 5: pistons retain the planned destruction states and accept
+a later target already cleared to air or fluid after an admitted break in the
+same pass. Actual rejected breaks and non-fluid replacements still abort, and
+every cleared destination is rechecked before movement. This covers paired
+flowers, doors, beds and aquatic plants without dropping the round-4 replacement
+protection. Surviving tripwire targets can change connections before their own
+admitted break. Mirrors vanilla 26.3 `PistonBaseBlock.moveBlocks` and paired-block
+shape cleanup. Pot block-loot spawning now honors `BLOCK_DROPS`, matching
+`Block.popResource`; stored contents still scatter separately. No saved-data,
+public layout, native API 8 or Wasm WIT changes. Written by GPT-6.1 Sol
+(Codex Cloud). In-game verification: **Not yet**.
+The lifecycle refresh changes only the world-family fingerprint; all existing
+statuses and notes remain unchanged, with no new rows or lock-order edges.
+
+Compared with upstream/master `fb7c8e223`: open PR #4047 also corrects piston
+shape-update flags as part of a broader animation/persistence change; #4026
+covers retraction. This review keeps the fork's current shape-update order;
+those wider animation, persistence and retraction ports remain separate.
+
+The pre-existing EMPTY-pot compatibility policy remains as documented above.
+Drop callbacks still observe the already-claimed terrain, and overlapping break
+callbacks can both run before one removal wins. Changing either callback contract
+requires a separate cancellation-aware admission/snapshot design; delaying the
+current removal would restore reentrant duplication. No guard may span callbacks.
+
+Negative control on `dfcb98e98`, with the new regressions retained: the
+`b1020b_g09` filter passed all 42 existing tests and failed the rose-bush, door,
+seagrass and `BLOCK_DROPS` regressions. The flower and door blocked extension,
+cleared seagrass water was broken again, and disabled block drops still spawned
+two bricks. With the fixes and tripwire control, the filter passes all 47 tests.
+Tests use powered synced piston events and actual arrow collision.
+
+Play test: place an east-facing piston with two slime blocks stacked vertically
+directly in front, and a rose bush in front of both slime blocks on
+dirt. Power the piston from behind; expect both slime blocks to move and one rose
+bush to drop. Repeat with a door and the piston behind the upper slime block.
+Set `doBlockDrops` false and shoot a patterned pot containing a diamond; expect
+only the diamond. Restore the rule and repeat; expect its faces and the diamond.
+Record the extensions and collected stock. Real-client verification is pending.
+
+PR #330 review round 6 is a semantic merge of `2a821729f` with `murgicraft`
+`dec07fc01`, retaining #339's bed-break reservation and the pot destruction claim.
+Beds return through their existing break path before pot preparation; other blocks
+keep the generic path. Beds, pots and ordinary block-entity removal now share
+`remove_block_entity_under_publication_gate`. It retires the pending/live entity,
+snapshot, published capture stamp and custom data under the existing publication
+gate. Bed unload checks, bed-break/use reservations, expected state and terrain
+identity checks remain unchanged. Pot mutation admission and the publication gate
+end before loot, native callbacks and packets; no lock-order edge is added.
+Public layouts/signatures, API 8, Wasm WIT and saved-data meaning are unchanged.
+The lifecycle refresh moves 19 boundary keys and updates five family hashes;
+all 92 existing statuses and notes remain unchanged, with no new rows.
+Written by Codex (GPT-6), with independent finding verification by subagents.
+In-game verification: **Not yet**.
+
+The prior-round callback-visibility and duplicate-break-event limitations above
+remain design backlog. Piston destruction can also commit earlier admitted breaks
+before a later refusal aborts movement: the stock drops normally, but providing
+all-or-nothing destruction needs a transaction across plugin callbacks, replacement
+claims and paired-block cleanup. This behavior predates this semantic merge;
+the refusal abort was introduced in round 4, not in the original piston loop.
+Strict face-template validation is also pre-existing (#236): saved count-65 sherd
+templates currently split into 64+1. Vanilla `ItemStackTemplate.create` instead
+uses `ItemStack.validateStrict`, including effective component and nested-stack
+validation. That shared validation and its saved-template compatibility decision
+remain separate work. Child-component codec hashes, explicit Bedrock pattern
+overrides and independently saved projectile `can_break` remain the documented
+backlog. This merge does not claim those parity gaps are fixed.
+
+PR #330 review round 7: a supplied pot preparation is checked against the reread
+target before any break callback or bed dispatch. A changed target rejects the
+operation; only an unprepared ordinary break can select a bed. The original
+terrain/entity/state claim still decides removal after callbacks. The shared
+retirement helper and bed reservation logic remain unchanged.
+
+Successful projectile shattering now uses #162's game-event context to retain
+the projectile source and destroyed, cracked pot state, matching vanilla 26.3
+`Level.destroyBlock` and `GameEvent.Context.of`. Cancelled, denied and stale hits
+emit no destruction event. No saved-data meaning, public layout/signature,
+native API 8 or Wasm WIT changes. Written by Codex (GPT-6), with independent
+finding verification by subagents.
+In-game verification: **Not yet**.
+
+Bounded pending-load regressions replace the original pot with ordinary/straw
+bed pairs, stone or air before resuming its arrow. Both bed halves and their
+custom data must survive with no drops, break callbacks or successful pot event;
+the ordinary-bed case also uses a pot-only Adventure CAN_BREAK predicate.
+A real arrow-hit regression checks the forwarded event's projectile identity,
+world, position and broken state, plus cancellation. The earlier documented
+compatibility, callback-admission, piston-transaction and child-codec limitations
+remain backlog; this round does not change their contracts.
+
+Negative control with the new regressions on `317e747f9`: all 47 existing PR
+core tests passed; the four new tests failed on replacement-bed destruction,
+fresh replacement-block break admission and missing projectile source. With the
+fixes, the same filter passes all 51 tests. The lifecycle refresh moves 11
+boundary keys and changes one world-family hash; all 92 existing statuses and
+notes remain unchanged, with no new rows.
+
+Play test: shoot a patterned pot containing a diamond; expect one set of faces
+and one diamond. Break either half of an ordinary or straw bed in Survival;
+expect one bed item. Repeat with a plugin cancelling projectile hits or pot
+breaks; expect the pot and contents to remain. Record these breaks and drops
+on the candidate build before updating PR #330.
+
 
 ## Cauldron filled-bucket transactions (#29, #30, #31)
 

@@ -129,7 +129,7 @@ pub fn build_shearing_loot_context(
     }
 }
 
-pub(super) fn snapshot_entity(
+pub(in crate::world) fn snapshot_entity(
     entity: &dyn EntityBase,
     seen: &mut HashSet<i32>,
     depth: usize,

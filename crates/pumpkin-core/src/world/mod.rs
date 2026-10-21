@@ -1,6 +1,7 @@
 pub(crate) use explosion::ExplosionDamageSource;
 use pumpkin_util::sync::{SnapshotBoundary as SB, assert_not_in_snapshot};
 mod container_lifecycle;
+mod decorated_pot_break;
 mod storage_failure;
 use crate::block::entities::{
     BlockEntity, block_entity_from_nbt, block_entity_name, block_owns_block_entity,
@@ -5049,6 +5050,17 @@ impl World {
         flags: BlockFlags,
         update_limit: u32,
     ) -> Option<BlockStateId> {
+        self.break_block_with_limit_prepared(position, cause, flags, update_limit, None)
+    }
+
+    fn break_block_with_limit_prepared(
+        self: &Arc<Self>,
+        position: &BlockPos,
+        cause: Option<&Arc<Player>>,
+        flags: BlockFlags,
+        update_limit: u32,
+        pot: Option<&decorated_pot_break::DecoratedPotBreak<'_>>,
+    ) -> Option<BlockStateId> {
         if let Some(player) = cause
             && self.is_in_spawn_protection(player, position)
         {
@@ -5061,12 +5073,16 @@ impl World {
         }
 
         let (broken_block, broken_block_state) = self.get_block_and_state(position);
-        if broken_block_state.is_air() {
+        // A supplied preparation stays bound to its original target, before any dispatch.
+        if broken_block_state.is_air()
+            || pot.is_some_and(|pot| pot.expected != broken_block_state.id)
+        {
             return None;
         }
 
-        if broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
-            || broken_block == &Block::STRAW_BED
+        if pot.is_none()
+            && (broken_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_BEDS)
+                || broken_block == &Block::STRAW_BED)
         {
             return self.break_bed_block(
                 position,
@@ -5077,6 +5093,8 @@ impl World {
                 broken_block_state.id,
             );
         }
+
+        let ordinary_pot = self.prepare_pot_break(position, broken_block_state.id, pot.is_none());
 
         let mut flags = flags;
         if flags.contains(BlockFlags::SKIP_DROPS)
@@ -5102,14 +5120,13 @@ impl World {
             return None;
         }
 
+        if let Some(pot) = pot.or(ordinary_pot.as_ref()) {
+            return pot.break_admitted(self, position, cause, event.drop, flags, update_limit);
+        }
         // Level.destroyBlock must admit removal before callbacks retire or drop the container.
         let _mutation = self.block_entity_mutation_permit(*position)?;
 
-        if event.drop {
-            flags.remove(BlockFlags::SKIP_DROPS);
-        } else {
-            flags.insert(BlockFlags::SKIP_DROPS);
-        }
+        flags.set(BlockFlags::SKIP_DROPS, !event.drop);
 
         self.block_registry
             .player_will_destroy(self, cause, position, broken_block_state);

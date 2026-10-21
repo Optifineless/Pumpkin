@@ -335,11 +335,16 @@ pub trait FlowingFluid: Send + Sync {
         } else {
             // Replace non-fluid blocks
             let block = world.get_block(pos);
-            if block.id != Block::AIR.id {
-                world.break_block(pos, None, BlockFlags::NOTIFY_ALL);
+            if block.id != Block::AIR.id
+                && world
+                    .break_block_for_replacement(pos, None, BlockFlags::NOTIFY_ALL)
+                    .is_none()
+            {
+                return;
             }
         }
 
+        let admitted = world.get_block_state_id(pos);
         let mut event = crate::plugin::api::events::block::block_from_to::BlockFromToEvent::new(
             *pos,
             *pos,
@@ -348,7 +353,7 @@ pub trait FlowingFluid: Send + Sync {
         if let Some(server) = world.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
-        if event.cancelled {
+        if event.cancelled || world.get_block_state_id(pos) != admitted {
             return;
         }
 

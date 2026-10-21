@@ -4,6 +4,8 @@ use pumpkin_data::data_component_impl::{
 };
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::tag::{self, Taggable};
+use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_inventory::{Clearable, Inventory, inventory::slot_transaction};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
@@ -40,7 +42,8 @@ pub struct DecoratedPotBlockEntity {
     pub position: BlockPos,
     pub sherds: Mutex<Option<NbtTag>>,
     pub item: Mutex<Option<ItemStack>>,
-    decorations: PotDecorationsLock<Option<PotDecorationsImpl>>,
+    decorations: PotDecorationsLock<Option<Arc<PotDecorationsImpl>>>,
+    retained_decorations: NbtCompound,
     transaction: Arc<slot_transaction::Transaction>,
     dirty: AtomicBool,
     comparator_dirty: AtomicBool,
@@ -53,14 +56,12 @@ impl BlockEntity for DecoratedPotBlockEntity {
 
     fn collect_item_components(&self, stack: &mut ItemStack) {
         let decorations = self
-            .decorations
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-            .cloned()
+            .decorations_snapshot()
             // Old fork saves had no face data and historically returned four bricks.
             // Explicitly stored empty decorations remain empty.
-            .unwrap_or_else(legacy_brick_decorations);
+            .map_or_else(legacy_brick_decorations, |decorations| {
+                (*decorations).clone()
+            });
         stack.set_data_component(decorations);
         if let Some(item) = self.get_item().filter(|item| !item.is_empty()) {
             stack.set_data_component(ContainerImpl {
@@ -70,11 +71,18 @@ impl BlockEntity for DecoratedPotBlockEntity {
     }
 
     fn apply_item_components(&self, stack: &ItemStack) {
-        let decorations = stack.get_data_component::<PotDecorationsImpl>().cloned();
-        *self
-            .decorations
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = decorations;
+        let decorations = stack
+            .get_data_component::<PotDecorationsImpl>()
+            .cloned()
+            .map(Arc::new);
+        let old_decorations = {
+            let mut current = self
+                .decorations
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            std::mem::replace(&mut *current, decorations)
+        };
+        drop(old_decorations);
 
         let item = stack
             .get_data_component::<ContainerImpl>()
@@ -105,12 +113,23 @@ impl BlockEntity for DecoratedPotBlockEntity {
     where
         Self: Sized,
     {
-        let sherds = nbt.get("sherds").cloned();
+        let mut retained_decorations = nbt
+            .get_compound(Self::RETAINED_DECORATIONS)
+            .cloned()
+            .unwrap_or_default();
+        let sherds = retained_decorations
+            .child_tags
+            .remove("sherds")
+            .or_else(|| nbt.get("sherds").cloned());
+        if let Some(private) = nbt.get("PotDecorations") {
+            retained_decorations.put("PotDecorations", private.clone());
+        }
+        // Old fork saves made the private cache authoritative over retained raw sherds.
         let decorations = nbt
             .get("PotDecorations")
             .map(|data| PotDecorationsImpl::read_data(data).unwrap_or(PotDecorationsImpl::EMPTY));
         let decorations = decorations.or_else(|| {
-            sherds.as_ref().map(|saved| {
+            nbt.get("sherds").map(|saved| {
                 PotDecorationsImpl::read_data(saved)
                     .or_else(|| match saved {
                         NbtTag::List(legacy) => PotDecorationsImpl::from_legacy_sherds(legacy),
@@ -120,6 +139,22 @@ impl BlockEntity for DecoratedPotBlockEntity {
                     .unwrap_or(PotDecorationsImpl::EMPTY)
             })
         });
+        let decorations = decorations
+            .or_else(|| {
+                nbt.get_bool(Self::EMPTY_DECORATIONS)
+                    .unwrap_or(false)
+                    .then_some(PotDecorationsImpl::EMPTY)
+            })
+            .map(Arc::new);
+        if let Some(current) = nbt.get("sherds")
+            && sherds.as_ref().is_some_and(|original| original != current)
+            && decorations
+                .as_ref()
+                .is_some_and(|decorations| decorations.write_data() != *current)
+        {
+            // A /data edit may add unsupported fields beside an older retained source.
+            retained_decorations.put("CurrentSherds", current.clone());
+        }
         let item = nbt
             .get_compound("item")
             .and_then(ItemStack::read_item_stack);
@@ -128,6 +163,7 @@ impl BlockEntity for DecoratedPotBlockEntity {
             sherds: Mutex::new(sherds),
             item: Mutex::new(item),
             decorations: PotDecorationsLock::new(decorations),
+            retained_decorations,
             transaction: Arc::default(),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),
@@ -135,31 +171,61 @@ impl BlockEntity for DecoratedPotBlockEntity {
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        if let Ok(sherds) = self.sherds.lock()
-            && let Some(sh) = sherds.as_ref()
-        {
-            nbt.put("sherds", sh.clone());
+        let empty = self.write_face_nbt(nbt);
+        if empty {
+            // Vanilla omits EMPTY; this distinguishes it from old fork saves without a cache.
+            nbt.put_bool(Self::EMPTY_DECORATIONS, true);
         }
-        if let Some(decorations) = self
-            .decorations
+        let sherds = self
+            .sherds
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-        {
-            nbt.put("PotDecorations", decorations.write_data());
+            .clone();
+        let mut retained = self.retained_decorations.clone();
+        if let Some(sherds) = sherds {
+            retained.put("sherds", sherds);
         }
-        // DecoratedPotBlockEntity.saveAdditional keeps the single-item tag format.
-        let item = slot_transaction::snapshot_slot(self, 0);
-        if !item.is_empty() {
-            let mut item_nbt = NbtCompound::new();
-            item.write_item_stack(&mut item_nbt);
-            nbt.put_compound("item", item_nbt);
+        if !retained.is_empty() {
+            nbt.put_compound(Self::RETAINED_DECORATIONS, retained);
         }
+        self.write_item_nbt(nbt);
     }
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        self.write_nbt(&mut nbt);
+        // DecoratedPotBlockEntity.getUpdateTag exposes current vanilla fields, not retained backups.
+        self.write_face_nbt(&mut nbt);
+        self.write_item_nbt(&mut nbt);
+        Some(nbt)
+    }
+
+    fn bedrock_block_actor_data(&self, state_id: BlockStateId) -> Option<NbtCompound> {
+        if BlockState::from_id_with_block(state_id).0 != &Block::DECORATED_POT {
+            return None;
+        }
+        let decorations = self.decorations_snapshot();
+        // Geyser DecoratedPotBlockEntityTranslator: back, left, right, front; absent faces are bricks.
+        let sherds = (0..4)
+            .map(|face| {
+                let item = decorations
+                    .as_ref()
+                    .and_then(|decorations| decorations.decorations[face].as_ref())
+                    .filter(|face| {
+                        face.item.has_tag(&tag::Item::MINECRAFT_DECORATED_POT_SHERDS)
+                            && !face.patch.iter().any(|(id, _)| {
+                                *id == pumpkin_data::data_component::DataComponent::ProvidesPotteryPattern
+                            })
+                    })
+                    .map_or(&Item::BRICK, |face| face.item);
+                NbtTag::String(format!("minecraft:{}", item.registry_key).into())
+            })
+            .collect();
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", "DecoratedPot".to_owned());
+        nbt.put_int("x", self.position.0.x);
+        nbt.put_int("y", self.position.0.y);
+        nbt.put_int("z", self.position.0.z);
+        nbt.put_list("sherds", sherds);
         Some(nbt)
     }
 
@@ -186,12 +252,40 @@ impl BlockEntity for DecoratedPotBlockEntity {
 
 impl DecoratedPotBlockEntity {
     pub const ID: &'static str = "minecraft:decorated_pot";
+    const RETAINED_DECORATIONS: &'static str = "PotDecorationsRetained";
+    const EMPTY_DECORATIONS: &'static str = "PotDecorationsEmpty";
 
-    pub(crate) fn has_empty_decorations(&self) -> bool {
+    fn decorations_snapshot(&self) -> Option<Arc<PotDecorationsImpl>> {
         self.decorations
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
+            .clone()
+    }
+
+    fn write_face_nbt(&self, nbt: &mut NbtCompound) -> bool {
+        let Some(decorations) = self.decorations_snapshot() else {
+            return false;
+        };
+        let empty = decorations.decorations.iter().all(Option::is_none);
+        // DecoratedPotBlockEntity.saveAdditional / PotDecorations.CODEC.
+        if !empty {
+            nbt.put("sherds", decorations.write_data());
+        }
+        empty
+    }
+
+    fn write_item_nbt(&self, nbt: &mut NbtCompound) {
+        // DecoratedPotBlockEntity.saveAdditional keeps the single-item tag format.
+        let item = slot_transaction::snapshot_slot(self, 0);
+        if !item.is_empty() {
+            let mut item_nbt = NbtCompound::new();
+            item.write_item_stack(&mut item_nbt);
+            nbt.put_compound("item", item_nbt);
+        }
+    }
+
+    pub(crate) fn has_empty_decorations(&self) -> bool {
+        self.decorations_snapshot()
             .is_some_and(|decorations| decorations.decorations.iter().all(Option::is_none))
     }
 
@@ -202,6 +296,7 @@ impl DecoratedPotBlockEntity {
             sherds: Mutex::new(None),
             item: Mutex::new(None),
             decorations: PotDecorationsLock::new(None),
+            retained_decorations: NbtCompound::new(),
             transaction: Arc::default(),
             dirty: AtomicBool::new(false),
             comparator_dirty: AtomicBool::new(false),

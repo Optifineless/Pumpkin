@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 mod block_item;
 mod loot;
+pub(crate) use loot::block_drops_with_context;
 pub use loot::{block_drops, drop_experience, drop_loot, loot_table_name};
 pub mod blocks;
 pub mod entities;

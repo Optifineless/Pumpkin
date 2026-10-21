@@ -170,6 +170,8 @@ impl PistonBlock {
             }
 
             if !move_piston(world, dir, pos, true, sticky) {
+                // Removal callbacks may queue the same extension against intermediate air.
+                world.cancel_synced_block_event(pos, block, r#type, data);
                 return false;
             }
             props.extended = true;
@@ -397,18 +399,45 @@ fn move_piston(
     }
 
     let broken_blocks: Vec<BlockPos> = handler.broken_blocks;
-    let mut affected_block_states: Vec<&BlockState> =
-        Vec::with_capacity(moved_blocks.len() + broken_blocks.len());
+    // Capture all targets before paired-block cleanup can remove a later target.
+    let mut affected_block_states: Vec<&BlockState> = broken_blocks
+        .iter()
+        .rev()
+        .map(|pos| world.get_block_state(pos))
+        .collect();
+    let mut cleared_states = Vec::with_capacity(broken_blocks.len());
     let move_direction = if extend { dir } else { dir.opposite() };
 
     for &broken_block_pos in broken_blocks.iter().rev() {
-        let block_state = world.get_block_state(&broken_block_pos);
-        world.break_block(
-            &broken_block_pos,
-            None,
-            BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE,
-        );
-        affected_block_states.push(block_state);
+        let current = world.get_block_state(&broken_block_pos);
+        let cleared = if !cleared_states.is_empty()
+            && (current.is_air()
+                || current.id.to_block() == &Block::WATER
+                || current.id.to_block() == &Block::LAVA)
+        {
+            // Double plants, doors and beds can clear their partner during this pass.
+            current.id
+        } else {
+            let Some(broken) = world.break_block_for_replacement(
+                &broken_block_pos,
+                None,
+                BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE,
+            ) else {
+                return false;
+            };
+            crate::block::blocks::growing_plant::fluid_state_after_break(broken)
+        };
+        cleared_states.push(cleared);
+    }
+
+    // A later destruction callback can replace an earlier cleared destination.
+    if broken_blocks
+        .iter()
+        .rev()
+        .zip(&cleared_states)
+        .any(|(pos, cleared)| world.get_block_state_id(pos) != *cleared)
+    {
+        return false;
     }
 
     for (index, &moved_block_pos) in moved_blocks.iter().rev().enumerate() {

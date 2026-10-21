@@ -417,7 +417,7 @@ impl World {
             .is_some_and(|live| Arc::ptr_eq(&live, entity))
     }
 
-    fn has_pending_block_entity_image(&self, pos: &BlockPos) -> bool {
+    pub(super) fn has_pending_block_entity_image(&self, pos: &BlockPos) -> bool {
         let chunk = self
             .level
             .loaded_chunks
@@ -788,7 +788,8 @@ impl World {
         committed
     }
 
-    fn remove_block_entity_under_publication_gate(
+    // The caller holds publication admission across its checked terrain write and retirement.
+    pub(super) fn remove_block_entity_under_publication_gate(
         &self,
         pos: &BlockPos,
         loads: &mut PendingBlockEntityLoads,

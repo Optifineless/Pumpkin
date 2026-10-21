@@ -120,6 +120,25 @@ impl Explosion {
                 self.trigger_block(world, &pos, block, state);
                 continue;
             }
+            if block == &Block::DECORATED_POT {
+                let params = self.block_loot_context(world, &pos, state);
+                let Some(stacks) = world.explode_decorated_pot(
+                    &pos,
+                    state.id,
+                    &params,
+                    behavior.is_none_or(|behavior| behavior.should_drop_items_on_explosion()),
+                ) else {
+                    continue;
+                };
+                for stack in stacks {
+                    add_or_append_stack(&mut drops, stack, pos);
+                }
+                world.close_container_screens_at(&pos);
+                if let Some(behavior) = behavior {
+                    behavior.explode(args);
+                }
+                continue;
+            }
             if behavior.is_none_or(|behavior| behavior.should_drop_items_on_explosion()) {
                 // BlockBehaviour.onExplosionHit / spawnAfterBreak: only player-caused blasts drop XP.
                 if world.level_info.load().game_rules.block_drops
@@ -156,7 +175,18 @@ impl Explosion {
         block: &Block,
         state: &'static BlockState,
     ) -> Vec<ItemStack> {
-        let params = LootContextParameters {
+        let params = self.block_loot_context(world, pos, state);
+        // BlockBehaviour.onExplosionHit uses the same Block.getDrops context as harvesting.
+        crate::block::block_drops(world, block, pos, &params)
+    }
+
+    fn block_loot_context(
+        &self,
+        world: &Arc<World>,
+        pos: &BlockPos,
+        state: &'static BlockState,
+    ) -> LootContextParameters {
+        LootContextParameters {
             block_state: Some(state),
             tool: Some(ItemStack::EMPTY.clone()),
             this_entity: self
@@ -170,9 +200,7 @@ impl Explosion {
             is_raining: Some(world.is_raining()),
             is_thundering: Some(world.is_thundering()),
             ..Default::default()
-        };
-        // BlockBehaviour.onExplosionHit uses the same Block.getDrops context as harvesting.
-        crate::block::block_drops(world, block, pos, &params)
+        }
     }
 
     pub(super) fn create_fire(&self, world: &Arc<World>, positions: &[BlockPos]) {

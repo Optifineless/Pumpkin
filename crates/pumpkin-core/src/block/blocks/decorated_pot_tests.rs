@@ -36,7 +36,7 @@ struct Fixture {
     server: Arc<Server>,
     world: Arc<World>,
     player: TestPlayer,
-    _directory: tempfile::TempDir,
+    directory: tempfile::TempDir,
 }
 
 impl Fixture {
@@ -50,8 +50,14 @@ impl Fixture {
             server,
             world,
             player,
-            _directory: directory,
+            directory,
         }
+    }
+
+    async fn shutdown(&self) {
+        tokio::time::timeout(std::time::Duration::from_secs(20), self.server.shutdown())
+            .await
+            .expect("decorated pot fixture shutdown did not finish");
     }
 
     fn approach(&self, block: BlockPos) {
@@ -180,17 +186,35 @@ fn take_pot_drop(world: &World) -> Option<ItemStack> {
     None
 }
 
-struct CaptureDropState(Arc<AtomicBool>);
+struct CaptureCrackedLoot(Arc<AtomicBool>);
 
-impl EventHandler<crate::plugin::block::block_drop_item::BlockDropItemEvent> for CaptureDropState {
+impl EventHandler<crate::plugin::block::block_drop_item::BlockDropItemEvent>
+    for CaptureCrackedLoot
+{
     fn handle_blocking<'a>(
         &'a self,
         _server: &'a Arc<Server>,
         event: &'a mut crate::plugin::block::block_drop_item::BlockDropItemEvent,
     ) -> BoxFuture<'a, ()> {
-        let state = event.world.get_block_state(&event.block_pos);
-        let properties = DecoratedPotLikeProperties::from_state_id(state.id);
-        self.0.store(properties.cracked, Relaxed);
+        let faces: u32 = event
+            .items
+            .iter()
+            .filter(|stack| {
+                stack.item == &Item::BRICK
+                    || stack.item == &Item::ANGLER_POTTERY_SHERD
+                    || stack.item == &Item::ARCHER_POTTERY_SHERD
+            })
+            .map(|stack| u32::from(stack.item_count))
+            .sum();
+        self.0.store(
+            event.world.get_block(&event.block_pos).is_air()
+                && faces == 4
+                && event
+                    .items
+                    .iter()
+                    .all(|stack| stack.item != &Item::DECORATED_POT),
+            Relaxed,
+        );
         Box::pin(async {})
     }
 }
@@ -272,7 +296,7 @@ async fn b1019_g03_eligible_tool_uses_cracked_mixed_decoration_loot() {
         .server
         .plugin_manager
         .register::<crate::plugin::block::block_drop_item::BlockDropItemEvent, _>(
-            Arc::new(CaptureDropState(states.clone())),
+            Arc::new(CaptureCrackedLoot(states.clone())),
             EventPriority::Normal,
             true,
         );
@@ -282,7 +306,7 @@ async fn b1019_g03_eligible_tool_uses_cracked_mixed_decoration_loot() {
     assert_eq!(fixture.world.get_block(&position), &Block::AIR);
     assert!(
         states.load(Relaxed),
-        "the plugin drop event observes the cracked state during loot"
+        "the plugin receives cracked loot after the original terrain was claimed"
     );
     assert_eq!(item_count(&fixture.world, &Item::DECORATED_POT), 0);
     assert_eq!(item_count(&fixture.world, &Item::BRICK), 2);
@@ -437,8 +461,14 @@ fn b1019_g03_legacy_sherds_load_and_save_without_changing_the_old_field() {
     let mut saved = NbtCompound::new();
     loaded.write_nbt(&mut saved);
 
-    assert_eq!(saved.get_list("sherds"), Some(sherds.as_slice()));
-    let encoded = saved.get("PotDecorations").unwrap();
+    assert_eq!(
+        saved
+            .get_compound("PotDecorationsRetained")
+            .unwrap()
+            .get_list("sherds"),
+        Some(sherds.as_slice())
+    );
+    let encoded = saved.get("sherds").unwrap();
     let converted = PotDecorationsImpl::read_data(encoded).unwrap();
     assert_eq!(
         converted.decorations[0].as_ref().unwrap().item,
@@ -460,3 +490,15 @@ fn b1019_g03_legacy_sherds_load_and_save_without_changing_the_old_field() {
 
 #[path = "decorated_pot_crafting_tests.rs"]
 mod crafting_tests;
+
+#[path = "decorated_pot_face_tests.rs"]
+mod face_tests;
+
+#[path = "decorated_pot_hash_tests.rs"]
+mod hash_tests;
+
+#[path = "decorated_pot_dynamic_tests.rs"]
+mod dynamic_tests;
+
+#[path = "decorated_pot_projectile_tests.rs"]
+mod projectile_tests;

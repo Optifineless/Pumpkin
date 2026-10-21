@@ -103,9 +103,6 @@ fn fill_blocks(
         from.0.z.max(to.0.z),
     );
     check_region_loaded(source, min, max)?;
-    let _mutation = world
-        .block_entity_mutation_permit(from)
-        .ok_or_else(|| ERROR_FAILED.create_without_context())?;
     let air = BlockInput {
         state: BlockStateId::AIR,
         properties: Vec::new(),
@@ -134,17 +131,21 @@ fn fill_blocks(
                 if matches!(mode, FillMode::Outline) && !edge {
                     continue;
                 }
-                let destroyed = matches!(mode, FillMode::Destroy)
+                let destroy = matches!(mode, FillMode::Destroy) && !old.to_state().is_air();
+                if destroy
                     && world
-                        .break_block(&pos, None, BlockFlags::NOTIFY_ALL)
-                        .is_some();
+                        .break_block_for_replacement(&pos, None, BlockFlags::NOTIFY_ALL)
+                        .is_none()
+                {
+                    continue;
+                }
                 let input = if matches!(mode, FillMode::Hollow) && !edge {
                     &air
                 } else {
                     target
                 };
                 let placed = super::block_input::place(input, world, &pos, strict);
-                if placed || destroyed {
+                if placed || destroy {
                     count += 1;
                 }
                 if placed && !strict {

@@ -93,6 +93,7 @@ impl ThrownItemEntity {
 
     // Projectile.hitTargetOrDeflectSelf / onHit, keeping the existing block/plugin callback.
     pub(super) fn hit_target(&self, caller: &dyn EntityBase, hit: ProjectileHit) {
+        let cancelled = super::hit_event::cancelled(caller, &hit);
         let entity = self.get_entity();
         if entity.entity_type == &EntityType::LLAMA_SPIT {
             if deflection::hit_target_or_deflect_self(caller, &hit) {
@@ -105,6 +106,7 @@ impl ThrownItemEntity {
                     ProjectileHit::Block { pos, hit_pos, .. } => Some((*pos, *hit_pos)),
                     ProjectileHit::Entity { .. } => None,
                 },
+                cancelled,
             );
             on_hit(caller, hit);
             return;
@@ -123,7 +125,7 @@ impl ThrownItemEntity {
             ProjectileHit::Entity { .. } => None,
         };
         if !rocket {
-            on_hit_block(caller, block_hit);
+            on_hit_block(caller, block_hit, cancelled);
         }
         let landing = land_position(&hit);
         let dragon = entity.entity_type == &EntityType::DRAGON_FIREBALL;
@@ -133,7 +135,7 @@ impl ThrownItemEntity {
         }
         caller.on_hit(hit);
         if rocket {
-            on_hit_block(caller, block_hit);
+            on_hit_block(caller, block_hit, cancelled);
         }
         if !dragon {
             emit_land(caller, landing);
@@ -149,11 +151,14 @@ impl ThrownItemEntity {
 fn on_hit_block(
     caller: &dyn EntityBase,
     hit: Option<(pumpkin_util::math::position::BlockPos, Vector3<f64>)>,
+    cancelled: bool,
 ) {
     if let Some((pos, hit_pos)) = hit {
         let world = caller.get_entity().world.load();
         let state = world.get_block_state(&pos);
-        if let Some(server) = world.server.upgrade() {
+        if (!cancelled || state.id.to_block() != &pumpkin_data::Block::DECORATED_POT)
+            && let Some(server) = world.server.upgrade()
+        {
             world.block_registry.on_projectile_hit(
                 state.id.to_block(),
                 &world,

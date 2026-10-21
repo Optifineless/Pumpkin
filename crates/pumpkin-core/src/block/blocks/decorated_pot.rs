@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
+use crate::block::entities::BlockEntity;
 use pumpkin_data::block_properties::DecoratedPotLikeProperties;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
+use pumpkin_protocol::bedrock::client::block_actor_data::CBlockActorData;
 use pumpkin_world::world::BlockFlags;
 
 use crate::block::entities::decorated_pot::DecoratedPotBlockEntity;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
     BlockBehaviour, BrokenArgs, GetComparatorOutputArgs, NormalUseArgs, OnPlaceArgs,
-    PathComputationType, PlacedArgs, PlayerWillDestroyArgs, UseWithItemArgs,
+    OnProjectileHitArgs, PathComputationType, PlacedArgs, PlayerPlacedArgs, PlayerWillDestroyArgs,
+    UseWithItemArgs,
 };
 
 #[pumpkin_block("minecraft:decorated_pot")]
@@ -22,6 +26,12 @@ pub struct DecoratedPotBlock;
 mod tests;
 
 impl BlockBehaviour for DecoratedPotBlock {
+    fn on_projectile_hit(&self, args: OnProjectileHitArgs<'_>) {
+        // DecoratedPotBlock.onProjectileHit: crack only an admitted impact, then use normal loot/removal.
+        args.world
+            .break_decorated_pot(args.position, args.state.id, args.projectile);
+    }
+
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = DecoratedPotLikeProperties::from_state_id(args.block.default_state.id);
         props.facing = args
@@ -36,6 +46,26 @@ impl BlockBehaviour for DecoratedPotBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let entity = DecoratedPotBlockEntity::new(*args.position);
         args.world.add_block_entity(Arc::new(entity));
+    }
+
+    fn player_placed(&self, args: PlayerPlacedArgs<'_>) {
+        // BlockItem.updateBlockEntityComponents: publish the claimed faces after application.
+        if args.world.get_block(args.position) == args.block
+            && let Some(entity) = args.world.get_block_entity(args.position)
+            && entity.as_any().is::<DecoratedPotBlockEntity>()
+        {
+            args.world.update_block_entity(&entity);
+            let state = args.world.get_block_state_id(args.position);
+            if state.to_block() == args.block
+                && args.world.is_live_block_entity(&entity)
+                && let Some(actor) = entity.bedrock_block_actor_data(state)
+            {
+                args.world.broadcast_to_chunk_bedrock(
+                    args.position.chunk_position(),
+                    &CBlockActorData::new(*args.position, actor),
+                );
+            }
+        }
     }
 
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
@@ -101,32 +131,8 @@ impl BlockBehaviour for DecoratedPotBlock {
 
     fn player_will_destroy(&self, args: PlayerWillDestroyArgs<'_>) {
         let held_item = args.player.inventory().held_item();
-        if held_item.is_empty()
-            || !held_item
-                .item
-                .has_tag(&tag::Item::MINECRAFT_BREAKS_DECORATED_POTS)
-        {
-            return;
-        }
-
-        let mut prevents_shattering = false;
-        crate::enchantment::EnchantmentHelper::run_iteration_on_item(
-            &held_item,
-            |enchantment, _| {
-                prevents_shattering |= enchantment
-                    .has_tag(&tag::Enchantment::MINECRAFT_PREVENTS_DECORATED_POT_SHATTERING);
-            },
-        );
-        if prevents_shattering {
-            return;
-        }
-
-        if let Some(block_entity) = args.world.get_block_entity(args.position)
-            && let Some(pot_entity) = block_entity
-                .as_any()
-                .downcast_ref::<DecoratedPotBlockEntity>()
-            && pot_entity.has_empty_decorations()
-        {
+        let entity = args.world.get_block_entity(args.position);
+        if !player_cracks_pot(&held_item, entity.as_deref()) {
             return;
         }
 
@@ -155,4 +161,24 @@ impl BlockBehaviour for DecoratedPotBlock {
     fn is_pathfindable(&self, _state: &BlockState, _computation_type: PathComputationType) -> bool {
         false
     }
+}
+
+// DecoratedPotBlock.playerWillDestroy, retaining the fork's saved EMPTY compatibility.
+pub(crate) fn player_cracks_pot(tool: &ItemStack, entity: Option<&dyn BlockEntity>) -> bool {
+    if tool.is_empty()
+        || !tool
+            .item
+            .has_tag(&tag::Item::MINECRAFT_BREAKS_DECORATED_POTS)
+    {
+        return false;
+    }
+    let mut prevents_shattering = false;
+    crate::enchantment::EnchantmentHelper::run_iteration_on_item(tool, |enchantment, _| {
+        prevents_shattering |=
+            enchantment.has_tag(&tag::Enchantment::MINECRAFT_PREVENTS_DECORATED_POT_SHATTERING);
+    });
+    !prevents_shattering
+        && !entity
+            .and_then(|entity| entity.as_any().downcast_ref::<DecoratedPotBlockEntity>())
+            .is_some_and(DecoratedPotBlockEntity::has_empty_decorations)
 }
