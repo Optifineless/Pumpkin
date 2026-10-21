@@ -19,8 +19,10 @@ pub struct DaylightDetectorBlock;
 
 impl BlockBehaviour for DaylightDetectorBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
-        args.world
-            .add_block_entity(Arc::new(DaylightDetectorBlockEntity::new(*args.position)));
+        args.world.add_block_entity_from_observed(
+            Arc::new(DaylightDetectorBlockEntity::new(*args.position)),
+            args.state_id,
+        );
     }
 
     fn broken(&self, args: BrokenArgs<'_>) {
@@ -37,13 +39,25 @@ impl BlockBehaviour for DaylightDetectorBlock {
             return BlockActionResult::Pass;
         }
 
+        drop(player_abilities);
+
         let state = args.world.get_block_state(args.position);
+
+        if state.id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let mut props = DaylightDetectorProperties::from_state_id(state.id);
         props.inverted = !props.inverted;
 
         let new_state = props.to_state_id(args.block);
-        args.world
-            .set_block_state(args.position, new_state, BlockFlags::NOTIFY_LISTENERS);
+        if !args.world.set_block_state_from_observed(
+            args.position,
+            state.id,
+            new_state,
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
+            return BlockActionResult::Pass;
+        }
         args.world.emit_game_event(
             GameEvent::BlockChange.name(),
             args.position.to_centered_f64(),
@@ -90,6 +104,9 @@ impl DaylightDetectorBlock {
 
     pub fn update_signal_strength(world: &Arc<World>, block_pos: &BlockPos) {
         let (block, state) = world.get_block_and_state(block_pos);
+        if block.id != pumpkin_data::BlockId::DAYLIGHT_DETECTOR {
+            return;
+        }
         let mut props = DaylightDetectorProperties::from_state_id(state.id);
 
         let target = Self::calculate_signal_strength(
@@ -101,7 +118,12 @@ impl DaylightDetectorBlock {
         if props.power != target {
             props.power = target;
             let new_state = props.to_state_id(block);
-            world.set_block_state(block_pos, new_state, BlockFlags::NOTIFY_ALL);
+            world.set_block_state_from_observed(
+                block_pos,
+                state.id,
+                new_state,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 }

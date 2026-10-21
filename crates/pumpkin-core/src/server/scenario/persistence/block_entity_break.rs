@@ -1,8 +1,9 @@
 use super::block_entity_support::*;
 use super::*;
-use crate::world::block_placer::WorldBlockPlacer;
+use crate::world::{block_placer::WorldBlockPlacer, generation_cache::WorldGenerationCache};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
+use pumpkin_world::generation::proto_chunk::GenerationCache;
 use pumpkin_world::generation::structure::template::{
     BlockPlacer, PaletteEntry, StructureTemplate, TemplateBlock, place_template,
 };
@@ -164,6 +165,72 @@ async fn rejected_structure_terrain_cannot_install_its_delayed_block_entity() {
         let stack = inventory.get_stack(0);
         assert_eq!(stack.item, &Item::DIAMOND);
         assert_eq!(stack.item_count, 3);
+        scenario.stop().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn structure_nbt_publication_rechecks_terrain_after_preparation() {
+    exercise_delayed_nbt_publication(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn feature_nbt_publication_rechecks_terrain_after_preparation() {
+    exercise_delayed_nbt_publication(true).await;
+}
+
+async fn exercise_delayed_nbt_publication(feature: bool) {
+    run(async {
+        let scenario = Scenario::new().await;
+        let player = scenario.join(Uuid::new_v4(), "DelayedNbt").await;
+        let world = player.player.world();
+        let position = BlockPos::new(9, 64, 8);
+        world.set_block_state(
+            &position,
+            Block::CHEST.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+        let chest = ChestBlockEntity::new(position);
+        chest.set_stack(0, ItemStack::new(3, &Item::DIAMOND));
+        let mut nbt = NbtCompound::new();
+        crate::block::entities::BlockEntity::write_internal(&chest, &mut nbt);
+        let called = Arc::new(AtomicBool::new(false));
+        let observed = called.clone();
+        let target = world.clone();
+        let remove: Arc<dyn Fn(BlockPos) + Send + Sync> = Arc::new(move |actual| {
+            assert_eq!(actual, position);
+            observed.store(true, Ordering::Release);
+            assert!(
+                target
+                    .break_block(&position, None, BlockFlags::NOTIFY_ALL)
+                    .is_some()
+            );
+        });
+        if feature {
+            let mut cache = WorldGenerationCache::new(world.clone(), &position);
+            cache.add_block_entity(&position.0, nbt);
+            let target = world.clone();
+            // The unchanged source guard commits first; removal races the later NBT admission.
+            *world.persistence_test_hooks.state_write.lock().unwrap() =
+                Some(Arc::new(move |actual| {
+                    assert_eq!(actual, position);
+                    *target.persistence_test_hooks.state_write.lock().unwrap() =
+                        Some(remove.clone());
+                }));
+            cache.apply();
+        } else {
+            let mut placer = WorldBlockPlacer::new(&world);
+            placer.add_block_entity(nbt);
+            *world.persistence_test_hooks.state_write.lock().unwrap() = Some(remove);
+            placer.finalize();
+        }
+        assert!(called.load(Ordering::Acquire));
+        assert_eq!(world.get_block(&position), &Block::AIR);
+        assert!(
+            world.get_block_entity(&position).is_none(),
+            "delayed chest NBT was published on removed terrain"
+        );
         scenario.stop().await;
     })
     .await;

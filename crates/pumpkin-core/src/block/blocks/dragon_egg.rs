@@ -33,6 +33,9 @@ impl DragonEggBlock {
     fn teleport(world: &Arc<World>, pos: &BlockPos) {
         let mut random = rng();
         let state = world.get_block_state_id(pos);
+        if pumpkin_data::Block::from_state_id(state) != &pumpkin_data::Block::DRAGON_EGG {
+            return;
+        }
         for _ in 0..Self::MAX_TELEPORT_ATTEMPTS {
             let horizontal = Self::HORIZONTAL_TELEPORT_RADIUS;
             let vertical = Self::VERTICAL_TELEPORT_RADIUS;
@@ -40,33 +43,39 @@ impl DragonEggBlock {
             let dy = random.random_range(0..vertical) - random.random_range(0..vertical);
             let dz = random.random_range(0..horizontal) - random.random_range(0..horizontal);
             let target = BlockPos::new(pos.0.x + dx, pos.0.y + dy, pos.0.z + dz);
+            let target_state = world.get_block_state_id(&target);
             if !world.is_in_height_limit(target.0.y)
                 || !world
                     .worldborder
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .contains(f64::from(target.0.x), f64::from(target.0.z))
-                || !world.get_block_state(&target).is_air()
+                || !target_state.to_state().is_air()
                 || world.get_block_state(&target.down()).is_air()
             {
                 continue;
             }
-            // BlockUtil.packDifferenceInPosition encodes signed offsets biased by the radii.
+            if !world.set_block_states_from_observed(&[
+                (
+                    target,
+                    target_state,
+                    state,
+                    pumpkin_world::world::BlockFlags::NOTIFY_LISTENERS,
+                ),
+                (
+                    *pos,
+                    state,
+                    pumpkin_data::BlockStateId::AIR,
+                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                ),
+            ]) {
+                return;
+            }
             let packed = Self::pack_difference_in_position(dx, dy, dz);
             world.sync_world_event(
                 pumpkin_data::world::WorldEvent::ParticlesDragonEggTeleport,
                 *pos,
                 packed,
-            );
-            world.set_block_state(
-                &target,
-                state,
-                pumpkin_world::world::BlockFlags::NOTIFY_LISTENERS,
-            );
-            world.set_block_state(
-                pos,
-                pumpkin_data::Block::AIR.default_state.id,
-                pumpkin_world::world::BlockFlags::NOTIFY_ALL,
             );
             return;
         }

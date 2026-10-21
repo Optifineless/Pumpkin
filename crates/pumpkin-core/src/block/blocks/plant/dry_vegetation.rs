@@ -33,30 +33,39 @@ impl BlockBehaviour for DryVegetationBlock {
             })
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
-        {
-            if args.block == &Block::SHORT_DRY_GRASS {
-                args.world.set_block_state(
-                    args.position,
-                    Block::TALL_DRY_GRASS.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                );
-                return;
-            }
-
-            let mut directions = horizontal_directions();
-            directions.shuffle(&mut rand::rng());
-            if let Some(position) = directions.into_iter().find_map(|direction| {
-                let position = args.position.offset(direction.to_offset());
-                can_spread_to(args.world, position).then_some(position)
-            }) {
-                args.world.set_block_state(
-                    &position,
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
+        if args.block == &Block::SHORT_DRY_GRASS {
+            return args.world.set_block_state_from_observed(
+                args.position,
+                args.state_id,
+                Block::TALL_DRY_GRASS.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            );
+        }
+        let mut directions = horizontal_directions();
+        directions.shuffle(&mut rand::rng());
+        if let Some((position, observed)) = directions.into_iter().find_map(|direction| {
+            let position = args.position.offset(direction.to_offset());
+            let observed = args.world.get_block_state_id(&position);
+            (observed.to_state().is_air() && can_spread_to(args.world, position))
+                .then_some((position, observed))
+        }) {
+            return args.world.set_block_states_from_observed(&[
+                (
+                    *args.position,
+                    args.state_id,
+                    args.state_id,
+                    BlockFlags::empty(),
+                ),
+                (
+                    position,
+                    observed,
                     Block::SHORT_DRY_GRASS.default_state.id,
                     BlockFlags::NOTIFY_ALL,
-                );
-            }
+                ),
+            ]);
         }
+        true
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {

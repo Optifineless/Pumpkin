@@ -15,11 +15,14 @@ mod tests;
 pub fn remove_partner(args: PlayerWillDestroyArgs<'_>, pos: BlockPos, replacement: BlockStateId) {
     // AbstractBedBlock.playerWillDestroy / DoublePlantBlock.preventDropFromBottomPart: flag 35.
     let state = args.world.get_block_state_id(&pos);
-    args.world.set_block_state(
+    if !args.world.set_block_state_from_observed(
         &pos,
+        state,
         replacement,
         BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
-    );
+    ) {
+        return;
+    }
     let java = CWorldEvent::new(
         WorldEvent::ParticlesDestroyBlock as i32,
         pos,

@@ -104,8 +104,12 @@ impl BlockBehaviour for BuddingAmethystBlock {
                 target_props.facing = grow_direction.to_facing();
                 target_props.waterlogged = waterlogged;
                 let target_state_id = target_props.to_state_id(next_stage);
-                args.world
-                    .set_block_state(&grow_pos, target_state_id, BlockFlags::NOTIFY_ALL);
+                args.world.set_block_state_from_observed(
+                    &grow_pos,
+                    relative_state_id,
+                    target_state_id,
+                    BlockFlags::NOTIFY_ALL,
+                );
             }
         }
     }

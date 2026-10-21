@@ -18,36 +18,54 @@ pub struct SugarCaneBlock;
 
 impl BlockBehaviour for SugarCaneBlock {
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
-        if args.world.get_block_state(&args.position.up()).is_air()
+        let upper = args.position.up();
+        let upper_observed = args.world.get_block_state_id(&upper);
+        if upper_observed.to_state().is_air()
             && !(args.world.get_block(&args.position.down()) == &Block::SUGAR_CANE
                 && args.world.get_block(&args.position.down().down()) == &Block::SUGAR_CANE)
         {
             let state_id = args.world.get_block_state(args.position).id;
+            if state_id.to_block() != args.block {
+                return;
+            }
             let age = CactusLikeProperties::from_state_id(state_id).age;
             if age == 15 {
-                args.world.set_block_state(
-                    &args.position.up(),
-                    // SugarCaneBlock.randomTick creates a default, age-zero segment.
-                    args.block.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                );
                 let props = CactusLikeProperties { age: 0 };
-                args.world.set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                );
+                args.world.set_block_states_from_observed(&[
+                    (
+                        upper,
+                        upper_observed,
+                        args.block.default_state.id,
+                        BlockFlags::NOTIFY_ALL,
+                    ),
+                    (
+                        *args.position,
+                        state_id,
+                        props.to_state_id(args.block),
+                        BlockFlags::NOTIFY_LISTENERS,
+                    ),
+                ]);
             } else {
                 let props = CactusLikeProperties { age: age + 1 };
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    state_id,
                     props.to_state_id(args.block),
                     BlockFlags::NOTIFY_LISTENERS,
                 );

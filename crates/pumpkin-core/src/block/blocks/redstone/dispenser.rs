@@ -33,7 +33,9 @@ use crate::entity::vehicle::minecart::MinecartEntity;
 use crate::entity::{Entity, EntityBase};
 use crate::item::ItemMetadata;
 use crate::item::items::boat::BoatItem;
-use crate::item::items::bucket::{FilledBucketItem, check_extra_content, try_pickup_fluid_at};
+use crate::item::items::bucket::{
+    FilledBucketItem, check_extra_content, try_pickup_fluid_at_outcome,
+};
 use crate::item::items::honeycomb::try_wax_block;
 use crate::item::items::ignite::ignition::Ignition;
 use crate::item::items::minecart::MinecartItem;
@@ -219,29 +221,37 @@ impl BlockBehaviour for DispenserBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let dispenser_block_entity = DispenserBlockEntity::new(*args.position);
         args.world
-            .add_block_entity(Arc::new(dispenser_block_entity));
+            .add_block_entity_from_observed(Arc::new(dispenser_block_entity), args.state_id);
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         let powered = block_receives_redstone_power(args.world, args.position)
             || block_receives_redstone_power(args.world, &args.position.up());
 
-        let mut props =
-            DispenserLikeProperties::from_state_id(args.world.get_block_state(args.position).id);
+        let state = args.world.get_block_state(args.position);
+
+        if state.id.to_block() != args.block {
+            return;
+        }
+        let mut props = DispenserLikeProperties::from_state_id(state.id);
 
         if powered && !props.triggered {
-            args.world
-                .schedule_block_tick(args.block, *args.position, 4, TickPriority::Normal);
             props.triggered = true;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
+            args.world
+                .schedule_block_tick(args.block, *args.position, 4, TickPriority::Normal);
         } else if !powered && props.triggered {
             props.triggered = false;
-            args.world.set_block_state(
+            args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
             );
@@ -394,8 +404,7 @@ impl DispenserBlock {
             }
         } else if item.item.id == Item::GLOWSTONE.id {
             match Self::dispense_glowstone(ctx, item) {
-                Some(true) => Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense),
-                Some(false) => Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserFail),
+                Some(_) => {}
                 None => Self::drop_item(ctx, item),
             }
         } else if item.item.id == Item::WITHER_SKELETON_SKULL.id {
@@ -797,9 +806,13 @@ impl DispenserBlock {
         item: &mut ItemStack,
     ) {
         let front = Self::target_position(ctx);
-        let Some(filled) = try_pickup_fluid_at(ctx.world, front) else {
-            Self::drop_item(ctx, item);
-            return;
+        let filled = match try_pickup_fluid_at_outcome(ctx.world, front) {
+            Ok(Some(filled)) => filled,
+            Ok(None) => {
+                Self::drop_item(ctx, item);
+                return;
+            }
+            Err(()) => return,
         };
 
         Self::consume_with_remainder(ctx, dispenser, item, ItemStack::new(1, filled));
@@ -830,7 +843,11 @@ impl DispenserBlock {
     fn dispense_filled_bucket(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
         // DefaultDispenseItemBehavior's bucket path passes the full stack.
         let front = Self::target_position(ctx);
-        let destination = crate::item::items::bucket::empty_bucket_at(ctx.world, item.item, front);
+        let Ok(destination) =
+            crate::item::items::bucket::empty_bucket_at_outcome(ctx.world, item.item, front)
+        else {
+            return;
+        };
         if let Some(destination) = destination {
             check_extra_content(ctx.world, item, destination);
             *item = ItemStack::new(1, &Item::BUCKET);
@@ -842,39 +859,42 @@ impl DispenserBlock {
 
     fn dispense_flint_and_steel(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
         let front = Self::target_position(ctx);
-        let front_block = ctx.world.get_block(&front);
+        let observed = ctx.world.get_block_state_id(&front);
+        let front_block = observed.to_block();
 
         let ignited = if front_block == &Block::TNT {
             TNTBlock::prime(ctx.world, &front)
         } else {
-            Ignition::ignite_block(
-                |world: Arc<World>, pos: BlockPos, new_state_id: BlockStateId| {
-                    world.set_block_state(&pos, new_state_id, BlockFlags::NOTIFY_ALL);
-                },
+            let Some(ignited) = Ignition::try_ignite_block(
+                |_world: Arc<World>, _pos: BlockPos, _new_state_id: BlockStateId| {},
                 ctx.world,
                 front,
                 front,
                 front_block,
-            )
+            ) else {
+                return;
+            };
+            ignited
         };
 
         if ignited {
             // `damage_item` already consumes the tool from the stack when it breaks.
             let _ = item.damage_item(1);
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
-        } else {
+        } else if ctx.world.get_block_state_id(&front) == observed {
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserFail);
         }
     }
 
     fn dispense_honeycomb(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
         let front = Self::target_position(ctx);
-        let front_block = ctx.world.get_block(&front);
+        let observed = ctx.world.get_block_state_id(&front);
+        let front_block = observed.to_block();
 
         if try_wax_block(ctx.world, front, front_block) {
             item.decrement(1);
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
-        } else {
+        } else if ctx.world.get_block_state_id(&front) == observed {
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserFail);
         }
     }
@@ -932,7 +952,10 @@ impl DispenserBlock {
     }
 
     fn dispense_shears(ctx: &DispenseContext<'_>, item: &mut ItemStack) {
-        if Self::shear_beehive(ctx) || Self::shear_entity_in_front(ctx, item) {
+        let Some(sheared_hive) = Self::shear_beehive(ctx) else {
+            return;
+        };
+        if sheared_hive || Self::shear_entity_in_front(ctx, item) {
             // `damage_item` already consumes the tool from the stack when it breaks.
             let _ = item.damage_item(1);
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
@@ -941,21 +964,30 @@ impl DispenserBlock {
         }
     }
 
-    fn shear_beehive(ctx: &DispenseContext<'_>) -> bool {
+    fn shear_beehive(ctx: &DispenseContext<'_>) -> Option<bool> {
         const FULL_HONEY_LEVEL: u8 = 5;
         const HARVESTED_HONEYCOMBS: u8 = 3;
 
         let target = Self::target_position(ctx);
         let (block, state_id) = ctx.world.get_block_and_state_id(&target);
         if !block.has_tag(&tag::Block::MINECRAFT_BEEHIVES) {
-            return false;
+            return Some(false);
         }
 
         let mut props = BeeNestLikeProperties::from_state_id(state_id);
         if props.honey_level < FULL_HONEY_LEVEL {
-            return false;
+            return Some(false);
         }
 
+        props.honey_level = 0;
+        if !ctx.world.set_block_state_from_observed(
+            &target,
+            state_id,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return None;
+        }
         ctx.world
             .play_block_sound(Sound::BlockBeehiveShear, SoundCategory::Blocks, target);
         Self::drop_at(
@@ -964,11 +996,7 @@ impl DispenserBlock {
             ItemStack::new(HARVESTED_HONEYCOMBS, &Item::HONEYCOMB),
         );
 
-        props.honey_level = 0;
-        ctx.world
-            .set_block_state(&target, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
-
-        true
+        Some(true)
     }
 
     fn shear_entity_in_front(ctx: &DispenseContext<'_>, tool: &ItemStack) -> bool {
@@ -1046,8 +1074,14 @@ impl DispenserBlock {
             }
 
             props.honey_level = 0;
-            ctx.world
-                .set_block_state(&target, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+            if !ctx.world.set_block_state_from_observed(
+                &target,
+                state_id,
+                props.to_state_id(block),
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return true;
+            }
             Self::consume_with_remainder(
                 ctx,
                 dispenser,
@@ -1070,14 +1104,22 @@ impl DispenserBlock {
 
     fn dispense_water_bottle(ctx: &DispenseContext<'_>, item: &mut ItemStack) -> bool {
         let target = Self::target_position(ctx);
-        if !ctx
-            .world
-            .get_block(&target)
+        let observed = ctx.world.get_block_state_id(&target);
+        if !observed
+            .to_block()
             .has_tag(&tag::Block::MINECRAFT_CONVERTIBLE_TO_MUD)
         {
             return false;
         }
 
+        if !ctx.world.set_block_state_from_observed(
+            &target,
+            observed,
+            Block::MUD.default_state.id,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return true;
+        }
         ctx.world.spawn_particle(
             target.to_centered_f64(),
             Vector3::new(0.5, 0.5, 0.5),
@@ -1087,8 +1129,6 @@ impl DispenserBlock {
         );
         ctx.world
             .play_block_sound(Sound::ItemBottleEmpty, SoundCategory::Blocks, target);
-        ctx.world
-            .set_block_state(&target, Block::MUD.default_state.id, BlockFlags::NOTIFY_ALL);
 
         *item = ItemStack::new(1, &Item::GLASS_BOTTLE);
         Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
@@ -1106,19 +1146,27 @@ impl DispenserBlock {
 
         let mut props = RespawnAnchorLikeProperties::from_state_id(state_id);
         if props.charges >= MAX_CHARGES {
+            Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserFail);
             return Some(false);
         }
 
         props.charges += 1;
+        if !ctx.world.set_block_state_from_observed(
+            &target,
+            state_id,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return Some(false);
+        }
         let _ = item.split(1);
-        ctx.world
-            .set_block_state(&target, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
         ctx.world.play_block_sound(
             Sound::BlockRespawnAnchorCharge,
             SoundCategory::Blocks,
             target,
         );
 
+        Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
         Some(true)
     }
 
@@ -1147,7 +1195,8 @@ impl DispenserBlock {
     fn dispense_mob_head(ctx: &DispenseContext<'_>, item: &mut ItemStack, block: &'static Block) {
         let target = Self::target_position(ctx);
 
-        let summons_mob = ctx.world.get_block_state(&target).is_air()
+        let observed = ctx.world.get_block_state_id(&target);
+        let summons_mob = observed.to_state().is_air()
             && if block == &Block::WITHER_SKELETON_SKULL {
                 find_wither_pattern(ctx.world, &target).is_some()
             } else {
@@ -1163,9 +1212,15 @@ impl DispenserBlock {
                 block.default_state.id
             };
 
+            if !ctx.world.set_block_state_from_observed(
+                &target,
+                observed,
+                state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
             let _ = item.split(1);
-            ctx.world
-                .set_block_state(&target, state_id, BlockFlags::NOTIFY_ALL);
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
         } else if Self::dispense_equipment(ctx, item) {
             Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
@@ -1180,7 +1235,8 @@ impl DispenserBlock {
         };
 
         let target = Self::target_position(ctx);
-        if !ctx.world.get_block_state(&target).replaceable() {
+        let observed = ctx.world.get_block_state_id(&target);
+        if !observed.to_state().replaceable() {
             return false;
         }
 
@@ -1191,9 +1247,15 @@ impl DispenserBlock {
             Facing::Up
         };
 
+        if !ctx.world.set_block_state_from_observed(
+            &target,
+            observed,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return true;
+        }
         let placed = item.split(1);
-        ctx.world
-            .set_block_state(&target, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
         if let Some(block_entity) = ctx.world.get_block_entity(&target) {
             block_entity.apply_item_components(&placed);
         }

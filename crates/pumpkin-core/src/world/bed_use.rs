@@ -86,17 +86,20 @@ impl World {
         {
             return false;
         }
-        let Some(_head_mutation) = self.block_entity_mutation_permit(head) else {
+        let Some(head_mutation) = self.block_entity_mutation_permit(head) else {
             return false;
         };
-        let Some(_foot_mutation) = self.block_entity_mutation_permit(foot) else {
+        let Some(foot_mutation) = self.block_entity_mutation_permit(foot) else {
             return false;
         };
         let retired = self.remove_bed_states_if(&halves);
+        drop(head_mutation);
+        drop(foot_mutation);
         let committed = retired.len();
         drop(reservation);
-        // The established owner is per position; even a later rejected write must finish
-        // the notifications and block-entity retirement of an already committed half.
+        #[cfg(test)]
+        self.after_bed_removal_test();
+        // Both halves committed before callbacks; finish only their captured effects.
         for (index, (position, state, entity)) in retired.into_iter().enumerate() {
             entity.on_block_replaced(self, &position);
             self.on_block_state_set_with_block_entity(
@@ -119,6 +122,31 @@ impl World {
         }
         // BedBlock.destroyOnUse still explodes after consuming an available half.
         committed != 0
+    }
+
+    #[cfg(test)]
+    fn after_bed_removal_test(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        if self
+            .persistence_test_hooks
+            .bed_half_write_test
+            .compare_exchange(1, 2, Relaxed, Relaxed)
+            .is_ok()
+        {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while self
+                .persistence_test_hooks
+                .bed_half_write_test
+                .load(Relaxed)
+                == 2
+            {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "bed writer test timed out"
+                );
+                std::thread::yield_now();
+            }
+        }
     }
 }
 

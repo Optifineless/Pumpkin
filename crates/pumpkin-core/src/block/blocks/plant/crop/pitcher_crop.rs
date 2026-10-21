@@ -71,28 +71,39 @@ impl PitcherCropBlock {
         world: &std::sync::Arc<crate::world::World>,
         lower_pos: pumpkin_util::math::position::BlockPos,
         mut lower_state: PitcherCropLikeProperties,
-    ) {
+    ) -> bool {
         let new_age = lower_state.age.saturating_add(1).min(MAX_AGE);
         if !Self::can_grow(world, &lower_pos, lower_state, new_age) {
-            return;
+            return false;
         }
 
+        let observed = lower_state.to_state_id(&Block::PITCHER_CROP);
+        let upper_pos = lower_pos.up();
+        let upper_observed = world.get_block_state_id(&upper_pos);
+        if Self::is_double(new_age)
+            && !upper_observed.to_state().is_air()
+            && upper_observed.to_block() != &Block::PITCHER_CROP
+        {
+            return false;
+        }
         lower_state.age = new_age;
-        // PitcherCropBlock.grow uses setBlock(..., 2) before setBlockAndUpdate on the upper half.
-        world.set_block_state(
-            &lower_pos,
+        let mut updates = vec![(
+            lower_pos,
+            observed,
             lower_state.to_state_id(&Block::PITCHER_CROP),
             BlockFlags::NOTIFY_LISTENERS,
-        );
+        )];
         if Self::is_double(new_age) {
             let mut upper_state = lower_state;
             upper_state.half = DoubleBlockHalf::Upper;
-            world.set_block_state(
-                &lower_pos.up(),
+            updates.push((
+                upper_pos,
+                upper_observed,
                 upper_state.to_state_id(&Block::PITCHER_CROP),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ));
         }
+        world.set_block_states_from_observed(&updates)
     }
 
     #[must_use]
@@ -149,6 +160,9 @@ impl BlockBehaviour for PitcherCropBlock {
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let mut props = PitcherCropLikeProperties::from_state_id(state_id);
         if props.half == DoubleBlockHalf::Lower && props.age < MAX_AGE {
             let next_age = props.age + 1;
@@ -161,21 +175,32 @@ impl BlockBehaviour for PitcherCropBlock {
                     return;
                 }
             }
+            let upper_pos = args.position.up();
+            let upper_observed = args.world.get_block_state_id(&upper_pos);
+            if next_age >= 3
+                && !upper_observed.to_state().is_air()
+                && upper_observed.to_block() != args.block
+            {
+                return;
+            }
             props.age = next_age;
-            args.world.set_block_state(
-                args.position,
+            let mut updates = vec![(
+                *args.position,
+                state_id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            )];
             if next_age >= 3 {
                 let mut upper_props = props;
                 upper_props.half = DoubleBlockHalf::Upper;
-                args.world.set_block_state(
-                    &args.position.up(),
+                updates.push((
+                    upper_pos,
+                    upper_observed,
                     upper_props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
-                );
+                ));
             }
+            args.world.set_block_states_from_observed(&updates);
         }
     }
 
@@ -190,10 +215,11 @@ impl BlockBehaviour for PitcherCropBlock {
         })
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         if let Some((lower_pos, lower_state)) = Self::lower_half(args.world, *args.position) {
-            Self::grow_bonemeal(args.world, lower_pos, lower_state);
+            return Self::grow_bonemeal(args.world, lower_pos, lower_state);
         }
+        false
     }
 }
 

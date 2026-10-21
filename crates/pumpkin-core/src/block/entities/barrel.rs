@@ -122,14 +122,18 @@ impl BlockEntity for BarrelBlockEntity {
 
 impl ViewerCountListener for BarrelBlockEntity {
     fn on_container_open(&self, world: &Arc<World>, position: &BlockPos) {
+        if !self.set_open(world, true) {
+            return;
+        }
         self.play_sound(world, Sound::BlockBarrelOpen);
-        self.set_open(world, true);
         world.emit_game_event(GameEvent::ContainerOpen.name(), position.to_centered_f64());
     }
 
     fn on_container_close(&self, world: &Arc<World>, position: &BlockPos) {
+        if !self.set_open(world, false) {
+            return;
+        }
         self.play_sound(world, Sound::BlockBarrelClose);
-        self.set_open(world, false);
         world.emit_game_event(GameEvent::ContainerClose.name(), position.to_centered_f64());
     }
 }
@@ -151,17 +155,23 @@ impl BarrelBlockEntity {
         }
     }
 
-    fn set_open(&self, world: &Arc<World>, open: bool) {
+    fn set_open(&self, world: &Arc<World>, open: bool) -> bool {
         let state = world.get_block_state(&self.position);
+        if state.id.to_block() != &Block::BARREL {
+            return false;
+        }
         let mut properties = BarrelLikeProperties::from_state_id(state.id);
 
         properties.open = open;
 
-        world.set_block_state(
-            &self.position,
-            properties.to_state_id(&Block::BARREL),
-            BlockFlags::NOTIFY_ALL,
-        );
+        world
+            .set_block_state_if(
+                &self.position,
+                properties.to_state_id(&Block::BARREL),
+                BlockFlags::NOTIFY_ALL,
+                |current| current == state.id && self.transaction.is_live(),
+            )
+            .is_some()
     }
 
     fn play_sound(&self, world: &Arc<World>, sound: Sound) {

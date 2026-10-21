@@ -92,7 +92,12 @@ fn placed_chest_impl<E: BlockEntity + 'static>(
     create_entity: impl FnOnce(BlockPos) -> E,
 ) {
     let chest = create_entity(*args.position);
-    args.world.add_block_entity(Arc::new(chest));
+    if !args
+        .world
+        .add_block_entity_from_observed(Arc::new(chest), args.state_id)
+    {
+        return;
+    }
 
     let chest_props = ChestLikeProperties::from_state_id(args.state_id);
     let connected_towards = match chest_props.r#type {
@@ -109,13 +114,23 @@ fn placed_chest_impl<E: BlockEntity + 'static>(
         connected_towards,
         ChestType::Single,
     ) {
+        let observed = neighbor_props.to_state_id(args.block);
         neighbor_props.r#type = chest_props.r#type.opposite();
 
-        args.world.set_block_state(
-            &args.position.offset(connected_towards.to_offset()),
-            neighbor_props.to_state_id(args.block),
-            BlockFlags::NOTIFY_LISTENERS,
-        );
+        args.world.set_block_states_from_observed(&[
+            (
+                *args.position,
+                args.state_id,
+                args.state_id,
+                BlockFlags::empty(),
+            ),
+            (
+                args.position.offset(connected_towards.to_offset()),
+                observed,
+                neighbor_props.to_state_id(args.block),
+                BlockFlags::NOTIFY_LISTENERS,
+            ),
+        ]);
     }
 }
 
@@ -311,10 +326,12 @@ fn broken_chest_impl(args: &BrokenArgs<'_>) {
         connected_towards,
         chest_props.r#type.opposite(),
     ) {
+        let observed = neighbor_props.to_state_id(args.block);
         neighbor_props.r#type = ChestType::Single;
 
-        args.world.set_block_state(
+        args.world.set_block_state_from_observed(
             &args.position.offset(connected_towards.to_offset()),
+            observed,
             neighbor_props.to_state_id(args.block),
             BlockFlags::NOTIFY_LISTENERS,
         );

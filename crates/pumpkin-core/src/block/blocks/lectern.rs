@@ -29,6 +29,9 @@ use pumpkin_util::text::TextComponent;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
 
+#[path = "lectern_book.rs"]
+mod book;
+
 /// Bridges the screen handler back into the world: page changes emit the
 /// vanilla redstone pulse and taking the book clears `has_book`.
 struct LecternPageController {
@@ -161,25 +164,13 @@ impl LecternBlock {
         );
         world.sync_world_event(WorldEvent::SoundPageTurn, *position, 0);
     }
-
-    /// Sets `has_book`, dropping any pending pulse like vanilla `setHasBook`.
-    pub(crate) fn set_has_book(world: &Arc<World>, position: &BlockPos, has_book: bool) {
-        let (block, state_id) = world.get_block_and_state_id(position);
-        if block != &Block::LECTERN {
-            return;
-        }
-        let mut props = LecternLikeProperties::from_state_id(state_id);
-        props.powered = false;
-        props.has_book = has_book;
-        world.set_block_state(position, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
-        Self::update_neighbors_below(world, position);
-    }
 }
 
 impl BlockBehaviour for LecternBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let block_entity = LecternBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(block_entity), args.state_id);
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
@@ -240,43 +231,37 @@ impl BlockBehaviour for LecternBlock {
         }))
     }
 
-    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        let item_stack = &mut *args.item_stack;
-        if !item_stack.item.has_tag(&tag::Item::MINECRAFT_LECTERN_BOOKS) {
+    fn use_with_item(&self, mut args: UseWithItemArgs<'_>) -> BlockActionResult {
+        if !args
+            .item_stack
+            .item
+            .has_tag(&tag::Item::MINECRAFT_LECTERN_BOOKS)
+        {
             return BlockActionResult::PassToDefaultBlockAction;
         }
-
-        let props =
-            LecternLikeProperties::from_state_id(args.world.get_block_state(args.position).id);
-        if props.has_book {
-            // Fall through so `normal_use` opens the reading screen.
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
             return BlockActionResult::PassToDefaultBlockAction;
         }
-
-        let Some(lectern) = args.world.get_block_entity(args.position) else {
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
-        let Some(lectern) = lectern.as_any().downcast_ref::<LecternBlockEntity>() else {
-            return BlockActionResult::PassToDefaultBlockAction;
-        };
-
-        if !crate::item::item_utils::place_held_item(item_stack, args.player, lectern, 0) {
+        let props = LecternLikeProperties::from_state_id(observed);
+        if props.has_book || !book::place_book(&mut args, observed) {
             return BlockActionResult::PassToDefaultBlockAction;
         }
-
-        Self::set_has_book(args.world, args.position, true);
         args.world
             .play_block_sound(Sound::ItemBookPut, SoundCategory::Blocks, *args.position);
-
         BlockActionResult::Success
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        let mut props =
-            LecternLikeProperties::from_state_id(args.world.get_block_state(args.position).id);
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+        let mut props = LecternLikeProperties::from_state_id(observed);
         props.powered = false;
-        args.world.set_block_state(
+        args.world.set_block_state_from_observed(
             args.position,
+            observed,
             props.to_state_id(args.block),
             BlockFlags::NOTIFY_ALL,
         );

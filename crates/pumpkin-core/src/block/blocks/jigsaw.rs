@@ -130,7 +130,8 @@ impl BlockBehaviour for JigsawBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         {
             let entity = JigsawBlockEntity::new(*args.position);
-            args.world.add_block_entity(Arc::new(entity));
+            args.world
+                .add_block_entity_from_observed(Arc::new(entity), args.state_id);
         }
     }
 

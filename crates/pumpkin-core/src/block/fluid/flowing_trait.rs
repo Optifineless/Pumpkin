@@ -97,7 +97,14 @@ pub trait FlowingFluid: Send + Sync {
                 let new_state_id = new_state.to_state_id(fluid);
 
                 if new_state_id != current_block_state_id {
-                    world.set_block_state(block_pos, new_state_id, BlockFlags::NOTIFY_ALL);
+                    if !world.set_block_state_from_observed(
+                        block_pos,
+                        current_block_state_id,
+                        new_state_id,
+                        BlockFlags::NOTIFY_ALL,
+                    ) {
+                        return;
+                    }
 
                     // Schedule next tick for this position
                     let tick_delay = self.get_flow_speed(world);
@@ -108,8 +115,9 @@ pub trait FlowingFluid: Send + Sync {
                 state_for_spreading = new_state;
             } else {
                 if !waterlogged {
-                    world.set_block_state(
+                    world.set_block_state_from_observed(
                         block_pos,
+                        current_block_state_id,
                         Block::AIR.default_state.id,
                         BlockFlags::NOTIFY_ALL,
                     );
@@ -147,7 +155,13 @@ pub trait FlowingFluid: Send + Sync {
         // Try to flow down first
         if is_hole {
             let falling_props = self.get_flowing(fluid, Level::L8, true);
-            self.spread_to(world, fluid, &below_pos, falling_props.to_state_id(fluid));
+            self.spread_to(
+                world,
+                fluid,
+                &below_pos,
+                below_state.id,
+                falling_props.to_state_id(fluid),
+            );
 
             // Check if we should also spread to sides
             if props.level == Level::L8 && props.falling == Falling::False {
@@ -293,52 +307,15 @@ pub trait FlowingFluid: Send + Sync {
         world: &Arc<World>,
         fluid: &Fluid,
         pos: &BlockPos,
+        observed: BlockStateId,
         state_id: BlockStateId,
         new_props: FlowingFluidProperties,
     ) {
-        let current_state_id = world.get_block_state_id(pos);
-        if let Some(current_props) = self.get_effective_props(fluid, current_state_id) {
-            let current_level = i32::from(current_props.level.to_index()) + 1;
-            let new_level = i32::from(new_props.level.to_index()) + 1;
-            let current_is_source =
-                current_props.level == Level::L8 && current_props.falling == Falling::False;
-            let new_is_source = new_props.level == Level::L8 && new_props.falling == Falling::False;
-
-            // Never overwrite a source with anything
-            if current_is_source {
-                return;
-            }
-
-            // Check for infinite source formation before quiescence checks
-            if !current_is_source && self.can_convert_to_source(world) {
-                let should_convert = self.check_infinite_source_formation(world, fluid, pos);
-
-                if should_convert {
-                    let source_props = self.get_source(fluid, false);
-                    let source_state_id = source_props.to_state_id(fluid);
-                    world.set_block_state(pos, source_state_id, BlockFlags::NOTIFY_ALL);
-
-                    // Sources don't need ticks
-                    return;
-                }
-            }
-
-            // If new is a source, always accept it
-            if new_is_source {
-                // Continue to set state below
-            } else if current_props.falling == new_props.falling {
-                // Same falling state - check level
-                if new_level <= current_level {
-                    return;
-                }
-            }
-        } else {
-            // Replace non-fluid blocks
-            let block = world.get_block(pos);
-            if block.id != Block::AIR.id {
-                world.break_block(pos, None, BlockFlags::NOTIFY_ALL);
-            }
-        }
+        let Some(current_state_id) =
+            self.prepare_spread_target(world, fluid, pos, observed, new_props)
+        else {
+            return;
+        };
 
         let mut event = crate::plugin::api::events::block::block_from_to::BlockFromToEvent::new(
             *pos,
@@ -352,7 +329,14 @@ pub trait FlowingFluid: Send + Sync {
             return;
         }
 
-        world.set_block_state(pos, state_id, BlockFlags::NOTIFY_ALL);
+        if !world.set_block_state_from_observed(
+            pos,
+            current_state_id,
+            state_id,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return;
+        }
 
         // Check for infinite source formation after placing new fluid
         if self.can_convert_to_source(world) {
@@ -361,7 +345,12 @@ pub trait FlowingFluid: Send + Sync {
             if should_convert {
                 let source_props = self.get_source(fluid, false);
                 let source_state_id = source_props.to_state_id(fluid);
-                world.set_block_state(pos, source_state_id, BlockFlags::NOTIFY_ALL);
+                world.set_block_state_from_observed(
+                    pos,
+                    state_id,
+                    source_state_id,
+                    BlockFlags::NOTIFY_ALL,
+                );
 
                 // Sources don't need ticks
                 return;
@@ -375,6 +364,74 @@ pub trait FlowingFluid: Send + Sync {
             let tick_delay = self.get_flow_speed(world);
             world.schedule_fluid_tick(fluid, *pos, tick_delay, TickPriority::Normal);
         }
+    }
+
+    /// Resolves the target observation before a fluid spread event can call plugins.
+    fn prepare_spread_target(
+        &self,
+        world: &Arc<World>,
+        fluid: &Fluid,
+        pos: &BlockPos,
+        observed: BlockStateId,
+        new_props: FlowingFluidProperties,
+    ) -> Option<BlockStateId> {
+        let mut current_state_id = observed;
+        if let Some(current_props) = self.get_effective_props(fluid, current_state_id) {
+            let current_level = i32::from(current_props.level.to_index()) + 1;
+            let new_level = i32::from(new_props.level.to_index()) + 1;
+            let current_is_source =
+                current_props.level == Level::L8 && current_props.falling == Falling::False;
+            let new_is_source = new_props.level == Level::L8 && new_props.falling == Falling::False;
+
+            // Never overwrite a source with anything
+            if current_is_source {
+                return None;
+            }
+
+            // Check for infinite source formation before quiescence checks
+            if !current_is_source && self.can_convert_to_source(world) {
+                let should_convert = self.check_infinite_source_formation(world, fluid, pos);
+
+                if should_convert {
+                    let source_props = self.get_source(fluid, false);
+                    let source_state_id = source_props.to_state_id(fluid);
+                    world.set_block_state_from_observed(
+                        pos,
+                        current_state_id,
+                        source_state_id,
+                        BlockFlags::NOTIFY_ALL,
+                    );
+
+                    // Sources don't need ticks
+                    return None;
+                }
+            }
+
+            // If new is a source, always accept it
+            if new_is_source {
+                // Continue to set state below
+            } else if current_props.falling == new_props.falling {
+                // Same falling state - check level
+                if new_level <= current_level {
+                    return None;
+                }
+            }
+        } else {
+            // Replace non-fluid blocks
+            let block = Block::from_state_id(current_state_id);
+            if block.id != Block::AIR.id {
+                world.break_block_from_observed(
+                    pos,
+                    current_state_id,
+                    None,
+                    BlockFlags::NOTIFY_ALL,
+                )?;
+                current_state_id =
+                    crate::block::blocks::growing_plant::fluid_state_after_break(current_state_id);
+            }
+        }
+
+        Some(current_state_id)
     }
 
     /// Checks if infinite source formation conditions are met.
@@ -433,9 +490,16 @@ pub trait FlowingFluid: Send + Sync {
     ///
     /// Default implementation delegates to `apply_spread`. Implementations like
     /// lava can override to add fluid-specific logic (e.g., water -> stone conversion).
-    fn spread_to(&self, world: &Arc<World>, fluid: &Fluid, pos: &BlockPos, state_id: BlockStateId) {
+    fn spread_to(
+        &self,
+        world: &Arc<World>,
+        fluid: &Fluid,
+        pos: &BlockPos,
+        observed: BlockStateId,
+        state_id: BlockStateId,
+    ) {
         let new_props = FlowingFluidProperties::from_state_id(state_id, fluid);
-        self.apply_spread(world, fluid, pos, state_id, new_props);
+        self.apply_spread(world, fluid, pos, observed, state_id, new_props);
     }
 
     /// Spreads fluid horizontally to adjacent positions using pathfinding.
@@ -463,10 +527,10 @@ pub trait FlowingFluid: Send + Sync {
 
         let (spread_dirs, count) = pathfinder::get_spread(self, world, fluid, block_pos);
 
-        for &(direction, state_id) in spread_dirs.iter().take(count) {
+        for &(direction, observed, state_id) in spread_dirs.iter().take(count) {
             let side_pos = block_pos.offset(direction.to_offset());
 
-            self.spread_to(world, fluid, &side_pos, state_id);
+            self.spread_to(world, fluid, &side_pos, observed, state_id);
         }
     }
 }

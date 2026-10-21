@@ -10,6 +10,7 @@ use crate::world::World;
 use pumpkin_data::Block;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{BlockDirection, BlockId, BlockStateId};
 use pumpkin_util::math::position::BlockPos;
@@ -66,12 +67,24 @@ pub(crate) fn try_wax_block(world: &Arc<World>, location: BlockPos, block: &Bloc
     }
     let new_state_id = waxed_state_id(block, old_state_id, new_block);
 
-    if world
-        .set_block_state_if(&location, new_state_id, BlockFlags::NOTIFY_ALL, |current| {
-            current == old_state_id
-        })
-        .is_none()
+    let applied = if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_DOORS)
+        || block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_COPPER_CHESTS)
     {
+        crate::block::blocks::weathering_copper::set_stage_from_observed(
+            world,
+            &location,
+            old_state_id,
+            new_block,
+        )
+    } else {
+        world.set_block_state_from_observed(
+            &location,
+            old_state_id,
+            new_state_id,
+            BlockFlags::NOTIFY_ALL,
+        )
+    };
+    if !applied {
         return false;
     }
     world.sync_world_event(WorldEvent::ParticlesWaxOn, location, 0);

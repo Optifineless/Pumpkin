@@ -29,8 +29,8 @@ fn publish_command_block_entity(
     state_id: BlockStateId,
     block_entity: &Arc<dyn BlockEntity>,
 ) -> bool {
-    world.add_block_entity(Arc::clone(block_entity));
-    world.get_block_state_id(&position) == state_id
+    world.add_block_entity_from_observed(Arc::clone(block_entity), state_id)
+        && world.get_block_state_id(&position) == state_id
         && world
             .get_block_entity(&position)
             .is_some_and(|current| Arc::ptr_eq(&current, block_entity))
@@ -108,6 +108,14 @@ impl JavaClient {
         }
         let pos = command.pos;
         let world = player.world();
+        let old_state_id = world.get_block_state_id(&pos);
+        let old_block = old_state_id.to_block();
+        if old_block != &Block::COMMAND_BLOCK
+            && old_block != &Block::CHAIN_COMMAND_BLOCK
+            && old_block != &Block::REPEATING_COMMAND_BLOCK
+        {
+            return;
+        }
         let block_entity = world.get_block_entity(&pos);
         if let Some(block_entity) = block_entity {
             if block_entity.resource_location() != CommandBlockEntity::ID {
@@ -120,8 +128,6 @@ impl JavaClient {
                 return;
             };
 
-            let old_block = world.get_block(&pos);
-            let old_state_id = world.get_block_state_id(&pos);
             let mut props = CommandBlockLikeProperties::from_state_id(old_state_id);
 
             let block_type: &'static Block = match command_block_mode {
@@ -149,11 +155,12 @@ impl JavaClient {
 
             let new_state_id = props.to_state_id(block_type);
             // ServerGamePacketListenerImpl.handleSetCommandBlock updates terrain and the entity
-            // together: hold the block-entity mutation permit until the new entity is published.
+            // together, with each stage admitting its retained terrain observation.
             let Some(mutation) = world.block_entity_mutation_permit(pos) else {
                 warn!("Command block update rejected while chunk is unloading at {pos:?}");
                 return;
             };
+            drop(mutation);
             if world
                 .set_block_state_if(
                     &command.pos,
@@ -179,7 +186,6 @@ impl JavaClient {
             let published_block_entity: Arc<dyn BlockEntity> = command_block;
             let published =
                 publish_command_block_entity(&world, pos, new_state_id, &published_block_entity);
-            drop(mutation);
             if !published {
                 return;
             }

@@ -58,6 +58,9 @@ impl BlockBehaviour for DripstoneBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state = args.world.get_block_state_id(args.position);
+        if state.to_block() != args.block {
+            return;
+        }
         let props = PointedDripstoneLikeProperties::from_state_id(state);
         // SpeleothemBlock.tick rechecks stalagmite survival; a scheduled stalactite still falls.
         if props.vertical_direction == VerticalDirection::Up
@@ -68,8 +71,12 @@ impl BlockBehaviour for DripstoneBlock {
                 props.vertical_direction,
             )
         {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                state,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         } else {
             spawn_falling_stalactite(args.world, *args.position);
         }
@@ -228,7 +235,10 @@ fn spawn_falling_stalactite(world: &Arc<World>, start: BlockPos) {
         if props.vertical_direction != VerticalDirection::Down {
             break;
         }
-        let falling = crate::entity::falling::FallingEntity::replace_spawn(world, pos, state);
+        let Some(falling) = crate::entity::falling::FallingEntity::replace_spawn(world, pos, state)
+        else {
+            break;
+        };
         if matches!(
             props.thickness,
             SpeleothemThickness::Tip | SpeleothemThickness::TipMerge
@@ -514,8 +524,9 @@ fn modify_dripstone_thickness_to(
         return;
     }
     support_props.thickness = new_thickness;
-    world.set_block_state(
+    world.set_block_state_from_observed(
         pos,
+        support_block_state_id,
         support_props.to_state_id(&Block::POINTED_DRIPSTONE),
         BlockFlags::empty(),
     );

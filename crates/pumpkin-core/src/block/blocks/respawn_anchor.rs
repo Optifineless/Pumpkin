@@ -62,6 +62,9 @@ pub struct RespawnAnchorBlock;
 impl BlockBehaviour for RespawnAnchorBlock {
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let mut props = RespawnAnchorLikeProperties::from_state_id(state_id);
 
         match item_use_action(
@@ -77,11 +80,14 @@ impl BlockBehaviour for RespawnAnchorBlock {
 
         props.charges += 1;
         // RespawnAnchorBlock.charge emits block_change and sound before consuming the glowstone.
-        args.world.set_block_state(
+        if !args.world.set_block_state_from_observed(
             args.position,
+            state_id,
             props.to_state_id(args.block),
             BlockFlags::NOTIFY_ALL,
-        );
+        ) {
+            return BlockActionResult::Pass;
+        }
         args.world.emit_game_event(
             GameEvent::BlockChange.name(),
             args.position.to_centered_f64(),
@@ -100,6 +106,9 @@ impl BlockBehaviour for RespawnAnchorBlock {
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let props = RespawnAnchorLikeProperties::from_state_id(state_id);
 
         match empty_hand_action(props.charges, args.world.dimension.respawn_anchor_works) {
@@ -108,8 +117,9 @@ impl BlockBehaviour for RespawnAnchorBlock {
                 // RespawnAnchorBlock.explode removes the block with Level.removeBlock's notifying flags.
                 if args
                     .world
-                    .break_block(
+                    .break_block_from_observed(
                         args.position,
+                        state_id,
                         None,
                         BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
                     )

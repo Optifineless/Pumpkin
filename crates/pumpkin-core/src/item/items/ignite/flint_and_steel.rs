@@ -3,15 +3,12 @@ use crate::entity::player::Player;
 use crate::item::ItemBehaviour;
 use crate::item::ItemMetadata;
 use crate::server::Server;
-use crate::world::World;
+use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::{Block, BlockStateId};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_world::world::BlockFlags;
-use std::sync::Arc;
 
 use crate::item::items::ignite::ignition::Ignition;
 
@@ -58,9 +55,7 @@ impl ItemBehaviour for FlintAndSteelItem {
         }
 
         let ignited = Ignition::ignite_block(
-            |world: Arc<World>, pos: BlockPos, new_state_id: BlockStateId| {
-                world.set_block_state(&pos, new_state_id, BlockFlags::NOTIFY_ALL);
-            },
+            |_, _, _| {},
             &world,
             location,
             location.offset(face.to_offset()),

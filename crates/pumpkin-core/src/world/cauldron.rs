@@ -19,6 +19,15 @@ impl World {
         old_state: BlockStateId,
         new_state: BlockStateId,
     ) -> Option<impl FnOnce() + 'static> {
+        self.prepare_block_state_from_observed(position, old_state, new_state)
+    }
+
+    pub(crate) fn prepare_block_state_from_observed(
+        self: &Arc<Self>,
+        position: BlockPos,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+    ) -> Option<impl FnOnce() + 'static> {
         assert_not_in_snapshot(SnapshotBoundary::Mutation, "World::prepare_cauldron_fill");
         if !self.is_in_build_limit(position) {
             return None;

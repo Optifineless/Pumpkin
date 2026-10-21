@@ -125,8 +125,9 @@ impl BlockBehaviour for BigDripleafBlock {
 
                 dripleaf_stem_props.facing = old_dripleaf_props.facing;
                 dripleaf_stem_props.waterlogged = old_dripleaf_props.waterlogged;
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     &support_pos,
+                    support_state_id,
                     dripleaf_stem_props.to_state_id(&Block::BIG_DRIPLEAF_STEM),
                     BlockFlags::empty(),
                 );
@@ -145,7 +146,9 @@ fn set_tilt_and_schedule_tick(
     tilt: Tilt,
     sound_wrapper: Option<Sound>,
 ) {
-    set_tilt(state_id, world, pos, tilt);
+    if !set_tilt(state_id, world, pos, tilt) {
+        return;
+    }
     if let Some(tilt_sound) = sound_wrapper {
         play_tilt_sound(world, pos, tilt_sound);
     }
@@ -165,21 +168,24 @@ fn set_tilt_and_schedule_tick(
 }
 
 fn reset_tilt(state_id: BlockStateId, world: &Arc<World>, pos: &BlockPos) {
-    set_tilt(state_id, world, pos, Tilt::None);
+    if !set_tilt(state_id, world, pos, Tilt::None) {
+        return;
+    }
     let props = BigDripleafLikeProperties::from_state_id(state_id);
     if props.tilt != Tilt::None {
         play_tilt_sound(world, pos, Sound::BlockBigDripleafTiltUp);
     }
 }
 
-fn set_tilt(state_id: BlockStateId, world: &Arc<World>, pos: &BlockPos, new_tilt: Tilt) {
+fn set_tilt(state_id: BlockStateId, world: &Arc<World>, pos: &BlockPos, new_tilt: Tilt) -> bool {
     let mut props = BigDripleafLikeProperties::from_state_id(state_id);
     props.tilt = new_tilt;
-    world.set_block_state(
+    world.set_block_state_from_observed(
         pos,
+        state_id,
         props.to_state_id(&Block::BIG_DRIPLEAF),
         BlockFlags::NOTIFY_ALL,
-    );
+    )
 }
 
 fn play_tilt_sound(world: &Arc<World>, pos: &BlockPos, tilt_sound: Sound) {

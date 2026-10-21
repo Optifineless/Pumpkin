@@ -52,17 +52,30 @@ impl BlockBehaviour for ChorusFlowerBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+
         if !can_survive(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let above = args.position.up();
         let max_y = args.world.dimension.min_y + args.world.dimension.height - 1;
-        if args.world.get_block(&above).default_state.is_air() && above.0.y <= max_y {
+        let above_state = args.world.get_block_state_id(&above);
+        if above_state.to_state().is_air() && above.0.y <= max_y {
             let state_id = args.world.get_block_state_id(args.position);
+            if state_id.to_block() != args.block {
+                return;
+            }
             let state_props = ChorusFlowerLikeProperties::from_state_id(state_id);
             let current_age = state_props.age;
             if current_age < DEAD_AGE {
@@ -105,12 +118,12 @@ impl BlockBehaviour for ChorusFlowerBlock {
                         &Block::CHORUS_PLANT,
                         args.position,
                     );
-                    args.world.set_block_state(
-                        args.position,
-                        plant_state_id,
-                        BlockFlags::NOTIFY_ALL,
+                    place_growth(
+                        args.world,
+                        (*args.position, state_id, plant_state_id),
+                        (above, above_state),
+                        current_age,
                     );
-                    place_grown_flower(args.world, &above, current_age);
                 } else if current_age < 4 {
                     let mut num_branch_attempts = rand::rng().random_range(0..4);
                     if pillar_on_support_block {
@@ -124,7 +137,8 @@ impl BlockBehaviour for ChorusFlowerBlock {
                         let target = args.position.offset(direction.to_offset());
                         let target_below = target.down();
 
-                        if args.world.get_block(&target).default_state.is_air()
+                        let target_state = args.world.get_block_state_id(&target);
+                        if target_state.to_state().is_air()
                             && args.world.get_block(&target_below).default_state.is_air()
                             && all_neighbors_empty(
                                 args.world.as_ref(),
@@ -132,8 +146,12 @@ impl BlockBehaviour for ChorusFlowerBlock {
                                 Some(direction.opposite()),
                             )
                         {
-                            place_grown_flower(args.world, &target, current_age + 1);
-                            created_branch = true;
+                            created_branch |= place_growth(
+                                args.world,
+                                (*args.position, state_id, state_id),
+                                (target, target_state),
+                                current_age + 1,
+                            );
                         }
                     }
 
@@ -143,42 +161,81 @@ impl BlockBehaviour for ChorusFlowerBlock {
                             &Block::CHORUS_PLANT,
                             args.position,
                         );
-                        args.world.set_block_state(
+                        args.world.set_block_state_from_observed(
                             args.position,
+                            state_id,
                             plant_state_id,
                             BlockFlags::NOTIFY_ALL,
                         );
                     } else {
-                        place_dead_flower(args.world, args.position);
+                        place_dead_flower_from_observed(args.world, args.position, state_id);
                     }
                 } else {
-                    place_dead_flower(args.world, args.position);
+                    place_dead_flower_from_observed(args.world, args.position, state_id);
                 }
             }
         }
     }
 }
 
+fn place_growth(
+    world: &Arc<World>,
+    source: (BlockPos, BlockStateId, BlockStateId),
+    target: (BlockPos, BlockStateId),
+    age: u8,
+) -> bool {
+    let mut props = ChorusFlowerLikeProperties::default(&Block::CHORUS_FLOWER);
+    props.age = age;
+    if !world.set_block_states_from_observed(&[
+        (source.0, source.1, source.2, BlockFlags::NOTIFY_ALL),
+        (
+            target.0,
+            target.1,
+            props.to_state_id(&Block::CHORUS_FLOWER),
+            BlockFlags::NOTIFY_ALL,
+        ),
+    ]) {
+        return false;
+    }
+    world.sync_world_event(WorldEvent::SoundChorusGrow, target.0, 0);
+    true
+}
+
 pub fn place_grown_flower(world: &Arc<World>, pos: &BlockPos, age: u8) {
     let mut props = ChorusFlowerLikeProperties::default(&Block::CHORUS_FLOWER);
     props.age = age;
-    world.set_block_state(
-        pos,
-        props.to_state_id(&Block::CHORUS_FLOWER),
-        BlockFlags::NOTIFY_ALL,
-    );
-    world.sync_world_event(WorldEvent::SoundChorusGrow, *pos, 0);
+    let observed = world.get_block_state_id(pos);
+    if observed.to_state().is_air()
+        && world.set_block_state_from_observed(
+            pos,
+            observed,
+            props.to_state_id(&Block::CHORUS_FLOWER),
+            BlockFlags::NOTIFY_ALL,
+        )
+    {
+        world.sync_world_event(WorldEvent::SoundChorusGrow, *pos, 0);
+    }
 }
 
 pub fn place_dead_flower(world: &Arc<World>, pos: &BlockPos) {
+    let observed = world.get_block_state_id(pos);
+    place_dead_flower_from_observed(world, pos, observed);
+}
+
+fn place_dead_flower_from_observed(world: &Arc<World>, pos: &BlockPos, observed: BlockStateId) {
+    if observed.to_block() != &Block::CHORUS_FLOWER {
+        return;
+    }
     let mut props = ChorusFlowerLikeProperties::default(&Block::CHORUS_FLOWER);
     props.age = DEAD_AGE;
-    world.set_block_state(
+    if world.set_block_state_from_observed(
         pos,
+        observed,
         props.to_state_id(&Block::CHORUS_FLOWER),
         BlockFlags::NOTIFY_ALL,
-    );
-    world.sync_world_event(WorldEvent::SoundChorusDeath, *pos, 0);
+    ) {
+        world.sync_world_event(WorldEvent::SoundChorusDeath, *pos, 0);
+    }
 }
 
 #[must_use]

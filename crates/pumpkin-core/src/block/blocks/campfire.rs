@@ -27,7 +27,8 @@ pub struct CampfireBlock;
 impl BlockBehaviour for CampfireBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let entity = CampfireBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(entity), args.state_id);
     }
 
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {

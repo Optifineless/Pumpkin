@@ -52,11 +52,20 @@ pub fn block_drops(
     pos: &BlockPos,
     params: &LootContextParameters,
 ) -> Vec<pumpkin_data::item_stack::ItemStack> {
+    let params = crate::world::loot::build_block_loot_context(world, pos, params);
+    block_drops_with_context(world, block, pos, &params)
+}
+
+pub fn block_drops_with_context(
+    world: &Arc<World>,
+    block: &Block,
+    pos: &BlockPos,
+    params: &LootContextParameters,
+) -> Vec<pumpkin_data::item_stack::ItemStack> {
     // Block.getDrops / BlockEntity.collectComponents; Blocks.wallVariant assigns the standing block's loot table (upstream #3890).
     let key = format!("minecraft:blocks/{}", loot_table_name(block));
     if let Some(loot_table) = world.get_loot_table(&key) {
-        let params = crate::world::loot::build_block_loot_context(world, pos, params);
-        let items = crate::world::loot::generate_loot_from_handle(&loot_table, 0, &params);
+        let items = crate::world::loot::generate_loot_from_handle(&loot_table, 0, params);
         if !items.is_empty() {
             let mut event = crate::plugin::block::block_drop_item::BlockDropItemEvent {
                 block_pos: *pos,
@@ -85,6 +94,20 @@ pub fn drop_experience(
     pos: &BlockPos,
     tool: Option<&pumpkin_data::item_stack::ItemStack>,
 ) {
+    let amount = prepare_block_experience(world, block, pos, tool);
+    if amount > 0 {
+        // Block.popExperience uses Vec3.atCenterOf.
+        ExperienceOrbEntity::award(world, pos.to_centered_f64(), amount);
+    }
+}
+
+/// Evaluates block experience and its plugin event before terrain admission.
+pub fn prepare_block_experience(
+    world: &Arc<World>,
+    block: &Block,
+    pos: &BlockPos,
+    tool: Option<&pumpkin_data::item_stack::ItemStack>,
+) -> u32 {
     let has_silk_touch = tool.is_some_and(|tool| {
         pumpkin_data::Enchantment::from_name("silk_touch")
             .is_some_and(|e| tool.get_enchantment_level(e) > 0)
@@ -102,10 +125,8 @@ pub fn drop_experience(
             if let Some(server) = world.server.upgrade() {
                 server.plugin_manager.fire_blocking(&server, &mut event);
             }
-            if event.exp > 0 {
-                // Block.popExperience uses Vec3.atCenterOf.
-                ExperienceOrbEntity::award(world, pos.to_centered_f64(), event.exp as u32);
-            }
+            return event.exp.max(0) as u32;
         }
     }
+    0
 }

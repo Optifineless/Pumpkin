@@ -18,14 +18,13 @@ use crate::{
 
 pub struct WitherPattern {
     blocks: [BlockPos; 7],
+    observed: [BlockStateId; 7],
     center: BlockPos,
 }
 
 #[must_use]
 pub fn find_wither_pattern(world: &Arc<World>, skull_pos: &BlockPos) -> Option<WitherPattern> {
     let is_soul_block = |block: &Block| block == &Block::SOUL_SAND || block == &Block::SOUL_SOIL;
-    let is_skull =
-        |pos: &BlockPos| pos == skull_pos || world.get_block(pos) == &Block::WITHER_SKELETON_SKULL;
 
     for dir in [BlockDirection::North, BlockDirection::West] {
         let opposite = dir.opposite();
@@ -41,16 +40,18 @@ pub fn find_wither_pattern(world: &Arc<World>, skull_pos: &BlockPos) -> Option<W
             let skull1_pos = arm1.up();
             let skull2_pos = arm2.up();
 
-            if is_soul_block(world.get_block(&top_middle))
-                && is_soul_block(world.get_block(&base))
-                && is_soul_block(world.get_block(&arm1))
-                && is_soul_block(world.get_block(&arm2))
-                && is_skull(&center)
-                && is_skull(&skull1_pos)
-                && is_skull(&skull2_pos)
+            let blocks = [center, skull1_pos, skull2_pos, top_middle, arm1, arm2, base];
+            let observed = blocks.map(|pos| world.get_block_state_id(&pos));
+            if observed[3..]
+                .iter()
+                .all(|state| is_soul_block(state.to_block()))
+                && blocks[..3].iter().zip(&observed[..3]).all(|(pos, state)| {
+                    *pos == *skull_pos || state.to_block() == &Block::WITHER_SKELETON_SKULL
+                })
             {
                 return Some(WitherPattern {
-                    blocks: [center, skull1_pos, skull2_pos, top_middle, arm1, arm2, base],
+                    blocks,
+                    observed,
                     center: top_middle,
                 });
             }
@@ -61,8 +62,22 @@ pub fn find_wither_pattern(world: &Arc<World>, skull_pos: &BlockPos) -> Option<W
 }
 
 fn spawn_wither(world: &Arc<World>, pattern: &WitherPattern) {
+    if pattern.observed[..3]
+        .iter()
+        .any(|state| state.to_block() != &Block::WITHER_SKELETON_SKULL)
+    {
+        return;
+    }
+    let updates = pattern
+        .blocks
+        .iter()
+        .zip(pattern.observed)
+        .map(|(pos, observed)| (*pos, observed, BlockStateId::AIR, BlockFlags::NOTIFY_ALL))
+        .collect::<Vec<_>>();
+    if !world.set_block_states_from_observed(&updates) {
+        return;
+    }
     for pos in pattern.blocks {
-        world.set_block_state(&pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
         world.sync_world_event(
             WorldEvent::ParticlesDestroyBlock,
             pos,
@@ -89,8 +104,12 @@ impl BlockBehaviour for WitherSkeletonSkullBlock {
     }
 
     fn placed(&self, args: PlacedArgs<'_>) {
-        args.world
-            .add_block_entity(Arc::new(SkullBlockEntity::new(*args.position)));
+        if !args.world.add_block_entity_from_observed(
+            Arc::new(SkullBlockEntity::new(*args.position)),
+            args.state_id,
+        ) {
+            return;
+        }
 
         if let Some(pattern) = find_wither_pattern(args.world, args.position) {
             spawn_wither(args.world, &pattern);

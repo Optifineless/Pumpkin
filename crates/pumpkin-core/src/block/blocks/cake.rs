@@ -42,42 +42,33 @@ impl CakeBlock {
         location: &BlockPos,
         state_id: BlockStateId,
     ) -> BlockActionResult {
-        if !player.can_eat(false) {
+        if Block::from_state_id(state_id) != block || !player.can_eat(false) {
+            return BlockActionResult::Pass;
+        }
+        let mut properties = CakeLikeProperties::from_state_id(state_id);
+        let new_state = match properties.bites {
+            0..=5 => {
+                properties.bites += 1;
+                properties.to_state_id(block)
+            }
+            6 => Block::AIR.default_state.id,
+            _ => return BlockActionResult::Pass,
+        };
+        if !world.set_block_state_from_observed(
+            location,
+            state_id,
+            new_state,
+            BlockFlags::NOTIFY_ALL,
+        ) {
             return BlockActionResult::Pass;
         }
         player.hunger_manager.eat(player, 2, 0.4);
-
-        let mut properties = CakeLikeProperties::from_state_id(state_id);
-        match properties.bites {
-            0..=5 => {
-                player.increment_stat(
-                    pumpkin_data::statistic::StatisticCategory::Custom,
-                    pumpkin_data::statistic::CustomStatistic::EatCakeSlice as i32,
-                    1,
-                );
-                properties.bites += 1;
-                world.set_block_state(
-                    location,
-                    properties.to_state_id(block),
-                    BlockFlags::NOTIFY_ALL,
-                );
-                BlockActionResult::Consume
-            }
-            6 => {
-                player.increment_stat(
-                    pumpkin_data::statistic::StatisticCategory::Custom,
-                    pumpkin_data::statistic::CustomStatistic::EatCakeSlice as i32,
-                    1,
-                );
-                world.set_block_state(
-                    location,
-                    Block::AIR.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                );
-                BlockActionResult::Consume
-            }
-            _ => BlockActionResult::Pass,
-        }
+        player.increment_stat(
+            pumpkin_data::statistic::StatisticCategory::Custom,
+            pumpkin_data::statistic::CustomStatistic::EatCakeSlice as i32,
+            1,
+        );
+        BlockActionResult::Consume
     }
 }
 
@@ -95,6 +86,9 @@ impl BlockBehaviour for CakeBlock {
 
     fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let properties = CakeLikeProperties::from_state_id(state_id);
         let item = args.item_stack.item;
         match item.id {
@@ -109,14 +103,17 @@ impl BlockBehaviour for CakeBlock {
                     );
                 }
 
+                if !args.world.set_block_state_from_observed(
+                    args.position,
+                    state_id,
+                    cake_from_candle(item).default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return BlockActionResult::Pass;
+                }
                 if args.player.gamemode.load() != GameMode::Creative {
                     args.item_stack.decrement(1);
                 }
-                args.world.set_block_state(
-                    args.position,
-                    cake_from_candle(item).default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                );
                 args.world.play_sound(
                     Sound::BlockCakeAddCandle,
                     SoundCategory::Blocks,
@@ -140,9 +137,17 @@ impl BlockBehaviour for CakeBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if Block::from_state_id(observed) != args.block {
+            return;
+        }
         if !can_place_at(args.world.as_ref(), args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 

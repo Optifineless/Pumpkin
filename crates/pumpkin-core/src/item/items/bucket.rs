@@ -209,50 +209,65 @@ const fn get_fill_sound(item: &Item) -> Sound {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn try_pickup_fluid_at(
     world: &Arc<World>,
     block_pos: BlockPos,
 ) -> Option<&'static Item> {
-    let (block, state) = world.get_block_and_state_id(&block_pos);
+    try_pickup_fluid_at_outcome(world, block_pos).ok().flatten()
+}
 
+pub(crate) fn try_pickup_fluid_at_outcome(
+    world: &Arc<World>,
+    block_pos: BlockPos,
+) -> Result<Option<&'static Item>, ()> {
+    pickup_fluid_from_observed(world, block_pos, world.get_block_state_id(&block_pos))
+}
+
+fn pickup_fluid_from_observed(
+    world: &Arc<World>,
+    block_pos: BlockPos,
+    state: pumpkin_data::BlockStateId,
+) -> Result<Option<&'static Item>, ()> {
+    let block = state.to_block();
     if block == &Block::POWDER_SNOW {
-        world.break_block(
-            &block_pos,
-            None,
-            BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
-        );
-        return Some(&Item::POWDER_SNOW_BUCKET);
+        world
+            .break_block_from_observed(
+                &block_pos,
+                state,
+                None,
+                BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
+            )
+            .ok_or(())?;
+        return Ok(Some(&Item::POWDER_SNOW_BUCKET));
     }
-
     if block.is_waterlogged(state) {
         let state_id = block.set_waterlogged(state, false).unwrap_or(state);
-        world.set_block_state(&block_pos, state_id, BlockFlags::NOTIFY_ALL);
+        if !world.set_block_state_from_observed(&block_pos, state, state_id, BlockFlags::NOTIFY_ALL)
+        {
+            return Err(());
+        }
         world.schedule_fluid_tick(&Fluid::WATER, block_pos, 5, TickPriority::Normal);
-        return Some(&Item::WATER_BUCKET);
+        return Ok(Some(&Item::WATER_BUCKET));
     }
-
     if state == Block::LAVA.default_state.id || state == Block::WATER.default_state.id {
-        world.break_block(&block_pos, None, BlockFlags::NOTIFY_ALL);
-        world.set_block_state(
-            &block_pos,
-            Block::AIR.default_state.id,
-            BlockFlags::NOTIFY_ALL,
-        );
-        return Some(if state == Block::LAVA.default_state.id {
+        world
+            .break_block_from_observed(&block_pos, state, None, BlockFlags::NOTIFY_ALL)
+            .ok_or(())?;
+        return Ok(Some(if state == Block::LAVA.default_state.id {
             &Item::LAVA_BUCKET
         } else {
             &Item::WATER_BUCKET
-        });
+        }));
     }
-
-    None
+    Ok(None)
 }
 
 fn bucket_pickup_target(
     world: &World,
     position: BlockPos,
     direction: BlockDirection,
-) -> Option<(BlockPos, &'static Item)> {
+) -> Option<(BlockPos, &'static Item, pumpkin_data::BlockStateId)> {
     for pos in [position, position.offset(direction.to_offset())] {
         let (block, state) = world.get_block_and_state_id(&pos);
         let output = if block == &Block::POWDER_SNOW {
@@ -265,7 +280,7 @@ fn bucket_pickup_target(
             None
         };
         if let Some(output) = output {
-            return Some((pos, output));
+            return Some((pos, output, state));
         }
     }
     None
@@ -313,12 +328,17 @@ fn is_liquid_container(block: &Block) -> bool {
 }
 
 // BlockBehaviour.canBeReplaced(Fluid), LiquidBlockContainer.canPlaceLiquid.
-pub(crate) fn can_empty_bucket_at(world: &World, item: &Item, pos: BlockPos) -> bool {
-    let (block, state) = world.get_block_and_state(&pos);
+fn can_empty_bucket_state(
+    world: &World,
+    item: &Item,
+    pos: BlockPos,
+    observed: pumpkin_data::BlockStateId,
+) -> bool {
+    let block = observed.to_block();
+    let state = observed.to_state();
     if item == &Item::POWDER_SNOW_BUCKET {
         return world.is_in_build_limit(pos) && state.is_air();
     }
-    // EndPortalBlock and EndGatewayBlock override canBeReplaced(Fluid).
     if block == &Block::END_PORTAL || block == &Block::END_GATEWAY {
         return false;
     }
@@ -328,7 +348,8 @@ pub(crate) fn can_empty_bucket_at(world: &World, item: &Item, pos: BlockPos) -> 
         || (item != &Item::LAVA_BUCKET && block.is_waterloggable())
 }
 
-// BucketItem.use resolves the actual placement destination.
+// BucketItem.use resolves the actual placement destination and retains its state.
+#[cfg(test)]
 pub(crate) fn bucket_destination(
     world: &World,
     item: &Item,
@@ -336,31 +357,59 @@ pub(crate) fn bucket_destination(
     direction: BlockDirection,
     sneaking: bool,
 ) -> Option<BlockPos> {
-    // SolidBucketItem.useOn delegates to BlockItem, allowing replaceable player targets.
+    bucket_destination_observed(world, item, pos, direction, sneaking).map(|(pos, _)| pos)
+}
+
+fn bucket_destination_observed(
+    world: &World,
+    item: &Item,
+    pos: BlockPos,
+    direction: BlockDirection,
+    sneaking: bool,
+) -> Option<(BlockPos, pumpkin_data::BlockStateId)> {
+    let hit = world.get_block_state_id(&pos);
     if item == &Item::POWDER_SNOW_BUCKET {
-        let destination = if world.get_block_state(&pos).replaceable() {
+        let destination = if hit.to_state().replaceable() {
             pos
         } else {
             pos.offset(direction.to_offset())
         };
-        let state = world.get_block_state(&destination);
+        let state = if destination == pos {
+            hit
+        } else {
+            world.get_block_state_id(&destination)
+        };
         return (world.is_in_build_limit(destination)
-            && (state.is_air() || state.is_liquid() || state.replaceable()))
-        .then_some(destination);
+            && (state.to_state().is_air()
+                || state.to_state().is_liquid()
+                || state.to_state().replaceable()))
+        .then_some((destination, state));
     }
-    // BucketItem.use tries the hit cell only for a compatible LiquidBlockContainer.
-    let (block, _) = world.get_block_and_state(&pos);
-    let inside = item != &Item::LAVA_BUCKET && is_liquid_container(block);
+    let inside = item != &Item::LAVA_BUCKET && is_liquid_container(hit.to_block());
     let destination = if inside && !sneaking {
         pos
     } else {
         pos.offset(direction.to_offset())
     };
-    can_empty_bucket_at(world, item, destination).then_some(destination)
+    let observed = if destination == pos {
+        hit
+    } else {
+        world.get_block_state_id(&destination)
+    };
+    can_empty_bucket_state(world, item, destination, observed).then_some((destination, observed))
 }
 
+#[cfg(test)]
 pub(crate) fn empty_bucket_at(world: &Arc<World>, item: &Item, pos: BlockPos) -> Option<BlockPos> {
-    empty_bucket_at_with_player(world, None, item, pos)
+    empty_bucket_at_outcome(world, item, pos).ok().flatten()
+}
+
+pub(crate) fn empty_bucket_at_outcome(
+    world: &Arc<World>,
+    item: &Item,
+    pos: BlockPos,
+) -> Result<Option<BlockPos>, ()> {
+    empty_bucket_at_with_player(world, None, item, pos, None)
 }
 
 // BucketItem.emptyContents carries the nullable sound source through every placement branch.
@@ -369,28 +418,45 @@ fn empty_bucket_at_with_player(
     player: Option<&Player>,
     item: &Item,
     pos: BlockPos,
-) -> Option<BlockPos> {
-    if !can_empty_bucket_at(world, item, pos) {
-        return None;
+    expected: Option<pumpkin_data::BlockStateId>,
+) -> Result<Option<BlockPos>, ()> {
+    let (block, state) = world.get_block_and_state(&pos);
+    if expected.is_some_and(|expected| expected != state.id) {
+        return Err(());
+    }
+    if !can_empty_bucket_state(world, item, pos, state.id)
+        && !(expected.is_some()
+            && item == &Item::POWDER_SNOW_BUCKET
+            && world.is_in_build_limit(pos)
+            && (state.is_liquid() || state.replaceable()))
+    {
+        return Ok(None);
     }
     if should_evaporate_in_nether(item, world) {
         play_bucket_evaporation(world, player, pos);
-        return Some(pos);
+        return Ok(Some(pos));
     }
-    let (block, state) = world.get_block_and_state(&pos);
     if item != &Item::LAVA_BUCKET && item != &Item::POWDER_SNOW_BUCKET && is_liquid_container(block)
     {
-        // SimpleWaterloggedBlock.placeLiquid can fail on an occupied container;
-        // BucketItem.emptyContents deliberately ignores its result and still succeeds.
+        // BucketItem.emptyContents succeeds for an already-full LiquidBlockContainer.
         if !block.is_waterlogged(state.id)
             && let Some(state_id) = block.set_waterlogged(state.id, true)
         {
             if block == &Block::DRIED_GHAST {
-                crate::block::blocks::dried_ghast::DriedGhastBlock::place_liquid(
+                if !crate::block::blocks::dried_ghast::DriedGhastBlock::place_liquid(
                     world, &pos, state.id,
-                );
+                ) {
+                    return Err(());
+                }
             } else {
-                world.set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
+                if !world.set_block_state_from_observed(
+                    &pos,
+                    state.id,
+                    state_id,
+                    BlockFlags::NOTIFY_ALL,
+                ) {
+                    return Err(());
+                }
                 world.schedule_fluid_tick(
                     &Fluid::WATER,
                     pos,
@@ -398,11 +464,10 @@ fn empty_bucket_at_with_player(
                     TickPriority::Normal,
                 );
             }
+        } else if world.get_block_state_id(&pos) != state.id {
+            return Err(());
         }
     } else {
-        if !state.is_air() && !state.is_liquid() {
-            world.break_block(&pos, None, BlockFlags::NOTIFY_ALL);
-        }
         let state_id = if item == &Item::POWDER_SNOW_BUCKET {
             Block::POWDER_SNOW.default_state.id
         } else if item == &Item::LAVA_BUCKET {
@@ -410,10 +475,19 @@ fn empty_bucket_at_with_player(
         } else {
             Block::WATER.default_state.id
         };
-        world.set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
+        let applied = if !state.is_air() && !state.is_liquid() {
+            world
+                .replace_block_from_observed(&pos, state.id, state_id, None, BlockFlags::NOTIFY_ALL)
+                .is_some()
+        } else {
+            world.set_block_state_from_observed(&pos, state.id, state_id, BlockFlags::NOTIFY_ALL)
+        };
+        if !applied {
+            return Err(());
+        }
     }
     play_empty_sound(world, player, item, pos);
-    Some(pos)
+    Ok(Some(pos))
 }
 
 impl ItemBehaviour for EmptyBucketItem {
@@ -457,10 +531,9 @@ impl ItemBehaviour for EmptyBucketItem {
             return false;
         }
 
-        let Some((pickup_pos, item)) = bucket_pickup_target(&world, block_pos, direction) else {
-            return false;
-        };
-        let Some(_mutation) = world.block_entity_mutation_permit(pickup_pos) else {
+        let Some((pickup_pos, item, pickup_state)) =
+            bucket_pickup_target(&world, block_pos, direction)
+        else {
             return false;
         };
 
@@ -485,7 +558,12 @@ impl ItemBehaviour for EmptyBucketItem {
         let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
             return false;
         };
-        let Some(actual_item) = try_pickup_fluid_at(&world, pickup_pos) else {
+        if world.get_block_state_id(&pickup_pos) != pickup_state {
+            crate::item::item_utils::give_or_drop(player, receipt);
+            return false;
+        }
+        let Ok(Some(actual_item)) = pickup_fluid_from_observed(&world, pickup_pos, pickup_state)
+        else {
             crate::item::item_utils::give_or_drop(player, receipt);
             return false;
         };
@@ -610,16 +688,13 @@ impl ItemBehaviour for FilledBucketItem {
         }
 
         // BucketItem.use resolves eligibility, then plugin cancellation, before placement.
-        let Some(destination) = bucket_destination(
+        let Some((destination, destination_state)) = bucket_destination_observed(
             &world,
             item,
             pos,
             direction,
             player.get_entity().is_sneaking(),
         ) else {
-            return false;
-        };
-        let Some(_mutation) = world.block_entity_mutation_permit(destination) else {
             return false;
         };
         if let Some(server) = world.server.upgrade()
@@ -643,19 +718,13 @@ impl ItemBehaviour for FilledBucketItem {
         let Some(receipt) = crate::item::item_utils::claim_item_in_hand(player, hand, stack) else {
             return false;
         };
-        let place_pos = if item == &Item::POWDER_SNOW_BUCKET {
-            world.set_block_state(
-                &destination,
-                Block::POWDER_SNOW.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            );
-            play_empty_sound(&world, Some(player), item, destination);
-            destination
-        } else if let Some(pos) =
-            empty_bucket_at_with_player(&world, Some(player), item, destination)
-        {
-            pos
-        } else {
+        let Ok(Some(place_pos)) = empty_bucket_at_with_player(
+            &world,
+            Some(player),
+            item,
+            destination,
+            Some(destination_state),
+        ) else {
             crate::item::item_utils::give_or_drop(player, receipt);
             return false;
         };

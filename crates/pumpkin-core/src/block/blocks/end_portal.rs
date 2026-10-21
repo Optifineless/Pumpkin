@@ -27,10 +27,9 @@ impl BlockBehaviour for EndPortalBlock {
     }
 
     fn placed(&self, args: PlacedArgs<'_>) {
-        let nbt = EndPortalBlockEntity::create_nbt(*args.position);
-        args.world.add_block_entity_nbt(*args.position, &nbt);
-
-        args.world
-            .add_block_entity(Arc::new(EndPortalBlockEntity::new(*args.position)));
+        args.world.add_block_entity_from_observed(
+            Arc::new(EndPortalBlockEntity::new(*args.position)),
+            args.state_id,
+        );
     }
 }

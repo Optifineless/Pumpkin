@@ -1,8 +1,14 @@
 use std::sync::Arc;
 
-use pumpkin_data::BlockStateId;
+use crate::world::World;
 use pumpkin_data::world::WorldEvent;
+use pumpkin_data::{
+    BlockStateId,
+    block_properties::{DoubleBlockHalf, OakDoorLikeProperties},
+    tag::{self, Taggable},
+};
 use pumpkin_util::Difficulty;
+use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 
@@ -145,21 +151,11 @@ impl Goal for BreakDoorGoal {
         if self.break_time == self.get_door_break_time()
             && self.is_valid_difficulty(level_info.difficulty)
         {
-            let (_, block_state_id) =
-                world.get_block_and_state_id(&self.door_interact_goal.door_pos);
             let door_pos = self.door_interact_goal.door_pos;
-            let mut event =
-                crate::plugin::api::events::entity::entity_break_door::EntityBreakDoorEvent::new(
-                    mob.get_entity().entity_id,
-                    door_pos,
-                );
-            if let Some(server) = world.server.upgrade() {
-                server.plugin_manager.fire_blocking(&server, &mut event);
-                if event.cancelled {
-                    return;
-                }
-            }
-            world.set_block_state(&door_pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
+            let Some(block_state_id) = try_break_door(&world, door_pos, mob.get_entity().entity_id)
+            else {
+                return;
+            };
             world.sync_world_event(
                 WorldEvent::SoundZombieDoorCrash,
                 self.door_interact_goal.door_pos,
@@ -180,4 +176,41 @@ impl Goal for BreakDoorGoal {
     fn controls(&self) -> Controls {
         Controls::empty()
     }
+}
+
+fn try_break_door(world: &Arc<World>, pos: BlockPos, entity_id: i32) -> Option<BlockStateId> {
+    let (block, observed) = world.get_block_and_state_id(&pos);
+    if !block.has_tag(&tag::Block::MINECRAFT_DOORS) {
+        return None;
+    }
+    let props = OakDoorLikeProperties::from_state_id(observed);
+    let partner = if props.half == DoubleBlockHalf::Lower {
+        pos.up()
+    } else {
+        pos.down()
+    };
+    let (partner_block, partner_state) = world.get_block_and_state_id(&partner);
+    let mut changes = vec![(pos, observed, BlockStateId::AIR, BlockFlags::NOTIFY_ALL)];
+    if partner_block == block {
+        let partner_props = OakDoorLikeProperties::from_state_id(partner_state);
+        if partner_props.half != props.half && partner_props.facing == props.facing {
+            changes.push((
+                partner,
+                partner_state,
+                BlockStateId::AIR,
+                BlockFlags::NOTIFY_ALL,
+            ));
+        }
+    }
+    let mut event =
+        crate::plugin::api::events::entity::entity_break_door::EntityBreakDoorEvent::new(
+            entity_id, pos,
+        );
+    if let Some(server) = world.server.upgrade() {
+        server.plugin_manager.fire_blocking(&server, &mut event);
+    }
+    if event.cancelled || !world.set_block_states_from_observed(&changes) {
+        return None;
+    }
+    Some(observed)
 }

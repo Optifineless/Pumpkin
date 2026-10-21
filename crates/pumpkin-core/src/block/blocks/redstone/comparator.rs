@@ -37,6 +37,10 @@ impl BlockBehaviour for ComparatorBlock {
         }
 
         let state = args.world.get_block_state(args.position);
+
+        if state.id.to_block() != args.block {
+            return BlockActionResult::Pass;
+        }
         let mut props = ComparatorLikeProperties::from_state_id(state.id);
 
         props.mode = match props.mode {
@@ -49,6 +53,15 @@ impl BlockBehaviour for ComparatorBlock {
             ModeComparator::Compare => 0.5,
         };
 
+        let state_id = props.to_state_id(args.block);
+        if !args.world.set_block_state_from_observed(
+            args.position,
+            state.id,
+            state_id,
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
+            return BlockActionResult::Pass;
+        }
         args.world.play_sound_raw_expect(
             args.player,
             Sound::BlockComparatorClick as u16,
@@ -57,10 +70,6 @@ impl BlockBehaviour for ComparatorBlock {
             0.3,
             pitch,
         );
-
-        let state_id = props.to_state_id(args.block);
-        args.world
-            .set_block_state(args.position, state_id, BlockFlags::NOTIFY_LISTENERS);
 
         if args.world.get_block(args.position) == args.block {
             self.update(
@@ -84,7 +93,12 @@ impl BlockBehaviour for ComparatorBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let comparator = ComparatorBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(comparator));
+        if !args
+            .world
+            .add_block_entity_from_observed(Arc::new(comparator), args.state_id)
+        {
+            return;
+        }
 
         RedstoneGateBlock::update_target(
             self,
@@ -134,6 +148,9 @@ impl BlockBehaviour for ComparatorBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let (block, state) = args.world.get_block_and_state(args.position);
+        if block != args.block {
+            return;
+        }
         self.update(args.world, *args.position, state, block);
     }
 
@@ -328,31 +345,36 @@ impl ComparatorBlock {
     }
 
     fn update(&self, world: &Arc<World>, pos: BlockPos, state: &BlockState, block: &Block) {
-        let future_level = i32::from(self.calculate_output_signal(world, pos, state, block));
-        let mut now_level = 0;
-
-        if let Some(blockentity) = world.get_block_entity(&pos)
-            && let Some(comparator) = blockentity.as_any().downcast_ref::<ComparatorBlockEntity>()
-        {
-            now_level = i32::from(comparator.output_signal.load(Ordering::Relaxed));
+        if state.id.to_block() != &Block::COMPARATOR {
+            return;
+        }
+        let future_level = self.calculate_output_signal(world, pos, state, block);
+        let entity = world.get_block_entity(&pos);
+        let comparator = entity
+            .as_ref()
+            .and_then(|entity| entity.as_any().downcast_ref::<ComparatorBlockEntity>());
+        let now_level = comparator.map_or(0, |comparator| {
+            comparator.output_signal.load(Ordering::Relaxed)
+        });
+        let mut props = ComparatorLikeProperties::from_state_id(state.id);
+        let update_target = now_level != future_level || props.mode == ModeComparator::Compare;
+        if update_target {
+            props.powered = self.has_power(world, pos, state, block);
+        }
+        if !world.set_block_state_from_observed(
+            &pos,
+            state.id,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
+            return;
+        }
+        if let Some(comparator) = comparator {
             comparator
                 .output_signal
-                .store(future_level as u8, Ordering::Relaxed);
+                .store(future_level, Ordering::Relaxed);
         }
-
-        let mut props = ComparatorLikeProperties::from_state_id(state.id);
-        if now_level != future_level || props.mode == ModeComparator::Compare {
-            let future_power = self.has_power(world, pos, state, block);
-            let now_power = props.powered;
-
-            if now_power && !future_power {
-                props.powered = false;
-                world.set_block_state(&pos, props.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
-            } else if !now_power && future_power {
-                props.powered = true;
-                world.set_block_state(&pos, props.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
-            }
-
+        if update_target {
             RedstoneGateBlock::update_target(self, world, pos, props.to_state_id(block), block);
         }
     }

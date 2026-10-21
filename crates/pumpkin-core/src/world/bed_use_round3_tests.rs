@@ -29,8 +29,8 @@ fn until(mut ready: impl FnMut() -> bool) {
     }
 }
 
-// SetBlockCommand/BlockInput now acquire mutation admission before the raw write.
-// Pause after those owners so the reviewed partial-write window remains reachable.
+// Pause the explicit replacement before admission; it must survive delayed effects
+// from the bed's complete two-cell removal without retaining any publication owner.
 fn pause_strict_writer(
     fixture: &Fixture,
 ) -> (tokio::task::JoinHandle<i32>, crossbeam::channel::Sender<()>) {
@@ -65,7 +65,7 @@ fn pause_strict_writer(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn b1019_g05_partial_unsafe_use_explodes_after_real_strict_setblock() {
+async fn b1019_g05_atomic_unsafe_use_explodes_after_real_strict_setblock() {
     let mut fixture = Fixture::new(Dimension::THE_NETHER);
     fixture.place(&Block::WHITE_BED, &Item::WHITE_BED);
     fixture
@@ -128,7 +128,7 @@ async fn b1019_g05_partial_unsafe_use_explodes_after_real_strict_setblock() {
             == 2
     });
     assert!(fixture.world.get_block(&HEAD).is_air());
-    assert_eq!(fixture.world.get_block(&FOOT), &Block::WHITE_BED);
+    assert!(fixture.world.get_block(&FOOT).is_air());
     resume_writer.send(()).unwrap();
     until(|| fixture.world.get_block(&FOOT) == &Block::STONE);
     fixture

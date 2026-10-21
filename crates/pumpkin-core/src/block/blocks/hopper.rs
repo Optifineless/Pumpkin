@@ -100,7 +100,12 @@ impl BlockBehaviour for HopperBlock {
     fn placed(&self, args: PlacedArgs<'_>) {
         let props = HopperLikeProperties::from_state_id(args.state_id);
         let hopper_block_entity = HopperBlockEntity::new(*args.position, props.facing);
-        args.world.add_block_entity(Arc::new(hopper_block_entity));
+        if !args
+            .world
+            .add_block_entity_from_observed(Arc::new(hopper_block_entity), args.state_id)
+        {
+            return;
+        }
         if Block::from_state_id(args.old_state_id) != Block::from_state_id(args.state_id) {
             check_powered_state(args.world, args.position, args.state_id, args.block);
         }
@@ -130,10 +135,18 @@ impl BlockBehaviour for HopperBlock {
 }
 
 fn check_powered_state(world: &Arc<World>, pos: &BlockPos, state_id: BlockStateId, block: &Block) {
+    if state_id.to_block() != block {
+        return;
+    }
     let signal = !block_receives_redstone_power(world, pos);
     let mut state = HopperLikeProperties::from_state_id(state_id);
     if signal != state.enabled {
         state.enabled = signal;
-        world.set_block_state(pos, state.to_state_id(block), BlockFlags::NOTIFY_LISTENERS);
+        world.set_block_state_from_observed(
+            pos,
+            state_id,
+            state.to_state_id(block),
+            BlockFlags::NOTIFY_LISTENERS,
+        );
     }
 }

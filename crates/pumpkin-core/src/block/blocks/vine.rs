@@ -347,6 +347,9 @@ impl BlockBehaviour for VineBlock {
             }
 
             let state = args.world.get_block_state(args.position);
+            if state.id.to_block() != args.block {
+                return BlockActionResult::Pass;
+            }
             let mut props = VineLikeProperties::from_state_id(state.id);
             if count_faces(&props) >= 5 {
                 return BlockActionResult::Pass;
@@ -362,12 +365,16 @@ impl BlockBehaviour for VineBlock {
                         && can_support_at_face(&**args.world, args.position, direction)
                     {
                         set_face_property(&mut props, direction, true);
-                        args.world.set_block_state(
+                        return if args.world.set_block_state_from_observed(
                             args.position,
+                            state.id,
                             props.to_state_id(args.block),
                             BlockFlags::NOTIFY_ALL,
-                        );
-                        return BlockActionResult::Consume;
+                        ) {
+                            BlockActionResult::Consume
+                        } else {
+                            BlockActionResult::Pass
+                        };
                     }
                 }
             }
@@ -397,6 +404,9 @@ impl BlockBehaviour for VineBlock {
         let test_direction = BlockDirection::all()[rand::rng().random_range(0..6)];
         let above_pos = args.position.up();
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let state_props = VineLikeProperties::from_state_id(state_id);
 
         if test_direction.is_horizontal() && !has_face_property(&state_props, test_direction) {
@@ -421,8 +431,9 @@ impl BlockBehaviour for VineBlock {
                     {
                         let mut new_props = VineLikeProperties::default(args.block);
                         set_face_property(&mut new_props, cw_direction, true);
-                        args.world.set_block_state(
+                        args.world.set_block_state_from_observed(
                             &test_pos,
+                            edge_state.id,
                             new_props.to_state_id(args.block),
                             BlockFlags::NOTIFY_ALL,
                         );
@@ -431,8 +442,9 @@ impl BlockBehaviour for VineBlock {
                     {
                         let mut new_props = VineLikeProperties::default(args.block);
                         set_face_property(&mut new_props, ccw_direction, true);
-                        args.world.set_block_state(
+                        args.world.set_block_state_from_observed(
                             &test_pos,
+                            edge_state.id,
                             new_props.to_state_id(args.block),
                             BlockFlags::NOTIFY_ALL,
                         );
@@ -451,8 +463,9 @@ impl BlockBehaviour for VineBlock {
                         {
                             let mut new_props = VineLikeProperties::default(args.block);
                             set_face_property(&mut new_props, opposite, true);
-                            args.world.set_block_state(
+                            args.world.set_block_state_from_observed(
                                 &cw_test_pos,
+                                cw_test_state.id,
                                 new_props.to_state_id(args.block),
                                 BlockFlags::NOTIFY_ALL,
                             );
@@ -466,8 +479,9 @@ impl BlockBehaviour for VineBlock {
                         {
                             let mut new_props = VineLikeProperties::default(args.block);
                             set_face_property(&mut new_props, opposite, true);
-                            args.world.set_block_state(
+                            args.world.set_block_state_from_observed(
                                 &ccw_test_pos,
+                                ccw_test_state.id,
                                 new_props.to_state_id(args.block),
                                 BlockFlags::NOTIFY_ALL,
                             );
@@ -480,8 +494,9 @@ impl BlockBehaviour for VineBlock {
                         {
                             let mut new_props = VineLikeProperties::default(args.block);
                             new_props.up = true;
-                            args.world.set_block_state(
+                            args.world.set_block_state_from_observed(
                                 &test_pos,
+                                edge_state.id,
                                 new_props.to_state_id(args.block),
                                 BlockFlags::NOTIFY_ALL,
                             );
@@ -490,8 +505,9 @@ impl BlockBehaviour for VineBlock {
                 } else if is_acceptable_neighbour(edge_block, edge_state, test_direction) {
                     let mut new_props = state_props;
                     set_face_property(&mut new_props, test_direction, true);
-                    args.world.set_block_state(
+                    args.world.set_block_state_from_observed(
                         args.position,
+                        state_id,
                         new_props.to_state_id(args.block),
                         BlockFlags::NOTIFY_ALL,
                     );
@@ -503,15 +519,17 @@ impl BlockBehaviour for VineBlock {
             if can_support_at_face(&**args.world, args.position, test_direction) {
                 let mut new_props = state_props;
                 new_props.up = true;
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    state_id,
                     new_props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
                 );
                 return;
             }
 
-            if args.world.get_block(&above_pos).default_state.is_air() {
+            let above_state = args.world.get_block_state(&above_pos);
+            if above_state.is_air() {
                 if !can_spread(args.world, args.position) {
                     return;
                 }
@@ -533,8 +551,9 @@ impl BlockBehaviour for VineBlock {
                 }
 
                 if has_horizontal_connection(&above_props) {
-                    args.world.set_block_state(
+                    args.world.set_block_state_from_observed(
                         &above_pos,
+                        above_state.id,
                         above_props.to_state_id(args.block),
                         BlockFlags::NOTIFY_ALL,
                     );
@@ -565,8 +584,9 @@ impl BlockBehaviour for VineBlock {
                 }
 
                 if before_props != after_props && has_horizontal_connection(&after_props) {
-                    args.world.set_block_state(
+                    args.world.set_block_state_from_observed(
                         &below_pos,
+                        below_state.id,
                         after_props.to_state_id(args.block),
                         BlockFlags::NOTIFY_ALL,
                     );

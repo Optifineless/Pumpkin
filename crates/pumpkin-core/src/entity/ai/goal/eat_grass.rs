@@ -86,27 +86,40 @@ impl Goal for EatGrassGoal {
 
             let mob_griefing = world.level_info.load().game_rules.mob_griefing;
 
-            let block_at_pos = world.get_block(&block_pos);
+            let (block_at_pos, observed) = world.get_block_and_state_id(&block_pos);
             if block_at_pos.has_tag(&tag::Block::MINECRAFT_EDIBLE_FOR_SHEEP) {
                 if mob_griefing {
                     // Break effects, no drops.
-                    world.break_block(&block_pos, None, BlockFlags::SKIP_DROPS);
+                    if world
+                        .break_block_from_observed(
+                            &block_pos,
+                            observed,
+                            None,
+                            BlockFlags::SKIP_DROPS,
+                        )
+                        .is_none()
+                    {
+                        return;
+                    }
                 }
                 mob.on_eating_grass();
             } else {
                 let below_pos = block_pos.down();
-                let block_below = world.get_block(&below_pos);
+                let (block_below, observed) = world.get_block_and_state_id(&below_pos);
                 if block_below.id == Block::GRASS_BLOCK.id {
                     if mob_griefing {
+                        if !world.set_block_state_from_observed(
+                            &below_pos,
+                            observed,
+                            Block::DIRT.default_state.id,
+                            BlockFlags::NOTIFY_LISTENERS,
+                        ) {
+                            return;
+                        }
                         world.sync_world_event(
                             WorldEvent::ParticlesDestroyBlock,
                             below_pos,
                             i32::from(Block::GRASS_BLOCK.default_state.id.as_u16()),
-                        );
-                        world.set_block_state(
-                            &below_pos,
-                            Block::DIRT.default_state.id,
-                            BlockFlags::NOTIFY_LISTENERS,
                         );
                     }
                     mob.on_eating_grass();

@@ -54,7 +54,7 @@ impl Goal for PickUpBlockGoal {
         let world = entity.world.load_full();
         let target_pos = BlockPos::new(bx, by, bz);
 
-        let block = world.get_block(&target_pos);
+        let (block, observed) = world.get_block_and_state_id(&target_pos);
 
         if !block.has_tag(&tag::Block::MINECRAFT_ENDERMAN_HOLDABLE) {
             return;
@@ -90,7 +90,14 @@ impl Goal for PickUpBlockGoal {
         }
 
         // TODO: Emit game event (BLOCK_DESTROY)
-        world.set_block_state(&target_pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL);
+        if !world.set_block_state_from_observed(
+            &target_pos,
+            observed,
+            BlockStateId::AIR,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return;
+        }
         self.enderman.set_carried_block(Some(default_state_id));
     }
 }

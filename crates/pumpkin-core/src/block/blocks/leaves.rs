@@ -89,17 +89,27 @@ impl BlockBehaviour for LeavesBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let props = OakLeavesLikeProperties::from_state_id(state_id);
         let updated_props = update_distance(&**args.world, args.position, props);
         let new_state_id = updated_props.to_state_id(args.block);
         if new_state_id != state_id {
-            args.world
-                .set_block_state(args.position, new_state_id, BlockFlags::NOTIFY_ALL);
+            args.world.set_block_state_from_observed(
+                args.position,
+                state_id,
+                new_state_id,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 
     fn random_tick(&self, args: RandomTickArgs<'_>) {
         let state_id = args.world.get_block_state_id(args.position);
+        if state_id.to_block() != args.block {
+            return;
+        }
         let props = OakLeavesLikeProperties::from_state_id(state_id);
         if !props.persistent && props.distance == DECAY_DISTANCE {
             if let Some(server) = args.world.server.upgrade() {
@@ -118,16 +128,20 @@ impl BlockBehaviour for LeavesBlock {
                 position: Some(args.position.to_f64()),
                 ..Default::default()
             };
-            // loot is dropped
-            drop_loot(args.world, args.block, args.position, true, &params);
             let new_state_id = if args.block.is_waterlogged(state_id) {
                 Block::WATER.default_state.id
             } else {
                 BlockStateId::AIR
             };
             // and the block gets removed, not broken
-            args.world
-                .set_block_state(args.position, new_state_id, BlockFlags::NOTIFY_ALL);
+            if args.world.set_block_state_from_observed(
+                args.position,
+                state_id,
+                new_state_id,
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                drop_loot(args.world, args.block, args.position, true, &params);
+            }
         }
     }
 
@@ -140,13 +154,28 @@ impl BlockBehaviour for LeavesBlock {
         args.block == &Block::MANGROVE_LEAVES
     }
 
-    fn perform_bonemeal(&self, args: BonemealArgs<'_>) {
+    fn perform_bonemeal(&self, args: BonemealArgs<'_>) -> bool {
         if args.block == &Block::MANGROVE_LEAVES {
-            args.world.set_block_state(
-                &args.position.down(),
-                MangrovePropaguleBlock::create_new_hanging_propagule(0),
-                BlockFlags::NOTIFY_ALL,
-            );
+            let below = args.position.down();
+            let observed = args.world.get_block_state_id(&below);
+            if !observed.to_state().is_air() {
+                return false;
+            }
+            return args.world.set_block_states_from_observed(&[
+                (
+                    *args.position,
+                    args.state_id,
+                    args.state_id,
+                    BlockFlags::empty(),
+                ),
+                (
+                    below,
+                    observed,
+                    MangrovePropaguleBlock::create_new_hanging_propagule(0),
+                    BlockFlags::NOTIFY_ALL,
+                ),
+            ]);
         }
+        true
     }
 }

@@ -24,10 +24,8 @@ impl BlockBehaviour for BambooSaplingBlock {
             && args.world.get_block_state(&above).is_air()
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
-        {
-            grow_bamboo(args.world, args.position);
-        }
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
+        grow_bamboo(args.world, args.position)
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
@@ -39,8 +37,9 @@ impl BlockBehaviour for BambooSaplingBlock {
             if args.block == &Block::BAMBOO_SAPLING
                 && args.world.get_block(&args.position.up()) == &Block::BAMBOO
             {
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    Block::BAMBOO_SAPLING.default_state.id,
                     Block::BAMBOO.default_state.id,
                     BlockFlags::NOTIFY_NEIGHBORS,
                 );
@@ -72,14 +71,28 @@ impl BlockBehaviour for BambooSaplingBlock {
     }
 }
 
-fn grow_bamboo(world: &std::sync::Arc<crate::world::World>, position: &BlockPos) {
+fn grow_bamboo(world: &std::sync::Arc<crate::world::World>, position: &BlockPos) -> bool {
     let mut props = BambooLikeProperties::from_state_id(Block::BAMBOO.default_state.id);
     props.leaves = BambooLeaves::Small;
-    world.set_block_state(
-        &position.up(),
-        props.to_state_id(&Block::BAMBOO),
-        BlockFlags::NOTIFY_ALL,
-    );
+    let upper = position.up();
+    let observed = world.get_block_state_id(&upper);
+    if observed.to_state().is_air() {
+        return world.set_block_states_from_observed(&[
+            (
+                *position,
+                Block::BAMBOO_SAPLING.default_state.id,
+                Block::BAMBOO_SAPLING.default_state.id,
+                BlockFlags::empty(),
+            ),
+            (
+                upper,
+                observed,
+                props.to_state_id(&Block::BAMBOO),
+                BlockFlags::NOTIFY_ALL,
+            ),
+        ]);
+    }
+    false
 }
 
 impl PlantBlockBase for BambooSaplingBlock {

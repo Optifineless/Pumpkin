@@ -42,6 +42,9 @@ impl ItemBehaviour for ShearsItem {
     ) -> BlockActionResult {
         let world = player.world();
         let state_id = world.get_block_state_id(&location);
+        if Block::from_state_id(state_id) != block {
+            return BlockActionResult::Pass;
+        }
 
         if handle_growing_plant(player, &location, block, state_id) {
             return BlockActionResult::Success;
@@ -51,7 +54,7 @@ impl ItemBehaviour for ShearsItem {
             return BlockActionResult::Success;
         }
 
-        if handle_pumpkin(player, &location, block) {
+        if handle_pumpkin(player, &location, block, state_id) {
             BlockActionResult::Success
         } else {
             BlockActionResult::Pass
@@ -88,7 +91,14 @@ fn handle_growing_plant(
     };
 
     let world = player.world();
-    world.set_block_state(location, new_state_id, BlockFlags::NOTIFY_ALL);
+    if !world.set_block_state_from_observed(
+        location,
+        state_id,
+        new_state_id,
+        BlockFlags::NOTIFY_ALL,
+    ) {
+        return false;
+    }
     world.play_sound(
         Sound::BlockGrowingPlantCrop,
         SoundCategory::Blocks,
@@ -114,6 +124,7 @@ fn handle_beehive(
         return false;
     }
 
+    let harvested_hive = player.world().get_block_entity(location);
     let mut drops = vec![ItemStack::new(3, &Item::HONEYCOMB)];
     if let Some(player_arc) = player.world().get_player_by_uuid(player.gameprofile.id)
         && let Some(server) = player.world().server.upgrade()
@@ -133,6 +144,9 @@ fn handle_beehive(
     }
 
     let world = player.world();
+    if !crate::block::blocks::beehive::take_honey(&world, *location, state_id) {
+        return false;
+    }
     world.play_sound(
         Sound::BlockBeehiveShear,
         SoundCategory::Blocks,
@@ -149,17 +163,34 @@ fn handle_beehive(
     }
     player.damage_held_item(1);
     // BeehiveBlock.useItemOn releases bees and resets honey after shearing, just as for bottles.
-    if let Some(player) = world.get_player_by_uuid(player.gameprofile.id) {
+    if let Some(player) = world.get_player_by_uuid(player.gameprofile.id)
+        && let Some(harvested_hive) = harvested_hive
+        && world
+            .get_block_entity(location)
+            .is_some_and(|current| Arc::ptr_eq(&current, &harvested_hive))
+    {
         crate::block::blocks::beehive::finish_harvest(&world, *location, &player);
     }
     true
 }
 
-fn handle_pumpkin(player: &Player, location: &BlockPos, block: &Block) -> bool {
+fn handle_pumpkin(
+    player: &Player,
+    location: &BlockPos,
+    block: &Block,
+    observed: BlockStateId,
+) -> bool {
     if block.id == BlockId::PUMPKIN {
         let world = player.world();
         let carved_state = Block::CARVED_PUMPKIN.default_state.id;
-        world.set_block_state(location, carved_state, BlockFlags::NOTIFY_ALL);
+        if !world.set_block_state_from_observed(
+            location,
+            observed,
+            carved_state,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return false;
+        }
         world.play_sound(
             Sound::BlockPumpkinCarve,
             SoundCategory::Blocks,

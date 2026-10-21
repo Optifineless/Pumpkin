@@ -272,17 +272,51 @@ impl NetherPortal {
                 .offset_dir(self.negative_direction.to_offset(), self.width as i32 - 1),
         );
 
+        let mut updates = Vec::new();
         for pos in blocks {
-            world.set_block_state(
-                &pos,
+            let expected = world.get_block_state_id(&pos);
+            if !Self::valid_state_inside_portal(expected.to_block(), expected.to_state(), self.axis)
+            {
+                return;
+            }
+            updates.push((
+                pos,
+                expected,
                 state,
                 BlockFlags::NOTIFY_LISTENERS | BlockFlags::UPDATE_KNOWN_SHAPE,
-            );
-            world
-                .portal_poi
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .add_portal(pos);
+            ));
+        }
+        // Guard the frame as well as the interior that the shape scan admitted.
+        for x in -1..=self.width as i32 {
+            for y in -1..=self.height as i32 {
+                if (0..self.width as i32).contains(&x) && (0..self.height as i32).contains(&y) {
+                    continue;
+                }
+                if (x == -1 || x == self.width as i32) && (y == -1 || y == self.height as i32) {
+                    continue;
+                }
+                let pos = self
+                    .lower_conor
+                    .offset_dir(self.negative_direction.to_offset(), x)
+                    .offset_dir(BlockDirection::Up.to_offset(), y);
+                let expected = world.get_block_state_id(&pos);
+                if expected.to_block() != &Self::FRAME_BLOCK {
+                    return;
+                }
+                updates.push((pos, expected, expected, BlockFlags::empty()));
+            }
+        }
+        if !world.set_block_states_from_observed(&updates) {
+            return;
+        }
+        let mut poi = world
+            .portal_poi
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (pos, expected, state, _) in updates {
+            if expected != state {
+                poi.add_portal(pos);
+            }
         }
     }
 

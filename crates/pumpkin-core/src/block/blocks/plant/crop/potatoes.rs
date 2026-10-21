@@ -15,8 +15,8 @@ impl BlockBehaviour for PotatoBlock {
         <Self as CropBlockBase>::is_valid_bonemeal_target(self, args.world, args.position)
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
-        <Self as CropBlockBase>::perform_bonemeal(self, args.world, args.position);
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
+        <Self as CropBlockBase>::perform_bonemeal(self, args.world, args.position, args.state_id)
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {

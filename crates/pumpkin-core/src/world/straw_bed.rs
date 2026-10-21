@@ -49,7 +49,7 @@ impl World {
         if event.cancelled {
             return None;
         }
-        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
+        let Some(mutation) = self.block_entity_mutation_permit(*position) else {
             tracing::warn!("Straw bed break rejected while chunk is unloading at {position:?}");
             return None;
         };
@@ -57,6 +57,7 @@ impl World {
         // The existing atomic chunk write releases its guards before any completion effects.
         self.write_block_state_if(position, BlockStateId::AIR, |current| current == expected)?;
         let retired_entity = self.remove_loaded_block_entity(position);
+        drop(mutation);
         if !flags.contains(BlockFlags::SKIP_BLOCK_ENTITY_REPLACED_CALLBACK) {
             retired_entity.on_block_replaced(self, position);
         }

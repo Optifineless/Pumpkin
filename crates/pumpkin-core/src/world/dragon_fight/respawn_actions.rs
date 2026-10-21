@@ -25,7 +25,8 @@ impl RespawnAction {
                                 spike.height + dy,
                                 spike.center_z + dz,
                             );
-                            let block = world.get_block(&pos);
+                            let expected = world.get_block_state_id(&pos);
+                            let block = expected.to_block();
                             if block != &Block::BEDROCK
                                 && block != &Block::OBSIDIAN
                                 && block != &Block::AIR
@@ -33,8 +34,9 @@ impl RespawnAction {
                                 if !current() {
                                     return;
                                 }
-                                world.set_block_state(
+                                world.set_block_state_from_observed(
                                     &pos,
+                                    expected,
                                     Block::AIR.default_state.id,
                                     BlockFlags::NOTIFY_ALL,
                                 );

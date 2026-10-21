@@ -18,10 +18,20 @@ pub struct LightningRodBlock;
 impl LightningRodBlock {
     pub fn trigger(world: &Arc<World>, pos: &BlockPos) {
         let (block, state_id) = world.get_block_and_state_id(pos);
+        if block.id != pumpkin_data::BlockId::LIGHTNING_ROD {
+            return;
+        }
         let mut props = LightningRodLikeProperties::from_state_id(state_id);
         if !props.powered {
             props.powered = true;
-            world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                pos,
+                state_id,
+                props.to_state_id(block),
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
 
             Self::update_neighbors(world, pos, props);
 
@@ -66,14 +76,20 @@ impl BlockBehaviour for LightningRodBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         let mut props = LightningRodLikeProperties::from_state_id(state.id);
         if props.powered {
             props.powered = false;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                state.id,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_ALL,
-            );
+            ) {
+                return;
+            }
             Self::update_neighbors(args.world, args.position, props);
         }
     }

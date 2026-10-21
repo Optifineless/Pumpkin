@@ -43,6 +43,9 @@ pub fn toggle_fence_gate(
 ) -> BlockStateId {
     let (block, state) = world.get_block_and_state_id(block_pos);
 
+    if !block.has_tag(&tag::Block::MINECRAFT_FENCE_GATES) {
+        return state;
+    }
     let mut fence_gate_props = FenceGateProperties::from_state_id(state);
     if fence_gate_props.open {
         fence_gate_props.open = false;
@@ -59,17 +62,19 @@ pub fn toggle_fence_gate(
         fence_gate_props.open = true;
     }
 
+    if !world.set_block_state_from_observed(
+        block_pos,
+        state,
+        fence_gate_props.to_state_id(block),
+        BlockFlags::NOTIFY_LISTENERS,
+    ) {
+        return world.get_block_state_id(block_pos);
+    }
     world.play_block_sound_expect(
         player,
         get_sound(block, fence_gate_props.open),
         SoundCategory::Blocks,
         *block_pos,
-    );
-
-    world.set_block_state(
-        block_pos,
-        fence_gate_props.to_state_id(block),
-        BlockFlags::NOTIFY_LISTENERS,
     );
     fence_gate_props.to_state_id(block)
 }
@@ -106,31 +111,33 @@ impl BlockBehaviour for FenceGateBlock {
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        {
-            let block_state = args.world.get_block_state(args.position);
-            let mut fence_gate_props = FenceGateProperties::from_state_id(block_state.id);
-            let powered = block_receives_redstone_power(args.world, args.position);
-
-            if powered == fence_gate_props.powered {
-                return;
-            }
-
-            fence_gate_props.powered = powered;
-
-            if powered != fence_gate_props.open {
-                fence_gate_props.open = powered;
-
-                args.world.play_block_sound(
-                    get_sound(args.block, powered),
-                    SoundCategory::Blocks,
-                    *args.position,
-                );
-            }
-
-            args.world.set_block_state(
-                args.position,
-                fence_gate_props.to_state_id(args.block),
-                BlockFlags::NOTIFY_LISTENERS,
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+        let mut props = FenceGateProperties::from_state_id(observed);
+        let powered = block_receives_redstone_power(args.world, args.position);
+        if powered == props.powered {
+            return;
+        }
+        props.powered = powered;
+        let changed_open = powered != props.open;
+        if changed_open {
+            props.open = powered;
+        }
+        if !args.world.set_block_state_from_observed(
+            args.position,
+            observed,
+            props.to_state_id(args.block),
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
+            return;
+        }
+        if changed_open {
+            args.world.play_block_sound(
+                get_sound(args.block, powered),
+                SoundCategory::Blocks,
+                *args.position,
             );
         }
     }

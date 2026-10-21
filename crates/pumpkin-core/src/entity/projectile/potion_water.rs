@@ -83,7 +83,12 @@ pub fn douse_fire(world: &Arc<World>, pos: &BlockPos) {
     let state = world.get_block_state(pos);
     let block = state.id.to_block();
     if block.has_tag(&tag::Block::MINECRAFT_FIRE) {
-        world.break_block(pos, None, BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS);
+        world.break_block_from_observed(
+            pos,
+            state.id,
+            None,
+            BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
+        );
         return;
     }
     let (state_id, campfire) = if block.has_tag(&tag::Block::MINECRAFT_CANDLES) {
@@ -110,7 +115,9 @@ pub fn douse_fire(world: &Arc<World>, pos: &BlockPos) {
     } else {
         return;
     };
-    world.set_block_state(pos, state_id, BlockFlags::NOTIFY_ALL);
+    if !world.set_block_state_from_observed(pos, state.id, state_id, BlockFlags::NOTIFY_ALL) {
+        return;
+    }
     if campfire {
         world.broadcast_to_chunk(
             pos.chunk_and_chunk_relative_position().0,

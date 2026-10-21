@@ -556,7 +556,9 @@ impl BlockRegistry {
             position,
             state_id,
         };
-        if !behaviour.is_valid_bonemeal_target(args) {
+        if world.get_block_state_id(position) != state_id
+            || !behaviour.is_valid_bonemeal_target(args)
+        {
             return false;
         }
         if behaviour.is_bonemeal_success(args) {
@@ -577,7 +579,10 @@ impl BlockRegistry {
                     return false;
                 }
             }
-            behaviour.perform_bonemeal(args);
+            if world.get_block_state_id(position) != state_id {
+                return false;
+            }
+            return behaviour.perform_bonemeal(args);
         }
         true
     }
@@ -850,6 +855,16 @@ impl BlockRegistry {
             return Ok(PlacementOutcome::Refused);
         }
 
+        let Some(placement_updates) = Self::placement_updates(
+            &world,
+            placed_block,
+            final_block_pos,
+            previous_state,
+            new_state,
+        ) else {
+            return Ok(PlacementOutcome::Refused);
+        };
+
         // Mirror vanilla obstruction checks: only entities that block building should prevent
         // placement. (e.g. arrows/xp orbs/displays/markers should not)
         let state = BlockState::from_id(new_state);
@@ -889,15 +904,9 @@ impl BlockRegistry {
             return Ok(PlacementOutcome::Denied);
         }
 
-        let Some(claimed_stack) = Self::install_claimed_block(
-            player,
-            source_slot,
-            stack,
-            &world,
-            &final_block_pos,
-            new_state,
-            previous_state,
-        ) else {
+        let Some(claimed_stack) =
+            Self::install_claimed_block(player, source_slot, stack, &world, &placement_updates)
+        else {
             return Ok(PlacementOutcome::Denied);
         };
         self.finish_block_placement(
@@ -1245,14 +1254,21 @@ impl BlockRegistry {
         notify: bool,
     ) {
         let state = world.get_block_state(position);
+        if state.id != state_id {
+            return;
+        }
         if state.block_entity_type != u16::MAX
             && world.get_block_entity(position).is_none()
             && let Some(entity) =
                 crate::block::entities::create_block_entity(state.block_entity_type, *position)
+            && !world.add_block_entity_from_observed(entity, state.id)
         {
-            world.add_block_entity(entity);
+            return;
         }
 
+        if world.get_block_state_id(position) != state_id {
+            return;
+        }
         let pumpkin_block = self.get_pumpkin_block(block.id);
         if let Some(pumpkin_block) = pumpkin_block {
             pumpkin_block.placed(PlacedArgs {
@@ -1419,7 +1435,12 @@ impl BlockRegistry {
                         neighbor_position: &neighbor_pos,
                         neighbor_state_id,
                     });
-                world.set_block_state(&neighbor_pos, new_state, flags);
+                world.set_block_state_from_observed(
+                    &neighbor_pos,
+                    neighbor_state_id,
+                    new_state,
+                    flags,
+                );
             }
         }
     }

@@ -9,6 +9,7 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::{
     HeightMap,
     math::{position::BlockPos, vector2::Vector2, vector3::Vector3},
+    sync::{LockClass, Mutex},
 };
 use pumpkin_world::{
     ProtoChunk,
@@ -24,10 +25,17 @@ use rustc_hash::FxHashMap;
 use crate::block::entities::block_entity_from_nbt;
 use crate::world::World;
 
+// Local observation bookkeeping only; never held during a world read or callback.
+enum GenerationObservations {}
+impl LockClass for GenerationObservations {
+    const NAME: &'static str = "live generation observations";
+    const LEVEL: u8 = 100;
+}
+
 pub struct WorldGenerationCache {
     world: Arc<World>,
     center: ProtoChunk,
-    pending: Vec<(BlockPos, BlockStateId)>,
+    observed: Mutex<FxHashMap<BlockPos, BlockStateId>, GenerationObservations>,
     overlay: FxHashMap<BlockPos, BlockStateId>,
     block_entities: Vec<NbtCompound>,
 }
@@ -40,17 +48,23 @@ impl WorldGenerationCache {
         Self {
             world,
             center,
-            pending: Vec::new(),
+            observed: Mutex::new(FxHashMap::default()),
             overlay: FxHashMap::default(),
             block_entities: Vec::new(),
         }
     }
 
     fn read(&self, pos: &BlockPos) -> BlockStateId {
-        self.overlay
-            .get(pos)
-            .copied()
-            .unwrap_or_else(|| self.world.get_block_state_id(pos))
+        if let Some(state) = self.overlay.get(pos) {
+            return *state;
+        }
+        let state = self.world.get_block_state_id(pos);
+        *self
+            .observed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(*pos)
+            .or_insert(state)
     }
 
     fn heightmap(&self, heightmap: ChunkHeightmapType, x: i32, z: i32) -> i32 {
@@ -70,15 +84,37 @@ impl WorldGenerationCache {
     }
 
     pub fn apply(self) {
-        for (pos, state_id) in self.pending {
-            self.world
-                .set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
+        self.apply_if_observed();
+    }
+
+    pub(crate) fn apply_if_observed(self) -> bool {
+        let observed = self
+            .observed
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updates = observed
+            .iter()
+            .map(|(&position, &expected)| {
+                let state = self.overlay.get(&position).copied().unwrap_or(expected);
+                (position, expected, state, BlockFlags::NOTIFY_ALL)
+            })
+            .collect::<Vec<_>>();
+        if !self.world.set_block_states_from_observed(&updates) {
+            return false;
         }
         for nbt in self.block_entities {
-            if let Some(block_entity) = block_entity_from_nbt(&nbt) {
-                self.world.add_block_entity(block_entity);
+            if let Some(block_entity) = block_entity_from_nbt(&nbt)
+                && let Some(expected) = self
+                    .overlay
+                    .get(&block_entity.get_position())
+                    .or_else(|| observed.get(&block_entity.get_position()))
+                    .copied()
+            {
+                self.world
+                    .add_block_entity_from_observed(block_entity, expected);
             }
         }
+        true
     }
 }
 
@@ -136,17 +172,19 @@ impl GenerationCache for WorldGenerationCache {
     }
 
     fn get_fluid_and_fluid_state(&self, position: &Vector3<i32>) -> (Fluid, FluidState) {
+        self.read(&BlockPos(*position));
         let (fluid, state) = self.world.get_fluid_and_fluid_state(&BlockPos(*position));
         (fluid.clone(), state)
     }
 
     fn set_block_state(&mut self, pos: &Vector3<i32>, block_state: &BlockState) {
         let position = BlockPos(*pos);
+        self.read(&position);
         self.overlay.insert(position, block_state.id);
-        self.pending.push((position, block_state.id));
     }
 
     fn add_block_entity(&mut self, pos: &Vector3<i32>, mut nbt: NbtCompound) {
+        self.read(&BlockPos(*pos));
         nbt.put_int("x", pos.x);
         nbt.put_int("y", pos.y);
         nbt.put_int("z", pos.z);

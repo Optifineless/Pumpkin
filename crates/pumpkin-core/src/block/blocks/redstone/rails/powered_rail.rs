@@ -94,15 +94,27 @@ impl BlockBehaviour for PoweredRailBlock {
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
         if !rail_placement_is_valid(args.world, args.block, args.position) {
-            args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
+            args.world.break_block_from_observed(
+                args.position,
+                observed,
+                None,
+                BlockFlags::NOTIFY_ALL,
+            );
             return;
         }
 
         self.update_powered_state(args.world, args.block, args.position);
 
         let state_id = args.world.get_block_state_id(args.position);
+
+        if state_id.to_block() != args.block {
+            return;
+        }
         let rail_props = RailProperties::new(state_id, args.block);
 
         self.update_connected_rails(args.world, args.position, &rail_props, true, 0);
@@ -325,7 +337,14 @@ impl PoweredRailBlock {
 
         if current_powered != should_be_powered {
             rail_props.set_powered(should_be_powered);
-            world.set_block_state(pos, rail_props.to_state_id(block), BlockFlags::NOTIFY_ALL);
+            if !world.set_block_state_from_observed(
+                pos,
+                state_id,
+                rail_props.to_state_id(block),
+                BlockFlags::NOTIFY_ALL,
+            ) {
+                return;
+            }
 
             world.update_neighbor(&pos.down(), block);
 

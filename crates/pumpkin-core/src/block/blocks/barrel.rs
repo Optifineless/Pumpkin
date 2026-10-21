@@ -93,7 +93,8 @@ impl BlockBehaviour for BarrelBlock {
 
     fn placed(&self, args: PlacedArgs<'_>) {
         let barrel_block_entity = BarrelBlockEntity::new(*args.position);
-        args.world.add_block_entity(Arc::new(barrel_block_entity));
+        args.world
+            .add_block_entity_from_observed(Arc::new(barrel_block_entity), args.state_id);
     }
 
     fn get_comparator_output(&self, args: GetComparatorOutputArgs<'_>) -> Option<u8> {

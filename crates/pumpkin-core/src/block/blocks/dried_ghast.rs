@@ -36,11 +36,14 @@ impl DriedGhastBlock {
             return false;
         }
         props.waterlogged = true;
-        world.set_block_state(
+        if !world.set_block_state_from_observed(
             pos,
+            state,
             props.to_state_id(&Block::DRIED_GHAST),
             BlockFlags::NOTIFY_ALL,
-        );
+        ) {
+            return false;
+        }
         world.schedule_fluid_tick(
             &Fluid::WATER,
             *pos,
@@ -56,9 +59,19 @@ impl DriedGhastBlock {
     }
 
     fn tick_waterlogged(world: &Arc<World>, pos: &BlockPos, mut props: DriedGhastLikeProperties) {
+        let observed = props.to_state_id(&Block::DRIED_GHAST);
         // DriedGhastBlock.tickWaterlogged advances once per scheduled tick.
         if props.hydration == MAX_HYDRATION_LEVEL {
-            Self::spawn_ghastling(world, pos, props.facing);
+            Self::spawn_ghastling(world, pos, observed, props.facing);
+            return;
+        }
+        props.hydration += 1;
+        if !world.set_block_state_from_observed(
+            pos,
+            observed,
+            props.to_state_id(&Block::DRIED_GHAST),
+            BlockFlags::NOTIFY_LISTENERS,
+        ) {
             return;
         }
         world.play_sound(
@@ -66,18 +79,24 @@ impl DriedGhastBlock {
             SoundCategory::Blocks,
             &pos.to_f64(),
         );
-        props.hydration += 1;
-        world.set_block_state(
-            pos,
-            props.to_state_id(&Block::DRIED_GHAST),
-            BlockFlags::NOTIFY_LISTENERS,
-        );
         world.emit_game_event(GameEvent::BlockChange.name(), pos.to_f64());
     }
 
-    fn spawn_ghastling(world: &Arc<World>, pos: &BlockPos, facing: HorizontalFacing) {
+    fn spawn_ghastling(
+        world: &Arc<World>,
+        pos: &BlockPos,
+        observed: BlockStateId,
+        facing: HorizontalFacing,
+    ) {
         // DriedGhastBlock.spawnGhastling / Level.removeBlock preserve the water without loot.
-        world.set_block_state(pos, Block::WATER.default_state.id, BlockFlags::NOTIFY_ALL);
+        if !world.set_block_state_from_observed(
+            pos,
+            observed,
+            Block::WATER.default_state.id,
+            BlockFlags::NOTIFY_ALL,
+        ) {
+            return;
+        }
         let spawn_at = Vector3::new(
             f64::from(pos.0.x) + 0.5,
             f64::from(pos.0.y),
@@ -165,17 +184,23 @@ impl BlockBehaviour for DriedGhastBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         // DriedGhastBlock.tick dries by one level, without a transition sound.
-        let mut props =
-            DriedGhastLikeProperties::from_state_id(args.world.get_block_state_id(args.position));
+        let observed = args.world.get_block_state_id(args.position);
+        if observed.to_block() != args.block {
+            return;
+        }
+        let mut props = DriedGhastLikeProperties::from_state_id(observed);
         if props.waterlogged {
             Self::tick_waterlogged(args.world, args.position, props);
         } else if props.hydration > 0 {
             props.hydration -= 1;
-            args.world.set_block_state(
+            if !args.world.set_block_state_from_observed(
                 args.position,
+                observed,
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
-            );
+            ) {
+                return;
+            }
             args.world
                 .emit_game_event(GameEvent::BlockChange.name(), args.position.to_f64());
         }

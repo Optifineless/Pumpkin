@@ -184,19 +184,29 @@ impl TreeGrower {
         None
     }
 
-    fn remove_saplings(world: &Arc<World>, saplings: &[(BlockPos, BlockStateId)]) {
-        for (pos, _) in saplings {
-            world.set_block_state(
-                pos,
-                Block::AIR.default_state.id,
-                BlockFlags::NOTIFY_LISTENERS,
-            );
-        }
+    fn remove_saplings(world: &Arc<World>, saplings: &[(BlockPos, BlockStateId)]) -> bool {
+        let updates: Vec<_> = saplings
+            .iter()
+            .map(|(pos, observed)| {
+                (
+                    *pos,
+                    *observed,
+                    Block::AIR.default_state.id,
+                    BlockFlags::NOTIFY_LISTENERS,
+                )
+            })
+            .collect();
+        world.set_block_states_from_observed(&updates)
     }
 
     fn reset_saplings(world: &Arc<World>, saplings: &[(BlockPos, BlockStateId)]) {
-        for (pos, state_id) in saplings {
-            world.set_block_state(pos, *state_id, BlockFlags::NOTIFY_LISTENERS);
+        for (pos, state) in saplings {
+            world.set_block_state_from_observed(
+                pos,
+                Block::AIR.default_state.id,
+                *state,
+                BlockFlags::NOTIFY_LISTENERS,
+            );
         }
     }
 
@@ -205,20 +215,19 @@ impl TreeGrower {
         key: FeatureKey,
         pos: BlockPos,
         random: &mut RandomGenerator,
-    ) -> bool {
+    ) -> Option<bool> {
         let Some(ConfiguredFeature::Tree(tree)) = CONFIGURED_FEATURES.get(&key) else {
-            return false;
+            return Some(false);
         };
         let portal = world.level.world_portal.load_full();
         let Some(portal) = portal.as_ref() else {
-            return false;
+            return Some(false);
         };
         let mut cache = WorldGenerationCache::new(world.clone(), &pos);
         if !tree.generate(&**portal, &mut cache, random, pos) {
-            return false;
+            return Some(false);
         }
-        cache.apply();
-        true
+        cache.apply_if_observed().then_some(true)
     }
 
     #[must_use]
@@ -264,16 +273,39 @@ impl TreeGrower {
         state_id: BlockStateId,
         random: &mut RandomGenerator,
     ) -> bool {
+        self.grow_tree_checked(world, pos, block, state_id, random)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn grow_tree_checked(
+        &self,
+        world: &Arc<World>,
+        pos: &BlockPos,
+        block: &Block,
+        state_id: BlockStateId,
+        random: &mut RandomGenerator,
+    ) -> Option<bool> {
+        if world.get_block_state_id(pos) != state_id || state_id.to_block() != block {
+            return None;
+        }
+
         if let Some(mega) = Self::pick(self.mega_trees, random)
             && let Some(two_by_two) = Self::find_two_by_two(world, block, pos)
         {
-            Self::remove_saplings(world, &two_by_two.saplings);
-            let origin = pos.offset(Vector3::new(two_by_two.offset_x, 0, two_by_two.offset_z));
-            if Self::place(world, mega, origin, random) {
-                return true;
+            if !two_by_two
+                .saplings
+                .iter()
+                .any(|(position, observed)| position == pos && *observed == state_id)
+                || !Self::remove_saplings(world, &two_by_two.saplings)
+            {
+                return None;
             }
-            Self::reset_saplings(world, &two_by_two.saplings);
-            return false;
+            let origin = pos.offset(Vector3::new(two_by_two.offset_x, 0, two_by_two.offset_z));
+            let result = Self::place(world, mega, origin, random);
+            if result != Some(true) {
+                Self::reset_saplings(world, &two_by_two.saplings);
+            }
+            return result;
         }
 
         let has_flowers = Self::has_flowers(world, pos);
@@ -283,14 +315,16 @@ impl TreeGrower {
             self.trees
         };
         let Some(key) = Self::pick(list, random) else {
-            return false;
+            return Some(false);
         };
         let sapling = [(*pos, state_id)];
-        Self::remove_saplings(world, &sapling);
-        if Self::place(world, key, *pos, random) {
-            return true;
+        if !Self::remove_saplings(world, &sapling) {
+            return None;
         }
-        Self::reset_saplings(world, &sapling);
-        false
+        let result = Self::place(world, key, *pos, random);
+        if result != Some(true) {
+            Self::reset_saplings(world, &sapling);
+        }
+        result
     }
 }

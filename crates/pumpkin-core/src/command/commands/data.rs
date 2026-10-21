@@ -275,14 +275,28 @@ impl DataAccessor for EntityDataAccessor {
 pub struct BlockDataAccessor {
     pos: BlockPos,
     world: Arc<World>,
+    observed: pumpkin_data::BlockStateId,
 }
 
 impl BlockDataAccessor {
     pub fn new(pos: BlockPos, world: Arc<World>) -> Result<Self, CommandSyntaxError> {
-        if world.get_block_entity(&pos).is_none() {
+        let observed = world.get_block_state_id(&pos);
+        Self::from_observed(pos, world, observed)
+    }
+
+    pub(super) fn from_observed(
+        pos: BlockPos,
+        world: Arc<World>,
+        observed: pumpkin_data::BlockStateId,
+    ) -> Result<Self, CommandSyntaxError> {
+        if world.get_block_state_id(&pos) != observed || world.get_block_entity(&pos).is_none() {
             return Err(ERROR_BLOCK_INVALID.create_without_context());
         }
-        Ok(Self { pos, world })
+        Ok(Self {
+            pos,
+            world,
+            observed,
+        })
     }
 }
 
@@ -300,8 +314,13 @@ impl DataAccessor for BlockDataAccessor {
         tag.put_int("z", self.pos.0.z);
         let entity = crate::block::entities::block_entity_from_nbt(&tag)
             .ok_or_else(|| ERROR_BLOCK_INVALID.create_without_context())?;
+        if !self
+            .world
+            .add_block_entity_from_observed(entity, self.observed)
+        {
+            return Err(ERROR_BLOCK_INVALID.create_without_context());
+        }
         self.world.close_container_screens_at(&self.pos);
-        self.world.add_block_entity(entity);
         self.world
             .update_neighbour_for_output_signal(&self.pos, self.world.get_block(&self.pos));
         Ok(())

@@ -38,11 +38,15 @@ impl StemBlock {
         let f: f32 = get_available_moisture(args.world, args.position, args.block);
         if random.random_range(0..=(25.0 / f).floor() as i32) == 0 {
             let (block, state) = args.world.get_block_and_state_id(args.position);
+            if block != args.block {
+                return;
+            }
             let props = StemProperties::from_state_id(state);
             let age = i32::from(props.age);
             if age < 7 {
-                args.world.set_block_state(
+                args.world.set_block_state_from_observed(
                     args.position,
+                    state,
                     Self::state_with_age(block, state, age + 1),
                     BlockFlags::NOTIFY_NEIGHBORS,
                 );
@@ -59,16 +63,20 @@ impl StemBlock {
                 {
                     let attached_stem = Self::get_attached_stem(dir, block);
                     let gourd = Self::get_gourd(block);
-                    args.world.set_block_state(
-                        &plant_block_pos,
-                        gourd.default_state.id,
-                        BlockFlags::NOTIFY_NEIGHBORS,
-                    );
-                    args.world.set_block_state(
-                        args.position,
-                        attached_stem,
-                        BlockFlags::NOTIFY_NEIGHBORS,
-                    );
+                    args.world.set_block_states_from_observed(&[
+                        (
+                            plant_block_pos,
+                            plant_block_state.id,
+                            gourd.default_state.id,
+                            BlockFlags::NOTIFY_NEIGHBORS,
+                        ),
+                        (
+                            *args.position,
+                            state,
+                            attached_stem,
+                            BlockFlags::NOTIFY_NEIGHBORS,
+                        ),
+                    ]);
                 }
             }
         }
@@ -105,8 +113,15 @@ impl BlockBehaviour for StemBlock {
         <Self as CropBlockBase>::is_valid_bonemeal_target(self, args.world, args.position)
     }
 
-    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) {
-        <Self as CropBlockBase>::perform_bonemeal(self, args.world, args.position);
+    fn perform_bonemeal(&self, args: crate::block::BonemealArgs<'_>) -> bool {
+        if !<Self as CropBlockBase>::perform_bonemeal(
+            self,
+            args.world,
+            args.position,
+            args.state_id,
+        ) {
+            return false;
+        }
         let (_, state) = args.world.get_block_and_state_id(args.position);
         if StemProperties::from_state_id(state).age == 7 {
             BlockBehaviour::random_tick(
@@ -118,6 +133,7 @@ impl BlockBehaviour for StemBlock {
                 },
             );
         }
+        true
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {

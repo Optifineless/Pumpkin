@@ -261,24 +261,18 @@ impl World {
     }
 
     // Level.setBlock's explicit depth argument is retained through shape replacements.
-    pub(crate) fn set_block_state_with_limit(
+    pub(crate) fn set_block_state_from_observed_with_limit(
         self: &Arc<Self>,
         position: &BlockPos,
+        expected: BlockStateId,
         state: BlockStateId,
         flags: BlockFlags,
         update_limit: u32,
-    ) -> BlockStateId {
-        if !self.is_in_build_limit(*position) {
-            return BlockStateId::AIR;
-        }
-        let Some(_mutation) = self.block_entity_mutation_permit(*position) else {
-            tracing::warn!("Block state change rejected while chunk is unloading at {position:?}");
-            return self.get_block_state_id(position);
-        };
-        let old = self
-            .write_block_state_if(position, state, |_| true)
-            .unwrap_or(BlockStateId::AIR);
-        self.on_block_state_set(position, old, state, flags, update_limit)
+    ) -> bool {
+        self.commit_block_state_if(position, state, flags, update_limit, |current| {
+            current == expected
+        })
+        .is_some()
     }
 
     /// Queues a shape update with the remaining vanilla propagation depth.
@@ -321,15 +315,17 @@ impl World {
 
         if new_state_id != block_state_id {
             if new_state_id.to_state().is_air() {
-                self.break_block_with_limit(
+                self.break_block_with_limit_from_observed(
                     block_pos,
                     None,
                     flags | BlockFlags::NOTIFY_ALL,
                     update_limit,
+                    block_state_id,
                 );
             } else {
-                self.set_block_state_with_limit(
+                self.set_block_state_from_observed_with_limit(
                     block_pos,
+                    block_state_id,
                     new_state_id,
                     flags - BlockFlags::SKIP_DROPS,
                     update_limit,
@@ -345,6 +341,7 @@ impl World {
         source_block: &Block,
         include_fluid: bool,
     ) {
+        let expected = self.get_block_state_id(position);
         let (block, fluid) = if include_fluid {
             let (block, fluid) = self.get_block_and_fluid(position);
             (block, Some(fluid))
@@ -359,7 +356,7 @@ impl World {
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
-        if event.cancelled {
+        if event.cancelled || self.get_block_state_id(position) != expected {
             return;
         }
 
