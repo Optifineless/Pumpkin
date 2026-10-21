@@ -214,6 +214,7 @@ pub mod entity_tracker;
 pub mod environment;
 mod experience_orbs;
 mod fishing_hook;
+mod game_event_sources;
 pub(crate) mod game_events;
 pub(crate) mod generation_spawning;
 pub mod guard_effects;
@@ -370,6 +371,7 @@ pub struct World {
     /// A map of active entities within the world, keyed by their unique UUID.
     /// This does not include players.
     pub entities: ArcSwap<Vec<Arc<dyn EntityBase>>>,
+    game_event_sources: game_event_sources::SourceIndex,
     entity_activation_state: pumpkin_util::sync::Mutex<
         entity_save::EntityActivationState,
         entity_save::EntityActivationLock,
@@ -563,6 +565,7 @@ impl World {
             level_info,
             players: ArcSwap::new(Arc::new(Vec::new())),
             entities: ArcSwap::new(Arc::new(Vec::new())),
+            game_event_sources: game_event_sources::SourceIndex::default(),
             entity_activation_state: pumpkin_util::sync::Mutex::default(),
             pending_entity_activations: crossbeam::queue::SegQueue::new(),
             dragon_parts: DashMap::new(),
@@ -751,6 +754,7 @@ impl World {
     }
 
     pub async fn shutdown(&self) {
+        self.close_game_event_sources();
         // ServerLevel.close closes admission after synchronous block-entity callbacks drain.
         while !self.try_stop_block_entity_mutations() {
             tokio::task::yield_now().await;
@@ -4668,20 +4672,7 @@ impl World {
         player: &Arc<Player>,
         fire_event: bool,
     ) -> Option<Arc<Player>> {
-        let mut removed_player: Option<Arc<Player>> = None;
-
-        self.players.rcu(|current_list| {
-            removed_player = None;
-            let mut new_list = (**current_list).clone();
-            // PlayerList.remove affects this connection's instance, not a later login with its UUID.
-            let pos = new_list
-                .iter()
-                .position(|current| Arc::ptr_eq(current, player));
-            if let Some(pos) = pos {
-                removed_player = Some(new_list.remove(pos));
-            }
-            new_list
-        });
+        let removed_player = self.withdraw_game_event_player(player);
         if let Some(ref player) = removed_player {
             self.entity_tracker
                 .remove_entity(player.as_ref() as &dyn EntityBase, self);

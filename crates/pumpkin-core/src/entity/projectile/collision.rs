@@ -94,6 +94,8 @@ impl ThrownItemEntity {
     // Projectile.hitTargetOrDeflectSelf / onHit, keeping the existing block/plugin callback.
     pub(super) fn hit_target(&self, caller: &dyn EntityBase, hit: ProjectileHit) {
         let entity = self.get_entity();
+        let action_world = entity.world.load_full();
+        let action = action_world.capture_game_event_source_for_action(entity);
         if entity.entity_type == &EntityType::LLAMA_SPIT {
             if deflection::hit_target_or_deflect_self(caller, &hit) {
                 return;
@@ -106,7 +108,7 @@ impl ThrownItemEntity {
                     ProjectileHit::Entity { .. } => None,
                 },
             );
-            on_hit(caller, hit);
+            on_hit_after_action(caller, hit, action.as_ref());
             return;
         }
         let rocket = entity.entity_type == &EntityType::FIREWORK_ROCKET;
@@ -129,14 +131,14 @@ impl ThrownItemEntity {
         let dragon = entity.entity_type == &EntityType::DRAGON_FIREBALL;
         // DragonFireball.onHit calls Projectile.onHit before creating the cloud.
         if dragon {
-            emit_land(caller, landing);
+            emit_land(caller, landing, action.as_ref());
         }
         caller.on_hit(hit);
         if rocket {
             on_hit_block(caller, block_hit);
         }
         if !dragon {
-            emit_land(caller, landing);
+            emit_land(caller, landing, action.as_ref());
         }
         if entity.entity_type == &EntityType::FIREWORK_ROCKET || dragon {
             self.has_hit.store(false, Ordering::Relaxed);
@@ -169,21 +171,47 @@ fn on_hit_block(
 
 // Projectile.onHit emits PROJECTILE_LAND after the projectile's own hit effects.
 pub(super) fn on_hit(caller: &dyn EntityBase, hit: ProjectileHit) {
-    let landing = land_position(&hit);
-    caller.on_hit(hit);
-    emit_land(caller, landing);
+    let entity = caller.get_entity();
+    let world = entity.world.load_full();
+    let action = world.capture_game_event_source_for_action(entity);
+    on_hit_after_action(caller, hit, action.as_ref());
 }
 
-fn land_position(hit: &ProjectileHit) -> Vector3<f64> {
+fn on_hit_after_action(
+    caller: &dyn EntityBase,
+    hit: ProjectileHit,
+    action: Option<&crate::world::game_events::CapturedSource<'_>>,
+) {
+    let landing = land_position(&hit);
+    caller.on_hit(hit);
+    emit_land(caller, landing, action);
+}
+
+fn land_position(
+    hit: &ProjectileHit,
+) -> (Vector3<f64>, Option<pumpkin_util::math::position::BlockPos>) {
     match hit {
-        ProjectileHit::Block { pos, .. } => pos.to_centered_f64(),
-        ProjectileHit::Entity { hit_pos, .. } => *hit_pos,
+        ProjectileHit::Block { pos, .. } => (pos.to_centered_f64(), Some(*pos)),
+        ProjectileHit::Entity { hit_pos, .. } => (*hit_pos, None),
     }
 }
 
-fn emit_land(caller: &dyn EntityBase, landing: Vector3<f64>) {
-    caller.get_entity().world.load().emit_game_event(
+fn emit_land(
+    caller: &dyn EntityBase,
+    landing: (Vector3<f64>, Option<pumpkin_util::math::position::BlockPos>),
+    action: Option<&crate::world::game_events::CapturedSource<'_>>,
+) {
+    let entity = caller.get_entity();
+    let world = entity.world.load_full();
+    // Removed hit overrides retain their plugin event; strict membership rejects
+    // typed land until the hit owner can prove normal retirement across callbacks.
+    world.emit_game_event_after_action(
         pumpkin_data::game_event::GameEvent::ProjectileLand.name(),
-        landing,
+        landing.0,
+        || crate::world::game_events::GameEventContext {
+            source: Some(entity),
+            affected_state: landing.1.map(|pos| world.get_block_state_id(&pos)),
+        },
+        action,
     );
 }

@@ -1,14 +1,32 @@
 use super::World;
+use super::game_event_sources::SourceMembership;
 use crate::{
-    entity::{Entity, living::LivingEntity},
+    entity::{Entity, EntityBase, living::LivingEntity, player::Player},
     plugin::api::events::world::generic_game::GenericGameEvent,
 };
 use pumpkin_data::{BlockStateId, game_event::GameEvent};
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[cfg(test)]
+mod actorless_tests;
+#[cfg(test)]
+mod adapter_tests;
+#[cfg(test)]
+mod indexed_tests;
+#[cfg(test)]
+mod lifecycle_boundaries;
+#[cfg(test)]
+mod lifecycle_tests;
+#[cfg(test)]
+mod native_reentry_tests;
+#[cfg(test)]
 mod plugin_tests;
+#[cfg(test)]
+mod projectile_controls;
+#[cfg(test)]
+mod projectile_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
@@ -49,44 +67,151 @@ pub struct EmittedGameEvent<'a> {
     pub affected_state: Option<BlockStateId>,
 }
 
-impl<'a> GameEventSource<'a> {
+pub struct CapturedSource<'a> {
+    snapshot: GameEventSource<'a>,
+    membership: Arc<SourceMembership>,
+}
+
+// Resolve every unsealed native getter before the final membership/scalar checks.
+// None of these references retains the index owner or invokes virtual code on access.
+struct SourceParts<'a> {
+    entity: &'a Entity,
+    living: Option<&'a LivingEntity>,
+    player: Option<&'a Player>,
+}
+
+impl<'a> SourceParts<'a> {
+    fn resolve(current: &'a dyn EntityBase) -> Self {
+        Self {
+            entity: current.get_entity(),
+            living: current.get_living_entity(),
+            player: current.get_player(),
+        }
+    }
+}
+
+impl<'a> CapturedSource<'a> {
     fn capture(world: &'a World, entity: &'a Entity) -> Option<Self> {
-        let current = world.get_entity_by_id(entity.entity_id)?;
-        let snapshot = Self {
+        let membership = world.game_event_source_membership(entity.entity_id)?;
+        let current = membership.entity()?;
+        let parts = SourceParts::resolve(current.as_ref());
+        let snapshot = GameEventSource {
             entity,
             entity_id: entity.entity_id,
             uuid: entity.entity_uuid,
             world,
             position: entity.pos.load(),
-            life: current
-                .get_living_entity()
-                .map(LivingEntity::damage_lifecycle),
+            life: parts.living.map(LivingEntity::damage_lifecycle),
         };
-        drop(current);
-        snapshot.is_current().then_some(snapshot)
+        let captured = Self {
+            snapshot,
+            membership,
+        };
+        captured.matches(&parts).then_some(captured)
     }
 
     fn is_current(&self) -> bool {
-        if self.entity.is_removed() || !std::ptr::eq(self.entity.world.load().as_ref(), self.world)
-        {
-            return false;
-        }
-        let Some(current) = self.world.get_entity_by_id(self.entity_id) else {
+        let source = &self.snapshot;
+        let Some(current) = self.membership.entity() else {
             return false;
         };
-        std::ptr::eq(current.get_entity(), self.entity)
-            && current.get_entity().entity_uuid == self.uuid
-            && current
-                .get_living_entity()
-                .map(LivingEntity::damage_lifecycle)
-                == self.life
-            && current.get_player().is_none_or(|player| {
-                !player.client.closed() && self.world.contains_player_instance(player)
-            })
+        let parts = SourceParts::resolve(current.as_ref());
+        let Some(membership) = source.world.game_event_source_membership(source.entity_id) else {
+            return false;
+        };
+        #[cfg(test)]
+        source
+            .world
+            .game_event_sources
+            .comparisons
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Arc::ptr_eq(&membership, &self.membership) && self.matches(&parts)
+    }
+
+    fn matches(&self, current: &SourceParts<'_>) -> bool {
+        let source = &self.snapshot;
+        #[cfg(test)]
+        source
+            .world
+            .game_event_sources
+            .comparisons
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::ptr::eq(current.entity, source.entity)
+            && current.entity.entity_id == source.entity_id
+            && current.entity.entity_uuid == source.uuid
+            && !source.entity.is_removed()
+            && std::ptr::eq(source.entity.world.load().as_ref(), source.world)
+            && current.living.map(LivingEntity::damage_lifecycle) == source.life
+            && current.player.is_none_or(|player| !player.client.closed())
     }
 }
 
 impl World {
+    pub(crate) fn emit_game_event_from_action(
+        &self,
+        event_key: impl Into<String>,
+        position: Vector3<f64>,
+        source: Option<&Entity>,
+        action: Option<&CapturedSource<'_>>,
+    ) {
+        if source.is_some() {
+            self.emit_game_event_after_action(
+                event_key,
+                position,
+                || GameEventContext {
+                    source,
+                    affected_state: None,
+                },
+                action,
+            );
+        } else {
+            self.emit_game_event(event_key, position);
+        }
+    }
+
+    pub(crate) fn capture_game_event_source_for_action<'a>(
+        &'a self,
+        entity: &'a Entity,
+    ) -> Option<CapturedSource<'a>> {
+        self.game_event_forwarding_enabled()
+            .then(|| CapturedSource::capture(self, entity))
+            .flatten()
+    }
+
+    pub(crate) fn emit_game_event_after_action<'a>(
+        &self,
+        event_key: impl Into<String>,
+        position: Vector3<f64>,
+        context: impl FnOnce() -> GameEventContext<'a>,
+        action: Option<&CapturedSource<'_>>,
+    ) {
+        self.emit_game_event_with_validation(event_key, position, context, || {
+            action.is_some_and(CapturedSource::is_current)
+        });
+    }
+
+    pub(crate) fn game_event_forwarding_enabled(&self) -> bool {
+        self.server
+            .upgrade()
+            .is_some_and(|server| server.advanced_config.sculk_game_events.enabled)
+    }
+
+    pub(crate) fn emit_game_event_from(
+        &self,
+        event_key: impl Into<String>,
+        position: Vector3<f64>,
+        source: Option<&Entity>,
+    ) {
+        self.emit_game_event_with_context(
+            event_key,
+            position,
+            GameEventContext {
+                source,
+                affected_state: None,
+            },
+        );
+    }
+
     /// Emits `GameEvent.ITEM_INTERACT_FINISH` at the user's existing event position.
     pub fn game_event_item_interact_finish(&self, entity: &Entity) {
         self.emit_game_event_with_context(
@@ -117,16 +242,41 @@ impl World {
         position: Vector3<f64>,
         context: GameEventContext<'_>,
     ) {
-        let source = context
-            .source
-            .and_then(|entity| GameEventSource::capture(self, entity));
-        let mut event = GenericGameEvent::new(event_key.into(), position);
+        self.emit_game_event_with_lazy_context(event_key, position, || context);
+    }
+
+    pub(crate) fn emit_game_event_with_lazy_context<'a>(
+        &self,
+        event_key: impl Into<String>,
+        position: Vector3<f64>,
+        context: impl FnOnce() -> GameEventContext<'a>,
+    ) {
+        self.emit_game_event_with_validation(event_key, position, context, || true);
+    }
+
+    fn emit_game_event_with_validation<'a>(
+        &self,
+        event_key: impl Into<String>,
+        position: Vector3<f64>,
+        context: impl FnOnce() -> GameEventContext<'a>,
+        validate_action: impl FnOnce() -> bool,
+    ) {
         let Some(server) = self.server.upgrade() else {
             return;
         };
+        let enabled = server.advanced_config.sculk_game_events.enabled;
+        let context = if enabled {
+            context()
+        } else {
+            GameEventContext::default()
+        };
+        let source = context
+            .source
+            .and_then(|entity| CapturedSource::capture(self, entity));
+        let mut event = GenericGameEvent::new(event_key.into(), position);
         // ServerLevel.gameEvent -> GameEventDispatcher.post, after the existing plugin boundary.
         server.plugin_manager.fire_blocking(&server, &mut event);
-        if event.cancelled || !server.advanced_config.sculk_game_events.enabled {
+        if event.cancelled || !enabled {
             return;
         }
         let Some(resolved) = GameEvent::from_name(&event.event_key) else {
@@ -137,14 +287,15 @@ impl World {
             || !event.position.z.is_finite()
             || !Self::is_valid(BlockPos::floored_v(event.position))
             || (context.source.is_some() && source.is_none())
-            || source.is_some_and(|source| !source.is_current())
+            || source.as_ref().is_some_and(|source| !source.is_current())
+            || !validate_action()
         {
             return;
         }
         self.dispatch_game_event(EmittedGameEvent {
             event: resolved,
             position: event.position,
-            source,
+            source: source.map(|source| source.snapshot),
             affected_state: context.affected_state,
         });
     }

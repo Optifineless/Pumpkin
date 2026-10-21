@@ -171,7 +171,8 @@ impl RavagerEntity {
     fn block_roar(&self) {
         // Ravager.roar and its two game-rule predicates; illagers avoid damage, players avoid push.
         let entity = &self.mob_entity.living_entity.entity;
-        let world = entity.world.load();
+        let world = entity.world.load_full();
+        let action = world.capture_game_event_source_for_action(entity);
         let griefing = world.level_info.load().game_rules.mob_griefing;
         for target in world.get_all_at_box(&entity.bounding_box.load().expand(4.0, 4.0, 4.0)) {
             let other = target.get_entity();
@@ -202,7 +203,12 @@ impl RavagerEntity {
                 self.strong_block_knockback(target.as_ref());
             }
         }
-        world.emit_game_event("entity_action", entity.pos.load());
+        world.emit_game_event_from_action(
+            "entity_action",
+            entity.pos.load(),
+            Some(entity),
+            action.as_ref(),
+        );
         world.send_entity_status(entity, EntityStatus::RavagerRoared, None);
     }
 }

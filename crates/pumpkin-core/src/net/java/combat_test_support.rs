@@ -46,7 +46,11 @@ impl TestPlayer {
                 player.get_entity().chunk_pos.load(),
                 std::num::NonZeroU8::new(2).unwrap(),
             ));
-        world.players.store(Arc::new(vec![player.clone()]));
+        for previous in world.players.load().iter() {
+            world.retire_game_event_source(previous.get_entity());
+        }
+        world.players.store(Arc::new(Vec::new()));
+        world.add_pending_player(&player);
         world.entity_tracker.add_entity(
             &(player.clone() as Arc<dyn crate::entity::EntityBase>),
             world,

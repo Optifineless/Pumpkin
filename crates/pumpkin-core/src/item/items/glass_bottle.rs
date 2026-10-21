@@ -1,3 +1,4 @@
+use crate::entity::EntityBase;
 use std::any::Any;
 
 use crate::entity::player::Player;
@@ -226,15 +227,18 @@ impl GlassBottleItem {
             return;
         }
 
+        let action = world.capture_game_event_source_for_action(player.get_entity());
         world.play_sound_expect(
             player,
             Sound::ItemBottleFill,
             SoundCategory::Neutral,
             &player.position(),
         );
-        world.emit_game_event(
+        world.emit_game_event_from_action(
             pumpkin_data::game_event::GameEvent::FluidPickup.name(),
             position.to_centered_f64(),
+            Some(player.get_entity()),
+            action.as_ref(),
         );
         if !Self::hand_matches(player, hand, expected) {
             return;

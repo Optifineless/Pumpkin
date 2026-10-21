@@ -122,7 +122,13 @@ const fn get_empty_sound(item: &Item) -> Sound {
 }
 
 // BucketItem/MobBucketItem.playEmptySound and SolidBucketItem.emptyContents.
-fn play_empty_sound(world: &Arc<World>, player: Option<&Player>, item: &Item, pos: BlockPos) {
+fn play_empty_sound(
+    world: &Arc<World>,
+    player: Option<&Player>,
+    item: &Item,
+    pos: BlockPos,
+    action: Option<&crate::world::game_events::CapturedSource<'_>>,
+) {
     let category = if get_mob_for_bucket(item).is_some() {
         SoundCategory::Neutral
     } else {
@@ -134,9 +140,11 @@ fn play_empty_sound(world: &Arc<World>, player: Option<&Player>, item: &Item, po
         world.play_block_sound(get_empty_sound(item), category, pos);
     }
     if get_mob_for_bucket(item).is_none() {
-        world.emit_game_event(
+        world.emit_game_event_from_action(
             pumpkin_data::game_event::GameEvent::FluidPlace.name(),
             pos.to_f64(),
+            player.map(EntityBase::get_entity),
+            action,
         );
     }
 }
@@ -360,7 +368,7 @@ pub(crate) fn bucket_destination(
 }
 
 pub(crate) fn empty_bucket_at(world: &Arc<World>, item: &Item, pos: BlockPos) -> Option<BlockPos> {
-    empty_bucket_at_with_player(world, None, item, pos)
+    empty_bucket_at_with_player(world, None, item, pos, None)
 }
 
 // BucketItem.emptyContents carries the nullable sound source through every placement branch.
@@ -369,6 +377,7 @@ fn empty_bucket_at_with_player(
     player: Option<&Player>,
     item: &Item,
     pos: BlockPos,
+    action: Option<&crate::world::game_events::CapturedSource<'_>>,
 ) -> Option<BlockPos> {
     if !can_empty_bucket_at(world, item, pos) {
         return None;
@@ -412,7 +421,7 @@ fn empty_bucket_at_with_player(
         };
         world.set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
     }
-    play_empty_sound(world, player, item, pos);
+    play_empty_sound(world, player, item, pos, action);
     Some(pos)
 }
 
@@ -600,6 +609,7 @@ impl ItemBehaviour for FilledBucketItem {
     ) -> bool {
         let item = stack.item;
         let world = player.world();
+        let action = world.capture_game_event_source_for_action(player.get_entity());
         let Some((pos, direction)) = bucket_use_hit(&world, player, stack, yaw, pitch) else {
             return false;
         };
@@ -649,10 +659,10 @@ impl ItemBehaviour for FilledBucketItem {
                 Block::POWDER_SNOW.default_state.id,
                 BlockFlags::NOTIFY_ALL,
             );
-            play_empty_sound(&world, Some(player), item, destination);
+            play_empty_sound(&world, Some(player), item, destination, action.as_ref());
             destination
         } else if let Some(pos) =
-            empty_bucket_at_with_player(&world, Some(player), item, destination)
+            empty_bucket_at_with_player(&world, Some(player), item, destination, action.as_ref())
         {
             pos
         } else {

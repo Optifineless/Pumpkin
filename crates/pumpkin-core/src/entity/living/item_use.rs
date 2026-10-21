@@ -94,6 +94,9 @@ impl LivingEntity {
     ) {
         let before = item.clone();
         let consumable = before.get_data_component::<ConsumableImpl>();
+        let action_world = self.entity.world.load_full();
+        let action = consumable
+            .and_then(|_| action_world.capture_game_event_source_for_action(&self.entity));
         if consumable.is_some() {
             if let Some(player) = caller.get_player() {
                 item.decrement_unless_creative(player.gamemode.load(), 1);
@@ -144,10 +147,12 @@ impl LivingEntity {
             }
             self.on_consume_listeners(&before);
             self.apply_consumable_effects(caller, &before);
-            self.entity
-                .world
-                .load()
-                .emit_game_event(event, self.entity.pos.load());
+            self.entity.world.load().emit_game_event_from_action(
+                event,
+                self.entity.pos.load(),
+                Some(&self.entity),
+                action.as_ref(),
+            );
         }
         self.apply_after_use_component_side_effects(caller, &item, &before, hand);
     }

@@ -44,12 +44,12 @@ impl EnchantmentEntityEffectExt for ReplaceBlock {
         world: &Arc<World>,
         _enchantment_level: i32,
         _owner: Option<&Arc<Player>>,
-        _entity: Option<&Entity>,
+        entity: Option<&Entity>,
         position: Vector3<f64>,
     ) {
         let target = self.target_position(position);
         if let Some(event) = self.trigger_game_event {
-            world.emit_game_event(event.name(), target.to_centered_f64());
+            world.emit_game_event_from(event.name(), target.to_centered_f64(), entity);
         }
     }
 }

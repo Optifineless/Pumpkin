@@ -74,6 +74,7 @@ pub(super) fn send_transform_effects(
     location: BlockPos,
     current_state_id: BlockStateId,
     result: TransformResult,
+    action: Option<&crate::world::game_events::CapturedSource<'_>>,
 ) {
     let world = player.world();
     if let Some(sound) = result.entry.sound {
@@ -93,7 +94,19 @@ pub(super) fn send_transform_effects(
                 &CWorldEvent::new(particle as i32, position, 0, false),
             );
         }
-        world.emit_game_event(GameEvent::BlockChange.name(), position.to_centered_f64());
+        world.emit_game_event_after_action(
+            GameEvent::BlockChange.name(),
+            position.to_centered_f64(),
+            || crate::world::game_events::GameEventContext {
+                source: Some(player.get_entity()),
+                affected_state: Some(if position == location {
+                    result.new_state_id
+                } else {
+                    world.get_block_state_id(&position)
+                }),
+            },
+            action,
+        );
     };
     emit(location);
 

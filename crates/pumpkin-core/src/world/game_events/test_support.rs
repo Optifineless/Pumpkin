@@ -54,6 +54,18 @@ pub struct Observations {
     pub order: Vec<&'static str>,
 }
 
+pub fn watch_world(world: &World) -> Arc<Mutex<Observations>> {
+    let sink = Arc::new(Mutex::new(Observations::default()));
+    let mut observers = OBSERVERS.lock().unwrap();
+    observers.retain(|(_, sink)| sink.strong_count() > 0);
+    assert!(
+        observers.len() < LIMIT,
+        "bounded game-event observer registry overflow"
+    );
+    observers.push((std::ptr::from_ref(world) as usize, Arc::downgrade(&sink)));
+    sink
+}
+
 pub fn observe(world: &World, event: &EmittedGameEvent<'_>) {
     let sink = OBSERVERS
         .lock()
@@ -146,15 +158,7 @@ impl Scenario {
         world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
         let owner = TestPlayer::new(&world);
         owner.player.get_entity().set_pos(DEPARTURE);
-        let sink = Arc::new(Mutex::new(Observations::default()));
-        let mut observers = OBSERVERS.lock().unwrap();
-        observers.retain(|(_, sink)| sink.strong_count() > 0);
-        assert!(
-            observers.len() < LIMIT,
-            "bounded game-event observer registry overflow"
-        );
-        observers.push((Arc::as_ptr(&world) as usize, Arc::downgrade(&sink)));
-        drop(observers);
+        let sink = watch_world(&world);
         Self {
             server,
             world,

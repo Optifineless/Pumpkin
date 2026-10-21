@@ -7,7 +7,7 @@ use crate::{
     world::World,
 };
 use pumpkin_data::{entity::EntityType, game_event::GameEvent, tracked_data};
-use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use std::sync::atomic::Ordering::Relaxed;
 
 impl FishingBobberEntity {
@@ -69,6 +69,9 @@ impl FishingBobberEntity {
             }
         }
         let hit_pos = start + *velocity * closest;
+        let action = (hooked.is_some() || block_hit.is_some())
+            .then(|| world.capture_game_event_source_for_action(&self.entity))
+            .flatten();
         if (hooked.is_some() || block_hit.is_some())
             && !self.fire_hit_event(
                 world,
@@ -90,7 +93,7 @@ impl FishingBobberEntity {
                 return;
             }
             self.set_hooked_entity(Some(hooked.get_entity().entity_id));
-            world.emit_game_event(GameEvent::ProjectileLand.name(), hit_pos);
+            self.emit_land(world, hit_pos, None, action.as_ref());
         } else if let Some(pos) = block_hit {
             // Projectile.onHitBlock calls the block callback before FishingHook clips its motion.
             if let Some(server) = world.server.upgrade() {
@@ -105,9 +108,27 @@ impl FishingBobberEntity {
                     &server,
                 );
             }
-            world.emit_game_event(GameEvent::ProjectileLand.name(), hit_pos);
+            self.emit_land(world, hit_pos, Some(pos), action.as_ref());
             *velocity = *velocity * closest;
         }
+    }
+
+    fn emit_land(
+        &self,
+        world: &World,
+        hit_pos: Vector3<f64>,
+        block_hit: Option<BlockPos>,
+        action: Option<&crate::world::game_events::CapturedSource<'_>>,
+    ) {
+        world.emit_game_event_after_action(
+            GameEvent::ProjectileLand.name(),
+            hit_pos,
+            || crate::world::game_events::GameEventContext {
+                source: Some(&self.entity),
+                affected_state: block_hit.map(|pos| world.get_block_state_id(&pos)),
+            },
+            action,
+        );
     }
 
     fn fire_hit_event(&self, world: &World, pos: Vector3<f64>, entity_id: Option<i32>) -> bool {

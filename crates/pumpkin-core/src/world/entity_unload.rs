@@ -182,6 +182,7 @@ impl World {
             return;
         };
         for member in &members {
+            self.retire_game_event_source(member.get_entity());
             super::container_lifecycle::retire_entity_container(member);
         }
         Self::store_retired_entities(request, &members, was_live);

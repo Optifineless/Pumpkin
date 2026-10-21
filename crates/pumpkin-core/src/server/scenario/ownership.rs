@@ -207,6 +207,11 @@ impl Scenario {
     }
 
     pub async fn restart(self) -> Self {
+        let game_events = self.server.advanced_config.sculk_game_events.enabled;
+        self.restart_with_game_events(game_events).await
+    }
+
+    pub(crate) async fn restart_with_game_events(self, game_events: bool) -> Self {
         self.stop().await;
         let hardcore = self.server.basic_config.hardcore;
         let Self {
@@ -214,7 +219,7 @@ impl Scenario {
         } = self;
         drop(server); // Release the real session lock before opening the same directory.
         let scenario = Self {
-            server: Self::services(fixture.directory.path(), hardcore),
+            server: Self::services(fixture.directory.path(), hardcore, game_events),
             fixture,
             sessions: Rc::default(),
             stopped: Rc::default(),
