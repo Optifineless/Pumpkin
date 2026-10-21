@@ -736,6 +736,29 @@ native plugins must rebuild. Existing generic Entity and both Wasm age APIs
 still mean elapsed ticks; no WIT changes or biological-age API is added to Wasm.
 Implemented by Codex. In-game verification: Not yet.
 
+PR #412 review round 2 accepts every vanilla numeric tag for `Age`, `ForcedAge`
+and `AgeLocked`, including float flooring, integer narrowing and nonzero byte
+booleans. Undecodable tags retain the previous effective age (fresh entities use
+the vanilla defaults) while preserving their raw NBT; a later valid `/data` load
+recovers the same owner. Initial projection is separate from baby/adult boundary
+effects, and same-status reloads leave navigation alone. API 8 (same version):
+additive numeric NBT conversion methods, with no new type or layout changes.
+Written by GPT-6.1 Sol (Codex Cloud). In-game verification: Not yet.
+
+Merge/deployment prerequisite: issue #414 must first merge and deploy as
+`murgicraft-baseline-202610-2`. This slice adds no rollback age reader. That
+baseline may display retained babies as adults until roll-forward, but must
+retain all four age tags. The regression simulates that unknown-tag retention
+contract through real activation and shutdown saves; it does not validate the
+absent #414 implementation or its deployment.
+
+Play test: use `/data merge entity` on a baby with numeric age tags of each type;
+expect its size to follow the signed age. Merge a string `Age` into a known baby;
+expect it to remain a baby and stop growing. Replace all invalid age tags with
+valid numbers; expect growth to resume on that same villager. Merge a different
+negative age while it is walking; expect it to keep its path. Change the age to
+zero; expect an adult body. Capture these transitions and the `/data get` output.
+
 ## Hanging support lifecycle and painting attacker (#44, #47)
 
 Paintings and ordinary item frames check support, block collision and hanging

@@ -2,6 +2,7 @@
 mod callbacks;
 mod fixtures;
 mod navigation;
+mod reload;
 use super::{villager_persistence::*, *};
 use crate::{
     entity::passive::villager::VillagerEntity,

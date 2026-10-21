@@ -222,7 +222,7 @@ impl VillagerEntity {
             }
             state.value.age = new;
             state.pending |= (old < 0) != (new < 0);
-            state.boundary_pending |= (old < 0) != (new < 0);
+            state.boundary_pending |= authority.tracked.is_some() && (old < 0) != (new < 0);
             state.revision = state.revision.wrapping_add(1);
             (state.revision, (old < 0) != (new < 0))
         };
@@ -278,15 +278,13 @@ impl VillagerEntity {
         let Some(authority) = AgeAuthority::capture(self, false) else {
             return;
         };
-        let malformed = AGE_KEYS.iter().any(|key| {
-            nbt.get(key).is_some_and(|tag| {
-                if *key == "AgeLocked" {
-                    !matches!(tag, NbtTag::Byte(0 | 1))
-                } else {
-                    !matches!(tag, NbtTag::Int(_))
-                }
-            })
+        // AgeableMob.readAdditionalSaveData uses TagValueInput's NumericTag conversions.
+        let age = nbt.get("Age").map_or(Some(0), NbtTag::as_numeric_int);
+        let forced_age = nbt.get("ForcedAge").map_or(Some(0), NbtTag::as_numeric_int);
+        let locked = nbt.get("AgeLocked").map_or(Some(false), |tag| {
+            tag.as_numeric_byte().map(|value| value != 0)
         });
+        let malformed = age.is_none() || forced_age.is_none() || locked.is_none();
         let future = nbt.get(AGE_SCHEMA).is_some() && nbt.get_int(AGE_SCHEMA) != Some(AGE_VERSION);
         let quarantined = malformed || future;
         let retained = quarantined.then(|| {
@@ -298,21 +296,6 @@ impl VillagerEntity {
             }
             raw
         });
-        let value = VillagerAgeSnapshot {
-            age: if quarantined {
-                0
-            } else {
-                nbt.get_int("Age").unwrap_or(0)
-            },
-            forced_age: if quarantined {
-                0
-            } else {
-                nbt.get_int("ForcedAge").unwrap_or(0)
-            },
-            locked: !quarantined && nbt.get_bool("AgeLocked").unwrap_or(false),
-            had_schema: nbt.get(AGE_SCHEMA).is_some(),
-            quarantined,
-        };
         let entity = self.get_entity();
         let revision = {
             let mut state = self
@@ -321,13 +304,25 @@ impl VillagerEntity {
                 .unwrap_or_else(PoisonError::into_inner);
             if entity.removal_reason.load().is_some()
                 || !Arc::ptr_eq(&authority.world, &entity.world.load_full())
-                || state.value.quarantined
             {
                 return;
             }
+            // Retain the effective state while raw tags are undecodable; a later valid
+            // /data load may replace them without replacing this incarnation.
+            let mut value = state.value;
+            if !quarantined {
+                value.age = age.unwrap_or(0);
+                value.forced_age = forced_age.unwrap_or(0);
+                value.locked = locked.unwrap_or(false);
+            }
+            value.had_schema = nbt.get(AGE_SCHEMA).is_some();
+            value.quarantined = quarantined;
+            // Initial hydration only projects the body/metadata. Boundary effects belong
+            // to baby/adult transitions of an admitted entity, as in AgeableMob.setAge.
+            state.boundary_pending |=
+                authority.tracked.is_some() && (state.value.age < 0) != (value.age < 0);
             state.value = value;
             state.pending = true;
-            state.boundary_pending = true;
             state.retained = retained;
             state.revision = state.revision.wrapping_add(1);
             state.revision
