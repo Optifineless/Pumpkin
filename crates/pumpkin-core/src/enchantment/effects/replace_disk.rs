@@ -132,9 +132,10 @@ impl ReplaceDisk {
         &self,
         world: &Arc<World>,
         enchantment_level: i32,
-        _entity: Option<&crate::entity::Entity>,
+        entity: Option<&crate::entity::Entity>,
         position: Vector3<f64>,
     ) {
+        let action = entity.and_then(|entity| world.capture_game_event_source_for_action(entity));
         let mut changed = false;
         for pos in self.iterate_blocks(enchantment_level, position) {
             let passes_predicate = self
@@ -150,7 +151,12 @@ impl ReplaceDisk {
             if old_state_id != new_state.id {
                 changed = true;
                 if let Some(event) = self.trigger_game_event {
-                    world.emit_game_event(event.name(), pos.to_centered_f64());
+                    world.emit_game_event_from_action(
+                        event.name(),
+                        pos.to_centered_f64(),
+                        entity,
+                        action.as_ref(),
+                    );
                 }
             }
         }

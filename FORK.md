@@ -42,6 +42,49 @@ its UUID, health, bases and modifiers unchanged. Disable the switch and create
 new horses; expect prior generated defaults, while saved horses remain unchanged.
 Record the births and restart, and capture UUID, Health and attribute values.
 
+## Indexed game-event source identity and existing emitters, slice 2 (#162)
+
+Game-event source validation uses a transient world-local membership index rather
+than entity/player population scans. Existing spawn, restoration, player/session,
+transfer, respawn, removal and unload owners publish or retire exact instances;
+admission tokens also reject same-Arc re-entry through callbacks. Zero tracking
+range does not prevent live source membership. `[sculk_game_events] enabled = true`
+remains default ON; false keeps existing plugin notifications and gameplay while
+skipping all new source/action/state capture and built-in forwarding.
+
+Existing flower-pot, bucket/bottle, tool-transform, living damage/consume/action,
+shear, enchantment and projectile notifications carry their actual source and the
+specific vanilla affected-state factory. SHOOT uses the owner; live LAND uses the
+projectile and post-hit block state. Required action identity and emission snapshots
+survive callbacks without moving notifications or changing stock, damage or hits.
+Automatic dried-ghast hydration remains actorless and carries its previous state.
+Vanilla 26.3 normal lever use and explosion pulls both pass null, so both stay
+source-less. Ordinary bucket pickup has no existing game-event emitter; none is
+added. Container callbacks still lack the real actor. Retired projectile LAND stays
+plugin-visible but typed forwarding is deferred to #330/#394 hit admission.
+
+API 8 (same version): the private source-index field changes native `World` layout;
+rebuild native plugins against this checkout. Supported public method signatures,
+GenericGameEvent payload and cancellation, configuration schema, both Wasm host
+mappings and WIT are unchanged. Direct raw stores to public legacy entity/player
+lists bypass admission and are unsupported/unverified for indexed forwarding;
+plugins must use existing admission/removal APIs. No durable fields or meanings
+change; the index is rebuilt on admission and restart. Ownership details are in
+[the source membership record](.fork/game-event-source-ownership.md).
+
+This partial slice adds no movement/STEP events, production listener registry,
+sensor output, vibration policy or Warden AI, and closes no broad issue. Actor
+threading through containers, early-retired hit ownership, remaining source-less
+adapters, listeners and consumers remain separate owners. Implemented with Codex.
+In-game verification: Not yet.
+
+Play test: use flower pots, bottles, buckets and an axe; cast/reel and draw a bow;
+eat, drink, take damage and shear a sheep. Expect unchanged items, blocks, hits and
+plugin notification counts. Repeat with forwarding OFF, then save/restart twice;
+expect identities, health and stock to survive. Capture both clients and the plugin
+notifications, including cancelled/edited events and a callback removing a source.
+No sensor activation is claimed.
+
 ## Game-event source context foundation, slice 1 (#162)
 
 Fishing use, item release and death-protection game events retain their originating

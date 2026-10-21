@@ -2,6 +2,7 @@ use crate::block::registry::BlockActionResult;
 use crate::block::{
     BlockBehaviour, NormalUseArgs, PathComputationType, RandomTickArgs, UseWithItemArgs,
 };
+use crate::entity::EntityBase;
 use pumpkin_data::flower_pot_transformations::get_potted_item;
 use pumpkin_data::{Block, BlockId, BlockState};
 use pumpkin_macros::pumpkin_block_from_tag;
@@ -20,13 +21,20 @@ impl BlockBehaviour for FlowerPotBlock {
         if args.block != &Block::FLOWER_POT {
             return BlockActionResult::Consume;
         }
+        let action = args
+            .world
+            .capture_game_event_source_for_action(args.player.get_entity());
         args.world.set_block_state(
             args.position,
             Block::from_id(potted).default_state.id,
             BlockFlags::NOTIFY_ALL,
         );
-        args.world
-            .emit_game_event("block_change", args.position.to_centered_f64());
+        args.world.emit_game_event_from_action(
+            "block_change",
+            args.position.to_centered_f64(),
+            Some(args.player.get_entity()),
+            action.as_ref(),
+        );
         args.player.increment_stat(
             pumpkin_data::statistic::StatisticCategory::Custom,
             pumpkin_data::statistic::CustomStatistic::PotFlower as i32,
@@ -42,6 +50,9 @@ impl BlockBehaviour for FlowerPotBlock {
         if args.block == &Block::FLOWER_POT {
             return BlockActionResult::Consume;
         }
+        let action = args
+            .world
+            .capture_game_event_source_for_action(args.player.get_entity());
         if let Some(item) = potted_content(args.block) {
             crate::item::item_utils::give_or_drop(
                 args.player,
@@ -53,8 +64,12 @@ impl BlockBehaviour for FlowerPotBlock {
             Block::FLOWER_POT.default_state.id,
             BlockFlags::NOTIFY_ALL,
         );
-        args.world
-            .emit_game_event("block_change", args.position.to_centered_f64());
+        args.world.emit_game_event_from_action(
+            "block_change",
+            args.position.to_centered_f64(),
+            Some(args.player.get_entity()),
+            action.as_ref(),
+        );
         BlockActionResult::Success
     }
 

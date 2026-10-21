@@ -1,4 +1,5 @@
 use crate::block::registry::BlockActionResult;
+use crate::entity::EntityBase;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
@@ -57,6 +58,7 @@ impl ItemBehaviour for ShovelItem {
         hand: Hand,
     ) -> BlockActionResult {
         let world = player.world();
+        let action = world.capture_game_event_source_for_action(player.get_entity());
         let current_state_id = world.get_block_state_id(&location);
         let result = match super::block_transformer::prepare_transform(
             &SHOVEL,
@@ -95,6 +97,7 @@ impl ItemBehaviour for ShovelItem {
                 location,
                 current_state_id,
                 result,
+                action.as_ref(),
             );
             changed = true;
         } else if (block == &Block::CAMPFIRE || block == &Block::SOUL_CAMPFIRE)

@@ -150,9 +150,15 @@ impl ProjectileState {
     // Projectile.tick / checkLeftOwner: a collision sweep, never an age-based grace period.
     pub fn tick(&self, entity: &Entity) {
         if !self.has_been_shot.swap(true, Ordering::Relaxed) {
-            entity.world.load().emit_game_event(
+            let world = entity.world.load_full();
+            let owner = world
+                .game_event_forwarding_enabled()
+                .then(|| self.owner(entity))
+                .flatten();
+            world.emit_game_event_from(
                 pumpkin_data::game_event::GameEvent::ProjectileShoot.name(),
                 entity.pos.load(),
+                owner.as_ref().map(|owner| owner.get_entity()),
             );
         }
         self.check_left_owner(entity);
@@ -310,11 +316,12 @@ pub(crate) fn teleport_projectile(
     let Some(projectile) = source.get_entity_by_id(entity.entity_id) else {
         return false;
     };
+    let retire_source = source.game_event_source_retirement(entity);
     let previous_position = entity.pos.load();
     entity.set_pos(position);
     entity.set_world(destination.clone());
     if !destination.spawn_entity(projectile.clone()) {
-        entity.set_world(source);
+        entity.set_world(source.clone());
         entity.set_pos(previous_position);
         return true;
     }
@@ -332,6 +339,7 @@ pub(crate) fn teleport_projectile(
             .cloned()
             .collect::<Vec<_>>()
     });
+    retire_source();
     entity.teleport(position, yaw, pitch, destination);
     true
 }

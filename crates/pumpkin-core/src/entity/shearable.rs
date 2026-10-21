@@ -1,3 +1,4 @@
+use crate::entity::EntityBase;
 use std::sync::Arc;
 
 use pumpkin_data::game_event::GameEvent;
@@ -43,7 +44,8 @@ fn shear_by_player_with_hand(
     hand: Hand,
 ) -> bool {
     let entity = &shearable.get_mob_entity().living_entity.entity;
-    let world = entity.world.load();
+    let world = entity.world.load_full();
+    let action = world.capture_game_event_source_for_action(player.get_entity());
     if let Some(server) = world.server.upgrade() {
         let mut event = PlayerShearEntityEvent {
             player: player.clone(),
@@ -61,7 +63,12 @@ fn shear_by_player_with_hand(
     if !shearable.shear(SoundCategory::Players, tool) {
         return false;
     }
-    world.emit_game_event(GameEvent::Shear.name(), pos);
+    world.emit_game_event_from_action(
+        GameEvent::Shear.name(),
+        pos,
+        Some(player.get_entity()),
+        action.as_ref(),
+    );
     player.damage_detached_item(tool, 1);
     true
 }

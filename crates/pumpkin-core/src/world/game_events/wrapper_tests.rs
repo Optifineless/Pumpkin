@@ -142,13 +142,13 @@ fn assert_protection(scenario: &Scenario, moved: bool, vibrations: bool) {
     };
     assert_eq!(scenario.owner.player.position(), final_position);
     let sink = scenario.sink.lock().unwrap();
-    // The real damage entry also emits its existing, source-less entity_damage notification.
+    // The real damage entry emits its existing entity_damage notification before protection.
     assert_eq!(sink.plugins[0].key, "entity_damage");
     assert_eq!(sink.plugins[0].position, ORIGIN);
     assert_eq!(sink.plugins[0].count, 1);
     assert_eq!(sink.forwarded[0].event, GameEvent::EntityDamage);
     assert_eq!(sink.forwarded[0].position, ORIGIN);
-    assert!(sink.forwarded[0].source.is_none());
+    scenario.assert_source(sink.forwarded[0].source.as_ref().unwrap(), ORIGIN);
     let plugins = &sink.plugins[1..];
     let forwarded = &sink.forwarded[1..];
     assert_eq!(plugins.len(), usize::from(vibrations) + usize::from(moved));

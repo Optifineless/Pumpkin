@@ -185,9 +185,17 @@ impl Scenario {
         Self::new_with_hardcore(false).await
     }
     async fn new_with_hardcore(hardcore: bool) -> Self {
+        Self::new_with_game_event_settings(hardcore, true).await
+    }
+
+    pub(crate) async fn new_with_game_events(enabled: bool) -> Self {
+        Self::new_with_game_event_settings(false, enabled).await
+    }
+
+    async fn new_with_game_event_settings(hardcore: bool, enabled: bool) -> Self {
         let isolation = SCENARIO_GATE.lock().await;
         let directory = tempfile::tempdir().unwrap();
-        let server = Self::services(directory.path(), hardcore);
+        let server = Self::services(directory.path(), hardcore, enabled);
         let scenario = Self {
             server,
             sessions: Rc::default(),
@@ -203,9 +211,10 @@ impl Scenario {
         }
         scenario
     }
-    fn services(path: &Path, hardcore: bool) -> Arc<Server> {
+    fn services(path: &Path, hardcore: bool, game_events: bool) -> Arc<Server> {
         let mut server = combat_test_support::server(path);
         let services = Arc::get_mut(&mut server).unwrap();
+        services.advanced_config.sculk_game_events.enabled = game_events;
         services.basic_config.hardcore = hardcore;
         services.dimensions = vec![Dimension::OVERWORLD, Dimension::THE_NETHER];
         services.advanced_config.networking.java.view_distance =

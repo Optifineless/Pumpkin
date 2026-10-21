@@ -56,6 +56,8 @@ impl LivingEntity {
         if !self.valid_hurt_context(caller, context) {
             return false;
         }
+        let action_world = self.entity.world.load_full();
+        let action = action_world.capture_game_event_source_for_action(&self.entity);
         // LivingEntity.actuallyHurt:1961 / Player.actuallyHurt:738: one immunity roll,
         // before armor and absorption. Revalidation must never reroll random predicates.
         if self.is_immune_to_enchantment_damage(caller, damage_type, source, cause) {
@@ -98,7 +100,7 @@ impl LivingEntity {
             return false;
         }
         self.damage_owner.reserve_admission(incoming);
-        self.apply_health_damage(caller, context, damage)
+        self.apply_health_damage(caller, context, damage, action.as_ref())
     }
 
     // The absorption/health portion of LivingEntity.actuallyHurt and Player.actuallyHurt.
@@ -107,6 +109,7 @@ impl LivingEntity {
         caller: &dyn EntityBase,
         context: super::damage::HurtContext<'_>,
         damage: f32,
+        action: Option<&crate::world::game_events::CapturedSource<'_>>,
     ) -> bool {
         let super::damage::HurtContext {
             damage_type,
@@ -164,10 +167,12 @@ impl LivingEntity {
                 self.set_absorption((self.absorption.load() - health_damage).max(0.0));
             }
             if health_damage > 0.0 {
-                self.entity
-                    .world
-                    .load()
-                    .emit_game_event("entity_damage", self.entity.pos.load());
+                self.entity.world.load().emit_game_event_from_action(
+                    "entity_damage",
+                    self.entity.pos.load(),
+                    Some(&self.entity),
+                    action,
+                );
             }
         }
         Self::award_absorbed_damage(caller, cause, extra_absorbed);

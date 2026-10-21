@@ -116,7 +116,7 @@ impl World {
             member.init_data_tracker();
         }
         // LeashFenceKnotEntity.getOrCreateKnot requires one live knot per fence position.
-        self.entities.rcu(|current| {
+        self.publish_game_event_entities(members, |current| {
             let duplicate_uuid = members.iter().position(|member| {
                 let uuid = member.get_entity().entity_uuid;
                 current
@@ -156,11 +156,11 @@ impl World {
             accepted.store(duplicate.is_none(), Relaxed);
             if let Some(index) = duplicate {
                 rejected_index.store(index, Relaxed);
-                return (**current).clone();
+                return None;
             }
             let mut next = (**current).clone();
             next.extend(members.iter().cloned());
-            next
+            Some(next)
         });
         if !accepted.load(Relaxed) {
             if rejected_for_knot.load(Relaxed) {

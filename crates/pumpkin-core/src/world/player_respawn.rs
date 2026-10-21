@@ -42,20 +42,21 @@ impl World {
         #[cfg(test)]
         test_support::pause(player, test_support::Phase::BeforeAdmission).await;
         // Admit first: rejection must not disturb source membership or chunk streaming.
-        let mut published = false;
-        destination.players.rcu(|current_list| {
-            published = false;
-            let mut new_list = (**current_list).clone();
-            if self.can_respawn_player(player)
-                && !new_list
+        let published = loop {
+            let previous = destination.players.load_full();
+            if !self.can_respawn_player(player)
+                || previous
                     .iter()
                     .any(|current| current.gameprofile.id == player.gameprofile.id)
             {
-                new_list.push(player.clone());
-                published = true;
+                break false;
             }
-            new_list
-        });
+            let mut next = (*previous).clone();
+            next.push(player.clone());
+            if destination.commit_game_event_player(player, &previous, Arc::new(next)) {
+                break true;
+            }
+        };
         if !published {
             #[cfg(test)]
             test_support::pause(player, test_support::Phase::AdmissionRejected).await;
@@ -82,11 +83,7 @@ impl World {
     }
 
     fn forget_respawn_admission(&self, player: &Arc<Player>) {
-        self.players.rcu(|current_list| {
-            let mut new_list = (**current_list).clone();
-            new_list.retain(|current| !Arc::ptr_eq(current, player));
-            new_list
-        });
+        self.withdraw_game_event_player(player);
     }
 
     // PlayerList.respawn commits the resolved location before the respawn hook.

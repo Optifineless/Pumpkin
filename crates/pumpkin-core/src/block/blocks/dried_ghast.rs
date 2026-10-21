@@ -55,7 +55,12 @@ impl DriedGhastBlock {
         true
     }
 
-    fn tick_waterlogged(world: &Arc<World>, pos: &BlockPos, mut props: DriedGhastLikeProperties) {
+    fn tick_waterlogged(
+        world: &Arc<World>,
+        pos: &BlockPos,
+        mut props: DriedGhastLikeProperties,
+        state_before: BlockStateId,
+    ) {
         // DriedGhastBlock.tickWaterlogged advances once per scheduled tick.
         if props.hydration == MAX_HYDRATION_LEVEL {
             Self::spawn_ghastling(world, pos, props.facing);
@@ -72,7 +77,19 @@ impl DriedGhastBlock {
             props.to_state_id(&Block::DRIED_GHAST),
             BlockFlags::NOTIFY_LISTENERS,
         );
-        world.emit_game_event(GameEvent::BlockChange.name(), pos.to_f64());
+        Self::emit_hydration_change(world, pos, state_before);
+    }
+
+    fn emit_hydration_change(world: &World, pos: &BlockPos, state_before: BlockStateId) {
+        // DriedGhastBlock.tick/tickWaterlogged use Context.of(the previous state).
+        world.emit_game_event_with_lazy_context(
+            GameEvent::BlockChange.name(),
+            pos.to_f64(),
+            || crate::world::game_events::GameEventContext {
+                source: None,
+                affected_state: Some(state_before),
+            },
+        );
     }
 
     fn spawn_ghastling(world: &Arc<World>, pos: &BlockPos, facing: HorizontalFacing) {
@@ -165,10 +182,10 @@ impl BlockBehaviour for DriedGhastBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         // DriedGhastBlock.tick dries by one level, without a transition sound.
-        let mut props =
-            DriedGhastLikeProperties::from_state_id(args.world.get_block_state_id(args.position));
+        let state_before = args.world.get_block_state_id(args.position);
+        let mut props = DriedGhastLikeProperties::from_state_id(state_before);
         if props.waterlogged {
-            Self::tick_waterlogged(args.world, args.position, props);
+            Self::tick_waterlogged(args.world, args.position, props, state_before);
         } else if props.hydration > 0 {
             props.hydration -= 1;
             args.world.set_block_state(
@@ -176,8 +193,7 @@ impl BlockBehaviour for DriedGhastBlock {
                 props.to_state_id(args.block),
                 BlockFlags::NOTIFY_LISTENERS,
             );
-            args.world
-                .emit_game_event(GameEvent::BlockChange.name(), args.position.to_f64());
+            Self::emit_hydration_change(args.world, args.position, state_before);
         }
     }
 

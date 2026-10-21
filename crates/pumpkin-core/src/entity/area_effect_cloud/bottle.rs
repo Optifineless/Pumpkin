@@ -12,6 +12,7 @@ use pumpkin_util::Hand;
 /// BottleItem.use's dragon-breath branch, before the ordinary water raycast.
 pub fn try_bottle(player: &Player, hand: Hand) -> bool {
     let world = player.world();
+    let action = world.capture_game_event_source_for_action(player.get_entity());
     let candidates = world.get_all_at_box(&player.get_entity().bounding_box.load().expand_all(2.0));
     let Some(cloud) = candidates
         .iter()
@@ -39,9 +40,11 @@ pub fn try_bottle(player: &Player, hand: Hand) -> bool {
         SoundCategory::Neutral,
         &player.position(),
     );
-    world.emit_game_event(
+    world.emit_game_event_from_action(
         pumpkin_data::game_event::GameEvent::FluidPickup.name(),
         player.position(),
+        Some(player.get_entity()),
+        action.as_ref(),
     );
     player.increment_stat(StatisticCategory::Used, i32::from(Item::GLASS_BOTTLE.id), 1);
     crate::item::item_utils::finish_claimed_result(

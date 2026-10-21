@@ -3317,11 +3317,7 @@ impl Player {
                     return TeleportWorldOutcome::NotCommitted;
                 };
                 if !defer_arrival_publication {
-                    new_world.players.rcu(|current_list| {
-                        let mut new_list = (**current_list).clone();
-                        new_list.push(player.clone());
-                        new_list
-                    });
+                    new_world.add_pending_player(&player);
                 }
                 self.unload_watched_chunks(&current_world).await;
 
@@ -3422,11 +3418,7 @@ impl Player {
                     player.send_health_update();
                     outcome = TeleportWorldOutcome::Committed;
                     // Keep the player out of destination ticks until pearl effects are committed.
-                    new_world.players.rcu(|current_list| {
-                        let mut new_list = (**current_list).clone();
-                        new_list.push(player.clone());
-                        new_list
-                    });
+                    new_world.add_pending_player(&player);
                 }
                 new_world.send_center_chunk(&player).await;
 

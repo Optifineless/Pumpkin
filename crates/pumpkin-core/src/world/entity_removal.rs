@@ -33,5 +33,6 @@ impl World {
             new_entities.retain(|e| e.get_entity().entity_uuid != base_entity.entity_uuid);
             new_entities
         });
+        self.retire_game_event_source(base_entity);
     }
 }

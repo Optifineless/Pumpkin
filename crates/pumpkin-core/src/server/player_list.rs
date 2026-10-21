@@ -24,11 +24,14 @@ const fn hat_shown(skin_parts: u8) -> bool {
 
 impl World {
     pub(crate) fn add_pending_player(&self, player: &Arc<Player>) {
-        self.players.rcu(|players| {
-            let mut next = (**players).clone();
+        loop {
+            let previous = self.players.load_full();
+            let mut next = (*previous).clone();
             next.push(player.clone());
-            next
-        });
+            if self.commit_game_event_player(player, &previous, Arc::new(next)) {
+                break;
+            }
+        }
     }
 }
 
